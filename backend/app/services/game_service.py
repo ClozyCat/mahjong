@@ -41,7 +41,7 @@ from app.domain.reducer import (
 from app.domain.wall import WallState
 from app.services.presence_service import mark_connected, mark_disconnected
 from app.services.reconnect_service import consume_reconnect_token, issue_reconnect_token
-from app.services.table_service import get_table_by_code
+from app.services.table_service import close_table, get_table_by_code
 from app.services.timeout_service import (
     ACTIVE_TURN_TIMEOUT_SECONDS,
     PendingTimeout,
@@ -123,6 +123,7 @@ class SeatReservation:
 class RoomState:
     table_code: str
     phase: str = "waiting"
+    test_mode: bool = False
     seats: dict[int, SeatReservation] = field(default_factory=dict)
     match_state: MatchState | None = None
     round_state: RoundState | None = None
@@ -152,7 +153,8 @@ class GameService:
 
         async with self._lock:
             room = self._get_or_restore_room_locked(table_code) or RoomState(
-                table_code=table_code
+                table_code=table_code,
+                test_mode=self._test_mode,
             )
             self._rooms[table_code] = room
             available_seats = [
@@ -177,10 +179,10 @@ class GameService:
                 ready=False,
             )
 
-            if self._test_mode and room.round_state is None:
+            if room.test_mode and room.round_state is None:
                 self._add_bot_reservations_locked(room)
 
-            if self._test_mode and len(room.seats) == MAX_SEATS and room.round_state is None:
+            if room.test_mode and len(room.seats) == MAX_SEATS and room.round_state is None:
                 self._start_match_locked(room)
 
             self._persist_room_state_locked(room)
@@ -214,7 +216,8 @@ class GameService:
 
         async with self._lock:
             room = self._get_or_restore_room_locked(table_code) or RoomState(
-                table_code=table_code
+                table_code=table_code,
+                test_mode=self._test_mode,
             )
             self._rooms[table_code] = room
             reservation = room.seats.get(reconnect_record.seat_index)
@@ -477,8 +480,11 @@ class GameService:
             if reservation.reconnect_token:
                 self._consume_reconnect_token(reservation.reconnect_token)
             self._mark_disconnected(player_session_id=reservation.player_session_id)
-            self._persist_room_state_locked(room)
-            peer_updates = self._peer_snapshot_updates_locked(room, exclude_seat=owned_seat)
+            if room.seats:
+                self._persist_room_state_locked(room)
+                peer_updates = self._peer_snapshot_updates_locked(room, exclude_seat=owned_seat)
+            else:
+                self._close_room_locked(room)
 
         async with room.send_lock:
             await self._send_presence_and_snapshots(
@@ -763,7 +769,7 @@ class GameService:
             )
 
     def _auto_advance_test_mode_locked(self, room: RoomState) -> list[dict]:
-        if not self._test_mode or room.round_state is None:
+        if not room.test_mode or room.round_state is None:
             return []
 
         messages: list[dict] = []
@@ -838,7 +844,15 @@ class GameService:
             if not offered_seats:
                 break
 
-            seat_index = offered_seats[0]
+            bot_offered_seats = [
+                seat_index
+                for seat_index in offered_seats
+                if self._is_bot_seat(room, seat_index)
+            ]
+            if not bot_offered_seats:
+                return []
+
+            seat_index = bot_offered_seats[0]
             room.round_state, _ = apply_claim_action(
                 room.round_state,
                 seat=seat_index,
@@ -1206,6 +1220,14 @@ class GameService:
                 room_version=self._room_version(room),
                 payload=self._serialize_room(room),
             )
+
+    def _close_room_locked(self, room: RoomState) -> None:
+        if room.timeout_task is not None:
+            room.timeout_task.cancel()
+            room.timeout_task = None
+        self._rooms.pop(room.table_code, None)
+        with self._session_factory() as session:
+            close_table(session, room.table_code)
 
     def _require_table(self, session: Session, table_code: str):
         record = get_table_record_by_code(session, table_code)
@@ -1638,6 +1660,7 @@ class GameService:
         return {
             "table_code": room.table_code,
             "phase": room.phase,
+            "test_mode": room.test_mode,
             "seats": [
                 {
                     "seat_index": seat_index,
@@ -1659,6 +1682,7 @@ class GameService:
         room = RoomState(
             table_code=payload["table_code"],
             phase=payload.get("phase", "waiting"),
+            test_mode=payload.get("test_mode", False),
         )
         for seat_payload in payload.get("seats", []):
             seat_index = seat_payload["seat_index"]

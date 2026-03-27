@@ -2,7 +2,7 @@ import { startTransition, useEffect, useEffectEvent, useMemo, useReducer, useRef
 
 import { BattleScreen } from './components/battle-screen/BattleScreen';
 import { ConnectGate, type ConnectGateValue } from './components/connect-gate/ConnectGate';
-import { createTable } from './lib/api';
+import { ApiError, createTable } from './lib/api';
 import {
   getActionCandidateGroups,
   getActionCandidateTileIds,
@@ -92,6 +92,7 @@ export default function App() {
     wsBaseUrl: storedSession?.wsBaseUrl ?? defaults.wsBaseUrl,
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
+    testMode: false,
   });
   const [statusMessage, setStatusMessage] = useState<string | null>(
     storedSession ? `检测到牌桌 ${storedSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
@@ -310,7 +311,12 @@ export default function App() {
     try {
       setStatusMessage('正在创建牌桌...');
       dispatch({ type: 'set_config', apiBaseUrl: connectValue.apiBaseUrl, wsBaseUrl: connectValue.wsBaseUrl });
-      const table = await createTable(connectValue.apiBaseUrl);
+      const requestedTableCode = connectValue.tableCode.trim().toUpperCase();
+      const table = await createTable(
+        connectValue.apiBaseUrl,
+        requestedTableCode || undefined,
+        connectValue.testMode,
+      );
       startTransition(() => {
         setConnectValue((current) => ({
           ...current,
@@ -323,6 +329,24 @@ export default function App() {
         wsBaseUrl: connectValue.wsBaseUrl,
       });
     } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status === 409 &&
+        typeof error.detail === 'object' &&
+        error.detail !== null &&
+        'detail' in error.detail &&
+        (error.detail as { detail: unknown }).detail === 'table_code_exists'
+      ) {
+        const requestedTableCode = connectValue.tableCode.trim().toUpperCase();
+        const shouldJoin = window.confirm(`牌桌编号 ${requestedTableCode} 已存在，是否直接加入该牌桌？`);
+        if (shouldJoin) {
+          handleJoin();
+          return;
+        }
+        setStatusMessage(`牌桌编号 ${requestedTableCode} 已存在，请更换编号或直接加入。`);
+        return;
+      }
+
       setStatusMessage(error instanceof Error ? error.message : '创建牌桌失败。');
       dispatch({ type: 'set_connection_status', status: 'error' });
     }

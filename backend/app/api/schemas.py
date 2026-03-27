@@ -5,6 +5,8 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import StringConstraints
+from typing import Annotated
 
 
 class HealthResponse(BaseModel):
@@ -27,6 +29,11 @@ class WaitingRoomResponse(BaseModel):
     phase: str
     created_at: datetime
     seats: list[TableSeatResponse]
+
+
+class CreateTableRequest(BaseModel):
+    table_code: Annotated[str | None, StringConstraints(pattern=r"^[A-Z0-9]{1,12}$")] = None
+    test_mode: bool | None = None
 
 
 class JoinTableRequest(BaseModel):

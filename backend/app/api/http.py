@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.schemas import HealthResponse, WaitingRoomResponse
+from app.api.schemas import CreateTableRequest, HealthResponse, WaitingRoomResponse
 from app.db.session import get_session
 from app.services.table_service import create_table, to_waiting_room
 
@@ -28,7 +28,25 @@ def healthcheck() -> HealthResponse:
     status_code=status.HTTP_201_CREATED,
 )
 def create_table_endpoint(
+    request: Request,
+    payload: CreateTableRequest | None = None,
     session: Session = Depends(get_db_session),
 ) -> WaitingRoomResponse:
-    table = create_table(session)
+    try:
+        table = create_table(
+            session,
+            payload.table_code if payload else None,
+            test_mode=(
+                payload.test_mode
+                if payload is not None and payload.test_mode is not None
+                else request.app.state.settings.test_mode
+            ),
+        )
+    except ValueError as exc:
+        if str(exc) == "table_code_exists":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="table_code_exists",
+            ) from exc
+        raise
     return WaitingRoomResponse.model_validate(to_waiting_room(table))

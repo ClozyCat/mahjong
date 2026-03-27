@@ -476,6 +476,84 @@ async def test_leave_table_removes_waiting_seat_and_notifies_peers(monkeypatch):
     ]
 
 
+def test_auto_pass_claim_window_in_test_mode_skips_human_hu_prompt() -> None:
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOMHU", phase="playing", test_mode=True)
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Human",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=_RecordingWebSocket(),
+        connected=True,
+        ready=True,
+        is_bot=False,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="Bot 1",
+        reconnect_token=None,
+        player_session_id=-2,
+        connected=True,
+        ready=True,
+        is_bot=True,
+    )
+    room.seats[2] = SeatReservation(
+        seat_index=2,
+        nickname="Bot 2",
+        reconnect_token=None,
+        player_session_id=-3,
+        connected=True,
+        ready=True,
+        is_bot=True,
+    )
+    room.seats[3] = SeatReservation(
+        seat_index=3,
+        nickname="Bot 3",
+        reconnect_token=None,
+        player_session_id=-4,
+        connected=True,
+        ready=True,
+        is_bot=True,
+    )
+    room.round_state = RoundState(
+        round_id="round-claim-human",
+        dealer_seat=0,
+        current_actor=3,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=_make_suit_tile("w5", "w5#discard"),
+        pending_action={
+            "type": "claim_window",
+            "discarder_seat": 3,
+            "claim_window": [["hu"], ["pung"], [], []],
+            "responded_seats": [],
+        },
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="claim_window",
+        seat_index=3,
+        deadline_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+    )
+
+    messages = service._auto_pass_claim_window_locked(room)
+
+    assert messages == []
+    assert room.pending_timeout is not None
+    assert room.round_state is not None
+    assert room.round_state.pending_action is not None
+    assert room.round_state.pending_action["type"] == "claim_window"
+    assert room.round_state.pending_action["responded_seats"] == [1]
+
+
 @pytest.mark.asyncio
 async def test_handle_action_request_resolves_claims_by_priority_after_all_responses(
     monkeypatch,

@@ -5,6 +5,7 @@ export interface ConnectGateValue {
   wsBaseUrl: string;
   tableCode: string;
   nickname: string;
+  testMode: boolean;
 }
 
 interface ConnectGateProps {
@@ -66,6 +67,17 @@ export function ConnectGate({ value, status, message, onChange, onCreate, onJoin
               aria-label="昵称"
             />
           </label>
+
+          <div className="connect-gate__actions">
+            <button
+              type="button"
+              onClick={() => onChange({ testMode: !value.testMode })}
+              disabled={disabled}
+              aria-pressed={value.testMode}
+            >
+              测试模式：{value.testMode ? '开' : '关'}
+            </button>
+          </div>
 
           <div className="connect-gate__actions">
             <button type="button" onClick={onCreate} disabled={disabled}>

@@ -3,13 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
     PlayerSessionRecord,
     ReconnectTokenRecord,
+    RoundEventRecord,
+    RoundSnapshotRecord,
     RoomSnapshotRecord,
+    SettlementRecord,
     TableRecord,
     TableSeatRecord,
     utcnow,
@@ -43,6 +46,13 @@ def table_code_exists(session: Session, table_code: str) -> bool:
     return existing is not None
 
 
+def table_has_players(session: Session, *, table_id: int) -> bool:
+    existing = session.scalar(
+        select(PlayerSessionRecord.id).where(PlayerSessionRecord.table_id == table_id)
+    )
+    return existing is not None
+
+
 def to_table_dto(record: TableRecord) -> TableDTO:
     return TableDTO(
         table_code=record.table_code,
@@ -53,6 +63,36 @@ def to_table_dto(record: TableRecord) -> TableDTO:
 
 def get_table_record_by_code(session: Session, table_code: str) -> TableRecord | None:
     return session.scalar(select(TableRecord).where(TableRecord.table_code == table_code))
+
+
+def delete_table_record(session: Session, table_code: str) -> bool:
+    record = get_table_record_by_code(session, table_code)
+    if record is None:
+        return False
+    session.execute(
+        delete(RoomSnapshotRecord).where(RoomSnapshotRecord.table_id == record.id)
+    )
+    session.execute(
+        delete(RoundSnapshotRecord).where(RoundSnapshotRecord.table_id == record.id)
+    )
+    session.execute(
+        delete(SettlementRecord).where(SettlementRecord.table_id == record.id)
+    )
+    session.execute(
+        delete(RoundEventRecord).where(RoundEventRecord.table_id == record.id)
+    )
+    session.execute(
+        delete(ReconnectTokenRecord).where(ReconnectTokenRecord.table_id == record.id)
+    )
+    session.execute(
+        delete(TableSeatRecord).where(TableSeatRecord.table_id == record.id)
+    )
+    session.execute(
+        delete(PlayerSessionRecord).where(PlayerSessionRecord.table_id == record.id)
+    )
+    session.delete(record)
+    session.commit()
+    return True
 
 
 def create_player_session(
