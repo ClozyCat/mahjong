@@ -46,16 +46,47 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    expect(screen.getByText('手牌控制区')).toBeInTheDocument();
+    expect(screen.getByText('Player A')).toBeInTheDocument();
+    expect(screen.getByText(/25,000 · 花 1 · Live/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '收起手牌控制区' }));
+    fireEvent.click(screen.getByRole('button', { name: '收起手牌区' }));
 
-    expect(screen.queryByText('手牌控制区')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '展开手牌控制区' })).toBeInTheDocument();
+    expect(screen.queryByText('Player A')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开手牌区' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '展开手牌控制区' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开手牌区' }));
 
-    expect(screen.getByText('手牌控制区')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '展开手牌控制区' })).not.toBeInTheDocument();
+    expect(screen.getByText('Player A')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开手牌区' })).not.toBeInTheDocument();
+  });
+
+  it('renders only the provided battle actions inside the bottom action row', () => {
+    const { container } = render(
+      <BottomActionDock
+        hand={localHand}
+        actions={[
+          { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ]}
+        isElevated={false}
+        waitingControls={{
+          canReady: true,
+          canStart: true,
+          isReady: false,
+          occupiedSeats: 4,
+        }}
+        localPlayer={localPlayer}
+        onTileSelect={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const bottomRow = container.querySelector('.action-dock__actions');
+
+    expect(bottomRow?.textContent).toContain('出牌');
+    expect(bottomRow?.textContent).toContain('过');
+    expect(bottomRow?.textContent).toContain('收起');
+    expect(container.querySelector('.action-dock__side-panel')).toBeNull();
+    expect(container.querySelector('.action-dock__caption')).toBeNull();
   });
 });

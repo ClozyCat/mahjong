@@ -1,4 +1,5 @@
 import type { PlayerView, Seat } from '../../types/match';
+import { formatTileName } from '../../lib/tileNames';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 
@@ -7,13 +8,22 @@ interface TableStageProps {
   activeSeat: Seat;
   lastDiscard: string | null;
   lastDiscardSeat?: Seat | null;
+  remainingTileCount?: number | null;
   promptText: string | null;
   players?: Pick<PlayerView, 'seat' | 'name' | 'melds'>[];
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
 
-export function TableStage({ discards, activeSeat, lastDiscard, lastDiscardSeat = null, promptText, players = [] }: TableStageProps) {
+export function TableStage({
+  discards,
+  activeSeat,
+  lastDiscard,
+  lastDiscardSeat = null,
+  remainingTileCount = null,
+  promptText,
+  players = [],
+}: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
@@ -27,8 +37,9 @@ export function TableStage({ discards, activeSeat, lastDiscard, lastDiscardSeat 
         <div className="table-stage__core">
           <div className="table-stage__center-sigil">Table Core</div>
           <div className="table-stage__center-meta">
-            {lastDiscard ? <span>Last {lastDiscard}</span> : <span>No discard yet</span>}
-            {promptText ? <strong>{promptText}</strong> : null}
+            <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
+            {lastDiscard ? <span>最新出牌 {formatTileName(lastDiscard, lastDiscard)}</span> : <span>尚未有出牌</span>}
+            {promptText ? <em>{promptText}</em> : null}
           </div>
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);

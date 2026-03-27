@@ -1446,6 +1446,7 @@ class GameService:
             "round_wind": state.round_wind,
             "dealer_seat": state.dealer_seat,
             "current_actor": state.current_actor,
+            "wall_tiles_remaining": max(0, state.wall.tail_index - state.wall.head_index + 1),
             "last_discard": state.last_discard.tile_key if state.last_discard else None,
             "pending_action": self._private_pending_action(room=room, local_seat=local_seat),
             "score_state": self._round_score_state(room),

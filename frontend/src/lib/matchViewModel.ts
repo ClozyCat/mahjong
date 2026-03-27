@@ -580,6 +580,11 @@ function createCenterBanner(state: SessionState) {
   return snapshot.private_state?.last_discard ?? null;
 }
 
+function createRemainingTileCount(state: SessionState) {
+  const remaining = state.roomSnapshot?.payload.private_state?.wall_tiles_remaining;
+  return typeof remaining === 'number' ? remaining : null;
+}
+
 export function createMatchViewModel(state: SessionState): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
   const waitingControls = createWaitingControls(state);
@@ -631,6 +636,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     discards: createDiscards(state),
     localHand: createLocalHand(state),
     centerBanner: createCenterBanner(state),
+    remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state),
     result: createResult(state),
     lastDiscard: snapshot?.private_state?.last_discard ?? null,

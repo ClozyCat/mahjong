@@ -15,23 +15,23 @@ export function PlayerRing({ player }: PlayerRingProps) {
           player.isLocal ? 'player-ring--local' : ''
         }`}
       >
-        <div className="player-ring__avatar" aria-hidden="true" />
         <div className="player-ring__content">
-          <span className="player-ring__eyebrow">
-            {windLabel}
-            {player.isDealer ? ' 庄家' : ''}
-            {player.connected ? ' 在线' : ' 离线'}
-          </span>
-          <strong>{player.name}</strong>
-          <span className="player-ring__meta">
-            {player.score.toLocaleString()} · {player.statusText ?? '待命'}
-          </span>
-          <span className="player-ring__detail">
-            准备 {player.ready ? '是' : '否'} · 手牌 {player.concealedCount} · 花 {player.flowerCount}
-          </span>
-          <span className="player-ring__detail">
-            {deltaLabel}
-          </span>
+          <div className="player-ring__row player-ring__row--primary">
+            <strong>{player.name}</strong>
+            <span className="player-ring__eyebrow">
+              {windLabel}
+              {player.isDealer ? ' 庄家' : ''}
+              {player.connected ? ' 在线' : ' 离线'}
+            </span>
+          </div>
+          <div className="player-ring__row player-ring__row--secondary">
+            <span className="player-ring__meta">
+              {player.score.toLocaleString()} · {player.statusText ?? '待命'}
+            </span>
+            <span className="player-ring__detail">
+              手牌 {player.concealedCount} · 花 {player.flowerCount} · {deltaLabel}
+            </span>
+          </div>
         </div>
       </article>
     </section>

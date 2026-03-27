@@ -1,6 +1,7 @@
 import type { BattleActionId, BattleViewModel } from '../../types/match';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
+import { FloatingRoomControls } from './FloatingRoomControls';
 import { PlayerRing } from './PlayerRing';
 import { ResultOverlay } from './ResultOverlay';
 import { StageBackground } from './StageBackground';
@@ -23,6 +24,8 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
   const remotePlayers = REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)).filter(
     (player): player is NonNullable<typeof player> => Boolean(player),
   );
+  const roomActions = viewModel.actions.filter((action) => ROOM_CONTROL_ACTION_IDS.includes(action.id));
+  const battleActions = viewModel.actions.filter((action) => !ROOM_CONTROL_ACTION_IDS.includes(action.id));
 
   return (
     <main className="battle-screen">
@@ -52,6 +55,7 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
               activeSeat={viewModel.activePlayerSeat}
               lastDiscard={viewModel.lastDiscard}
               lastDiscardSeat={viewModel.lastDiscardSeat}
+              remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               players={viewModel.players}
             />
@@ -62,11 +66,12 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
             waitingControls={viewModel.waitingControls}
             toasts={viewModel.toasts}
           />
+          <FloatingRoomControls actions={roomActions} onAction={onAction} />
           {viewModel.result ? <ResultOverlay result={viewModel.result} onAction={onAction} /> : null}
         </div>
         <BottomActionDock
           hand={viewModel.localHand}
-          actions={viewModel.actions}
+          actions={battleActions}
           isElevated={viewModel.isActionDockElevated}
           waitingControls={viewModel.waitingControls}
           localPlayer={localPlayer}
@@ -77,3 +82,5 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
     </main>
   );
 }
+
+const ROOM_CONTROL_ACTION_IDS: BattleActionId[] = ['ready', 'start_match', 'start_next_round', 'restart_match'];

@@ -234,10 +234,11 @@ describe('BattleScreen', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
     expect(container.querySelector('.action-dock__player')).not.toBeNull();
-    expect(screen.getByText(/当前操作/i)).toBeInTheDocument();
+    expect(screen.getByText(/25,000 · 花 0 · live/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '收起手牌区' }).length).toBeGreaterThan(0);
   });
 
-  it('shows up to four latest toasts so local discard prompts are not immediately hidden', () => {
+  it('keeps the message window collapsed by default even when messages exist', () => {
     renderBattleScreen(
       createBattleViewModel({
         toasts: [
@@ -251,18 +252,32 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.queryByText('提示1')).not.toBeInTheDocument();
-    expect(screen.getByText('提示2')).toBeInTheDocument();
-    expect(screen.getByText('提示3')).toBeInTheDocument();
-    expect(screen.getByText('提示4')).toBeInTheDocument();
-    expect(screen.getByText('提示5')).toBeInTheDocument();
+    expect(screen.queryByText('提示5')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开消息窗口' })).toBeInTheDocument();
   });
 
-  it('renders dedicated meld areas for remote seats and the local dock', () => {
+  it('renders room controls in a separate floating window instead of the hand dock', () => {
+    const { container } = renderBattleScreen(
+      createBattleViewModel({
+        actions: [
+          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
+          { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
+          { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
+        ],
+      }),
+    );
+
+    expect(screen.getByLabelText('房间操作窗口')).toBeInTheDocument();
+    expect(container.querySelector('.action-dock__actions')?.textContent).toContain('出牌');
+    expect(container.querySelector('.action-dock__actions')?.textContent).not.toContain('准备');
+  });
+
+  it('renders dedicated meld areas only for remote seats', () => {
     renderBattleScreen(createBattleViewModel());
 
     expect(screen.getByLabelText('Player Left melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
     expect(screen.getByLabelText('Player B melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
-    expect(screen.getByLabelText(/local melds/i).querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
+    expect(screen.queryByLabelText(/local melds/i)).toBeNull();
   });
 
   it('shows a leave-table button in waiting rooms and wires the callback', async () => {

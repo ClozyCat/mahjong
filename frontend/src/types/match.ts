@@ -109,6 +109,7 @@ export interface PrivateState {
   round_wind: 'east' | 'south' | 'west' | 'north';
   dealer_seat: number;
   current_actor: number;
+  wall_tiles_remaining?: number;
   last_discard?: string | null;
   pending_action?: PendingAction | null;
   score_state?: ScoreState | null;
@@ -351,6 +352,7 @@ export interface BattleViewModel {
   discards: Record<Seat, string[]>;
   localHand: LocalTileView[];
   centerBanner: string | null;
+  remainingTileCount?: number | null;
   promptText: string | null;
   result: ResultView | null;
   lastDiscard: string | null;

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import type { MatchPhase, ToastMessage, WaitingControls } from '../../types/match';
 
 interface AmbientOverlayProps {
@@ -8,6 +10,7 @@ interface AmbientOverlayProps {
 }
 
 export function AmbientOverlay({ mode, promptText, waitingControls, toasts }: AmbientOverlayProps) {
+  const [isMessageWindowCollapsed, setIsMessageWindowCollapsed] = useState(true);
   const showVeil = mode === 'loading' || mode === 'disconnected_or_waiting' || mode === 'finished';
   const isWaiting = Boolean(waitingControls);
   const isFinished = mode === 'finished';
@@ -31,14 +34,40 @@ export function AmbientOverlay({ mode, promptText, waitingControls, toasts }: Am
           </div>
         </div>
       ) : null}
-      {toasts.length > 0 ? (
-        <div className="ambient-overlay__toast-rail" aria-label="Toast messages">
-          {toasts.slice(-4).map((toast) => (
-            <div key={toast.id} className={`ambient-overlay__toast ambient-overlay__toast--${toast.kind}`}>
-              {toast.text}
+      {toasts.length > 0 && !isMessageWindowCollapsed ? (
+        <aside className="ambient-overlay__message-window" aria-label="消息窗口">
+          <div className="ambient-overlay__message-titlebar">
+            <div>
+              <span className="ambient-overlay__message-eyebrow">Message Log</span>
+              <strong>消息窗口</strong>
             </div>
-          ))}
-        </div>
+            <button
+              type="button"
+              className="ambient-overlay__message-collapse"
+              aria-label="收起消息窗口"
+              onClick={() => setIsMessageWindowCollapsed(true)}
+            >
+              收起
+            </button>
+          </div>
+          <div className="ambient-overlay__message-list" aria-label="消息列表">
+            {toasts.map((toast) => (
+              <div key={toast.id} className={`ambient-overlay__toast ambient-overlay__toast--${toast.kind}`}>
+                {toast.text}
+              </div>
+            ))}
+          </div>
+        </aside>
+      ) : null}
+      {toasts.length > 0 && isMessageWindowCollapsed ? (
+        <button
+          type="button"
+          className="ambient-overlay__message-restore"
+          aria-label="展开消息窗口"
+          onClick={() => setIsMessageWindowCollapsed(false)}
+        >
+          消息
+        </button>
       ) : null}
     </>
   );

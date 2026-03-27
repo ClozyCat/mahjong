@@ -991,9 +991,55 @@ def test_room_snapshot_exposes_in_round_score_state() -> None:
     snapshot = service._room_snapshot(room=room, local_seat=0)
     score_state = snapshot["payload"]["private_state"]["score_state"]
 
+    assert snapshot["payload"]["private_state"]["wall_tiles_remaining"] == 0
     assert score_state["flower_count_by_seat"] == {0: 1, 1: 0, 2: 0, 3: 0}
     assert score_state["kong_delta_by_seat"] == {0: 2, 1: 0, 2: -1, 3: -1}
     assert score_state["current_round_delta_by_seat"] == {0: 2, 1: 0, 2: -1, 3: -1}
     assert score_state["base_cumulative_scores"] == {0: 10, 1: -10, 2: 0, 3: 0}
     assert score_state["projected_cumulative_scores"] == {0: 12, 1: -10, 2: -1, 3: -1}
     assert len(score_state["kong_score_detail"]) == 2
+
+
+def test_room_snapshot_exposes_wall_tiles_remaining_count() -> None:
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOM56", phase="playing")
+    for seat in range(4):
+        room.seats[seat] = SeatReservation(
+            seat_index=seat,
+            nickname=f"P{seat}",
+            reconnect_token=f"token-{seat}",
+            player_session_id=seat + 1,
+            websocket=_RecordingWebSocket(),
+            connected=True,
+            ready=True,
+        )
+
+    wall_tiles = (
+        _make_suit_tile("w1", "w1#0"),
+        _make_suit_tile("w2", "w2#0"),
+        _make_suit_tile("w3", "w3#0"),
+        _make_suit_tile("w4", "w4#0"),
+        _make_suit_tile("w5", "w5#0"),
+    )
+    room.round_state = RoundState(
+        round_id="round-wall-count",
+        dealer_seat=0,
+        current_actor=1,
+        wall=WallState(tiles=wall_tiles, head_index=1, tail_index=3),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+    )
+
+    snapshot = service._room_snapshot(room=room, local_seat=0)
+
+    assert snapshot["payload"]["private_state"]["wall_tiles_remaining"] == 3

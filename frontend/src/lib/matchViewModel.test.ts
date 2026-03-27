@@ -65,6 +65,7 @@ function createPlayingSessionState(overrides: Partial<SessionState> = {}): Sessi
           round_wind: 'east',
           dealer_seat: 1,
           current_actor: 2,
+          wall_tiles_remaining: 67,
           last_discard: 'b4',
           pending_action: {
             type: 'active_turn',
@@ -221,6 +222,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actions.find((item) => item.id === 'discard')?.label).toBe('出牌');
     expect(viewModel.canLeaveTable).toBe(true);
     expect(viewModel.topStatusLabel).toBe('对局中');
+    expect(viewModel.remainingTileCount).toBe(67);
   });
 
   it('keeps the leave-table entry visible after the full match finishes', () => {

@@ -1,4 +1,5 @@
 import { getTileAsset } from '../../lib/tileAssets';
+import { formatTileName } from '../../lib/tileNames';
 
 interface MahjongTileProps {
   code: string;
@@ -18,6 +19,7 @@ export function MahjongTile({
   className,
 }: MahjongTileProps) {
   const asset = getTileAsset(code);
+  const tileName = formatTileName(code, code);
   const classes = [
     'mahjong-tile',
     'mahjong-tile--retro',
@@ -31,7 +33,7 @@ export function MahjongTile({
     .join(' ');
 
   return (
-    <span className={classes} data-testid="mahjong-tile" aria-label={`${code} tile`}>
+    <span className={classes} data-testid="mahjong-tile" aria-label={`${tileName}`}>
       <span className="mahjong-tile__shell">
         <span className="mahjong-tile__face-area">
           <span className="mahjong-tile__face-viewport">
@@ -39,7 +41,7 @@ export function MahjongTile({
               <img
                 className="mahjong-tile__face-image"
                 src={asset.src}
-                alt={`${code} tile face`}
+                alt={`${tileName}牌面`}
                 data-asset-name={asset.assetName}
               />
             ) : asset.kind === 'blank' ? (

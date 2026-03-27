@@ -1,30 +1,5 @@
 import type { SeatSnapshot } from '../types/match';
-
-const HONOR_TILE_NAMES: Record<string, string> = {
-  east: '东风',
-  south: '南风',
-  west: '西风',
-  north: '北风',
-  red: '红中',
-  green: '发财',
-  white: '白板',
-  d1: '东风',
-  d2: '南风',
-  d3: '西风',
-  d4: '北风',
-  d5: '红中',
-  d6: '发财',
-  d7: '白板',
-};
-
-const SUIT_NAMES = {
-  w: '万',
-  m: '万',
-  b: '筒',
-  p: '筒',
-  c: '条',
-  t: '条',
-} as const;
+import { formatTileName } from './tileNames';
 
 function getSeatName(seat: unknown, seats: SeatSnapshot[] | undefined): string {
   if (typeof seat !== 'number') {
@@ -44,22 +19,7 @@ function getTileCodeFromTileId(tileId: unknown): string | null {
 }
 
 function getTileName(tileCode: string | null): string {
-  if (!tileCode) {
-    return '一张牌';
-  }
-
-  const flower = tileCode.match(/^f(\d+)$/);
-  if (flower) {
-    return `花牌${flower[1]}`;
-  }
-
-  const suited = tileCode.match(/^([wbcmpt])([1-9])$/);
-  if (suited) {
-    const [, suit, rank] = suited;
-    return `${rank}${SUIT_NAMES[suit as keyof typeof SUIT_NAMES]}`;
-  }
-
-  return HONOR_TILE_NAMES[tileCode] ?? '一张牌';
+  return formatTileName(tileCode, '一张牌');
 }
 
 export function getRoundEventCopy(

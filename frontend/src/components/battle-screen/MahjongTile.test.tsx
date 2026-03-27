@@ -8,9 +8,10 @@ describe('MahjongTile', () => {
     render(<MahjongTile code="w1" variant="hand" />);
 
     const tile = screen.getByTestId('mahjong-tile');
-    const image = screen.getByRole('img', { name: 'w1 tile face' });
+    const image = screen.getByRole('img', { name: '一万牌面' });
 
     expect(tile).toHaveClass('mahjong-tile--retro');
+    expect(tile).toHaveAttribute('aria-label', '一万');
     expect(image).toHaveAttribute('data-asset-name', '1man.svg');
     expect(tile.querySelector('.mahjong-tile__face-image')).not.toBeNull();
     expect(screen.queryByText('万')).not.toBeInTheDocument();
@@ -21,7 +22,7 @@ describe('MahjongTile', () => {
     render(<MahjongTile code="c7" variant="discard" />);
 
     const tile = screen.getByTestId('mahjong-tile');
-    expect(screen.getByRole('img', { name: 'c7 tile face' })).toHaveAttribute('data-asset-name', '7sou.svg');
+    expect(screen.getByRole('img', { name: '七条牌面' })).toHaveAttribute('data-asset-name', '7sou.svg');
     expect(tile.querySelector('.mahjong-tile__face-viewport')).not.toBeNull();
   });
 

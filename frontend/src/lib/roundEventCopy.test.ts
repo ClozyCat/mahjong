@@ -13,8 +13,8 @@ describe('getRoundEventCopy', () => {
         },
         [{ seat_index: 0, nickname: '小李', connected: true, ready: true }],
       ),
-    ).toBe('小李打出5条');
-    });
+    ).toBe('小李打出五条');
+  });
 
   it('falls back to a generic Chinese system message for unknown events', () => {
     expect(getRoundEventCopy('mystery_event')).toBe('牌局状态已更新');
