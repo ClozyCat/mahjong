@@ -610,6 +610,16 @@ button:active:not(:disabled) {
   border-bottom-color: #69530d;
 }
 
+.mahjong-tile--selected.mahjong-tile--drawn {
+  transform: translateY(-0.24rem);
+}
+
+.mahjong-tile--selected.mahjong-tile--drawn .mahjong-tile__shell {
+  border-color: #0a246a;
+  border-right-color: #04173f;
+  border-bottom-color: #04173f;
+}
+
 .mahjong-tile--last-discard {
   transform: translateY(-0.04rem);
 }
@@ -754,20 +764,6 @@ button:active:not(:disabled) {
   padding: 0.08rem 0.34rem 0.12rem;
   font-size: 0.72rem;
   line-height: 1;
-}
-
-.ambient-overlay__banner {
-  position: absolute;
-  top: 7rem;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0.35rem 0.75rem;
-  border: 2px outset #fff;
-  background: #d4d0c8;
-  color: #111;
-  font-size: 0.88rem;
-  letter-spacing: 0.04em;
-  z-index: 2;
 }
 
 .ambient-overlay__veil {

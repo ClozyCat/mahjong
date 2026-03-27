@@ -126,6 +126,51 @@ def _ready_all_and_start(*sockets) -> tuple[dict, dict]:
 
 
 
+def test_voluntary_leave_during_match_invalidates_reconnect_token(test_app) -> None:
+    with TestClient(test_app) as client:
+        table_code = client.post("/api/tables").json()["table_code"]
+
+        try:
+            with ExitStack() as stack:
+                sockets = [
+                    stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+                    for _ in range(4)
+                ]
+
+                join_snapshots = []
+                for index, ws in enumerate(sockets):
+                    join_snapshots.append(_join_player(ws, f"P{index}"))
+                    for peer in sockets[:index]:
+                        assert peer.receive_json()["type"] == "player_presence"
+                        assert peer.receive_json()["type"] == "room_snapshot"
+
+                reconnect_token = join_snapshots[0]["payload"]["reconnect_token"]
+                _ready_all_and_start(*sockets)
+
+                sockets[0].send_json({"type": "leave_table", "payload": {}})
+                assert sockets[0].receive_json() == {
+                    "type": "leave_table_accepted",
+                    "payload": {
+                        "table_code": table_code,
+                        "seat_index": 0,
+                    },
+                }
+
+                reconnect_socket = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+                reconnect_socket.send_json(
+                    {"type": "reconnect", "payload": {"reconnect_token": reconnect_token}}
+                )
+
+                assert reconnect_socket.receive_json() == {
+                    "type": "action_rejected",
+                    "payload": {"reason": "invalid_reconnect_token"},
+                }
+        finally:
+            room = test_app.state.game_service._rooms.pop(table_code, None)
+            if room is not None and room.timeout_task is not None:
+                room.timeout_task.cancel()
+
+
 def test_four_players_join_same_table_and_receive_room_snapshot(test_app) -> None:
     client = TestClient(test_app)
     create_response = client.post("/api/tables")

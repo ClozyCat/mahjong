@@ -29,6 +29,7 @@ import { clearStoredSession, loadStoredConfig, loadStoredSession, saveStoredConf
 import type { BackendActionType, BattleActionId, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
+const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
 
 function getRuntimeDefaultBaseUrls() {
   if (typeof window === 'undefined') {
@@ -486,7 +487,8 @@ export default function App() {
   }
 
   function handleLeaveTable() {
-    if (state.roomSnapshot?.payload.phase !== 'waiting') {
+    const shouldConfirmLeave = state.roomSnapshot?.payload.phase !== 'waiting';
+    if (shouldConfirmLeave && !window.confirm(LEAVE_TABLE_CONFIRM_MESSAGE)) {
       return;
     }
 

@@ -58,7 +58,6 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
           </div>
           <AmbientOverlay
             mode={viewModel.mode}
-            banner={viewModel.centerBanner}
             promptText={viewModel.promptText}
             waitingControls={viewModel.waitingControls}
             toasts={viewModel.toasts}

@@ -476,6 +476,108 @@ async def test_leave_table_removes_waiting_seat_and_notifies_peers(monkeypatch):
     ]
 
 
+@pytest.mark.asyncio
+async def test_leave_table_during_active_match_keeps_seat_but_invalidates_reconnect(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_auto_advance_bot_seats_locked", lambda _room: [])
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    consumed_tokens: list[str] = []
+    disconnected_sessions: list[int] = []
+    monkeypatch.setattr(service, "_consume_reconnect_token", lambda token: consumed_tokens.append(token))
+    monkeypatch.setattr(
+        service,
+        "_mark_disconnected",
+        lambda *, player_session_id: disconnected_sessions.append(player_session_id),
+    )
+
+    leaver = _RecordingWebSocket()
+    peer = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM25", phase="playing")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=leaver,
+        connected=True,
+        ready=True,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="P1",
+        reconnect_token="token-1",
+        player_session_id=2,
+        websocket=peer,
+        connected=True,
+        ready=True,
+    )
+    room.round_state = initialize_round(seed=123, dealer_seat=0, round_id="round-25", round_wind="east")
+    service._rooms["ROOM25"] = room
+
+    response = await service.leave_table(table_code="ROOM25", websocket=leaver)
+
+    assert response == {
+        "type": "leave_table_accepted",
+        "payload": {
+            "table_code": "ROOM25",
+            "seat_index": 0,
+        },
+    }
+    assert room.seats[0].websocket is None
+    assert room.seats[0].connected is True
+    assert room.seats[0].ready is True
+    assert room.seats[0].is_bot is True
+    assert room.seats[0].reconnect_token is None
+    assert consumed_tokens == ["token-0"]
+    assert disconnected_sessions == [1]
+    assert peer.messages[0]["type"] == "room_snapshot"
+    assert peer.messages[0]["payload"]["seats"][0] == {
+        "seat_index": 0,
+        "nickname": "P0",
+        "connected": True,
+        "ready": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_leave_table_during_active_turn_lets_bot_play_immediately(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_consume_reconnect_token", lambda _token: None)
+    monkeypatch.setattr(service, "_mark_disconnected", lambda **_kwargs: None)
+
+    leaver = _RecordingWebSocket()
+    peer = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM26", phase="playing")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=leaver,
+        connected=True,
+        ready=True,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="P1",
+        reconnect_token="token-1",
+        player_session_id=2,
+        websocket=peer,
+        connected=True,
+        ready=True,
+    )
+    room.round_state = initialize_round(seed=123, dealer_seat=0, round_id="round-26", round_wind="east")
+    service._rooms["ROOM26"] = room
+
+    await service.leave_table(table_code="ROOM26", websocket=leaver)
+
+    assert room.seats[0].is_bot is True
+    assert any(message["type"] == "round_event" for message in peer.messages)
+
+
 def test_auto_pass_claim_window_in_test_mode_skips_human_hu_prompt() -> None:
     service = GameService(sessionmaker())
     room = RoomState(table_code="ROOMHU", phase="playing", test_mode=True)
@@ -551,6 +653,97 @@ def test_auto_pass_claim_window_in_test_mode_skips_human_hu_prompt() -> None:
     assert room.round_state is not None
     assert room.round_state.pending_action is not None
     assert room.round_state.pending_action["type"] == "claim_window"
+    assert room.round_state.pending_action["responded_seats"] == [1]
+
+
+def test_auto_advance_bot_seats_stops_when_only_human_claims_remain(monkeypatch) -> None:
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOMHU2", phase="playing", test_mode=True)
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Human",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=_RecordingWebSocket(),
+        connected=True,
+        ready=True,
+        is_bot=False,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="Bot 1",
+        reconnect_token=None,
+        player_session_id=-2,
+        connected=True,
+        ready=True,
+        is_bot=True,
+    )
+    room.seats[2] = SeatReservation(
+        seat_index=2,
+        nickname="Bot 2",
+        reconnect_token=None,
+        player_session_id=-3,
+        connected=True,
+        ready=True,
+        is_bot=True,
+    )
+    room.seats[3] = SeatReservation(
+        seat_index=3,
+        nickname="Bot 3",
+        reconnect_token=None,
+        player_session_id=-4,
+        connected=True,
+        ready=True,
+        is_bot=True,
+    )
+    room.round_state = RoundState(
+        round_id="round-claim-human-2",
+        dealer_seat=0,
+        current_actor=3,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=_make_suit_tile("w5", "w5#discard"),
+        pending_action={
+            "type": "claim_window",
+            "discarder_seat": 3,
+            "claim_window": [["hu"], ["pung"], [], []],
+            "responded_seats": [],
+        },
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="claim_window",
+        seat_index=3,
+        deadline_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+    )
+
+    original = service._auto_pass_claim_window_locked
+    call_count = 0
+
+    def wrapped(target_room):
+        nonlocal call_count
+        call_count += 1
+        if call_count > 2:
+            raise AssertionError("claim window auto-pass loop did not stop")
+        return original(target_room)
+
+    monkeypatch.setattr(service, "_auto_pass_claim_window_locked", wrapped)
+
+    messages = service._auto_advance_bot_seats_locked(room)
+
+    assert messages == []
+    assert call_count <= 2
+    assert room.pending_timeout is not None
+    assert room.pending_timeout.kind == "claim_window"
+    assert room.round_state is not None
+    assert room.round_state.pending_action is not None
     assert room.round_state.pending_action["responded_seats"] == [1]
 
 

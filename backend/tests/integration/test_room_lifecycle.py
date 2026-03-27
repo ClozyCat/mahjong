@@ -117,26 +117,26 @@ def test_start_match_rejects_when_not_all_players_ready(test_app) -> None:
 
 
 def test_waiting_player_can_leave_table_and_free_the_seat(test_app) -> None:
-    client = TestClient(test_app)
-    table_code = client.post("/api/tables").json()["table_code"]
+    with TestClient(test_app) as client:
+        table_code = client.post("/api/tables").json()["table_code"]
 
-    with ExitStack() as stack:
-        first = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
-        second = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+        with ExitStack() as stack:
+            first = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+            second = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
 
-        _join_player(first, "P0")
-        _join_player(second, "P1")
-        assert first.receive_json()["type"] == "player_presence"
-        assert first.receive_json()["type"] == "room_snapshot"
+            _join_player(first, "P0")
+            _join_player(second, "P1")
+            assert first.receive_json()["type"] == "player_presence"
+            assert first.receive_json()["type"] == "room_snapshot"
 
-        _leave_table(second)
-        presence = first.receive_json()
-        snapshot = first.receive_json()
+            _leave_table(second)
+            presence = first.receive_json()
+            snapshot = first.receive_json()
 
-        rejoiner = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
-        rejoin_snapshot = _join_player(rejoiner, "P2")
-        assert first.receive_json()["type"] == "player_presence"
-        refreshed_snapshot = first.receive_json()
+            rejoiner = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+            rejoin_snapshot = _join_player(rejoiner, "P2")
+            assert first.receive_json()["type"] == "player_presence"
+            refreshed_snapshot = first.receive_json()
 
     assert presence == {
         "type": "player_presence",

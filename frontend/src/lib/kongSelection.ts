@@ -3,7 +3,14 @@ import type { BackendActionType, SessionState } from '../types/match';
 type MeldAction = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
 
 function normalizeTileKey(tileKey: string | null | undefined) {
-  return tileKey?.trim().toLowerCase() ?? '';
+  const normalized = tileKey?.trim().toLowerCase() ?? '';
+  const match = normalized.match(/^([wbcmpt])([1-9])$/);
+  if (!match) {
+    return normalized;
+  }
+
+  const [, suit, rank] = match;
+  return `${normalizeSuit(suit)}${rank}`;
 }
 
 function normalizeSuit(suit: string) {
@@ -13,14 +20,14 @@ function normalizeSuit(suit: string) {
   if (suit === 'p') {
     return 'b';
   }
-  if (suit === 't') {
-    return 'c';
+  if (suit === 'c') {
+    return 't';
   }
   return suit;
 }
 
 function parseSuitedTileKey(tileKey: string) {
-  const match = normalizeTileKey(tileKey).match(/^([wbcmpt])([1-9])$/);
+  const match = normalizeTileKey(tileKey).match(/^([wtb])([1-9])$/);
   if (!match) {
     return null;
   }

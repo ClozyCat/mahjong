@@ -173,6 +173,30 @@ function createSettlementSessionState(): SessionState {
   };
 }
 
+function createFinishedSessionState(): SessionState {
+  const base = createPlayingSessionState();
+
+  return {
+    ...base,
+    roomSnapshot: {
+      type: 'room_snapshot',
+      payload: {
+        ...base.roomSnapshot!.payload,
+        phase: 'finished',
+        match_state: {
+          ...base.roomSnapshot!.payload.match_state!,
+          match_finished: true,
+        },
+        private_state: {
+          ...base.roomSnapshot!.payload.private_state!,
+          pending_action: null,
+        },
+      },
+    },
+    latestActionPrompt: null,
+  };
+}
+
 describe('createMatchViewModel', () => {
   it('maps a waiting snapshot into waiting-room controls', () => {
     const viewModel = createMatchViewModel(createWaitingSessionState());
@@ -195,8 +219,75 @@ describe('createMatchViewModel', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 
     expect(viewModel.actions.find((item) => item.id === 'discard')?.label).toBe('出牌');
-    expect(viewModel.canLeaveTable).toBe(false);
+    expect(viewModel.canLeaveTable).toBe(true);
     expect(viewModel.topStatusLabel).toBe('对局中');
+  });
+
+  it('keeps the leave-table entry visible after the full match finishes', () => {
+    const viewModel = createMatchViewModel(createFinishedSessionState());
+
+    expect(viewModel.mode).toBe('finished');
+    expect(viewModel.canLeaveTable).toBe(true);
+    expect(viewModel.topStatusLabel).toBe('等待再来一局');
+  });
+
+  it('shows local claim options when the local seat can respond in a claim window', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 1,
+              deadline_at: '2026-03-26T06:01:00Z',
+              responded_seats: [],
+              options: ['chow', 'pass'],
+            },
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 2,
+          options: ['chow', 'pass'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.promptText).toBe('可响应：吃');
+  });
+
+  it('shows other players are responding when the local seat has no claim options', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 1,
+              deadline_at: '2026-03-26T06:01:00Z',
+              responded_seats: [],
+              options: [],
+            },
+          },
+        },
+      },
+      latestActionPrompt: null,
+    });
+
+    expect(viewModel.promptText).toBe('其他玩家可响应吃碰杠胡');
   });
 
   it('maps settlement state to a result overlay payload', () => {

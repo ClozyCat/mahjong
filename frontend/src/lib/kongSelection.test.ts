@@ -307,4 +307,61 @@ describe('kongSelection', () => {
       'b5#0',
     ]);
   });
+
+  it('derives chow candidates for bamboo tile keys from the backend', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 2,
+              deadline_at: '2026-03-26T06:01:00Z',
+              responded_seats: [],
+              options: ['chow', 'pass'],
+            },
+            last_discard: 't4',
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 6,
+                concealed_tiles: [
+                  { tile_id: 't2#0', tile_key: 't2' },
+                  { tile_id: 't3#0', tile_key: 't3' },
+                  { tile_id: 't3#1', tile_key: 't3' },
+                  { tile_id: 't5#0', tile_key: 't5' },
+                  { tile_id: 't6#0', tile_key: 't6' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(1),
+            ],
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 0,
+          options: ['chow', 'pass'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(getActionCandidateGroups(state, 'chow')).toEqual([
+      ['t2#0', 't3#0'],
+      ['t2#0', 't3#1'],
+      ['t3#0', 't5#0'],
+      ['t3#1', 't5#0'],
+      ['t5#0', 't6#0'],
+    ]);
+  });
 });

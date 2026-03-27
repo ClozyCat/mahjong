@@ -2,20 +2,18 @@ import type { MatchPhase, ToastMessage, WaitingControls } from '../../types/matc
 
 interface AmbientOverlayProps {
   mode: MatchPhase;
-  banner: string | null;
   promptText: string | null;
   waitingControls: WaitingControls | null;
   toasts: ToastMessage[];
 }
 
-export function AmbientOverlay({ mode, banner, promptText, waitingControls, toasts }: AmbientOverlayProps) {
+export function AmbientOverlay({ mode, promptText, waitingControls, toasts }: AmbientOverlayProps) {
   const showVeil = mode === 'loading' || mode === 'disconnected_or_waiting' || mode === 'finished';
   const isWaiting = Boolean(waitingControls);
   const isFinished = mode === 'finished';
 
   return (
     <>
-      {banner ? <div className="ambient-overlay__banner">{banner}</div> : null}
       {showVeil ? (
         <div className="ambient-overlay__veil">
           <div className="ambient-overlay__panel">

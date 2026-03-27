@@ -100,20 +100,33 @@ function formatSignedNumber(value: number) {
   return `${value}`;
 }
 
+function getPendingActionOptions(pendingAction: { options?: unknown } | null | undefined): BackendActionType[] {
+  const options = pendingAction?.options;
+  return Array.isArray(options) ? (options as BackendActionType[]) : [];
+}
+
+function formatActionLabels(options: BackendActionType[]) {
+  return options
+    .filter((item) => item !== 'pass')
+    .map((item) => ACTION_LABELS[item])
+    .join(' / ');
+}
+
 function createPromptText(state: SessionState): string | null {
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
   if (pendingAction && typeof pendingAction.type === 'string') {
     if (pendingAction.type === 'opening_flowers') {
-      const options = Array.isArray((pendingAction as { options?: unknown }).options)
-        ? ((pendingAction as { options: BackendActionType[] }).options)
-        : [];
+      const options = getPendingActionOptions(pendingAction as { options?: unknown });
       return options.includes('flower') ? '起手补花中，请选择花牌后点击补花' : '起手无花，请点击过牌';
     }
     if (pendingAction.type === 'claim_window') {
-      return '可响应吃碰杠胡';
+      const claimLabels = formatActionLabels(getPendingActionOptions(pendingAction as { options?: unknown }));
+      return claimLabels ? `可响应：${claimLabels}` : '其他玩家可响应吃碰杠胡';
     }
     if (pendingAction.type === 'rob_kong_window') {
-      return '可选择抢杠胡或过牌';
+      return getPendingActionOptions(pendingAction as { options?: unknown }).includes('hu')
+        ? '可选择抢杠和或过牌'
+        : '其他玩家可选择抢杠和';
     }
   }
 
@@ -596,7 +609,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
   return {
     mode,
     tableCode: snapshot?.table_code ?? state.tableCode,
-    canLeaveTable: snapshot?.phase === 'waiting' && state.connectionStatus === 'connected',
+    canLeaveTable: Boolean(snapshot),
     phaseLabel: snapshot ? PHASE_LABELS[snapshot.phase] : PHASE_LABELS.waiting,
     roundLabel: createRoundLabel(state),
     scoreSummaryLabel: createScoreSummaryLabel(state),
