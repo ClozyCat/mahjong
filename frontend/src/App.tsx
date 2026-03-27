@@ -1,0 +1,468 @@
+import { startTransition, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type MutableRefObject } from 'react';
+
+import { BattleScreen } from './components/battle-screen/BattleScreen';
+import { ConnectGate, type ConnectGateValue } from './components/connect-gate/ConnectGate';
+import { createTable } from './lib/api';
+import {
+  getActionCandidateGroups,
+  getActionCandidateTileIds,
+  getFlowerCandidateTileIds,
+  getMatchingActionGroup,
+} from './lib/kongSelection';
+import { createMatchViewModel } from './lib/matchViewModel';
+import {
+  buildWebSocketUrl,
+  createActionRequestMessage,
+  createHeartbeatMessage,
+  createJoinTableMessage,
+  createReadyMessage,
+  createReconnectMessage,
+  createRestartMatchMessage,
+  createStartMatchMessage,
+  createStartNextRoundMessage,
+  parseServerMessage,
+  serializeClientMessage,
+} from './lib/socket';
+import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
+import { clearStoredSession, loadStoredConfig, loadStoredSession, saveStoredConfig, saveStoredSession } from './lib/storage';
+import type { BackendActionType, BattleActionId, SessionState } from './types/match';
+
+const HEARTBEAT_INTERVAL_MS = 20_000;
+
+function getRuntimeDefaultBaseUrls() {
+  if (typeof window === 'undefined') {
+    return {
+      apiBaseUrl: 'http://localhost:8000',
+      wsBaseUrl: 'ws://localhost:8000',
+    };
+  }
+
+  const { origin, protocol, host } = window.location;
+  return {
+    apiBaseUrl: origin,
+    wsBaseUrl: `${protocol === 'https:' ? 'wss' : 'ws'}://${host}`,
+  };
+}
+
+function getDefaultConfig() {
+  const env = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {});
+  const runtimeDefaults = getRuntimeDefaultBaseUrls();
+  const defaults = loadStoredConfig({
+    apiBaseUrl: env.VITE_API_BASE_URL ?? runtimeDefaults.apiBaseUrl,
+    wsBaseUrl: env.VITE_WS_BASE_URL ?? runtimeDefaults.wsBaseUrl,
+  });
+  const storedSession = loadStoredSession();
+
+  return {
+    defaults,
+    storedSession,
+  };
+}
+
+function getRejectedMessage(reason: string) {
+  const lookup: Record<string, string> = {
+    table_not_found: '牌桌不存在，请检查牌桌编号后重试。',
+    table_full: '牌桌已经坐满了，请换一个牌桌试试。',
+    invalid_reconnect_token: '上次的重连凭证已失效，需要重新加入牌桌。',
+  };
+
+  return lookup[reason] ?? '请求未被服务器接受，请按最新房间状态重试。';
+}
+
+function closeSocket(socketRef: MutableRefObject<WebSocket | null>, heartbeatTimerRef: MutableRefObject<number | null>) {
+  if (heartbeatTimerRef.current !== null) {
+    window.clearInterval(heartbeatTimerRef.current);
+    heartbeatTimerRef.current = null;
+  }
+
+  if (!socketRef.current) {
+    return;
+  }
+
+  socketRef.current.onclose = null;
+  socketRef.current.close();
+  socketRef.current = null;
+}
+
+export default function App() {
+  const { defaults, storedSession } = useMemo(getDefaultConfig, []);
+  const [connectValue, setConnectValue] = useState<ConnectGateValue>({
+    apiBaseUrl: defaults.apiBaseUrl,
+    wsBaseUrl: storedSession?.wsBaseUrl ?? defaults.wsBaseUrl,
+    tableCode: storedSession?.tableCode ?? '',
+    nickname: storedSession?.nickname ?? '',
+  });
+  const [statusMessage, setStatusMessage] = useState<string | null>(
+    storedSession ? `检测到牌桌 ${storedSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
+  );
+  const [state, dispatch] = useReducer(
+    sessionReducer,
+    undefined,
+    (): SessionState => ({
+      ...createInitialSessionState(),
+      apiBaseUrl: defaults.apiBaseUrl,
+      wsBaseUrl: storedSession?.wsBaseUrl ?? defaults.wsBaseUrl,
+      tableCode: storedSession?.tableCode ?? '',
+      nickname: storedSession?.nickname ?? '',
+      reconnectToken: storedSession?.reconnectToken ?? null,
+      connectionStatus: storedSession ? 'reconnecting' : 'idle',
+    }),
+  );
+  const socketRef = useRef<WebSocket | null>(null);
+  const heartbeatTimerRef = useRef<number | null>(null);
+  const sessionRef = useRef(state);
+
+  useEffect(() => {
+    sessionRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    saveStoredConfig({
+      apiBaseUrl: connectValue.apiBaseUrl,
+      wsBaseUrl: connectValue.wsBaseUrl,
+    });
+  }, [connectValue.apiBaseUrl, connectValue.wsBaseUrl]);
+
+  useEffect(() => {
+    if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
+      saveStoredSession({
+        tableCode: state.tableCode,
+        nickname: state.nickname || connectValue.nickname,
+        reconnectToken: state.reconnectToken,
+        wsBaseUrl: state.wsBaseUrl,
+      });
+      return;
+    }
+
+    clearStoredSession();
+  }, [connectValue.nickname, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
+
+  const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
+    clearStoredSession();
+    dispatch({
+      type: 'return_to_lobby',
+      tableCode: tableCode ?? sessionRef.current.tableCode,
+    });
+    closeSocket(socketRef, heartbeatTimerRef);
+    setStatusMessage(message);
+  });
+
+  const handleServerMessage = useEffectEvent((raw: string) => {
+    const message = parseServerMessage(raw);
+    if (!message) {
+      setStatusMessage('收到了一条无法识别的服务器消息。');
+      return;
+    }
+
+    if (message.type === 'action_rejected') {
+      const current = sessionRef.current;
+
+      if (message.payload.reason === 'invalid_reconnect_token') {
+        handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
+        return;
+      }
+
+      if (!current.roomSnapshot && (message.payload.reason === 'table_not_found' || message.payload.reason === 'table_full')) {
+        handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
+        return;
+      }
+    }
+
+    if (message.type === 'room_snapshot') {
+      dispatch({ type: 'set_connection_status', status: 'connected' });
+      startTransition(() => {
+        setConnectValue((current) => ({
+          ...current,
+          tableCode: message.payload.table_code,
+        }));
+      });
+      setStatusMessage(null);
+    }
+
+    dispatch({ type: 'ws_message', message });
+  });
+
+  const openRoomSocket = useEffectEvent(
+    (options: {
+      tableCode: string;
+      nickname: string;
+      wsBaseUrl: string;
+      reconnectToken?: string | null;
+      reconnect?: boolean;
+    }) => {
+      closeSocket(socketRef, heartbeatTimerRef);
+
+      const { tableCode, nickname, wsBaseUrl, reconnectToken, reconnect } = options;
+      dispatch({ type: 'set_connection_status', status: reconnect ? 'reconnecting' : 'connecting' });
+      dispatch({ type: 'set_credentials', tableCode, nickname });
+      dispatch({ type: 'set_config', wsBaseUrl });
+
+      const socket = new WebSocket(buildWebSocketUrl(wsBaseUrl, tableCode));
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        const message =
+          reconnect && reconnectToken
+            ? createReconnectMessage(reconnectToken)
+            : createJoinTableMessage(nickname);
+        socket.send(serializeClientMessage(message));
+
+        heartbeatTimerRef.current = window.setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(serializeClientMessage(createHeartbeatMessage(new Date().toISOString())));
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+      };
+
+      socket.onmessage = (event) => {
+        handleServerMessage(String(event.data));
+      };
+
+      socket.onerror = () => {
+        setStatusMessage('通信连接失败。');
+      };
+
+      socket.onclose = () => {
+        if (heartbeatTimerRef.current !== null) {
+          window.clearInterval(heartbeatTimerRef.current);
+          heartbeatTimerRef.current = null;
+        }
+
+        socketRef.current = null;
+        const current = sessionRef.current;
+        if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {
+          dispatch({ type: 'set_connection_status', status: 'reconnecting' });
+          setStatusMessage('连接已断开，正在尝试恢复座位。');
+          return;
+        }
+
+        dispatch({ type: 'set_connection_status', status: 'closed' });
+      };
+    },
+  );
+
+  useEffect(() => {
+    if (
+      state.connectionStatus !== 'reconnecting' ||
+      !state.reconnectToken ||
+      !state.tableCode ||
+      !state.wsBaseUrl ||
+      socketRef.current
+    ) {
+      return;
+    }
+
+    const wsBaseUrl = state.wsBaseUrl;
+
+    const timeoutId = window.setTimeout(() => {
+      openRoomSocket({
+        tableCode: state.tableCode,
+        nickname: state.nickname || connectValue.nickname,
+        wsBaseUrl,
+        reconnectToken: state.reconnectToken,
+        reconnect: true,
+      });
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [connectValue.nickname, openRoomSocket, state.connectionStatus, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
+
+  useEffect(() => {
+    return () => {
+      closeSocket(socketRef, heartbeatTimerRef);
+    };
+  }, []);
+
+  function sendMessage(message: string) {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      setStatusMessage('当前尚未建立连接。');
+      return false;
+    }
+
+    socketRef.current.send(message);
+    return true;
+  }
+
+  async function handleCreate() {
+    if (!connectValue.nickname.trim()) {
+      setStatusMessage('请先输入昵称，再创建牌桌。');
+      return;
+    }
+
+    try {
+      setStatusMessage('正在创建牌桌...');
+      dispatch({ type: 'set_config', apiBaseUrl: connectValue.apiBaseUrl, wsBaseUrl: connectValue.wsBaseUrl });
+      const table = await createTable(connectValue.apiBaseUrl);
+      startTransition(() => {
+        setConnectValue((current) => ({
+          ...current,
+          tableCode: table.table_code,
+        }));
+      });
+      openRoomSocket({
+        tableCode: table.table_code,
+        nickname: connectValue.nickname.trim(),
+        wsBaseUrl: connectValue.wsBaseUrl,
+      });
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '创建牌桌失败。');
+      dispatch({ type: 'set_connection_status', status: 'error' });
+    }
+  }
+
+  function handleJoin() {
+    if (!connectValue.tableCode.trim() || !connectValue.nickname.trim()) {
+      setStatusMessage('加入牌桌前请先填写牌桌编号和昵称。');
+      return;
+    }
+
+    setStatusMessage('正在加入牌桌...');
+    dispatch({ type: 'set_config', apiBaseUrl: connectValue.apiBaseUrl, wsBaseUrl: connectValue.wsBaseUrl });
+    openRoomSocket({
+      tableCode: connectValue.tableCode.trim().toUpperCase(),
+      nickname: connectValue.nickname.trim(),
+      wsBaseUrl: connectValue.wsBaseUrl,
+    });
+  }
+
+  function handleTileSelect(tileId: string) {
+    if (state.selectionMode === 'kong' || state.selectionMode === 'chow' || state.selectionMode === 'pung') {
+      const nextTileIds = state.selectedTileIds.includes(tileId)
+        ? state.selectedTileIds.filter((selectedTileId) => selectedTileId !== tileId)
+        : [...state.selectedTileIds, tileId];
+
+      dispatch({
+        type: 'set_selected_tiles',
+        tileIds: nextTileIds,
+        mode: state.selectionMode,
+      });
+      return;
+    }
+
+    const isAlreadySingleSelected = state.selectedTileIds.length === 1 && state.selectedTileIds[0] === tileId;
+    dispatch({
+      type: 'set_selected_tiles',
+      tileIds: isAlreadySingleSelected ? [] : [tileId],
+      mode: 'single',
+    });
+  }
+
+  function handleAction(actionId: BattleActionId) {
+    if (actionId === 'ready') {
+      const localSeat = state.roomSnapshot?.payload.local_seat;
+      const localSeatState =
+        typeof localSeat === 'number'
+          ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === localSeat)
+          : null;
+      sendMessage(serializeClientMessage(createReadyMessage(!localSeatState?.ready)));
+      return;
+    }
+
+    if (actionId === 'start_match') {
+      sendMessage(serializeClientMessage(createStartMatchMessage()));
+      return;
+    }
+
+    if (actionId === 'start_next_round') {
+      sendMessage(serializeClientMessage(createStartNextRoundMessage()));
+      return;
+    }
+
+    if (actionId === 'restart_match') {
+      sendMessage(serializeClientMessage(createRestartMatchMessage()));
+      return;
+    }
+
+    if (actionId === 'discard') {
+      if (state.selectedTileIds.length !== 1) {
+        return;
+      }
+
+      sendMessage(serializeClientMessage(createActionRequestMessage(actionId, state.selectedTileIds)));
+      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+      return;
+    }
+
+    if (actionId === 'flower') {
+      const flowerTileIds = getFlowerCandidateTileIds(state);
+      if (state.selectedTileIds.length === 1 && flowerTileIds.includes(state.selectedTileIds[0])) {
+        sendMessage(serializeClientMessage(createActionRequestMessage(actionId, state.selectedTileIds)));
+        dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+        return;
+      }
+
+      if (flowerTileIds.length === 1) {
+        sendMessage(serializeClientMessage(createActionRequestMessage(actionId, flowerTileIds)));
+        return;
+      }
+
+      if (flowerTileIds.length > 1) {
+        dispatch({
+          type: 'set_selected_tiles',
+          tileIds: [flowerTileIds[0]],
+          mode: 'single',
+        });
+      }
+      return;
+    }
+
+    if (actionId === 'kong' || actionId === 'chow' || actionId === 'pung') {
+      const candidateGroups = getActionCandidateGroups(state, actionId);
+      const candidateTileIds = getActionCandidateTileIds(state, actionId);
+      const matchingGroup = getMatchingActionGroup(state.selectedTileIds, candidateGroups);
+
+      if (matchingGroup) {
+        sendMessage(serializeClientMessage(createActionRequestMessage(actionId, matchingGroup)));
+        dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+        return;
+      }
+
+      if (candidateTileIds.length > 0) {
+        dispatch({
+          type: 'set_selected_tiles',
+          tileIds: candidateTileIds,
+          mode: actionId,
+        });
+      }
+
+      return;
+    }
+
+    sendMessage(serializeClientMessage(createActionRequestMessage(actionId as BackendActionType)));
+  }
+
+  function handleCopyTableCode() {
+    if (!state.tableCode && !connectValue.tableCode) {
+      return;
+    }
+
+    const tableCode = state.tableCode || connectValue.tableCode;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(tableCode).catch(() => undefined);
+    }
+    setStatusMessage(`已复制牌桌编号 ${tableCode}。`);
+  }
+
+  const viewModel = createMatchViewModel(state);
+
+  if (!state.roomSnapshot) {
+    return (
+      <ConnectGate
+        value={connectValue}
+        status={state.connectionStatus === 'connecting' || state.connectionStatus === 'reconnecting' ? 'connecting' : statusMessage ? 'error' : 'idle'}
+        message={statusMessage}
+        onChange={(patch) => {
+          startTransition(() => {
+            setConnectValue((current) => ({ ...current, ...patch }));
+          });
+        }}
+        onCreate={handleCreate}
+        onJoin={handleJoin}
+      />
+    );
+  }
+
+  return <BattleScreen viewModel={viewModel} onTileSelect={handleTileSelect} onAction={handleAction} onCopyTableCode={handleCopyTableCode} />;
+}

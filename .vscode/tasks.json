@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Clean pycache",
+            "type": "shell",
+            "command": "Get-ChildItem -Path . -Include __pycache__ -Recurse -Directory -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse; Write-Host '✨ 所有 __pycache__ 清理完毕！' -ForegroundColor Green",
+            "problemMatcher": [],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        }
+    ]
+}
