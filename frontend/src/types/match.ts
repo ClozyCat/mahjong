@@ -203,6 +203,14 @@ export interface HeartbeatMessage {
   };
 }
 
+export interface LeaveTableAcceptedMessage {
+  type: 'leave_table_accepted';
+  payload: {
+    table_code: string;
+    seat_index: number;
+  };
+}
+
 export type ServerMessage =
   | RoomSnapshotMessage
   | MatchResultMessage
@@ -210,11 +218,13 @@ export type ServerMessage =
   | PlayerPresenceMessage
   | RoundEventMessage
   | ActionRejectedMessage
+  | LeaveTableAcceptedMessage
   | HeartbeatMessage;
 
 export type ClientMessage =
   | { type: 'join_table'; payload: { nickname: string } }
   | { type: 'reconnect'; payload: { reconnect_token: string } }
+  | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
@@ -327,6 +337,7 @@ export interface ResultView {
 export interface BattleViewModel {
   mode: MatchPhase;
   tableCode: string;
+  canLeaveTable: boolean;
   phaseLabel: string;
   roundLabel: string;
   scoreSummaryLabel: string;

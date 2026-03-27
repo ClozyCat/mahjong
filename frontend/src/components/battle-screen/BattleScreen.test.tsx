@@ -1,4 +1,6 @@
+import type { ComponentProps } from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BattleViewModel } from '../../types/match';
@@ -8,6 +10,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
   return {
     mode: 'watching',
     tableCode: 'AB12CD',
+    canLeaveTable: false,
     phaseLabel: 'playing',
     roundLabel: 'round-123',
     scoreSummaryLabel: '总分 12',
@@ -111,28 +114,36 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
   };
 }
 
+function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<ComponentProps<typeof BattleScreen>>) {
+  return render(
+    <BattleScreen
+      viewModel={viewModel}
+      onAction={vi.fn()}
+      onTileSelect={vi.fn()}
+      onCopyTableCode={vi.fn()}
+      onLeaveTable={vi.fn()}
+      {...overrides}
+    />,
+  );
+}
+
 describe('BattleScreen', () => {
   it('shows ready and start controls in waiting state', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel({
-          mode: 'disconnected_or_waiting',
-          phaseLabel: 'waiting',
-          waitingControls: {
-            canReady: true,
-            canStart: true,
-            isReady: false,
-            occupiedSeats: 4,
-          },
-          actions: [
-            { id: 'ready', label: 'Ready', enabled: true, emphasis: 'medium' },
-            { id: 'start_match', label: 'Start Match', enabled: true, emphasis: 'high' },
-          ],
-        })}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'disconnected_or_waiting',
+        phaseLabel: 'waiting',
+        waitingControls: {
+          canReady: true,
+          canStart: true,
+          isReady: false,
+          occupiedSeats: 4,
+        },
+        actions: [
+          { id: 'ready', label: 'Ready', enabled: true, emphasis: 'medium' },
+          { id: 'start_match', label: 'Start Match', enabled: true, emphasis: 'high' },
+        ],
+      }),
     );
 
     expect(screen.getByRole('button', { name: /ready/i })).toBeInTheDocument();
@@ -140,41 +151,36 @@ describe('BattleScreen', () => {
   });
 
   it('shows settlement breakdown in resolving state', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel({
-          mode: 'resolving',
-          phaseLabel: 'settlement',
-          result: {
-            title: '本局结算',
-            summary: '等待下一局',
-            fanTotal: 8,
-            winnerSeat: 'right',
-            discarderSeat: 'left',
-            winType: 'discard',
-            provisional: true,
-            flowerCount: 0,
-            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
-            scoreDeltaBySeat: {
-              bottom: 0,
-              left: -8,
-              right: 8,
-            },
-            seats: [
-              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
-              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
-            ],
-            continueAction: {
-              id: 'start_next_round',
-              label: '下一局',
-              enabled: true,
-            },
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          discarderSeat: 'left',
+          winType: 'discard',
+          provisional: true,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          scoreDeltaBySeat: {
+            bottom: 0,
+            left: -8,
+            right: 8,
           },
-        })}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
+          seats: [
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
     );
 
     expect(screen.getByText(/番数合计/i)).toBeInTheDocument();
@@ -182,18 +188,13 @@ describe('BattleScreen', () => {
   });
 
   it('shows reconnecting overlay copy when disconnected_or_waiting has no waiting controls', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel({
-          mode: 'disconnected_or_waiting',
-          waitingControls: null,
-          centerBanner: 'Reconnecting',
-          promptText: 'Trying to restore your seat.',
-        })}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'disconnected_or_waiting',
+        waitingControls: null,
+        centerBanner: 'Reconnecting',
+        promptText: 'Trying to restore your seat.',
+      }),
     );
 
     expect(screen.getByText(/正在重连/i)).toBeInTheDocument();
@@ -201,42 +202,21 @@ describe('BattleScreen', () => {
   });
 
   it('renders the top player ring separately from the table content', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
-    );
+    renderBattleScreen(createBattleViewModel());
 
     expect(screen.getByText('Player Top')).toBeInTheDocument();
     expect(screen.getByText('Player Left')).toBeInTheDocument();
   });
 
   it('renders local hand tiles with mahjong tile presentation', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
-    );
+    renderBattleScreen(createBattleViewModel());
 
     const hand = screen.getByLabelText(/local hand/i);
     expect(hand.querySelectorAll('.mahjong-tile--hand')).toHaveLength(2);
   });
 
   it('moves the local player identity into the action dock instead of the table center', () => {
-    const { container } = render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
-    );
+    const { container } = renderBattleScreen(createBattleViewModel());
 
     expect(container.querySelector('.battle-stage .player-ring--bottom')).toBeNull();
     expect(screen.getByText('Player A')).toBeInTheDocument();
@@ -244,49 +224,30 @@ describe('BattleScreen', () => {
   });
 
   it('renders the battle screen inside a retro client window', () => {
-    const { container } = render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
-    );
+    const { container } = renderBattleScreen(createBattleViewModel());
 
     expect(container.querySelector('.win98-window')).not.toBeNull();
     expect(screen.getByText(/牌桌编号/i)).toBeInTheDocument();
   });
 
   it('renders the local control area as a retro control panel with chinese labels', () => {
-    const { container } = render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
-    );
+    const { container } = renderBattleScreen(createBattleViewModel());
 
     expect(container.querySelector('.action-dock__player')).not.toBeNull();
     expect(screen.getByText(/当前操作/i)).toBeInTheDocument();
   });
 
   it('shows up to four latest toasts so local discard prompts are not immediately hidden', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel({
-          toasts: [
-            { id: 't1', kind: 'event', text: '提示1' },
-            { id: 't2', kind: 'event', text: '提示2' },
-            { id: 't3', kind: 'event', text: '提示3' },
-            { id: 't4', kind: 'event', text: '提示4' },
-            { id: 't5', kind: 'event', text: '提示5' },
-          ],
-        })}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
+    renderBattleScreen(
+      createBattleViewModel({
+        toasts: [
+          { id: 't1', kind: 'event', text: '提示1' },
+          { id: 't2', kind: 'event', text: '提示2' },
+          { id: 't3', kind: 'event', text: '提示3' },
+          { id: 't4', kind: 'event', text: '提示4' },
+          { id: 't5', kind: 'event', text: '提示5' },
+        ],
+      }),
     );
 
     expect(screen.queryByText('提示1')).not.toBeInTheDocument();
@@ -297,17 +258,34 @@ describe('BattleScreen', () => {
   });
 
   it('renders dedicated meld areas for remote seats and the local dock', () => {
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onCopyTableCode={vi.fn()}
-      />,
-    );
+    renderBattleScreen(createBattleViewModel());
 
     expect(screen.getByLabelText('Player Left melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
     expect(screen.getByLabelText('Player B melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
     expect(screen.getByLabelText(/local melds/i).querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
+  });
+
+  it('shows a leave-table button in waiting rooms and wires the callback', async () => {
+    const user = userEvent.setup();
+    const onLeaveTable = vi.fn();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        canLeaveTable: true,
+        mode: 'disconnected_or_waiting',
+        phaseLabel: 'waiting',
+        waitingControls: {
+          canReady: true,
+          canStart: false,
+          isReady: false,
+          occupiedSeats: 2,
+        },
+      }),
+      { onLeaveTable },
+    );
+
+    await user.click(screen.getByRole('button', { name: '离开牌桌' }));
+
+    expect(onLeaveTable).toHaveBeenCalledTimes(1);
   });
 });

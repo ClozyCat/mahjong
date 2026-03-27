@@ -45,6 +45,13 @@ export function createReconnectMessage(reconnectToken: string): ClientMessage {
   };
 }
 
+export function createLeaveTableMessage(): ClientMessage {
+  return {
+    type: 'leave_table',
+    payload: {},
+  };
+}
+
 export function createReadyMessage(ready: boolean): ClientMessage {
   return {
     type: 'ready',

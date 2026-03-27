@@ -13,11 +13,12 @@ interface BattleScreenProps {
   onTileSelect: (tileId: string) => void;
   onAction: (actionId: BattleActionId) => void;
   onCopyTableCode: () => void;
+  onLeaveTable: () => void;
 }
 
 const REMOTE_PLAYER_ORDER = ['left', 'top', 'right'] as const;
 
-export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCode }: BattleScreenProps) {
+export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCode, onLeaveTable }: BattleScreenProps) {
   const localPlayer = viewModel.players.find((item) => item.isLocal) ?? null;
   const remotePlayers = REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)).filter(
     (player): player is NonNullable<typeof player> => Boolean(player),
@@ -29,12 +30,14 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
       <WindowFrame title="四风麻将客户端" status={`状态：${viewModel.topStatusLabel}`} className="battle-shell">
         <TopMatchBar
           tableCode={viewModel.tableCode}
+          canLeaveTable={viewModel.canLeaveTable}
           phaseLabel={viewModel.phaseLabel}
           roundLabel={viewModel.roundLabel}
           scoreSummaryLabel={viewModel.scoreSummaryLabel}
           deadlineAt={viewModel.deadlineAt}
           topStatusLabel={viewModel.topStatusLabel}
           onCopyTableCode={onCopyTableCode}
+          onLeaveTable={onLeaveTable}
         />
         <div className="battle-stage">
           <div className="battle-stage__halo" />

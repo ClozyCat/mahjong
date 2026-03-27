@@ -178,6 +178,7 @@ describe('createMatchViewModel', () => {
     const viewModel = createMatchViewModel(createWaitingSessionState());
 
     expect(viewModel.mode).toBe('disconnected_or_waiting');
+    expect(viewModel.canLeaveTable).toBe(true);
     expect(viewModel.waitingControls?.canReady).toBe(true);
     expect(viewModel.waitingControls?.canStart).toBe(false);
   });
@@ -194,6 +195,7 @@ describe('createMatchViewModel', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 
     expect(viewModel.actions.find((item) => item.id === 'discard')?.label).toBe('出牌');
+    expect(viewModel.canLeaveTable).toBe(false);
     expect(viewModel.topStatusLabel).toBe('对局中');
   });
 

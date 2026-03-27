@@ -89,6 +89,18 @@ async def websocket_endpoint(websocket: WebSocket, table_code: str) -> None:
                 await _send_rejection_if_needed(websocket, response)
                 continue
 
+            if message_type == "leave_table":
+                response = await game_service.leave_table(
+                    table_code=table_code,
+                    websocket=websocket,
+                )
+                if response.get("type") == "action_rejected":
+                    await websocket.send_json(response)
+                    continue
+                await websocket.send_json(response)
+                await websocket.close()
+                return
+
             if message_type == "action_request":
                 await game_service.handle_action_request(table_code, websocket, payload)
                 continue

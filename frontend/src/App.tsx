@@ -15,6 +15,7 @@ import {
   createActionRequestMessage,
   createHeartbeatMessage,
   createJoinTableMessage,
+  createLeaveTableMessage,
   createReadyMessage,
   createReconnectMessage,
   createRestartMatchMessage,
@@ -111,6 +112,7 @@ export default function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const heartbeatTimerRef = useRef<number | null>(null);
   const sessionRef = useRef(state);
+  const leavingTableRef = useRef(false);
 
   useEffect(() => {
     sessionRef.current = state;
@@ -156,6 +158,10 @@ export default function App() {
 
     if (message.type === 'action_rejected') {
       const current = sessionRef.current;
+
+      if (leavingTableRef.current) {
+        leavingTableRef.current = false;
+      }
 
       if (message.payload.reason === 'invalid_reconnect_token') {
         handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
@@ -230,6 +236,16 @@ export default function App() {
 
         socketRef.current = null;
         const current = sessionRef.current;
+        if (leavingTableRef.current) {
+          leavingTableRef.current = false;
+          clearStoredSession();
+          dispatch({
+            type: 'return_to_lobby',
+            tableCode: current.tableCode,
+          });
+          setStatusMessage(null);
+          return;
+        }
         if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {
           dispatch({ type: 'set_connection_status', status: 'reconnecting' });
           setStatusMessage('连接已断开，正在尝试恢复座位。');
@@ -445,6 +461,20 @@ export default function App() {
     setStatusMessage(`已复制牌桌编号 ${tableCode}。`);
   }
 
+  function handleLeaveTable() {
+    if (state.roomSnapshot?.payload.phase !== 'waiting') {
+      return;
+    }
+
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      setStatusMessage('当前连接不可用，暂时无法离开牌桌。');
+      return;
+    }
+
+    leavingTableRef.current = true;
+    socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
+  }
+
   const viewModel = createMatchViewModel(state);
 
   if (!state.roomSnapshot) {
@@ -464,5 +494,13 @@ export default function App() {
     );
   }
 
-  return <BattleScreen viewModel={viewModel} onTileSelect={handleTileSelect} onAction={handleAction} onCopyTableCode={handleCopyTableCode} />;
+  return (
+    <BattleScreen
+      viewModel={viewModel}
+      onTileSelect={handleTileSelect}
+      onAction={handleAction}
+      onCopyTableCode={handleCopyTableCode}
+      onLeaveTable={handleLeaveTable}
+    />
+  );
 }

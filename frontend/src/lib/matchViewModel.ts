@@ -596,6 +596,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
   return {
     mode,
     tableCode: snapshot?.table_code ?? state.tableCode,
+    canLeaveTable: snapshot?.phase === 'waiting' && state.connectionStatus === 'connected',
     phaseLabel: snapshot ? PHASE_LABELS[snapshot.phase] : PHASE_LABELS.waiting,
     roundLabel: createRoundLabel(state),
     scoreSummaryLabel: createScoreSummaryLabel(state),

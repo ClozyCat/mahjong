@@ -13,6 +13,10 @@ def _mark_ready(ws) -> dict:
     return ws.receive_json()
 
 
+def _leave_table(ws) -> None:
+    ws.send_json({"type": "leave_table", "payload": {}})
+
+
 def test_four_players_join_room_without_auto_start(test_app) -> None:
     client = TestClient(test_app)
     table_code = client.post("/api/tables").json()["table_code"]
@@ -110,3 +114,40 @@ def test_start_match_rejects_when_not_all_players_ready(test_app) -> None:
         "type": "action_rejected",
         "payload": {"reason": "room_not_ready"},
     }
+
+
+def test_waiting_player_can_leave_table_and_free_the_seat(test_app) -> None:
+    client = TestClient(test_app)
+    table_code = client.post("/api/tables").json()["table_code"]
+
+    with ExitStack() as stack:
+        first = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+        second = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+
+        _join_player(first, "P0")
+        _join_player(second, "P1")
+        assert first.receive_json()["type"] == "player_presence"
+        assert first.receive_json()["type"] == "room_snapshot"
+
+        _leave_table(second)
+        presence = first.receive_json()
+        snapshot = first.receive_json()
+
+        rejoiner = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+        rejoin_snapshot = _join_player(rejoiner, "P2")
+        assert first.receive_json()["type"] == "player_presence"
+        refreshed_snapshot = first.receive_json()
+
+    assert presence == {
+        "type": "player_presence",
+        "payload": {
+            "table_code": table_code,
+            "seat_index": 1,
+            "connected": False,
+        },
+    }
+    assert snapshot["type"] == "room_snapshot"
+    assert [seat["nickname"] for seat in snapshot["payload"]["seats"]] == ["P0"]
+    assert rejoin_snapshot["type"] == "room_snapshot"
+    assert rejoin_snapshot["payload"]["local_seat"] == 1
+    assert [seat["nickname"] for seat in refreshed_snapshot["payload"]["seats"]] == ["P0", "P2"]

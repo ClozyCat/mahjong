@@ -2,22 +2,26 @@ import { useEffect, useState } from 'react';
 
 interface TopMatchBarProps {
   tableCode: string;
+  canLeaveTable: boolean;
   phaseLabel: string;
   roundLabel: string;
   scoreSummaryLabel: string;
   deadlineAt: string | null;
   topStatusLabel: string;
   onCopyTableCode: () => void;
+  onLeaveTable: () => void;
 }
 
 export function TopMatchBar({
   tableCode,
+  canLeaveTable,
   phaseLabel,
   roundLabel,
   scoreSummaryLabel,
   deadlineAt,
   topStatusLabel,
   onCopyTableCode,
+  onLeaveTable,
 }: TopMatchBarProps) {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
@@ -54,6 +58,11 @@ export function TopMatchBar({
       <button type="button" className="top-match-bar__copy" onClick={onCopyTableCode}>
         牌桌编号 {tableCode}
       </button>
+      {canLeaveTable ? (
+        <button type="button" className="top-match-bar__leave" onClick={onLeaveTable}>
+          离开牌桌
+        </button>
+      ) : null}
     </header>
   );
 }

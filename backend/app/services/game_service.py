@@ -445,6 +445,56 @@ class GameService:
             await self._send_prompt_targets(prompt_targets)
         return {"type": "restart_match_accepted", "payload": {}}
 
+    async def leave_table(
+        self,
+        *,
+        table_code: str,
+        websocket: WebSocket,
+    ) -> dict:
+        room: RoomState | None = None
+        peer_updates: list[tuple[WebSocket, list[dict]]] = []
+        owned_seat: int | None = None
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return self._action_rejected("table_not_found")
+            if room.round_state is not None:
+                return self._action_rejected("room_already_started")
+
+            owned_seat = next(
+                (
+                    seat_index
+                    for seat_index, reservation in room.seats.items()
+                    if reservation.websocket is websocket
+                ),
+                None,
+            )
+            if owned_seat is None:
+                return self._action_rejected("seat_not_owned")
+
+            reservation = room.seats.pop(owned_seat)
+            if reservation.reconnect_token:
+                self._consume_reconnect_token(reservation.reconnect_token)
+            self._mark_disconnected(player_session_id=reservation.player_session_id)
+            self._persist_room_state_locked(room)
+            peer_updates = self._peer_snapshot_updates_locked(room, exclude_seat=owned_seat)
+
+        async with room.send_lock:
+            await self._send_presence_and_snapshots(
+                table_code=table_code,
+                seat_index=owned_seat,
+                connected=False,
+                peer_updates=peer_updates,
+            )
+        return {
+            "type": "leave_table_accepted",
+            "payload": {
+                "table_code": table_code,
+                "seat_index": owned_seat,
+            },
+        }
+
     async def disconnect(self, table_code: str, websocket: WebSocket) -> None:
         async with self._lock:
             room = self._get_or_restore_room_locked(table_code)

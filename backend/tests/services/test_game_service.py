@@ -410,6 +410,73 @@ async def test_send_snapshot_targets_also_sends_match_result_for_settlement():
 
 
 @pytest.mark.asyncio
+async def test_leave_table_removes_waiting_seat_and_notifies_peers(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    consumed_tokens: list[str] = []
+    disconnected_sessions: list[int] = []
+    monkeypatch.setattr(service, "_consume_reconnect_token", lambda token: consumed_tokens.append(token))
+    monkeypatch.setattr(
+        service,
+        "_mark_disconnected",
+        lambda *, player_session_id: disconnected_sessions.append(player_session_id),
+    )
+
+    leaver = _RecordingWebSocket()
+    peer = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM24", phase="waiting")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=leaver,
+        connected=True,
+        ready=False,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="P1",
+        reconnect_token="token-1",
+        player_session_id=2,
+        websocket=peer,
+        connected=True,
+        ready=True,
+    )
+    service._rooms["ROOM24"] = room
+
+    response = await service.leave_table(table_code="ROOM24", websocket=leaver)
+
+    assert response == {
+        "type": "leave_table_accepted",
+        "payload": {
+            "table_code": "ROOM24",
+            "seat_index": 0,
+        },
+    }
+    assert 0 not in room.seats
+    assert consumed_tokens == ["token-0"]
+    assert disconnected_sessions == [1]
+    assert peer.messages[0] == {
+        "type": "player_presence",
+        "payload": {
+            "table_code": "ROOM24",
+            "seat_index": 0,
+            "connected": False,
+        },
+    }
+    assert peer.messages[1]["type"] == "room_snapshot"
+    assert peer.messages[1]["payload"]["seats"] == [
+        {
+            "seat_index": 1,
+            "nickname": "P1",
+            "connected": True,
+            "ready": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_handle_action_request_resolves_claims_by_priority_after_all_responses(
     monkeypatch,
 ):
