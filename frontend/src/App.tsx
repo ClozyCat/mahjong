@@ -25,7 +25,7 @@ import {
   serializeClientMessage,
 } from './lib/socket';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
-import { clearStoredSession, loadStoredConfig, loadStoredSession, saveStoredConfig, saveStoredSession } from './lib/storage';
+import { clearStoredSession, loadStoredSession, saveStoredSession } from './lib/storage';
 import type { BackendActionType, BattleActionId, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -52,10 +52,10 @@ function getRuntimeDefaultBaseUrls() {
 function getDefaultConfig() {
   const env = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {});
   const runtimeDefaults = getRuntimeDefaultBaseUrls();
-  const defaults = loadStoredConfig({
+  const defaults = {
     apiBaseUrl: env.VITE_API_BASE_URL ?? runtimeDefaults.apiBaseUrl,
     wsBaseUrl: env.VITE_WS_BASE_URL ?? runtimeDefaults.wsBaseUrl,
-  });
+  };
   const storedSession = loadStoredSession();
 
   return {
@@ -119,8 +119,6 @@ function canUseClaimMultiSelect(state: SessionState) {
 export default function App() {
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
-    apiBaseUrl: defaults.apiBaseUrl,
-    wsBaseUrl: storedSession?.wsBaseUrl ?? defaults.wsBaseUrl,
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
     testMode: false,
@@ -151,13 +149,6 @@ export default function App() {
   useEffect(() => {
     sessionRef.current = state;
   }, [state]);
-
-  useEffect(() => {
-    saveStoredConfig({
-      apiBaseUrl: connectValue.apiBaseUrl,
-      wsBaseUrl: connectValue.wsBaseUrl,
-    });
-  }, [connectValue.apiBaseUrl, connectValue.wsBaseUrl]);
 
   useEffect(() => {
     if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
@@ -357,10 +348,10 @@ export default function App() {
 
     try {
       setStatusMessage('正在创建牌桌...');
-      dispatch({ type: 'set_config', apiBaseUrl: connectValue.apiBaseUrl, wsBaseUrl: connectValue.wsBaseUrl });
+      dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       const requestedTableCode = connectValue.tableCode.trim().toUpperCase();
       const table = await createTable(
-        connectValue.apiBaseUrl,
+        defaults.apiBaseUrl,
         requestedTableCode || undefined,
         connectValue.testMode,
         connectValue.enforceMinimumEightFan,
@@ -374,7 +365,7 @@ export default function App() {
       openRoomSocket({
         tableCode: table.table_code,
         nickname: connectValue.nickname.trim(),
-        wsBaseUrl: connectValue.wsBaseUrl,
+        wsBaseUrl: defaults.wsBaseUrl,
       });
     } catch (error) {
       if (
@@ -407,11 +398,11 @@ export default function App() {
     }
 
     setStatusMessage('正在加入牌桌...');
-    dispatch({ type: 'set_config', apiBaseUrl: connectValue.apiBaseUrl, wsBaseUrl: connectValue.wsBaseUrl });
+    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
     openRoomSocket({
       tableCode: connectValue.tableCode.trim().toUpperCase(),
       nickname: connectValue.nickname.trim(),
-      wsBaseUrl: connectValue.wsBaseUrl,
+      wsBaseUrl: defaults.wsBaseUrl,
     });
   }
 

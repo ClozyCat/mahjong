@@ -1348,12 +1348,13 @@ button:active:not(:disabled) {
   padding: 1rem 1.1rem;
   min-width: 20rem;
   border-radius: 0;
-  background: #d4d0c8;
-  border: 2px solid #d4d0c8;
-  border-right-color: #404040;
-  border-bottom-color: #404040;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(139, 233, 255, 0.16), rgba(255, 255, 255, 0.03) 28%, rgba(255, 255, 255, 0.01)),
+    rgba(10, 23, 36, 0.9);
   box-shadow: none;
   text-align: center;
+  color: var(--text);
 }
 
 .ambient-overlay__panel strong {
@@ -1362,11 +1363,16 @@ button:active:not(:disabled) {
   font-family: 'Noto Sans SC', sans-serif;
   font-size: 1.2rem;
   letter-spacing: 0.04em;
+  color: #f8fcff;
+  text-shadow: 0 1px 12px rgba(95, 199, 255, 0.18);
 }
 
-.ambient-overlay__panel p,
+.ambient-overlay__panel p {
+  color: rgba(232, 241, 252, 0.84);
+}
+
 .ambient-overlay__eyebrow {
-  color: var(--muted);
+  color: rgba(139, 233, 255, 0.9);
 }
 
 .ambient-overlay__eyebrow {
@@ -2739,6 +2745,7 @@ input {
 
 .ambient-overlay__panel {
   border-radius: 1.5rem;
+  border-color: rgba(255, 255, 255, 0.14);
   box-shadow: var(--shadow-xl), 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 32px rgba(95, 199, 255, 0.14);
 }
 

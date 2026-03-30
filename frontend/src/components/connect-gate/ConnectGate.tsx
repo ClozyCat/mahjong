@@ -1,8 +1,6 @@
 import { WindowFrame } from '../win98/WindowFrame';
 
 export interface ConnectGateValue {
-  apiBaseUrl: string;
-  wsBaseUrl: string;
   tableCode: string;
   nickname: string;
   testMode: boolean;
@@ -28,26 +26,6 @@ export function ConnectGate({ value, status, message, onChange, onCreate, onJoin
         <div className="connect-gate__panel">
           <p className="connect-gate__eyebrow">联机大厅</p>
           <h1>连接牌桌</h1>
-
-          <label className="connect-gate__field">
-            <span>服务地址</span>
-            <input
-              value={value.apiBaseUrl}
-              onChange={(event) => onChange({ apiBaseUrl: event.target.value })}
-              disabled={disabled}
-              aria-label="服务地址"
-            />
-          </label>
-
-          <label className="connect-gate__field">
-            <span>通信地址</span>
-            <input
-              value={value.wsBaseUrl}
-              onChange={(event) => onChange({ wsBaseUrl: event.target.value })}
-              disabled={disabled}
-              aria-label="通信地址"
-            />
-          </label>
 
           <label className="connect-gate__field">
             <span>牌桌编号</span>

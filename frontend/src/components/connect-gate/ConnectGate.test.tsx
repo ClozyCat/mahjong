@@ -9,8 +9,6 @@ describe('ConnectGate', () => {
     const { container } = render(
       <ConnectGate
         value={{
-          apiBaseUrl: 'http://localhost:8080',
-          wsBaseUrl: 'ws://localhost:8080',
           tableCode: '',
           nickname: '',
           testMode: false,
@@ -24,8 +22,8 @@ describe('ConnectGate', () => {
     );
 
     expect(screen.getByText('联机大厅')).toBeInTheDocument();
-    expect(screen.getByLabelText('服务地址')).toBeInTheDocument();
-    expect(screen.getByLabelText('通信地址')).toBeInTheDocument();
+    expect(screen.queryByLabelText('服务地址')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('通信地址')).not.toBeInTheDocument();
     expect(screen.getByLabelText('昵称')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '测试模式：关' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '限制八番起胡：开' })).toBeInTheDocument();
@@ -43,8 +41,6 @@ describe('ConnectGate', () => {
     render(
       <ConnectGate
         value={{
-          apiBaseUrl: 'http://localhost:8080',
-          wsBaseUrl: 'ws://localhost:8080',
           tableCode: 'AB12CD',
           nickname: 'Player A',
           testMode: false,

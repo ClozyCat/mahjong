@@ -1,10 +1,4 @@
-const ENDPOINTS_KEY = 'mahjong:endpoints';
 const SESSION_KEY = 'mahjong:session';
-
-export interface StoredConfig {
-  apiBaseUrl: string;
-  wsBaseUrl: string;
-}
 
 export interface StoredSession {
   tableCode: string;
@@ -23,18 +17,6 @@ function safeParse<T>(value: string | null): T | null {
   } catch {
     return null;
   }
-}
-
-export function loadStoredConfig(defaults: StoredConfig): StoredConfig {
-  const stored = safeParse<Partial<StoredConfig>>(localStorage.getItem(ENDPOINTS_KEY));
-  return {
-    apiBaseUrl: stored?.apiBaseUrl ?? defaults.apiBaseUrl,
-    wsBaseUrl: stored?.wsBaseUrl ?? defaults.wsBaseUrl,
-  };
-}
-
-export function saveStoredConfig(config: StoredConfig) {
-  localStorage.setItem(ENDPOINTS_KEY, JSON.stringify(config));
 }
 
 export function loadStoredSession(): StoredSession | null {
