@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { BattleActionView } from '../../types/match';
 
@@ -14,7 +15,9 @@ export function FloatingRoomControls({ actions, onAction }: FloatingRoomControls
     return null;
   }
 
-  return (
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+
+  const content = (
     <>
       {!isCollapsed ? (
         <aside className="room-control-window" aria-label="房间操作窗口">
@@ -59,4 +62,6 @@ export function FloatingRoomControls({ actions, onAction }: FloatingRoomControls
       ) : null}
     </>
   );
+
+  return portalTarget ? createPortal(content, portalTarget) : content;
 }

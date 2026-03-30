@@ -91,7 +91,7 @@ describe('sessionReducer', () => {
 
     expect(next.toasts.at(-1)).toMatchObject({
       kind: 'event',
-      text: '小李打出5条',
+      text: '小李打出五条',
     });
   });
 });

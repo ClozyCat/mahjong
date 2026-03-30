@@ -36,6 +36,7 @@ function createToast(kind: ToastMessage['kind'], text: string): ToastMessage {
     id: `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     kind,
     text,
+    createdAt: new Date().toISOString(),
   };
 }
 

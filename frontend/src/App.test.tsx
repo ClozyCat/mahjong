@@ -236,7 +236,7 @@ describe('App', () => {
 
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
-    const { container } = render(<App />);
+    render(<App />);
 
     await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
     await user.type(screen.getByLabelText('昵称'), 'Player A');
@@ -330,10 +330,10 @@ describe('App', () => {
     });
 
     await user.click(await screen.findByRole('button', { name: '吃' }));
-    expect(countSelectedTiles(container)).toBe(2);
+    expect(countSelectedTiles(document.body)).toBe(2);
 
     await user.click(screen.getByRole('button', { name: '过' }));
-    expect(countSelectedTiles(container)).toBe(0);
+    expect(countSelectedTiles(document.body)).toBe(0);
 
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { nickname: 'Player A' } },

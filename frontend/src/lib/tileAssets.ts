@@ -22,6 +22,17 @@ const HONOR_ASSET_NAMES: Record<string, string> = {
   d6: 'fa.svg',
 };
 
+const FLOWER_ASSET_NAMES: Record<string, string> = {
+  f1: 'spring.svg',
+  f2: 'summer.svg',
+  f3: 'autumn.svg',
+  f4: 'winter.svg',
+  f5: 'plum.svg',
+  f6: 'orchid.svg',
+  f7: 'bamboo.svg',
+  f8: 'chrysanthemum.svg',
+};
+
 const BLANK_CODES = new Set(['white', 'd7']);
 const SVG_VIEWBOX = '0 0 320 446';
 const SVG_SOURCE_MAP = import.meta.glob('../../images/*.svg', {
@@ -97,6 +108,15 @@ export function getTileAsset(code: string): TileAsset {
       kind: 'image',
       assetName: honorFileName,
       src: assetUrl(honorFileName),
+    };
+  }
+
+  const flowerFileName = FLOWER_ASSET_NAMES[normalized];
+  if (flowerFileName) {
+    return {
+      kind: 'image',
+      assetName: flowerFileName,
+      src: assetUrl(flowerFileName),
     };
   }
 

@@ -26,6 +26,12 @@ describe('MahjongTile', () => {
     expect(tile.querySelector('.mahjong-tile__face-viewport')).not.toBeNull();
   });
 
+  it('renders flower tiles with the uploaded flower-face svg assets', () => {
+    render(<MahjongTile code="f6" variant="discard" />);
+
+    expect(screen.getByRole('img', { name: '兰牌面' })).toHaveAttribute('data-asset-name', 'orchid.svg');
+  });
+
   it('renders white dragon as a blank face without an image', () => {
     render(<MahjongTile code="white" variant="discard" />);
 

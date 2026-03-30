@@ -237,6 +237,7 @@ export interface ToastMessage {
   id: string;
   kind: 'presence' | 'event' | 'error' | 'system';
   text: string;
+  createdAt: string;
 }
 
 export interface SessionState {

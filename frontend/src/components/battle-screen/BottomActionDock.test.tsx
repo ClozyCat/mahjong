@@ -61,7 +61,7 @@ describe('BottomActionDock', () => {
   });
 
   it('renders only the provided battle actions inside the bottom action row', () => {
-    const { container } = render(
+    render(
       <BottomActionDock
         hand={localHand}
         actions={[
@@ -81,12 +81,12 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    const bottomRow = container.querySelector('.action-dock__actions');
+    const bottomRow = document.body.querySelector('.action-dock__actions');
 
     expect(bottomRow?.textContent).toContain('出牌');
     expect(bottomRow?.textContent).toContain('过');
     expect(bottomRow?.textContent).toContain('收起');
-    expect(container.querySelector('.action-dock__side-panel')).toBeNull();
-    expect(container.querySelector('.action-dock__caption')).toBeNull();
+    expect(document.body.querySelector('.action-dock__side-panel')).toBeNull();
+    expect(document.body.querySelector('.action-dock__caption')).toBeNull();
   });
 });

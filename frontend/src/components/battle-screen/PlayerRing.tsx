@@ -6,7 +6,6 @@ interface PlayerRingProps {
 
 export function PlayerRing({ player }: PlayerRingProps) {
   const windLabel = WIND_LABELS[player.wind] ?? player.wind;
-  const deltaLabel = player.liveDelta === 0 ? '本局 0' : `本局 ${player.liveDelta > 0 ? '+' : ''}${player.liveDelta}`;
 
   return (
     <section className={`player-slot player-slot--${player.seat}`}>
@@ -29,7 +28,7 @@ export function PlayerRing({ player }: PlayerRingProps) {
               {player.score.toLocaleString()} · {player.statusText ?? '待命'}
             </span>
             <span className="player-ring__detail">
-              手牌 {player.concealedCount} · 花 {player.flowerCount} · {deltaLabel}
+              手牌 {player.concealedCount} · 花 {player.flowerCount}
             </span>
           </div>
         </div>

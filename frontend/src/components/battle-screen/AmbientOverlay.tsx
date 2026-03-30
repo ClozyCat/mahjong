@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { MatchPhase, ToastMessage, WaitingControls } from '../../types/match';
 
@@ -14,6 +15,45 @@ export function AmbientOverlay({ mode, promptText, waitingControls, toasts }: Am
   const showVeil = mode === 'loading' || mode === 'disconnected_or_waiting' || mode === 'finished';
   const isWaiting = Boolean(waitingControls);
   const isFinished = mode === 'finished';
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+
+  const messageWindow = toasts.length > 0 && !isMessageWindowCollapsed ? (
+    <aside className="ambient-overlay__message-window" aria-label="日志窗口">
+      <div className="ambient-overlay__message-titlebar">
+        <div>
+          <span className="ambient-overlay__message-eyebrow">Event Log</span>
+          <strong>日志窗口</strong>
+        </div>
+        <button
+          type="button"
+          className="ambient-overlay__message-collapse"
+          aria-label="收起日志窗口"
+          onClick={() => setIsMessageWindowCollapsed(true)}
+        >
+          收起
+        </button>
+      </div>
+      <div className="ambient-overlay__message-list" aria-label="日志列表">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`ambient-overlay__toast ambient-overlay__toast--${toast.kind}`}>
+            <span className="ambient-overlay__toast-time">{formatToastTime(toast.createdAt)}</span>
+            <span className="ambient-overlay__toast-text">{toast.text}</span>
+          </div>
+        ))}
+      </div>
+    </aside>
+  ) : null;
+
+  const messageRestore = toasts.length > 0 && isMessageWindowCollapsed ? (
+    <button
+      type="button"
+      className="ambient-overlay__message-restore"
+      aria-label="展开日志窗口"
+      onClick={() => setIsMessageWindowCollapsed(false)}
+    >
+      日志
+    </button>
+  ) : null;
 
   return (
     <>
@@ -34,41 +74,23 @@ export function AmbientOverlay({ mode, promptText, waitingControls, toasts }: Am
           </div>
         </div>
       ) : null}
-      {toasts.length > 0 && !isMessageWindowCollapsed ? (
-        <aside className="ambient-overlay__message-window" aria-label="消息窗口">
-          <div className="ambient-overlay__message-titlebar">
-            <div>
-              <span className="ambient-overlay__message-eyebrow">Message Log</span>
-              <strong>消息窗口</strong>
-            </div>
-            <button
-              type="button"
-              className="ambient-overlay__message-collapse"
-              aria-label="收起消息窗口"
-              onClick={() => setIsMessageWindowCollapsed(true)}
-            >
-              收起
-            </button>
-          </div>
-          <div className="ambient-overlay__message-list" aria-label="消息列表">
-            {toasts.map((toast) => (
-              <div key={toast.id} className={`ambient-overlay__toast ambient-overlay__toast--${toast.kind}`}>
-                {toast.text}
-              </div>
-            ))}
-          </div>
-        </aside>
-      ) : null}
-      {toasts.length > 0 && isMessageWindowCollapsed ? (
-        <button
-          type="button"
-          className="ambient-overlay__message-restore"
-          aria-label="展开消息窗口"
-          onClick={() => setIsMessageWindowCollapsed(false)}
-        >
-          消息
-        </button>
-      ) : null}
+      {portalTarget && messageWindow ? createPortal(messageWindow, portalTarget) : messageWindow}
+      {portalTarget && messageRestore ? createPortal(messageRestore, portalTarget) : messageRestore}
     </>
   );
+}
+
+function formatToastTime(createdAt: string) {
+  const date = new Date(createdAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return '--:--:--';
+  }
+
+  return date.toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }

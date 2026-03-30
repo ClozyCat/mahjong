@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { BattleActionView, BattleViewModel, PlayerView } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
@@ -25,8 +26,9 @@ export function BottomActionDock({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const windLabel = localPlayer ? WIND_LABELS[localPlayer.wind] ?? localPlayer.wind : null;
   const dockLabel = '手牌区';
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
 
-  return (
+  const content = (
     <>
       {!isCollapsed ? (
         <section
@@ -125,6 +127,8 @@ export function BottomActionDock({
       ) : null}
     </>
   );
+
+  return portalTarget ? createPortal(content, portalTarget) : content;
 }
 
 const WIND_LABELS: Record<PlayerView['wind'], string> = {

@@ -164,7 +164,13 @@ describe('BattleScreen', () => {
           winType: 'discard',
           provisional: true,
           flowerCount: 0,
-          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          fanBreakdown: [
+            { fanKey: 'ping_hu', fanValue: 8 },
+            { fanKey: 'self_draw', fanValue: 1 },
+            { fanKey: 'full_flush', fanValue: 24 },
+            { fanKey: 'pung_of_terminals_or_honours', fanValue: 1 },
+            { fanKey: 'seven_pairs', fanValue: 24 },
+          ],
           scoreDeltaBySeat: {
             bottom: 0,
             left: -8,
@@ -184,7 +190,61 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByText(/番数合计/i)).toBeInTheDocument();
-    expect(screen.getByText(/ping_hu/i)).toBeInTheDocument();
+    expect(screen.getByText('平胡')).toBeInTheDocument();
+    expect(screen.getByText('幺九刻')).toBeInTheDocument();
+    expect(screen.queryByText('七对')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开剩余 1 项番种' })).toBeInTheDocument();
+  });
+
+  it('can expand and collapse extra fan breakdown rows in settlement view', async () => {
+    const user = userEvent.setup();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 16,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          provisional: false,
+          flowerCount: 2,
+          fanBreakdown: [
+            { fanKey: 'ping_hu', fanValue: 2 },
+            { fanKey: 'self_draw', fanValue: 1 },
+            { fanKey: 'full_flush', fanValue: 6 },
+            { fanKey: 'all_pungs', fanValue: 2 },
+            { fanKey: 'seven_pairs', fanValue: 3 },
+          ],
+          scoreDeltaBySeat: {
+            bottom: 16,
+            left: -6,
+            top: -5,
+            right: -5,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25016, delta: 16 },
+            { seat: 'left', name: 'Player Left', score: 24394, delta: -6 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.queryByText('七对')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '展开剩余 1 项番种' }));
+    expect(screen.getByText('七对')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '收起番种' }));
+    expect(screen.queryByText('七对')).not.toBeInTheDocument();
   });
 
   it('shows reconnecting overlay copy when disconnected_or_waiting has no waiting controls', () => {
@@ -208,6 +268,13 @@ describe('BattleScreen', () => {
     expect(screen.getByText('Player Left')).toBeInTheDocument();
   });
 
+  it('does not show per-round delta text on other player info panels', () => {
+    const { container } = renderBattleScreen(createBattleViewModel());
+
+    expect(container.querySelector('.player-ring--left .player-ring__detail')?.textContent).toBe('手牌 13 · 花 1');
+    expect(container.querySelector('.player-ring--top .player-ring__detail')?.textContent).toBe('手牌 13 · 花 0');
+  });
+
   it('renders local hand tiles with mahjong tile presentation', () => {
     renderBattleScreen(createBattleViewModel());
 
@@ -220,7 +287,7 @@ describe('BattleScreen', () => {
 
     expect(container.querySelector('.battle-stage .player-ring--bottom')).toBeNull();
     expect(screen.getByText('Player A')).toBeInTheDocument();
-    expect(container.querySelector('.action-dock__player')).not.toBeNull();
+    expect(document.body.querySelector('.action-dock__player')).not.toBeNull();
   });
 
   it('renders the battle screen inside a retro client window', () => {
@@ -231,9 +298,9 @@ describe('BattleScreen', () => {
   });
 
   it('renders the local control area as a retro control panel with chinese labels', () => {
-    const { container } = renderBattleScreen(createBattleViewModel());
+    renderBattleScreen(createBattleViewModel());
 
-    expect(container.querySelector('.action-dock__player')).not.toBeNull();
+    expect(document.body.querySelector('.action-dock__player')).not.toBeNull();
     expect(screen.getByText(/25,000 · 花 0 · live/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '收起手牌区' }).length).toBeGreaterThan(0);
   });
@@ -242,22 +309,22 @@ describe('BattleScreen', () => {
     renderBattleScreen(
       createBattleViewModel({
         toasts: [
-          { id: 't1', kind: 'event', text: '提示1' },
-          { id: 't2', kind: 'event', text: '提示2' },
-          { id: 't3', kind: 'event', text: '提示3' },
-          { id: 't4', kind: 'event', text: '提示4' },
-          { id: 't5', kind: 'event', text: '提示5' },
+          { id: 't1', kind: 'event', text: '提示1', createdAt: '2026-03-30T12:10:36+08:00' },
+          { id: 't2', kind: 'event', text: '提示2', createdAt: '2026-03-30T12:10:37+08:00' },
+          { id: 't3', kind: 'event', text: '提示3', createdAt: '2026-03-30T12:10:38+08:00' },
+          { id: 't4', kind: 'event', text: '提示4', createdAt: '2026-03-30T12:10:39+08:00' },
+          { id: 't5', kind: 'event', text: '提示5', createdAt: '2026-03-30T12:10:40+08:00' },
         ],
       }),
     );
 
     expect(screen.queryByText('提示1')).not.toBeInTheDocument();
     expect(screen.queryByText('提示5')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '展开消息窗口' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开日志窗口' })).toBeInTheDocument();
   });
 
   it('renders room controls in a separate floating window instead of the hand dock', () => {
-    const { container } = renderBattleScreen(
+    renderBattleScreen(
       createBattleViewModel({
         actions: [
           { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
@@ -268,8 +335,8 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByLabelText('房间操作窗口')).toBeInTheDocument();
-    expect(container.querySelector('.action-dock__actions')?.textContent).toContain('出牌');
-    expect(container.querySelector('.action-dock__actions')?.textContent).not.toContain('准备');
+    expect(document.body.querySelector('.action-dock__actions')?.textContent).toContain('出牌');
+    expect(document.body.querySelector('.action-dock__actions')?.textContent).not.toContain('准备');
   });
 
   it('renders dedicated meld areas only for remote seats', () => {

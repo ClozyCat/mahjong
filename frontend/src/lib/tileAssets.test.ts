@@ -51,6 +51,21 @@ describe('getTileAsset', () => {
     });
   });
 
+  it('maps flower tiles to the newly added flower-face assets', () => {
+    expect(getTileAsset('f1')).toMatchObject({
+      kind: 'image',
+      assetName: 'spring.svg',
+    });
+    expect(getTileAsset('f4')).toMatchObject({
+      kind: 'image',
+      assetName: 'winter.svg',
+    });
+    expect(getTileAsset('f8')).toMatchObject({
+      kind: 'image',
+      assetName: 'chrysanthemum.svg',
+    });
+  });
+
   it('renders white dragon aliases as blank faces', () => {
     expect(getTileAsset('white')).toEqual({ kind: 'blank' });
     expect(getTileAsset('d7')).toEqual({ kind: 'blank' });
