@@ -69,7 +69,7 @@ export function ConnectGate({ value, status, message, onChange, onCreate, onJoin
             />
           </label>
 
-          <div className="connect-gate__actions">
+          <div className="connect-gate__actions connect-gate__actions--toggles">
             <button
               type="button"
               onClick={() => onChange({ testMode: !value.testMode })}
@@ -78,17 +78,15 @@ export function ConnectGate({ value, status, message, onChange, onCreate, onJoin
             >
               测试模式：{value.testMode ? '开' : '关'}
             </button>
-          </div>
-
-          <label className="connect-gate__toggle">
-            <input
-              type="checkbox"
-              checked={value.enforceMinimumEightFan}
-              onChange={(event) => onChange({ enforceMinimumEightFan: event.target.checked })}
+            <button
+              type="button"
+              onClick={() => onChange({ enforceMinimumEightFan: !value.enforceMinimumEightFan })}
               disabled={disabled}
-            />
-            <span>限制八番起胡</span>
-          </label>
+              aria-pressed={value.enforceMinimumEightFan}
+            >
+              限制八番起胡：{value.enforceMinimumEightFan ? '开' : '关'}
+            </button>
+          </div>
 
           <div className="connect-gate__actions">
             <button type="button" onClick={onCreate} disabled={disabled}>
