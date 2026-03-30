@@ -117,11 +117,16 @@ describe('BottomActionDock', () => {
       />,
     );
 
+    const huButton = screen.getByRole('button', { name: '和牌' });
+    const pungButton = screen.getByRole('button', { name: '碰' });
+    const passButton = screen.getByRole('button', { name: '过' });
+
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
+    expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
-    expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '碰' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+    expect(huButton).toHaveClass('action-dock__action--response-glow', 'action-dock__action--response-glow-hu');
+    expect(pungButton).toHaveClass('action-dock__action--response-glow', 'action-dock__action--response-glow-pung');
+    expect(passButton).not.toHaveClass('action-dock__action--response-glow');
     expect(screen.getByRole('button', { name: '收起手牌区' })).toBeInTheDocument();
   });
 

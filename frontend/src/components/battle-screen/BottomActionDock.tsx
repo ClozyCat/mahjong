@@ -52,6 +52,7 @@ export function BottomActionDock({
             (ACTION_PRIORITY[right.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER),
         )
     : [];
+  const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -76,23 +77,24 @@ export function BottomActionDock({
     <>
       {!isCollapsed ? (
         <section
-          className={`action-dock ${isElevated ? 'action-dock--elevated' : ''}`}
+          className={`action-dock ${shouldElevateDock ? 'action-dock--elevated' : ''}`}
           data-testid="action-dock"
-          data-elevated={isElevated}
+          data-elevated={shouldElevateDock}
           style={dockStyle}
         >
           {visibleActions.length > 0 ? (
             <div className="action-dock__actions" aria-label="即时操作按钮">
               {visibleActions.map((action) => {
                 const isPassAction = action.id === 'pass';
+                const responseGlowClassName = getResponseGlowClassName(promptCue, action.id as BackendActionType);
 
                 return (
                   <button
                     key={action.id}
                     type="button"
-                    className={`action-dock__action action-dock__action--response ${
+                    className={`action-dock__action action-dock__action--response ${responseGlowClassName} ${
                       isPassAction ? 'action-dock__action--passive' : ''
-                    }`}
+                    }`.trim()}
                     onClick={() => onAction(action.id)}
                   >
                     {action.label}
@@ -207,3 +209,31 @@ const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
   discard: 5,
   pass: 6,
 };
+
+function isResponsePrompt(promptCue: BattlePromptView | null) {
+  return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong';
+}
+
+function getResponseGlowClassName(promptCue: BattlePromptView | null, actionId: BackendActionType) {
+  if (!promptCue || !isResponsePrompt(promptCue) || actionId === 'pass' || !promptCue.highlightedActionIds.includes(actionId)) {
+    return '';
+  }
+
+  if (actionId === 'hu') {
+    return 'action-dock__action--response-glow action-dock__action--response-glow-hu';
+  }
+
+  if (actionId === 'kong') {
+    return 'action-dock__action--response-glow action-dock__action--response-glow-kong';
+  }
+
+  if (actionId === 'pung') {
+    return 'action-dock__action--response-glow action-dock__action--response-glow-pung';
+  }
+
+  if (actionId === 'chow') {
+    return 'action-dock__action--response-glow action-dock__action--response-glow-chow';
+  }
+
+  return '';
+}

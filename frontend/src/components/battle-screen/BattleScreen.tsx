@@ -27,13 +27,11 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
   );
   const roomActions = viewModel.actions.filter((action) => ROOM_CONTROL_ACTION_IDS.includes(action.id));
   const battleActions = viewModel.actions.filter((action) => !ROOM_CONTROL_ACTION_IDS.includes(action.id));
-  const responseAccent = getResponseAccent(viewModel, battleActions);
-  const shellClassName = `battle-shell ${responseAccent ? `battle-shell--response battle-shell--response-${responseAccent}` : ''}`.trim();
 
   return (
     <main className="battle-screen">
       <StageBackground />
-      <WindowFrame title="四风麻将客户端" status={`状态：${viewModel.topStatusLabel}`} className={shellClassName}>
+      <WindowFrame title="四风麻将客户端" status={`状态：${viewModel.topStatusLabel}`} className="battle-shell">
         <TopMatchBar
           tableCode={viewModel.tableCode}
           canLeaveTable={viewModel.canLeaveTable}
@@ -95,36 +93,3 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
 }
 
 const ROOM_CONTROL_ACTION_IDS: BattleActionId[] = ['ready', 'start_match', 'start_next_round', 'restart_match'];
-
-function getResponseAccent(viewModel: BattleViewModel, actions: BattleViewModel['actions']) {
-  const promptCue = viewModel.promptCue;
-
-  if (!promptCue || (promptCue.kind !== 'claim' && promptCue.kind !== 'rob_kong')) {
-    return null;
-  }
-
-  const visibleIds = actions
-    .filter(
-      (action): action is typeof action & { id: Extract<typeof action.id, 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass'> } =>
-        action.enabled && promptCue.actionIds.includes(action.id as typeof promptCue.actionIds[number]),
-    )
-    .map((action) => action.id);
-
-  if (visibleIds.includes('hu')) {
-    return 'hu';
-  }
-
-  if (visibleIds.includes('kong')) {
-    return 'kong';
-  }
-
-  if (visibleIds.includes('pung')) {
-    return 'pung';
-  }
-
-  if (visibleIds.includes('chow')) {
-    return 'chow';
-  }
-
-  return null;
-}

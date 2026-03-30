@@ -2954,7 +2954,9 @@ input {
   .action-effects__caption,
   .action-effects__veil,
   .action-effects__celebration-copy,
-  .action-effects__particle {
+  .action-effects__particle,
+  .action-dock__action--response-glow::before,
+  .action-dock__action--response-glow::after {
     animation: none !important;
   }
 }
@@ -3386,72 +3388,6 @@ input {
   }
 }
 
-.battle-shell--response-chow {
-  --response-frame-accent: #4f9472;
-  --response-frame-pulse: rgba(79, 148, 114, 0.2);
-  --response-frame-flare: rgba(142, 246, 195, 0.28);
-}
-
-.battle-shell--response-pung {
-  --response-frame-accent: #4d7f98;
-  --response-frame-pulse: rgba(77, 127, 152, 0.22);
-  --response-frame-flare: rgba(132, 208, 255, 0.3);
-}
-
-.battle-shell--response-kong {
-  --response-frame-accent: #9b7a48;
-  --response-frame-pulse: rgba(155, 122, 72, 0.22);
-  --response-frame-flare: rgba(255, 215, 126, 0.3);
-}
-
-.battle-shell--response-hu {
-  --response-frame-accent: #ae5f50;
-  --response-frame-pulse: rgba(174, 95, 80, 0.24);
-  --response-frame-flare: rgba(255, 160, 142, 0.34);
-}
-
-.battle-shell--response {
-  position: relative;
-  isolation: isolate;
-  border-color: color-mix(in srgb, var(--response-frame-accent) 48%, rgba(255, 255, 255, 0.22));
-  box-shadow:
-    var(--shadow-xl),
-    0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 38%, transparent),
-    0 0 24px color-mix(in srgb, var(--response-frame-accent) 28%, transparent),
-    0 0 58px var(--response-frame-pulse, rgba(79, 148, 114, 0.2));
-  animation: battle-shell-response-glow 1.05s ease-in-out infinite;
-}
-
-.battle-shell--response::before {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: inherit;
-  border: 1px solid color-mix(in srgb, var(--response-frame-accent) 78%, white);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 24%, transparent),
-    inset 0 0 22px color-mix(in srgb, var(--response-frame-accent) 16%, transparent),
-    0 0 18px color-mix(in srgb, var(--response-frame-accent) 16%, transparent);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--response-frame-flare) 88%, transparent), transparent 28%),
-    linear-gradient(320deg, color-mix(in srgb, var(--response-frame-accent) 24%, transparent), transparent 22%),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--response-frame-flare) 86%, transparent), transparent 34%);
-  opacity: 0.92;
-  animation: battle-shell-response-scan 1.15s ease-in-out infinite;
-}
-
-.battle-shell--response::after {
-  border-color: color-mix(in srgb, var(--response-frame-accent) 32%, rgba(255, 255, 255, 0.12));
-  background:
-    linear-gradient(90deg, transparent, color-mix(in srgb, var(--response-frame-flare) 42%, transparent), transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 10%, transparent),
-    inset 0 0 26px color-mix(in srgb, var(--response-frame-accent) 10%, transparent);
-  opacity: 0.92;
-}
-
 .table-stage--urgent .table-stage__frame {
   box-shadow: 0 0 0 1px rgba(110, 200, 255, 0.24), 0 18px 36px rgba(6, 21, 34, 0.14);
 }
@@ -3558,6 +3494,8 @@ input {
 }
 
 .action-dock__action--response {
+  position: relative;
+  isolation: isolate;
   min-width: 5.2rem;
   min-height: 2.08rem;
   padding: 0.34rem 0.96rem;
@@ -3570,9 +3508,95 @@ input {
     background-color 140ms ease;
 }
 
+.action-dock__action--response-glow {
+  --response-button-core: #8ef6c3;
+  --response-button-stream: rgba(142, 246, 195, 0.9);
+  --response-button-shadow: rgba(142, 246, 195, 0.42);
+  border-color: color-mix(in srgb, var(--response-button-core) 62%, rgba(255, 255, 255, 0.3));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--response-button-core) 22%, rgba(255, 255, 255, 0.16)), rgba(14, 22, 35, 0.94));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--response-button-core) 40%, transparent),
+    0 0 18px var(--response-button-shadow),
+    0 0 34px color-mix(in srgb, var(--response-button-shadow) 74%, transparent);
+}
+
+.action-dock__action--response-glow::before,
+.action-dock__action--response-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.action-dock__action--response-glow::before {
+  inset: -0.26rem;
+  z-index: -2;
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      color-mix(in srgb, var(--response-button-stream) 90%, white) 34deg,
+      transparent 76deg,
+      transparent 160deg,
+      color-mix(in srgb, var(--response-button-stream) 94%, white) 212deg,
+      transparent 256deg,
+      transparent 312deg,
+      color-mix(in srgb, var(--response-button-stream) 72%, white) 344deg,
+      transparent 360deg
+    );
+  filter: blur(0.5rem);
+  opacity: 0.98;
+  animation: action-dock-response-flow 1.15s linear infinite;
+}
+
+.action-dock__action--response-glow::after {
+  inset: -0.12rem;
+  z-index: -1;
+  border: 1px solid color-mix(in srgb, var(--response-button-core) 82%, rgba(255, 255, 255, 0.42));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--response-button-core) 28%, transparent),
+    0 0 16px color-mix(in srgb, var(--response-button-shadow) 90%, transparent),
+    0 0 32px color-mix(in srgb, var(--response-button-shadow) 76%, transparent);
+  animation: action-dock-response-breathe 820ms ease-in-out infinite;
+}
+
+.action-dock__action--response-glow-hu {
+  --response-button-core: #ff9a84;
+  --response-button-stream: rgba(255, 154, 132, 0.96);
+  --response-button-shadow: rgba(255, 122, 94, 0.52);
+}
+
+.action-dock__action--response-glow-kong {
+  --response-button-core: #ffd17f;
+  --response-button-stream: rgba(255, 209, 127, 0.94);
+  --response-button-shadow: rgba(255, 191, 87, 0.48);
+}
+
+.action-dock__action--response-glow-pung {
+  --response-button-core: #87d6ff;
+  --response-button-stream: rgba(135, 214, 255, 0.96);
+  --response-button-shadow: rgba(85, 186, 255, 0.48);
+}
+
+.action-dock__action--response-glow-chow {
+  --response-button-core: #93f0bf;
+  --response-button-stream: rgba(147, 240, 191, 0.94);
+  --response-button-shadow: rgba(106, 219, 159, 0.46);
+}
+
 .action-dock__action--response:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.18);
+}
+
+.action-dock__action--response-glow:hover:not(:disabled) {
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.2),
+    0 0 0 1px color-mix(in srgb, var(--response-button-core) 40%, transparent),
+    0 0 18px var(--response-button-shadow),
+    0 0 34px color-mix(in srgb, var(--response-button-shadow) 74%, transparent);
 }
 
 .action-dock__action--passive:not(:disabled) {
@@ -3605,64 +3629,26 @@ input {
   }
 }
 
-@keyframes battle-shell-response-glow {
-  0%,
-  100% {
-    border-color: color-mix(in srgb, var(--response-frame-accent) 46%, rgba(255, 255, 255, 0.18));
-    box-shadow:
-      var(--shadow-xl),
-      0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 30%, transparent),
-      0 0 18px color-mix(in srgb, var(--response-frame-accent) 22%, transparent),
-      0 0 42px var(--response-frame-pulse, rgba(79, 148, 114, 0.2));
+@keyframes action-dock-response-flow {
+  0% {
+    transform: rotate(0deg) scale(0.98);
   }
 
-  50% {
-    border-color: color-mix(in srgb, var(--response-frame-accent) 72%, white);
-    box-shadow:
-      var(--shadow-xl),
-      0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 58%, transparent),
-      0 0 30px color-mix(in srgb, var(--response-frame-flare, rgba(142, 246, 195, 0.28)) 62%, transparent),
-      0 0 74px var(--response-frame-pulse, rgba(79, 148, 114, 0.2));
+  100% {
+    transform: rotate(360deg) scale(1.02);
   }
 }
 
-@keyframes battle-shell-response-scan {
+@keyframes action-dock-response-breathe {
   0%,
   100% {
-    opacity: 0.76;
-    transform: scale(0.998);
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 18%, transparent),
-      inset 0 0 16px color-mix(in srgb, var(--response-frame-accent) 14%, transparent),
-      0 0 12px color-mix(in srgb, var(--response-frame-accent) 10%, transparent);
+    opacity: 0.82;
+    transform: scale(0.99);
   }
 
   50% {
     opacity: 1;
-    transform: scale(1);
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 34%, transparent),
-      inset 0 0 24px color-mix(in srgb, var(--response-frame-flare, rgba(142, 246, 195, 0.28)) 30%, transparent),
-      0 0 22px color-mix(in srgb, var(--response-frame-accent) 18%, transparent);
-  }
-}
-
-@keyframes action-dock-neon-pulse {
-  0%,
-  100% {
-    opacity: 0.42;
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 20%, transparent),
-      0 0 8px var(--response-frame-pulse, rgba(110, 200, 255, 0.08)),
-      0 0 16px var(--response-frame-pulse, rgba(110, 200, 255, 0.08));
-  }
-
-  50% {
-    opacity: 0.92;
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--response-frame-accent) 42%, transparent),
-      0 0 14px var(--response-frame-pulse, rgba(110, 200, 255, 0.1)),
-      0 0 26px var(--response-frame-pulse, rgba(110, 200, 255, 0.1));
+    transform: scale(1.04);
   }
 }
 
