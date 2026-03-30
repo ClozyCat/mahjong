@@ -30,6 +30,9 @@ import type { BackendActionType, BattleActionId, SessionState } from './types/ma
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
+const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
+
+type ClaimActionId = (typeof CLAIM_ACTION_IDS)[number];
 
 function getRuntimeDefaultBaseUrls() {
   if (typeof window === 'undefined') {
@@ -86,6 +89,33 @@ function closeSocket(socketRef: MutableRefObject<WebSocket | null>, heartbeatTim
   socketRef.current = null;
 }
 
+function hasClaimAction(options: BackendActionType[]) {
+  return CLAIM_ACTION_IDS.some((actionId) => options.includes(actionId));
+}
+
+function getClaimSelectionSignature(state: SessionState) {
+  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+
+  if (pendingAction?.type === 'claim_window' && Array.isArray(pendingAction.options)) {
+    const options = pendingAction.options
+      .filter((option): option is BackendActionType => typeof option === 'string')
+      .filter((option): option is ClaimActionId => CLAIM_ACTION_IDS.includes(option as ClaimActionId));
+    return options.length > 0 ? `claim:${pendingAction.deadline_at}:${options.slice().sort().join(',')}` : null;
+  }
+
+  const promptOptions = state.latestActionPrompt?.payload.options ?? [];
+  if (promptOptions.includes('pass') && hasClaimAction(promptOptions)) {
+    const options = promptOptions.filter((option): option is ClaimActionId => CLAIM_ACTION_IDS.includes(option as ClaimActionId));
+    return options.length > 0 ? `claim:${state.latestActionPrompt?.payload.deadline_at ?? ''}:${options.slice().sort().join(',')}` : null;
+  }
+
+  return null;
+}
+
+function canUseClaimMultiSelect(state: SessionState) {
+  return getClaimSelectionSignature(state) !== null;
+}
+
 export default function App() {
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
@@ -94,6 +124,7 @@ export default function App() {
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
     testMode: false,
+    enforceMinimumEightFan: true,
   });
   const [statusMessage, setStatusMessage] = useState<string | null>(
     storedSession ? `检测到牌桌 ${storedSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
@@ -115,6 +146,7 @@ export default function App() {
   const heartbeatTimerRef = useRef<number | null>(null);
   const sessionRef = useRef(state);
   const leavingTableRef = useRef(false);
+  const previousClaimSelectionSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     sessionRef.current = state;
@@ -293,6 +325,20 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const claimSelectionSignature = getClaimSelectionSignature(state);
+
+    if (
+      claimSelectionSignature &&
+      claimSelectionSignature !== previousClaimSelectionSignatureRef.current &&
+      state.selectedTileIds.length > 0
+    ) {
+      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+    }
+
+    previousClaimSelectionSignatureRef.current = claimSelectionSignature;
+  }, [state]);
+
   function sendMessage(message: string) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       setStatusMessage('当前尚未建立连接。');
@@ -317,6 +363,7 @@ export default function App() {
         connectValue.apiBaseUrl,
         requestedTableCode || undefined,
         connectValue.testMode,
+        connectValue.enforceMinimumEightFan,
       );
       startTransition(() => {
         setConnectValue((current) => ({
@@ -369,7 +416,12 @@ export default function App() {
   }
 
   function handleTileSelect(tileId: string) {
-    if (state.selectionMode === 'kong' || state.selectionMode === 'chow' || state.selectionMode === 'pung') {
+    if (
+      canUseClaimMultiSelect(state) ||
+      state.selectionMode === 'kong' ||
+      state.selectionMode === 'chow' ||
+      state.selectionMode === 'pung'
+    ) {
       const nextTileIds = state.selectedTileIds.includes(tileId)
         ? state.selectedTileIds.filter((selectedTileId) => selectedTileId !== tileId)
         : [...state.selectedTileIds, tileId];

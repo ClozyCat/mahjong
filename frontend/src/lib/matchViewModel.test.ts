@@ -157,6 +157,7 @@ function createSettlementSessionState(): SessionState {
         win_type: 'discard',
         winner_seat: 1,
         discarder_seat: 0,
+        display_win_label: null,
         fan_total: 8,
         fan_keys: ['ping_hu'],
         fan_breakdown: [{ fan_key: 'ping_hu', fan_value: 8 }],
@@ -332,8 +333,33 @@ describe('createMatchViewModel', () => {
     expect(viewModel.mode).toBe('resolving');
     expect(viewModel.result?.fanTotal).toBe(8);
     expect(viewModel.result?.winnerSeat).toBe('left');
+    expect(viewModel.result?.winTypeLabel).toBe('荣和');
     expect(viewModel.celebrationEffect?.label).toBe('胡牌');
     expect(viewModel.celebrationEffect?.winnerSeat).toBe('left');
+  });
+
+  it('uses 屁和 copy for low-fan wins when eight-fan restriction is disabled', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestMatchResult: {
+        ...base.latestMatchResult!,
+        payload: {
+          ...base.latestMatchResult!.payload,
+          win_type: 'self_draw',
+          display_win_label: '屁和',
+          fan_total: 4,
+          score_delta: {
+            ...base.latestMatchResult!.payload.score_delta,
+            fan_total: 4,
+          },
+        },
+      },
+    });
+
+    expect(viewModel.result?.summary).toContain('屁和');
+    expect(viewModel.result?.winTypeLabel).toBe('屁和');
+    expect(viewModel.celebrationEffect?.label).toBe('屁和');
   });
 
   it('maps latest round events into action spectacle descriptors', () => {

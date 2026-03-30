@@ -165,6 +165,7 @@ describe('BattleScreen', () => {
           winnerSeat: 'right',
           discarderSeat: 'left',
           winType: 'discard',
+          winTypeLabel: '荣和',
           provisional: true,
           flowerCount: 0,
           fanBreakdown: [
@@ -213,6 +214,7 @@ describe('BattleScreen', () => {
           winnerSeat: 'bottom',
           discarderSeat: null,
           winType: 'self_draw',
+          winTypeLabel: '自摸',
           provisional: false,
           flowerCount: 2,
           fanBreakdown: [

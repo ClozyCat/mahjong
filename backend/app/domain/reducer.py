@@ -72,6 +72,7 @@ def initialize_round(
     dealer_seat: int = 0,
     round_id: str | None = None,
     round_wind: str = "east",
+    enforce_minimum_eight_fan: bool = True,
 ) -> RoundState:
     wall = build_wall(seed)
     players: list[PlayerState] = []
@@ -108,6 +109,7 @@ def initialize_round(
         score_trackers=_empty_score_trackers(),
         last_action_context=None,
         round_wind=round_wind,
+        enforce_minimum_eight_fan=enforce_minimum_eight_fan,
     )
 
 
@@ -126,6 +128,7 @@ def _replace_round_state(state: RoundState, **changes) -> RoundState:
         "score_trackers": state.score_trackers,
         "last_action_context": state.last_action_context,
         "round_wind": state.round_wind,
+        "enforce_minimum_eight_fan": state.enforce_minimum_eight_fan,
     }
     payload.update(changes)
     return RoundState(**payload)
@@ -256,6 +259,7 @@ def draw_for_turn(state: RoundState) -> tuple[RoundState, list[dict]]:
             "was_last_discard": False,
         },
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
 
     return new_state, events
@@ -347,6 +351,7 @@ def discard_tile(
             ),
         },
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
 
     claim_window = compute_claim_window(base_state)
@@ -375,6 +380,7 @@ def discard_tile(
             score_trackers=base_state.score_trackers,
             last_action_context=base_state.last_action_context,
             round_wind=base_state.round_wind,
+            enforce_minimum_eight_fan=base_state.enforce_minimum_eight_fan,
         )
     else:
         next_actor = (seat + 1) % len(state.players)
@@ -392,6 +398,7 @@ def discard_tile(
             score_trackers=base_state.score_trackers,
             last_action_context=base_state.last_action_context,
             round_wind=base_state.round_wind,
+            enforce_minimum_eight_fan=base_state.enforce_minimum_eight_fan,
         )
 
     events = [tile_discarded_event(seat, tile)]
@@ -845,6 +852,8 @@ def can_declare_hu(state: RoundState, seat: int, incoming_tile: str | None) -> b
         )
     except ValueError:
         return False
+    if not state.enforce_minimum_eight_fan:
+        return True
     return fan_result.get("minimum_qualifying_fan_total", fan_result["fan_total"]) >= MINIMUM_WINNING_FAN
 
 
@@ -864,6 +873,11 @@ def apply_self_draw_win(
         "win_type": "self_draw",
         "winner_seat": winner_seat,
         "discarder_seat": None,
+        "display_win_label": (
+            "屁和"
+            if not state.enforce_minimum_eight_fan and fan_result["fan_total"] < MINIMUM_WINNING_FAN
+            else None
+        ),
         "fan_total": fan_result["fan_total"],
         "fan_keys": fan_result["fan_keys"],
         "fan_breakdown": fan_result["fan_breakdown"],
@@ -885,6 +899,7 @@ def apply_self_draw_win(
         score_trackers=state.score_trackers,
         last_action_context=state.last_action_context,
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
     events = [{"type": "settlement_ready", "round_id": state.round_id}]
     return new_state, events
@@ -929,6 +944,11 @@ def apply_discard_win(
         "win_type": "discard",
         "winner_seat": winner_seat,
         "discarder_seat": discarder_seat,
+        "display_win_label": (
+            "屁和"
+            if not state.enforce_minimum_eight_fan and fan_result["fan_total"] < MINIMUM_WINNING_FAN
+            else None
+        ),
         "fan_total": fan_result["fan_total"],
         "fan_keys": fan_result["fan_keys"],
         "fan_breakdown": fan_result["fan_breakdown"],
@@ -950,6 +970,7 @@ def apply_discard_win(
         score_trackers=state.score_trackers,
         last_action_context=state.last_action_context,
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
     events = [{"type": "settlement_ready", "round_id": state.round_id}]
     return new_state, events
@@ -993,6 +1014,7 @@ def settle_exhaustive_draw(state: RoundState) -> tuple[RoundState, list[dict]]:
         score_trackers=state.score_trackers,
         last_action_context=state.last_action_context,
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
     events = [{"type": "round_drawn", "round_id": state.round_id}]
     return new_state, events
@@ -1078,6 +1100,7 @@ def _maybe_start_rob_kong_window(
         score_trackers=state.score_trackers,
         last_action_context=state.last_action_context,
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
 
 
@@ -1118,6 +1141,7 @@ def _apply_rob_kong_pass(
                 score_trackers=state.score_trackers,
                 last_action_context=state.last_action_context,
                 round_wind=state.round_wind,
+                enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
             ),
             [],
         )
@@ -1149,6 +1173,7 @@ def _complete_add_kong_after_passes(state: RoundState) -> tuple[RoundState, list
             score_trackers=state.score_trackers,
             last_action_context=state.last_action_context,
             round_wind=state.round_wind,
+            enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
         ),
         seat=actor_seat,
         kong_type="add_kong",
@@ -1228,6 +1253,7 @@ def _complete_self_kong(
             "was_last_discard": False,
         },
         round_wind=state.round_wind,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
 
     try:
@@ -1274,6 +1300,7 @@ def _complete_self_kong(
                 "was_last_discard": False,
             },
             round_wind=state.round_wind,
+            enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
         ),
         events,
     )

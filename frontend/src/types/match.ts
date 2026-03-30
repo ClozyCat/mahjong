@@ -137,6 +137,7 @@ export interface MatchResultPayload {
   round_id: string;
   phase: 'settlement';
   win_type: 'self_draw' | 'discard' | 'draw';
+  display_win_label?: string | null;
   winner_seat?: number | null;
   discarder_seat?: number | null;
   fan_total: number;
@@ -321,6 +322,7 @@ export interface ResultView {
   winnerSeat: Seat | null;
   discarderSeat: Seat | null;
   winType: string | null;
+  winTypeLabel: string | null;
   provisional: boolean;
   flowerCount: number;
   fanBreakdown: Array<{

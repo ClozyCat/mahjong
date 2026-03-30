@@ -44,7 +44,12 @@ export function getHealth(baseUrl: string) {
   return requestJson<HealthResponse>(`${normalizeBaseUrl(baseUrl)}/api/health`);
 }
 
-export function createTable(baseUrl: string, tableCode?: string, testMode = false) {
+export function createTable(
+  baseUrl: string,
+  tableCode?: string,
+  testMode = false,
+  enforceMinimumEightFan = true,
+) {
   return requestJson<CreateTableResponse>(`${normalizeBaseUrl(baseUrl)}/api/tables`, {
     method: 'POST',
     headers: {
@@ -53,6 +58,7 @@ export function createTable(baseUrl: string, tableCode?: string, testMode = fals
     body: JSON.stringify({
       ...(tableCode ? { table_code: tableCode } : {}),
       test_mode: testMode,
+      enforce_minimum_eight_fan: enforceMinimumEightFan,
     }),
   });
 }

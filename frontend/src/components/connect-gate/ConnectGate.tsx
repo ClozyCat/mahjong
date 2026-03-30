@@ -6,6 +6,7 @@ export interface ConnectGateValue {
   tableCode: string;
   nickname: string;
   testMode: boolean;
+  enforceMinimumEightFan: boolean;
 }
 
 interface ConnectGateProps {
@@ -78,6 +79,16 @@ export function ConnectGate({ value, status, message, onChange, onCreate, onJoin
               测试模式：{value.testMode ? '开' : '关'}
             </button>
           </div>
+
+          <label className="connect-gate__toggle">
+            <input
+              type="checkbox"
+              checked={value.enforceMinimumEightFan}
+              onChange={(event) => onChange({ enforceMinimumEightFan: event.target.checked })}
+              disabled={disabled}
+            />
+            <span>限制八番起胡</span>
+          </label>
 
           <div className="connect-gate__actions">
             <button type="button" onClick={onCreate} disabled={disabled}>

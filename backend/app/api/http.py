@@ -41,6 +41,11 @@ def create_table_endpoint(
                 if payload is not None and payload.test_mode is not None
                 else request.app.state.settings.test_mode
             ),
+            enforce_minimum_eight_fan=(
+                payload.enforce_minimum_eight_fan
+                if payload is not None and payload.enforce_minimum_eight_fan is not None
+                else True
+            ),
         )
     except ValueError as exc:
         if str(exc) == "table_code_exists":

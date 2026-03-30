@@ -86,6 +86,25 @@ def test_create_table_can_disable_test_mode_even_when_app_default_is_true(test_m
     assert snapshot["payload"]["phase"] == "waiting"
 
 
+def test_create_table_accepts_disabling_eight_fan_requirement(test_app) -> None:
+    client = TestClient(test_app)
+
+    create_response = client.post(
+        "/api/tables",
+        json={"table_code": "ROOM97", "enforce_minimum_eight_fan": False},
+    )
+
+    assert create_response.status_code == 201
+    table_code = create_response.json()["table_code"]
+
+    with client.websocket_connect(f"/ws/{table_code}") as websocket:
+        websocket.send_json({"type": "join_table", "payload": {"nickname": "Solo"}})
+        snapshot = websocket.receive_json()
+
+    assert snapshot["type"] == "room_snapshot"
+    assert snapshot["payload"]["phase"] == "waiting"
+
+
 def test_default_app_factory_boots_with_a_working_session_factory() -> None:
     client = TestClient(create_app())
 

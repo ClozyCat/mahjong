@@ -456,6 +456,55 @@ def test_can_declare_hu_accepts_supported_eight_fan_hand():
     assert can_declare_hu(state, 0, None) is True
 
 
+def test_can_declare_hu_allows_low_fan_win_when_eight_fan_rule_is_disabled():
+    state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(
+                    _make_tile("w1", "w1#0"),
+                    _make_tile("w2", "w2#0"),
+                    _make_tile("w3", "w3#0"),
+                    _make_tile("t4", "t4#0"),
+                    _make_tile("t5", "t5#0"),
+                    _make_tile("t6", "t6#0"),
+                    _make_tile("b2", "b2#0"),
+                    _make_tile("b3", "b3#0"),
+                    _make_tile("b4", "b4#0"),
+                    _make_tile("red", "red#0"),
+                    _make_tile("red", "red#1"),
+                ),
+                melds=((
+                    _make_tile("w7", "w7#m0"),
+                    _make_tile("w8", "w8#m1"),
+                    _make_tile("w9", "w9#m2"),
+                ),),
+                flowers=(),
+                discards=(),
+            ),
+        )
+        + tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(1, 4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers=None,
+        last_action_context=None,
+        round_wind="east",
+        enforce_minimum_eight_fan=False,
+    )
+
+    assert can_declare_hu(state, 0, None) is True
+
+
 def test_apply_self_draw_win_includes_visible_kong_score_detail():
     state = make_round_state(
         current_actor=0,

@@ -14,6 +14,7 @@ describe('ConnectGate', () => {
           tableCode: '',
           nickname: '',
           testMode: false,
+          enforceMinimumEightFan: true,
         }}
         status="idle"
         onChange={vi.fn()}
@@ -27,6 +28,7 @@ describe('ConnectGate', () => {
     expect(screen.getByLabelText('通信地址')).toBeInTheDocument();
     expect(screen.getByLabelText('昵称')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '测试模式：关' })).toBeInTheDocument();
+    expect(screen.getByLabelText('限制八番起胡')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建牌桌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
     expect(container.querySelector('.win98-window')).not.toBeNull();
@@ -46,6 +48,7 @@ describe('ConnectGate', () => {
           tableCode: 'AB12CD',
           nickname: 'Player A',
           testMode: false,
+          enforceMinimumEightFan: true,
         }}
         status="idle"
         onChange={onChange}
@@ -56,11 +59,13 @@ describe('ConnectGate', () => {
 
     await user.type(screen.getByLabelText(/牌桌编号/i), 'Z');
     await user.click(screen.getByRole('button', { name: '测试模式：关' }));
+    await user.click(screen.getByLabelText('限制八番起胡'));
     await user.click(screen.getByRole('button', { name: '创建牌桌' }));
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(onChange).toHaveBeenCalled();
     expect(onChange).toHaveBeenCalledWith({ testMode: true });
+    expect(onChange).toHaveBeenCalledWith({ enforceMinimumEightFan: false });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);
   });

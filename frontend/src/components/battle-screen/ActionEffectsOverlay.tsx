@@ -135,12 +135,12 @@ export function ActionEffectsOverlay({ actionEffect, celebrationEffect, drawnTil
           <div className="action-effects__winner-beam" />
           <div className="action-effects__winner-glow" />
           <div className="action-effects__winner-seal">
-            <span>{activeCelebration.winType === 'self_draw' ? '自摸' : '和'}</span>
+            <span>{getCelebrationSeal(activeCelebration)}</span>
           </div>
           <div className="action-effects__celebration-copy">
             <span className="action-effects__eyebrow">{getSeatCopy(activeCelebration.winnerSeat)}</span>
             <strong>{activeCelebration.label}</strong>
-            <em>{activeCelebration.winType === 'self_draw' ? '华彩自摸' : '荣耀和牌'}</em>
+            <em>{getCelebrationTagline(activeCelebration)}</em>
           </div>
           <div className="action-effects__particles">
             {particles.map((particle) => (
@@ -244,4 +244,20 @@ function getActionGlyph(label: string) {
   }
 
   return '局';
+}
+
+function getCelebrationSeal(effect: CelebrationEffectView) {
+  if (effect.label === '屁和') {
+    return '屁和';
+  }
+
+  return effect.winType === 'self_draw' ? '自摸' : '和';
+}
+
+function getCelebrationTagline(effect: CelebrationEffectView) {
+  if (effect.label === '屁和') {
+    return '低番和牌';
+  }
+
+  return effect.winType === 'self_draw' ? '华彩自摸' : '荣耀和牌';
 }

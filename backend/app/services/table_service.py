@@ -52,6 +52,7 @@ def _initial_room_payload(*, table_code: str, test_mode: bool) -> dict:
         "table_code": table_code,
         "phase": "waiting",
         "test_mode": test_mode,
+        "enforce_minimum_eight_fan": True,
         "seats": [],
         "match_state": None,
         "round_state": None,
@@ -64,13 +65,17 @@ def _create_waiting_table(
     *,
     table_code: str,
     test_mode: bool,
+    enforce_minimum_eight_fan: bool,
 ) -> TableDTO:
     record = create_table_record(session, table_code=table_code, phase="waiting")
     save_room_snapshot(
         session,
         table_id=record.id,
         room_version=0,
-        payload=_initial_room_payload(table_code=table_code, test_mode=test_mode),
+        payload={
+            **_initial_room_payload(table_code=table_code, test_mode=test_mode),
+            "enforce_minimum_eight_fan": enforce_minimum_eight_fan,
+        },
     )
     return to_table_dto(record)
 
@@ -80,6 +85,7 @@ def create_table(
     table_code: str | None = None,
     *,
     test_mode: bool = False,
+    enforce_minimum_eight_fan: bool = True,
 ) -> TableDTO:
     if table_code:
         normalized_table_code = normalize_table_code(table_code)
@@ -92,6 +98,7 @@ def create_table(
             session,
             table_code=normalized_table_code,
             test_mode=test_mode,
+            enforce_minimum_eight_fan=enforce_minimum_eight_fan,
         )
 
     for _ in range(TABLE_CODE_ATTEMPTS):
@@ -102,6 +109,7 @@ def create_table(
             session,
             table_code=table_code,
             test_mode=test_mode,
+            enforce_minimum_eight_fan=enforce_minimum_eight_fan,
         )
     raise RuntimeError("Unable to generate a unique table code")
 

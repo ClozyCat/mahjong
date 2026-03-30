@@ -5,6 +5,7 @@ import type {
   BattleActionView,
   BattleViewModel,
   CelebrationEffectView,
+  MatchResultPayload,
   PlayerView,
   PrivatePlayerState,
   ResultSeatView,
@@ -484,11 +485,12 @@ function createResult(state: SessionState): BattleViewModel['result'] {
           ? result.draw_type === 'exhaustive'
             ? '荒牌流局'
             : '本局流局'
-          : `${WIN_TYPE_LABELS[result.win_type] ?? result.win_type}，等待玩家开始下一局`,
+          : `${getWinTypeLabel(result)}，等待玩家开始下一局`,
       fanTotal: result.fan_total,
       winnerSeat: typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null,
       discarderSeat: typeof result.discarder_seat === 'number' ? toRelativeSeat(localSeat, result.discarder_seat) : null,
       winType: result.win_type,
+      winTypeLabel: getWinTypeLabel(result),
       provisional: result.score_delta.provisional,
       flowerCount: result.flower_count,
       fanBreakdown: result.fan_breakdown.map((item) => ({
@@ -513,6 +515,7 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       winnerSeat: null,
       discarderSeat: null,
       winType: null,
+      winTypeLabel: null,
       provisional: false,
       flowerCount: 0,
       fanBreakdown: [],
@@ -721,10 +724,14 @@ function createCelebrationEffect(state: SessionState): CelebrationEffectView | n
 
   return {
     key: `${result.round_id}-${result.win_type}-${result.winner_seat ?? 'none'}-${result.discarder_seat ?? 'none'}`,
-    label: result.win_type === 'self_draw' ? '自摸' : '胡牌',
+    label: result.display_win_label ?? (result.win_type === 'self_draw' ? '自摸' : '胡牌'),
     winnerSeat: typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null,
     winType: result.win_type,
   };
+}
+
+function getWinTypeLabel(result: MatchResultPayload) {
+  return result.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type;
 }
 
 export function createMatchViewModel(state: SessionState): BattleViewModel {

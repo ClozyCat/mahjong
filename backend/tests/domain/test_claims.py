@@ -600,6 +600,64 @@ def test_claim_window_does_not_offer_hu_below_eight_fan_minimum():
     assert "hu" not in claim_window[1]
 
 
+def test_claim_window_offers_hu_below_eight_fan_when_rule_is_disabled():
+    discard = _make_honor_tile("red", "red#discard", "dragon")
+    players = [
+        PlayerState(
+            seat=0,
+            concealed_tiles=(),
+            melds=(),
+            flowers=(),
+            discards=(discard,),
+        ),
+        PlayerState(
+            seat=1,
+            concealed_tiles=(
+                _make_suit_tile("w1", "w1#p1"),
+                _make_suit_tile("w2", "w2#p1"),
+                _make_suit_tile("w3", "w3#p1"),
+                _make_suit_tile("t4", "t4#p1"),
+                _make_suit_tile("t5", "t5#p1"),
+                _make_suit_tile("t6", "t6#p1"),
+                _make_suit_tile("b2", "b2#p1"),
+                _make_suit_tile("b3", "b3#p1"),
+                _make_suit_tile("b4", "b4#p1"),
+                _make_honor_tile("red", "red#p1", "dragon"),
+            ),
+            melds=((
+                _make_suit_tile("w7", "w7#m1"),
+                _make_suit_tile("w8", "w8#m2"),
+                _make_suit_tile("w9", "w9#m3"),
+            ),),
+            flowers=(),
+            discards=(),
+        ),
+        PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+    ]
+    state = _make_round_state(players, discard, current_actor=0)
+    state = RoundState(
+        round_id=state.round_id,
+        dealer_seat=state.dealer_seat,
+        current_actor=state.current_actor,
+        wall=state.wall,
+        players=state.players,
+        last_discard=state.last_discard,
+        pending_action=state.pending_action,
+        phase=state.phase,
+        settlement=state.settlement,
+        version=state.version,
+        score_trackers=state.score_trackers,
+        last_action_context=state.last_action_context,
+        round_wind=state.round_wind,
+        enforce_minimum_eight_fan=False,
+    )
+
+    claim_window = compute_claim_window(state)
+
+    assert "hu" in claim_window[1]
+
+
 def test_claim_window_blocks_non_hu_claims_after_last_live_tile_discard():
     discard = _make_suit_tile("w3", "w3#discard")
     players = [

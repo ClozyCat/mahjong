@@ -46,3 +46,4 @@ class RoundState:
     score_trackers: dict | None = None
     last_action_context: dict | None = None
     round_wind: str = "east"
+    enforce_minimum_eight_fan: bool = True

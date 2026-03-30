@@ -58,6 +58,16 @@ def test_create_table_persists_requested_test_mode_in_room_snapshot(db_session):
     assert persisted_snapshot.payload["test_mode"] is True
 
 
+def test_create_table_persists_eight_fan_rule_toggle_in_room_snapshot(db_session):
+    room = create_table(db_session, "ROOM44", enforce_minimum_eight_fan=False)
+    persisted_snapshot = db_session.scalar(
+        select(RoomSnapshotRecord).join(TableRecord, RoomSnapshotRecord.table_id == TableRecord.id).where(TableRecord.table_code == room.table_code)
+    )
+
+    assert persisted_snapshot is not None
+    assert persisted_snapshot.payload["enforce_minimum_eight_fan"] is False
+
+
 def test_close_table_deletes_persisted_record(db_session):
     room = create_table(db_session, "ROOM42")
 

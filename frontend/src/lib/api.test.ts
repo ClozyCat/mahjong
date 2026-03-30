@@ -31,7 +31,7 @@ describe('api helpers', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ test_mode: false }),
+      body: JSON.stringify({ test_mode: false, enforce_minimum_eight_fan: true }),
     });
     expect(result.table_code).toBe('AB12CD');
   });
@@ -53,14 +53,14 @@ describe('api helpers', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createTable('http://localhost:8080', 'ROOM42', true);
+    await createTable('http://localhost:8080', 'ROOM42', true, false);
 
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/tables', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ table_code: 'ROOM42', test_mode: true }),
+      body: JSON.stringify({ table_code: 'ROOM42', test_mode: true, enforce_minimum_eight_fan: false }),
     });
   });
 

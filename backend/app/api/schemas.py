@@ -34,6 +34,7 @@ class WaitingRoomResponse(BaseModel):
 class CreateTableRequest(BaseModel):
     table_code: Annotated[str | None, StringConstraints(pattern=r"^[A-Z0-9]{1,12}$")] = None
     test_mode: bool | None = None
+    enforce_minimum_eight_fan: bool | None = None
 
 
 class JoinTableRequest(BaseModel):

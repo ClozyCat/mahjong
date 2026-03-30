@@ -45,7 +45,7 @@ export function BottomActionDock({
                     <button
                       key={`${tile.tileId}-${index}`}
                       type="button"
-                      className="action-dock__tile"
+                      className={tile.isSelected ? 'action-dock__tile action-dock__tile--selected' : 'action-dock__tile'}
                       onClick={() => onTileSelect(tile.tileId)}
                     >
                       <MahjongTile

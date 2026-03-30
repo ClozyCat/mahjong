@@ -901,6 +901,7 @@ button:active:not(:disabled) {
   display: flex;
   justify-content: center;
   width: max-content;
+  border-radius: 0.82rem;
   z-index: 1;
 }
 
@@ -989,6 +990,7 @@ button:active:not(:disabled) {
   gap: var(--table-stage-river-gap);
   justify-content: center;
   align-content: center;
+  border-radius: inherit;
 }
 
 .table-stage__river-track--top,
@@ -1084,7 +1086,11 @@ button:active:not(:disabled) {
   padding: 0;
   border: 0;
   background: transparent;
-  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease,
+    filter 120ms ease;
 }
 
 .mahjong-tile--hand {
@@ -1148,7 +1154,8 @@ button:active:not(:disabled) {
 }
 
 .mahjong-tile--selected {
-  transform: translateY(-0.18rem);
+  transform: translateY(-1.65rem);
+  z-index: 3;
 }
 
 .mahjong-tile--selected .mahjong-tile__shell {
@@ -1158,7 +1165,8 @@ button:active:not(:disabled) {
 }
 
 .mahjong-tile--drawn {
-  transform: translateY(-0.08rem);
+  transform: translateY(-0.12rem);
+  z-index: 1;
 }
 
 .mahjong-tile--drawn .mahjong-tile__shell {
@@ -1168,7 +1176,8 @@ button:active:not(:disabled) {
 }
 
 .mahjong-tile--selected.mahjong-tile--drawn {
-  transform: translateY(-0.24rem);
+  transform: translateY(-1.70rem);
+  z-index: 4;
 }
 
 .mahjong-tile--selected.mahjong-tile--drawn .mahjong-tile__shell {
@@ -1444,7 +1453,7 @@ button:active:not(:disabled) {
   z-index: 5;
   width: min(72rem, calc(100vw - 2.5rem));
   max-height: calc(100vh - 2rem);
-  overflow: auto;
+  overflow: visible;
   padding: 0.5rem 0.66rem 0.62rem;
   border-radius: 0;
   border: 2px solid #808080;
@@ -1518,6 +1527,7 @@ button:active:not(:disabled) {
 
 .action-dock__hand-zone {
   min-width: 0;
+  overflow: visible;
 }
 
 .action-dock__info-rail {
@@ -1644,14 +1654,22 @@ button:active:not(:disabled) {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  align-items: flex-end;
+  overflow: visible;
 }
 
 .action-dock__tile {
   position: relative;
   display: inline-flex;
+  align-items: flex-end;
   padding: 0;
   border: 0;
   background: transparent;
+  overflow: visible;
+}
+
+.action-dock__tile--selected {
+  z-index: 4;
 }
 
 .action-dock__tile--drawn::after {
@@ -2111,6 +2129,20 @@ button:active:not(:disabled) {
 
 .connect-gate__actions button:disabled {
   opacity: 0.45;
+}
+
+.connect-gate__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #111;
+  font-size: 0.92rem;
+}
+
+.connect-gate__toggle input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
 }
 
 .top-match-bar__copy {
@@ -2641,7 +2673,7 @@ input {
 }
 
 .mahjong-tile--selected {
-  filter: drop-shadow(0 12px 22px rgba(95, 199, 255, 0.24));
+  filter: drop-shadow(0 18px 30px rgba(95, 199, 255, 0.3));
 }
 
 .mahjong-tile--selected .mahjong-tile__shell {
@@ -2649,8 +2681,8 @@ input {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.98),
     inset 0 -1px 0 rgba(180, 193, 208, 0.86),
-    0 14px 24px rgba(0, 0, 0, 0.2),
-    0 0 18px rgba(95, 199, 255, 0.26);
+    0 18px 28px rgba(0, 0, 0, 0.22),
+    0 0 24px rgba(95, 199, 255, 0.32);
 }
 
 .mahjong-tile--drawn .mahjong-tile__shell,
@@ -2768,7 +2800,7 @@ input {
   pointer-events: none;
 }
 
-.action-dock__tile:hover:not(:disabled) .mahjong-tile--hand {
+.action-dock__tile:hover:not(:disabled) .mahjong-tile--hand:not(.mahjong-tile--selected) {
   transform: translateY(-0.22rem);
   filter: drop-shadow(0 14px 26px rgba(95, 199, 255, 0.22));
 }

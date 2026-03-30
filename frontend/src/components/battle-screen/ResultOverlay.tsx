@@ -9,7 +9,7 @@ interface ResultOverlayProps {
 
 export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const winTypeLabel = result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null;
+  const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const visibleFanBreakdown = isExpanded ? result.fanBreakdown : result.fanBreakdown.slice(0, MAX_VISIBLE_FAN_ITEMS);
   const hiddenFanCount = Math.max(0, result.fanBreakdown.length - MAX_VISIBLE_FAN_ITEMS);
 

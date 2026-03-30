@@ -125,6 +125,7 @@ class RoomState:
     table_code: str
     phase: str = "waiting"
     test_mode: bool = False
+    enforce_minimum_eight_fan: bool = True
     seats: dict[int, SeatReservation] = field(default_factory=dict)
     match_state: MatchState | None = None
     round_state: RoundState | None = None
@@ -394,6 +395,7 @@ class GameService:
                     dealer_seat=next_match_state.dealer_seat,
                     round_id=self._round_id_for_match(next_match_state),
                     round_wind=next_match_state.prevailing_wind,
+                    enforce_minimum_eight_fan=room.enforce_minimum_eight_fan,
                 )
                 room.phase = room.round_state.phase
                 room.pending_timeout = None
@@ -1677,6 +1679,7 @@ class GameService:
             dealer_seat=room.match_state.dealer_seat,
             round_id=self._round_id_for_match(room.match_state),
             round_wind=room.match_state.prevailing_wind,
+            enforce_minimum_eight_fan=room.enforce_minimum_eight_fan,
         )
         room.phase = room.round_state.phase
         self._advance_round_locked(room)
@@ -1693,6 +1696,7 @@ class GameService:
             "table_code": room.table_code,
             "phase": room.phase,
             "test_mode": room.test_mode,
+            "enforce_minimum_eight_fan": room.enforce_minimum_eight_fan,
             "seats": [
                 {
                     "seat_index": seat_index,
@@ -1715,6 +1719,7 @@ class GameService:
             table_code=payload["table_code"],
             phase=payload.get("phase", "waiting"),
             test_mode=payload.get("test_mode", False),
+            enforce_minimum_eight_fan=payload.get("enforce_minimum_eight_fan", True),
         )
         for seat_payload in payload.get("seats", []):
             seat_index = seat_payload["seat_index"]
@@ -1791,6 +1796,7 @@ class GameService:
             score_trackers=payload.get("score_trackers"),
             last_action_context=payload.get("last_action_context"),
             round_wind=payload.get("round_wind", "east"),
+            enforce_minimum_eight_fan=payload.get("enforce_minimum_eight_fan", True),
         )
 
     def _deserialize_tile(self, payload: dict) -> Tile:
