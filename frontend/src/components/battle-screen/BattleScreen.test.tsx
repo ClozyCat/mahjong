@@ -297,7 +297,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByText('碰')).toBeInTheDocument();
+    expect(screen.getAllByText('碰').length).toBeGreaterThan(0);
     expect(screen.getByText('左家')).toBeInTheDocument();
   });
 
@@ -325,7 +325,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByText('自摸')).toBeInTheDocument();
+    expect(screen.getAllByText('自摸').length).toBeGreaterThan(0);
     expect(screen.getByText('华彩自摸')).toBeInTheDocument();
   });
 
