@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ConnectGate } from './ConnectGate';
 
 describe('ConnectGate', () => {
-  it('renders chinese-first lobby copy inside a win98 shell', () => {
+  it('renders chinese-first lobby copy inside a win10 shell', () => {
     const { container } = render(
       <ConnectGate
         value={{
@@ -29,7 +29,7 @@ describe('ConnectGate', () => {
     expect(screen.getByRole('button', { name: '限制八番起胡：开' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建牌桌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
-    expect(container.querySelector('.win98-window')).not.toBeNull();
+    expect(container.querySelector('.win10-window')).not.toBeNull();
   });
 
   it('forwards field edits and create/join actions', async () => {

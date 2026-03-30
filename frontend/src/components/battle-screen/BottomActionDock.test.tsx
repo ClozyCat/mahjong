@@ -29,7 +29,9 @@ const localHand: BattleViewModel['localHand'] = [
 ];
 
 const actions: BattleActionView[] = [
-  { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
+  { id: 'hu', label: '和牌', enabled: true, emphasis: 'high' },
+  { id: 'pung', label: '碰', enabled: true, emphasis: 'medium' },
+  { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
 ];
 
 describe('BottomActionDock', () => {
@@ -37,8 +39,10 @@ describe('BottomActionDock', () => {
     render(
       <BottomActionDock
         hand={localHand}
-        actions={actions}
+        actions={[]}
         isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
         waitingControls={null}
         localPlayer={localPlayer}
         onTileSelect={vi.fn()}
@@ -60,15 +64,14 @@ describe('BottomActionDock', () => {
     expect(screen.queryByRole('button', { name: '展开手牌区' })).not.toBeInTheDocument();
   });
 
-  it('renders only the provided battle actions inside the bottom action row', () => {
+  it('keeps the dock free of battle action buttons', () => {
     render(
       <BottomActionDock
         hand={localHand}
-        actions={[
-          { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
-          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
-        ]}
+        actions={[]}
         isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
         waitingControls={{
           canReady: true,
           canStart: true,
@@ -81,12 +84,79 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    const bottomRow = document.body.querySelector('.action-dock__actions');
-
-    expect(bottomRow?.textContent).toContain('出牌');
-    expect(bottomRow?.textContent).toContain('过');
-    expect(bottomRow?.textContent).toContain('收起');
+    expect(screen.queryByText('等待下一步可执行操作')).toBeNull();
+    expect(screen.queryByText('可用操作已上浮显示')).toBeNull();
+    expect(screen.queryByRole('button', { name: '出牌' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '过' })).toBeNull();
+    expect(screen.getByRole('button', { name: '收起手牌区' })).toBeInTheDocument();
     expect(document.body.querySelector('.action-dock__side-panel')).toBeNull();
     expect(document.body.querySelector('.action-dock__caption')).toBeNull();
+  });
+
+  it('keeps urgent actions out of the dock itself', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        actions={actions}
+        isElevated
+        promptCue={{
+          kind: 'claim',
+          tone: 'critical',
+          title: '左家刚打出可响应牌',
+          detail: '你可以 和牌 / 碰 / 过',
+          actionIds: ['hu', 'pung', 'pass'],
+          highlightedActionIds: ['hu', 'pung'],
+          sourceSeat: 'left',
+          isUrgent: true,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        waitingControls={null}
+        localPlayer={localPlayer}
+        onTileSelect={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(document.body.querySelector('.action-dock--actionable')).not.toBeNull();
+    expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
+    expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '碰' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起手牌区' })).toBeInTheDocument();
+  });
+
+  it('shows discard in a normal local turn without turning the dock into a response highlight', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        actions={[
+          { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
+          { id: 'kong', label: '杠', enabled: true, emphasis: 'medium' },
+          { id: 'hu', label: '和牌', enabled: true, emphasis: 'high' },
+        ]}
+        isElevated
+        promptCue={{
+          kind: 'turn',
+          tone: 'critical',
+          title: '轮到你操作',
+          detail: '你可以 出牌 / 杠 / 和牌',
+          actionIds: ['discard', 'kong', 'hu'],
+          highlightedActionIds: ['discard', 'kong', 'hu'],
+          sourceSeat: null,
+          isUrgent: false,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        waitingControls={null}
+        localPlayer={localPlayer}
+        onTileSelect={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(document.body.querySelector('.action-dock--elevated')).not.toBeNull();
+    expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
+    expect(screen.getByRole('button', { name: '出牌' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '杠' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '和牌' })).toBeNull();
   });
 });

@@ -354,6 +354,17 @@ export interface CelebrationEffectView {
   winType: 'self_draw' | 'discard';
 }
 
+export interface BattlePromptView {
+  kind: 'turn' | 'claim' | 'rob_kong';
+  tone: 'info' | 'urgent' | 'critical';
+  title: string;
+  detail: string | null;
+  actionIds: BackendActionType[];
+  highlightedActionIds: BackendActionType[];
+  sourceSeat: Seat | null;
+  isUrgent: boolean;
+}
+
 export interface BattleViewModel {
   mode: MatchPhase;
   tableCode: string;
@@ -374,6 +385,7 @@ export interface BattleViewModel {
   centerBanner: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
+  promptCue: BattlePromptView | null;
   result: ResultView | null;
   lastDiscard: string | null;
   lastDiscardSeat: Seat | null;

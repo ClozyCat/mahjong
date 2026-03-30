@@ -107,6 +107,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     drawnTileId: 'w2#2',
     centerBanner: 'Opponent Turn',
     promptText: null,
+    promptCue: null,
     result: null,
     lastDiscard: 'b4',
     lastDiscardSeat: 'left',
@@ -342,7 +343,7 @@ describe('BattleScreen', () => {
   it('renders the battle screen inside a retro client window', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
-    expect(container.querySelector('.win98-window')).not.toBeNull();
+    expect(container.querySelector('.win10-window')).not.toBeNull();
     expect(screen.getByText(/牌桌编号/i)).toBeInTheDocument();
   });
 
@@ -384,8 +385,8 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByLabelText('房间操作窗口')).toBeInTheDocument();
-    expect(document.body.querySelector('.action-dock__actions')?.textContent).toContain('出牌');
-    expect(document.body.querySelector('.action-dock__actions')?.textContent).not.toContain('准备');
+    expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('出牌');
+    expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
   });
 
   it('renders dedicated meld areas only for remote seats', () => {
@@ -418,5 +419,33 @@ describe('BattleScreen', () => {
     await user.click(screen.getByRole('button', { name: '离开牌桌' }));
 
     expect(onLeaveTable).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders claim actions inside the bottom dock when claim actions are available', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        deadlineAt: '2099-03-30T12:10:40+08:00',
+        promptCue: {
+          kind: 'claim',
+          tone: 'critical',
+          title: '左家刚打出可响应牌',
+          detail: '你可以 和牌 / 碰 / 过',
+          actionIds: ['hu', 'pung', 'pass'],
+          highlightedActionIds: ['hu', 'pung'],
+          sourceSeat: 'left',
+          isUrgent: true,
+        },
+        actions: [
+          { id: 'hu', label: '和牌', enabled: true, emphasis: 'high' },
+          { id: 'pung', label: '碰', enabled: true, emphasis: 'medium' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '碰' })).toBeInTheDocument();
+    expect(document.body.querySelector('.action-dock--actionable')).not.toBeNull();
+    expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
   });
 });

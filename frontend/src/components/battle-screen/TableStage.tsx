@@ -1,4 +1,4 @@
-import type { PlayerView, Seat } from '../../types/match';
+import type { BattlePromptView, PlayerView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 
@@ -9,6 +9,7 @@ interface TableStageProps {
   lastDiscardSeat?: Seat | null;
   remainingTileCount?: number | null;
   promptText: string | null;
+  promptCue?: BattlePromptView | null;
   players?: Pick<PlayerView, 'seat' | 'name' | 'melds'>[];
 }
 
@@ -21,6 +22,7 @@ export function TableStage({
   lastDiscardSeat = null,
   remainingTileCount = null,
   promptText,
+  promptCue = null,
   players = [],
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
@@ -31,10 +33,19 @@ export function TableStage({
     : null;
 
   return (
-    <section className="table-stage" aria-label="Mahjong table">
+    <section className={`table-stage ${promptCue?.isUrgent ? 'table-stage--urgent' : ''}`} aria-label="Mahjong table">
       <div className="table-stage__frame">
         <div className="table-stage__core">
-          <div className="table-stage__center-meta">
+          <div
+            className={`table-stage__center-meta ${promptCue ? 'table-stage__center-meta--with-cue' : ''} ${
+              promptCue?.isUrgent ? 'table-stage__center-meta--urgent' : ''
+            }`}
+          >
+            {promptCue ? (
+              <span className={`table-stage__cue table-stage__cue--${promptCue.tone}`}>
+                {PROMPT_KIND_COPY[promptCue.kind]}
+              </span>
+            ) : null}
             <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
             {promptText ? <em>{promptText}</em> : null}
           </div>
@@ -75,7 +86,12 @@ export function TableStage({
             );
           })}
           {spotlightSeat && spotlightTile ? (
-            <div className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat}`} aria-label="Latest discard spotlight">
+            <div
+              className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
+                promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
+              }`}
+              aria-label="Latest discard spotlight"
+            >
               <MahjongTile
                 code={spotlightTile}
                 variant="discard"
@@ -89,6 +105,12 @@ export function TableStage({
     </section>
   );
 }
+
+const PROMPT_KIND_COPY: Record<NonNullable<TableStageProps['promptCue']>['kind'], string> = {
+  turn: '当前可操作',
+  claim: '可响应',
+  rob_kong: '抢杠',
+};
 
 function findLastDiscardPosition(
   discards: Record<Seat, string[]>,

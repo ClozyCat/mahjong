@@ -8,7 +8,7 @@ import { ResultOverlay } from './ResultOverlay';
 import { StageBackground } from './StageBackground';
 import { TableStage } from './TableStage';
 import { TopMatchBar } from './TopMatchBar';
-import { WindowFrame } from '../win98/WindowFrame';
+import { WindowFrame } from '../win10/WindowFrame';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
@@ -58,6 +58,7 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
               lastDiscardSeat={viewModel.lastDiscardSeat}
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
+              promptCue={viewModel.promptCue}
               players={viewModel.players}
             />
           </div>
@@ -79,6 +80,8 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
           hand={viewModel.localHand}
           actions={battleActions}
           isElevated={viewModel.isActionDockElevated}
+          promptCue={viewModel.promptCue}
+          deadlineAt={viewModel.deadlineAt}
           waitingControls={viewModel.waitingControls}
           localPlayer={localPlayer}
           onTileSelect={onTileSelect}

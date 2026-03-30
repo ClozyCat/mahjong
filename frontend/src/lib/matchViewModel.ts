@@ -2,6 +2,7 @@ import type {
   ActionEffectView,
   BackendActionType,
   BattleActionId,
+  BattlePromptView,
   BattleActionView,
   BattleViewModel,
   CelebrationEffectView,
@@ -31,6 +32,16 @@ const ACTION_ORDER: BattleActionId[] = [
   'pung',
   'pass',
 ];
+
+const PROMPT_ACTION_PRIORITY: Record<BackendActionType, number> = {
+  hu: 0,
+  kong: 1,
+  pung: 2,
+  chow: 3,
+  flower: 4,
+  discard: 5,
+  pass: 6,
+};
 
 const ACTION_LABELS: Record<BattleActionId, string> = {
   ready: '准备',
@@ -127,6 +138,12 @@ function formatActionLabels(options: BackendActionType[]) {
   return options.includes('pass') ? ACTION_LABELS.pass : '';
 }
 
+function orderPromptActions(options: BackendActionType[]) {
+  return options
+    .slice()
+    .sort((left, right) => (PROMPT_ACTION_PRIORITY[left] ?? Number.MAX_SAFE_INTEGER) - (PROMPT_ACTION_PRIORITY[right] ?? Number.MAX_SAFE_INTEGER));
+}
+
 function getSeatName(state: SessionState, seatIndex: number | null | undefined) {
   if (typeof seatIndex !== 'number') {
     return '一名玩家';
@@ -188,6 +205,130 @@ function createPromptText(state: SessionState): string | null {
 
   if (state.roomSnapshot?.payload.phase === 'finished') {
     return '整场对局已结束，可发起再来一局';
+  }
+
+  return null;
+}
+
+function getPromptSourceSeatLabel(seat: Seat | null) {
+  if (!seat) {
+    return '当前牌局';
+  }
+
+  return PROMPT_SEAT_COPY[seat];
+}
+
+function getLocalPromptOptions(state: SessionState): BackendActionType[] {
+  const localSeat = getLocalSeat(state);
+  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+
+  if (pendingAction && 'options' in pendingAction) {
+    const options = (pendingAction as { options?: unknown }).options;
+    if (Array.isArray(options)) {
+      return options as BackendActionType[];
+    }
+  }
+
+  if (state.latestActionPrompt?.payload.seat_index === localSeat) {
+    return state.latestActionPrompt.payload.options;
+  }
+
+  return [];
+}
+
+function createPromptCue(state: SessionState): BattlePromptView | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const pendingAction = snapshot?.private_state?.pending_action;
+  const localSeat = getLocalSeat(state);
+  const localPromptOptions = orderPromptActions(getLocalPromptOptions(state));
+  const highlightedActionIds = orderPromptActions(localPromptOptions.filter((option) => option !== 'pass'));
+
+  if (pendingAction?.type === 'claim_window' && highlightedActionIds.length > 0) {
+    const sourceSeat =
+      typeof pendingAction.discarder_seat === 'number' ? toRelativeSeat(localSeat, pendingAction.discarder_seat) : createLastDiscardSeat(state);
+
+    return {
+      kind: 'claim',
+      tone: highlightedActionIds.includes('hu') ? 'critical' : 'urgent',
+      title: `${getPromptSourceSeatLabel(sourceSeat)}刚打出可响应牌`,
+      detail: `你可以 ${formatActionLabels(localPromptOptions)}`,
+      actionIds: localPromptOptions,
+      highlightedActionIds,
+      sourceSeat,
+      isUrgent: true,
+    };
+  }
+
+  if (pendingAction?.type === 'rob_kong_window' && highlightedActionIds.length > 0) {
+    const sourceSeat = typeof pendingAction.actor_seat === 'number' ? toRelativeSeat(localSeat, pendingAction.actor_seat) : null;
+
+    return {
+      kind: 'rob_kong',
+      tone: 'critical',
+      title: `${getPromptSourceSeatLabel(sourceSeat)}正在补杠`,
+      detail: `你可以 ${formatActionLabels(localPromptOptions)}`,
+      actionIds: localPromptOptions,
+      highlightedActionIds,
+      sourceSeat,
+      isUrgent: true,
+    };
+  }
+
+  if (
+    pendingAction?.type === 'opening_flowers' &&
+    typeof pendingAction.seat_index === 'number' &&
+    pendingAction.seat_index === localSeat &&
+    highlightedActionIds.length > 0
+  ) {
+    return {
+      kind: 'turn',
+      tone: 'info',
+      title: '当前可以补花',
+      detail: `你可以 ${formatActionLabels(localPromptOptions)}`,
+      actionIds: localPromptOptions,
+      highlightedActionIds,
+      sourceSeat: null,
+      isUrgent: false,
+    };
+  }
+
+  if (
+    pendingAction?.type === 'active_turn' &&
+    typeof pendingAction.seat_index === 'number' &&
+    pendingAction.seat_index === localSeat &&
+    highlightedActionIds.length > 0
+  ) {
+    const hasHu = highlightedActionIds.includes('hu');
+    const hasDiscard = localPromptOptions.includes('discard');
+    const title = hasHu
+      ? '当前手牌可直接和牌'
+      : hasDiscard
+        ? '轮到你操作'
+        : '当前手牌可执行操作';
+
+    return {
+      kind: 'turn',
+      tone: hasHu ? 'critical' : 'info',
+      title,
+      detail: `你可以 ${formatActionLabels(localPromptOptions)}`,
+      actionIds: localPromptOptions,
+      highlightedActionIds,
+      sourceSeat: null,
+      isUrgent: hasHu,
+    };
+  }
+
+  if (state.latestActionPrompt?.payload.seat_index === localSeat && localPromptOptions.length > 0) {
+    return {
+      kind: 'turn',
+      tone: highlightedActionIds.includes('hu') ? 'critical' : 'info',
+      title: '轮到你操作',
+      detail: `你可以 ${formatActionLabels(localPromptOptions)}`,
+      actionIds: localPromptOptions,
+      highlightedActionIds,
+      sourceSeat: null,
+      isUrgent: highlightedActionIds.includes('hu'),
+    };
   }
 
   return null;
@@ -779,6 +920,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     snapshot?.private_state?.pending_action && 'deadline_at' in snapshot.private_state.pending_action
       ? String(snapshot.private_state.pending_action.deadline_at)
       : state.latestActionPrompt?.payload.deadline_at ?? null;
+  const promptCue = createPromptCue(state);
   const mode = !snapshot
     ? 'loading'
     : isFinished
@@ -810,7 +952,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
             ? '等待牌手'
             : '对局中',
     activePlayerSeat,
-    isActionDockElevated: mode === 'my_turn',
+    isActionDockElevated: mode === 'my_turn' || Boolean(promptCue?.isUrgent),
     players: createPlayers(state),
     actions: createActionViews(state, waitingControls),
     waitingControls,
@@ -820,6 +962,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     centerBanner: createCenterBanner(state),
     remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state),
+    promptCue,
     result: createResult(state),
     lastDiscard: snapshot?.private_state?.last_discard ?? null,
     lastDiscardSeat: createLastDiscardSeat(state),
@@ -852,4 +995,11 @@ const ACTION_EFFECT_LABELS: Record<string, string> = {
 const KONG_EFFECT_LABELS: Record<string, string> = {
   concealed_kong: '暗杠',
   add_kong: '补杠',
+};
+
+const PROMPT_SEAT_COPY: Record<Seat, string> = {
+  bottom: '你',
+  left: '左家',
+  top: '对家',
+  right: '右家',
 };

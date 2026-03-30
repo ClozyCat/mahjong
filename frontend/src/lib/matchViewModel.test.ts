@@ -216,6 +216,13 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actions.find((item) => item.id === 'discard')?.enabled).toBe(false);
     expect(viewModel.actions.find((item) => item.id === 'hu')?.enabled).toBe(true);
     expect(viewModel.drawnTileId).toBe('w2#p0-13');
+    expect(viewModel.promptCue).toMatchObject({
+      kind: 'turn',
+      tone: 'critical',
+      title: '当前手牌可直接和牌',
+      actionIds: ['hu', 'kong', 'discard'],
+      highlightedActionIds: ['hu', 'kong', 'discard'],
+    });
   });
 
   it('maps action labels and battle status to chinese-first copy', () => {
@@ -267,6 +274,12 @@ describe('createMatchViewModel', () => {
     });
 
     expect(viewModel.promptText).toBe('一名玩家正在执行操作：吃');
+    expect(viewModel.promptCue).toMatchObject({
+      kind: 'claim',
+      tone: 'urgent',
+      sourceSeat: 'left',
+      highlightedActionIds: ['chow'],
+    });
   });
 
   it('shows other players are responding when the local seat has no claim options', () => {
@@ -293,6 +306,7 @@ describe('createMatchViewModel', () => {
     });
 
     expect(viewModel.promptText).toBe('一名玩家正在执行操作：吃 / 碰 / 杠 / 和牌');
+    expect(viewModel.promptCue).toBeNull();
   });
 
   it('prefers active_turn snapshot data over a stale action prompt after a claim resolves', () => {

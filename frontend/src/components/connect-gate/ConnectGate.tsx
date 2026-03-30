@@ -1,4 +1,4 @@
-import { WindowFrame } from '../win98/WindowFrame';
+import { WindowFrame } from '../win10/WindowFrame';
 
 export interface ConnectGateValue {
   tableCode: string;
