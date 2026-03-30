@@ -95,7 +95,7 @@ def _ready_all_and_start(*sockets) -> tuple[dict, dict]:
         prompt = sockets[seat_index].receive_json()
         assert prompt["type"] == "action_prompt"
         if pending_action["type"] == "active_turn":
-            return snapshots[0], prompt
+            return active_snapshot, prompt
 
         if pending_action["options"] == ["flower"]:
             sockets[seat_index].send_json(
@@ -257,7 +257,7 @@ def test_disconnect_and_reconnect_during_active_round_after_server_timeout(
         assert active_snapshot["payload"]["phase"] == "playing"
         assert active_snapshot["payload"]["private_state"] is not None
         assert action_prompt["type"] == "action_prompt"
-        assert action_prompt["payload"]["seat_index"] == 0
+        assert action_prompt["payload"]["seat_index"] == active_snapshot["payload"]["local_seat"]
 
         ws_0_stack.close()
         time.sleep(0.35)
@@ -406,10 +406,17 @@ def test_active_player_can_discard_and_broadcast_updated_snapshot(test_app) -> N
         drawn_tile_id = active_snapshot["payload"]["private_state"]["pending_action"][
             "drawn_tile_id"
         ]
+        active_seat = active_snapshot["payload"]["local_seat"]
+        sockets = (ws_0, ws_1, ws_2, ws_3)
+        active_socket = sockets[active_seat]
+        peer_socket = next(ws for index, ws in enumerate(sockets) if index != active_seat)
         if active_snapshot["payload"]["private_state"] is not None:
-            assert active_snapshot["payload"]["private_state"]["current_actor"] == 0
+            assert (
+                active_snapshot["payload"]["private_state"]["current_actor"]
+                == active_snapshot["payload"]["private_state"]["dealer_seat"]
+            )
 
-        ws_0.send_json(
+        active_socket.send_json(
             {
                 "type": "action_request",
                 "payload": {
@@ -419,9 +426,9 @@ def test_active_player_can_discard_and_broadcast_updated_snapshot(test_app) -> N
             }
         )
 
-        discard_event = ws_0.receive_json()
-        next_snapshot = ws_0.receive_json()
-        peer_message = ws_1.receive_json()
+        discard_event = active_socket.receive_json()
+        next_snapshot = active_socket.receive_json()
+        peer_message = peer_socket.receive_json()
 
     assert discard_event["type"] == "round_event"
     assert discard_event["payload"]["event_type"] == "tile_discarded"
@@ -530,9 +537,10 @@ def test_reconnect_during_settlement_receives_match_result(test_app) -> None:
     }
 
 
-def test_finished_room_can_restart_match(test_app) -> None:
+def test_finished_room_can_restart_match(test_app, monkeypatch) -> None:
     client = TestClient(test_app)
     table_code = client.post("/api/tables").json()["table_code"]
+    monkeypatch.setattr(game_service_module.random, "choice", lambda seats: 2)
 
     with ExitStack() as stack:
         sockets = [
@@ -564,7 +572,7 @@ def test_finished_room_can_restart_match(test_app) -> None:
     assert restart_snapshot["payload"]["phase"] == "playing"
     assert restart_snapshot["payload"]["match_state"]["prevailing_wind"] == "east"
     assert restart_snapshot["payload"]["match_state"]["hand_number"] == 1
-    assert restart_snapshot["payload"]["match_state"]["dealer_seat"] == 0
+    assert restart_snapshot["payload"]["match_state"]["dealer_seat"] == 2
     assert restart_snapshot["payload"]["match_state"]["cumulative_scores"] == {
         "0": 0,
         "1": 0,

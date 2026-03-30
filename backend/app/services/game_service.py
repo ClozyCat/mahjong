@@ -1593,11 +1593,17 @@ class GameService:
     def _round_seed(self, table_code: str | None = None) -> int:
         return secrets.randbits(64)
 
-    def _initial_match_state(self) -> MatchState:
+    def _choose_initial_dealer_seat(self, room: RoomState) -> int:
+        occupied_seats = tuple(sorted(room.seats))
+        if not occupied_seats:
+            raise ValueError("Cannot choose an initial dealer without occupied seats")
+        return random.choice(occupied_seats)
+
+    def _initial_match_state(self, room: RoomState) -> MatchState:
         return MatchState(
             prevailing_wind="east",
             hand_number=1,
-            dealer_seat=0,
+            dealer_seat=self._choose_initial_dealer_seat(room),
             cumulative_scores={seat: 0 for seat in range(MAX_SEATS)},
         )
 
@@ -1673,7 +1679,7 @@ class GameService:
         )
 
     def _start_match_locked(self, room: RoomState) -> None:
-        room.match_state = self._initial_match_state()
+        room.match_state = self._initial_match_state(room)
         room.round_state = initialize_round(
             seed=self._round_seed(room.table_code),
             dealer_seat=room.match_state.dealer_seat,

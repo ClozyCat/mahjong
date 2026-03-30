@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PlayerPresenceMessage, RoomSnapshotMessage } from '../types/match';
+import type { ActionPromptMessage, PlayerPresenceMessage, RoomSnapshotMessage } from '../types/match';
 import { createInitialSessionState, sessionReducer } from './sessionReducer';
 
 const roomSnapshotMessage: RoomSnapshotMessage = {
@@ -20,6 +20,15 @@ const playerPresenceMessage: PlayerPresenceMessage = {
     table_code: 'AB12CD',
     seat_index: 0,
     connected: false,
+  },
+};
+
+const actionPromptMessage: ActionPromptMessage = {
+  type: 'action_prompt',
+  payload: {
+    seat_index: 0,
+    options: ['discard'],
+    deadline_at: '2026-03-26T06:01:00Z',
   },
 };
 
@@ -44,6 +53,27 @@ describe('sessionReducer', () => {
     expect(next.reconnectToken).toBe('token-1');
     expect(next.lastRejectedAction).toBeNull();
     expect(next.roomSnapshot?.payload.table_code).toBe('AB12CD');
+  });
+
+  it('clears stale action prompts when a fresh room_snapshot arrives', () => {
+    const next = sessionReducer(
+      {
+        ...createInitialSessionState(),
+        latestActionPrompt: actionPromptMessage,
+      },
+      {
+        type: 'ws_message',
+        message: {
+          ...roomSnapshotMessage,
+          payload: {
+            ...roomSnapshotMessage.payload,
+            phase: 'playing',
+          },
+        },
+      },
+    );
+
+    expect(next.latestActionPrompt).toBeNull();
   });
 
   it('keeps room_snapshot authoritative when player_presence arrives', () => {

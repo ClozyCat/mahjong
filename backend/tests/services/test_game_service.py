@@ -5,6 +5,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.domain.models import PlayerState, RoundState, Tile
 from app.domain.reducer import initialize_round
 from app.domain.wall import WallState
+from app.services import game_service as game_service_module
 from app.services.game_service import GameService, MatchState, RoomState, SeatReservation
 from app.services.timeout_service import PendingTimeout
 
@@ -1062,10 +1063,43 @@ async def test_start_next_round_finishes_match_after_north_four(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_start_match_uses_random_initial_dealer(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(game_service_module.random, "choice", lambda seats: 2)
+
+    websocket = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM70", phase="waiting")
+    for seat in range(4):
+        room.seats[seat] = SeatReservation(
+            seat_index=seat,
+            nickname=f"P{seat}",
+            reconnect_token=f"token-{seat}",
+            player_session_id=seat + 1,
+            websocket=websocket if seat == 0 else _RecordingWebSocket(),
+            connected=True,
+            ready=True,
+        )
+    service._rooms["ROOM70"] = room
+
+    response = await service.start_match(table_code="ROOM70", websocket=websocket)
+
+    assert response == {"type": "start_match_accepted", "payload": {}}
+    assert room.phase == "playing"
+    assert room.match_state is not None
+    assert room.match_state.dealer_seat == 2
+    assert room.round_state is not None
+    assert room.round_state.dealer_seat == 2
+    assert room.round_state.current_actor == 2
+
+
+@pytest.mark.asyncio
 async def test_restart_match_resets_match_state_after_finish(monkeypatch):
     service = GameService(sessionmaker())
     monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
     monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(game_service_module.random, "choice", lambda seats: 2)
 
     websocket = _RecordingWebSocket()
     room = RoomState(table_code="ROOM77", phase="finished")
@@ -1114,11 +1148,12 @@ async def test_restart_match_resets_match_state_after_finish(monkeypatch):
     assert room.match_state is not None
     assert room.match_state.prevailing_wind == "east"
     assert room.match_state.hand_number == 1
-    assert room.match_state.dealer_seat == 0
+    assert room.match_state.dealer_seat == 2
     assert room.match_state.cumulative_scores == {0: 0, 1: 0, 2: 0, 3: 0}
     assert room.match_state.match_finished is False
     assert room.round_state is not None
     assert room.round_state.round_wind == "east"
+    assert room.round_state.dealer_seat == 2
 
 
 def test_room_snapshot_exposes_in_round_score_state() -> None:

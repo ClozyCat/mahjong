@@ -8,6 +8,7 @@ import type {
   MatchResultPayload,
   PlayerView,
   PrivatePlayerState,
+  PrivateState,
   ResultSeatView,
   Seat,
   SessionState,
@@ -95,6 +96,14 @@ function toRelativeSeat(localSeat: number, absoluteSeat: number): Seat {
   return RELATIVE_SEATS[offset] ?? 'bottom';
 }
 
+function getWindForSeat(seatIndex: number, dealerSeat: number | null | undefined): PlayerView['wind'] {
+  if (typeof dealerSeat !== 'number') {
+    return WINDS[seatIndex] ?? 'East';
+  }
+
+  return WINDS[(seatIndex - dealerSeat + 4) % 4] ?? 'East';
+}
+
 function formatSignedNumber(value: number) {
   if (value > 0) {
     return `+${value}`;
@@ -135,9 +144,30 @@ function getPendingActionSeatIndex(pendingAction: { seat_index?: unknown }) {
   return typeof pendingAction.seat_index === 'number' ? pendingAction.seat_index : null;
 }
 
+function getCurrentActorSeatIndex(privateState: PrivateState | null | undefined) {
+  if (!privateState) {
+    return null;
+  }
+
+  if (
+    privateState.pending_action?.type === 'active_turn' &&
+    typeof privateState.pending_action.seat_index === 'number'
+  ) {
+    return privateState.pending_action.seat_index;
+  }
+
+  return typeof privateState.current_actor === 'number' ? privateState.current_actor : null;
+}
+
 function createPromptText(state: SessionState): string | null {
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
   if (pendingAction && typeof pendingAction.type === 'string') {
+    if (pendingAction.type === 'active_turn') {
+      const actorSeat =
+        getPendingActionSeatIndex(pendingAction) ?? getCurrentActorSeatIndex(state.roomSnapshot?.payload.private_state);
+      const options = getPendingActionOptions(pendingAction as { options?: unknown });
+      return createActorPrompt(getSeatName(state, actorSeat), options);
+    }
     if (pendingAction.type === 'opening_flowers') {
       const options = getPendingActionOptions(pendingAction as { options?: unknown });
       return createActorPrompt(getSeatName(state, getPendingActionSeatIndex(pendingAction)), options);
@@ -299,7 +329,7 @@ function createPlayers(state: SessionState): PlayerView[] {
   }
 
   const localSeat = getLocalSeat(state);
-  const currentActor = snapshot.private_state?.current_actor;
+  const currentActor = getCurrentActorSeatIndex(snapshot.private_state);
   const dealerSeat = snapshot.match_state?.dealer_seat ?? snapshot.private_state?.dealer_seat;
   const displayedScores = getDisplayedScores(state);
   const liveDeltaBySeat = getLiveDeltaBySeat(state);
@@ -317,7 +347,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         score: displayedScores[seatKey] ?? 0,
         liveDelta: liveDeltaBySeat[seatKey] ?? 0,
         flowerCount: flowerCountBySeat[seatKey] ?? privatePlayer?.flowers.length ?? 0,
-        wind: WINDS[seat.seat_index] ?? 'East',
+        wind: getWindForSeat(seat.seat_index, dealerSeat),
         isDealer: dealerSeat === seat.seat_index,
         isActive: currentActor === seat.seat_index,
         isLocal: seat.seat_index === localSeat,
@@ -742,7 +772,9 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
   const isSettlement = snapshot?.phase === 'settlement';
   const isFinished = snapshot?.phase === 'finished';
   const localSeat = getLocalSeat(state);
-  const activePlayerSeat = snapshot?.private_state ? toRelativeSeat(localSeat, snapshot.private_state.current_actor) : 'bottom';
+  const activePlayerSeatIndex = getCurrentActorSeatIndex(snapshot?.private_state);
+  const activePlayerSeat =
+    typeof activePlayerSeatIndex === 'number' ? toRelativeSeat(localSeat, activePlayerSeatIndex) : 'bottom';
   const deadlineAt =
     snapshot?.private_state?.pending_action && 'deadline_at' in snapshot.private_state.pending_action
       ? String(snapshot.private_state.pending_action.deadline_at)

@@ -100,7 +100,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         reconnectToken: message.payload.reconnect_token ?? state.reconnectToken,
         lastRejectedAction: null,
         latestMatchResult: keepLatestResult ? state.latestMatchResult : null,
-        latestActionPrompt: message.payload.phase === 'playing' ? state.latestActionPrompt : null,
+        latestActionPrompt: null,
         selectedTileIds: nextSelectedTileIds,
         selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
       };

@@ -295,6 +295,41 @@ describe('createMatchViewModel', () => {
     expect(viewModel.promptText).toBe('一名玩家正在执行操作：吃 / 碰 / 杠 / 和牌');
   });
 
+  it('prefers active_turn snapshot data over a stale action prompt after a claim resolves', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            current_actor: 1,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-26T06:02:00Z',
+              options: ['discard'],
+            },
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 1,
+          options: ['chow', 'pass'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.promptText).toBe('Player A正在执行操作：出牌');
+    expect(viewModel.activePlayerSeat).toBe('top');
+    expect(viewModel.players.find((player) => player.name === 'Player A')?.isActive).toBe(true);
+  });
+
   it('marks bot-controlled players as offline with bot copy instead of online in-match copy', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
@@ -391,6 +426,24 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.players.find((item) => item.isLocal)?.seat).toBe('bottom');
     expect(viewModel.players.find((item) => item.name === 'Player B')?.seat).toBe('left');
+  });
+
+  it('computes player winds relative to the current dealer seat', () => {
+    const viewModel = createMatchViewModel(createPlayingSessionState());
+
+    expect(viewModel.players.find((item) => item.name === 'Player B')).toMatchObject({
+      wind: 'East',
+      isDealer: true,
+    });
+    expect(viewModel.players.find((item) => item.name === 'Player C')).toMatchObject({
+      wind: 'South',
+    });
+    expect(viewModel.players.find((item) => item.name === 'Player D')).toMatchObject({
+      wind: 'West',
+    });
+    expect(viewModel.players.find((item) => item.name === 'Player A')).toMatchObject({
+      wind: 'North',
+    });
   });
 
   it('sorts the local hand by wan, tong, sou, then honors from low to high', () => {

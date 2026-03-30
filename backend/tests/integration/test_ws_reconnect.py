@@ -22,13 +22,20 @@ def _ready_all_and_start(*sockets) -> tuple[dict, dict]:
             assert peer_snapshot["payload"]["seats"][ready_index]["ready"] is True
 
     sockets[0].send_json({"type": "start_match", "payload": {}})
-    start_snapshot = sockets[0].receive_json()
-    start_prompt = sockets[0].receive_json()
-    for peer in sockets[1:]:
-        peer_snapshot = peer.receive_json()
-        assert peer_snapshot["type"] == "room_snapshot"
-        assert peer_snapshot["payload"]["phase"] == "playing"
-    return start_snapshot, start_prompt
+    snapshots = [ws.receive_json() for ws in sockets]
+    for snapshot in snapshots:
+        assert snapshot["type"] == "room_snapshot"
+        assert snapshot["payload"]["phase"] == "playing"
+
+    active_snapshot = next(
+        snapshot
+        for snapshot in snapshots
+        if snapshot["payload"]["private_state"]["pending_action"] is not None
+    )
+    seat_index = active_snapshot["payload"]["private_state"]["pending_action"]["seat_index"]
+    start_prompt = sockets[seat_index].receive_json()
+    assert start_prompt["type"] == "action_prompt"
+    return active_snapshot, start_prompt
 
 
 def test_reconnect_returns_full_active_round_snapshot_and_rotates_reconnect_token(
@@ -84,7 +91,10 @@ def test_reconnect_returns_full_active_round_snapshot_and_rotates_reconnect_toke
     assert reconnect_snapshot["payload"]["reconnect_token"]
     assert reconnect_snapshot["payload"]["reconnect_token"] != original_token
     assert reconnect_snapshot["payload"]["private_state"] is not None
-    assert reconnect_snapshot["payload"]["private_state"]["current_actor"] == 0
+    assert (
+        reconnect_snapshot["payload"]["private_state"]["current_actor"]
+        == reconnect_snapshot["payload"]["private_state"]["dealer_seat"]
+    )
     players = reconnect_snapshot["payload"]["private_state"]["players"]
     assert players[0]["concealed_tiles"]
     assert players[1]["concealed_tiles"] is None
