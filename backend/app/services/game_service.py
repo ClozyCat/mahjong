@@ -52,6 +52,7 @@ from app.services.timeout_service import (
 )
 
 MAX_SEATS = 4
+WIND_ORDER = ("east", "south", "west", "north")
 
 
 class LoopSafeLock:
@@ -1635,28 +1636,15 @@ class GameService:
     def _next_match_state_after_settlement(
         self,
         match_state: MatchState,
-        round_state: RoundState,
+        _round_state: RoundState,
     ) -> MatchState:
-        settlement = round_state.settlement or {}
-        dealer_stays = settlement.get("win_type") == "draw" or settlement.get("winner_seat") == match_state.dealer_seat
-        if dealer_stays:
-            return MatchState(
-                prevailing_wind=match_state.prevailing_wind,
-                hand_number=match_state.hand_number,
-                dealer_seat=match_state.dealer_seat,
-                cumulative_scores=dict(match_state.cumulative_scores),
-                match_finished=False,
-                last_completed_round_id=match_state.last_completed_round_id,
-            )
-
-        winds = ["east", "south", "west", "north"]
-        current_wind_index = winds.index(match_state.prevailing_wind)
+        current_wind_index = WIND_ORDER.index(match_state.prevailing_wind)
         next_dealer = (match_state.dealer_seat + 1) % MAX_SEATS
         next_hand_number = match_state.hand_number + 1
         next_wind = match_state.prevailing_wind
         if next_hand_number > MAX_SEATS:
             next_hand_number = 1
-            if current_wind_index == len(winds) - 1:
+            if current_wind_index == len(WIND_ORDER) - 1:
                 return MatchState(
                     prevailing_wind=match_state.prevailing_wind,
                     hand_number=match_state.hand_number,
@@ -1665,7 +1653,7 @@ class GameService:
                     match_finished=True,
                     last_completed_round_id=match_state.last_completed_round_id,
                 )
-            next_wind = winds[current_wind_index + 1]
+            next_wind = WIND_ORDER[current_wind_index + 1]
 
         return MatchState(
             prevailing_wind=next_wind,

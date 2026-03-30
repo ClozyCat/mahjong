@@ -19,6 +19,7 @@ from app.domain.wall import WallState, build_wall, draw_live_tile, draw_replacem
 PLAYER_COUNT = 4
 TILES_PER_PLAYER = 13
 MINIMUM_WINNING_FAN = 8
+WIND_ORDER = ("east", "south", "west", "north")
 
 
 def _draw_live_tile_once(
@@ -254,6 +255,7 @@ def draw_for_turn(state: RoundState) -> tuple[RoundState, list[dict]]:
             "was_last_live_tile": wall.head_index > wall.tail_index,
             "was_last_discard": False,
         },
+        round_wind=state.round_wind,
     )
 
     return new_state, events
@@ -344,6 +346,7 @@ def discard_tile(
                 and (state.last_action_context or {}).get("was_last_live_tile", False)
             ),
         },
+        round_wind=state.round_wind,
     )
 
     claim_window = compute_claim_window(base_state)
@@ -371,6 +374,7 @@ def discard_tile(
             version=base_state.version,
             score_trackers=base_state.score_trackers,
             last_action_context=base_state.last_action_context,
+            round_wind=base_state.round_wind,
         )
     else:
         next_actor = (seat + 1) % len(state.players)
@@ -387,6 +391,7 @@ def discard_tile(
             version=base_state.version,
             score_trackers=base_state.score_trackers,
             last_action_context=base_state.last_action_context,
+            round_wind=base_state.round_wind,
         )
 
     events = [tile_discarded_event(seat, tile)]
@@ -987,6 +992,7 @@ def settle_exhaustive_draw(state: RoundState) -> tuple[RoundState, list[dict]]:
         version=state.version + 1,
         score_trackers=state.score_trackers,
         last_action_context=state.last_action_context,
+        round_wind=state.round_wind,
     )
     events = [{"type": "round_drawn", "round_id": state.round_id}]
     return new_state, events
@@ -1071,6 +1077,7 @@ def _maybe_start_rob_kong_window(
         version=state.version + 1,
         score_trackers=state.score_trackers,
         last_action_context=state.last_action_context,
+        round_wind=state.round_wind,
     )
 
 
@@ -1110,6 +1117,7 @@ def _apply_rob_kong_pass(
                 version=state.version + 1,
                 score_trackers=state.score_trackers,
                 last_action_context=state.last_action_context,
+                round_wind=state.round_wind,
             ),
             [],
         )
@@ -1140,6 +1148,7 @@ def _complete_add_kong_after_passes(state: RoundState) -> tuple[RoundState, list
             version=state.version,
             score_trackers=state.score_trackers,
             last_action_context=state.last_action_context,
+            round_wind=state.round_wind,
         ),
         seat=actor_seat,
         kong_type="add_kong",
@@ -1218,6 +1227,7 @@ def _complete_self_kong(
             "was_last_live_tile": False,
             "was_last_discard": False,
         },
+        round_wind=state.round_wind,
     )
 
     try:
@@ -1263,6 +1273,7 @@ def _complete_self_kong(
                 "was_last_live_tile": False,
                 "was_last_discard": False,
             },
+            round_wind=state.round_wind,
         ),
         events,
     )
@@ -1377,7 +1388,7 @@ def _fan_result_for_win(
         open_meld_tile_key_groups=open_meld_tile_key_groups,
         incoming_tile=incoming_tile,
         decompositions=decompositions,
-        seat_wind_key=_seat_wind_key(winner_seat),
+        seat_wind_key=_seat_wind_key(winner_seat, state.dealer_seat),
         round_wind_key=state.round_wind,
     )
 
@@ -1399,7 +1410,7 @@ def _winner_features(
         ],
         meld_open_flags=meld_open_flags,
         incoming_tile=incoming_tile,
-        seat_wind_key=_seat_wind_key(winner_seat),
+        seat_wind_key=_seat_wind_key(winner_seat, state.dealer_seat),
         round_wind_key=state.round_wind,
         decompositions=decompositions,
     )
@@ -1455,8 +1466,8 @@ def _kong_delta_by_seat(state: RoundState) -> dict[int, int]:
     return deltas
 
 
-def _seat_wind_key(seat: int) -> str:
-    return ("east", "south", "west", "north")[seat % 4]
+def _seat_wind_key(seat: int, dealer_seat: int) -> str:
+    return WIND_ORDER[(seat - dealer_seat) % 4]
 
 
 def _is_last_tile_wall_point_for_actor(state: RoundState) -> bool:

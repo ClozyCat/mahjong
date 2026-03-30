@@ -142,6 +142,47 @@ def _make_suit_tile(tile_key: str, tile_id: str) -> Tile:
     )
 
 
+def _make_settlement_room(
+    *,
+    table_code: str,
+    match_state: MatchState,
+    settlement: dict,
+    round_wind: str | None = None,
+) -> tuple[RoomState, _RecordingWebSocket]:
+    websocket = _RecordingWebSocket()
+    room = RoomState(table_code=table_code, phase="settlement")
+    for seat in range(4):
+        room.seats[seat] = SeatReservation(
+            seat_index=seat,
+            nickname=f"P{seat}",
+            reconnect_token=f"token-{seat}",
+            player_session_id=seat + 1,
+            websocket=websocket if seat == 0 else _RecordingWebSocket(),
+            connected=True,
+            ready=True,
+        )
+    room.match_state = match_state
+    room.round_state = RoundState(
+        round_id=f"{match_state.prevailing_wind}-{match_state.hand_number}-finished",
+        dealer_seat=match_state.dealer_seat,
+        current_actor=match_state.dealer_seat,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="settlement",
+        settlement=settlement,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind=round_wind or match_state.prevailing_wind,
+    )
+    return room, websocket
+
+
 def test_action_prompt_includes_kong_when_current_actor_can_self_kong():
     service = GameService(sessionmaker())
     websocket = _RecordingWebSocket()
@@ -880,6 +921,142 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
     assert response["payload"]["match_state"]["hand_number"] == 2
     assert response["payload"]["private_state"]["dealer_seat"] == 1
     assert response["payload"]["private_state"]["round_wind"] == "east"
+
+
+@pytest.mark.asyncio
+async def test_start_next_round_rotates_dealer_after_dealer_self_draw(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    room, websocket = _make_settlement_room(
+        table_code="ROOM100",
+        match_state=MatchState(
+            prevailing_wind="east",
+            hand_number=1,
+            dealer_seat=0,
+            cumulative_scores={0: 12, 1: -4, 2: -4, 3: -4},
+        ),
+        settlement={
+            "win_type": "self_draw",
+            "winner_seat": 0,
+            "fan_total": 8,
+            "fan_keys": ["test-eight-fan"],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 8,
+                "fan_delta_by_seat": {0: 48, 1: -16, 2: -16, 3: -16},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 48, 1: -16, 2: -16, 3: -16},
+            },
+        },
+    )
+    service._rooms["ROOM100"] = room
+
+    response = await service.start_next_round(table_code="ROOM100", websocket=websocket)
+
+    assert response["payload"]["match_state"]["dealer_seat"] == 1
+    assert response["payload"]["match_state"]["hand_number"] == 2
+    assert response["payload"]["match_state"]["cumulative_scores"] == {
+        0: 60,
+        1: -20,
+        2: -20,
+        3: -20,
+    }
+    assert response["payload"]["private_state"]["round_wind"] == "east"
+
+
+@pytest.mark.asyncio
+async def test_start_next_round_advances_round_wind_after_fourth_hand_draw(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    room, websocket = _make_settlement_room(
+        table_code="ROOM101",
+        match_state=MatchState(
+            prevailing_wind="east",
+            hand_number=4,
+            dealer_seat=3,
+            cumulative_scores={0: 5, 1: -1, 2: -2, 3: -2},
+        ),
+        settlement={
+            "win_type": "draw",
+            "fan_total": 0,
+            "fan_keys": [],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 0,
+                "fan_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+            },
+        },
+    )
+    service._rooms["ROOM101"] = room
+
+    response = await service.start_next_round(table_code="ROOM101", websocket=websocket)
+
+    assert response["payload"]["match_state"]["prevailing_wind"] == "south"
+    assert response["payload"]["match_state"]["hand_number"] == 1
+    assert response["payload"]["match_state"]["dealer_seat"] == 0
+    assert response["payload"]["private_state"]["round_wind"] == "south"
+    assert response["payload"]["private_state"]["dealer_seat"] == 0
+
+
+@pytest.mark.asyncio
+async def test_start_next_round_finishes_match_after_north_four(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    room, websocket = _make_settlement_room(
+        table_code="ROOM102",
+        match_state=MatchState(
+            prevailing_wind="north",
+            hand_number=4,
+            dealer_seat=3,
+            cumulative_scores={0: 10, 1: -3, 2: -3, 3: -4},
+        ),
+        settlement={
+            "win_type": "discard",
+            "winner_seat": 1,
+            "discarder_seat": 2,
+            "fan_total": 8,
+            "fan_keys": ["test-eight-fan"],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 8,
+                "fan_delta_by_seat": {0: 0, 1: 8, 2: -8, 3: 0},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 0, 1: 8, 2: -8, 3: 0},
+            },
+        },
+    )
+    service._rooms["ROOM102"] = room
+
+    response = await service.start_next_round(table_code="ROOM102", websocket=websocket)
+
+    assert response["payload"]["phase"] == "finished"
+    assert response["payload"]["match_state"]["match_finished"] is True
+    assert response["payload"]["match_state"]["prevailing_wind"] == "north"
+    assert response["payload"]["match_state"]["hand_number"] == 4
+    assert response["payload"]["match_state"]["dealer_seat"] == 3
+    assert response["payload"]["match_state"]["cumulative_scores"] == {
+        0: 10,
+        1: 5,
+        2: -11,
+        3: -4,
+    }
 
 
 @pytest.mark.asyncio

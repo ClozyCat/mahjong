@@ -646,6 +646,51 @@ def test_apply_self_draw_win_includes_seat_and_round_wind_triplets():
     assert "prevalent_wind" in next_state.settlement["fan_keys"]
 
 
+def test_apply_self_draw_win_uses_rotating_seat_wind_from_dealer() -> None:
+    state = make_round_state(
+        current_actor=0,
+        discarder_seat=0,
+        last_discard="w1",
+        player_hands={
+            0: [
+                "north",
+                "north",
+                "north",
+                "w2",
+                "w2",
+                "w2",
+                "w3",
+                "w3",
+                "w3",
+                "w4",
+                "w4",
+                "w4",
+                "red",
+                "red",
+            ],
+        },
+    )
+    state = RoundState(
+        round_id=state.round_id,
+        dealer_seat=1,
+        current_actor=state.current_actor,
+        wall=state.wall,
+        players=state.players,
+        last_discard=None,
+        pending_action=None,
+        phase=state.phase,
+        settlement=state.settlement,
+        version=state.version,
+        score_trackers=state.score_trackers,
+        round_wind="east",
+    )
+
+    next_state, _ = apply_self_draw_win(state, winner_seat=0)
+
+    assert "seat_wind" in next_state.settlement["fan_keys"]
+    assert "prevalent_wind" not in next_state.settlement["fan_keys"]
+
+
 def test_apply_discard_win_includes_dragon_and_terminal_triplet_fans() -> None:
     winning_state = make_round_state(
         current_actor=1,
