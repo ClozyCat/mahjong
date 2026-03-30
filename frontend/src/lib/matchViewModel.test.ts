@@ -45,10 +45,10 @@ function createPlayingSessionState(overrides: Partial<SessionState> = {}): Sessi
         table_code: 'AB12CD',
         phase: 'playing',
         seats: [
-          { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-          { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
-          { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
-          { seat_index: 3, nickname: 'Player D', connected: false, ready: true },
+          { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
+          { seat_index: 1, nickname: 'Player B', connected: true, ready: true, is_bot: false },
+          { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false },
+          { seat_index: 3, nickname: 'Player D', connected: false, ready: true, is_bot: false },
         ],
         local_seat: 2,
         reconnect_token: 'token-2',
@@ -214,6 +214,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.mode).toBe('my_turn');
     expect(viewModel.actions.find((item) => item.id === 'discard')?.enabled).toBe(false);
     expect(viewModel.actions.find((item) => item.id === 'hu')?.enabled).toBe(true);
+    expect(viewModel.drawnTileId).toBe('w2#p0-13');
   });
 
   it('maps action labels and battle status to chinese-first copy', () => {
@@ -223,6 +224,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.canLeaveTable).toBe(true);
     expect(viewModel.topStatusLabel).toBe('对局中');
     expect(viewModel.remainingTileCount).toBe(67);
+    expect(viewModel.promptText).toBe('Player C正在执行操作：出牌 / 杠 / 和牌');
   });
 
   it('keeps the leave-table entry visible after the full match finishes', () => {
@@ -263,7 +265,7 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.promptText).toBe('可响应：吃');
+    expect(viewModel.promptText).toBe('一名玩家正在执行操作：吃');
   });
 
   it('shows other players are responding when the local seat has no claim options', () => {
@@ -289,7 +291,39 @@ describe('createMatchViewModel', () => {
       latestActionPrompt: null,
     });
 
-    expect(viewModel.promptText).toBe('其他玩家可响应吃碰杠胡');
+    expect(viewModel.promptText).toBe('一名玩家正在执行操作：吃 / 碰 / 杠 / 和牌');
+  });
+
+  it('marks bot-controlled players as offline with bot copy instead of online in-match copy', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: base.roomSnapshot!.payload.seats.map((seat) =>
+            seat.seat_index === 3 ? { ...seat, connected: true, is_bot: true } : { ...seat, is_bot: false },
+          ),
+        },
+      },
+    });
+
+    expect(viewModel.players.find((player) => player.name === 'Player D')).toMatchObject({
+      connected: true,
+      isBotControlled: true,
+      statusText: 'Bot代打中',
+    });
+  });
+
+  it('marks disconnected players as waiting to reconnect instead of in-match copy', () => {
+    const viewModel = createMatchViewModel(createPlayingSessionState());
+
+    expect(viewModel.players.find((player) => player.name === 'Player D')).toMatchObject({
+      connected: false,
+      isBotControlled: false,
+      statusText: '等待重连中',
+    });
   });
 
   it('maps settlement state to a result overlay payload', () => {
@@ -298,6 +332,32 @@ describe('createMatchViewModel', () => {
     expect(viewModel.mode).toBe('resolving');
     expect(viewModel.result?.fanTotal).toBe(8);
     expect(viewModel.result?.winnerSeat).toBe('left');
+    expect(viewModel.celebrationEffect?.label).toBe('胡牌');
+    expect(viewModel.celebrationEffect?.winnerSeat).toBe('left');
+  });
+
+  it('maps latest round events into action spectacle descriptors', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'claim_made',
+          event: {
+            seat: 1,
+            claim_type: 'pung',
+            tile_id: 'w5#discard',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '碰',
+      emphasis: 'claim',
+      seat: 'left',
+    });
   });
 
   it('maps relative seats so the local seat is always bottom', () => {

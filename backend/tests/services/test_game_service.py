@@ -513,6 +513,7 @@ async def test_leave_table_removes_waiting_seat_and_notifies_peers(monkeypatch):
             "nickname": "P1",
             "connected": True,
             "ready": True,
+            "is_bot": False,
         }
     ]
 
@@ -578,6 +579,7 @@ async def test_leave_table_during_active_match_keeps_seat_but_invalidates_reconn
         "nickname": "P0",
         "connected": True,
         "ready": True,
+        "is_bot": True,
     }
 
 

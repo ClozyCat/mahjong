@@ -1,4 +1,5 @@
 import type { BattleActionId, BattleViewModel } from '../../types/match';
+import { ActionEffectsOverlay } from './ActionEffectsOverlay';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
 import { FloatingRoomControls } from './FloatingRoomControls';
@@ -60,6 +61,11 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
               players={viewModel.players}
             />
           </div>
+          <ActionEffectsOverlay
+            actionEffect={viewModel.actionEffect}
+            celebrationEffect={viewModel.celebrationEffect}
+            drawnTileId={viewModel.drawnTileId}
+          />
           <AmbientOverlay
             mode={viewModel.mode}
             promptText={viewModel.promptText}

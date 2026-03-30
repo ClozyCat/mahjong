@@ -1337,6 +1337,7 @@ class GameService:
                 "nickname": room.seats[seat_index].nickname,
                 "connected": room.seats[seat_index].connected,
                 "ready": room.seats[seat_index].ready,
+                "is_bot": room.seats[seat_index].is_bot,
             }
             for seat_index in sorted(room.seats)
         ]

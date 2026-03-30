@@ -104,11 +104,14 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
       { tileId: 'w2#2', code: 'w2', isSelected: true, isDrawn: true, isFlower: false },
     ],
+    drawnTileId: 'w2#2',
     centerBanner: 'Opponent Turn',
     promptText: null,
     result: null,
     lastDiscard: 'b4',
     lastDiscardSeat: 'left',
+    actionEffect: null,
+    celebrationEffect: null,
     toasts: [],
     ...overrides,
   };
@@ -280,6 +283,50 @@ describe('BattleScreen', () => {
 
     const hand = screen.getByLabelText(/local hand/i);
     expect(hand.querySelectorAll('.mahjong-tile--hand')).toHaveLength(2);
+  });
+
+  it('renders action spectacle copy when a battle action effect is active', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        actionEffect: {
+          key: 'claim-1',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'left',
+        },
+      }),
+    );
+
+    expect(screen.getByText('碰')).toBeInTheDocument();
+    expect(screen.getByText('左家')).toBeInTheDocument();
+  });
+
+  it('falls back to a draw spectacle when a new drawnTileId is present', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        actionEffect: null,
+        drawnTileId: 'w9#draw-1',
+      }),
+    );
+
+    expect(screen.getByText('摸牌')).toBeInTheDocument();
+    expect(screen.getByText('你')).toBeInTheDocument();
+  });
+
+  it('renders a celebration overlay when a winning celebration effect is active', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        celebrationEffect: {
+          key: 'win-1',
+          label: '自摸',
+          winnerSeat: 'bottom',
+          winType: 'self_draw',
+        },
+      }),
+    );
+
+    expect(screen.getByText('自摸')).toBeInTheDocument();
+    expect(screen.getByText('华彩自摸')).toBeInTheDocument();
   });
 
   it('moves the local player identity into the action dock instead of the table center', () => {

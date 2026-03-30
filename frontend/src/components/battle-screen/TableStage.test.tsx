@@ -24,7 +24,9 @@ describe('TableStage', () => {
     expect(screen.getAllByTestId('mahjong-tile').length).toBe(44);
     expect(screen.getByText(/claim window open/i)).toBeInTheDocument();
     expect(screen.getByText('剩余 66 张')).toBeInTheDocument();
-    expect(screen.getByText('最新出牌 三万')).toBeInTheDocument();
+    expect(screen.queryByText('三万')).not.toBeInTheDocument();
+    expect(screen.queryByText('Table Core')).not.toBeInTheDocument();
+    expect(screen.queryByText(/最新出牌/)).not.toBeInTheDocument();
   });
 
   it('marks only the latest matching discard as the last discard', () => {

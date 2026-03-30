@@ -25,6 +25,7 @@ export function BottomActionDock({
 }: BottomActionDockProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const windLabel = localPlayer ? WIND_LABELS[localPlayer.wind] ?? localPlayer.wind : null;
+  const presenceLabel = localPlayer ? (localPlayer.isBotControlled ? '离线' : localPlayer.connected ? '在线' : '离线') : null;
   const dockLabel = '手牌区';
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
 
@@ -66,7 +67,7 @@ export function BottomActionDock({
                   <span className="action-dock__player-eyebrow">
                     {windLabel}
                     {localPlayer.isDealer ? ' 庄家' : ''}
-                    {localPlayer.connected ? ' 在线' : ' 离线'}
+                    {presenceLabel ? ` ${presenceLabel}` : ''}
                   </span>
                   <strong>{localPlayer.name}</strong>
                   <span className="action-dock__player-meta">

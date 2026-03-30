@@ -30,6 +30,7 @@ export interface SeatSnapshot {
   nickname: string;
   connected: boolean;
   ready: boolean;
+  is_bot?: boolean;
 }
 
 export interface ConcealedTile {
@@ -282,6 +283,7 @@ export interface PlayerView {
   isActive: boolean;
   isLocal: boolean;
   connected: boolean;
+  isBotControlled?: boolean;
   ready: boolean;
   concealedCount: number;
   meldCount: number;
@@ -336,6 +338,20 @@ export interface ResultView {
     | null;
 }
 
+export interface ActionEffectView {
+  key: string;
+  label: string;
+  emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
+  seat: Seat | null;
+}
+
+export interface CelebrationEffectView {
+  key: string;
+  label: string;
+  winnerSeat: Seat | null;
+  winType: 'self_draw' | 'discard';
+}
+
 export interface BattleViewModel {
   mode: MatchPhase;
   tableCode: string;
@@ -352,11 +368,14 @@ export interface BattleViewModel {
   waitingControls: WaitingControls | null;
   discards: Record<Seat, string[]>;
   localHand: LocalTileView[];
+  drawnTileId: string | null;
   centerBanner: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
   result: ResultView | null;
   lastDiscard: string | null;
   lastDiscardSeat: Seat | null;
+  actionEffect: ActionEffectView | null;
+  celebrationEffect: CelebrationEffectView | null;
   toasts: ToastMessage[];
 }

@@ -1,5 +1,4 @@
 import type { PlayerView, Seat } from '../../types/match';
-import { formatTileName } from '../../lib/tileNames';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 
@@ -35,10 +34,8 @@ export function TableStage({
     <section className="table-stage" aria-label="Mahjong table">
       <div className="table-stage__frame">
         <div className="table-stage__core">
-          <div className="table-stage__center-sigil">Table Core</div>
           <div className="table-stage__center-meta">
             <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
-            {lastDiscard ? <span>最新出牌 {formatTileName(lastDiscard, lastDiscard)}</span> : <span>尚未有出牌</span>}
             {promptText ? <em>{promptText}</em> : null}
           </div>
           {SEATS.map((seat) => {

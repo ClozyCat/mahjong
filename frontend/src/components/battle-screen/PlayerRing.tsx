@@ -6,6 +6,7 @@ interface PlayerRingProps {
 
 export function PlayerRing({ player }: PlayerRingProps) {
   const windLabel = WIND_LABELS[player.wind] ?? player.wind;
+  const presenceLabel = player.isBotControlled ? '离线' : player.connected ? '在线' : '离线';
 
   return (
     <section className={`player-slot player-slot--${player.seat}`}>
@@ -20,7 +21,7 @@ export function PlayerRing({ player }: PlayerRingProps) {
             <span className="player-ring__eyebrow">
               {windLabel}
               {player.isDealer ? ' 庄家' : ''}
-              {player.connected ? ' 在线' : ' 离线'}
+              {` ${presenceLabel}`}
             </span>
           </div>
           <div className="player-ring__row player-ring__row--secondary">

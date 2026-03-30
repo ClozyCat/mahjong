@@ -1,8 +1,10 @@
 import type {
+  ActionEffectView,
   BackendActionType,
   BattleActionId,
   BattleActionView,
   BattleViewModel,
+  CelebrationEffectView,
   PlayerView,
   PrivatePlayerState,
   ResultSeatView,
@@ -106,10 +108,30 @@ function getPendingActionOptions(pendingAction: { options?: unknown } | null | u
 }
 
 function formatActionLabels(options: BackendActionType[]) {
-  return options
-    .filter((item) => item !== 'pass')
-    .map((item) => ACTION_LABELS[item])
-    .join(' / ');
+  const visibleLabels = options.filter((item) => item !== 'pass').map((item) => ACTION_LABELS[item]);
+
+  if (visibleLabels.length > 0) {
+    return visibleLabels.join(' / ');
+  }
+
+  return options.includes('pass') ? ACTION_LABELS.pass : '';
+}
+
+function getSeatName(state: SessionState, seatIndex: number | null | undefined) {
+  if (typeof seatIndex !== 'number') {
+    return '一名玩家';
+  }
+
+  return state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === seatIndex)?.nickname ?? `玩家${seatIndex + 1}`;
+}
+
+function createActorPrompt(actorLabel: string, options: BackendActionType[]) {
+  const actionLabels = formatActionLabels(options);
+  return actionLabels ? `${actorLabel}正在执行操作：${actionLabels}` : null;
+}
+
+function getPendingActionSeatIndex(pendingAction: { seat_index?: unknown }) {
+  return typeof pendingAction.seat_index === 'number' ? pendingAction.seat_index : null;
 }
 
 function createPromptText(state: SessionState): string | null {
@@ -117,21 +139,20 @@ function createPromptText(state: SessionState): string | null {
   if (pendingAction && typeof pendingAction.type === 'string') {
     if (pendingAction.type === 'opening_flowers') {
       const options = getPendingActionOptions(pendingAction as { options?: unknown });
-      return options.includes('flower') ? '起手补花中，请选择花牌后点击补花' : '起手无花，请点击过牌';
+      return createActorPrompt(getSeatName(state, getPendingActionSeatIndex(pendingAction)), options);
     }
     if (pendingAction.type === 'claim_window') {
-      const claimLabels = formatActionLabels(getPendingActionOptions(pendingAction as { options?: unknown }));
-      return claimLabels ? `可响应：${claimLabels}` : '其他玩家可响应吃碰杠胡';
+      const claimLabels = getPendingActionOptions(pendingAction as { options?: unknown });
+      return createActorPrompt('一名玩家', claimLabels.length > 0 ? claimLabels : ['chow', 'pung', 'kong', 'hu']);
     }
     if (pendingAction.type === 'rob_kong_window') {
-      return getPendingActionOptions(pendingAction as { options?: unknown }).includes('hu')
-        ? '可选择抢杠和或过牌'
-        : '其他玩家可选择抢杠和';
+      const options = getPendingActionOptions(pendingAction as { options?: unknown });
+      return createActorPrompt('一名玩家', options.length > 0 ? options : ['hu']);
     }
   }
 
   if (state.latestActionPrompt) {
-    return `可执行操作：${state.latestActionPrompt.payload.options.map((item) => ACTION_LABELS[item]).join(' / ')}`;
+    return createActorPrompt(getSeatName(state, state.latestActionPrompt.payload.seat_index), state.latestActionPrompt.payload.options);
   }
 
   if (state.roomSnapshot?.payload.phase === 'finished') {
@@ -300,13 +321,18 @@ function createPlayers(state: SessionState): PlayerView[] {
         isActive: currentActor === seat.seat_index,
         isLocal: seat.seat_index === localSeat,
         connected: seat.connected,
+        isBotControlled: Boolean(seat.is_bot),
         ready: seat.ready,
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: privatePlayer?.melds ?? [],
         flowers: privatePlayer?.flowers ?? [],
         statusText:
-          snapshot.phase === 'waiting'
+          seat.is_bot
+            ? 'Bot代打中'
+            : !seat.connected
+              ? '等待重连中'
+              : snapshot.phase === 'waiting'
             ? seat.ready
               ? '已准备'
               : '等待中'
@@ -314,9 +340,7 @@ function createPlayers(state: SessionState): PlayerView[] {
               ? '等待下一局'
               : snapshot.phase === 'finished'
                 ? '整场完成'
-                : seat.connected
-                  ? '对局中'
-                  : '已断线',
+                : '对局中',
       };
     })
     .sort((left, right) => RELATIVE_SEATS.indexOf(left.seat) - RELATIVE_SEATS.indexOf(right.seat));
@@ -360,6 +384,16 @@ function createLocalHand(state: SessionState) {
       isFlower: isFlowerTileKey(tile.tile_key),
     }))
     .sort(compareLocalHandTiles);
+}
+
+function createDrawnTileId(state: SessionState) {
+  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+
+  if (pendingAction?.type === 'active_turn' && typeof pendingAction.drawn_tile_id === 'string') {
+    return pendingAction.drawn_tile_id;
+  }
+
+  return null;
 }
 
 function compareLocalHandTiles(
@@ -585,6 +619,114 @@ function createRemainingTileCount(state: SessionState) {
   return typeof remaining === 'number' ? remaining : null;
 }
 
+function createActionEffect(state: SessionState): ActionEffectView | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const event = state.latestRoundEvent?.payload;
+
+  if (!snapshot || !event) {
+    return null;
+  }
+
+  const localSeat = getLocalSeat(state);
+  const seatValue = event.event?.seat;
+  const effectSeat = typeof seatValue === 'number' ? toRelativeSeat(localSeat, seatValue) : null;
+  const key = `${event.event_type}-${JSON.stringify(event.event)}`;
+
+  if (event.event_type === 'tile_drawn') {
+    return {
+      key,
+      label: '摸牌',
+      emphasis: 'draw',
+      seat: effectSeat,
+    };
+  }
+
+  if (event.event_type === 'flower_exposed') {
+    return {
+      key,
+      label: '补花',
+      emphasis: 'draw',
+      seat: effectSeat,
+    };
+  }
+
+  if (event.event_type === 'replacement_draw') {
+    return {
+      key,
+      label: '补牌',
+      emphasis: 'draw',
+      seat: effectSeat,
+    };
+  }
+
+  if (event.event_type === 'tile_discarded') {
+    return {
+      key,
+      label: '出牌',
+      emphasis: 'discard',
+      seat: effectSeat,
+    };
+  }
+
+  if (event.event_type === 'claim_made') {
+    const claimType = String(event.event?.claim_type ?? '');
+    return {
+      key,
+      label: ACTION_EFFECT_LABELS[claimType] ?? '响应',
+      emphasis: 'claim',
+      seat: effectSeat,
+    };
+  }
+
+  if (event.event_type === 'self_kong_declared') {
+    const kongType = String(event.event?.kong_type ?? '');
+    return {
+      key,
+      label: KONG_EFFECT_LABELS[kongType] ?? '杠',
+      emphasis: 'kong',
+      seat: effectSeat,
+    };
+  }
+
+  if (event.event_type === 'round_drawn') {
+    return {
+      key,
+      label: '流局',
+      emphasis: 'system',
+      seat: null,
+    };
+  }
+
+  if (event.event_type === 'settlement_ready') {
+    return {
+      key,
+      label: '结算',
+      emphasis: 'system',
+      seat: null,
+    };
+  }
+
+  return null;
+}
+
+function createCelebrationEffect(state: SessionState): CelebrationEffectView | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const result = state.latestMatchResult?.payload;
+
+  if (!snapshot || !result || result.win_type === 'draw') {
+    return null;
+  }
+
+  const localSeat = getLocalSeat(state);
+
+  return {
+    key: `${result.round_id}-${result.win_type}-${result.winner_seat ?? 'none'}-${result.discarder_seat ?? 'none'}`,
+    label: result.win_type === 'self_draw' ? '自摸' : '胡牌',
+    winnerSeat: typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null,
+    winType: result.win_type,
+  };
+}
+
 export function createMatchViewModel(state: SessionState): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
   const waitingControls = createWaitingControls(state);
@@ -635,12 +777,15 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     waitingControls,
     discards: createDiscards(state),
     localHand: createLocalHand(state),
+    drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
     remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state),
     result: createResult(state),
     lastDiscard: snapshot?.private_state?.last_discard ?? null,
     lastDiscardSeat: createLastDiscardSeat(state),
+    actionEffect: createActionEffect(state),
+    celebrationEffect: createCelebrationEffect(state),
     toasts: state.toasts,
   };
 }
@@ -656,4 +801,16 @@ const WIN_TYPE_LABELS: Record<string, string> = {
   discard: '荣和',
   self_draw: '自摸',
   draw: '流局',
+};
+
+const ACTION_EFFECT_LABELS: Record<string, string> = {
+  chow: '吃',
+  pung: '碰',
+  kong: '明杠',
+  hu: '胡牌',
+};
+
+const KONG_EFFECT_LABELS: Record<string, string> = {
+  concealed_kong: '暗杠',
+  add_kong: '补杠',
 };
