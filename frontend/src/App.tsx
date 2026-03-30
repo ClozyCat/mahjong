@@ -471,6 +471,12 @@ export default function App() {
       return;
     }
 
+    if (actionId === 'pass') {
+      sendMessage(serializeClientMessage(createActionRequestMessage(actionId)));
+      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+      return;
+    }
+
     sendMessage(serializeClientMessage(createActionRequestMessage(actionId as BackendActionType)));
   }
 
