@@ -282,6 +282,48 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('keeps a local opening-flower pass prompt actionable when no flower replacement is available', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'opening_flowers',
+              seat_index: 2,
+              deadline_at: '2026-03-26T06:01:00Z',
+              options: ['pass'],
+            },
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 2,
+          options: ['pass'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.promptText).toBe('Player C正在执行操作：过');
+    expect(viewModel.promptCue).toMatchObject({
+      kind: 'turn',
+      tone: 'info',
+      title: '当前可以补花',
+      detail: '你可以 过',
+      actionIds: ['pass'],
+      highlightedActionIds: [],
+      sourceSeat: null,
+      isUrgent: false,
+    });
+  });
+
   it('shows other players are responding when the local seat has no claim options', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({

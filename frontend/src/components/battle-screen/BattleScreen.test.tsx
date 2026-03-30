@@ -445,7 +445,9 @@ describe('BattleScreen', () => {
 
     expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '碰' })).toBeInTheDocument();
-    expect(document.body.querySelector('.action-dock--actionable')).not.toBeNull();
+    expect(document.body.querySelector('.battle-shell--response')).not.toBeNull();
+    expect(document.body.querySelector('.battle-shell--response-hu')).not.toBeNull();
+    expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
   });
 });

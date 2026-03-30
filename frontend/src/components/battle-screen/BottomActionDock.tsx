@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -29,18 +30,21 @@ export function BottomActionDock({
 }: BottomActionDockProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const handCount = hand.length;
   const windLabel = localPlayer ? WIND_LABELS[localPlayer.wind] ?? localPlayer.wind : null;
   const presenceLabel = localPlayer ? (localPlayer.isBotControlled ? '离线' : localPlayer.connected ? '在线' : '离线') : null;
   const dockLabel = '手牌区';
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
-  const isResponsePrompt = promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong';
+  const dockStyle = {
+    '--action-dock-hand-count': `${handCount}`,
+    '--action-dock-gap-count': `${Math.max(handCount - 1, 0)}`,
+  } as CSSProperties;
   const visibleActions = promptCue
     ? actions
         .filter(
           (action) =>
             action.enabled &&
-            promptCue.actionIds.includes(action.id as BackendActionType) &&
-            (isResponsePrompt ? true : action.id === 'discard' || action.id === 'flower'),
+            promptCue.actionIds.includes(action.id as BackendActionType),
         )
         .sort(
           (left, right) =>
@@ -48,8 +52,6 @@ export function BottomActionDock({
             (ACTION_PRIORITY[right.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER),
         )
     : [];
-  const promptToneClass = isResponsePrompt && promptCue ? `action-dock--tone-${promptCue.tone}` : '';
-  const isActionable = isResponsePrompt && visibleActions.length > 0;
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -74,12 +76,31 @@ export function BottomActionDock({
     <>
       {!isCollapsed ? (
         <section
-          className={`action-dock ${isElevated ? 'action-dock--elevated' : ''} ${promptToneClass} ${
-            isActionable ? 'action-dock--actionable' : ''
-          }`}
+          className={`action-dock ${isElevated ? 'action-dock--elevated' : ''}`}
           data-testid="action-dock"
           data-elevated={isElevated}
+          style={dockStyle}
         >
+          {visibleActions.length > 0 ? (
+            <div className="action-dock__actions" aria-label="即时操作按钮">
+              {visibleActions.map((action) => {
+                const isPassAction = action.id === 'pass';
+
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className={`action-dock__action action-dock__action--response ${
+                      isPassAction ? 'action-dock__action--passive' : ''
+                    }`}
+                    onClick={() => onAction(action.id)}
+                  >
+                    {action.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="action-dock__tableau action-dock__tableau--full">
             <div className="action-dock__hand-zone">
               {hand.length > 0 ? (
@@ -108,26 +129,6 @@ export function BottomActionDock({
               {localPlayer ? (
                 <>
                   <div className="action-dock__status-strip">
-                    {visibleActions.length > 0 ? (
-                      <div className="action-dock__actions" aria-label="即时操作按钮">
-                        {visibleActions.map((action) => {
-                          const isPassAction = action.id === 'pass';
-
-                          return (
-                            <button
-                              key={action.id}
-                              type="button"
-                              className={`action-dock__action action-dock__action--response ${
-                                isPassAction ? 'action-dock__action--passive' : ''
-                              }`}
-                              onClick={() => onAction(action.id)}
-                            >
-                              {action.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
                     {remainingSeconds !== null ? (
                       <div
                         className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}

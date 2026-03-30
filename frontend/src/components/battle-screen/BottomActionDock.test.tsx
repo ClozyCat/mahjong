@@ -117,7 +117,7 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    expect(document.body.querySelector('.action-dock--actionable')).not.toBeNull();
+    expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
     expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '碰' })).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('BottomActionDock', () => {
     expect(screen.getByRole('button', { name: '收起手牌区' })).toBeInTheDocument();
   });
 
-  it('shows discard in a normal local turn without turning the dock into a response highlight', () => {
+  it('shows all enabled local-turn actions without turning the dock into a response highlight', () => {
     render(
       <BottomActionDock
         hand={localHand}
@@ -156,7 +156,65 @@ describe('BottomActionDock', () => {
     expect(document.body.querySelector('.action-dock--elevated')).not.toBeNull();
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(screen.getByRole('button', { name: '出牌' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '杠' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '和牌' })).toBeNull();
+    expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
+  });
+
+  it('keeps pass available during opening flower prompts', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        actions={[
+          { id: 'flower', label: '补花', enabled: true, emphasis: 'medium' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ]}
+        isElevated
+        promptCue={{
+          kind: 'turn',
+          tone: 'info',
+          title: '当前可以补花',
+          detail: '你可以 过',
+          actionIds: ['pass'],
+          highlightedActionIds: [],
+          sourceSeat: null,
+          isUrgent: false,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        waitingControls={null}
+        localPlayer={localPlayer}
+        onTileSelect={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '补花' })).toBeNull();
+  });
+
+  it('derives dock width variables from the current hand count', () => {
+    render(
+      <BottomActionDock
+        hand={[
+          { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
+          { tileId: 'w2#2', code: 'w2', isSelected: false, isDrawn: false, isFlower: false },
+          { tileId: 'w3#3', code: 'w3', isSelected: false, isDrawn: false, isFlower: false },
+        ]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        waitingControls={null}
+        localPlayer={localPlayer}
+        onTileSelect={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const dock = screen.getByTestId('action-dock');
+
+    expect(dock).toHaveStyle({
+      '--action-dock-hand-count': '3',
+      '--action-dock-gap-count': '2',
+    });
   });
 });

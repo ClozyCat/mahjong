@@ -278,7 +278,7 @@ function createPromptCue(state: SessionState): BattlePromptView | null {
     pendingAction?.type === 'opening_flowers' &&
     typeof pendingAction.seat_index === 'number' &&
     pendingAction.seat_index === localSeat &&
-    highlightedActionIds.length > 0
+    localPromptOptions.length > 0
   ) {
     return {
       kind: 'turn',
