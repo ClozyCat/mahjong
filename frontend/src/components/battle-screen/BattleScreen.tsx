@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types/match';
 import { ActionEffectsOverlay } from './ActionEffectsOverlay';
@@ -24,6 +24,9 @@ const DEFAULT_TABLE_TILE_SCALE = 1.12;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
+const MIN_BATTLE_VIEWPORT_WIDTH = 1366;
+const MIN_BATTLE_VIEWPORT_HEIGHT = 768;
+const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
 
 export function BattleScreen({
   viewModel,
@@ -36,6 +39,7 @@ export function BattleScreen({
   onLeaveTable,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
+  const [viewportState, setViewportState] = useState(getBattleViewportState);
   const orderedPlayers = [
     viewModel.players.find((item) => item.seat === 'bottom'),
     ...REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)),
@@ -53,8 +57,22 @@ export function BattleScreen({
     });
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    function handleResize() {
+      setViewportState(getBattleViewportState());
+    }
+
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
-    <main className="battle-screen">
+    <main className={`battle-screen ${viewportState.isSupported ? '' : 'battle-screen--viewport-blocked'}`}>
       <div className="battle-shell">
         <div className="battle-stage">
           <div className="battle-stage__halo" />
@@ -70,10 +88,6 @@ export function BattleScreen({
               players={viewModel.players}
               settlementHands={viewModel.settlementHands}
               tileScale={tableTileScale}
-              canDecreaseTileScale={canDecreaseTableTileScale}
-              canIncreaseTileScale={canIncreaseTableTileScale}
-              onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
-              onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />
           </div>
           <ActionEffectsOverlay
@@ -102,8 +116,13 @@ export function BattleScreen({
         promptText={viewModel.promptText}
         remainingTileCount={viewModel.remainingTileCount}
         waitingControls={viewModel.waitingControls}
+        tableTileScale={tableTileScale}
+        canDecreaseTileScale={canDecreaseTableTileScale}
+        canIncreaseTileScale={canIncreaseTableTileScale}
         onCopyTableCode={onCopyTableCode}
         onLeaveTable={onLeaveTable}
+        onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
+        onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
         onAction={onAction}
       />
       <BottomActionDock
@@ -119,8 +138,44 @@ export function BattleScreen({
         onClaimCandidateActivate={onClaimCandidateActivate}
         onAction={onAction}
       />
+      {viewportState.isSupported ? null : (
+        <div className="battle-screen__viewport-guard" role="alert" aria-live="assertive">
+          <div className="battle-screen__viewport-guard-card">
+            <span className="battle-screen__viewport-guard-eyebrow">显示条件不足</span>
+            <strong>请把浏览器窗口调整到大于 1366 x 768，且宽高比大于 16:9</strong>
+            <p>
+              当前可用区域为 {viewportState.width} x {viewportState.height}，宽高比 {viewportState.ratioLabel}。
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
 
 const ROOM_CONTROL_ACTION_IDS: BattleActionId[] = ['ready', 'start_match', 'start_next_round', 'restart_match'];
+
+function getBattleViewportState() {
+  if (typeof window === 'undefined') {
+    return {
+      width: 1920,
+      height: 1080,
+      ratioLabel: '1.78',
+      isSupported: true,
+    };
+  }
+
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const ratio = height > 0 ? width / height : 0;
+
+  return {
+    width,
+    height,
+    ratioLabel: ratio.toFixed(2),
+    isSupported:
+      width > MIN_BATTLE_VIEWPORT_WIDTH &&
+      height > MIN_BATTLE_VIEWPORT_HEIGHT &&
+      ratio > MIN_BATTLE_VIEWPORT_RATIO,
+  };
+}

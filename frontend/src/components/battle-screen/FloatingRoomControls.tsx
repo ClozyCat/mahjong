@@ -16,8 +16,13 @@ interface FloatingRoomControlsProps {
   promptText: string | null;
   remainingTileCount?: number | null;
   waitingControls: WaitingControls | null;
+  tableTileScale?: number;
+  canDecreaseTileScale?: boolean;
+  canIncreaseTileScale?: boolean;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
+  onDecreaseTileScale?: () => void;
+  onIncreaseTileScale?: () => void;
   onAction: (actionId: BattleActionView['id']) => void;
 }
 
@@ -36,8 +41,13 @@ export function FloatingRoomControls({
   promptText,
   remainingTileCount = null,
   waitingControls,
+  tableTileScale = 1,
+  canDecreaseTileScale = false,
+  canIncreaseTileScale = false,
   onCopyTableCode,
   onLeaveTable,
+  onDecreaseTileScale,
+  onIncreaseTileScale,
   onAction,
 }: FloatingRoomControlsProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -50,6 +60,8 @@ export function FloatingRoomControls({
     [players],
   );
   const hasActionSection = actions.length > 0 || canLeaveTable;
+  const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
+  const scalePercentLabel = `${Math.round(tableTileScale * 100)}%`;
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -133,6 +145,38 @@ export function FloatingRoomControls({
                 </div>
               </div>
             </section>
+
+            {shouldShowScaleControls ? (
+              <section className="battle-drawer__section">
+                <div className="battle-drawer__section-head">
+                  <span className="battle-drawer__section-label">牌桌显示</span>
+                  <strong>牌面尺寸</strong>
+                </div>
+                <div className="battle-drawer__scale-controls">
+                  <span className="battle-drawer__scale-readout">牌面 {scalePercentLabel}</span>
+                  <div className="battle-drawer__scale-buttons" role="group" aria-label="调整牌桌牌面大小">
+                    <button
+                      type="button"
+                      className="battle-drawer__scale-button"
+                      aria-label="缩小牌桌牌面"
+                      onClick={onDecreaseTileScale}
+                      disabled={!canDecreaseTileScale}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      className="battle-drawer__scale-button"
+                      aria-label="放大牌桌牌面"
+                      onClick={onIncreaseTileScale}
+                      disabled={!canIncreaseTileScale}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             <section className="battle-drawer__section">
               <div className="battle-drawer__section-head">

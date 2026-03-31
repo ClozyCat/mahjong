@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { Fragment, type CSSProperties } from 'react';
 
 import type { BattlePromptView, PlayerView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
@@ -15,10 +15,6 @@ interface TableStageProps {
   players?: Pick<PlayerView, 'seat' | 'name' | 'melds'>[];
   settlementHands?: Partial<Record<Seat, string[]>> | null;
   tileScale?: number;
-  canDecreaseTileScale?: boolean;
-  canIncreaseTileScale?: boolean;
-  onDecreaseTileScale?: () => void;
-  onIncreaseTileScale?: () => void;
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
@@ -34,10 +30,6 @@ export function TableStage({
   players = [],
   settlementHands = null,
   tileScale = 1,
-  canDecreaseTileScale = false,
-  canIncreaseTileScale = false,
-  onDecreaseTileScale,
-  onIncreaseTileScale,
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
@@ -50,8 +42,6 @@ export function TableStage({
     '--table-stage-tile-scale': `${tileScale}`,
     '--table-stage-spotlight-scale': `${spotlightScale}`,
   } as CSSProperties;
-  const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
-  const scalePercentLabel = `${Math.round(tileScale * 100)}%`;
 
   return (
     <section
@@ -73,85 +63,62 @@ export function TableStage({
             ) : null}
             <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
             {promptText ? <em>{promptText}</em> : null}
-            {shouldShowScaleControls ? (
-              <div className="table-stage__scale-controls">
-                <span className="table-stage__scale-readout">牌面 {scalePercentLabel}</span>
-                <div className="table-stage__scale-buttons" role="group" aria-label="调整牌桌牌面大小">
-                  <button
-                    type="button"
-                    className="table-stage__scale-button"
-                    aria-label="缩小牌桌牌面"
-                    onClick={onDecreaseTileScale}
-                    disabled={!canDecreaseTileScale}
-                  >
-                    -
-                  </button>
-                  <button
-                    type="button"
-                    className="table-stage__scale-button"
-                    aria-label="放大牌桌牌面"
-                    onClick={onIncreaseTileScale}
-                    disabled={!canIncreaseTileScale}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ) : null}
           </div>
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
             const finalHandTiles = settlementHands?.[seat] ?? [];
 
             return (
-              <div key={seat} className={`table-stage__seat-zone table-stage__seat-zone--${seat}`}>
-                <div className={`table-stage__seat-panel table-stage__seat-panel--${seat}`}>
-                  <div
-                    className={`table-stage__river table-stage__river--${seat} ${
-                      activeSeat === seat ? 'table-stage__river--active' : ''
-                    }`}
-                    data-seat={seat}
-                  >
-                    <div className={`table-stage__river-track table-stage__river-track--${seat}`}>
-                      {discards[seat].map((tile, index) => {
-                        const isSpotlightTile =
-                          lastDiscardPosition !== null &&
-                          lastDiscardPosition.seat === seat &&
-                          lastDiscardPosition.index === index;
+              <Fragment key={seat}>
+                <div className={`table-stage__seat-zone table-stage__seat-zone--${seat}`}>
+                  <div className={`table-stage__seat-panel table-stage__seat-panel--${seat}`}>
+                    <div
+                      className={`table-stage__river table-stage__river--${seat} ${
+                        activeSeat === seat ? 'table-stage__river--active' : ''
+                      }`}
+                      data-seat={seat}
+                    >
+                      <div className={`table-stage__river-track table-stage__river-track--${seat}`}>
+                        {discards[seat].map((tile, index) => {
+                          const isSpotlightTile =
+                            lastDiscardPosition !== null &&
+                            lastDiscardPosition.seat === seat &&
+                            lastDiscardPosition.index === index;
 
-                        if (isSpotlightTile) {
-                          return null;
-                        }
+                          if (isSpotlightTile) {
+                            return null;
+                          }
 
-                        return <MahjongTile key={`${seat}-${tile}-${index}`} code={tile} variant="discard" />;
-                      })}
+                          return <MahjongTile key={`${seat}-${tile}-${index}`} code={tile} variant="discard" />;
+                        })}
+                      </div>
                     </div>
                   </div>
-                  {player && player.melds.length > 0 ? (
-                    <div className="table-stage__melds">
-                      <MeldRack seat={seat} melds={player.melds} ariaLabel={`${player.name} melds`} />
+                  {finalHandTiles.length > 0 ? (
+                    <div
+                      className={`table-stage__settlement-hand table-stage__settlement-hand--${seat}`}
+                      aria-label={`${player?.name ?? SEAT_COPY[seat]}终局手牌`}
+                    >
+                      <span className="table-stage__settlement-hand-eyebrow">终局手牌</span>
+                      <div className={`table-stage__settlement-hand-grid table-stage__settlement-hand-grid--${seat}`}>
+                        {finalHandTiles.map((tile, index) => (
+                          <MahjongTile
+                            key={`${seat}-settlement-${tile}-${index}`}
+                            code={tile}
+                            variant="discard"
+                            className="table-stage__settlement-hand-tile"
+                          />
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                 </div>
-                {finalHandTiles.length > 0 ? (
-                  <div
-                    className={`table-stage__settlement-hand table-stage__settlement-hand--${seat}`}
-                    aria-label={`${player?.name ?? SEAT_COPY[seat]}终局手牌`}
-                  >
-                    <span className="table-stage__settlement-hand-eyebrow">终局手牌</span>
-                    <div className={`table-stage__settlement-hand-grid table-stage__settlement-hand-grid--${seat}`}>
-                      {finalHandTiles.map((tile, index) => (
-                        <MahjongTile
-                          key={`${seat}-settlement-${tile}-${index}`}
-                          code={tile}
-                          variant="discard"
-                          className="table-stage__settlement-hand-tile"
-                        />
-                      ))}
-                    </div>
+                {player && player.melds.length > 0 ? (
+                  <div className={`table-stage__melds table-stage__melds--${seat}`}>
+                    <MeldRack seat={seat} melds={player.melds} ariaLabel={`${player.name} melds`} />
                   </div>
                 ) : null}
-              </div>
+              </Fragment>
             );
           })}
           {spotlightSeat && spotlightTile ? (

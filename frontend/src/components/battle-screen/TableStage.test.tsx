@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { TableStage } from './TableStage';
 
@@ -179,7 +179,7 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
   });
 
-  it('applies table tile scale variables and shows in-table scale controls when configured', () => {
+  it('applies table tile scale variables to the table stage', () => {
     render(
       <TableStage
         discards={{
@@ -193,10 +193,6 @@ describe('TableStage', () => {
         lastDiscardSeat="bottom"
         promptText={null}
         tileScale={1.12}
-        canDecreaseTileScale
-        canIncreaseTileScale
-        onDecreaseTileScale={vi.fn()}
-        onIncreaseTileScale={vi.fn()}
       />,
     );
 
@@ -204,8 +200,5 @@ describe('TableStage', () => {
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
     expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.4');
-    expect(screen.getByText('牌面 112%')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '缩小牌桌牌面' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '放大牌桌牌面' })).toBeEnabled();
   });
 });

@@ -6,6 +6,20 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BattleViewModel } from '../../types/match';
 import { BattleScreen } from './BattleScreen';
 
+function setViewportSize(width: number, height: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width,
+  });
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    writable: true,
+    value: height,
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
 function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): BattleViewModel {
   return {
     mode: 'watching',
@@ -121,6 +135,8 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
 }
 
 function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<ComponentProps<typeof BattleScreen>>) {
+  setViewportSize(1720, 900);
+
   return render(
     <BattleScreen
       viewModel={viewModel}
@@ -353,21 +369,22 @@ describe('BattleScreen', () => {
 
     const table = screen.getByLabelText('Mahjong table');
     const hand = screen.getByLabelText(/local hand/i);
+    const drawer = screen.getByLabelText('牌桌侧边面板');
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
-    expect(screen.getByText('牌面 112%')).toBeInTheDocument();
+    expect(within(drawer).getByText('牌面 112%')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '放大牌桌牌面' }));
+    await user.click(within(drawer).getByRole('button', { name: '放大牌桌牌面' }));
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.18');
     expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.48');
-    expect(screen.getByText('牌面 118%')).toBeInTheDocument();
+    expect(within(drawer).getByText('牌面 118%')).toBeInTheDocument();
     expect(hand.querySelector('.mahjong-tile--hand')?.getAttribute('style')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: '缩小牌桌牌面' }));
+    await user.click(within(drawer).getByRole('button', { name: '缩小牌桌牌面' }));
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
-    expect(screen.getByText('牌面 112%')).toBeInTheDocument();
+    expect(within(drawer).getByText('牌面 112%')).toBeInTheDocument();
   });
 
   it('renders the non-text action spectacle layer when a battle action effect is active', () => {
@@ -430,6 +447,26 @@ describe('BattleScreen', () => {
     expect(container.querySelector('.stage-background')).toBeNull();
     expect(container.querySelector('.battle-shell')).not.toBeNull();
     expect(screen.getByText(/牌桌编号/i)).toBeInTheDocument();
+  });
+
+  it('blocks interaction with a viewport guard when the browser window is below the required size', () => {
+    setViewportSize(1366, 768);
+
+    render(
+      <BattleScreen
+        viewModel={createBattleViewModel()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('请把浏览器窗口调整到大于 1366 x 768，且宽高比大于 16:9');
+    expect(document.body.querySelector('.battle-screen--viewport-blocked')).not.toBeNull();
   });
 
   it('renders the local control area as a retro control panel with chinese labels', () => {
