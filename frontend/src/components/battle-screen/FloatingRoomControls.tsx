@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { BattleActionView, PlayerView, Seat, WaitingControls } from '../../types/match';
-import { PlayerRing } from './PlayerRing';
 
 interface FloatingRoomControlsProps {
   players: PlayerView[];
@@ -178,18 +177,6 @@ export function FloatingRoomControls({
               </section>
             ) : null}
 
-            <section className="battle-drawer__section">
-              <div className="battle-drawer__section-head">
-                <span className="battle-drawer__section-label">玩家信息</span>
-                <strong>座位面板</strong>
-              </div>
-              <div className="battle-drawer__players">
-                {orderedPlayers.map((player) => (
-                  <PlayerRing key={player.seat} player={player} />
-                ))}
-              </div>
-            </section>
-
             {hasActionSection ? (
               <section className="battle-drawer__section">
                 <div className="battle-drawer__section-head">
@@ -247,5 +234,5 @@ function getStatusCopy(promptText: string | null, waitingControls: WaitingContro
     return `当前已有 ${waitingControls.occupiedSeats}/4 位牌手入座，准备状态会实时同步。`;
   }
 
-  return '牌桌信息、玩家状态和房间操作已整合到右侧抽屉。';
+  return '牌桌信息和房间操作已整合到右侧抽屉，玩家状态显示在桌面信息栏。';
 }

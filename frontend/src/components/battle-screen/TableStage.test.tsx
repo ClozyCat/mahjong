@@ -78,7 +78,7 @@ describe('TableStage', () => {
   });
 
   it('renders each players melds beside the matching river when player data is provided', () => {
-    render(
+    const { container } = render(
       <TableStage
         discards={{
           top: ['w1', 'w2'],
@@ -103,6 +103,10 @@ describe('TableStage', () => {
     expect(screen.getByLabelText('Player Left melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
     expect(screen.getByLabelText('Player Right melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
     expect(screen.getByLabelText('Player Bottom melds').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
+    expect(container.querySelector('.table-stage__seat-zone--top .table-stage__melds--top')).not.toBeNull();
+    expect(container.querySelector('.table-stage__seat-zone--left .table-stage__melds--left')).not.toBeNull();
+    expect(container.querySelector('.table-stage__seat-zone--right .table-stage__melds--right')).not.toBeNull();
+    expect(container.querySelector('.table-stage__seat-zone--bottom .table-stage__melds--bottom')).not.toBeNull();
   });
 
   it('shows the current latest discard in a larger spotlight near the discarding seat', () => {
@@ -123,6 +127,86 @@ describe('TableStage', () => {
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).not.toBeNull();
     expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
+  });
+
+  it('renders player info bars on the table and reuses the same accent on the spotlight seat', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: ['b1', 'b2'],
+          right: ['c1'],
+          bottom: ['d1'],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b2"
+        lastDiscardSeat="left"
+        promptText={null}
+        players={[
+          {
+            seat: 'top',
+            name: 'Player Top',
+            score: 26800,
+            flowerCount: 0,
+            wind: 'North',
+            isDealer: false,
+            isActive: false,
+            isLocal: false,
+            connected: true,
+            concealedCount: 13,
+            melds: [],
+            statusText: 'Live',
+          },
+          {
+            seat: 'left',
+            name: 'Player Left',
+            score: 24300,
+            flowerCount: 1,
+            wind: 'West',
+            isDealer: false,
+            isActive: false,
+            isLocal: false,
+            connected: true,
+            concealedCount: 13,
+            melds: [],
+            statusText: 'Live',
+          },
+          {
+            seat: 'right',
+            name: 'Player Right',
+            score: 25000,
+            flowerCount: 0,
+            wind: 'South',
+            isDealer: false,
+            isActive: false,
+            isLocal: false,
+            connected: true,
+            concealedCount: 13,
+            melds: [],
+            statusText: 'Live',
+          },
+          {
+            seat: 'bottom',
+            name: 'Player Bottom',
+            score: 25000,
+            flowerCount: 0,
+            wind: 'East',
+            isDealer: true,
+            isActive: true,
+            isLocal: true,
+            connected: true,
+            concealedCount: 14,
+            melds: [],
+            statusText: 'Live',
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText('Player Top 信息栏')).toBeInTheDocument();
+    expect(screen.getByLabelText('Player Left 信息栏')).toHaveTextContent('手牌 13 · 花 1');
+    expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveTextContent('庄家');
+    expect(container.querySelector('.table-stage__spotlight--left')?.getAttribute('style')).toContain('--table-player-accent');
   });
 
   it('renders settlement hands beside each seat when the round has ended', () => {

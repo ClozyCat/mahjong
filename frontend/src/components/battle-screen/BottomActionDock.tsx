@@ -66,6 +66,7 @@ export function BottomActionDock({
         (ACTION_PRIORITY[right.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER),
     );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
+  const shouldShowCountdown = Boolean(promptCue) && remainingSeconds !== null;
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -181,7 +182,7 @@ export function BottomActionDock({
               )}
             </div>
             <div className="action-dock__info-rail">
-              {remainingSeconds !== null ? (
+              {shouldShowCountdown ? (
                 <div
                   className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
                   aria-label={`剩余 ${remainingSeconds} 秒`}

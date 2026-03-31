@@ -398,18 +398,20 @@ describe('BattleScreen', () => {
     expect(screen.getAllByText(/trying to restore your seat/i).length).toBeGreaterThan(0);
   });
 
-  it('renders the top player ring separately from the table content', () => {
+  it('renders table player info bars for every seat around the table', () => {
     renderBattleScreen(createBattleViewModel());
 
-    expect(screen.getByText('Player Top')).toBeInTheDocument();
-    expect(screen.getByText('Player Left')).toBeInTheDocument();
+    expect(screen.getByLabelText('Player Top 信息栏')).toBeInTheDocument();
+    expect(screen.getByLabelText('Player Left 信息栏')).toBeInTheDocument();
+    expect(screen.getByLabelText('Player A 信息栏')).toBeInTheDocument();
   });
 
-  it('does not show per-round delta text on other player info panels', () => {
-    const { container } = renderBattleScreen(createBattleViewModel());
+  it('shows table info bars without exposing per-round delta values', () => {
+    renderBattleScreen(createBattleViewModel());
 
-    expect(container.querySelector('.player-ring--left .player-ring__detail')?.textContent).toBe('手牌 13 · 花 1');
-    expect(container.querySelector('.player-ring--top .player-ring__detail')?.textContent).toBe('手牌 13 · 花 0');
+    expect(screen.getByLabelText('Player Left 信息栏')).toHaveTextContent('手牌 13 · 花 1');
+    expect(screen.getByLabelText('Player Top 信息栏')).toHaveTextContent('手牌 13 · 花 0');
+    expect(screen.getByLabelText('Player Left 信息栏')).not.toHaveTextContent('-8');
   });
 
   it('renders local hand tiles with mahjong tile presentation', () => {
@@ -488,12 +490,12 @@ describe('BattleScreen', () => {
     expect(document.body.querySelector('.action-effects--celebration')).toBeNull();
   });
 
-  it('moves the local player identity into the side drawer instead of the table center', () => {
+  it('renders the local player identity inside the table info bar instead of the side drawer', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
-    expect(container.querySelector('.battle-stage .player-ring--bottom')).toBeNull();
+    expect(container.querySelector('.battle-stage .table-stage__player-info--bottom')).not.toBeNull();
     expect(screen.getByText('Player A')).toBeInTheDocument();
-    expect(container.querySelector('.battle-drawer .player-ring--bottom')).not.toBeNull();
+    expect(container.querySelector('.battle-drawer .player-ring')).toBeNull();
     expect(document.body.querySelector('.action-dock__player')).toBeNull();
   });
 
@@ -528,7 +530,7 @@ describe('BattleScreen', () => {
 
   it('renders the local control area as a retro control panel with chinese labels', () => {
     renderBattleScreen(createBattleViewModel());
-    const localPlayerCard = screen.getByText('Player A').closest('.player-ring');
+    const localPlayerCard = screen.getByLabelText('Player A 信息栏');
 
     expect(document.body.querySelector('.action-dock__player')).toBeNull();
     expect(localPlayerCard).not.toBeNull();

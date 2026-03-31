@@ -147,6 +147,27 @@ describe('BottomActionDock', () => {
     expect(screen.getByRole('button', { name: '出牌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/剩余 \d+ 秒/)).toBeInTheDocument();
+  });
+
+  it('hides the dock countdown when only other players are responding', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText(/剩余 \d+ 秒/)).toBeNull();
   });
 
   it('keeps pass available during opening flower prompts', () => {
