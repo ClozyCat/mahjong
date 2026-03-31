@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { BackendActionType, BattleActionView, BattlePromptView, BattleViewModel, PlayerView } from '../../types/match';
+import type { BackendActionType, BattleActionView, BattlePromptView, BattleViewModel } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 
 interface BottomActionDockProps {
@@ -11,8 +11,6 @@ interface BottomActionDockProps {
   isElevated: boolean;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
-  waitingControls: BattleViewModel['waitingControls'];
-  localPlayer: PlayerView | null;
   onTileSelect: (tileId: string) => void;
   onAction: (actionId: BattleActionView['id']) => void;
 }
@@ -23,35 +21,36 @@ export function BottomActionDock({
   isElevated,
   promptCue,
   deadlineAt,
-  waitingControls,
-  localPlayer,
   onTileSelect,
   onAction,
 }: BottomActionDockProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const handCount = hand.length;
-  const windLabel = localPlayer ? WIND_LABELS[localPlayer.wind] ?? localPlayer.wind : null;
-  const presenceLabel = localPlayer ? (localPlayer.isBotControlled ? '离线' : localPlayer.connected ? '在线' : '离线') : null;
   const dockLabel = '手牌区';
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
   const dockStyle = {
     '--action-dock-hand-count': `${handCount}`,
+    '--action-dock-effective-hand-count': `${Math.max(handCount, 1)}`,
     '--action-dock-gap-count': `${Math.max(handCount - 1, 0)}`,
   } as CSSProperties;
-  const visibleActions = promptCue
-    ? actions
-        .filter(
-          (action) =>
-            action.enabled &&
-            promptCue.actionIds.includes(action.id as BackendActionType),
-        )
-        .sort(
-          (left, right) =>
-            (ACTION_PRIORITY[left.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER) -
-            (ACTION_PRIORITY[right.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER),
-        )
-    : [];
+  const visibleActions = actions
+    .filter((action) => {
+      if (!action.enabled) {
+        return false;
+      }
+
+      if (!promptCue) {
+        return true;
+      }
+
+      return promptCue.actionIds.includes(action.id as BackendActionType);
+    })
+    .sort(
+      (left, right) =>
+        (ACTION_PRIORITY[left.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER) -
+        (ACTION_PRIORITY[right.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER),
+    );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
 
   useEffect(() => {
@@ -128,51 +127,23 @@ export function BottomActionDock({
               )}
             </div>
             <div className="action-dock__info-rail">
-              {localPlayer ? (
-                <>
-                  <div className="action-dock__status-strip">
-                    {remainingSeconds !== null ? (
-                      <div
-                        className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
-                        aria-label={`剩余 ${remainingSeconds} 秒`}
-                      >
-                        <strong>{remainingSeconds}</strong>
-                      </div>
-                    ) : null}
-                    <div className="action-dock__player">
-                      <span className="action-dock__player-eyebrow">
-                        {windLabel}
-                        {localPlayer.isDealer ? ' 庄家' : ''}
-                        {presenceLabel ? ` ${presenceLabel}` : ''}
-                      </span>
-                      <strong>{localPlayer.name}</strong>
-                      <span className="action-dock__player-meta">
-                        {localPlayer.score.toLocaleString()} · 花 {localPlayer.flowerCount} · {localPlayer.statusText ?? '就绪'}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="action-dock__action action-dock__action--medium action-dock__action--collapse"
-                    aria-label={`收起${dockLabel}`}
-                    onClick={() => setIsCollapsed(true)}
-                  >
-                    收起
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="action-dock__badge">{waitingControls?.isReady ? '已准备' : '待命中'}</span>
-                  <button
-                    type="button"
-                    className="action-dock__action action-dock__action--medium action-dock__action--collapse"
-                    aria-label={`收起${dockLabel}`}
-                    onClick={() => setIsCollapsed(true)}
-                  >
-                    收起
-                  </button>
-                </>
-              )}
+              {remainingSeconds !== null ? (
+                <div
+                  className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
+                  aria-label={`剩余 ${remainingSeconds} 秒`}
+                >
+                  <span>倒计时</span>
+                  <strong>{remainingSeconds}</strong>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="action-dock__action action-dock__action--medium action-dock__action--collapse"
+                aria-label={`收起${dockLabel}`}
+                onClick={() => setIsCollapsed(true)}
+              >
+                收起
+              </button>
             </div>
           </div>
         </section>
@@ -192,13 +163,6 @@ export function BottomActionDock({
 
   return portalTarget ? createPortal(content, portalTarget) : content;
 }
-
-const WIND_LABELS: Record<PlayerView['wind'], string> = {
-  East: '东',
-  South: '南',
-  West: '西',
-  North: '北',
-};
 
 const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
   hu: 0,

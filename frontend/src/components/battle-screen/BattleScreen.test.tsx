@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -332,30 +332,36 @@ describe('BattleScreen', () => {
     expect(screen.getByText('华彩自摸')).toBeInTheDocument();
   });
 
-  it('moves the local player identity into the action dock instead of the table center', () => {
+  it('moves the local player identity into the side drawer instead of the table center', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
     expect(container.querySelector('.battle-stage .player-ring--bottom')).toBeNull();
     expect(screen.getByText('Player A')).toBeInTheDocument();
-    expect(document.body.querySelector('.action-dock__player')).not.toBeNull();
+    expect(container.querySelector('.battle-drawer .player-ring--bottom')).not.toBeNull();
+    expect(document.body.querySelector('.action-dock__player')).toBeNull();
   });
 
-  it('renders the battle screen inside a retro client window', () => {
+  it('renders the battle screen as a plain full-window table layout', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
-    expect(container.querySelector('.win10-window')).not.toBeNull();
+    expect(container.querySelector('.win10-window')).toBeNull();
+    expect(container.querySelector('.stage-background')).toBeNull();
+    expect(container.querySelector('.battle-shell')).not.toBeNull();
     expect(screen.getByText(/牌桌编号/i)).toBeInTheDocument();
   });
 
   it('renders the local control area as a retro control panel with chinese labels', () => {
     renderBattleScreen(createBattleViewModel());
+    const localPlayerCard = screen.getByText('Player A').closest('.player-ring');
 
-    expect(document.body.querySelector('.action-dock__player')).not.toBeNull();
-    expect(screen.getByText(/25,000 · 花 0 · live/i)).toBeInTheDocument();
+    expect(document.body.querySelector('.action-dock__player')).toBeNull();
+    expect(localPlayerCard).not.toBeNull();
+    expect(within(localPlayerCard as HTMLElement).getByText(/25,000 · Live/i)).toBeInTheDocument();
+    expect(within(localPlayerCard as HTMLElement).getByText(/手牌 14 · 花 0/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '收起手牌区' }).length).toBeGreaterThan(0);
   });
 
-  it('keeps the message window collapsed by default even when messages exist', () => {
+  it('does not render any log window affordance even when toasts exist', () => {
     renderBattleScreen(
       createBattleViewModel({
         toasts: [
@@ -370,10 +376,11 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByText('提示1')).not.toBeInTheDocument();
     expect(screen.queryByText('提示5')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '展开日志窗口' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开日志窗口' })).toBeNull();
+    expect(screen.queryByLabelText('日志窗口')).toBeNull();
   });
 
-  it('renders room controls in a separate floating window instead of the hand dock', () => {
+  it('renders room controls inside the right-side drawer instead of the hand dock', () => {
     renderBattleScreen(
       createBattleViewModel({
         actions: [
@@ -384,8 +391,8 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByLabelText('房间操作窗口')).toBeInTheDocument();
-    expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('出牌');
+    expect(screen.getByLabelText('牌桌侧边面板')).toBeInTheDocument();
+    expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
   });
 
