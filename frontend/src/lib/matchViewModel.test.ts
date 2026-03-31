@@ -282,6 +282,62 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('deduplicates visually identical claim candidates that only differ by tile ids', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            last_discard: 't9',
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 1,
+              deadline_at: '2026-03-26T06:01:00Z',
+              responded_seats: [],
+              options: ['chow', 'pass'],
+            },
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    concealed_count: 4,
+                    concealed_tiles: [
+                      { tile_id: 't7#0', tile_key: 't7' },
+                      { tile_id: 't7#1', tile_key: 't7' },
+                      { tile_id: 't8#0', tile_key: 't8' },
+                      { tile_id: 'w1#0', tile_key: 'w1' },
+                    ],
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 2,
+          options: ['chow', 'pass'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.claimCandidates).toHaveLength(1);
+    expect(viewModel.claimCandidates[0]).toMatchObject({
+      actionId: 'chow',
+      tiles: [
+        { code: 't7', source: 'hand' },
+        { code: 't8', source: 'hand' },
+        { code: 't9', source: 'claim' },
+      ],
+    });
+  });
+
   it('keeps a local opening-flower pass prompt actionable when no flower replacement is available', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({

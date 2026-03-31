@@ -5,7 +5,6 @@ import { ConnectGate, type ConnectGateValue } from './components/connect-gate/Co
 import { ApiError, createTable } from './lib/api';
 import {
   getActionCandidateGroups,
-  getActionCandidateTileIds,
   getFlowerCandidateTileIds,
   getMatchingActionGroup,
 } from './lib/kongSelection';
@@ -26,13 +25,11 @@ import {
 } from './lib/socket';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
 import { clearStoredSession, loadStoredSession, saveStoredSession } from './lib/storage';
-import type { BackendActionType, BattleActionId, SessionState } from './types/match';
+import type { BackendActionType, BattleActionId, ClaimActionId, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
-
-type ClaimActionId = (typeof CLAIM_ACTION_IDS)[number];
 
 function getRuntimeDefaultBaseUrls() {
   if (typeof window === 'undefined') {
@@ -114,6 +111,29 @@ function getClaimSelectionSignature(state: SessionState) {
 
 function canUseClaimMultiSelect(state: SessionState) {
   return getClaimSelectionSignature(state) !== null;
+}
+
+function canQuickDiscard(state: SessionState) {
+  if (canUseClaimMultiSelect(state) || state.selectionMode === 'kong' || state.selectionMode === 'chow' || state.selectionMode === 'pung') {
+    return false;
+  }
+
+  const localSeat = state.roomSnapshot?.payload.local_seat;
+  if (typeof localSeat !== 'number') {
+    return false;
+  }
+
+  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+  if (
+    pendingAction?.type === 'active_turn' &&
+    pendingAction.seat_index === localSeat &&
+    Array.isArray(pendingAction.options) &&
+    pendingAction.options.includes('discard')
+  ) {
+    return true;
+  }
+
+  return state.latestActionPrompt?.payload.seat_index === localSeat && state.latestActionPrompt.payload.options.includes('discard');
 }
 
 export default function App() {
@@ -494,21 +514,12 @@ export default function App() {
 
     if (actionId === 'kong' || actionId === 'chow' || actionId === 'pung') {
       const candidateGroups = getActionCandidateGroups(state, actionId);
-      const candidateTileIds = getActionCandidateTileIds(state, actionId);
       const matchingGroup = getMatchingActionGroup(state.selectedTileIds, candidateGroups);
 
       if (matchingGroup) {
         sendMessage(serializeClientMessage(createActionRequestMessage(actionId, matchingGroup)));
         dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
         return;
-      }
-
-      if (candidateTileIds.length > 0) {
-        dispatch({
-          type: 'set_selected_tiles',
-          tileIds: candidateTileIds,
-          mode: actionId,
-        });
       }
 
       return;
@@ -521,6 +532,34 @@ export default function App() {
     }
 
     sendMessage(serializeClientMessage(createActionRequestMessage(actionId as BackendActionType)));
+  }
+
+  function handleClaimCandidateSelect(actionId: ClaimActionId, tileIds: string[]) {
+    dispatch({
+      type: 'set_selected_tiles',
+      tileIds,
+      mode: actionId,
+    });
+  }
+
+  function handleClaimCandidateActivate(actionId: ClaimActionId, tileIds: string[]) {
+    if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId, tileIds)))) {
+      return;
+    }
+
+    dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+  }
+
+  function handleTileDoubleClick(tileId: string) {
+    if (!canQuickDiscard(state)) {
+      return;
+    }
+
+    if (!sendMessage(serializeClientMessage(createActionRequestMessage('discard', [tileId])))) {
+      return;
+    }
+
+    dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
   }
 
   function handleCopyTableCode() {
@@ -573,6 +612,9 @@ export default function App() {
     <BattleScreen
       viewModel={viewModel}
       onTileSelect={handleTileSelect}
+      onTileDoubleClick={handleTileDoubleClick}
+      onClaimCandidateSelect={handleClaimCandidateSelect}
+      onClaimCandidateActivate={handleClaimCandidateActivate}
       onAction={handleAction}
       onCopyTableCode={handleCopyTableCode}
       onLeaveTable={handleLeaveTable}

@@ -104,6 +104,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
       { tileId: 'w2#2', code: 'w2', isSelected: true, isDrawn: true, isFlower: false },
     ],
+    claimCandidates: [],
     drawnTileId: 'w2#2',
     centerBanner: 'Opponent Turn',
     promptText: null,
@@ -124,6 +125,9 @@ function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<Comp
       viewModel={viewModel}
       onAction={vi.fn()}
       onTileSelect={vi.fn()}
+      onTileDoubleClick={vi.fn()}
+      onClaimCandidateSelect={vi.fn()}
+      onClaimCandidateActivate={vi.fn()}
       onCopyTableCode={vi.fn()}
       onLeaveTable={vi.fn()}
       {...overrides}

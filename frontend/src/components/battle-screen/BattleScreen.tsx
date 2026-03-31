@@ -1,4 +1,4 @@
-import type { BattleActionId, BattleViewModel } from '../../types/match';
+import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types/match';
 import { ActionEffectsOverlay } from './ActionEffectsOverlay';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
@@ -9,6 +9,9 @@ import { TableStage } from './TableStage';
 interface BattleScreenProps {
   viewModel: BattleViewModel;
   onTileSelect: (tileId: string) => void;
+  onTileDoubleClick: (tileId: string) => void;
+  onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
+  onClaimCandidateActivate: (actionId: ClaimActionId, tileIds: string[]) => void;
   onAction: (actionId: BattleActionId) => void;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
@@ -16,7 +19,16 @@ interface BattleScreenProps {
 
 const REMOTE_PLAYER_ORDER = ['left', 'top', 'right'] as const;
 
-export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCode, onLeaveTable }: BattleScreenProps) {
+export function BattleScreen({
+  viewModel,
+  onTileSelect,
+  onTileDoubleClick,
+  onClaimCandidateSelect,
+  onClaimCandidateActivate,
+  onAction,
+  onCopyTableCode,
+  onLeaveTable,
+}: BattleScreenProps) {
   const orderedPlayers = [
     viewModel.players.find((item) => item.seat === 'bottom'),
     ...REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)),
@@ -73,11 +85,15 @@ export function BattleScreen({ viewModel, onTileSelect, onAction, onCopyTableCod
       />
       <BottomActionDock
         hand={viewModel.localHand}
+        claimCandidates={viewModel.claimCandidates}
         actions={battleActions}
         isElevated={viewModel.isActionDockElevated}
         promptCue={viewModel.promptCue}
         deadlineAt={viewModel.deadlineAt}
         onTileSelect={onTileSelect}
+        onTileDoubleClick={onTileDoubleClick}
+        onClaimCandidateSelect={onClaimCandidateSelect}
+        onClaimCandidateActivate={onClaimCandidateActivate}
         onAction={onAction}
       />
     </main>

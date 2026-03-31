@@ -6,6 +6,9 @@ import type {
   BattleActionView,
   BattleViewModel,
   CelebrationEffectView,
+  ClaimActionId,
+  ClaimCandidateTileView,
+  ClaimCandidateView,
   MatchResultPayload,
   PlayerView,
   PrivatePlayerState,
@@ -558,6 +561,109 @@ function createLocalHand(state: SessionState) {
     .sort(compareLocalHandTiles);
 }
 
+function hasMatchingTileSelection(selectedTileIds: string[], candidateTileIds: string[]) {
+  if (selectedTileIds.length !== candidateTileIds.length) {
+    return false;
+  }
+
+  const normalizedSelection = [...new Set(selectedTileIds)].sort();
+  const normalizedCandidate = [...new Set(candidateTileIds)].sort();
+
+  return normalizedCandidate.every((tileId, index) => tileId === normalizedSelection[index]);
+}
+
+function compareClaimPreviewTiles(left: ClaimCandidateTileView, right: ClaimCandidateTileView) {
+  const leftKey = getTileSortKey(left.code);
+  const rightKey = getTileSortKey(right.code);
+
+  if (leftKey.group !== rightKey.group) {
+    return leftKey.group - rightKey.group;
+  }
+
+  if (leftKey.order !== rightKey.order) {
+    return leftKey.order - rightKey.order;
+  }
+
+  if (left.source !== right.source) {
+    return left.source === 'hand' ? -1 : 1;
+  }
+
+  return 0;
+}
+
+function createClaimCandidateTiles(
+  actionId: ClaimActionId,
+  tileIds: string[],
+  discardTileKey: string,
+  concealedTileKeyById: Map<string, string>,
+) {
+  const handTiles = tileIds
+    .map((tileId) => concealedTileKeyById.get(tileId))
+    .filter((tileKey): tileKey is string => typeof tileKey === 'string')
+    .map((tileKey) => ({ code: tileKey, source: 'hand' as const }));
+  const previewTiles = [...handTiles, { code: discardTileKey, source: 'claim' as const }];
+
+  if (actionId === 'chow') {
+    return previewTiles.sort(compareClaimPreviewTiles);
+  }
+
+  return previewTiles;
+}
+
+function getClaimCandidateSignature(actionId: ClaimActionId, tiles: ClaimCandidateTileView[]) {
+  return `${actionId}:${tiles.map((tile) => `${tile.source}:${tile.code}`).join('|')}`;
+}
+
+function createClaimCandidates(state: SessionState): ClaimCandidateView[] {
+  const privateState = state.roomSnapshot?.payload.private_state;
+  const localSeat = getLocalSeat(state);
+  const localPlayer =
+    typeof localSeat === 'number'
+      ? privateState?.players.find((player) => player.seat_index === localSeat)
+      : null;
+  const discardTileKey = privateState?.pending_action?.type === 'claim_window' ? privateState.last_discard : null;
+
+  if (!localPlayer || privateState?.pending_action?.type !== 'claim_window' || !discardTileKey) {
+    return [];
+  }
+
+  const concealedTileKeyById = new Map(
+    (localPlayer.concealed_tiles ?? []).map((tile) => [tile.tile_id, tile.tile_key] as const),
+  );
+  const dedupedCandidates = new Map<
+    string,
+    ClaimCandidateView & {
+      matchingGroups: string[][];
+    }
+  >();
+
+  for (const actionId of ['kong', 'pung', 'chow'] as const) {
+    for (const tileIds of getActionCandidateGroups(state, actionId)) {
+      const tiles = createClaimCandidateTiles(actionId, tileIds, discardTileKey, concealedTileKeyById);
+      const signature = getClaimCandidateSignature(actionId, tiles);
+      const existing = dedupedCandidates.get(signature);
+
+      if (existing) {
+        existing.matchingGroups.push(tileIds);
+        existing.isSelected = existing.isSelected || hasMatchingTileSelection(state.selectedTileIds, tileIds);
+        continue;
+      }
+
+      dedupedCandidates.set(signature, {
+        key: `${actionId}:${tileIds.slice().sort().join('|')}`,
+        actionId,
+        actionLabel: ACTION_LABELS[actionId],
+        tileIds,
+        tiles,
+        isSelected: hasMatchingTileSelection(state.selectedTileIds, tileIds),
+        matchingGroups: [tileIds],
+      });
+    }
+  }
+
+  return Array.from(dedupedCandidates.values()).map(({ matchingGroups: _matchingGroups, ...candidate }) => candidate);
+}
+
 function createDrawnTileId(state: SessionState) {
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
 
@@ -958,6 +1064,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     waitingControls,
     discards: createDiscards(state),
     localHand: createLocalHand(state),
+    claimCandidates: createClaimCandidates(state),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
     remainingTileCount: createRemainingTileCount(state),

@@ -321,7 +321,7 @@ describe('App', () => {
       });
     });
 
-    await user.click(await screen.findByRole('button', { name: '吃' }));
+    await user.click(await screen.findByRole('button', { name: '吃候选组合 1' }));
     expect(countSelectedTiles(document.body)).toBe(2);
 
     await user.click(screen.getByRole('button', { name: '过' }));
@@ -472,7 +472,7 @@ describe('App', () => {
     expect(countSelectedTiles(document.body)).toBe(0);
   });
 
-  it('lets the player preselect a valid chow pair and submit on the first chow click', async () => {
+  it('lets the player choose a claim candidate pane before confirming chow', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
 
@@ -541,9 +541,7 @@ describe('App', () => {
       });
     });
 
-    const handButtons = getLocalHandButtons();
-    await user.click(handButtons[0]!);
-    await user.click(handButtons[1]!);
+    await user.click(await screen.findByRole('button', { name: '吃候选组合 1' }));
     expect(countSelectedTiles(document.body)).toBe(2);
 
     await user.click(screen.getByRole('button', { name: '吃' }));
@@ -555,7 +553,7 @@ describe('App', () => {
     ]);
   });
 
-  it('falls back to the existing chow preselection when the manual multi-select is invalid', async () => {
+  it('does not auto-select a chow pair when the chow button is clicked directly', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
 
@@ -624,18 +622,162 @@ describe('App', () => {
       });
     });
 
-    const handButtons = getLocalHandButtons();
-    await user.click(handButtons[0]!);
-    await user.click(handButtons[2]!);
-    expect(countSelectedTiles(document.body)).toBe(2);
-
     await user.click(screen.getByRole('button', { name: '吃' }));
-    expect(countSelectedTiles(document.body)).toBe(2);
+    expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { nickname: 'Player A' } },
     ]);
+  });
 
-    await user.click(screen.getByRole('button', { name: '吃' }));
+  it('supports double-clicking a hand tile to discard immediately', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 0,
+            last_discard: null,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: 'w2#2',
+              options: ['discard', 'kong'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 14,
+                concealed_tiles: [
+                  { tile_id: 'w1#1', tile_key: 'w1' },
+                  { tile_id: 'w2#2', tile_key: 'w2' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    await user.dblClick(getLocalHandButtons()[1]!);
+
+    expect(countSelectedTiles(document.body)).toBe(0);
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'action_request', payload: { action_type: 'discard', tile_ids: ['w2#2'] } },
+    ]);
+  });
+
+  it('submits the matching claim action immediately when a candidate pane is double-clicked', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 1,
+            last_discard: 'w3',
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 1,
+              deadline_at: '2026-03-30T12:00:00Z',
+              responded_seats: [],
+              options: ['chow', 'pass'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 13,
+                concealed_tiles: [
+                  { tile_id: 'w1#1', tile_key: 'w1' },
+                  { tile_id: 'w2#2', tile_key: 'w2' },
+                  { tile_id: 'b9#3', tile_key: 'b9' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    await user.dblClick(await screen.findByRole('button', { name: '吃候选组合 1' }));
+
+    expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { nickname: 'Player A' } },
       { type: 'action_request', payload: { action_type: 'chow', tile_ids: ['w1#1', 'w2#2'] } },

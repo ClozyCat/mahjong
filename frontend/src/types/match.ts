@@ -13,6 +13,7 @@ export type RoomPhase = 'waiting' | 'playing' | 'settlement' | 'finished';
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'error';
 
 export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
+export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
 
 export interface HealthResponse {
   status: string;
@@ -308,6 +309,20 @@ export interface LocalTileView {
   isFlower: boolean;
 }
 
+export interface ClaimCandidateTileView {
+  code: string;
+  source: 'hand' | 'claim';
+}
+
+export interface ClaimCandidateView {
+  key: string;
+  actionId: ClaimActionId;
+  actionLabel: string;
+  tileIds: string[];
+  tiles: ClaimCandidateTileView[];
+  isSelected: boolean;
+}
+
 export interface ResultSeatView {
   seat: Seat;
   name: string;
@@ -381,6 +396,7 @@ export interface BattleViewModel {
   waitingControls: WaitingControls | null;
   discards: Record<Seat, string[]>;
   localHand: LocalTileView[];
+  claimCandidates: ClaimCandidateView[];
   drawnTileId: string | null;
   centerBanner: string | null;
   remainingTileCount?: number | null;

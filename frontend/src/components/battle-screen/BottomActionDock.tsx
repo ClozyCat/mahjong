@@ -2,26 +2,40 @@ import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { BackendActionType, BattleActionView, BattlePromptView, BattleViewModel } from '../../types/match';
+import type {
+  BackendActionType,
+  BattleActionView,
+  BattlePromptView,
+  BattleViewModel,
+  ClaimActionId,
+} from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 
 interface BottomActionDockProps {
   hand: BattleViewModel['localHand'];
+  claimCandidates: BattleViewModel['claimCandidates'];
   actions: BattleActionView[];
   isElevated: boolean;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
   onTileSelect: (tileId: string) => void;
+  onTileDoubleClick: (tileId: string) => void;
+  onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
+  onClaimCandidateActivate: (actionId: ClaimActionId, tileIds: string[]) => void;
   onAction: (actionId: BattleActionView['id']) => void;
 }
 
 export function BottomActionDock({
   hand,
+  claimCandidates,
   actions,
   isElevated,
   promptCue,
   deadlineAt,
   onTileSelect,
+  onTileDoubleClick,
+  onClaimCandidateSelect,
+  onClaimCandidateActivate,
   onAction,
 }: BottomActionDockProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -82,24 +96,57 @@ export function BottomActionDock({
           style={dockStyle}
         >
           {visibleActions.length > 0 ? (
-            <div className="action-dock__actions" aria-label="即时操作按钮">
-              {visibleActions.map((action) => {
-                const isPassAction = action.id === 'pass';
-                const responseGlowClassName = getResponseGlowClassName(promptCue, action.id as BackendActionType);
+            <div className="action-dock__response-stack">
+              {claimCandidates.length > 0 ? (
+                <div className="action-dock__claim-candidates" aria-label="可选吃碰杠组合">
+                  {claimCandidates.map((candidate, index) => (
+                    <button
+                      key={candidate.key}
+                      type="button"
+                      className={`action-dock__claim-candidate action-dock__claim-candidate--${candidate.actionId} ${
+                        candidate.isSelected ? 'action-dock__claim-candidate--selected' : ''
+                      }`.trim()}
+                      aria-label={`${candidate.actionLabel}候选组合 ${index + 1}`}
+                      aria-pressed={candidate.isSelected}
+                      onClick={() => onClaimCandidateSelect(candidate.actionId, candidate.tileIds)}
+                      onDoubleClick={() => onClaimCandidateActivate(candidate.actionId, candidate.tileIds)}
+                    >
+                      <span className="action-dock__claim-candidate-badge">{candidate.actionLabel}</span>
+                      <span className="action-dock__claim-candidate-strip">
+                        {candidate.tiles.map((tile, tileIndex) => (
+                          <MahjongTile
+                            key={`${candidate.key}-${tile.source}-${tile.code}-${tileIndex}`}
+                            code={tile.code}
+                            variant="discard"
+                            className={`action-dock__claim-preview-tile ${
+                              tile.source === 'claim' ? 'action-dock__claim-preview-tile--claim' : ''
+                            }`.trim()}
+                          />
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="action-dock__actions" aria-label="即时操作按钮">
+                {visibleActions.map((action) => {
+                  const isPassAction = action.id === 'pass';
+                  const responseGlowClassName = getResponseGlowClassName(promptCue, action.id as BackendActionType);
 
-                return (
-                  <button
-                    key={action.id}
-                    type="button"
-                    className={`action-dock__action action-dock__action--response ${responseGlowClassName} ${
-                      isPassAction ? 'action-dock__action--passive' : ''
-                    }`.trim()}
-                    onClick={() => onAction(action.id)}
-                  >
-                    {action.label}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className={`action-dock__action action-dock__action--response ${responseGlowClassName} ${
+                        isPassAction ? 'action-dock__action--passive' : ''
+                      }`.trim()}
+                      onClick={() => onAction(action.id)}
+                    >
+                      {action.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
           <div className="action-dock__tableau action-dock__tableau--full">
@@ -111,7 +158,14 @@ export function BottomActionDock({
                       key={`${tile.tileId}-${index}`}
                       type="button"
                       className={tile.isSelected ? 'action-dock__tile action-dock__tile--selected' : 'action-dock__tile'}
-                      onClick={() => onTileSelect(tile.tileId)}
+                      onClick={(event) => {
+                        if (event.detail > 1) {
+                          return;
+                        }
+
+                        onTileSelect(tile.tileId);
+                      }}
+                      onDoubleClick={() => onTileDoubleClick(tile.tileId)}
                     >
                       <MahjongTile
                         code={tile.code}

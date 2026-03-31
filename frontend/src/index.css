@@ -3445,25 +3445,126 @@ input {
   min-height: 3rem;
 }
 
-.action-dock__actions {
+.action-dock__response-stack {
   position: absolute;
   left: 50%;
   top: 0;
   z-index: 2;
   transform: translate(-50%, calc(-100% - 0.32rem));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.68rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.46rem;
   width: max-content;
   max-width: calc(100% - 1rem);
   margin: 0;
   pointer-events: none;
 }
 
-.action-dock__actions > * {
+.action-dock__response-stack > * {
   pointer-events: auto;
+}
+
+.action-dock__claim-candidates {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.52rem;
+  width: max-content;
+  max-width: min(100%, 38rem);
+}
+
+.action-dock__claim-candidate {
+  --claim-candidate-tint: rgba(139, 233, 255, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 3.15rem;
+  padding: 0.34rem 0.48rem 0.34rem 0.38rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--claim-candidate-tint) 62%, rgba(255, 255, 255, 0.08)), rgba(8, 18, 28, 0.88)),
+    rgba(8, 18, 28, 0.82);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.action-dock__claim-candidate--kong {
+  --claim-candidate-tint: rgba(255, 209, 127, 0.26);
+}
+
+.action-dock__claim-candidate--pung {
+  --claim-candidate-tint: rgba(135, 214, 255, 0.24);
+}
+
+.action-dock__claim-candidate--chow {
+  --claim-candidate-tint: rgba(147, 240, 191, 0.22);
+}
+
+.action-dock__claim-candidate:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.action-dock__claim-candidate--selected {
+  border-color: color-mix(in srgb, var(--claim-candidate-tint) 88%, rgba(255, 255, 255, 0.34));
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.24),
+    0 0 0 1px color-mix(in srgb, var(--claim-candidate-tint) 60%, transparent),
+    0 0 20px color-mix(in srgb, var(--claim-candidate-tint) 72%, transparent);
+}
+
+.action-dock__claim-candidate-badge {
+  display: grid;
+  place-items: center;
+  min-width: 1.9rem;
+  min-height: 2.35rem;
+  padding: 0.15rem 0.32rem;
+  border-radius: 0.7rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05)),
+    rgba(17, 31, 46, 0.82);
+  color: #f7fbff;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+}
+
+.action-dock__claim-candidate-strip {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.18rem;
+}
+
+.action-dock__claim-preview-tile {
+  width: clamp(1.42rem, 2vw, 1.72rem);
+  height: calc(clamp(1.42rem, 2vw, 1.72rem) * 1.36);
+  min-width: clamp(1.42rem, 2vw, 1.72rem);
+  min-height: calc(clamp(1.42rem, 2vw, 1.72rem) * 1.36);
+}
+
+.action-dock__claim-preview-tile--claim {
+  transform: translateY(-0.14rem);
+}
+
+.action-dock__claim-preview-tile--claim .mahjong-tile__shell {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 222, 134, 0.52),
+    0 0 0 1px rgba(255, 216, 126, 0.36),
+    0 0 16px rgba(255, 191, 87, 0.26);
+}
+
+.action-dock__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.68rem;
+  width: max-content;
+  max-width: 100%;
 }
 
 .action-dock__countdown {
@@ -3681,6 +3782,33 @@ input {
   .action-dock__status-strip {
     flex-wrap: wrap;
     row-gap: 0.35rem;
+  }
+
+  .action-dock__response-stack {
+    width: min(calc(100% - 0.5rem), 100%);
+  }
+
+  .action-dock__claim-candidates {
+    max-width: 100%;
+    gap: 0.4rem;
+  }
+
+  .action-dock__claim-candidate {
+    min-height: 2.9rem;
+    padding: 0.3rem 0.42rem 0.3rem 0.34rem;
+  }
+
+  .action-dock__claim-candidate-badge {
+    min-width: 1.7rem;
+    min-height: 2.1rem;
+    font-size: 0.72rem;
+  }
+
+  .action-dock__claim-preview-tile {
+    width: 1.28rem;
+    height: calc(1.28rem * 1.36);
+    min-width: 1.28rem;
+    min-height: calc(1.28rem * 1.36);
   }
 
   .action-dock__actions {
@@ -4348,6 +4476,33 @@ input {
   .action-dock__actions {
     max-width: calc(100% - 0.25rem);
     gap: 0.42rem;
+  }
+
+  .action-dock__claim-candidates {
+    max-width: calc(100% - 0.15rem);
+    gap: 0.34rem;
+  }
+
+  .action-dock__claim-candidate {
+    gap: 0.32rem;
+    min-height: 2.6rem;
+    padding: 0.22rem 0.32rem 0.22rem 0.26rem;
+    border-radius: 0.86rem;
+  }
+
+  .action-dock__claim-candidate-badge {
+    min-width: 1.42rem;
+    min-height: 1.9rem;
+    padding: 0.1rem 0.2rem;
+    border-radius: 0.58rem;
+    font-size: 0.68rem;
+  }
+
+  .action-dock__claim-preview-tile {
+    width: 1.06rem;
+    height: calc(1.06rem * 1.36);
+    min-width: 1.06rem;
+    min-height: calc(1.06rem * 1.36);
   }
 
   .action-dock__action--response {

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BattleActionView, BattleViewModel } from '../../types/match';
@@ -20,11 +21,15 @@ describe('BottomActionDock', () => {
     render(
       <BottomActionDock
         hand={localHand}
+        claimCandidates={[]}
         actions={[]}
         isElevated={false}
         promptCue={null}
         deadlineAt={null}
         onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
         onAction={vi.fn()}
       />,
     );
@@ -46,11 +51,15 @@ describe('BottomActionDock', () => {
     render(
       <BottomActionDock
         hand={localHand}
+        claimCandidates={[]}
         actions={[]}
         isElevated={false}
         promptCue={null}
         deadlineAt={null}
         onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
         onAction={vi.fn()}
       />,
     );
@@ -68,6 +77,7 @@ describe('BottomActionDock', () => {
     render(
       <BottomActionDock
         hand={localHand}
+        claimCandidates={[]}
         actions={actions}
         isElevated
         promptCue={{
@@ -82,6 +92,9 @@ describe('BottomActionDock', () => {
         }}
         deadlineAt="2099-03-30T12:10:40+08:00"
         onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
         onAction={vi.fn()}
       />,
     );
@@ -103,6 +116,7 @@ describe('BottomActionDock', () => {
     render(
       <BottomActionDock
         hand={localHand}
+        claimCandidates={[]}
         actions={[
           { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
           { id: 'kong', label: '杠', enabled: true, emphasis: 'medium' },
@@ -121,6 +135,9 @@ describe('BottomActionDock', () => {
         }}
         deadlineAt="2099-03-30T12:10:40+08:00"
         onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
         onAction={vi.fn()}
       />,
     );
@@ -136,6 +153,7 @@ describe('BottomActionDock', () => {
     render(
       <BottomActionDock
         hand={localHand}
+        claimCandidates={[]}
         actions={[
           { id: 'flower', label: '补花', enabled: true, emphasis: 'medium' },
           { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
@@ -153,6 +171,9 @@ describe('BottomActionDock', () => {
         }}
         deadlineAt="2099-03-30T12:10:40+08:00"
         onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
         onAction={vi.fn()}
       />,
     );
@@ -169,11 +190,15 @@ describe('BottomActionDock', () => {
           { tileId: 'w2#2', code: 'w2', isSelected: false, isDrawn: false, isFlower: false },
           { tileId: 'w3#3', code: 'w3', isSelected: false, isDrawn: false, isFlower: false },
         ]}
+        claimCandidates={[]}
         actions={[]}
         isElevated={false}
         promptCue={null}
         deadlineAt={null}
         onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
         onAction={vi.fn()}
       />,
     );
@@ -186,4 +211,137 @@ describe('BottomActionDock', () => {
       '--action-dock-gap-count': '2',
     });
   });
+
+  it('renders claim candidate panes above the action buttons and forwards candidate clicks', () => {
+    const onClaimCandidateSelect = vi.fn();
+    const onClaimCandidateActivate = vi.fn();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[
+          {
+            key: 'pung:w5#1|w5#2',
+            actionId: 'pung',
+            actionLabel: '碰',
+            tileIds: ['w5#1', 'w5#2'],
+            tiles: [
+              { code: 'w5', source: 'hand' },
+              { code: 'w5', source: 'claim' },
+              { code: 'w5', source: 'hand' },
+            ],
+            isSelected: true,
+          },
+        ]}
+        actions={actions}
+        isElevated
+        promptCue={{
+          kind: 'claim',
+          tone: 'critical',
+          title: '左家刚打出可响应牌',
+          detail: '你可以 和牌 / 碰 / 过',
+          actionIds: ['hu', 'pung', 'pass'],
+          highlightedActionIds: ['hu', 'pung'],
+          sourceSeat: 'left',
+          isUrgent: true,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={onClaimCandidateSelect}
+        onClaimCandidateActivate={onClaimCandidateActivate}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const candidateButton = screen.getByRole('button', { name: '碰候选组合 1' });
+
+    expect(screen.getByLabelText('可选吃碰杠组合')).toBeInTheDocument();
+    expect(candidateButton).toHaveAttribute('aria-pressed', 'true');
+    expect(document.body.querySelector('.action-dock__claim-preview-tile--claim')).not.toBeNull();
+
+    fireEvent.click(candidateButton);
+
+    expect(onClaimCandidateSelect).toHaveBeenCalledWith('pung', ['w5#1', 'w5#2']);
+    expect(onClaimCandidateActivate).not.toHaveBeenCalled();
+  });
+
+  it('triggers the candidate action immediately on double click', async () => {
+    const user = userEvent.setup();
+    const onClaimCandidateSelect = vi.fn();
+    const onClaimCandidateActivate = vi.fn();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[
+          {
+            key: 'chow:t7#0|t8#0',
+            actionId: 'chow',
+            actionLabel: '吃',
+            tileIds: ['t7#0', 't8#0'],
+            tiles: [
+              { code: 't7', source: 'hand' },
+              { code: 't8', source: 'hand' },
+              { code: 't9', source: 'claim' },
+            ],
+            isSelected: false,
+          },
+        ]}
+        actions={actions}
+        isElevated
+        promptCue={{
+          kind: 'claim',
+          tone: 'critical',
+          title: '左家刚打出可响应牌',
+          detail: '你可以 和牌 / 吃 / 过',
+          actionIds: ['hu', 'chow', 'pass'],
+          highlightedActionIds: ['hu', 'chow'],
+          sourceSeat: 'left',
+          isUrgent: true,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={onClaimCandidateSelect}
+        onClaimCandidateActivate={onClaimCandidateActivate}
+        onAction={vi.fn()}
+      />,
+    );
+
+    await user.dblClick(screen.getByRole('button', { name: '吃候选组合 1' }));
+
+    expect(onClaimCandidateSelect).toHaveBeenCalled();
+    expect(onClaimCandidateActivate).toHaveBeenCalledWith('chow', ['t7#0', 't8#0']);
+  });
+
+  it('forwards hand tile double clicks for quick discard interactions', () => {
+    const onTileDoubleClick = vi.fn();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={onTileDoubleClick}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    fireEvent.doubleClick(getLocalHandButton(0));
+
+    expect(onTileDoubleClick).toHaveBeenCalledWith('w1#1');
+  });
 });
+
+function getLocalHandButton(index: number) {
+  const hand = screen.getByLabelText(/local hand/i);
+  const buttons = hand.querySelectorAll('button');
+  return buttons[index] as HTMLButtonElement;
+}
