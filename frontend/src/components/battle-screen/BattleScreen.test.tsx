@@ -346,6 +346,30 @@ describe('BattleScreen', () => {
     expect(hand.querySelectorAll('.mahjong-tile--hand')).toHaveLength(2);
   });
 
+  it('lets the player resize table tiles from the table panel without affecting the hand dock', async () => {
+    const user = userEvent.setup();
+
+    renderBattleScreen(createBattleViewModel());
+
+    const table = screen.getByLabelText('Mahjong table');
+    const hand = screen.getByLabelText(/local hand/i);
+
+    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
+    expect(screen.getByText('牌面 112%')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '放大牌桌牌面' }));
+
+    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.18');
+    expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.48');
+    expect(screen.getByText('牌面 118%')).toBeInTheDocument();
+    expect(hand.querySelector('.mahjong-tile--hand')?.getAttribute('style')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '缩小牌桌牌面' }));
+
+    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
+    expect(screen.getByText('牌面 112%')).toBeInTheDocument();
+  });
+
   it('renders the non-text action spectacle layer when a battle action effect is active', () => {
     renderBattleScreen(
       createBattleViewModel({

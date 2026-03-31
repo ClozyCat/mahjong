@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 import type { BattlePromptView, PlayerView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
@@ -12,6 +14,11 @@ interface TableStageProps {
   promptCue?: BattlePromptView | null;
   players?: Pick<PlayerView, 'seat' | 'name' | 'melds'>[];
   settlementHands?: Partial<Record<Seat, string[]>> | null;
+  tileScale?: number;
+  canDecreaseTileScale?: boolean;
+  canIncreaseTileScale?: boolean;
+  onDecreaseTileScale?: () => void;
+  onIncreaseTileScale?: () => void;
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
@@ -26,6 +33,11 @@ export function TableStage({
   promptCue = null,
   players = [],
   settlementHands = null,
+  tileScale = 1,
+  canDecreaseTileScale = false,
+  canIncreaseTileScale = false,
+  onDecreaseTileScale,
+  onIncreaseTileScale,
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
@@ -33,9 +45,20 @@ export function TableStage({
   const spotlightTile = spotlightSeat !== null && lastDiscardPosition !== null
     ? discards[spotlightSeat][lastDiscardPosition.index]
     : null;
+  const spotlightScale = Math.round(tileScale * 125) / 100;
+  const tableStageStyle = {
+    '--table-stage-tile-scale': `${tileScale}`,
+    '--table-stage-spotlight-scale': `${spotlightScale}`,
+  } as CSSProperties;
+  const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
+  const scalePercentLabel = `${Math.round(tileScale * 100)}%`;
 
   return (
-    <section className={`table-stage ${promptCue?.isUrgent ? 'table-stage--urgent' : ''}`} aria-label="Mahjong table">
+    <section
+      className={`table-stage ${promptCue?.isUrgent ? 'table-stage--urgent' : ''}`}
+      aria-label="Mahjong table"
+      style={tableStageStyle}
+    >
       <div className="table-stage__frame">
         <div className="table-stage__core">
           <div
@@ -50,6 +73,31 @@ export function TableStage({
             ) : null}
             <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
             {promptText ? <em>{promptText}</em> : null}
+            {shouldShowScaleControls ? (
+              <div className="table-stage__scale-controls">
+                <span className="table-stage__scale-readout">牌面 {scalePercentLabel}</span>
+                <div className="table-stage__scale-buttons" role="group" aria-label="调整牌桌牌面大小">
+                  <button
+                    type="button"
+                    className="table-stage__scale-button"
+                    aria-label="缩小牌桌牌面"
+                    onClick={onDecreaseTileScale}
+                    disabled={!canDecreaseTileScale}
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    className="table-stage__scale-button"
+                    aria-label="放大牌桌牌面"
+                    onClick={onIncreaseTileScale}
+                    disabled={!canIncreaseTileScale}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);

@@ -603,6 +603,10 @@ def _apply_selected_claim(
         claimed_tiles.append(concealed_list.pop(tile_index))
 
     meld = tuple(claimed_tiles + [state.last_discard])
+    discarder = state.players[discarder_seat]
+    if not discarder.discards or discarder.discards[-1].tile_id != state.last_discard.tile_id:
+        raise ValueError("Claimed discard must be the latest tile in discarder river")
+
     updated_player = PlayerState(
         seat=player.seat,
         concealed_tiles=tuple(concealed_list),
@@ -610,11 +614,23 @@ def _apply_selected_claim(
         flowers=player.flowers,
         discards=player.discards,
     )
+    updated_discarder = PlayerState(
+        seat=discarder.seat,
+        concealed_tiles=discarder.concealed_tiles,
+        melds=discarder.melds,
+        flowers=discarder.flowers,
+        discards=discarder.discards[:-1],
+    )
 
-    new_players = [
-        updated_player if idx == seat else current_player
-        for idx, current_player in enumerate(state.players)
-    ]
+    new_players = []
+    for idx, current_player in enumerate(state.players):
+        if idx == seat:
+            new_players.append(updated_player)
+            continue
+        if idx == discarder_seat:
+            new_players.append(updated_discarder)
+            continue
+        new_players.append(current_player)
     wall = state.wall
     events = [claim_made_event(seat, action_type, state.last_discard)]
 
@@ -666,6 +682,7 @@ def _apply_selected_claim(
             current_actor=seat,
             wall=wall,
             players=tuple(new_players),
+            last_discard=None,
             pending_action=None,
             version=state.version + 1,
             score_trackers=_append_kong_entry(

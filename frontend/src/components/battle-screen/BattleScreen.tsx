@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types/match';
 import { ActionEffectsOverlay } from './ActionEffectsOverlay';
 import { AmbientOverlay } from './AmbientOverlay';
@@ -18,6 +20,10 @@ interface BattleScreenProps {
 }
 
 const REMOTE_PLAYER_ORDER = ['left', 'top', 'right'] as const;
+const DEFAULT_TABLE_TILE_SCALE = 1.12;
+const TABLE_TILE_SCALE_STEP = 0.06;
+const MIN_TABLE_TILE_SCALE = 0.88;
+const MAX_TABLE_TILE_SCALE = 1.3;
 
 export function BattleScreen({
   viewModel,
@@ -29,12 +35,23 @@ export function BattleScreen({
   onCopyTableCode,
   onLeaveTable,
 }: BattleScreenProps) {
+  const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const orderedPlayers = [
     viewModel.players.find((item) => item.seat === 'bottom'),
     ...REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)),
   ].filter((player): player is NonNullable<typeof player> => Boolean(player));
   const roomActions = viewModel.actions.filter((action) => ROOM_CONTROL_ACTION_IDS.includes(action.id));
   const battleActions = viewModel.actions.filter((action) => !ROOM_CONTROL_ACTION_IDS.includes(action.id));
+  const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
+  const canIncreaseTableTileScale = tableTileScale < MAX_TABLE_TILE_SCALE;
+
+  function adjustTableTileScale(offset: number) {
+    setTableTileScale((currentScale) => {
+      const nextScale = Number((currentScale + offset).toFixed(2));
+
+      return Math.min(MAX_TABLE_TILE_SCALE, Math.max(MIN_TABLE_TILE_SCALE, nextScale));
+    });
+  }
 
   return (
     <main className="battle-screen">
@@ -52,6 +69,11 @@ export function BattleScreen({
               promptCue={viewModel.promptCue}
               players={viewModel.players}
               settlementHands={viewModel.settlementHands}
+              tileScale={tableTileScale}
+              canDecreaseTileScale={canDecreaseTableTileScale}
+              canIncreaseTileScale={canIncreaseTableTileScale}
+              onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
+              onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />
           </div>
           <ActionEffectsOverlay

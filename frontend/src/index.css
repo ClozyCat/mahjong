@@ -440,8 +440,16 @@ button:active:not(:disabled) {
 }
 
 .table-stage {
-  --table-stage-river-tile-width: 2.34rem;
-  --table-stage-river-tile-height: 3.18rem;
+  --table-stage-tile-scale: 1;
+  --table-stage-spotlight-scale: 1.25;
+  --table-stage-river-base-width: 2.34rem;
+  --table-stage-river-base-height: 3.18rem;
+  --table-stage-river-tile-width: calc(var(--table-stage-river-base-width) * var(--table-stage-tile-scale));
+  --table-stage-river-tile-height: calc(var(--table-stage-river-base-height) * var(--table-stage-tile-scale));
+  --table-stage-settlement-base-width: 1.38rem;
+  --table-stage-settlement-base-height: 1.94rem;
+  --table-stage-settlement-tile-width: calc(var(--table-stage-settlement-base-width) * var(--table-stage-tile-scale));
+  --table-stage-settlement-tile-height: calc(var(--table-stage-settlement-base-height) * var(--table-stage-tile-scale));
   --table-stage-river-gap: 0.4rem;
   position: relative;
   width: 100%;
@@ -615,14 +623,16 @@ button:active:not(:disabled) {
   grid-auto-rows: var(--table-stage-river-tile-height);
 }
 
-.table-stage__river-track .mahjong-tile--discard {
+.table-stage__river-track .mahjong-tile--discard,
+.table-stage__melds .mahjong-tile--discard {
   width: var(--table-stage-river-tile-width);
   height: var(--table-stage-river-tile-height);
   min-width: var(--table-stage-river-tile-width);
   min-height: var(--table-stage-river-tile-height);
 }
 
-.table-stage__river-track .mahjong-tile__shell {
+.table-stage__river-track .mahjong-tile__shell,
+.table-stage__melds .mahjong-tile__shell {
   padding: 0.08rem;
 }
 
@@ -717,20 +727,20 @@ button:active:not(:disabled) {
 
 .table-stage__settlement-hand-grid--top,
 .table-stage__settlement-hand-grid--bottom {
-  grid-template-columns: repeat(7, 1.38rem);
+  grid-template-columns: repeat(7, var(--table-stage-settlement-tile-width));
 }
 
 .table-stage__settlement-hand-grid--left,
 .table-stage__settlement-hand-grid--right {
-  grid-template-columns: repeat(4, 1.38rem);
+  grid-template-columns: repeat(4, var(--table-stage-settlement-tile-width));
 }
 
 .table-stage__settlement-hand-grid .mahjong-tile--discard,
 .table-stage__settlement-hand-tile {
-  width: 1.38rem;
-  height: 1.94rem;
-  min-width: 1.38rem;
-  min-height: 1.94rem;
+  width: var(--table-stage-settlement-tile-width);
+  height: var(--table-stage-settlement-tile-height);
+  min-width: var(--table-stage-settlement-tile-width);
+  min-height: var(--table-stage-settlement-tile-height);
 }
 
 .table-stage__settlement-hand-grid .mahjong-tile__shell {
@@ -749,27 +759,27 @@ button:active:not(:disabled) {
 }
 
 .table-stage__spotlight--top {
-  --spotlight-offset-y: -5.9rem;
+  --spotlight-offset-y: calc(var(--table-stage-river-tile-height) * -1.86);
 }
 
 .table-stage__spotlight--bottom {
-  --spotlight-offset-y: 5.9rem;
+  --spotlight-offset-y: calc(var(--table-stage-river-tile-height) * 1.86);
 }
 
 .table-stage__spotlight--left {
-  --spotlight-offset-x: -7.5rem;
+  --spotlight-offset-x: calc(var(--table-stage-river-tile-width) * -3.21);
 }
 
 .table-stage__spotlight--right {
-  --spotlight-offset-x: 7.5rem;
+  --spotlight-offset-x: calc(var(--table-stage-river-tile-width) * 3.21);
 }
 
 .table-stage__spotlight .mahjong-tile--discard,
 .table-stage__spotlight-tile {
-  width: 2.74rem;
-  height: 3.72rem;
-  min-width: 2.74rem;
-  min-height: 3.72rem;
+  width: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));
+  height: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale));
+  min-width: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));
+  min-height: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale));
 }
 
 .table-stage__spotlight .mahjong-tile__shell {
@@ -1630,22 +1640,27 @@ button:active:not(:disabled) {
     width: 8.8rem;
   }
 
+  .table-stage {
+    --table-stage-settlement-base-width: 1.22rem;
+    --table-stage-settlement-base-height: 1.7rem;
+  }
+
   .table-stage__settlement-hand-grid--top,
   .table-stage__settlement-hand-grid--bottom {
-    grid-template-columns: repeat(7, 1.22rem);
+    grid-template-columns: repeat(7, var(--table-stage-settlement-tile-width));
   }
 
   .table-stage__settlement-hand-grid--left,
   .table-stage__settlement-hand-grid--right {
-    grid-template-columns: repeat(4, 1.22rem);
+    grid-template-columns: repeat(4, var(--table-stage-settlement-tile-width));
   }
 
   .table-stage__settlement-hand-grid .mahjong-tile--discard,
   .table-stage__settlement-hand-tile {
-    width: 1.22rem;
-    height: 1.7rem;
-    min-width: 1.22rem;
-    min-height: 1.7rem;
+    width: var(--table-stage-settlement-tile-width);
+    height: var(--table-stage-settlement-tile-height);
+    min-width: var(--table-stage-settlement-tile-width);
+    min-height: var(--table-stage-settlement-tile-height);
   }
 
   .table-stage__spotlight--top {
@@ -1732,6 +1747,11 @@ button:active:not(:disabled) {
     padding-left: 0.72rem;
   }
 
+  .table-stage {
+    --table-stage-settlement-base-width: 1.02rem;
+    --table-stage-settlement-base-height: 1.42rem;
+  }
+
   .table-stage__settlement-hand {
     gap: 0.2rem;
   }
@@ -1749,20 +1769,20 @@ button:active:not(:disabled) {
 
   .table-stage__settlement-hand-grid--top,
   .table-stage__settlement-hand-grid--bottom {
-    grid-template-columns: repeat(7, 1.02rem);
+    grid-template-columns: repeat(7, var(--table-stage-settlement-tile-width));
   }
 
   .table-stage__settlement-hand-grid--left,
   .table-stage__settlement-hand-grid--right {
-    grid-template-columns: repeat(4, 1.02rem);
+    grid-template-columns: repeat(4, var(--table-stage-settlement-tile-width));
   }
 
   .table-stage__settlement-hand-grid .mahjong-tile--discard,
   .table-stage__settlement-hand-tile {
-    width: 1.02rem;
-    height: 1.42rem;
-    min-width: 1.02rem;
-    min-height: 1.42rem;
+    width: var(--table-stage-settlement-tile-width);
+    height: var(--table-stage-settlement-tile-height);
+    min-width: var(--table-stage-settlement-tile-width);
+    min-height: var(--table-stage-settlement-tile-height);
   }
 
   .table-stage__spotlight--top {
@@ -1990,6 +2010,56 @@ button:active:not(:disabled) {
   color: rgba(255, 243, 222, 0.8);
   font-size: 0.7rem;
   letter-spacing: 0.08em;
+}
+
+.table-stage__scale-controls {
+  display: grid;
+  gap: 0.32rem;
+  justify-items: center;
+  margin-top: 0.15rem;
+}
+
+.table-stage__scale-readout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.42rem;
+  padding: 0.18rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(7, 20, 31, 0.38);
+  color: rgba(247, 239, 224, 0.82);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.table-stage__scale-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.table-stage__scale-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.85rem;
+  min-height: 1.85rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(10, 23, 35, 0.82);
+  color: rgba(255, 243, 222, 0.92);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.table-stage__scale-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .action-dock__empty {
@@ -3382,8 +3452,8 @@ input {
 }
 
 .table-stage {
-  --table-stage-river-tile-width: var(--battle-stage-discard-width);
-  --table-stage-river-tile-height: var(--battle-stage-discard-height);
+  --table-stage-river-base-width: var(--battle-stage-discard-width);
+  --table-stage-river-base-height: var(--battle-stage-discard-height);
   --table-stage-river-gap: var(--battle-stage-gap);
   width: 100%;
 }
@@ -3447,27 +3517,27 @@ input {
 }
 
 .table-stage__spotlight--top {
-  --spotlight-offset-y: calc(var(--battle-stage-discard-height) * -2.55);
+  --spotlight-offset-y: calc(var(--table-stage-river-tile-height) * -2.32);
 }
 
 .table-stage__spotlight--bottom {
-  --spotlight-offset-y: calc(var(--battle-stage-discard-height) * 2.55);
+  --spotlight-offset-y: calc(var(--table-stage-river-tile-height) * 2.32);
 }
 
 .table-stage__spotlight--left {
-  --spotlight-offset-x: calc(var(--battle-stage-discard-width) * -4.4);
+  --spotlight-offset-x: calc(var(--table-stage-river-tile-width) * -4);
 }
 
 .table-stage__spotlight--right {
-  --spotlight-offset-x: calc(var(--battle-stage-discard-width) * 4.4);
+  --spotlight-offset-x: calc(var(--table-stage-river-tile-width) * 4);
 }
 
 .table-stage__spotlight .mahjong-tile--discard,
 .table-stage__spotlight-tile {
-  width: calc(var(--battle-stage-discard-width) * 1.38);
-  height: calc(var(--battle-stage-discard-height) * 1.38);
-  min-width: calc(var(--battle-stage-discard-width) * 1.38);
-  min-height: calc(var(--battle-stage-discard-height) * 1.38);
+  width: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));
+  height: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale));
+  min-width: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));
+  min-height: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale));
 }
 
 .battle-screen .mahjong-tile--hand {
@@ -3475,13 +3545,6 @@ input {
   height: var(--battle-hand-tile-height);
   min-width: var(--battle-hand-tile-width);
   min-height: var(--battle-hand-tile-height);
-}
-
-.battle-screen .mahjong-tile--discard {
-  width: var(--battle-stage-discard-width);
-  height: var(--battle-stage-discard-height);
-  min-width: var(--battle-stage-discard-width);
-  min-height: var(--battle-stage-discard-height);
 }
 
 .battle-screen .mahjong-tile__shell {

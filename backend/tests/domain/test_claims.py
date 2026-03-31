@@ -181,6 +181,8 @@ def test_apply_claim_action_pung_merges_discard_into_meld():
         tile.tile_id not in {"t4#c1", "t4#c2"}
         for tile in updated_player.concealed_tiles
     )
+    assert next_state.players[0].discards == ()
+    assert next_state.last_discard is None
     assert next_state.pending_action is None
     assert next_state.current_actor == 1
     assert events[0]["type"] == "claim_made"
@@ -466,7 +468,7 @@ def test_apply_claim_action_rejects_claim_after_seat_already_passed():
         )
 
 
-def test_claim_keeps_discard_in_river():
+def test_claim_removes_claimed_discard_from_river():
     discard = _make_suit_tile("t7", "t7#discard")
     claimant_tiles = (
         _make_suit_tile("t7", "t7#c1"),
@@ -514,7 +516,8 @@ def test_claim_keeps_discard_in_river():
         tiles=[tile.tile_id for tile in claimant_tiles],
     )
 
-    assert next_state.players[0].discards == (discard,)
+    assert next_state.players[0].discards == ()
+    assert next_state.last_discard is None
 
 
 def test_claim_window_offers_hu_when_hand_is_winning():
