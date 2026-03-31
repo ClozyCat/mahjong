@@ -67,6 +67,7 @@ export function TableStage({
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
             const finalHandTiles = settlementHands?.[seat] ?? [];
+            const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
 
             return (
               <Fragment key={seat}>
@@ -94,12 +95,12 @@ export function TableStage({
                       </div>
                     </div>
                   </div>
-                  {finalHandTiles.length > 0 ? (
+                  {finalHandTiles.length > 0 && settlementHandLabel ? (
                     <div
                       className={`table-stage__settlement-hand table-stage__settlement-hand--${seat}`}
-                      aria-label={`${player?.name ?? SEAT_COPY[seat]}终局手牌`}
+                      aria-label={settlementHandLabel}
                     >
-                      <span className="table-stage__settlement-hand-eyebrow">终局手牌</span>
+                      <span className="table-stage__settlement-hand-eyebrow">{settlementHandLabel}</span>
                       <div className={`table-stage__settlement-hand-grid table-stage__settlement-hand-grid--${seat}`}>
                         {finalHandTiles.map((tile, index) => (
                           <MahjongTile
@@ -148,11 +149,10 @@ const PROMPT_KIND_COPY: Record<NonNullable<TableStageProps['promptCue']>['kind']
   rob_kong: '抢杠',
 };
 
-const SEAT_COPY: Record<Seat, string> = {
-  top: '上家',
-  left: '左家',
-  right: '右家',
-  bottom: '本家',
+const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
+  top: '对家手牌',
+  left: '左家手牌',
+  right: '右家手牌',
 };
 
 function findLastDiscardPosition(

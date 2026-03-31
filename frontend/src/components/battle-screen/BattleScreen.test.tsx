@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -317,7 +317,8 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByRole('button', { name: '收起结算面板' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Player Top终局手牌')).toBeInTheDocument();
+    expect(screen.getByLabelText('对家手牌')).toBeInTheDocument();
+    expect(screen.queryByLabelText('本家手牌')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: '收起结算面板' }));
     expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
@@ -325,6 +326,62 @@ describe('BattleScreen', () => {
 
     await user.click(screen.getByRole('button', { name: '展开结算面板' }));
     expect(screen.getByText('本局结算')).toBeInTheDocument();
+  });
+
+  it('waits to show the settlement panel until the final discard returns to the river when no response is needed', () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        result: {
+          title: '本局结算',
+          summary: '本局流局，等待下一局',
+          fanTotal: null,
+          winnerSeat: null,
+          discarderSeat: null,
+          winType: 'draw',
+          winTypeLabel: '流局',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [],
+          scoreDeltaBySeat: {
+            bottom: 0,
+            left: 0,
+            top: 0,
+            right: 0,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
+            { seat: 'left', name: 'Player Left', score: 24300, delta: 0 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(420);
+    });
+
+    expect(screen.getByText('本局结算')).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('shows reconnecting overlay copy when disconnected_or_waiting has no waiting controls', () => {

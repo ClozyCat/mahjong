@@ -152,10 +152,10 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Player Top终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
-    expect(screen.getByLabelText('Player Left终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
-    expect(screen.getByLabelText('Player Right终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
-    expect(screen.getByLabelText('Player Bottom终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
+    expect(screen.getByLabelText('对家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
+    expect(screen.getByLabelText('左家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
+    expect(screen.getByLabelText('右家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(screen.queryByLabelText('本家手牌')).toBeNull();
   });
 
   it('uses the provided discard seat to avoid spotlighting the same tile in another river', () => {

@@ -24,6 +24,7 @@ const DEFAULT_TABLE_TILE_SCALE = 1.12;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
+const SETTLEMENT_PANEL_DELAY_MS = 420;
 const MIN_BATTLE_VIEWPORT_WIDTH = 1366;
 const MIN_BATTLE_VIEWPORT_HEIGHT = 768;
 const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
@@ -40,6 +41,7 @@ export function BattleScreen({
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [viewportState, setViewportState] = useState(getBattleViewportState);
+  const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const orderedPlayers = [
     viewModel.players.find((item) => item.seat === 'bottom'),
     ...REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)),
@@ -48,6 +50,11 @@ export function BattleScreen({
   const battleActions = viewModel.actions.filter((action) => !ROOM_CONTROL_ACTION_IDS.includes(action.id));
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
   const canIncreaseTableTileScale = tableTileScale < MAX_TABLE_TILE_SCALE;
+  const shouldDelaySettlementPanel =
+    Boolean(viewModel.result) && Boolean(viewModel.lastDiscard) && viewModel.result?.winType === 'draw';
+  const visibleLastDiscard = shouldDelaySettlementPanel ? null : viewModel.lastDiscard;
+  const visibleLastDiscardSeat = shouldDelaySettlementPanel ? null : viewModel.lastDiscardSeat;
+  const visibleResult = isSettlementPanelReady ? viewModel.result : null;
 
   function adjustTableTileScale(offset: number) {
     setTableTileScale((currentScale) => {
@@ -71,6 +78,25 @@ export function BattleScreen({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    if (!viewModel.result) {
+      setIsSettlementPanelReady(true);
+      return undefined;
+    }
+
+    if (!shouldDelaySettlementPanel) {
+      setIsSettlementPanelReady(true);
+      return undefined;
+    }
+
+    setIsSettlementPanelReady(false);
+    const timer = window.setTimeout(() => {
+      setIsSettlementPanelReady(true);
+    }, SETTLEMENT_PANEL_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [shouldDelaySettlementPanel, viewModel.result]);
+
   return (
     <main className={`battle-screen ${viewportState.isSupported ? '' : 'battle-screen--viewport-blocked'}`}>
       <div className="battle-shell">
@@ -80,8 +106,8 @@ export function BattleScreen({
             <TableStage
               discards={viewModel.discards}
               activeSeat={viewModel.activePlayerSeat}
-              lastDiscard={viewModel.lastDiscard}
-              lastDiscardSeat={viewModel.lastDiscardSeat}
+              lastDiscard={visibleLastDiscard}
+              lastDiscardSeat={visibleLastDiscardSeat}
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
@@ -100,7 +126,7 @@ export function BattleScreen({
             promptText={viewModel.promptText}
             waitingControls={viewModel.waitingControls}
           />
-          {viewModel.result ? <ResultOverlay result={viewModel.result} onAction={onAction} /> : null}
+          {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}
         </div>
       </div>
       <FloatingRoomControls
