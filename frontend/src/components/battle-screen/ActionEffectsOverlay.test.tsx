@@ -27,7 +27,10 @@ describe('ActionEffectsOverlay', () => {
       />,
     );
 
-    expect(screen.getAllByText('出牌').length).toBeGreaterThan(0);
+    expect(document.body.querySelector('.action-effects--action')).not.toBeNull();
+    expect(document.body.querySelector('.action-effects__ring')).toBeNull();
+    expect(document.body.querySelector('.action-effects__seal')).toBeNull();
+    expect(document.body.querySelector('.action-effects__caption')).toBeNull();
 
     rerender(
       <ActionEffectsOverlay
@@ -46,6 +49,23 @@ describe('ActionEffectsOverlay', () => {
       vi.advanceTimersByTime(1700);
     });
 
-    expect(screen.queryByText('出牌')).not.toBeInTheDocument();
+    expect(document.body.querySelector('.action-effects--action')).toBeNull();
+  });
+
+  it('does not render the celebration layer even when a celebration effect is provided', () => {
+    render(
+      <ActionEffectsOverlay
+        actionEffect={null}
+        celebrationEffect={{
+          key: 'win-1',
+          label: '自摸',
+          winnerSeat: 'bottom',
+          winType: 'self_draw',
+        }}
+        drawnTileId={null}
+      />,
+    );
+
+    expect(document.body.querySelector('.action-effects--celebration')).toBeNull();
   });
 });

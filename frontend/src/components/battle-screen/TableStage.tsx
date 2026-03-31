@@ -11,6 +11,7 @@ interface TableStageProps {
   promptText: string | null;
   promptCue?: BattlePromptView | null;
   players?: Pick<PlayerView, 'seat' | 'name' | 'melds'>[];
+  settlementHands?: Partial<Record<Seat, string[]>> | null;
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
@@ -24,6 +25,7 @@ export function TableStage({
   promptText,
   promptCue = null,
   players = [],
+  settlementHands = null,
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
@@ -51,6 +53,7 @@ export function TableStage({
           </div>
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
+            const finalHandTiles = settlementHands?.[seat] ?? [];
 
             return (
               <div key={seat} className={`table-stage__seat-zone table-stage__seat-zone--${seat}`}>
@@ -82,6 +85,24 @@ export function TableStage({
                     </div>
                   ) : null}
                 </div>
+                {finalHandTiles.length > 0 ? (
+                  <div
+                    className={`table-stage__settlement-hand table-stage__settlement-hand--${seat}`}
+                    aria-label={`${player?.name ?? SEAT_COPY[seat]}终局手牌`}
+                  >
+                    <span className="table-stage__settlement-hand-eyebrow">终局手牌</span>
+                    <div className={`table-stage__settlement-hand-grid table-stage__settlement-hand-grid--${seat}`}>
+                      {finalHandTiles.map((tile, index) => (
+                        <MahjongTile
+                          key={`${seat}-settlement-${tile}-${index}`}
+                          code={tile}
+                          variant="discard"
+                          className="table-stage__settlement-hand-tile"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -110,6 +131,13 @@ const PROMPT_KIND_COPY: Record<NonNullable<TableStageProps['promptCue']>['kind']
   turn: '当前可操作',
   claim: '可响应',
   rob_kong: '抢杠',
+};
+
+const SEAT_COPY: Record<Seat, string> = {
+  top: '上家',
+  left: '左家',
+  right: '右家',
+  bottom: '本家',
 };
 
 function findLastDiscardPosition(

@@ -403,6 +403,7 @@ export interface BattleViewModel {
   promptText: string | null;
   promptCue: BattlePromptView | null;
   result: ResultView | null;
+  settlementHands: Partial<Record<Seat, string[]>> | null;
   lastDiscard: string | null;
   lastDiscardSeat: Seat | null;
   actionEffect: ActionEffectView | null;

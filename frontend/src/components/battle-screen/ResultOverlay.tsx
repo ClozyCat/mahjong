@@ -9,19 +9,48 @@ interface ResultOverlayProps {
 
 export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const visibleFanBreakdown = isExpanded ? result.fanBreakdown : result.fanBreakdown.slice(0, MAX_VISIBLE_FAN_ITEMS);
   const hiddenFanCount = Math.max(0, result.fanBreakdown.length - MAX_VISIBLE_FAN_ITEMS);
 
   useEffect(() => {
     setIsExpanded(false);
+    setIsCollapsed(false);
   }, [result.fanBreakdown, result.title, result.summary]);
+
+  if (isCollapsed) {
+    return (
+      <section className="result-overlay result-overlay--collapsed" aria-label="Match settlement result">
+        <button
+          type="button"
+          className="result-overlay__restore"
+          onClick={() => setIsCollapsed(false)}
+          aria-expanded="false"
+        >
+          展开结算面板
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="result-overlay" aria-label="Match settlement result">
       <div className="result-overlay__card">
-        <span className="result-overlay__eyebrow">结算面板</span>
-        <h2>{result.title}</h2>
+        <div className="result-overlay__header">
+          <div className="result-overlay__heading">
+            <span className="result-overlay__eyebrow">结算面板</span>
+            <h2>{result.title}</h2>
+          </div>
+          <button
+            type="button"
+            className="result-overlay__collapse"
+            onClick={() => setIsCollapsed(true)}
+            aria-expanded="true"
+          >
+            收起结算面板
+          </button>
+        </div>
         <p>{result.summary}</p>
         {result.fanTotal !== null ? (
           <p>

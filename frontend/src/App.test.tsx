@@ -321,7 +321,6 @@ describe('App', () => {
       });
     });
 
-    await user.click(await screen.findByRole('button', { name: '吃候选组合 1' }));
     expect(countSelectedTiles(document.body)).toBe(2);
 
     await user.click(screen.getByRole('button', { name: '过' }));
@@ -333,7 +332,7 @@ describe('App', () => {
     ]);
   });
 
-  it('clears the previous single selection when the claim window opens', async () => {
+  it('replaces the previous single selection with the first claim candidate when the claim window opens', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
 
@@ -469,7 +468,8 @@ describe('App', () => {
       });
     });
 
-    expect(countSelectedTiles(document.body)).toBe(0);
+    expect(countSelectedTiles(document.body)).toBe(2);
+    expect(screen.getByRole('button', { name: '吃候选组合 1' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('lets the player choose a claim candidate pane before confirming chow', async () => {
@@ -553,7 +553,7 @@ describe('App', () => {
     ]);
   });
 
-  it('does not auto-select a chow pair when the chow button is clicked directly', async () => {
+  it('submits the default selected chow pair when the chow button is clicked directly', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
 
@@ -626,6 +626,7 @@ describe('App', () => {
     expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'action_request', payload: { action_type: 'chow', tile_ids: ['w1#1', 'w2#2'] } },
     ]);
   });
 

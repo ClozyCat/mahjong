@@ -146,6 +146,64 @@ function createSettlementSessionState(): SessionState {
       payload: {
         ...base.roomSnapshot!.payload,
         phase: 'settlement',
+        private_state: {
+          ...base.roomSnapshot!.payload.private_state!,
+          pending_action: null,
+          players: [
+            {
+              seat_index: 0,
+              nickname: 'Player A',
+              connected: true,
+              concealed_count: 2,
+              concealed_tiles: [
+                { tile_id: 'w9#0', tile_key: 'w9' },
+                { tile_id: 'w1#0', tile_key: 'w1' },
+              ],
+              melds: [],
+              flowers: [],
+              discards: ['b1', 'b9'],
+            },
+            {
+              seat_index: 1,
+              nickname: 'Player B',
+              connected: true,
+              concealed_count: 2,
+              concealed_tiles: [
+                { tile_id: 'b3#0', tile_key: 'b3' },
+                { tile_id: 'b1#0', tile_key: 'b1' },
+              ],
+              melds: [['east', 'east', 'east']],
+              flowers: [],
+              discards: ['c1'],
+            },
+            {
+              seat_index: 2,
+              nickname: 'Player C',
+              connected: true,
+              concealed_count: 2,
+              concealed_tiles: [
+                { tile_id: 't9#0', tile_key: 't9' },
+                { tile_id: 'w2#0', tile_key: 'w2' },
+              ],
+              melds: [],
+              flowers: [],
+              discards: ['d1'],
+            },
+            {
+              seat_index: 3,
+              nickname: 'Player D',
+              connected: false,
+              concealed_count: 2,
+              concealed_tiles: [
+                { tile_id: 'd2#0', tile_key: 'd2' },
+                { tile_id: 'd1#0', tile_key: 'd1' },
+              ],
+              melds: [],
+              flowers: [],
+              discards: [],
+            },
+          ],
+        },
       },
     },
     latestMatchResult: {
@@ -407,7 +465,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.promptCue).toBeNull();
   });
 
-  it('prefers active_turn snapshot data over a stale action prompt after a claim resolves', () => {
+  it('falls back to the public current actor after a claim resolves and the local action prompt is stale', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -417,13 +475,8 @@ describe('createMatchViewModel', () => {
           ...base.roomSnapshot!.payload,
           private_state: {
             ...base.roomSnapshot!.payload.private_state!,
-            current_actor: 1,
-            pending_action: {
-              type: 'active_turn',
-              seat_index: 0,
-              deadline_at: '2026-03-26T06:02:00Z',
-              options: ['discard'],
-            },
+            current_actor: 0,
+            pending_action: null,
           },
         },
       },
@@ -483,6 +536,12 @@ describe('createMatchViewModel', () => {
     expect(viewModel.result?.winTypeLabel).toBe('荣和');
     expect(viewModel.celebrationEffect?.label).toBe('胡牌');
     expect(viewModel.celebrationEffect?.winnerSeat).toBe('left');
+    expect(viewModel.settlementHands).toEqual({
+      top: ['w1', 'w9'],
+      left: ['b1', 'b3'],
+      bottom: ['w2', 't9'],
+      right: ['d1', 'd2'],
+    });
   });
 
   it('uses 屁和 copy for low-fan wins when eight-fan restriction is disabled', () => {

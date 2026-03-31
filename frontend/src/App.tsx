@@ -8,7 +8,7 @@ import {
   getFlowerCandidateTileIds,
   getMatchingActionGroup,
 } from './lib/kongSelection';
-import { createMatchViewModel } from './lib/matchViewModel';
+import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
 import {
   buildWebSocketUrl,
   createActionRequestMessage,
@@ -111,6 +111,19 @@ function getClaimSelectionSignature(state: SessionState) {
 
 function canUseClaimMultiSelect(state: SessionState) {
   return getClaimSelectionSignature(state) !== null;
+}
+
+function getDefaultClaimCandidateSelection(state: SessionState) {
+  const firstCandidate = createClaimCandidates(state)[0];
+
+  if (!firstCandidate) {
+    return null;
+  }
+
+  return {
+    actionId: firstCandidate.actionId,
+    tileIds: firstCandidate.tileIds,
+  };
 }
 
 function canQuickDiscard(state: SessionState) {
@@ -339,12 +352,18 @@ export default function App() {
   useEffect(() => {
     const claimSelectionSignature = getClaimSelectionSignature(state);
 
-    if (
-      claimSelectionSignature &&
-      claimSelectionSignature !== previousClaimSelectionSignatureRef.current &&
-      state.selectedTileIds.length > 0
-    ) {
-      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+    if (claimSelectionSignature && claimSelectionSignature !== previousClaimSelectionSignatureRef.current) {
+      const defaultSelection = getDefaultClaimCandidateSelection(state);
+
+      if (defaultSelection) {
+        dispatch({
+          type: 'set_selected_tiles',
+          tileIds: defaultSelection.tileIds,
+          mode: defaultSelection.actionId,
+        });
+      } else if (state.selectedTileIds.length > 0) {
+        dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+      }
     }
 
     previousClaimSelectionSignatureRef.current = claimSelectionSignature;

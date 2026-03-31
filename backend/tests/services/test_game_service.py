@@ -149,6 +149,7 @@ def _make_settlement_room(
     match_state: MatchState,
     settlement: dict,
     round_wind: str | None = None,
+    players: tuple[PlayerState, ...] | None = None,
 ) -> tuple[RoomState, _RecordingWebSocket]:
     websocket = _RecordingWebSocket()
     room = RoomState(table_code=table_code, phase="settlement")
@@ -168,7 +169,8 @@ def _make_settlement_room(
         dealer_seat=match_state.dealer_seat,
         current_actor=match_state.dealer_seat,
         wall=WallState(tiles=(), head_index=0, tail_index=-1),
-        players=tuple(
+        players=players
+        or tuple(
             PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
             for seat in range(4)
         ),
@@ -1257,3 +1259,67 @@ def test_room_snapshot_exposes_wall_tiles_remaining_count() -> None:
     snapshot = service._room_snapshot(room=room, local_seat=0)
 
     assert snapshot["payload"]["private_state"]["wall_tiles_remaining"] == 3
+
+
+def test_settlement_snapshot_reveals_all_players_concealed_tiles() -> None:
+    service = GameService(sessionmaker())
+    players = tuple(
+        PlayerState(
+            seat=seat,
+            concealed_tiles=(
+                _make_suit_tile(f"w{seat + 1}", f"w{seat + 1}#a"),
+                _make_suit_tile(f"b{seat + 1}", f"b{seat + 1}#b"),
+            ),
+            melds=(),
+            flowers=(),
+            discards=(),
+        )
+        for seat in range(4)
+    )
+    room, _websocket = _make_settlement_room(
+        table_code="ROOM-HANDS",
+        match_state=MatchState(
+            prevailing_wind="east",
+            hand_number=1,
+            dealer_seat=0,
+            cumulative_scores={0: 0, 1: 0, 2: 0, 3: 0},
+        ),
+        settlement={
+            "win_type": "draw",
+            "fan_total": 0,
+            "fan_keys": [],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 0,
+                "fan_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+            },
+        },
+        players=players,
+    )
+
+    snapshot = service._room_snapshot(room=room, local_seat=0)
+    private_players = snapshot["payload"]["private_state"]["players"]
+
+    assert [player["concealed_tiles"] for player in private_players] == [
+        [
+            {"tile_id": "w1#a", "tile_key": "w1"},
+            {"tile_id": "b1#b", "tile_key": "b1"},
+        ],
+        [
+            {"tile_id": "w2#a", "tile_key": "w2"},
+            {"tile_id": "b2#b", "tile_key": "b2"},
+        ],
+        [
+            {"tile_id": "w3#a", "tile_key": "w3"},
+            {"tile_id": "b3#b", "tile_key": "b3"},
+        ],
+        [
+            {"tile_id": "w4#a", "tile_key": "w4"},
+            {"tile_id": "b4#b", "tile_key": "b4"},
+        ],
+    ]

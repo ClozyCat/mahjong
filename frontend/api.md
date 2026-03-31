@@ -453,7 +453,8 @@ Top-level `payload.phase` values:
 - In waiting rooms, `private_state` is `null`.
 - In active rooms, every player receives a private view.
 - The local player's own `concealed_tiles` is a full list of `{tile_id, tile_key}`.
-- Other players’ `concealed_tiles` is always `null`.
+- In `playing`, other players’ `concealed_tiles` is `null`.
+- In `settlement`, all players’ `concealed_tiles` is exposed so the frontend can render final hands.
 - Other players still expose `concealed_count`.
 
 Important JSON note:

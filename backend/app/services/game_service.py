@@ -1433,7 +1433,7 @@ class GameService:
                             {"tile_id": tile.tile_id, "tile_key": tile.tile_key}
                             for tile in player.concealed_tiles
                         ]
-                        if player.seat == local_seat
+                        if state.phase == "settlement" or player.seat == local_seat
                         else None
                     ),
                     "melds": [

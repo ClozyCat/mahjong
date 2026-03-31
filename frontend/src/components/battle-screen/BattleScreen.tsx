@@ -51,6 +51,7 @@ export function BattleScreen({
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
               players={viewModel.players}
+              settlementHands={viewModel.settlementHands}
             />
           </div>
           <ActionEffectsOverlay

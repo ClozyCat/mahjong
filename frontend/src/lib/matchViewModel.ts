@@ -179,7 +179,23 @@ function getCurrentActorSeatIndex(privateState: PrivateState | null | undefined)
   return typeof privateState.current_actor === 'number' ? privateState.current_actor : null;
 }
 
+function createPublicTurnPrompt(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  if (snapshot?.phase !== 'playing') {
+    return null;
+  }
+
+  const actorSeat = getCurrentActorSeatIndex(snapshot.private_state);
+  if (typeof actorSeat !== 'number') {
+    return null;
+  }
+
+  return createActorPrompt(getSeatName(state, actorSeat), ['discard']);
+}
+
 function createPromptText(state: SessionState): string | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const currentActor = getCurrentActorSeatIndex(snapshot?.private_state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
   if (pendingAction && typeof pendingAction.type === 'string') {
     if (pendingAction.type === 'active_turn') {
@@ -200,6 +216,18 @@ function createPromptText(state: SessionState): string | null {
       const options = getPendingActionOptions(pendingAction as { options?: unknown });
       return createActorPrompt('一名玩家', options.length > 0 ? options : ['hu']);
     }
+  }
+
+  if (state.latestActionPrompt) {
+    const promptSeat = state.latestActionPrompt.payload.seat_index;
+    if (typeof currentActor !== 'number' || currentActor === promptSeat) {
+      return createActorPrompt(getSeatName(state, promptSeat), state.latestActionPrompt.payload.options);
+    }
+  }
+
+  const publicTurnPrompt = createPublicTurnPrompt(state);
+  if (publicTurnPrompt) {
+    return publicTurnPrompt;
   }
 
   if (state.latestActionPrompt) {
@@ -614,7 +642,7 @@ function getClaimCandidateSignature(actionId: ClaimActionId, tiles: ClaimCandida
   return `${actionId}:${tiles.map((tile) => `${tile.source}:${tile.code}`).join('|')}`;
 }
 
-function createClaimCandidates(state: SessionState): ClaimCandidateView[] {
+export function createClaimCandidates(state: SessionState): ClaimCandidateView[] {
   const privateState = state.roomSnapshot?.payload.private_state;
   const localSeat = getLocalSeat(state);
   const localPlayer =
@@ -674,22 +702,37 @@ function createDrawnTileId(state: SessionState) {
   return null;
 }
 
+function createSettlementHands(state: SessionState): BattleViewModel['settlementHands'] {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+
+  if (!snapshot || snapshot.phase !== 'settlement' || !privateState) {
+    return null;
+  }
+
+  const localSeat = getLocalSeat(state);
+  const settlementHands: Partial<Record<Seat, string[]>> = {};
+
+  for (const player of privateState.players) {
+    if (!player.concealed_tiles || player.concealed_tiles.length === 0) {
+      continue;
+    }
+
+    settlementHands[toRelativeSeat(localSeat, player.seat_index)] = player.concealed_tiles
+      .map((tile) => tile.tile_key)
+      .slice()
+      .sort(compareTileCodes);
+  }
+
+  return Object.keys(settlementHands).length > 0 ? settlementHands : null;
+}
+
 function compareLocalHandTiles(
   left: BattleViewModel['localHand'][number],
   right: BattleViewModel['localHand'][number],
 ) {
-  const leftKey = getTileSortKey(left.code);
-  const rightKey = getTileSortKey(right.code);
-
-  if (leftKey.group !== rightKey.group) {
-    return leftKey.group - rightKey.group;
-  }
-
-  if (leftKey.order !== rightKey.order) {
-    return leftKey.order - rightKey.order;
-  }
-
-  return left.tileId.localeCompare(right.tileId);
+  const codeComparison = compareTileCodes(left.code, right.code);
+  return codeComparison !== 0 ? codeComparison : left.tileId.localeCompare(right.tileId);
 }
 
 function getTileSortKey(code: string) {
@@ -716,6 +759,21 @@ function getTileSortKey(code: string) {
     group: 5,
     order: Number.MAX_SAFE_INTEGER,
   };
+}
+
+function compareTileCodes(left: string, right: string) {
+  const leftKey = getTileSortKey(left);
+  const rightKey = getTileSortKey(right);
+
+  if (leftKey.group !== rightKey.group) {
+    return leftKey.group - rightKey.group;
+  }
+
+  if (leftKey.order !== rightKey.order) {
+    return leftKey.order - rightKey.order;
+  }
+
+  return left.localeCompare(right);
 }
 
 function createResultSeats(state: SessionState, scoreDeltaBySeat: Record<string, number> | null): ResultSeatView[] {
@@ -1071,6 +1129,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     promptText: createPromptText(state),
     promptCue,
     result: createResult(state),
+    settlementHands: createSettlementHands(state),
     lastDiscard: snapshot?.private_state?.last_discard ?? null,
     lastDiscardSeat: createLastDiscardSeat(state),
     actionEffect: createActionEffect(state),

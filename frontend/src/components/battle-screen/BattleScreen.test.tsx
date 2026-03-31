@@ -110,6 +110,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     promptText: null,
     promptCue: null,
     result: null,
+    settlementHands: null,
     lastDiscard: 'b4',
     lastDiscardSeat: 'left',
     actionEffect: null,
@@ -257,6 +258,59 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('七对')).not.toBeInTheDocument();
   });
 
+  it('can collapse the settlement panel and restore it from the table center', async () => {
+    const user = userEvent.setup();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        settlementHands: {
+          top: ['w1', 'w2'],
+          left: ['b1', 'b2'],
+          right: ['c1', 'c2'],
+          bottom: ['d1', 'd2'],
+        },
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          discarderSeat: 'left',
+          winType: 'discard',
+          winTypeLabel: '荣和',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          scoreDeltaBySeat: {
+            bottom: 0,
+            left: -8,
+            right: 8,
+          },
+          seats: [
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: '收起结算面板' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Player Top终局手牌')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '收起结算面板' }));
+    expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开结算面板' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '展开结算面板' }));
+    expect(screen.getByText('本局结算')).toBeInTheDocument();
+  });
+
   it('shows reconnecting overlay copy when disconnected_or_waiting has no waiting controls', () => {
     renderBattleScreen(
       createBattleViewModel({
@@ -292,7 +346,7 @@ describe('BattleScreen', () => {
     expect(hand.querySelectorAll('.mahjong-tile--hand')).toHaveLength(2);
   });
 
-  it('renders action spectacle copy when a battle action effect is active', () => {
+  it('renders the non-text action spectacle layer when a battle action effect is active', () => {
     renderBattleScreen(
       createBattleViewModel({
         actionEffect: {
@@ -304,23 +358,24 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getAllByText('碰').length).toBeGreaterThan(0);
-    expect(screen.getByText('左家')).toBeInTheDocument();
+    expect(document.body.querySelector('.action-effects--action')).not.toBeNull();
+    expect(document.body.querySelector('.action-effects__seal')).toBeNull();
+    expect(document.body.querySelector('.action-effects__caption')).toBeNull();
   });
 
-  it('falls back to a draw spectacle when a new drawnTileId is present', () => {
+  it('falls back to a non-text draw spectacle when a new drawnTileId is present', () => {
     renderBattleScreen(
       createBattleViewModel({
         actionEffect: null,
         drawnTileId: 'w9#draw-1',
-      }),
+        }),
     );
 
-    expect(screen.getByText('摸牌')).toBeInTheDocument();
-    expect(screen.getByText('你')).toBeInTheDocument();
+    expect(document.body.querySelector('.action-effects--action')).not.toBeNull();
+    expect(document.body.querySelector('.action-effects__caption')).toBeNull();
   });
 
-  it('renders a celebration overlay when a winning celebration effect is active', () => {
+  it('does not render a celebration overlay when a winning celebration effect is active', () => {
     renderBattleScreen(
       createBattleViewModel({
         celebrationEffect: {
@@ -332,8 +387,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getAllByText('自摸').length).toBeGreaterThan(0);
-    expect(screen.getByText('华彩自摸')).toBeInTheDocument();
+    expect(document.body.querySelector('.action-effects--celebration')).toBeNull();
   });
 
   it('moves the local player identity into the side drawer instead of the table center', () => {

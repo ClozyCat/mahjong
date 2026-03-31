@@ -125,6 +125,39 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
   });
 
+  it('renders settlement hands beside each seat when the round has ended', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'top', name: 'Player Top', melds: [] },
+          { seat: 'left', name: 'Player Left', melds: [] },
+          { seat: 'right', name: 'Player Right', melds: [] },
+          { seat: 'bottom', name: 'Player Bottom', melds: [] },
+        ]}
+        settlementHands={{
+          top: ['w1', 'w2'],
+          left: ['b1', 'b2', 'b3'],
+          right: ['c1'],
+          bottom: ['d1', 'd2'],
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText('Player Top终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
+    expect(screen.getByLabelText('Player Left终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
+    expect(screen.getByLabelText('Player Right终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(screen.getByLabelText('Player Bottom终局手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
+  });
+
   it('uses the provided discard seat to avoid spotlighting the same tile in another river', () => {
     const { container } = render(
       <TableStage
