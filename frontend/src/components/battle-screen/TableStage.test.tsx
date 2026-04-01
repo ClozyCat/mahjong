@@ -367,7 +367,6 @@ describe('TableStage', () => {
           bottom: [],
         }}
         activeSeat="bottom"
-        lastDiscard={null}
         promptText={null}
         players={[
           { seat: 'top', name: 'Player Top', melds: [] },
@@ -377,16 +376,22 @@ describe('TableStage', () => {
         ]}
         settlementHands={{
           top: ['w1', 'w2'],
-          left: ['b1', 'b2', 'b3'],
+          left: ['b1', 'b2', 'b3', 'b4'],
           right: ['c1'],
           bottom: ['d1', 'd2'],
         }}
+        lastDiscard="b4"
+        lastDiscardSeat="top"
+        settlementWinnerSeat="left"
+        settlementWinType="discard"
       />,
     );
 
     expect(screen.getByLabelText('对家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
-    expect(screen.getByLabelText('左家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(3);
+    expect(screen.getByLabelText('左家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(4);
     expect(screen.getByLabelText('右家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(screen.getByLabelText('左家手牌').querySelectorAll('.mahjong-tile--last-discard')).toHaveLength(1);
+    expect(document.querySelector('.table-stage__spotlight')).toBeNull();
     expect(screen.queryByLabelText('本家手牌')).toBeNull();
   });
 

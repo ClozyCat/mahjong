@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import type { BattleActionId, ResultView } from '../../types/match';
+import type { BattleActionId, ResultView, ResultSeatView, Seat } from '../../types/match';
 
 interface ResultOverlayProps {
   result: ResultView;
@@ -13,6 +13,14 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const visibleFanBreakdown = isExpanded ? result.fanBreakdown : result.fanBreakdown.slice(0, MAX_VISIBLE_FAN_ITEMS);
   const hiddenFanCount = Math.max(0, result.fanBreakdown.length - MAX_VISIBLE_FAN_ITEMS);
+  const fanMeta = [
+    winTypeLabel,
+    result.winnerSeat ? `胜者 ${formatResultActor(result.winnerSeat, result.seats)}` : null,
+    result.discarderSeat ? `放铳 ${formatResultActor(result.discarderSeat, result.seats)}` : null,
+    result.flowerCount > 0 ? `花牌 ${result.flowerCount}` : null,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join(' · ');
 
   useEffect(() => {
     setIsExpanded(false);
@@ -51,46 +59,75 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
             收起结算面板
           </button>
         </div>
-        <p>{result.summary}</p>
-        {result.fanTotal !== null ? (
-          <p>
-            番数合计 {result.fanTotal}
-            {winTypeLabel ? ` · ${winTypeLabel}` : ''}
-            {result.winnerSeat ? ` · 胜者 ${result.winnerSeat}` : ''}
-            {result.discarderSeat ? ` · 放铳 ${result.discarderSeat}` : ''}
-            {result.flowerCount > 0 ? ` · 花牌 ${result.flowerCount}` : ''}
-          </p>
-        ) : null}
-        {result.provisional ? <p className="result-overlay__provisional">当前为临时结算结果</p> : null}
+        <p className="result-overlay__summary">{result.summary}</p>
 
-        {result.fanBreakdown.length > 0 ? (
-          <div className="result-overlay__list">
-            {visibleFanBreakdown.map((item) => (
-              <div key={item.fanKey} className="result-overlay__row">
-                <span>{getFanLabel(item.fanKey)}</span>
-                <strong>{item.fanValue}</strong>
+        {result.fanTotal !== null || result.fanBreakdown.length > 0 ? (
+          <div className="result-overlay__fan-panel">
+            <div className="result-overlay__section-head">
+              <span className="result-overlay__section-label">番型明细</span>
+              {result.fanTotal !== null ? <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong> : null}
+            </div>
+            {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
+
+            {result.fanBreakdown.length > 0 ? (
+              <div className="result-overlay__list">
+                {visibleFanBreakdown.map((item) => (
+                  <div key={item.fanKey} className="result-overlay__row">
+                    <span>{getFanLabel(item.fanKey)}</span>
+                    <strong>{item.fanValue}</strong>
+                  </div>
+                ))}
+                {hiddenFanCount > 0 ? (
+                  <button
+                    type="button"
+                    className="result-overlay__toggle"
+                    onClick={() => setIsExpanded((current) => !current)}
+                  >
+                    {isExpanded ? '收起番种' : `展开剩余 ${hiddenFanCount} 项番种`}
+                  </button>
+                ) : null}
               </div>
-            ))}
-            {hiddenFanCount > 0 ? (
-              <button
-                type="button"
-                className="result-overlay__toggle"
-                onClick={() => setIsExpanded((current) => !current)}
-              >
-                {isExpanded ? '收起番种' : `展开剩余 ${hiddenFanCount} 项番种`}
-              </button>
             ) : null}
           </div>
         ) : null}
 
-        <div className="result-overlay__seat-list">
-          {result.seats.map((seat) => (
-            <div key={`${seat.seat}-${seat.name}`} className="result-overlay__seat-row">
-              <span>{seat.name}</span>
-              <strong>{seat.score}</strong>
-              <span>{seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}</span>
-            </div>
-          ))}
+        <div className="result-overlay__score-panel">
+          <div className="result-overlay__section-head">
+            <span className="result-overlay__section-label">玩家分数</span>
+            <span className="result-overlay__score-hint">本局结算后总分</span>
+          </div>
+          <div className="result-overlay__seat-list">
+            {result.seats.map((seat) => {
+              const deltaClassName =
+                seat.delta === null
+                  ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
+                  : seat.delta > 0
+                    ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
+                    : seat.delta < 0
+                      ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
+                      : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
+
+              const rowClassName =
+                seat.delta !== null && seat.delta > 0
+                  ? 'result-overlay__seat-row result-overlay__seat-row--positive'
+                  : seat.delta !== null && seat.delta < 0
+                    ? 'result-overlay__seat-row result-overlay__seat-row--negative'
+                    : 'result-overlay__seat-row result-overlay__seat-row--neutral';
+
+              return (
+                <div key={`${seat.seat}-${seat.name}`} className={rowClassName}>
+                  <div className="result-overlay__seat-main">
+                    <span className="result-overlay__seat-name">{seat.name}</span>
+                    <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+                  </div>
+                  <strong className="result-overlay__seat-score">{seat.score}</strong>
+                  <span className={deltaClassName}>
+                    {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {result.continueAction ? (
@@ -115,7 +152,13 @@ const WIN_TYPE_LABELS: Record<string, string> = {
   draw: '流局',
 };
 
-const MAX_VISIBLE_FAN_ITEMS = 4;
+const MAX_VISIBLE_FAN_ITEMS = 3;
+const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
+  bottom: '本家',
+  left: '左家',
+  top: '对家',
+  right: '右家',
+};
 
 const FAN_LABELS: Record<string, string> = {
   ping_hu: '平胡',
@@ -216,4 +259,19 @@ function getFanLabel(fanKey: string) {
   }
 
   return fanKey;
+}
+
+function getRelativeSeatLabel(seat: Seat) {
+  return RELATIVE_SEAT_LABELS[seat];
+}
+
+function formatResultActor(seat: Seat, seats: ResultSeatView[]) {
+  const relativeSeatLabel = getRelativeSeatLabel(seat);
+  const seatView = seats.find((item) => item.seat === seat);
+
+  if (!seatView?.name) {
+    return relativeSeatLabel;
+  }
+
+  return `${seatView.name}（${relativeSeatLabel}）`;
 }

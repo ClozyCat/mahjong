@@ -12,6 +12,8 @@ interface TableStageProps {
   actionIndicatorSeat?: Seat | null;
   lastDiscard: string | null;
   lastDiscardSeat?: Seat | null;
+  settlementWinnerSeat?: Seat | null;
+  settlementWinType?: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
@@ -45,6 +47,8 @@ export function TableStage({
   actionIndicatorSeat = null,
   lastDiscard,
   lastDiscardSeat = null,
+  settlementWinnerSeat = null,
+  settlementWinType = null,
   remainingTileCount = null,
   promptText,
   promptCue = null,
@@ -71,6 +75,7 @@ export function TableStage({
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
+  const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
@@ -260,6 +265,13 @@ export function TableStage({
             const finalHandTiles = settlementHands?.[seat] ?? [];
             const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
             const shouldRenderSeatInfo = Boolean(player);
+            const settlementWinningTileIndex =
+              settlementWinType === 'discard' &&
+              settlementWinnerSeat === seat &&
+              lastDiscard !== null &&
+              finalHandTiles.at(-1) === lastDiscard
+                ? finalHandTiles.length - 1
+                : -1;
 
             return (
               <Fragment key={seat}>
@@ -308,6 +320,7 @@ export function TableStage({
                             key={`${seat}-settlement-${tile}-${index}`}
                             code={tile}
                             variant="discard"
+                            isLastDiscard={index === settlementWinningTileIndex}
                             className="table-stage__settlement-hand-tile"
                           />
                         ))}
@@ -321,7 +334,7 @@ export function TableStage({
               </Fragment>
             );
           })}
-          {spotlightSeat && spotlightTile ? (
+          {!hasSettlementHands && spotlightSeat && spotlightTile ? (
             <div
               className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
                 spotlightPlayer?.isDealer ? 'table-stage__spotlight--dealer' : ''

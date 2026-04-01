@@ -778,6 +778,7 @@ function createDrawnTileId(state: SessionState) {
 function createSettlementHands(state: SessionState): BattleViewModel['settlementHands'] {
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
+  const settlementWinningDiscard = getSettlementWinningDiscard(state);
 
   if (!snapshot || snapshot.phase !== 'settlement' || !privateState) {
     return null;
@@ -787,17 +788,46 @@ function createSettlementHands(state: SessionState): BattleViewModel['settlement
   const settlementHands: Partial<Record<Seat, string[]>> = {};
 
   for (const player of privateState.players) {
-    if (!player.concealed_tiles || player.concealed_tiles.length === 0) {
-      continue;
-    }
-
-    settlementHands[toRelativeSeat(localSeat, player.seat_index)] = player.concealed_tiles
+    const seat = toRelativeSeat(localSeat, player.seat_index);
+    const tiles = (player.concealed_tiles ?? [])
       .map((tile) => tile.tile_key)
       .slice()
       .sort(compareTileCodes);
+
+    if (tiles.length === 0 && settlementWinningDiscard?.winnerSeat !== seat) {
+      continue;
+    }
+
+    settlementHands[seat] =
+      settlementWinningDiscard?.winnerSeat === seat
+        ? [...tiles, settlementWinningDiscard.tileCode]
+        : tiles;
   }
 
   return Object.keys(settlementHands).length > 0 ? settlementHands : null;
+}
+
+function getSettlementWinningDiscard(state: SessionState): { winnerSeat: Seat; tileCode: string } | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+  const result = state.latestMatchResult?.payload;
+
+  if (
+    !snapshot ||
+    snapshot.phase !== 'settlement' ||
+    !privateState ||
+    !result ||
+    result.win_type !== 'discard' ||
+    typeof result.winner_seat !== 'number' ||
+    !privateState.last_discard
+  ) {
+    return null;
+  }
+
+  return {
+    winnerSeat: toRelativeSeat(getLocalSeat(state), result.winner_seat),
+    tileCode: privateState.last_discard,
+  };
 }
 
 function compareLocalHandTiles(

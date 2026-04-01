@@ -600,7 +600,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.result?.winTypeLabel).toBe('荣和');
     expect(viewModel.settlementHands).toEqual({
       top: ['w1', 'w9'],
-      left: ['b1', 'b3'],
+      left: ['b1', 'b3', 'b4'],
       bottom: ['w2', 't9'],
       right: ['d1', 'd2'],
     });

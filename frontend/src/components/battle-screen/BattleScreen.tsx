@@ -53,10 +53,14 @@ export function BattleScreen({
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
   const canIncreaseTableTileScale = tableTileScale < MAX_TABLE_TILE_SCALE;
+  const shouldReturnLastDiscardToRiver =
+    Boolean(viewModel.result) &&
+    Boolean(viewModel.lastDiscard) &&
+    (viewModel.result?.winType === 'draw' || viewModel.result?.winType === 'self_draw');
   const shouldDelaySettlementPanel =
     Boolean(viewModel.result) && Boolean(viewModel.lastDiscard) && viewModel.result?.winType === 'draw';
-  const visibleLastDiscard = shouldDelaySettlementPanel ? null : viewModel.lastDiscard;
-  const visibleLastDiscardSeat = shouldDelaySettlementPanel ? null : viewModel.lastDiscardSeat;
+  const visibleLastDiscard = shouldReturnLastDiscardToRiver ? null : viewModel.lastDiscard;
+  const visibleLastDiscardSeat = shouldReturnLastDiscardToRiver ? null : viewModel.lastDiscardSeat;
   const visibleResult = isSettlementPanelReady ? viewModel.result : null;
 
   function adjustTableTileScale(offset: number) {
@@ -126,6 +130,8 @@ export function BattleScreen({
               actionIndicatorSeat={viewModel.actionIndicatorSeat}
               lastDiscard={visibleLastDiscard}
               lastDiscardSeat={visibleLastDiscardSeat}
+              settlementWinnerSeat={viewModel.result?.winnerSeat ?? null}
+              settlementWinType={viewModel.result?.winType ?? null}
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}

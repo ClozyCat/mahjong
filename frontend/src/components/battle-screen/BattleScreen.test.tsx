@@ -219,11 +219,57 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByText(/番数合计/i)).toBeInTheDocument();
+    expect(screen.getByText('8 番')).toBeInTheDocument();
     expect(screen.getByText('平胡')).toBeInTheDocument();
-    expect(screen.getByText('幺九刻')).toBeInTheDocument();
+    expect(screen.getByText('清一色')).toBeInTheDocument();
+    expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
+    expect(screen.getByText(/放铳 Player Left（左家）/)).toBeInTheDocument();
+    expect(screen.queryByText(/胜者 right/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/放铳 left/)).not.toBeInTheDocument();
+    expect(screen.queryByText('幺九刻')).not.toBeInTheDocument();
     expect(screen.queryByText('七对')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '展开剩余 1 项番种' })).toBeInTheDocument();
+    expect(screen.queryByText('当前为临时结算结果')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开剩余 2 项番种' })).toBeInTheDocument();
+  });
+
+  it('shows 屁和 in the settlement overlay when the backend provides the low-fan label', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '屁和，等待下一局',
+          fanTotal: 4,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '屁和',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 4,
+            left: -2,
+            top: -1,
+            right: -1,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25004, delta: 4 },
+            { seat: 'left', name: 'Player Left', score: 24298, delta: -2 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByText('屁和，等待下一局')).toBeInTheDocument();
+    expect(screen.getByText('屁和 · 胜者 Player A（本家）')).toBeInTheDocument();
+    expect(screen.queryByText('自摸 · 胜者 Player A（本家）')).toBeNull();
   });
 
   it('can expand and collapse extra fan breakdown rows in settlement view', async () => {
@@ -271,7 +317,7 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByText('七对')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '展开剩余 1 项番种' }));
+    await user.click(screen.getByRole('button', { name: '展开剩余 2 项番种' }));
     expect(screen.getByText('七对')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '收起番种' }));
@@ -386,6 +432,53 @@ describe('BattleScreen', () => {
 
     expect(screen.getByText('本局结算')).toBeInTheDocument();
     vi.useRealTimers();
+  });
+
+  it('returns the previous discard to the river instead of keeping a spotlight during self draw settlement', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        result: {
+          title: '本局结算',
+          summary: '自摸，等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByText('本局结算')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
   });
 
   it('shows reconnecting overlay copy when disconnected_or_waiting has no waiting controls', () => {
