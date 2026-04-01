@@ -258,10 +258,10 @@ describe('TableStage', () => {
     expect(screen.getByLabelText('Player Top 信息栏')).toBeInTheDocument();
     expect(screen.getByLabelText('Player Left 信息栏')).toHaveTextContent('手牌 13 · 花 1');
     expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveTextContent('手牌 14 · 花 0');
-    expect(container.querySelector('.table-stage__spotlight--left')?.getAttribute('style')).toContain('--table-player-accent');
+    expect(container.querySelector('.table-stage__spotlight--left')).not.toBeNull();
   });
 
-  it('assigns unique chinese-color accents to each player info bar that is present', () => {
+  it('uses a unified theme-driven player info style and marks the dealer separately', () => {
     render(
       <TableStage
         discards={{
@@ -277,63 +277,33 @@ describe('TableStage', () => {
           { seat: 'top', name: 'Player Top', melds: [] },
           { seat: 'left', name: 'Player Left', melds: [] },
           { seat: 'right', name: 'Player Right', melds: [] },
-          { seat: 'bottom', name: 'Player Bottom', melds: [] },
+          { seat: 'bottom', name: 'Player Bottom', melds: [], isDealer: true },
         ]}
       />,
     );
 
-    const accents = [
-      screen.getByLabelText('Player Top 信息栏'),
-      screen.getByLabelText('Player Left 信息栏'),
-      screen.getByLabelText('Player Right 信息栏'),
-      screen.getByLabelText('Player Bottom 信息栏'),
-    ].map((element) => (element as HTMLElement).style.getPropertyValue('--table-player-accent'));
-
-    expect(new Set(accents).size).toBe(4);
+    expect(screen.getByLabelText('Player Top 信息栏')).not.toHaveClass('table-stage__player-info--dealer');
+    expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveClass('table-stage__player-info--dealer');
   });
 
-  it('slightly shifts player accent colors with the active overall theme', () => {
-    const { rerender } = render(
+  it('marks the dealer spotlight with the dealer style modifier', () => {
+    const { container } = render(
       <TableStage
         discards={{
           top: [],
           left: [],
           right: [],
-          bottom: [],
+          bottom: ['w1'],
         }}
         activeSeat="bottom"
-        lastDiscard={null}
+        lastDiscard="w1"
+        lastDiscardSeat="bottom"
         promptText={null}
-        themeId="qing-ci"
-        players={[{ seat: 'bottom', name: 'Player Bottom', melds: [] }]}
+        players={[{ seat: 'bottom', name: 'Player Bottom', melds: [], isDealer: true }]}
       />,
     );
 
-    const qingCiAccent = (screen.getByLabelText('Player Bottom 信息栏') as HTMLElement).style.getPropertyValue(
-      '--table-player-accent',
-    );
-
-    rerender(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        themeId="zhu-sha"
-        players={[{ seat: 'bottom', name: 'Player Bottom', melds: [] }]}
-      />,
-    );
-
-    const zhuShaAccent = (screen.getByLabelText('Player Bottom 信息栏') as HTMLElement).style.getPropertyValue(
-      '--table-player-accent',
-    );
-
-    expect(qingCiAccent).not.toBe(zhuShaAccent);
+    expect(container.querySelector('.table-stage__spotlight--bottom')).toHaveClass('table-stage__spotlight--dealer');
   });
 
   it('renders settlement hands beside each seat when the round has ended', () => {

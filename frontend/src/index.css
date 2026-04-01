@@ -456,11 +456,16 @@ button:active:not(:disabled) {
   --table-stage-settlement-tile-width: calc(var(--table-stage-settlement-base-width) * var(--table-stage-tile-scale));
   --table-stage-settlement-tile-height: calc(var(--table-stage-settlement-base-height) * var(--table-stage-tile-scale));
   --table-stage-river-gap: 0.4rem;
-  --table-player-accent: rgba(255, 214, 110, 0.92);
-  --table-player-accent-strong: rgba(255, 214, 110, 0.72);
-  --table-player-accent-soft: rgba(255, 214, 110, 0.22);
-  --table-player-accent-surface: rgba(255, 214, 110, 0.12);
-  --table-player-accent-shadow: rgba(255, 214, 110, 0.28);
+  --table-player-accent: rgba(170, 192, 186, 0.92);
+  --table-player-accent-strong: rgba(170, 192, 186, 0.68);
+  --table-player-accent-soft: rgba(170, 192, 186, 0.2);
+  --table-player-accent-surface: rgba(170, 192, 186, 0.12);
+  --table-player-accent-shadow: rgba(170, 192, 186, 0.24);
+  --table-player-dealer-accent: rgba(214, 182, 110, 0.94);
+  --table-player-dealer-accent-strong: rgba(214, 182, 110, 0.72);
+  --table-player-dealer-accent-soft: rgba(214, 182, 110, 0.22);
+  --table-player-dealer-accent-surface: rgba(214, 182, 110, 0.13);
+  --table-player-dealer-accent-shadow: rgba(214, 182, 110, 0.28);
   position: relative;
   width: 100%;
   aspect-ratio: 2 / 1;
@@ -833,6 +838,15 @@ button:active:not(:disabled) {
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03)),
     linear-gradient(180deg, var(--table-player-accent-surface), transparent 72%),
     rgba(10, 25, 39, 0.8);
+}
+
+.table-stage__player-info--dealer,
+.table-stage__spotlight--dealer {
+  --table-player-accent: var(--table-player-dealer-accent);
+  --table-player-accent-strong: var(--table-player-dealer-accent-strong);
+  --table-player-accent-soft: var(--table-player-dealer-accent-soft);
+  --table-player-accent-surface: var(--table-player-dealer-accent-surface);
+  --table-player-accent-shadow: var(--table-player-dealer-accent-shadow);
 }
 
 .table-stage__player-info-eyebrow,
@@ -5272,6 +5286,19 @@ input {
   border-color: color-mix(in srgb, var(--theme-paper) 10%, transparent);
 }
 
+.table-stage {
+  --table-player-accent: color-mix(in srgb, var(--accent) 62%, var(--theme-paper));
+  --table-player-accent-strong: color-mix(in srgb, var(--accent) 54%, var(--theme-paper));
+  --table-player-accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
+  --table-player-accent-surface: color-mix(in srgb, var(--accent) 12%, transparent);
+  --table-player-accent-shadow: color-mix(in srgb, var(--accent) 26%, transparent);
+  --table-player-dealer-accent: color-mix(in srgb, var(--accent-2) 78%, var(--theme-paper));
+  --table-player-dealer-accent-strong: color-mix(in srgb, var(--accent-2) 68%, var(--theme-paper));
+  --table-player-dealer-accent-soft: color-mix(in srgb, var(--accent-2) 22%, transparent);
+  --table-player-dealer-accent-surface: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  --table-player-dealer-accent-shadow: color-mix(in srgb, var(--accent-2) 28%, transparent);
+}
+
 .table-stage__melds,
 .table-stage__settlement-hand-grid,
 .table-stage__player-info,
@@ -5469,6 +5496,40 @@ input {
   border-color: color-mix(in srgb, var(--accent-2) 34%, var(--theme-border));
 }
 
+.table-stage__scale-controls {
+  border-color: color-mix(in srgb, var(--accent-3) 24%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 12%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
+    color-mix(in srgb, var(--theme-panel-bg) 94%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
+    0 10px 24px var(--theme-shadow-soft),
+    0 0 0 1px color-mix(in srgb, var(--accent-3) 8%, transparent);
+}
+
+.table-stage__scale-readout {
+  color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-3));
+}
+
+.table-stage__scale-button {
+  border-color: color-mix(in srgb, var(--accent-3) 34%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 20%, transparent), color-mix(in srgb, var(--theme-paper) 5%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 92%, black);
+  color: color-mix(in srgb, var(--theme-paper-strong) 92%, var(--accent-3));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
+    0 8px 18px var(--theme-shadow-soft);
+}
+
+.table-stage__scale-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-3) 56%, var(--theme-border-strong));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
+    0 12px 22px var(--theme-shadow-soft),
+    0 0 0 1px color-mix(in srgb, var(--accent-3) 16%, transparent);
+}
+
 .battle-drawer__action--low:not(:disabled) {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
@@ -5485,6 +5546,36 @@ input {
 .action-dock__empty {
   background: color-mix(in srgb, var(--theme-paper) 5%, transparent);
   color: var(--muted);
+}
+
+.action-dock__info-rail {
+  padding: 0.18rem 0.16rem 0.1rem 0.5rem;
+  border-left: 1px solid color-mix(in srgb, var(--accent-2) 18%, transparent);
+}
+
+.action-dock__action--collapse.action-dock__action--medium:not(:disabled),
+.action-dock__restore {
+  border-color: color-mix(in srgb, var(--accent-2) 24%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 12%, transparent), color-mix(in srgb, var(--theme-paper) 4%, transparent)),
+    color-mix(in srgb, var(--panel) 94%, black);
+  color: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent-2));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
+    0 8px 16px color-mix(in srgb, var(--theme-shadow-soft) 82%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 6%, transparent);
+}
+
+.action-dock__action--collapse.action-dock__action--medium:hover:not(:disabled),
+.action-dock__restore:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-2) 36%, var(--theme-border-strong));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 16%, transparent), color-mix(in srgb, var(--theme-paper) 5%, transparent)),
+    color-mix(in srgb, var(--panel) 92%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
+    0 10px 20px color-mix(in srgb, var(--theme-shadow-soft) 88%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 10%, transparent);
 }
 
 .action-dock__countdown strong,

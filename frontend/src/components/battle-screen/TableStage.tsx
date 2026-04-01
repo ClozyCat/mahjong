@@ -4,7 +4,7 @@ import type { ThemeId } from '../../lib/themes';
 import type { BattleActionView, BattlePromptView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
-import { buildPlayerAccentStyles, PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
+import { PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
@@ -67,9 +67,9 @@ export function TableStage({
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
-  const playerAccentStyleBySeat = buildPlayerAccentStyles(players, themeId);
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
+  const spotlightPlayer = spotlightSeat ? playerBySeat.get(spotlightSeat) : null;
   const spotlightTile = spotlightSeat !== null && lastDiscardPosition !== null
     ? discards[spotlightSeat][lastDiscardPosition.index]
     : null;
@@ -239,11 +239,7 @@ export function TableStage({
                     </div>
                   ) : null}
                   {shouldRenderSeatInfo && player ? (
-                    <PlayerInfoBar
-                      player={player}
-                      className={`table-stage__player-info--${seat}`}
-                      accentStyle={playerAccentStyleBySeat.get(seat)}
-                    />
+                    <PlayerInfoBar player={player} className={`table-stage__player-info--${seat}`} />
                   ) : null}
                 </div>
               </Fragment>
@@ -252,10 +248,11 @@ export function TableStage({
           {spotlightSeat && spotlightTile ? (
             <div
               className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
+                spotlightPlayer?.isDealer ? 'table-stage__spotlight--dealer' : ''
+              } ${
                 promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
               }`}
               aria-label="Latest discard spotlight"
-              style={playerAccentStyleBySeat.get(spotlightSeat)}
             >
               <MahjongTile
                 code={spotlightTile}
