@@ -239,6 +239,17 @@ export default function App() {
     clearStoredSession();
   }, [connectValue.nickname, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
+  const handleLeaveToLobby = useEffectEvent((tableCode?: string) => {
+    leavingTableRef.current = false;
+    clearStoredSession();
+    dispatch({
+      type: 'return_to_lobby',
+      tableCode: tableCode ?? sessionRef.current.tableCode,
+    });
+    closeSocket(socketRef, heartbeatTimerRef);
+    setStatusMessage(null);
+  });
+
   const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
     clearStoredSession();
     dispatch({
@@ -272,6 +283,11 @@ export default function App() {
         handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
         return;
       }
+    }
+
+    if (message.type === 'leave_table_accepted') {
+      handleLeaveToLobby(message.payload.table_code);
+      return;
     }
 
     if (message.type === 'room_snapshot') {
@@ -337,13 +353,7 @@ export default function App() {
         socketRef.current = null;
         const current = sessionRef.current;
         if (leavingTableRef.current) {
-          leavingTableRef.current = false;
-          clearStoredSession();
-          dispatch({
-            type: 'return_to_lobby',
-            tableCode: current.tableCode,
-          });
-          setStatusMessage(null);
+          handleLeaveToLobby(current.tableCode);
           return;
         }
         if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {

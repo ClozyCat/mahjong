@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { WindowFrame } from '../win10/WindowFrame';
 
 export interface ConnectGateValue {
@@ -20,6 +22,15 @@ interface ConnectGateProps {
   onJoin: () => void;
 }
 
+const CONNECT_GATE_QUOTES = [
+  '牌局未开，先定心气。',
+  '落子无悔，起手有光。',
+  '风起四座，静待良局。',
+  '牌有千变，心守一线。',
+  '好局不怕晚，妙手自会来。',
+  '入席先安神，出手见真章。',
+];
+
 export function ConnectGate({
   value,
   status,
@@ -32,8 +43,11 @@ export function ConnectGate({
   onCreate,
   onJoin,
 }: ConnectGateProps) {
+  const [footnoteQuote] = useState(
+    () => CONNECT_GATE_QUOTES[Math.floor(Math.random() * CONNECT_GATE_QUOTES.length)],
+  );
   const disabled = status === 'connecting';
-  const helperText = tableCodeError ?? '支持 1-12 位数字或英文字母；留空创建时将自动分配牌桌编号。';
+  const helperText = tableCodeError ?? '支持 1-12 位数字或英文字母；留空创建时将自动分配。';
   const statusText =
     message ??
     tableCodeError ??
@@ -48,7 +62,7 @@ export function ConnectGate({
               <p className="connect-gate__eyebrow">联机大厅</p>
               <h1>启局入席</h1>
               <p className="connect-gate__lead">
-                大厅会在每次开启时随机取用一套中国色。保留当前牌桌内的沉静层次，也让每次入局都有一点新鲜气息。
+                大厅会在每次开启时随机取用一套中国色。保留当前牌桌内的沉浸感，也让每次入局都有一点新鲜气息。
               </p>
 
               <div className="connect-gate__meta">
@@ -129,7 +143,7 @@ export function ConnectGate({
                 </button>
               </div>
 
-              <p className="connect-gate__footnote">编号不合规时将直接拦截创建与加入，避免误入无效牌局。</p>
+              <p className="connect-gate__footnote">{footnoteQuote}</p>
             </div>
           </div>
         </div>

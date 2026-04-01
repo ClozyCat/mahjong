@@ -54,6 +54,8 @@ from app.services.timeout_service import (
 
 MAX_SEATS = 4
 WIND_ORDER = ("east", "south", "west", "north")
+BOT_ACTION_DELAY_MIN_SECONDS = 0.5
+BOT_ACTION_DELAY_MAX_SECONDS = 1.5
 
 
 class LoopSafeLock:
@@ -134,6 +136,8 @@ class RoomState:
     round_state: RoundState | None = None
     pending_timeout: PendingTimeout | None = None
     timeout_task: asyncio.Task[None] | None = None
+    bot_action_task: asyncio.Task[None] | None = None
+    bot_action_key: tuple[str, int, int, str | None, tuple[int, ...]] | None = None
     send_lock: LoopSafeLock = field(default_factory=LoopSafeLock)
 
 
@@ -405,6 +409,7 @@ class GameService:
                 self._advance_round_locked(room)
                 self._auto_advance_bot_seats_locked(room)
                 self._sync_timeout_task_locked(room)
+                self._sync_bot_action_task_locked(room)
                 self._persist_room_state_locked(room)
                 snapshot_targets = self._snapshot_targets_locked(room)
                 prompt_targets = self._prompt_targets_locked(room)
@@ -509,12 +514,16 @@ class GameService:
                     reservation.reconnect_token = None
                 self._mark_disconnected(player_session_id=reservation.player_session_id)
 
-                messages = self._auto_advance_bot_seats_locked(room)
-                self._sync_timeout_task_locked(room)
-                self._persist_room_state_locked(room)
-                broadcast_targets = self._connected_websockets_locked(room)
-                snapshot_targets = self._snapshot_targets_locked(room)
-                prompt_targets = self._prompt_targets_locked(room)
+                if self._should_terminate_unattended_room_locked(room):
+                    self._close_room_locked(room)
+                else:
+                    messages = self._auto_advance_bot_seats_locked(room)
+                    self._sync_timeout_task_locked(room)
+                    self._sync_bot_action_task_locked(room)
+                    self._persist_room_state_locked(room)
+                    broadcast_targets = self._connected_websockets_locked(room)
+                    snapshot_targets = self._snapshot_targets_locked(room)
+                    prompt_targets = self._prompt_targets_locked(room)
 
         async with room.send_lock:
             if peer_updates:
@@ -549,10 +558,15 @@ class GameService:
                     reservation.websocket = None
                     reservation.connected = False
                     self._mark_disconnected(player_session_id=reservation.player_session_id)
-                    self._persist_room_state_locked(room)
+                    if self._should_terminate_unattended_room_locked(room):
+                        self._close_room_locked(room)
+                    else:
+                        self._persist_room_state_locked(room)
                     break
 
             if disconnected_seat is None:
+                return
+            if table_code not in self._rooms:
                 return
 
         asyncio.create_task(
@@ -607,6 +621,7 @@ class GameService:
             self._apply_settlement_to_match_locked(room)
             additional_messages = self._auto_advance_bot_seats_locked(room)
             self._sync_timeout_task_locked(room)
+            self._sync_bot_action_task_locked(room)
             self._persist_room_state_locked(room)
 
             broadcast_targets = self._connected_websockets_locked(room)
@@ -679,6 +694,7 @@ class GameService:
                         self._apply_settlement_to_match_locked(room)
                         auto_messages = self._auto_advance_bot_seats_locked(room)
                         self._sync_timeout_task_locked(room)
+                        self._sync_bot_action_task_locked(room)
                         self._persist_room_state_locked(room)
                         reason = None
                         messages = [
@@ -789,6 +805,141 @@ class GameService:
             self._timeout_runner(room.table_code, room.pending_timeout)
         )
 
+    def _pending_bot_action_key_locked(
+        self,
+        room: RoomState,
+    ) -> tuple[str, int, int, str | None, tuple[int, ...]] | None:
+        if (
+            room.test_mode
+            or room.round_state is None
+            or room.round_state.phase != "playing"
+            or room.pending_timeout is None
+        ):
+            return None
+
+        if room.pending_timeout.kind == "active_turn":
+            actor = room.round_state.current_actor
+            if not self._is_bot_seat(room, actor):
+                return None
+
+            return (
+                room.pending_timeout.kind,
+                actor,
+                room.round_state.version,
+                room.pending_timeout.drawn_tile_id,
+                (),
+            )
+
+        if room.pending_timeout.kind != "claim_window":
+            return None
+
+        pending_action = room.round_state.pending_action or {}
+        pending_type = pending_action.get("type")
+        if pending_type not in {"claim_window", "rob_kong_window"}:
+            return None
+
+        seat_index = self._next_bot_claim_seat_locked(room)
+        if seat_index is None:
+            return None
+
+        return (
+            room.pending_timeout.kind,
+            seat_index,
+            room.round_state.version,
+            pending_type,
+            tuple(sorted(pending_action.get("responded_seats", []))),
+        )
+
+    def _sync_bot_action_task_locked(self, room: RoomState) -> None:
+        current_task = asyncio.current_task()
+        desired_key = self._pending_bot_action_key_locked(room)
+
+        if desired_key is None:
+            if room.bot_action_task is not None and room.bot_action_task is not current_task:
+                room.bot_action_task.cancel()
+            room.bot_action_task = None
+            room.bot_action_key = None
+            return
+
+        if (
+            room.bot_action_task is not None
+            and not room.bot_action_task.done()
+            and room.bot_action_key == desired_key
+        ):
+            return
+
+        if room.bot_action_task is not None and room.bot_action_task is not current_task:
+            room.bot_action_task.cancel()
+
+        room.bot_action_key = desired_key
+        room.bot_action_task = asyncio.create_task(
+            self._bot_action_runner(
+                room.table_code,
+                expected_key=desired_key,
+                delay=self._bot_action_delay_seconds(room),
+            )
+        )
+
+    def _bot_action_delay_seconds(self, room: RoomState) -> float:
+        if room.test_mode:
+            return 0.0
+        return random.uniform(
+            BOT_ACTION_DELAY_MIN_SECONDS,
+            BOT_ACTION_DELAY_MAX_SECONDS,
+        )
+
+    async def _bot_action_runner(
+        self,
+        table_code: str,
+        *,
+        expected_key: tuple[str, int, int, str | None, tuple[int, ...]],
+        delay: float,
+    ) -> None:
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+
+        room: RoomState | None = None
+        messages: list[dict] = []
+        snapshot_targets: list[tuple[WebSocket, list[dict]]] = []
+        prompt_targets: list[tuple[WebSocket, dict]] = []
+        broadcast_targets: list[WebSocket] = []
+
+        async with self._lock:
+            room = self._rooms.get(table_code)
+            if room is None or room.round_state is None:
+                return
+            if room.bot_action_key != expected_key:
+                return
+            if self._pending_bot_action_key_locked(room) != expected_key:
+                return
+
+            if expected_key[0] == "active_turn":
+                actor = room.round_state.current_actor
+                messages.extend(self._resolve_bot_active_turn_locked(room, actor=actor))
+            else:
+                messages.extend(self._resolve_bot_claim_locked(room, seat_index=expected_key[1]))
+                room.pending_timeout = None
+            self._apply_settlement_to_match_locked(room)
+            messages.extend(self._auto_advance_bot_seats_locked(room))
+            self._apply_settlement_to_match_locked(room)
+            self._sync_timeout_task_locked(room)
+            self._sync_bot_action_task_locked(room)
+            self._persist_room_state_locked(room)
+
+            broadcast_targets = self._connected_websockets_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+            prompt_targets = self._prompt_targets_locked(room)
+
+        if room is None:
+            return
+
+        async with room.send_lock:
+            await self._broadcast_messages(broadcast_targets, messages)
+            await self._send_snapshot_targets(snapshot_targets)
+            await self._send_prompt_targets(prompt_targets)
+
     def _add_bot_reservations_locked(self, room: RoomState) -> None:
         for seat_index in range(MAX_SEATS):
             if seat_index in room.seats:
@@ -823,6 +974,8 @@ class GameService:
                 pending_action = room.round_state.pending_action or {}
                 pending_type = pending_action.get("type")
                 responded_before = tuple(pending_action.get("responded_seats", []))
+                if not room.test_mode and self._next_bot_claim_seat_locked(room) is not None:
+                    break
                 auto_claim_messages = self._auto_resolve_claim_window_locked(room)
                 messages.extend(auto_claim_messages)
                 next_pending_action = room.round_state.pending_action or {}
@@ -868,23 +1021,70 @@ class GameService:
             if not self._is_bot_seat(room, actor):
                 break
 
-            decision = choose_active_turn_action(
-                room.round_state,
-                actor,
-                aggression=self._bot_aggression(room, actor),
-                persona=self._bot_persona(room, actor),
-            )
-            room.round_state, events = self._resolve_action_locked(
-                room.round_state,
-                seat_index=actor,
-                action_type=decision.action_type,
-                tile_ids=decision.tile_ids,
-            )
-            room.phase = room.round_state.phase
-            room.pending_timeout = None
-            messages.extend(self.round_event(event["type"], event) for event in events)
+            if not room.test_mode:
+                break
+
+            messages.extend(self._resolve_bot_active_turn_locked(room, actor=actor))
 
         return messages
+
+    def _resolve_bot_active_turn_locked(self, room: RoomState, *, actor: int) -> list[dict]:
+        assert room.round_state is not None
+        decision = choose_active_turn_action(
+            room.round_state,
+            actor,
+            aggression=self._bot_aggression(room, actor),
+            persona=self._bot_persona(room, actor),
+        )
+        room.round_state, events = self._resolve_action_locked(
+            room.round_state,
+            seat_index=actor,
+            action_type=decision.action_type,
+            tile_ids=decision.tile_ids,
+        )
+        room.phase = room.round_state.phase
+        room.pending_timeout = None
+        return [self.round_event(event["type"], event) for event in events]
+
+    def _next_bot_claim_seat_locked(self, room: RoomState) -> int | None:
+        assert room.round_state is not None
+        pending_action = room.round_state.pending_action or {}
+        responded = set(pending_action.get("responded_seats", []))
+
+        if pending_action.get("type") == "rob_kong_window":
+            offered_seats = [
+                seat_index
+                for seat_index in pending_action.get("offered_hu_seats", [])
+                if seat_index not in responded
+            ]
+        else:
+            offered_seats = [
+                seat_index
+                for seat_index, claims in enumerate(pending_action.get("claim_window", []))
+                if claims and seat_index not in responded
+            ]
+
+        for seat_index in offered_seats:
+            if self._is_bot_seat(room, seat_index):
+                return seat_index
+        return None
+
+    def _resolve_bot_claim_locked(self, room: RoomState, *, seat_index: int) -> list[dict]:
+        assert room.round_state is not None
+        decision = choose_claim_action(
+            room.round_state,
+            seat_index,
+            aggression=self._bot_aggression(room, seat_index),
+            persona=self._bot_persona(room, seat_index),
+        )
+        room.round_state, events = self._resolve_action_locked(
+            room.round_state,
+            seat_index=seat_index,
+            action_type=decision.action_type,
+            tile_ids=decision.tile_ids,
+        )
+        room.phase = room.round_state.phase
+        return [self.round_event(event["type"], event) for event in events]
 
     def _auto_resolve_claim_window_locked(self, room: RoomState) -> list[dict]:
         assert room.round_state is not None
@@ -919,21 +1119,9 @@ class GameService:
             if not bot_offered_seats:
                 return messages
 
-            seat_index = bot_offered_seats[0]
-            decision = choose_claim_action(
-                room.round_state,
-                seat_index,
-                aggression=self._bot_aggression(room, seat_index),
-                persona=self._bot_persona(room, seat_index),
+            messages.extend(
+                self._resolve_bot_claim_locked(room, seat_index=bot_offered_seats[0])
             )
-            room.round_state, events = self._resolve_action_locked(
-                room.round_state,
-                seat_index=seat_index,
-                action_type=decision.action_type,
-                tile_ids=decision.tile_ids,
-            )
-            room.phase = room.round_state.phase
-            messages.extend(self.round_event(event["type"], event) for event in events)
 
         room.pending_timeout = None
         if room.round_state.phase != "settlement":
@@ -1029,6 +1217,11 @@ class GameService:
             for _, reservation in sorted(room.seats.items())
             if reservation.websocket is not None
         ]
+
+    def _should_terminate_unattended_room_locked(self, room: RoomState) -> bool:
+        return len(room.seats) == MAX_SEATS and not any(
+            reservation.websocket is not None for reservation in room.seats.values()
+        )
 
     def _prompt_targets_locked(
         self,
@@ -1304,6 +1497,7 @@ class GameService:
 
         self._rooms[table_code] = room
         self._sync_timeout_task_locked(room)
+        self._sync_bot_action_task_locked(room)
         return room
 
     def _restore_room(self, table_code: str) -> RoomState | None:
@@ -1330,6 +1524,10 @@ class GameService:
         if room.timeout_task is not None:
             room.timeout_task.cancel()
             room.timeout_task = None
+        if room.bot_action_task is not None:
+            room.bot_action_task.cancel()
+            room.bot_action_task = None
+        room.bot_action_key = None
         self._rooms.pop(room.table_code, None)
         with self._session_factory() as session:
             close_table(session, room.table_code)
@@ -1751,6 +1949,7 @@ class GameService:
         self._advance_round_locked(room)
         self._auto_advance_bot_seats_locked(room)
         self._sync_timeout_task_locked(room)
+        self._sync_bot_action_task_locked(room)
 
     def _room_version(self, room: RoomState) -> int:
         if room.round_state is not None:

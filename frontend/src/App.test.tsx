@@ -278,6 +278,34 @@ describe('App', () => {
     ]);
   });
 
+  it('returns to the lobby as soon as leave_table_accepted arrives', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'leave_table_accepted',
+        payload: {
+          table_code: 'AB12CD',
+          seat_index: 0,
+        },
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Mahjong table')).toBeNull();
+  });
+
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
