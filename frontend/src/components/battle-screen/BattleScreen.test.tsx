@@ -226,10 +226,10 @@ describe('BattleScreen', () => {
     expect(screen.getByText(/放铳 Player Left（左家）/)).toBeInTheDocument();
     expect(screen.queryByText(/胜者 right/)).not.toBeInTheDocument();
     expect(screen.queryByText(/放铳 left/)).not.toBeInTheDocument();
-    expect(screen.queryByText('幺九刻')).not.toBeInTheDocument();
-    expect(screen.queryByText('七对')).not.toBeInTheDocument();
+    expect(screen.getByText('幺九刻')).toBeInTheDocument();
+    expect(screen.getByText('七对')).toBeInTheDocument();
     expect(screen.queryByText('当前为临时结算结果')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '展开剩余 2 项番种' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
   });
 
   it('shows 屁和 in the settlement overlay when the backend provides the low-fan label', () => {
@@ -272,9 +272,54 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('自摸 · 胜者 Player A（本家）')).toBeNull();
   });
 
-  it('can expand and collapse extra fan breakdown rows in settlement view', async () => {
-    const user = userEvent.setup();
+  it('shows all player scores directly without section expansion controls', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            { seat: 'right', name: 'Player B', score: 24998, delta: -2 },
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
+            { seat: 'top', name: 'Player Top', score: 26797, delta: -3 },
+            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
 
+    const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement;
+
+    expect(within(scorePanel).getByText('Player A')).toBeInTheDocument();
+    expect(within(scorePanel).getByText('Player Left')).toBeInTheDocument();
+    expect(within(scorePanel).getByText('Player Top')).toBeInTheDocument();
+    expect(within(scorePanel).getByText('Player B')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开其他玩家分数（3）' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '收起其他玩家分数' })).toBeNull();
+  });
+
+  it('renders side-by-side fan and score panels without per-section expand buttons', () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'resolving',
@@ -315,13 +360,11 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.queryByText('七对')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '展开剩余 2 项番种' }));
     expect(screen.getByText('七对')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '收起番种' }));
-    expect(screen.queryByText('七对')).not.toBeInTheDocument();
+    expect(document.body.querySelector('.result-overlay__columns')).not.toBeNull();
+    expect(document.body.querySelector('.result-overlay__fan-list')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '收起番种' })).toBeNull();
   });
 
   it('can collapse the settlement panel and restore it from the table center', async () => {

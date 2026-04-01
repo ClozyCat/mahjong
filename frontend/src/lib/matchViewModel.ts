@@ -555,6 +555,10 @@ function getFlowerCountBySeat(state: SessionState) {
   return state.roomSnapshot?.payload.private_state?.score_state?.flower_count_by_seat ?? {};
 }
 
+function normalizeDisplayMelds(melds: string[][] | null | undefined) {
+  return (melds ?? []).map((meld) => meld.slice().sort(compareTileCodes));
+}
+
 function createPlayers(state: SessionState): PlayerView[] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
@@ -589,7 +593,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         ready: seat.ready,
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,
-        melds: privatePlayer?.melds ?? [],
+        melds: normalizeDisplayMelds(privatePlayer?.melds),
         flowers: privatePlayer?.flowers ?? [],
         statusText:
           seat.is_bot

@@ -8,11 +8,9 @@ interface ResultOverlayProps {
 }
 
 export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
-  const visibleFanBreakdown = isExpanded ? result.fanBreakdown : result.fanBreakdown.slice(0, MAX_VISIBLE_FAN_ITEMS);
-  const hiddenFanCount = Math.max(0, result.fanBreakdown.length - MAX_VISIBLE_FAN_ITEMS);
   const fanMeta = [
     winTypeLabel,
     result.winnerSeat ? `胜者 ${formatResultActor(result.winnerSeat, result.seats)}` : null,
@@ -23,9 +21,8 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     .join(' · ');
 
   useEffect(() => {
-    setIsExpanded(false);
     setIsCollapsed(false);
-  }, [result.fanBreakdown, result.title, result.summary]);
+  }, [result]);
 
   if (isCollapsed) {
     return (
@@ -61,72 +58,65 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
         </div>
         <p className="result-overlay__summary">{result.summary}</p>
 
-        {result.fanTotal !== null || result.fanBreakdown.length > 0 ? (
-          <div className="result-overlay__fan-panel">
-            <div className="result-overlay__section-head">
-              <span className="result-overlay__section-label">番型明细</span>
-              {result.fanTotal !== null ? <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong> : null}
-            </div>
-            {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
-
-            {result.fanBreakdown.length > 0 ? (
-              <div className="result-overlay__list">
-                {visibleFanBreakdown.map((item) => (
-                  <div key={item.fanKey} className="result-overlay__row">
-                    <span>{getFanLabel(item.fanKey)}</span>
-                    <strong>{item.fanValue}</strong>
-                  </div>
-                ))}
-                {hiddenFanCount > 0 ? (
-                  <button
-                    type="button"
-                    className="result-overlay__toggle"
-                    onClick={() => setIsExpanded((current) => !current)}
-                  >
-                    {isExpanded ? '收起番种' : `展开剩余 ${hiddenFanCount} 项番种`}
-                  </button>
-                ) : null}
+        <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
+          {hasFanPanel ? (
+            <div className="result-overlay__fan-panel">
+              <div className="result-overlay__section-head">
+                <span className="result-overlay__section-label">番型明细</span>
+                {result.fanTotal !== null ? <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong> : null}
               </div>
-            ) : null}
-          </div>
-        ) : null}
+              {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
 
-        <div className="result-overlay__score-panel">
-          <div className="result-overlay__section-head">
-            <span className="result-overlay__section-label">玩家分数</span>
-            <span className="result-overlay__score-hint">本局结算后总分</span>
-          </div>
-          <div className="result-overlay__seat-list">
-            {result.seats.map((seat) => {
-              const deltaClassName =
-                seat.delta === null
-                  ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
-                  : seat.delta > 0
-                    ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
-                    : seat.delta < 0
-                      ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
-                      : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
-
-              const rowClassName =
-                seat.delta !== null && seat.delta > 0
-                  ? 'result-overlay__seat-row result-overlay__seat-row--positive'
-                  : seat.delta !== null && seat.delta < 0
-                    ? 'result-overlay__seat-row result-overlay__seat-row--negative'
-                    : 'result-overlay__seat-row result-overlay__seat-row--neutral';
-
-              return (
-                <div key={`${seat.seat}-${seat.name}`} className={rowClassName}>
-                  <div className="result-overlay__seat-main">
-                    <span className="result-overlay__seat-name">{seat.name}</span>
-                    <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
-                  </div>
-                  <strong className="result-overlay__seat-score">{seat.score}</strong>
-                  <span className={deltaClassName}>
-                    {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
-                  </span>
+              {result.fanBreakdown.length > 0 ? (
+                <div className="result-overlay__fan-list" aria-label="番型明细列表">
+                  {result.fanBreakdown.map((item) => (
+                    <div key={item.fanKey} className="result-overlay__row">
+                      <span>{getFanLabel(item.fanKey)}</span>
+                      <strong>{item.fanValue}</strong>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}>
+            <div className="result-overlay__section-head">
+              <span className="result-overlay__section-label">玩家分数</span>
+              <span className="result-overlay__score-hint">本局结算后总分</span>
+            </div>
+            <div className="result-overlay__seat-list">
+              {result.seats.map((seat) => {
+                const deltaClassName =
+                  seat.delta === null
+                    ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
+                    : seat.delta > 0
+                      ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
+                      : seat.delta < 0
+                        ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
+                        : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
+
+                const rowClassName =
+                  seat.delta !== null && seat.delta > 0
+                    ? 'result-overlay__seat-row result-overlay__seat-row--positive'
+                    : seat.delta !== null && seat.delta < 0
+                      ? 'result-overlay__seat-row result-overlay__seat-row--negative'
+                      : 'result-overlay__seat-row result-overlay__seat-row--neutral';
+
+                return (
+                  <div key={`${seat.seat}-${seat.name}`} className={rowClassName}>
+                    <div className="result-overlay__seat-main">
+                      <span className="result-overlay__seat-name">{seat.name}</span>
+                      <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+                    </div>
+                    <strong className="result-overlay__seat-score">{seat.score}</strong>
+                    <span className={deltaClassName}>
+                      {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -152,7 +142,6 @@ const WIN_TYPE_LABELS: Record<string, string> = {
   draw: '流局',
 };
 
-const MAX_VISIBLE_FAN_ITEMS = 3;
 const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
   bottom: '本家',
   left: '左家',

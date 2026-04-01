@@ -6084,7 +6084,7 @@ input {
   --result-overlay-negative-ink: color-mix(in srgb, var(--theme-paper-strong) 84%, var(--theme-danger));
   --result-overlay-neutral-fill: color-mix(in srgb, var(--accent-2) 10%, transparent);
   position: relative;
-  width: min(29rem, calc(100vw - 2rem));
+  width: min(54rem, calc(100vw - 2rem));
   padding: 1.1rem 1.15rem 1rem;
 }
 
@@ -6117,16 +6117,30 @@ input {
   letter-spacing: 0.02em;
 }
 
+.result-overlay__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.95fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: stretch;
+}
+
+.result-overlay__columns--score-only {
+  display: block;
+}
+
 .result-overlay__fan-panel,
 .result-overlay__score-panel {
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid color-mix(in srgb, var(--theme-border) 76%, transparent);
   border-radius: 1.2rem;
 }
 
 .result-overlay__fan-panel {
-  margin-top: 0.85rem;
   padding: 0.9rem;
   border-color: var(--result-overlay-fan-rim);
   background: var(--result-overlay-fan-surface);
@@ -6148,7 +6162,6 @@ input {
 }
 
 .result-overlay__score-panel {
-  margin-top: 1.35rem;
   padding: 1rem;
   border-color: var(--result-overlay-score-rim);
   background: var(--result-overlay-score-surface);
@@ -6157,6 +6170,10 @@ input {
     0 18px 30px var(--theme-shadow-soft),
     0 0 28px color-mix(in srgb, var(--accent) 12%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.result-overlay__score-panel--full {
+  width: 100%;
 }
 
 .result-overlay__section-head {
@@ -6195,9 +6212,20 @@ input {
   margin: 0.38rem 0 0;
 }
 
-.result-overlay__list {
+.result-overlay__fan-list,
+.result-overlay__seat-list {
+  display: grid;
+  min-height: 0;
+}
+
+.result-overlay__fan-list {
   gap: 0.42rem;
   margin: 0.75rem 0 0;
+  padding-right: 0.2rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  flex: 1 1 auto;
 }
 
 .result-overlay__row {
@@ -6218,11 +6246,6 @@ input {
 .result-overlay__row strong {
   color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-2));
   font-size: 1rem;
-}
-
-.result-overlay__toggle {
-  margin-top: 0.18rem;
-  min-height: 2.05rem;
 }
 
 .result-overlay__seat-list {
