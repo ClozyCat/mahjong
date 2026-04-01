@@ -322,7 +322,7 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '快捷离开牌桌' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '准备' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始对局' })).toBeInTheDocument();

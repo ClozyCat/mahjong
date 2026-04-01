@@ -2307,10 +2307,12 @@ button:active:not(:disabled) {
 }
 
 .table-stage__leave-button span {
-  display: block;
+  display: inline-grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
   font-size: 1.05rem;
   line-height: 1;
-  transform: translateY(-0.02rem);
 }
 
 .table-stage__room-actions {

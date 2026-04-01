@@ -610,10 +610,8 @@ describe('BattleScreen', () => {
       { onLeaveTable },
     );
 
-    const leaveButtons = screen.getAllByRole('button', { name: '离开牌桌' });
-
-    expect(leaveButtons).toHaveLength(2);
-    await user.click(leaveButtons[1] as HTMLButtonElement);
+    expect(screen.getByRole('button', { name: '快捷离开牌桌' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '离开牌桌' }));
 
     expect(onLeaveTable).toHaveBeenCalledTimes(1);
   });

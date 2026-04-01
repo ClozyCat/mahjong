@@ -351,8 +351,9 @@ export default function App() {
 
   useEffect(() => {
     const claimSelectionSignature = getClaimSelectionSignature(state);
+    const previousClaimSelectionSignature = previousClaimSelectionSignatureRef.current;
 
-    if (claimSelectionSignature && claimSelectionSignature !== previousClaimSelectionSignatureRef.current) {
+    if (claimSelectionSignature && claimSelectionSignature !== previousClaimSelectionSignature) {
       const defaultSelection = getDefaultClaimCandidateSelection(state);
 
       if (defaultSelection) {
@@ -364,6 +365,8 @@ export default function App() {
       } else if (state.selectedTileIds.length > 0) {
         dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
       }
+    } else if (!claimSelectionSignature && previousClaimSelectionSignature && state.selectedTileIds.length > 0) {
+      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
     }
 
     previousClaimSelectionSignatureRef.current = claimSelectionSignature;

@@ -96,7 +96,7 @@ export function TableStage({
             <button
               type="button"
               className="table-stage__leave-button"
-              aria-label="离开牌桌"
+              aria-label="快捷离开牌桌"
               onClick={onLeaveTable}
             >
               <span aria-hidden="true">×</span>

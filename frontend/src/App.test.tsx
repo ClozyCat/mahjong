@@ -243,7 +243,7 @@ describe('App', () => {
       });
     });
 
-    await user.click(await screen.findByRole('button', { name: '离开牌桌' }));
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
     expect(confirmSpy).toHaveBeenCalledWith('若主动离开，则无法再次加入对局，是否确定离开牌桌？');
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
@@ -330,6 +330,145 @@ describe('App', () => {
       { type: 'join_table', payload: { nickname: 'Player A' } },
       { type: 'action_request', payload: { action_type: 'pass', tile_ids: [] } },
     ]);
+  });
+
+  it('clears preselected claim tiles after the claim window times out and play resumes', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 1,
+            last_discard: 'w3',
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 1,
+              deadline_at: '2026-03-30T12:00:00Z',
+              responded_seats: [],
+              options: ['chow', 'pass'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 13,
+                concealed_tiles: [
+                  { tile_id: 'w1#1', tile_key: 'w1' },
+                  { tile_id: 'w2#2', tile_key: 'w2' },
+                  { tile_id: 'b9#3', tile_key: 'b9' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(countSelectedTiles(document.body)).toBe(2);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 2,
+            last_discard: 'b7',
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 2,
+              deadline_at: '2026-03-30T12:00:05Z',
+              drawn_tile_id: 'b7#9',
+              options: ['discard'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 13,
+                concealed_tiles: [
+                  { tile_id: 'w1#1', tile_key: 'w1' },
+                  { tile_id: 'w2#2', tile_key: 'w2' },
+                  { tile_id: 'b9#3', tile_key: 'b9' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 14,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(countSelectedTiles(document.body)).toBe(0);
   });
 
   it('replaces the previous single selection with the first claim candidate when the claim window opens', async () => {
