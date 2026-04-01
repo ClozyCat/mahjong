@@ -34,6 +34,7 @@ export function MahjongTile({
 
   return (
     <span className={classes} data-testid="mahjong-tile" aria-label={`${tileName}`}>
+      {isDrawn ? <span className="mahjong-tile__drawn-indicator" data-testid="mahjong-tile-drawn-indicator" aria-hidden="true" /> : null}
       <span className="mahjong-tile__shell">
         <span className="mahjong-tile__face-area">
           <span className="mahjong-tile__face-viewport">

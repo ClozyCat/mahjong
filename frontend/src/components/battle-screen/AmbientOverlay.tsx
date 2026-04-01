@@ -4,12 +4,21 @@ interface AmbientOverlayProps {
   mode: MatchPhase;
   promptText: string | null;
   waitingControls: WaitingControls | null;
+  canLeaveTable?: boolean;
+  onLeaveTable?: () => void;
 }
 
-export function AmbientOverlay({ mode, promptText, waitingControls }: AmbientOverlayProps) {
+export function AmbientOverlay({
+  mode,
+  promptText,
+  waitingControls,
+  canLeaveTable = false,
+  onLeaveTable,
+}: AmbientOverlayProps) {
   const showVeil = mode === 'loading' || mode === 'disconnected_or_waiting' || mode === 'finished';
   const isWaiting = Boolean(waitingControls);
   const isFinished = mode === 'finished';
+  const shouldShowLeaveButton = isWaiting && canLeaveTable;
 
   return (
     <>
@@ -27,6 +36,11 @@ export function AmbientOverlay({ mode, promptText, waitingControls }: AmbientOve
                   : `当前已入座 ${waitingControls?.occupiedSeats ?? 0}/4，座位、准备状态和在线信息会持续同步。`
                 : promptText ?? '正在等待服务器同步下一帧状态。'}
             </p>
+            {shouldShowLeaveButton ? (
+              <button type="button" className="ambient-overlay__leave-button" onClick={onLeaveTable}>
+                离开牌桌
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

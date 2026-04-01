@@ -4,7 +4,6 @@ import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types
 import { ActionEffectsOverlay } from './ActionEffectsOverlay';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
-import { FloatingRoomControls } from './FloatingRoomControls';
 import { ResultOverlay } from './ResultOverlay';
 import { TableStage } from './TableStage';
 
@@ -19,7 +18,6 @@ interface BattleScreenProps {
   onLeaveTable: () => void;
 }
 
-const REMOTE_PLAYER_ORDER = ['left', 'top', 'right'] as const;
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
@@ -42,12 +40,9 @@ export function BattleScreen({
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [viewportState, setViewportState] = useState(getBattleViewportState);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
-  const orderedPlayers = [
-    viewModel.players.find((item) => item.seat === 'bottom'),
-    ...REMOTE_PLAYER_ORDER.map((seat) => viewModel.players.find((item) => item.seat === seat)),
-  ].filter((player): player is NonNullable<typeof player> => Boolean(player));
-  const roomActions = viewModel.actions.filter((action) => ROOM_CONTROL_ACTION_IDS.includes(action.id));
-  const battleActions = viewModel.actions.filter((action) => !ROOM_CONTROL_ACTION_IDS.includes(action.id));
+  const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
+  const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
+  const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
   const canIncreaseTableTileScale = tableTileScale < MAX_TABLE_TILE_SCALE;
   const shouldDelaySettlementPanel =
@@ -113,7 +108,20 @@ export function BattleScreen({
               promptCue={viewModel.promptCue}
               players={viewModel.players}
               settlementHands={viewModel.settlementHands}
+              tableCode={viewModel.tableCode}
+              roundLabel={viewModel.roundLabel}
+              phaseLabel={viewModel.phaseLabel}
+              occupiedSeatCount={occupiedSeatCount}
+              seatCapacity={4}
+              preMatchActions={viewModel.waitingControls ? preMatchActions : []}
               tileScale={tableTileScale}
+              canDecreaseTileScale={canDecreaseTableTileScale}
+              canIncreaseTileScale={canIncreaseTableTileScale}
+              canLeaveTable={viewModel.canLeaveTable}
+              onLeaveTable={onLeaveTable}
+              onAction={onAction}
+              onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
+              onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />
           </div>
           <ActionEffectsOverlay
@@ -125,37 +133,18 @@ export function BattleScreen({
             mode={viewModel.mode}
             promptText={viewModel.promptText}
             waitingControls={viewModel.waitingControls}
+            canLeaveTable={viewModel.canLeaveTable}
+            onLeaveTable={onLeaveTable}
           />
           {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}
         </div>
       </div>
-      <FloatingRoomControls
-        players={orderedPlayers}
-        actions={roomActions}
-        tableCode={viewModel.tableCode}
-        canLeaveTable={viewModel.canLeaveTable}
-        phaseLabel={viewModel.phaseLabel}
-        roundLabel={viewModel.roundLabel}
-        scoreSummaryLabel={viewModel.scoreSummaryLabel}
-        deadlineAt={viewModel.deadlineAt}
-        topStatusLabel={viewModel.topStatusLabel}
-        promptText={viewModel.promptText}
-        remainingTileCount={viewModel.remainingTileCount}
-        waitingControls={viewModel.waitingControls}
-        tableTileScale={tableTileScale}
-        canDecreaseTileScale={canDecreaseTableTileScale}
-        canIncreaseTileScale={canIncreaseTableTileScale}
-        onCopyTableCode={onCopyTableCode}
-        onLeaveTable={onLeaveTable}
-        onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
-        onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
-        onAction={onAction}
-      />
       <BottomActionDock
         hand={viewModel.localHand}
         claimCandidates={viewModel.claimCandidates}
         actions={battleActions}
         isElevated={viewModel.isActionDockElevated}
+        isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
         promptCue={viewModel.promptCue}
         deadlineAt={viewModel.deadlineAt}
         onTileSelect={onTileSelect}
@@ -179,7 +168,9 @@ export function BattleScreen({
   );
 }
 
-const ROOM_CONTROL_ACTION_IDS: BattleActionId[] = ['ready', 'start_match', 'start_next_round', 'restart_match'];
+const PRE_MATCH_ACTION_IDS: BattleActionId[] = ['ready', 'start_match'];
+const HIDDEN_TABLE_ACTION_IDS: BattleActionId[] = ['start_next_round', 'restart_match'];
+const TABLE_ONLY_ACTION_IDS: BattleActionId[] = [...PRE_MATCH_ACTION_IDS, ...HIDDEN_TABLE_ACTION_IDS];
 
 function getBattleViewportState() {
   if (typeof window === 'undefined') {

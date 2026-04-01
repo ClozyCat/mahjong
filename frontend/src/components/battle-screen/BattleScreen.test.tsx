@@ -173,6 +173,7 @@ describe('BattleScreen', () => {
 
     expect(screen.getByRole('button', { name: /ready/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /start match/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText('牌桌侧边面板')).toBeNull();
   });
 
   it('shows settlement breakdown in resolving state', () => {
@@ -428,25 +429,25 @@ describe('BattleScreen', () => {
 
     const table = screen.getByLabelText('Mahjong table');
     const hand = screen.getByLabelText(/local hand/i);
-    const drawer = screen.getByLabelText('牌桌侧边面板');
+    const scaleControls = screen.getByRole('group', { name: '调整牌桌牌面大小' });
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
-    expect(within(drawer).getByText('牌面 112%')).toBeInTheDocument();
+    expect(within(scaleControls).getByText('112%')).toBeInTheDocument();
 
-    await user.click(within(drawer).getByRole('button', { name: '放大牌桌牌面' }));
+    await user.click(within(scaleControls).getByRole('button', { name: '放大牌桌牌面' }));
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.18');
     expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.48');
-    expect(within(drawer).getByText('牌面 118%')).toBeInTheDocument();
+    expect(within(scaleControls).getByText('118%')).toBeInTheDocument();
     expect(hand.querySelector('.mahjong-tile--hand')?.getAttribute('style')).toBeNull();
 
-    await user.click(within(drawer).getByRole('button', { name: '缩小牌桌牌面' }));
+    await user.click(within(scaleControls).getByRole('button', { name: '缩小牌桌牌面' }));
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
-    expect(within(drawer).getByText('牌面 112%')).toBeInTheDocument();
+    expect(within(scaleControls).getByText('112%')).toBeInTheDocument();
   });
 
-  it('renders the non-text action spectacle layer when a battle action effect is active', () => {
+  it('does not render an action overlay when a battle action effect is active', () => {
     renderBattleScreen(
       createBattleViewModel({
         actionEffect: {
@@ -458,21 +459,19 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(document.body.querySelector('.action-effects--action')).not.toBeNull();
-    expect(document.body.querySelector('.action-effects__seal')).toBeNull();
-    expect(document.body.querySelector('.action-effects__caption')).toBeNull();
+    expect(document.body.querySelector('.action-effects')).toBeNull();
   });
 
-  it('falls back to a non-text draw spectacle when a new drawnTileId is present', () => {
+  it('shows a drawn-tile arrow instead of a draw spectacle when a new drawnTileId is present', () => {
     renderBattleScreen(
       createBattleViewModel({
         actionEffect: null,
         drawnTileId: 'w9#draw-1',
-        }),
+      }),
     );
 
-    expect(document.body.querySelector('.action-effects--action')).not.toBeNull();
-    expect(document.body.querySelector('.action-effects__caption')).toBeNull();
+    expect(document.body.querySelector('.action-effects')).toBeNull();
+    expect(screen.getAllByTestId('mahjong-tile-drawn-indicator')).toHaveLength(1);
   });
 
   it('does not render a celebration overlay when a winning celebration effect is active', () => {
@@ -506,7 +505,9 @@ describe('BattleScreen', () => {
     expect(container.querySelector('.win10-window')).toBeNull();
     expect(container.querySelector('.stage-background')).toBeNull();
     expect(container.querySelector('.battle-shell')).not.toBeNull();
-    expect(screen.getByText(/牌桌编号/i)).toBeInTheDocument();
+    expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
+    expect(screen.getByText('房间座位数：4/4')).toBeInTheDocument();
+    expect(screen.getByText('round-123 | playing')).toBeInTheDocument();
   });
 
   it('blocks interaction with a viewport guard when the browser window is below the required size', () => {
@@ -559,18 +560,25 @@ describe('BattleScreen', () => {
     expect(screen.queryByLabelText('日志窗口')).toBeNull();
   });
 
-  it('renders room controls inside the right-side drawer instead of the hand dock', () => {
+  it('renders pre-match room controls in the table center instead of the hand dock', () => {
     renderBattleScreen(
       createBattleViewModel({
+        mode: 'disconnected_or_waiting',
         actions: [
           { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
           { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
         ],
+        waitingControls: {
+          canReady: true,
+          canStart: true,
+          isReady: false,
+          occupiedSeats: 4,
+        },
       }),
     );
 
-    expect(screen.getByLabelText('牌桌侧边面板')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
   });
@@ -602,9 +610,26 @@ describe('BattleScreen', () => {
       { onLeaveTable },
     );
 
-    await user.click(screen.getByRole('button', { name: '离开牌桌' }));
+    const leaveButtons = screen.getAllByRole('button', { name: '离开牌桌' });
+
+    expect(leaveButtons).toHaveLength(2);
+    await user.click(leaveButtons[1] as HTMLButtonElement);
 
     expect(onLeaveTable).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the pre-match room menu after the game has started', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        waitingControls: null,
+        actions: [
+          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
+          { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
+        ],
+      }),
+    );
+
+    expect(screen.queryByRole('group', { name: '开局前房间操作' })).toBeNull();
   });
 
   it('renders claim actions inside the bottom dock when claim actions are available', () => {
@@ -637,8 +662,8 @@ describe('BattleScreen', () => {
     expect(document.body.querySelector('.battle-shell--response-hu')).toBeNull();
     expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
-    expect(huButton).toHaveClass('action-dock__action--response-glow', 'action-dock__action--response-glow-hu');
-    expect(pungButton).toHaveClass('action-dock__action--response-glow', 'action-dock__action--response-glow-pung');
+    expect(huButton).not.toHaveClass('action-dock__action--response-glow');
+    expect(pungButton).not.toHaveClass('action-dock__action--response-glow');
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
   });

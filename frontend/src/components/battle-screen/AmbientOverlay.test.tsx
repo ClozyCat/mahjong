@@ -18,4 +18,24 @@ describe('AmbientOverlay', () => {
     expect(screen.queryByRole('button', { name: '展开日志窗口' })).toBeNull();
     expect(screen.queryByLabelText('日志窗口')).toBeNull();
   });
+
+  it('shows a leave-table button on the waiting-player overlay when leaving is allowed', () => {
+    render(
+      <AmbientOverlay
+        mode="disconnected_or_waiting"
+        promptText={null}
+        waitingControls={{
+          canReady: true,
+          canStart: false,
+          isReady: false,
+          occupiedSeats: 2,
+        }}
+        canLeaveTable
+        onLeaveTable={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText('等待牌手')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
+  });
 });

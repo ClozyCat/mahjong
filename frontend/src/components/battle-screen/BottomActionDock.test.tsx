@@ -106,8 +106,8 @@ describe('BottomActionDock', () => {
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
-    expect(huButton).toHaveClass('action-dock__action--response-glow', 'action-dock__action--response-glow-hu');
-    expect(pungButton).toHaveClass('action-dock__action--response-glow', 'action-dock__action--response-glow-pung');
+    expect(huButton).not.toHaveClass('action-dock__action--response-glow');
+    expect(pungButton).not.toHaveClass('action-dock__action--response-glow');
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');
     expect(screen.getByRole('button', { name: '收起手牌区' })).toBeInTheDocument();
   });
@@ -231,6 +231,34 @@ describe('BottomActionDock', () => {
       '--action-dock-effective-hand-count': '3',
       '--action-dock-gap-count': '2',
     });
+  });
+
+  it('uses a waiting placeholder width when the local hand is empty before match start', () => {
+    render(
+      <BottomActionDock
+        hand={[]}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        isWaitingForMatchStart
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const dock = screen.getByTestId('action-dock');
+
+    expect(dock).toHaveStyle({
+      '--action-dock-hand-count': '0',
+      '--action-dock-layout-hand-count': '13',
+      '--action-dock-layout-gap-count': '12',
+    });
+    expect(screen.getByText('牌桌进入对局后，手牌和操作按钮会显示在这里。')).toBeInTheDocument();
   });
 
   it('renders claim candidate panes above the action buttons and forwards candidate clicks', () => {

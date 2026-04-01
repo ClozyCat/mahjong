@@ -18,12 +18,20 @@ describe('TableStage', () => {
         lastDiscardSeat="top"
         remainingTileCount={66}
         promptText="Claim window open"
+        tableCode="111"
+        occupiedSeatCount={4}
+        seatCapacity={4}
+        roundLabel="东3局"
+        phaseLabel="进行中"
       />,
     );
 
     expect(screen.getAllByTestId('mahjong-tile').length).toBe(44);
     expect(screen.getByText(/claim window open/i)).toBeInTheDocument();
     expect(screen.getByText('剩余 66 张')).toBeInTheDocument();
+    expect(screen.getByText('牌桌编号：111')).toBeInTheDocument();
+    expect(screen.getByText('房间座位数：4/4')).toBeInTheDocument();
+    expect(screen.getByText('东3局 | 进行中')).toBeInTheDocument();
     expect(screen.queryByText('三万')).not.toBeInTheDocument();
     expect(screen.queryByText('Table Core')).not.toBeInTheDocument();
     expect(screen.queryByText(/最新出牌/)).not.toBeInTheDocument();
@@ -277,6 +285,10 @@ describe('TableStage', () => {
         lastDiscardSeat="bottom"
         promptText={null}
         tileScale={1.12}
+        canDecreaseTileScale
+        canIncreaseTileScale
+        onDecreaseTileScale={() => undefined}
+        onIncreaseTileScale={() => undefined}
       />,
     );
 
@@ -284,5 +296,35 @@ describe('TableStage', () => {
 
     expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
     expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.4');
+    expect(screen.getByRole('group', { name: '调整牌桌牌面大小' })).toBeInTheDocument();
+    expect(screen.getByText('112%')).toBeInTheDocument();
+  });
+
+  it('renders the pre-match room actions in the table center and keeps the corner leave button', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        canLeaveTable
+        onLeaveTable={() => undefined}
+        onAction={() => undefined}
+        preMatchActions={[
+          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
+          { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '准备' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开始对局' })).toBeInTheDocument();
   });
 });

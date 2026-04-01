@@ -1,10 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FloatingRoomControls } from './FloatingRoomControls';
 
 describe('FloatingRoomControls', () => {
-  it('renders the integrated right-side drawer and can collapse into a side button', () => {
+  it('does not render anything after the table panel was removed', () => {
     render(
       <FloatingRoomControls
         players={[
@@ -67,18 +67,7 @@ describe('FloatingRoomControls', () => {
       />,
     );
 
-    expect(screen.getByLabelText('牌桌侧边面板')).toBeInTheDocument();
-    expect(screen.getByText('Player A')).toBeInTheDocument();
-    expect(screen.getByText('AB12CD')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '准备' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开始对局' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '下一局' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '再来一局' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '缩进牌桌侧边面板' }));
-
     expect(screen.queryByLabelText('牌桌侧边面板')).toBeNull();
-    expect(screen.getByRole('button', { name: '展开牌桌侧边面板' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '准备' })).toBeNull();
   });
 });

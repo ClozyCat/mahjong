@@ -16,6 +16,7 @@ interface BottomActionDockProps {
   claimCandidates: BattleViewModel['claimCandidates'];
   actions: BattleActionView[];
   isElevated: boolean;
+  isWaitingForMatchStart?: boolean;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
   onTileSelect: (tileId: string) => void;
@@ -30,6 +31,7 @@ export function BottomActionDock({
   claimCandidates,
   actions,
   isElevated,
+  isWaitingForMatchStart = false,
   promptCue,
   deadlineAt,
   onTileSelect,
@@ -41,12 +43,15 @@ export function BottomActionDock({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const handCount = hand.length;
+  const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
   const dockLabel = '手牌区';
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
   const dockStyle = {
     '--action-dock-hand-count': `${handCount}`,
     '--action-dock-effective-hand-count': `${Math.max(handCount, 1)}`,
     '--action-dock-gap-count': `${Math.max(handCount - 1, 0)}`,
+    '--action-dock-layout-hand-count': `${layoutHandCount}`,
+    '--action-dock-layout-gap-count': `${Math.max(layoutHandCount - 1, 0)}`,
   } as CSSProperties;
   const visibleActions = actions
     .filter((action) => {
@@ -132,13 +137,12 @@ export function BottomActionDock({
               <div className="action-dock__actions" aria-label="即时操作按钮">
                 {visibleActions.map((action) => {
                   const isPassAction = action.id === 'pass';
-                  const responseGlowClassName = getResponseGlowClassName(promptCue, action.id as BackendActionType);
 
                   return (
                     <button
                       key={action.id}
                       type="button"
-                      className={`action-dock__action action-dock__action--response ${responseGlowClassName} ${
+                      className={`action-dock__action action-dock__action--response ${
                         isPassAction ? 'action-dock__action--passive' : ''
                       }`.trim()}
                       onClick={() => onAction(action.id)}
@@ -219,6 +223,8 @@ export function BottomActionDock({
   return portalTarget ? createPortal(content, portalTarget) : content;
 }
 
+const WAITING_HAND_PLACEHOLDER_COUNT = 13;
+
 const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
   hu: 0,
   kong: 1,
@@ -231,28 +237,4 @@ const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
 
 function isResponsePrompt(promptCue: BattlePromptView | null) {
   return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong';
-}
-
-function getResponseGlowClassName(promptCue: BattlePromptView | null, actionId: BackendActionType) {
-  if (!promptCue || !isResponsePrompt(promptCue) || actionId === 'pass' || !promptCue.highlightedActionIds.includes(actionId)) {
-    return '';
-  }
-
-  if (actionId === 'hu') {
-    return 'action-dock__action--response-glow action-dock__action--response-glow-hu';
-  }
-
-  if (actionId === 'kong') {
-    return 'action-dock__action--response-glow action-dock__action--response-glow-kong';
-  }
-
-  if (actionId === 'pung') {
-    return 'action-dock__action--response-glow action-dock__action--response-glow-pung';
-  }
-
-  if (actionId === 'chow') {
-    return 'action-dock__action--response-glow action-dock__action--response-glow-chow';
-  }
-
-  return '';
 }

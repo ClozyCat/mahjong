@@ -448,7 +448,8 @@ button:active:not(:disabled) {
   --table-stage-river-base-height: 3.18rem;
   --table-stage-river-tile-width: calc(var(--table-stage-river-base-width) * var(--table-stage-tile-scale));
   --table-stage-river-tile-height: calc(var(--table-stage-river-base-height) * var(--table-stage-tile-scale));
-  --table-stage-meld-tile-width: 1.60rem;
+  --table-stage-meld-base-width: 2.08rem;
+  --table-stage-meld-tile-width: calc(var(--table-stage-meld-base-width) * var(--table-stage-tile-scale));
   --table-stage-meld-tile-height: calc(var(--table-stage-meld-tile-width) * 1.36);
   --table-stage-settlement-base-width: 1.38rem;
   --table-stage-settlement-base-height: 1.94rem;
@@ -661,8 +662,8 @@ button:active:not(:disabled) {
   width: max-content;
   max-width: none;
   padding:
-    calc(var(--table-stage-river-gap) * 1.15)
-    calc(var(--table-stage-river-gap) * 1.3);
+    calc(var(--table-stage-river-gap) * 0.68)
+    calc(var(--table-stage-river-gap) * 0.82);
   border-radius: 0.9rem;
   border: 1px solid rgba(242, 236, 217, 0.18);
   background:
@@ -679,36 +680,36 @@ button:active:not(:disabled) {
 
 .table-stage__melds .meld-rack {
   display: grid;
-  gap: calc(var(--table-stage-river-gap) * 1.15);
+  gap: calc(var(--table-stage-river-gap) * 0.7);
   align-content: start;
 }
 
 .table-stage__melds .meld-rack__group {
-  padding: calc(var(--table-stage-river-gap) * 0.5);
+  padding: calc(var(--table-stage-river-gap) * 0.18);
 }
 
 .table-stage__melds--top {
   left: 100%;
   top: 50%;
-  transform: translate(clamp(0.6rem, 1.6vw, 0.9rem), -50%);
+  transform: translate(clamp(0.36rem, 1vw, 0.56rem), -50%);
 }
 
 .table-stage__melds--bottom {
   left: 100%;
   top: 50%;
-  transform: translate(clamp(0.6rem, 1.6vw, 0.9rem), -50%);
+  transform: translate(clamp(0.36rem, 1vw, 0.56rem), -50%);
 }
 
 .table-stage__melds--left {
   left: 0;
   top: 100%;
-  transform: translateY(clamp(0.56rem, 1.4vw, 0.8rem));
+  transform: translateY(clamp(0.34rem, 0.9vw, 0.5rem));
 }
 
 .table-stage__melds--right {
   right: 0;
   top: 100%;
-  transform: translateY(clamp(0.56rem, 1.4vw, 0.8rem));
+  transform: translateY(clamp(0.34rem, 0.9vw, 0.5rem));
 }
 
 .table-stage__melds--top .meld-rack {
@@ -794,6 +795,7 @@ button:active:not(:disabled) {
 .table-stage__player-info--right {
   top: auto;
   bottom: calc(100% + max(0.14rem, calc(var(--table-stage-river-gap) * 0.72)));
+  width: clamp(5.45rem, calc(var(--table-stage-river-tile-width) * 2.7), 6.45rem);
   transform: none;
 }
 
@@ -1007,6 +1009,44 @@ button:active:not(:disabled) {
     filter 120ms ease;
 }
 
+.mahjong-tile__drawn-indicator {
+  position: absolute;
+  top: -0.76rem;
+  left: 50%;
+  width: 0.84rem;
+  height: 0.92rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.mahjong-tile__drawn-indicator::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 0.14rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f7d98a, #c9961e);
+  transform: translateX(-50%);
+  box-shadow: 0 1px 2px rgba(34, 16, 24, 0.28);
+}
+
+.mahjong-tile__drawn-indicator::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0.3rem;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 0.34rem solid transparent;
+  border-right: 0.34rem solid transparent;
+  border-top: 0.46rem solid #c9961e;
+  filter: drop-shadow(0 1px 2px rgba(34, 16, 24, 0.3));
+}
+
 .mahjong-tile--hand {
   width: 3.7rem;
   height: 5.8rem;
@@ -1079,25 +1119,11 @@ button:active:not(:disabled) {
 }
 
 .mahjong-tile--drawn {
-  transform: translateY(-0.05rem);
   z-index: 1;
 }
 
-.mahjong-tile--drawn .mahjong-tile__shell {
-  border-color: #b28b1e;
-  border-right-color: #69530d;
-  border-bottom-color: #69530d;
-}
-
 .mahjong-tile--selected.mahjong-tile--drawn {
-  transform: translateY(-0.60rem);
   z-index: 4;
-}
-
-.mahjong-tile--selected.mahjong-tile--drawn .mahjong-tile__shell {
-  border-color: #0a246a;
-  border-right-color: #04173f;
-  border-bottom-color: #04173f;
 }
 
 .mahjong-tile--last-discard {
@@ -1283,6 +1309,25 @@ button:active:not(:disabled) {
 
 .ambient-overlay__panel p {
   color: rgba(232, 241, 252, 0.84);
+}
+
+.ambient-overlay__leave-button {
+  min-width: 6.4rem;
+  min-height: 2.3rem;
+  margin-top: 0.95rem;
+  padding: 0.42rem 0.9rem;
+  border-radius: 0.98rem;
+  border: 1px solid rgba(255, 138, 138, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 184, 184, 0.22), rgba(255, 102, 102, 0.08)),
+    rgba(74, 12, 16, 0.88);
+  color: #ffe3e3;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(0, 0, 0, 0.18);
 }
 
 .ambient-overlay__eyebrow {
@@ -1643,21 +1688,6 @@ button:active:not(:disabled) {
 
 .action-dock__tile--selected {
   z-index: 4;
-}
-
-.action-dock__tile--drawn::after {
-  content: 'Draw';
-  position: absolute;
-  top: -0.55rem;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0.18rem 0.45rem;
-  border-radius: 999px;
-  background: #221018;
-  color: var(--accent-2);
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .action-dock__tile .mahjong-tile {
@@ -2200,6 +2230,7 @@ button:active:not(:disabled) {
   text-align: center;
   min-width: 8.5rem;
   color: rgba(247, 232, 241, 0.62);
+  z-index: 4;
 }
 
 .table-stage__center-meta strong {
@@ -2219,6 +2250,164 @@ button:active:not(:disabled) {
   color: rgba(255, 243, 222, 0.8);
   font-size: 0.7rem;
   letter-spacing: 0.08em;
+}
+
+.table-stage__table-info {
+  position: absolute;
+  top: 1.15rem;
+  left: 1.25rem;
+  z-index: 4;
+  display: grid;
+  justify-items: start;
+  gap: 0.18rem;
+  text-align: left;
+  pointer-events: none;
+}
+
+.table-stage__table-info span {
+  display: block;
+  color: rgba(234, 243, 250, 0.78);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+
+.table-stage__status-summary {
+  position: absolute;
+  left: 1.3rem;
+  bottom: 1.1rem;
+  z-index: 4;
+  color: rgba(255, 243, 222, 0.88);
+  font-size: clamp(0.86rem, 1.1vw, 1.05rem);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  pointer-events: none;
+}
+
+.table-stage__leave-button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 5;
+  display: inline-grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 132, 132, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 159, 159, 0.24), rgba(255, 80, 80, 0.14)),
+    rgba(74, 12, 16, 0.84);
+  color: #ffd8d8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+.table-stage__leave-button span {
+  display: block;
+  font-size: 1.05rem;
+  line-height: 1;
+  transform: translateY(-0.02rem);
+}
+
+.table-stage__room-actions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  display: grid;
+  grid-auto-flow: column;
+  gap: 0.55rem;
+  transform: translate(-50%, calc(-50% + 3.2rem));
+}
+
+.table-stage__room-action {
+  min-width: 5.6rem;
+  min-height: 2.3rem;
+  padding: 0.42rem 0.86rem;
+  border-radius: 0.98rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
+    rgba(13, 28, 42, 0.88);
+  color: #fff;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.table-stage__room-action--high:not(:disabled) {
+  background:
+    linear-gradient(180deg, rgba(139, 233, 255, 0.26), rgba(88, 166, 255, 0.12)),
+    rgba(18, 51, 82, 0.92);
+  border-color: rgba(139, 233, 255, 0.3);
+}
+
+.table-stage__room-action--medium:not(:disabled) {
+  background:
+    linear-gradient(180deg, rgba(255, 235, 178, 0.22), rgba(255, 205, 105, 0.08)),
+    rgba(59, 48, 20, 0.88);
+  border-color: rgba(255, 214, 110, 0.26);
+}
+
+.table-stage__room-action:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.table-stage__scale-controls {
+  position: absolute;
+  right: 1.2rem;
+  bottom: 1rem;
+  z-index: 5;
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.22rem 0.24rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+    rgba(8, 23, 35, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.table-stage__scale-readout {
+  min-width: 2.52rem;
+  color: rgba(247, 250, 255, 0.9);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-align: center;
+}
+
+.table-stage__scale-button {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(17, 37, 54, 0.84);
+  color: #fff;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.table-stage__scale-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .action-dock__empty {
@@ -2756,7 +2945,6 @@ input {
     0 0 24px rgba(95, 199, 255, 0.32);
 }
 
-.mahjong-tile--drawn .mahjong-tile__shell,
 .mahjong-tile--last-discard .mahjong-tile__shell {
   border-color: rgba(255, 214, 110, 0.82);
   box-shadow:
@@ -2970,6 +3158,7 @@ input {
 
   .table-stage__player-info--left,
   .table-stage__player-info--right {
+    width: 5rem;
     transform: none;
   }
 
@@ -3771,8 +3960,8 @@ input {
 .table-stage__melds {
   max-width: none;
   padding:
-    calc(var(--table-stage-river-gap) * 1.3)
-    calc(var(--table-stage-river-gap) * 1.55);
+    calc(var(--table-stage-river-gap) * 0.68)
+    calc(var(--table-stage-river-gap) * 0.82);
 }
 
 .table-stage__spotlight--top {
@@ -3818,11 +4007,11 @@ input {
   position: fixed;
   top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
   right: calc(var(--battle-shell-gap) + max(0.1rem, env(safe-area-inset-right)));
-  bottom: calc(var(--battle-shell-bottom-gap) + max(0.1rem, env(safe-area-inset-bottom)));
   z-index: 8;
-  width: min(clamp(15.5rem, 21vw, 20rem), calc(100vw - 1.6rem));
+  width: min(clamp(10.8rem, 14vw, 12.6rem), calc(100vw - 1.6rem));
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  max-height: calc(100vh - var(--battle-shell-top-gap) - var(--battle-shell-bottom-gap) - 1rem);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 1.5rem;
@@ -3895,21 +4084,25 @@ input {
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: 0.62rem;
-  padding: 0.72rem;
+  gap: 0.48rem;
+  padding: 0.58rem;
 }
 
 .battle-drawer__section {
   display: grid;
-  gap: 0.52rem;
+  gap: 0.4rem;
   min-width: 0;
-  padding: 0.68rem;
+  padding: 0.54rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 1rem;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
     rgba(11, 24, 37, 0.5);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.battle-drawer__section--actions-only {
+  padding: 0.5rem;
 }
 
 .battle-drawer__summary-top,
@@ -4079,8 +4272,8 @@ input {
 
 .battle-drawer__actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.48rem;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
 }
 
 .battle-drawer__action {
@@ -4088,8 +4281,8 @@ input {
   place-items: center;
   width: 100%;
   min-width: 0;
-  min-height: 2.3rem;
-  padding: 0.45rem 0.58rem;
+  min-height: 1.96rem;
+  padding: 0.38rem 0.56rem;
   border-radius: 0.88rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #fff;
@@ -4146,8 +4339,8 @@ input {
   --action-dock-info-width: clamp(3.8rem, 5vw, 4.4rem);
   --action-dock-inline-padding: 1.24rem;
   --action-dock-content-width: calc(
-    (var(--action-dock-hand-count) * var(--action-dock-tile-width)) +
-    (var(--action-dock-gap-count) * var(--action-dock-tile-gap)) +
+    (var(--action-dock-layout-hand-count, var(--action-dock-hand-count)) * var(--action-dock-tile-width)) +
+    (var(--action-dock-layout-gap-count, var(--action-dock-gap-count)) * var(--action-dock-tile-gap)) +
     var(--action-dock-info-width) +
     var(--action-dock-inline-padding)
   );
@@ -4264,7 +4457,7 @@ input {
   }
 
   .battle-drawer {
-    width: min(18rem, calc(100vw - 1.2rem));
+    width: min(12.4rem, calc(100vw - 1.2rem));
   }
 }
 
@@ -4303,8 +4496,7 @@ input {
 
   .battle-drawer {
     top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-    bottom: calc(var(--battle-shell-bottom-gap) + var(--battle-hand-tile-height) + 2.65rem);
-    width: min(16.2rem, calc(100vw - 0.8rem));
+    width: min(11.8rem, calc(100vw - 0.8rem));
   }
 
   .battle-drawer__body {
@@ -4386,7 +4578,7 @@ input {
   }
 
   .battle-drawer {
-    width: min(clamp(14.2rem, 19vw, 18rem), calc(100vw - 1.4rem));
+    width: min(clamp(10.4rem, 13vw, 12rem), calc(100vw - 1.4rem));
   }
 
   .battle-drawer__body {
@@ -4421,8 +4613,8 @@ input {
   }
 
   .battle-drawer__action {
-    min-height: 2.05rem;
-    font-size: 0.72rem;
+    min-height: 1.9rem;
+    font-size: 0.7rem;
   }
 }
 

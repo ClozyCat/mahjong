@@ -1,6 +1,6 @@
 import { Fragment, type CSSProperties } from 'react';
 
-import type { BattlePromptView, Seat } from '../../types/match';
+import type { BattleActionView, BattlePromptView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 import { buildPlayerAccentStyle, PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
@@ -15,7 +15,20 @@ interface TableStageProps {
   promptCue?: BattlePromptView | null;
   players?: TableStagePlayer[];
   settlementHands?: Partial<Record<Seat, string[]>> | null;
+  tableCode?: string;
+  roundLabel?: string;
+  phaseLabel?: string;
+  occupiedSeatCount?: number;
+  seatCapacity?: number;
+  preMatchActions?: BattleActionView[];
   tileScale?: number;
+  canDecreaseTileScale?: boolean;
+  canIncreaseTileScale?: boolean;
+  canLeaveTable?: boolean;
+  onLeaveTable?: () => void;
+  onAction?: (actionId: BattleActionView['id']) => void;
+  onDecreaseTileScale?: () => void;
+  onIncreaseTileScale?: () => void;
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
@@ -30,16 +43,34 @@ export function TableStage({
   promptCue = null,
   players = [],
   settlementHands = null,
+  tableCode = '',
+  roundLabel = '',
+  phaseLabel = '',
+  occupiedSeatCount,
+  seatCapacity = 4,
+  preMatchActions = [],
   tileScale = 1,
+  canDecreaseTileScale = false,
+  canIncreaseTileScale = false,
+  canLeaveTable = false,
+  onLeaveTable,
+  onAction,
+  onDecreaseTileScale,
+  onIncreaseTileScale,
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
   const playerAccentStyleBySeat = new Map(players.map((player) => [player.seat, buildPlayerAccentStyle(player)]));
+  const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
   const spotlightTile = spotlightSeat !== null && lastDiscardPosition !== null
     ? discards[spotlightSeat][lastDiscardPosition.index]
     : null;
   const spotlightScale = Math.round(tileScale * 125) / 100;
+  const tableSummary = buildTableSummary(roundLabel, phaseLabel);
+  const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
+  const shouldShowPreMatchActions = preMatchActions.length > 0;
+  const scalePercentLabel = `${Math.round(tileScale * 100)}%`;
   const tableStageStyle = {
     '--table-stage-tile-scale': `${tileScale}`,
     '--table-stage-spotlight-scale': `${spotlightScale}`,
@@ -53,6 +84,24 @@ export function TableStage({
     >
       <div className="table-stage__frame">
         <div className="table-stage__core">
+          {tableCode || seatCapacity > 0 ? (
+            <div className="table-stage__table-info" aria-label="牌桌信息">
+              {tableCode ? <span>牌桌编号：{tableCode}</span> : null}
+              <span>
+                房间座位数：{resolvedOccupiedSeatCount}/{seatCapacity}
+              </span>
+            </div>
+          ) : null}
+          {canLeaveTable ? (
+            <button
+              type="button"
+              className="table-stage__leave-button"
+              aria-label="离开牌桌"
+              onClick={onLeaveTable}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          ) : null}
           <div
             className={`table-stage__center-meta ${promptCue ? 'table-stage__center-meta--with-cue' : ''} ${
               promptCue?.isUrgent ? 'table-stage__center-meta--urgent' : ''
@@ -66,6 +115,47 @@ export function TableStage({
             <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
             {promptText ? <em>{promptText}</em> : null}
           </div>
+          {shouldShowPreMatchActions ? (
+            <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
+              {preMatchActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className={`table-stage__room-action table-stage__room-action--${action.emphasis}`}
+                  disabled={!action.enabled}
+                  onClick={() => onAction?.(action.id)}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {tableSummary ? <div className="table-stage__status-summary">{tableSummary}</div> : null}
+          {shouldShowScaleControls ? (
+            <div className="table-stage__scale-controls" role="group" aria-label="调整牌桌牌面大小">
+              <button
+                type="button"
+                className="table-stage__scale-button"
+                aria-label="缩小牌桌牌面"
+                onClick={onDecreaseTileScale}
+                disabled={!canDecreaseTileScale}
+              >
+                -
+              </button>
+              <span className="table-stage__scale-readout" aria-label={`当前牌面大小 ${scalePercentLabel}`}>
+                {scalePercentLabel}
+              </span>
+              <button
+                type="button"
+                className="table-stage__scale-button"
+                aria-label="放大牌桌牌面"
+                onClick={onIncreaseTileScale}
+                disabled={!canIncreaseTileScale}
+              >
+                +
+              </button>
+            </div>
+          ) : null}
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
             const finalHandTiles = settlementHands?.[seat] ?? [];
@@ -161,6 +251,14 @@ const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
   left: '左家手牌',
   right: '右家手牌',
 };
+
+function buildTableSummary(roundLabel: string, phaseLabel: string) {
+  if (roundLabel && phaseLabel) {
+    return `${roundLabel} | ${phaseLabel}`;
+  }
+
+  return roundLabel || phaseLabel || null;
+}
 
 function findLastDiscardPosition(
   discards: Record<Seat, string[]>,
