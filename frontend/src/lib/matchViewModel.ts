@@ -1068,6 +1068,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: '摸牌',
       emphasis: 'draw',
       seat: effectSeat,
+      calloutTone: null,
     };
   }
 
@@ -1077,6 +1078,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: '补花',
       emphasis: 'draw',
       seat: effectSeat,
+      calloutTone: null,
     };
   }
 
@@ -1086,6 +1088,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: '补牌',
       emphasis: 'draw',
       seat: effectSeat,
+      calloutTone: null,
     };
   }
 
@@ -1095,6 +1098,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: '出牌',
       emphasis: 'discard',
       seat: effectSeat,
+      calloutTone: null,
     };
   }
 
@@ -1105,6 +1109,17 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: ACTION_EFFECT_LABELS[claimType] ?? '响应',
       emphasis: 'claim',
       seat: effectSeat,
+      calloutTone: resolveActionEffectCalloutTone(claimType),
+    };
+  }
+
+  if (event.event_type === 'self_hu_declared') {
+    return {
+      key,
+      label: '和',
+      emphasis: 'claim',
+      seat: effectSeat,
+      calloutTone: 'hu',
     };
   }
 
@@ -1115,6 +1130,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: KONG_EFFECT_LABELS[kongType] ?? '杠',
       emphasis: 'kong',
       seat: effectSeat,
+      calloutTone: 'kong',
     };
   }
 
@@ -1124,6 +1140,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: '流局',
       emphasis: 'system',
       seat: null,
+      calloutTone: null,
     };
   }
 
@@ -1133,6 +1150,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
       label: '结算',
       emphasis: 'system',
       seat: null,
+      calloutTone: null,
     };
   }
 
@@ -1263,3 +1281,11 @@ const PROMPT_SEAT_COPY: Record<Seat, string> = {
   top: '对家',
   right: '右家',
 };
+
+function resolveActionEffectCalloutTone(claimType: string): ActionEffectView['calloutTone'] {
+  if (claimType === 'chow' || claimType === 'pung' || claimType === 'kong' || claimType === 'hu') {
+    return claimType;
+  }
+
+  return null;
+}

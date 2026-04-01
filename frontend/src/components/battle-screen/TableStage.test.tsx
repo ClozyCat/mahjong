@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TableStage } from './TableStage';
@@ -498,5 +498,126 @@ describe('TableStage', () => {
     fireEvent.click(themeButton);
 
     expect(onCycleTheme).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a themed callout on the matching seat when a chow, pung, kong, or hu effect arrives', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'claim-1',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'pung',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('碰')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout--pung')).not.toBeNull();
+  });
+
+  it('fades the action callout after three seconds', () => {
+    vi.useFakeTimers();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'claim-1',
+          label: '吃',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'chow',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('吃')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.queryByText('吃')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('fast-fades the previous callout within 0.25s when a later action arrives', () => {
+    vi.useFakeTimers();
+
+    const { container, rerender } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'claim-1',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'pung',
+        }}
+      />,
+    );
+
+    rerender(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'draw-2',
+          label: '摸牌',
+          emphasis: 'draw',
+          seat: 'top',
+          calloutTone: null,
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--exit')).not.toBeNull();
+    expect(screen.getByText('碰')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(container.querySelector('.table-stage__action-callout')).toBeNull();
+    vi.useRealTimers();
   });
 });

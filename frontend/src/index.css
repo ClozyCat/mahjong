@@ -1026,6 +1026,68 @@ button:active:not(:disabled) {
     0 10px 22px rgba(0, 0, 0, 0.28);
 }
 
+.table-stage__action-callout {
+  --spotlight-left: 50%;
+  --spotlight-top: 50%;
+  --spotlight-offset-x: 0rem;
+  --spotlight-offset-y: 0rem;
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent));
+  --table-stage-action-callout-shadow: color-mix(in srgb, var(--theme-shadow) 68%, transparent);
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-paper) 22%, transparent);
+  position: absolute;
+  left: var(--spotlight-left);
+  top: var(--spotlight-top);
+  z-index: 3;
+  pointer-events: none;
+  transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y));
+  transform-origin: center center;
+  filter: drop-shadow(0 0.28rem 0.5rem var(--table-stage-action-callout-shadow));
+}
+
+.table-stage__action-callout-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1em;
+  font-family: 'STKaiti', 'KaiTi', 'KaiTi_GB2312', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale) * 1.06);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--table-stage-action-callout-ink);
+  text-shadow:
+    0 0 0.08em color-mix(in srgb, var(--theme-paper-strong) 52%, transparent),
+    0 0 0.34em var(--table-stage-action-callout-glow),
+    0 0.08em 0.18em var(--table-stage-action-callout-shadow);
+}
+
+.table-stage__action-callout--chow {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-info) 82%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-info) 34%, transparent);
+}
+
+.table-stage__action-callout--pung {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--accent) 84%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.table-stage__action-callout--kong {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-success) 82%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-success) 34%, transparent);
+}
+
+.table-stage__action-callout--hu {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-warning) 86%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-warning) 36%, transparent);
+}
+
+.table-stage__action-callout--active {
+  animation: table-stage-action-callout-fade 3000ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+.table-stage__action-callout--exit {
+  animation: table-stage-action-callout-fast-exit 250ms ease-out forwards;
+}
+
 .mahjong-tile {
   position: relative;
   display: inline-flex;
@@ -3747,6 +3809,36 @@ input {
 
   50% {
     transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.05);
+  }
+}
+
+@keyframes table-stage-action-callout-fade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) + 0.38rem)) scale(0.88);
+  }
+
+  12%,
+  58% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.16rem)) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.72rem)) scale(1.08);
+  }
+}
+
+@keyframes table-stage-action-callout-fast-exit {
+  0% {
+    opacity: 0.94;
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.16rem)) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.46rem)) scale(0.94);
   }
 }
 

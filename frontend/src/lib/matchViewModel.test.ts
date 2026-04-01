@@ -653,6 +653,31 @@ describe('createMatchViewModel', () => {
       label: '碰',
       emphasis: 'claim',
       seat: 'left',
+      calloutTone: 'pung',
+    });
+  });
+
+  it('maps self-hu round events into a hu action spectacle descriptor', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'self_hu_declared',
+          event: {
+            seat: 2,
+            tile_id: 'w2#p0-13',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '和',
+      emphasis: 'claim',
+      seat: 'bottom',
+      calloutTone: 'hu',
     });
   });
 

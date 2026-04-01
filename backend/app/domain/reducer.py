@@ -4,6 +4,7 @@ from app.domain.actions import (
     claim_made_event,
     flower_exposed_event,
     replacement_draw_event,
+    self_hu_declared_event,
     self_kong_declared_event,
     tile_discarded_event,
     tile_drawn_event,
@@ -512,6 +513,22 @@ def _record_claim_response(
             }
         )
 
+    if pending.get("type") == "claim_window" and action_type != "pass":
+        discarder_seat = pending.get("discarder_seat")
+        if isinstance(discarder_seat, int):
+            winning_claim = resolve_claims(claim_responses, discarder_seat)
+            if winning_claim is not None:
+                for seat_index, claims in enumerate(pending.get("claim_window", [])):
+                    if not claims or seat_index in responded_seats:
+                        continue
+                    if not _seat_can_beat_recorded_claim(
+                        seat=seat_index,
+                        claims=claims,
+                        winning_claim=winning_claim,
+                        discarder_seat=discarder_seat,
+                    ):
+                        responded_seats.add(seat_index)
+
     pending["responded_seats"] = sorted(responded_seats)
     pending["claim_responses"] = claim_responses
     updated_state = _replace_round_state(
@@ -525,6 +542,21 @@ def _record_claim_response(
     if unresolved:
         return updated_state, []
     return resolve_recorded_claims(updated_state)
+
+
+def _seat_can_beat_recorded_claim(
+    *,
+    seat: int,
+    claims: list[str],
+    winning_claim: dict,
+    discarder_seat: int,
+) -> bool:
+    for claim_type in claims:
+        candidate = {"seat": seat, "type": claim_type}
+        winner = resolve_claims([winning_claim, candidate], discarder_seat)
+        if winner == candidate:
+            return True
+    return False
 
 
 def _offered_claim_seats(pending_action: dict) -> list[int]:
@@ -918,7 +950,14 @@ def apply_self_draw_win(
         round_wind=state.round_wind,
         enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
-    events = [{"type": "settlement_ready", "round_id": state.round_id}]
+    winning_tile_id = state.last_action_context.get("tile_id") if isinstance(state.last_action_context, dict) else None
+    events = [
+        self_hu_declared_event(
+            winner_seat,
+            tile_id=winning_tile_id if isinstance(winning_tile_id, str) else None,
+        ),
+        {"type": "settlement_ready", "round_id": state.round_id},
+    ]
     return new_state, events
 
 

@@ -16,6 +16,19 @@ describe('getRoundEventCopy', () => {
     ).toBe('小李打出五条');
   });
 
+  it('maps self_hu_declared to a Chinese action confirmation copy', () => {
+    expect(
+      getRoundEventCopy(
+        'self_hu_declared',
+        {
+          seat: 0,
+          tile_id: 't5#p0-3',
+        },
+        [{ seat_index: 0, nickname: '小李', connected: true, ready: true }],
+      ),
+    ).toBe('小李已点和');
+  });
+
   it('falls back to a generic Chinese system message for unknown events', () => {
     expect(getRoundEventCopy('mystery_event')).toBe('牌局状态已更新');
   });

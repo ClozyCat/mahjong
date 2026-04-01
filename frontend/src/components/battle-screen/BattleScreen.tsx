@@ -114,6 +114,7 @@ export function BattleScreen({
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
+              actionEffect={viewModel.actionEffect}
               players={viewModel.players}
               settlementHands={viewModel.settlementHands}
               tableCode={viewModel.tableCode}

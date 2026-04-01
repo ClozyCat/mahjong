@@ -51,6 +51,10 @@ export function getRoundEventCopy(
     return `${getSeatName(event.seat, seats)}${claimType}${tileName}`;
   }
 
+  if (eventType === 'self_hu_declared') {
+    return `${getSeatName(event.seat, seats)}已点和`;
+  }
+
   if (eventType === 'self_kong_declared') {
     const kongType = KONG_TYPE_NAMES[String(event.kong_type)] ?? '杠';
     return `${getSeatName(event.seat, seats)}${kongType}${getTileName(String(event.tile_key ?? ''))}`;

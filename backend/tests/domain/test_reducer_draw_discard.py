@@ -360,6 +360,8 @@ def test_apply_self_draw_win_requires_current_actor():
     )
     next_state, events = apply_self_draw_win(state, winner_seat=1)
     assert next_state.phase == "settlement"
+    assert events[0]["type"] == "self_hu_declared"
+    assert events[0]["seat"] == 1
     assert events[-1]["type"] == "settlement_ready"
     assert next_state.settlement["win_type"] == "self_draw"
     assert next_state.settlement["winner_seat"] == 1

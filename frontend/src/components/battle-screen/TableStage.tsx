@@ -1,7 +1,7 @@
-import { Fragment, type CSSProperties } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import type { ThemeId } from '../../lib/themes';
-import type { BattleActionView, BattlePromptView, Seat } from '../../types/match';
+import type { ActionEffectView, BattleActionView, BattlePromptView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 import { PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
@@ -15,6 +15,7 @@ interface TableStageProps {
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
+  actionEffect?: ActionEffectView | null;
   players?: TableStagePlayer[];
   settlementHands?: Partial<Record<Seat, string[]>> | null;
   tableCode?: string;
@@ -47,6 +48,7 @@ export function TableStage({
   remainingTileCount = null,
   promptText,
   promptCue = null,
+  actionEffect = null,
   players = [],
   settlementHands = null,
   tableCode = '',
@@ -69,6 +71,11 @@ export function TableStage({
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
+  const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
+  const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
+  const activeActionCalloutRef = useRef<ActionCallout | null>(null);
+  const activeActionCalloutTimerRef = useRef<number | null>(null);
+  const exitingActionCalloutTimerRef = useRef<number | null>(null);
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
   const spotlightPlayer = spotlightSeat ? playerBySeat.get(spotlightSeat) : null;
@@ -84,6 +91,67 @@ export function TableStage({
     '--table-stage-tile-scale': `${tileScale}`,
     '--table-stage-spotlight-scale': `${spotlightScale}`,
   } as CSSProperties;
+
+  useEffect(() => {
+    activeActionCalloutRef.current = activeActionCallout;
+  }, [activeActionCallout]);
+
+  useEffect(() => {
+    return () => {
+      if (activeActionCalloutTimerRef.current !== null) {
+        window.clearTimeout(activeActionCalloutTimerRef.current);
+      }
+      if (exitingActionCalloutTimerRef.current !== null) {
+        window.clearTimeout(exitingActionCalloutTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!actionEffect) {
+      return;
+    }
+
+    const nextActionCallout = createActionCallout(actionEffect);
+    const actionCalloutKey = nextActionCallout?.key ?? actionEffect?.key;
+    const currentActionCallout = activeActionCalloutRef.current;
+    if (!actionCalloutKey) {
+      return;
+    }
+
+    if (!nextActionCallout && (!currentActionCallout || currentActionCallout.key === actionCalloutKey)) {
+      return;
+    }
+
+    if (currentActionCallout?.key === actionCalloutKey) {
+      return;
+    }
+
+    if (activeActionCalloutTimerRef.current !== null) {
+      window.clearTimeout(activeActionCalloutTimerRef.current);
+      activeActionCalloutTimerRef.current = null;
+    }
+
+    if (currentActionCallout) {
+      setExitingActionCallout(currentActionCallout);
+      if (exitingActionCalloutTimerRef.current !== null) {
+        window.clearTimeout(exitingActionCalloutTimerRef.current);
+      }
+      exitingActionCalloutTimerRef.current = window.setTimeout(() => {
+        setExitingActionCallout(null);
+        exitingActionCalloutTimerRef.current = null;
+      }, ACTION_CALLOUT_FAST_EXIT_MS);
+    }
+
+    setActiveActionCallout(nextActionCallout);
+
+    if (nextActionCallout) {
+      activeActionCalloutTimerRef.current = window.setTimeout(() => {
+        setActiveActionCallout((current) => (current?.key === nextActionCallout.key ? null : current));
+        activeActionCalloutTimerRef.current = null;
+      }, ACTION_CALLOUT_LINGER_MS);
+    }
+  }, [actionEffect]);
 
   return (
     <section
@@ -270,6 +338,8 @@ export function TableStage({
               />
             </div>
           ) : null}
+          {exitingActionCallout ? <ActionCalloutMarker callout={exitingActionCallout} phase="exit" /> : null}
+          {activeActionCallout ? <ActionCalloutMarker callout={activeActionCallout} phase="active" /> : null}
         </div>
       </div>
     </section>
@@ -295,6 +365,52 @@ const ACTION_POINTER_COPY: Record<Seat, string> = {
   right: '右家',
   bottom: '你',
 };
+
+const ACTION_CALLOUT_COPY = {
+  chow: '吃',
+  pung: '碰',
+  kong: '杠',
+  hu: '和',
+} as const;
+
+const ACTION_CALLOUT_LINGER_MS = 3000;
+const ACTION_CALLOUT_FAST_EXIT_MS = 250;
+
+type ActionCallout = {
+  key: string;
+  seat: Seat;
+  tone: keyof typeof ACTION_CALLOUT_COPY;
+  label: (typeof ACTION_CALLOUT_COPY)[keyof typeof ACTION_CALLOUT_COPY];
+};
+
+interface ActionCalloutMarkerProps {
+  callout: ActionCallout;
+  phase: 'active' | 'exit';
+}
+
+function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
+  return (
+    <div
+      className={`table-stage__action-callout table-stage__spotlight--${callout.seat} table-stage__action-callout--${callout.tone} table-stage__action-callout--${phase}`}
+      aria-hidden="true"
+    >
+      <span className="table-stage__action-callout-glyph">{callout.label}</span>
+    </div>
+  );
+}
+
+function createActionCallout(actionEffect: ActionEffectView | null): ActionCallout | null {
+  if (!actionEffect?.seat || !actionEffect.calloutTone) {
+    return null;
+  }
+
+  return {
+    key: actionEffect.key,
+    seat: actionEffect.seat,
+    tone: actionEffect.calloutTone,
+    label: ACTION_CALLOUT_COPY[actionEffect.calloutTone],
+  };
+}
 
 function buildTableSummary(roundLabel: string, phaseLabel: string) {
   if (roundLabel && phaseLabel) {

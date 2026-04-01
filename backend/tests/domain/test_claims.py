@@ -418,6 +418,198 @@ def test_pass_keeps_claim_window_open_until_all_offers_are_resolved():
     }
 
 
+def test_higher_priority_claim_auto_passes_lower_priority_claims():
+    discard = _make_suit_tile("t3", "t3#discard")
+    players = [
+        PlayerState(
+            seat=0,
+            concealed_tiles=(),
+            melds=(),
+            flowers=(),
+            discards=(discard,),
+        ),
+        PlayerState(
+            seat=1,
+            concealed_tiles=(
+                _make_suit_tile("t1", "t1#c1"),
+                _make_suit_tile("t2", "t2#c2"),
+            ),
+            melds=(),
+            flowers=(),
+            discards=(),
+        ),
+        PlayerState(
+            seat=2,
+            concealed_tiles=(
+                _make_suit_tile("t3", "t3#p1"),
+                _make_suit_tile("t3", "t3#p2"),
+            ),
+            melds=(),
+            flowers=(),
+            discards=(),
+        ),
+        PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+    ]
+    state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=_make_wall([]),
+        players=tuple(players),
+        last_discard=discard,
+        pending_action={
+            "type": "claim_window",
+            "discarder_seat": 0,
+            "claim_window": [[], ["chow"], ["pung"], []],
+            "responded_seats": [],
+        },
+        phase="playing",
+        settlement=None,
+        version=0,
+    )
+
+    next_state, events = apply_claim_action(
+        state,
+        seat=2,
+        action_type="pung",
+        tiles=["t3#p1", "t3#p2"],
+    )
+
+    assert next_state.pending_action is None
+    assert next_state.current_actor == 2
+    assert events[0]["type"] == "claim_made"
+
+
+def test_hu_auto_passes_lower_priority_claims_and_resolves_immediately():
+    discard = _make_suit_tile("w5", "w5#discard")
+    players = [
+        PlayerState(
+            seat=0,
+            concealed_tiles=(),
+            melds=(),
+            flowers=(),
+            discards=(discard,),
+        ),
+        PlayerState(
+            seat=1,
+            concealed_tiles=(
+                _make_suit_tile("w5", "w5#p1a"),
+                _make_suit_tile("w5", "w5#p1b"),
+            ),
+            melds=(),
+            flowers=(),
+            discards=(),
+        ),
+        PlayerState(
+            seat=2,
+            concealed_tiles=(
+                _make_suit_tile("w1", "w1#p2a"),
+                _make_suit_tile("w1", "w1#p2b"),
+                _make_suit_tile("w1", "w1#p2c"),
+                _make_suit_tile("w2", "w2#p2a"),
+                _make_suit_tile("w2", "w2#p2b"),
+                _make_suit_tile("w2", "w2#p2c"),
+                _make_suit_tile("w3", "w3#p2a"),
+                _make_suit_tile("w3", "w3#p2b"),
+                _make_suit_tile("w3", "w3#p2c"),
+                _make_suit_tile("w4", "w4#p2a"),
+                _make_suit_tile("w4", "w4#p2b"),
+                _make_suit_tile("w4", "w4#p2c"),
+                _make_suit_tile("w5", "w5#p2a"),
+            ),
+            melds=(),
+            flowers=(),
+            discards=(),
+        ),
+        PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+    ]
+    state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=_make_wall([]),
+        players=tuple(players),
+        last_discard=discard,
+        pending_action={
+            "type": "claim_window",
+            "discarder_seat": 0,
+            "claim_window": [[], ["pung"], ["hu"], []],
+            "responded_seats": [],
+        },
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+    )
+
+    next_state, events = apply_claim_action(state, seat=2, action_type="hu", tiles=[])
+
+    assert next_state.phase == "settlement"
+    assert next_state.pending_action is None
+    assert next_state.settlement["winner_seat"] == 2
+    assert next_state.settlement["discarder_seat"] == 0
+    assert events[-1]["type"] == "settlement_ready"
+
+
+def test_rob_kong_hu_still_waits_for_other_eligible_robbers():
+    actor = PlayerState(
+        seat=0,
+        concealed_tiles=(
+            _make_honor_tile("east", "east#add", "wind"),
+            _make_suit_tile("w2", "w2#a"),
+        ),
+        melds=((
+            _make_honor_tile("east", "east#m1", "wind"),
+            _make_honor_tile("east", "east#m2", "wind"),
+            _make_honor_tile("east", "east#m3", "wind"),
+        ),),
+        flowers=(),
+        discards=(),
+    )
+    robbed_tile = _make_honor_tile("east", "east#add", "wind")
+    state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            actor,
+            PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        ),
+        last_discard=robbed_tile,
+        pending_action={
+            "type": "rob_kong_window",
+            "actor_seat": 0,
+            "tile_id": "east#add",
+            "tile_key": "east",
+            "meld_index": 0,
+            "offered_hu_seats": [1, 2],
+            "responded_seats": [],
+        },
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+    )
+
+    next_state, events = apply_claim_action(state, seat=1, action_type="hu", tiles=[])
+
+    assert events == []
+    assert next_state.phase == "playing"
+    assert next_state.pending_action == {
+        "type": "rob_kong_window",
+        "actor_seat": 0,
+        "tile_id": "east#add",
+        "tile_key": "east",
+        "meld_index": 0,
+        "offered_hu_seats": [1, 2],
+        "responded_seats": [1],
+        "claim_responses": [{"seat": 1, "type": "hu", "tiles": []}],
+    }
+
+
 def test_apply_claim_action_rejects_claim_after_seat_already_passed():
     discard = _make_suit_tile("t4", "t4#discard")
     players = [

@@ -26,6 +26,16 @@ def claim_made_event(seat: int, claim_type: str, tile: Tile) -> dict:
     }
 
 
+def self_hu_declared_event(seat: int, tile_id: str | None = None) -> dict:
+    event = {
+        "type": "self_hu_declared",
+        "seat": seat,
+    }
+    if tile_id is not None:
+        event["tile_id"] = tile_id
+    return event
+
+
 def self_kong_declared_event(
     seat: int,
     kong_type: str,

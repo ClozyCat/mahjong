@@ -661,6 +661,9 @@ Notes:
 
 - `chow` is only offered to the next seat in turn order.
 - Frontend should not infer claim legality itself.
+- In a normal `claim_window`, once a seat confirms a non-`pass` action, the server may immediately auto-pass lower-priority seats that can no longer win priority against the recorded best claim.
+- Equal-priority seats that can still win by turn order are not auto-passed.
+- This early auto-pass behavior does not apply to `rob_kong_window`; rob-kong candidates still wait for all eligible `hu` / `pass` responses or timeout.
 
 #### `rob_kong_window`
 
@@ -820,6 +823,11 @@ For claim-kong flow, the visible user-facing action is represented by:
   "seats": [1, 2]
 }
 ```
+
+Meaning:
+
+- These seats were treated as `pass` by the server in a normal discard-claim window.
+- This can happen either because they timed out or because a higher-priority confirmed claim made their response unable to affect the final outcome.
 
 #### `rob_kong_auto_passed`
 
@@ -1061,7 +1069,8 @@ Rules:
 1. discard occurs
 2. eligible seats get `action_prompt`
 3. claimant sends `action_request`
-4. after all required responses resolve, server pushes new state
+4. server may resolve immediately once no remaining unresolved seat can beat the current best recorded claim; otherwise it waits for the remaining required responses or timeout
+5. server pushes updated `round_event` / `room_snapshot` state
 
 ### Settlement
 

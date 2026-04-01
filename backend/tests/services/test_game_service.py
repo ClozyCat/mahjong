@@ -834,6 +834,143 @@ async def test_handle_action_request_resolves_claims_by_priority_after_all_respo
 
 
 @pytest.mark.asyncio
+async def test_handle_action_request_resolves_immediately_when_higher_priority_claim_blocks_others(
+    monkeypatch,
+):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    room = RoomState(table_code="ROOM43", phase="playing")
+    websockets = [_RecordingWebSocket() for _ in range(4)]
+    for seat_index, websocket in enumerate(websockets):
+        room.seats[seat_index] = SeatReservation(
+            seat_index=seat_index,
+            nickname=f"P{seat_index}",
+            reconnect_token=f"token-{seat_index}",
+            player_session_id=seat_index + 1,
+            websocket=websocket,
+            connected=True,
+            ready=True,
+        )
+    room.round_state = _make_claim_priority_round_state()
+    service._rooms["ROOM43"] = room
+
+    await service.handle_action_request(
+        "ROOM43",
+        websockets[2],
+        {"action_type": "hu", "tile_ids": []},
+    )
+
+    assert room.round_state is not None
+    assert room.round_state.phase == "settlement"
+    assert room.round_state.settlement["winner_seat"] == 2
+    assert room.round_state.settlement["discarder_seat"] == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_action_request_broadcasts_self_hu_declared_before_settlement(
+    monkeypatch,
+):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    room = RoomState(table_code="ROOM44", phase="playing")
+    websockets = [_RecordingWebSocket() for _ in range(4)]
+    for seat_index, websocket in enumerate(websockets):
+        room.seats[seat_index] = SeatReservation(
+            seat_index=seat_index,
+            nickname=f"P{seat_index}",
+            reconnect_token=f"token-{seat_index}",
+            player_session_id=seat_index + 1,
+            websocket=websocket,
+            connected=True,
+            ready=True,
+        )
+
+    room.round_state = RoundState(
+        round_id="round-self-hu",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(
+                    _make_suit_tile("w1", "w1#0"),
+                    _make_suit_tile("w1", "w1#1"),
+                    _make_suit_tile("w2", "w2#0"),
+                    _make_suit_tile("w2", "w2#1"),
+                    _make_suit_tile("w3", "w3#0"),
+                    _make_suit_tile("w3", "w3#1"),
+                    _make_suit_tile("w4", "w4#0"),
+                    _make_suit_tile("w4", "w4#1"),
+                    _make_suit_tile("w5", "w5#0"),
+                    _make_suit_tile("w5", "w5#1"),
+                    _make_suit_tile("w6", "w6#0"),
+                    _make_suit_tile("w6", "w6#1"),
+                    _make_suit_tile("w7", "w7#0"),
+                    _make_suit_tile("w7", "w7#1"),
+                ),
+                melds=(),
+                flowers=(),
+                discards=(),
+            ),
+        )
+        + tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(1, 4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context={
+            "kind": "draw",
+            "seat": 0,
+            "tile_id": "w7#1",
+            "from_kong_replacement": False,
+            "was_last_live_tile": False,
+            "was_last_discard": False,
+        },
+        round_wind="east",
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="active_turn",
+        seat_index=0,
+        deadline_at=__import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ),
+        drawn_tile_id="w7#1",
+    )
+    service._rooms["ROOM44"] = room
+
+    await service.handle_action_request(
+        "ROOM44",
+        websockets[0],
+        {"action_type": "hu", "tile_ids": []},
+    )
+
+    assert room.round_state is not None
+    assert room.round_state.phase == "settlement"
+    assert room.round_state.settlement["win_type"] == "self_draw"
+    assert any(
+        message["type"] == "round_event"
+        and message["payload"]["event_type"] == "self_hu_declared"
+        and message["payload"]["event"]["seat"] == 0
+        for message in websockets[0].messages
+    )
+    assert any(
+        message["type"] == "round_event"
+        and message["payload"]["event_type"] == "settlement_ready"
+        for message in websockets[0].messages
+    )
+
+
+@pytest.mark.asyncio
 async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatch):
     service = GameService(sessionmaker())
     monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
