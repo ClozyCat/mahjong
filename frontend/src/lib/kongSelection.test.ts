@@ -6,6 +6,8 @@ import {
   getActionCandidateTileIds,
   getKongCandidateGroups,
   getKongCandidateTileIds,
+  getLocalTurnKongCandidateGroups,
+  getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
   getMatchingKongGroup,
 } from './kongSelection';
@@ -118,6 +120,41 @@ describe('kongSelection', () => {
       ['w3#0', 'w3#1', 'w3#2', 'w3#3'],
       ['east#0'],
     ]);
+  });
+
+  it('finds local-turn kong candidates even when the backend prompt only exposes discard', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-26T06:01:00Z',
+              drawn_tile_id: 'w3#3',
+              options: ['discard'],
+            },
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 0,
+          options: ['discard'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(getLocalTurnKongCandidateGroups(state)).toEqual([
+      ['w3#0', 'w3#1', 'w3#2', 'w3#3'],
+      ['east#0'],
+    ]);
+    expect(getLocalTurnKongPromptSignature(state)).toContain('turn-kong:round-1:0:2026-03-26T06:01:00Z:w3#3');
   });
 
   it('flattens all candidate tile ids for first-click preselection', () => {

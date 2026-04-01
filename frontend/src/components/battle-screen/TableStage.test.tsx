@@ -117,6 +117,50 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__seat-zone--bottom .table-stage__melds--bottom')).not.toBeNull();
   });
 
+  it('pins dense top and bottom meld racks to the river edge to keep them within the table frame', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: ['w1', 'w2'],
+          left: [],
+          right: [],
+          bottom: ['d1', 'd2'],
+        }}
+        activeSeat="bottom"
+        lastDiscard="d2"
+        lastDiscardSeat="bottom"
+        promptText={null}
+        players={[
+          {
+            seat: 'top',
+            name: 'Player Top',
+            melds: [
+              ['w3', 'w4', 'w5'],
+              ['w6', 'w7', 'w8'],
+              ['w9', 'd1', 'd2'],
+            ],
+          },
+          { seat: 'left', name: 'Player Left', melds: [] },
+          { seat: 'right', name: 'Player Right', melds: [] },
+          {
+            seat: 'bottom',
+            name: 'Player Bottom',
+            melds: [
+              ['d3', 'd4', 'd5'],
+              ['d6', 'd7', 'd8'],
+              ['d9', 'w1', 'w2'],
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__melds--top.table-stage__melds--dense')).not.toBeNull();
+    expect(container.querySelector('.table-stage__melds--bottom.table-stage__melds--dense')).not.toBeNull();
+    expect(container.querySelector('.table-stage__melds--left.table-stage__melds--dense')).toBeNull();
+    expect(container.querySelector('.table-stage__melds--right.table-stage__melds--dense')).toBeNull();
+  });
+
   it('shows the current latest discard in a larger spotlight near the discarding seat', () => {
     const { container } = render(
       <TableStage

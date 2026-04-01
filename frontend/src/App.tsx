@@ -6,6 +6,8 @@ import { ApiError, createTable } from './lib/api';
 import {
   getActionCandidateGroups,
   getFlowerCandidateTileIds,
+  getLocalTurnKongCandidateGroups,
+  getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
 } from './lib/kongSelection';
 import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
@@ -133,8 +135,14 @@ function getDefaultClaimCandidateSelection(state: SessionState) {
   };
 }
 
-function canQuickDiscard(state: SessionState) {
-  if (canUseClaimMultiSelect(state) || state.selectionMode === 'kong' || state.selectionMode === 'chow' || state.selectionMode === 'pung') {
+function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
+  if (
+    hasLocalTurnKongPrompt ||
+    canUseClaimMultiSelect(state) ||
+    state.selectionMode === 'kong' ||
+    state.selectionMode === 'chow' ||
+    state.selectionMode === 'pung'
+  ) {
     return false;
   }
 
@@ -190,6 +198,8 @@ export default function App() {
   const sessionRef = useRef(state);
   const leavingTableRef = useRef(false);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
+  const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
+  const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
 
   useEffect(() => {
     sessionRef.current = state;
@@ -393,6 +403,44 @@ export default function App() {
     previousClaimSelectionSignatureRef.current = claimSelectionSignature;
   }, [state]);
 
+  const localTurnKongPromptSignature = getLocalTurnKongPromptSignature(state);
+  const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
+  const hasLocalTurnKongPrompt =
+    localTurnKongPromptSignature !== null && localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature;
+
+  useEffect(() => {
+    const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
+
+    if (localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature) {
+      setDismissedLocalTurnKongPromptSignature((current) =>
+        current === null || current === localTurnKongPromptSignature ? current : null,
+      );
+    }
+
+    if (
+      hasLocalTurnKongPrompt &&
+      localTurnKongPromptSignature &&
+      localTurnKongPromptSignature !== previousLocalTurnKongPromptSignature
+    ) {
+      const defaultGroup = localTurnKongCandidateGroups[0];
+
+      if (defaultGroup) {
+        dispatch({
+          type: 'set_selected_tiles',
+          tileIds: defaultGroup,
+          mode: 'kong',
+        });
+      }
+    }
+
+    previousLocalTurnKongPromptSignatureRef.current = hasLocalTurnKongPrompt ? localTurnKongPromptSignature : null;
+  }, [
+    dismissedLocalTurnKongPromptSignature,
+    hasLocalTurnKongPrompt,
+    localTurnKongCandidateGroups,
+    localTurnKongPromptSignature,
+  ]);
+
   function sendMessage(message: string) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       setStatusMessage('当前尚未建立连接。');
@@ -472,6 +520,7 @@ export default function App() {
   function handleTileSelect(tileId: string) {
     if (
       canUseClaimMultiSelect(state) ||
+      hasLocalTurnKongPrompt ||
       state.selectionMode === 'kong' ||
       state.selectionMode === 'chow' ||
       state.selectionMode === 'pung'
@@ -483,7 +532,7 @@ export default function App() {
       dispatch({
         type: 'set_selected_tiles',
         tileIds: nextTileIds,
-        mode: state.selectionMode,
+        mode: hasLocalTurnKongPrompt ? 'kong' : state.selectionMode,
       });
       return;
     }
@@ -556,7 +605,10 @@ export default function App() {
     }
 
     if (actionId === 'kong' || actionId === 'chow' || actionId === 'pung') {
-      const candidateGroups = getActionCandidateGroups(state, actionId);
+      const candidateGroups =
+        actionId === 'kong' && hasLocalTurnKongPrompt
+          ? localTurnKongCandidateGroups
+          : getActionCandidateGroups(state, actionId);
       const matchingGroup = getMatchingActionGroup(state.selectedTileIds, candidateGroups);
 
       if (matchingGroup) {
@@ -569,6 +621,12 @@ export default function App() {
     }
 
     if (actionId === 'pass') {
+      if (hasLocalTurnKongPrompt && localTurnKongPromptSignature) {
+        setDismissedLocalTurnKongPromptSignature(localTurnKongPromptSignature);
+        dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+        return;
+      }
+
       sendMessage(serializeClientMessage(createActionRequestMessage(actionId)));
       dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
       return;
@@ -594,7 +652,7 @@ export default function App() {
   }
 
   function handleTileDoubleClick(tileId: string) {
-    if (!canQuickDiscard(state)) {
+    if (!canQuickDiscard(state, hasLocalTurnKongPrompt)) {
       return;
     }
 
@@ -632,7 +690,9 @@ export default function App() {
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
   }
 
-  const viewModel = createMatchViewModel(state);
+  const viewModel = createMatchViewModel(state, {
+    showLocalTurnKongPrompt: hasLocalTurnKongPrompt,
+  });
 
   if (!state.roomSnapshot) {
     return (

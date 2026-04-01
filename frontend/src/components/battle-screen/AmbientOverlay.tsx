@@ -15,8 +15,12 @@ export function AmbientOverlay({
   canLeaveTable = false,
   onLeaveTable,
 }: AmbientOverlayProps) {
-  const showVeil = mode === 'loading' || mode === 'disconnected_or_waiting' || mode === 'finished';
   const isWaiting = Boolean(waitingControls);
+  const shouldShowWaitingVeil = (waitingControls?.occupiedSeats ?? 0) < FULL_TABLE_SEAT_COUNT;
+  const showVeil =
+    mode === 'loading' ||
+    mode === 'finished' ||
+    (mode === 'disconnected_or_waiting' && (!isWaiting || shouldShowWaitingVeil));
   const isFinished = mode === 'finished';
   const shouldShowLeaveButton = isWaiting && canLeaveTable;
 
@@ -47,3 +51,5 @@ export function AmbientOverlay({
     </>
   );
 }
+
+const FULL_TABLE_SEAT_COUNT = 4;

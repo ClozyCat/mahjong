@@ -236,5 +236,5 @@ const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
 };
 
 function isResponsePrompt(promptCue: BattlePromptView | null) {
-  return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong';
+  return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong' || promptCue?.kind === 'turn_kong';
 }

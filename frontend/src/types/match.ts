@@ -370,7 +370,7 @@ export interface CelebrationEffectView {
 }
 
 export interface BattlePromptView {
-  kind: 'turn' | 'claim' | 'rob_kong';
+  kind: 'turn' | 'claim' | 'rob_kong' | 'turn_kong';
   tone: 'info' | 'urgent' | 'critical';
   title: string;
   detail: string | null;

@@ -283,6 +283,67 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('can synthesize a local kong-response prompt before the normal discard flow', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel(
+      {
+        ...base,
+        roomSnapshot: {
+          type: 'room_snapshot',
+          payload: {
+            ...base.roomSnapshot!.payload,
+            private_state: {
+              ...base.roomSnapshot!.payload.private_state!,
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 2,
+                deadline_at: '2026-03-26T06:01:00Z',
+                drawn_tile_id: 'w3#3',
+                options: ['discard'],
+              },
+              players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+                player.seat_index === 2
+                  ? {
+                      ...player,
+                      concealed_count: 5,
+                      concealed_tiles: [
+                        { tile_id: 'w3#0', tile_key: 'w3' },
+                        { tile_id: 'w3#1', tile_key: 'w3' },
+                        { tile_id: 'w3#2', tile_key: 'w3' },
+                        { tile_id: 'w3#3', tile_key: 'w3' },
+                        { tile_id: 'b9#0', tile_key: 'b9' },
+                      ],
+                    }
+                  : player,
+              ),
+            },
+          },
+        },
+        latestActionPrompt: {
+          type: 'action_prompt',
+          payload: {
+            seat_index: 2,
+            options: ['discard'],
+            deadline_at: '2026-03-26T06:01:00Z',
+          },
+        },
+      },
+      { showLocalTurnKongPrompt: true },
+    );
+
+    expect(viewModel.promptText).toBe('Player C正在执行操作：杠');
+    expect(viewModel.promptCue).toMatchObject({
+      kind: 'turn_kong',
+      tone: 'urgent',
+      title: '当前可选择是否杠牌',
+      actionIds: ['kong', 'pass'],
+      highlightedActionIds: ['kong'],
+      isUrgent: true,
+    });
+    expect(viewModel.actions.find((item) => item.id === 'kong')?.enabled).toBe(true);
+    expect(viewModel.actions.find((item) => item.id === 'pass')?.enabled).toBe(true);
+  });
+
   it('maps action labels and battle status to chinese-first copy', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 

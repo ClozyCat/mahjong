@@ -585,6 +585,7 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
+    expect(screen.queryByText('等待牌手')).toBeNull();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
   });

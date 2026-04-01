@@ -18,7 +18,12 @@ import type {
   SessionState,
   WaitingControls,
 } from '../types/match';
-import { getActionCandidateGroups, getFlowerCandidateTileIds, isFlowerTileKey } from './kongSelection';
+import {
+  getActionCandidateGroups,
+  getFlowerCandidateTileIds,
+  getLocalTurnKongCandidateGroups,
+  isFlowerTileKey,
+} from './kongSelection';
 
 const RELATIVE_SEATS: Seat[] = ['bottom', 'right', 'top', 'left'];
 const WINDS: PlayerView['wind'][] = ['East', 'South', 'West', 'North'];
@@ -193,10 +198,31 @@ function createPublicTurnPrompt(state: SessionState) {
   return createActorPrompt(getSeatName(state, actorSeat), ['discard']);
 }
 
-function createPromptText(state: SessionState): string | null {
+interface MatchViewModelOptions {
+  showLocalTurnKongPrompt?: boolean;
+}
+
+function createPromptText(state: SessionState, options: MatchViewModelOptions = {}): string | null {
   const snapshot = state.roomSnapshot?.payload;
   const currentActor = getCurrentActorSeatIndex(snapshot?.private_state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+  const localPromptOptions = getLocalPromptOptions(state);
+
+  if (
+    options.showLocalTurnKongPrompt &&
+    pendingAction?.type === 'active_turn' &&
+    typeof pendingAction.seat_index === 'number' &&
+    pendingAction.seat_index === getLocalSeat(state)
+  ) {
+    const turnKongOptions = orderPromptActions([
+      ...(localPromptOptions.includes('hu') ? (['hu'] as BackendActionType[]) : []),
+      'kong',
+      'pass',
+    ]);
+
+    return createActorPrompt(getSeatName(state, pendingAction.seat_index), turnKongOptions);
+  }
+
   if (pendingAction && typeof pendingAction.type === 'string') {
     if (pendingAction.type === 'active_turn') {
       const actorSeat =
@@ -267,12 +293,37 @@ function getLocalPromptOptions(state: SessionState): BackendActionType[] {
   return [];
 }
 
-function createPromptCue(state: SessionState): BattlePromptView | null {
+function createPromptCue(state: SessionState, options: MatchViewModelOptions = {}): BattlePromptView | null {
   const snapshot = state.roomSnapshot?.payload;
   const pendingAction = snapshot?.private_state?.pending_action;
   const localSeat = getLocalSeat(state);
   const localPromptOptions = orderPromptActions(getLocalPromptOptions(state));
   const highlightedActionIds = orderPromptActions(localPromptOptions.filter((option) => option !== 'pass'));
+
+  if (
+    options.showLocalTurnKongPrompt &&
+    pendingAction?.type === 'active_turn' &&
+    typeof pendingAction.seat_index === 'number' &&
+    pendingAction.seat_index === localSeat
+  ) {
+    const turnKongActionIds = orderPromptActions([
+      ...(localPromptOptions.includes('hu') ? (['hu'] as BackendActionType[]) : []),
+      'kong',
+      'pass',
+    ]);
+    const turnKongHighlightedActionIds = orderPromptActions(turnKongActionIds.filter((option) => option !== 'pass'));
+
+    return {
+      kind: 'turn_kong',
+      tone: turnKongHighlightedActionIds.includes('hu') ? 'critical' : 'urgent',
+      title: '当前可选择是否杠牌',
+      detail: `你可以 ${formatActionLabels(turnKongActionIds)}`,
+      actionIds: turnKongActionIds,
+      highlightedActionIds: turnKongHighlightedActionIds,
+      sourceSeat: null,
+      isUrgent: true,
+    };
+  }
 
   if (pendingAction?.type === 'claim_window' && highlightedActionIds.length > 0) {
     const sourceSeat =
@@ -396,10 +447,17 @@ function getPromptOptions(state: SessionState): BackendActionType[] {
   return state.latestActionPrompt?.payload.options ?? [];
 }
 
-function createActionViews(state: SessionState, waitingControls: WaitingControls | null): BattleActionView[] {
+function createActionViews(
+  state: SessionState,
+  waitingControls: WaitingControls | null,
+  options: MatchViewModelOptions = {},
+): BattleActionView[] {
   const snapshot = state.roomSnapshot?.payload;
   const promptOptions = new Set<BackendActionType>(getPromptOptions(state));
-  const kongCandidateGroups = getActionCandidateGroups(state, 'kong');
+  const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
+  const kongCandidateGroups = options.showLocalTurnKongPrompt
+    ? localTurnKongCandidateGroups
+    : getActionCandidateGroups(state, 'kong');
   const chowCandidateGroups = getActionCandidateGroups(state, 'chow');
   const pungCandidateGroups = getActionCandidateGroups(state, 'pung');
   const flowerCandidateTileIds = getFlowerCandidateTileIds(state);
@@ -423,6 +481,10 @@ function createActionViews(state: SessionState, waitingControls: WaitingControls
       enabled = canContinueRound;
     } else if (id === 'restart_match') {
       enabled = canRestartMatch;
+    } else if (options.showLocalTurnKongPrompt && id === 'kong') {
+      enabled = kongCandidateGroups.length > 0;
+    } else if (options.showLocalTurnKongPrompt && id === 'pass') {
+      enabled = true;
     } else if (promptOptions.has(id as BackendActionType)) {
       enabled =
         id === 'discard'
@@ -1069,7 +1131,7 @@ function getWinTypeLabel(result: MatchResultPayload) {
   return result.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type;
 }
 
-export function createMatchViewModel(state: SessionState): BattleViewModel {
+export function createMatchViewModel(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
   const waitingControls = createWaitingControls(state);
   const isWaiting = snapshot?.phase === 'waiting';
@@ -1084,7 +1146,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     snapshot?.private_state?.pending_action && 'deadline_at' in snapshot.private_state.pending_action
       ? String(snapshot.private_state.pending_action.deadline_at)
       : state.latestActionPrompt?.payload.deadline_at ?? null;
-  const promptCue = createPromptCue(state);
+  const promptCue = createPromptCue(state, options);
   const mode = !snapshot
     ? 'loading'
     : isFinished
@@ -1118,7 +1180,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     activePlayerSeat,
     isActionDockElevated: mode === 'my_turn' || Boolean(promptCue?.isUrgent),
     players: createPlayers(state),
-    actions: createActionViews(state, waitingControls),
+    actions: createActionViews(state, waitingControls, options),
     waitingControls,
     discards: createDiscards(state),
     localHand: createLocalHand(state),
@@ -1126,7 +1188,7 @@ export function createMatchViewModel(state: SessionState): BattleViewModel {
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
     remainingTileCount: createRemainingTileCount(state),
-    promptText: createPromptText(state),
+    promptText: createPromptText(state, options),
     promptCue,
     result: createResult(state),
     settlementHands: createSettlementHands(state),

@@ -150,6 +150,40 @@ describe('BottomActionDock', () => {
     expect(screen.getByLabelText(/剩余 \d+ 秒/)).toBeInTheDocument();
   });
 
+  it('treats the local kong prompt as a response-style action stack', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[
+          { id: 'kong', label: '杠', enabled: true, emphasis: 'medium' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ]}
+        isElevated
+        promptCue={{
+          kind: 'turn_kong',
+          tone: 'urgent',
+          title: '当前可选择是否杠牌',
+          detail: '你可以 杠 / 过',
+          actionIds: ['kong', 'pass'],
+          highlightedActionIds: ['kong'],
+          sourceSeat: null,
+          isUrgent: true,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
+    expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+  });
+
   it('hides the dock countdown when only other players are responding', () => {
     render(
       <BottomActionDock

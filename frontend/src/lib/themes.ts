@@ -1,7 +1,15 @@
 export const THEME_OPTIONS = [
   { id: 'tian-shui-bi', label: '天水碧' },
   { id: 'qiu-xiang', label: '秋香' },
+  { id: 'song-hua', label: '松花' },
+  { id: 'yue-bai', label: '月白' },
+  { id: 'mei-zi-qing', label: '梅子青' },
+  { id: 'qing-ci', label: '青瓷' },
+  { id: 'ou-he', label: '藕荷' },
   { id: 'ya-qing', label: '鸦青' },
+  { id: 'dai-qing', label: '黛青' },
+  { id: 'xuan-qing', label: '玄青' },
+  { id: 'zhu-sha', label: '朱砂' },
   { id: 'tan-xiang-zi', label: '檀香紫' },
 ] as const;
 

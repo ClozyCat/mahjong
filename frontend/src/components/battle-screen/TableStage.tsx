@@ -212,7 +212,11 @@ export function TableStage({
                     </div>
                   </div>
                   {player && player.melds.length > 0 ? (
-                    <div className={`table-stage__melds table-stage__melds--${seat}`}>
+                    <div
+                      className={`table-stage__melds table-stage__melds--${seat} ${
+                        shouldPinDenseMeldRack(seat, player.melds.length) ? 'table-stage__melds--dense' : ''
+                      }`.trim()}
+                    >
                       <MeldRack seat={seat} melds={player.melds} ariaLabel={`${player.name} melds`} />
                     </div>
                   ) : null}
@@ -267,6 +271,7 @@ const PROMPT_KIND_COPY: Record<NonNullable<TableStageProps['promptCue']>['kind']
   turn: '当前可操作',
   claim: '可响应',
   rob_kong: '抢杠',
+  turn_kong: '杠响应',
 };
 
 const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
@@ -311,4 +316,8 @@ function findLastDiscardPosition(
   }
 
   return match;
+}
+
+function shouldPinDenseMeldRack(seat: Seat, meldCount: number) {
+  return (seat === 'top' || seat === 'bottom') && meldCount >= 3;
 }

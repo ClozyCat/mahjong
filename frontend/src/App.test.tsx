@@ -846,6 +846,170 @@ describe('App', () => {
     ]);
   });
 
+  it('asks about kong before the normal turn flow when the local hand can self-kong', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 0,
+            last_discard: null,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: 'w3#3',
+              options: ['discard'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 5,
+                concealed_tiles: [
+                  { tile_id: 'w3#0', tile_key: 'w3' },
+                  { tile_id: 'w3#1', tile_key: 'w3' },
+                  { tile_id: 'w3#2', tile_key: 'w3' },
+                  { tile_id: 'w3#3', tile_key: 'w3' },
+                  { tile_id: 'b9#0', tile_key: 'b9' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '出牌' })).toBeNull();
+    expect(countSelectedTiles(document.body)).toBe(4);
+
+    await user.click(screen.getByRole('button', { name: '过' }));
+
+    expect(screen.queryByRole('button', { name: '过' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '杠' })).toBeNull();
+    expect(screen.getByText('Player A正在执行操作：出牌')).toBeInTheDocument();
+    expect(countSelectedTiles(document.body)).toBe(0);
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([{ type: 'join_table', payload: { nickname: 'Player A' } }]);
+  });
+
+  it('still allows sending kong from the local kong-response prompt', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 0,
+            last_discard: null,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: 'w3#3',
+              options: ['discard'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 5,
+                concealed_tiles: [
+                  { tile_id: 'w3#0', tile_key: 'w3' },
+                  { tile_id: 'w3#1', tile_key: 'w3' },
+                  { tile_id: 'w3#2', tile_key: 'w3' },
+                  { tile_id: 'w3#3', tile_key: 'w3' },
+                  { tile_id: 'b9#0', tile_key: 'b9' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: '杠' }));
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'action_request', payload: { action_type: 'kong', tile_ids: ['w3#0', 'w3#1', 'w3#2', 'w3#3'] } },
+    ]);
+  });
+
   it('submits the matching claim action immediately when a candidate pane is double-clicked', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

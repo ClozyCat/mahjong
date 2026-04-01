@@ -78,6 +78,27 @@ function getLocalPrivatePlayer(state: SessionState) {
   return snapshot?.private_state?.players.find((player) => player.seat_index === localSeat) ?? null;
 }
 
+function getLocalSeat(state: SessionState) {
+  return state.roomSnapshot?.payload.local_seat ?? null;
+}
+
+function getLocalActiveTurn(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  const localSeat = getLocalSeat(state);
+  const pendingAction = snapshot?.private_state?.pending_action;
+
+  if (
+    typeof localSeat !== 'number' ||
+    snapshot?.phase !== 'playing' ||
+    pendingAction?.type !== 'active_turn' ||
+    pendingAction.seat_index !== localSeat
+  ) {
+    return null;
+  }
+
+  return pendingAction;
+}
+
 function getPromptAllowsAction(state: SessionState, action: MeldAction) {
   const latestPrompt = state.latestActionPrompt?.payload.options ?? [];
   if (latestPrompt.includes(action)) {
@@ -124,6 +145,72 @@ function pushUniqueGroup(groups: string[][], tileIds: string[]) {
   }
 }
 
+function collectActiveTurnKongCandidateGroups(
+  localPlayer: ReturnType<typeof getLocalPrivatePlayer>,
+  concealedByKey: Map<string, string[]>,
+) {
+  const groups: string[][] = [];
+
+  for (const tileIds of concealedByKey.values()) {
+    if (tileIds.length >= 4) {
+      pushUniqueGroup(groups, tileIds.slice(0, 4));
+    }
+  }
+
+  for (const meld of localPlayer?.melds ?? []) {
+    if (meld.length !== 3) {
+      continue;
+    }
+
+    const meldKey = normalizeTileKey(meld[0]);
+    if (!meld.every((tile) => normalizeTileKey(tile) === meldKey)) {
+      continue;
+    }
+
+    const matchingConcealed = concealedByKey.get(meldKey);
+    if (matchingConcealed?.length) {
+      pushUniqueGroup(groups, [matchingConcealed[0]]);
+    }
+  }
+
+  return groups;
+}
+
+export function getLocalTurnKongCandidateGroups(state: SessionState): string[][] {
+  const activeTurn = getLocalActiveTurn(state);
+  const { localPlayer, concealedTiles, concealedByKey } = getConcealedByKey(state);
+
+  if (!activeTurn || concealedTiles.length === 0) {
+    return [];
+  }
+
+  return collectActiveTurnKongCandidateGroups(localPlayer, concealedByKey);
+}
+
+export function getLocalTurnKongPromptSignature(state: SessionState): string | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const activeTurn = getLocalActiveTurn(state);
+  const groups = getLocalTurnKongCandidateGroups(state);
+
+  if (!snapshot?.private_state || !activeTurn || groups.length === 0) {
+    return null;
+  }
+
+  const groupSignature = groups
+    .map((group) => group.slice().sort().join('|'))
+    .sort()
+    .join('||');
+
+  return [
+    'turn-kong',
+    snapshot.private_state.round_id,
+    activeTurn.seat_index,
+    activeTurn.deadline_at,
+    activeTurn.drawn_tile_id ?? '',
+    groupSignature,
+  ].join(':');
+}
+
 export function getActionCandidateGroups(state: SessionState, action: MeldAction): string[][] {
   if (!getPromptAllowsAction(state, action)) {
     return [];
@@ -140,26 +227,8 @@ export function getActionCandidateGroups(state: SessionState, action: MeldAction
   const groups: string[][] = [];
 
   if (action === 'kong' && privateState.pending_action?.type === 'active_turn') {
-    for (const tileIds of concealedByKey.values()) {
-      if (tileIds.length >= 4) {
-        pushUniqueGroup(groups, tileIds.slice(0, 4));
-      }
-    }
-
-    for (const meld of localPlayer?.melds ?? []) {
-      if (meld.length !== 3) {
-        continue;
-      }
-
-      const meldKey = normalizeTileKey(meld[0]);
-      if (!meld.every((tile) => normalizeTileKey(tile) === meldKey)) {
-        continue;
-      }
-
-      const matchingConcealed = concealedByKey.get(meldKey);
-      if (matchingConcealed?.length) {
-        pushUniqueGroup(groups, [matchingConcealed[0]]);
-      }
+    for (const group of collectActiveTurnKongCandidateGroups(localPlayer, concealedByKey)) {
+      pushUniqueGroup(groups, group);
     }
   }
 

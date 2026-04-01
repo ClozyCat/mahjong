@@ -38,4 +38,21 @@ describe('AmbientOverlay', () => {
     expect(screen.getByText('等待牌手')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
   });
+
+  it('hides the waiting-player veil after all four seats are occupied', () => {
+    render(
+      <AmbientOverlay
+        mode="disconnected_or_waiting"
+        promptText={null}
+        waitingControls={{
+          canReady: true,
+          canStart: false,
+          isReady: false,
+          occupiedSeats: 4,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('等待牌手')).toBeNull();
+  });
 });
