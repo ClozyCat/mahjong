@@ -2029,7 +2029,7 @@ button:active:not(:disabled) {
   .table-stage__seat-zone--left,
   .table-stage__seat-zone--right {
     top: 50%;
-    transform: translateY(-50%) scale(0.94);
+    transform: translateY(-50%);
     transform-origin: center;
   }
 
