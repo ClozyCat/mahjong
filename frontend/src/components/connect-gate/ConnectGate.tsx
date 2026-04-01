@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { WindowFrame } from '../win10/WindowFrame';
 
@@ -46,12 +46,39 @@ export function ConnectGate({
   const [footnoteQuote] = useState(
     () => CONNECT_GATE_QUOTES[Math.floor(Math.random() * CONNECT_GATE_QUOTES.length)],
   );
+  const [tableCodeDraft, setTableCodeDraft] = useState(value.tableCode);
+  const [nicknameDraft, setNicknameDraft] = useState(value.nickname);
+  const tableCodeComposingRef = useRef(false);
+  const nicknameComposingRef = useRef(false);
   const disabled = status === 'connecting';
   const helperText = tableCodeError ?? '支持 1-12 位数字或英文字母；留空创建时将自动分配。';
   const statusText =
     message ??
     tableCodeError ??
     (disabled ? '正在连接牌桌，请稍候。' : '输入昵称后即可创建牌桌，或填写编号加入现有牌局。');
+
+  useEffect(() => {
+    if (!tableCodeComposingRef.current) {
+      setTableCodeDraft(value.tableCode);
+    }
+  }, [value.tableCode]);
+
+  useEffect(() => {
+    if (!nicknameComposingRef.current) {
+      setNicknameDraft(value.nickname);
+    }
+  }, [value.nickname]);
+
+  function commitTableCode(nextValue: string) {
+    const normalizedValue = nextValue.toUpperCase();
+    setTableCodeDraft(normalizedValue);
+    onChange({ tableCode: normalizedValue });
+  }
+
+  function commitNickname(nextValue: string) {
+    setNicknameDraft(nextValue);
+    onChange({ nickname: nextValue });
+  }
 
   return (
     <section className="connect-gate" aria-label="Room connection setup">
@@ -83,8 +110,22 @@ export function ConnectGate({
               <label className="connect-gate__field">
                 <span>牌桌编号</span>
                 <input
-                  value={value.tableCode}
-                  onChange={(event) => onChange({ tableCode: event.target.value.toUpperCase() })}
+                  value={tableCodeDraft}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setTableCodeDraft(nextValue);
+
+                    if (!tableCodeComposingRef.current) {
+                      commitTableCode(nextValue);
+                    }
+                  }}
+                  onCompositionStart={() => {
+                    tableCodeComposingRef.current = true;
+                  }}
+                  onCompositionEnd={(event) => {
+                    tableCodeComposingRef.current = false;
+                    commitTableCode(event.currentTarget.value);
+                  }}
                   disabled={disabled}
                   maxLength={12}
                   autoCapitalize="characters"
@@ -104,8 +145,22 @@ export function ConnectGate({
               <label className="connect-gate__field">
                 <span>昵称</span>
                 <input
-                  value={value.nickname}
-                  onChange={(event) => onChange({ nickname: event.target.value })}
+                  value={nicknameDraft}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setNicknameDraft(nextValue);
+
+                    if (!nicknameComposingRef.current) {
+                      commitNickname(nextValue);
+                    }
+                  }}
+                  onCompositionStart={() => {
+                    nicknameComposingRef.current = true;
+                  }}
+                  onCompositionEnd={(event) => {
+                    nicknameComposingRef.current = false;
+                    commitNickname(event.currentTarget.value);
+                  }}
                   disabled={disabled}
                   aria-label="昵称"
                 />

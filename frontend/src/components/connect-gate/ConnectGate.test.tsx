@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -98,5 +98,50 @@ describe('ConnectGate', () => {
     expect(screen.getByRole('button', { name: '创建牌桌' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeDisabled();
     expect(screen.getByLabelText('牌桌编号')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('waits until composition ends before syncing ime input to the parent state', () => {
+    const onChange = vi.fn();
+
+    render(
+      <ConnectGate
+        value={{
+          tableCode: '',
+          nickname: '',
+          testMode: false,
+          enforceMinimumEightFan: true,
+        }}
+        status="idle"
+        themeLabel="月白"
+        canCreate={false}
+        canJoin={false}
+        onChange={onChange}
+        onCreate={vi.fn()}
+        onJoin={vi.fn()}
+      />,
+    );
+
+    const tableCodeInput = screen.getByLabelText('牌桌编号');
+    const nicknameInput = screen.getByLabelText('昵称');
+
+    fireEvent.compositionStart(tableCodeInput);
+    fireEvent.change(tableCodeInput, { target: { value: 'ab12' } });
+    expect(tableCodeInput).toHaveValue('ab12');
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.compositionEnd(tableCodeInput);
+    expect(tableCodeInput).toHaveValue('AB12');
+    expect(onChange).toHaveBeenLastCalledWith({ tableCode: 'AB12' });
+
+    onChange.mockClear();
+
+    fireEvent.compositionStart(nicknameInput);
+    fireEvent.change(nicknameInput, { target: { value: 'ni' } });
+    fireEvent.change(nicknameInput, { target: { value: '你' } });
+    expect(nicknameInput).toHaveValue('你');
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.compositionEnd(nicknameInput);
+    expect(onChange).toHaveBeenLastCalledWith({ nickname: '你' });
   });
 });
