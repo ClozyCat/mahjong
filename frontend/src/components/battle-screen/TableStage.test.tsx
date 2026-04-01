@@ -261,6 +261,81 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__spotlight--left')?.getAttribute('style')).toContain('--table-player-accent');
   });
 
+  it('assigns unique chinese-color accents to each player info bar that is present', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'top', name: 'Player Top', melds: [] },
+          { seat: 'left', name: 'Player Left', melds: [] },
+          { seat: 'right', name: 'Player Right', melds: [] },
+          { seat: 'bottom', name: 'Player Bottom', melds: [] },
+        ]}
+      />,
+    );
+
+    const accents = [
+      screen.getByLabelText('Player Top 信息栏'),
+      screen.getByLabelText('Player Left 信息栏'),
+      screen.getByLabelText('Player Right 信息栏'),
+      screen.getByLabelText('Player Bottom 信息栏'),
+    ].map((element) => (element as HTMLElement).style.getPropertyValue('--table-player-accent'));
+
+    expect(new Set(accents).size).toBe(4);
+  });
+
+  it('slightly shifts player accent colors with the active overall theme', () => {
+    const { rerender } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        themeId="qing-ci"
+        players={[{ seat: 'bottom', name: 'Player Bottom', melds: [] }]}
+      />,
+    );
+
+    const qingCiAccent = (screen.getByLabelText('Player Bottom 信息栏') as HTMLElement).style.getPropertyValue(
+      '--table-player-accent',
+    );
+
+    rerender(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        themeId="zhu-sha"
+        players={[{ seat: 'bottom', name: 'Player Bottom', melds: [] }]}
+      />,
+    );
+
+    const zhuShaAccent = (screen.getByLabelText('Player Bottom 信息栏') as HTMLElement).style.getPropertyValue(
+      '--table-player-accent',
+    );
+
+    expect(qingCiAccent).not.toBe(zhuShaAccent);
+  });
+
   it('renders settlement hands beside each seat when the round has ended', () => {
     render(
       <TableStage

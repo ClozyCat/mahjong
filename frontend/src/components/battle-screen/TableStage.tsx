@@ -4,7 +4,7 @@ import type { ThemeId } from '../../lib/themes';
 import type { BattleActionView, BattlePromptView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
-import { buildPlayerAccentStyle, PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
+import { buildPlayerAccentStyles, PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
@@ -67,7 +67,7 @@ export function TableStage({
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
-  const playerAccentStyleBySeat = new Map(players.map((player) => [player.seat, buildPlayerAccentStyle(player)]));
+  const playerAccentStyleBySeat = buildPlayerAccentStyles(players, themeId);
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
   const spotlightTile = spotlightSeat !== null && lastDiscardPosition !== null
@@ -239,7 +239,11 @@ export function TableStage({
                     </div>
                   ) : null}
                   {shouldRenderSeatInfo && player ? (
-                    <PlayerInfoBar player={player} className={`table-stage__player-info--${seat}`} />
+                    <PlayerInfoBar
+                      player={player}
+                      className={`table-stage__player-info--${seat}`}
+                      accentStyle={playerAccentStyleBySeat.get(seat)}
+                    />
                   ) : null}
                 </div>
               </Fragment>
