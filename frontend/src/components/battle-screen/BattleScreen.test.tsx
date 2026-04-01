@@ -129,7 +129,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     lastDiscard: 'b4',
     lastDiscardSeat: 'left',
     actionEffect: null,
-    celebrationEffect: null,
     toasts: [],
     ...overrides,
   };
@@ -474,8 +473,6 @@ describe('BattleScreen', () => {
         },
       }),
     );
-
-    expect(document.body.querySelector('.action-effects')).toBeNull();
   });
 
   it('shows a drawn-tile arrow instead of a draw spectacle when a new drawnTileId is present', () => {
@@ -486,23 +483,59 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(document.body.querySelector('.action-effects')).toBeNull();
     expect(screen.getAllByTestId('mahjong-tile-drawn-indicator')).toHaveLength(1);
   });
 
-  it('does not render a celebration overlay when a winning celebration effect is active', () => {
-    renderBattleScreen(
+  it('does not replay the same sticky action effect after it fades when unrelated rerenders happen', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
       createBattleViewModel({
-        celebrationEffect: {
-          key: 'win-1',
-          label: '自摸',
-          winnerSeat: 'bottom',
-          winType: 'self_draw',
+        actionEffect: {
+          key: 'claim-1',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'pung',
         },
       }),
     );
 
-    expect(document.body.querySelector('.action-effects--celebration')).toBeNull();
+    expect(screen.getByText('碰')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.queryByText('碰')).toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          promptText: '无关重渲染',
+          actionEffect: {
+            key: 'claim-1',
+            label: '碰',
+            emphasis: 'claim',
+            seat: 'left',
+            calloutTone: 'pung',
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('碰')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('renders the local player identity inside the table info bar instead of the side drawer', () => {

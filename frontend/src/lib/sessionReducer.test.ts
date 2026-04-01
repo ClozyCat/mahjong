@@ -76,6 +76,39 @@ describe('sessionReducer', () => {
     expect(next.latestActionPrompt).toBeNull();
   });
 
+  it('keeps the latest round_event sticky across room_snapshot updates', () => {
+    const roundEventMessage = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'claim_made',
+        event: {
+          seat: 0,
+          claim_type: 'pung',
+          tile_id: 't5#discard',
+        },
+      },
+    };
+
+    const next = sessionReducer(
+      {
+        ...createInitialSessionState(),
+        latestRoundEvent: roundEventMessage,
+      },
+      {
+        type: 'ws_message',
+        message: {
+          ...roomSnapshotMessage,
+          payload: {
+            ...roomSnapshotMessage.payload,
+            phase: 'playing',
+          },
+        },
+      },
+    );
+
+    expect(next.latestRoundEvent).toEqual(roundEventMessage);
+  });
+
   it('keeps room_snapshot authoritative when player_presence arrives', () => {
     const next = sessionReducer(
       {

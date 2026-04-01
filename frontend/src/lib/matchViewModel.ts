@@ -5,7 +5,6 @@ import type {
   BattlePromptView,
   BattleActionView,
   BattleViewModel,
-  CelebrationEffectView,
   ClaimActionId,
   ClaimCandidateTileView,
   ClaimCandidateView,
@@ -1157,24 +1156,6 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
   return null;
 }
 
-function createCelebrationEffect(state: SessionState): CelebrationEffectView | null {
-  const snapshot = state.roomSnapshot?.payload;
-  const result = state.latestMatchResult?.payload;
-
-  if (!snapshot || !result || result.win_type === 'draw') {
-    return null;
-  }
-
-  const localSeat = getLocalSeat(state);
-
-  return {
-    key: `${result.round_id}-${result.win_type}-${result.winner_seat ?? 'none'}-${result.discarder_seat ?? 'none'}`,
-    label: result.display_win_label ?? (result.win_type === 'self_draw' ? '自摸' : '胡牌'),
-    winnerSeat: typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null,
-    winType: result.win_type,
-  };
-}
-
 function getWinTypeLabel(result: MatchResultPayload) {
   return result.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type;
 }
@@ -1245,7 +1226,6 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     lastDiscard: snapshot?.private_state?.last_discard ?? null,
     lastDiscardSeat: createLastDiscardSeat(state),
     actionEffect: createActionEffect(state),
-    celebrationEffect: createCelebrationEffect(state),
     toasts: state.toasts,
   };
 }

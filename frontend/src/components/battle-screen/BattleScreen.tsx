@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
-import { ActionEffectsOverlay } from './ActionEffectsOverlay';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
@@ -47,6 +46,8 @@ export function BattleScreen({
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [viewportState, setViewportState] = useState(getBattleViewportState);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
+  const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
+  const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
@@ -65,6 +66,20 @@ export function BattleScreen({
       return Math.min(MAX_TABLE_TILE_SCALE, Math.max(MIN_TABLE_TILE_SCALE, nextScale));
     });
   }
+
+  useEffect(() => {
+    const nextActionEffect = viewModel.actionEffect;
+    if (!nextActionEffect?.key) {
+      return;
+    }
+
+    if (consumedActionEffectKeyRef.current === nextActionEffect.key) {
+      return;
+    }
+
+    consumedActionEffectKeyRef.current = nextActionEffect.key;
+    setConsumedActionEffect(nextActionEffect);
+  }, [viewModel.actionEffect]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -114,7 +129,7 @@ export function BattleScreen({
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
-              actionEffect={viewModel.actionEffect}
+              actionEffect={consumedActionEffect}
               players={viewModel.players}
               settlementHands={viewModel.settlementHands}
               tableCode={viewModel.tableCode}
@@ -136,11 +151,6 @@ export function BattleScreen({
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />
           </div>
-          <ActionEffectsOverlay
-            actionEffect={viewModel.actionEffect}
-            celebrationEffect={viewModel.celebrationEffect}
-            drawnTileId={viewModel.drawnTileId}
-          />
           <AmbientOverlay
             mode={viewModel.mode}
             promptText={viewModel.promptText}

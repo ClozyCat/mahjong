@@ -598,8 +598,6 @@ describe('createMatchViewModel', () => {
     expect(viewModel.result?.fanTotal).toBe(8);
     expect(viewModel.result?.winnerSeat).toBe('left');
     expect(viewModel.result?.winTypeLabel).toBe('荣和');
-    expect(viewModel.celebrationEffect?.label).toBe('胡牌');
-    expect(viewModel.celebrationEffect?.winnerSeat).toBe('left');
     expect(viewModel.settlementHands).toEqual({
       top: ['w1', 'w9'],
       left: ['b1', 'b3'],
@@ -629,7 +627,6 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.result?.summary).toContain('屁和');
     expect(viewModel.result?.winTypeLabel).toBe('屁和');
-    expect(viewModel.celebrationEffect?.label).toBe('屁和');
   });
 
   it('maps latest round events into action spectacle descriptors', () => {

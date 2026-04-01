@@ -363,13 +363,6 @@ export interface ActionEffectView {
   calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | null;
 }
 
-export interface CelebrationEffectView {
-  key: string;
-  label: string;
-  winnerSeat: Seat | null;
-  winType: 'self_draw' | 'discard';
-}
-
 export interface BattlePromptView {
   kind: 'turn' | 'claim' | 'rob_kong' | 'turn_kong';
   tone: 'info' | 'urgent' | 'critical';
@@ -409,6 +402,5 @@ export interface BattleViewModel {
   lastDiscard: string | null;
   lastDiscardSeat: Seat | null;
   actionEffect: ActionEffectView | null;
-  celebrationEffect: CelebrationEffectView | null;
   toasts: ToastMessage[];
 }
