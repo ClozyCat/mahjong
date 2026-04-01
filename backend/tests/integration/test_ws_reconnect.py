@@ -95,10 +95,13 @@ def test_reconnect_returns_full_active_round_snapshot_and_rotates_reconnect_toke
         reconnect_snapshot["payload"]["private_state"]["current_actor"]
         == reconnect_snapshot["payload"]["private_state"]["dealer_seat"]
     )
+    current_actor = reconnect_snapshot["payload"]["private_state"]["current_actor"]
     players = reconnect_snapshot["payload"]["private_state"]["players"]
     assert players[0]["concealed_tiles"]
-    assert players[1]["concealed_tiles"] is None
-    assert players[1]["concealed_count"] == 13
+    for seat_index, player in enumerate(players[1:], start=1):
+        assert player["concealed_tiles"] is None
+        expected_count = 14 if seat_index == current_actor else 13
+        assert player["concealed_count"] == expected_count
 
     assert peer_presence == {
         "type": "player_presence",

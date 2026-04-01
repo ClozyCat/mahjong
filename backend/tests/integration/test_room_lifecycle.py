@@ -75,13 +75,22 @@ def test_room_starts_only_after_all_players_ready_and_start_request(test_app) ->
                 assert peer_snapshot["payload"]["seats"][ready_index]["ready"] is True
 
         sockets[0].send_json({"type": "start_match", "payload": {}})
-        start_snapshot = sockets[0].receive_json()
-        start_prompt = sockets[0].receive_json()
+        start_snapshot = None
+        start_prompt = None
+        for _ in range(6):
+            message = sockets[0].receive_json()
+            if message["type"] == "room_snapshot" and start_snapshot is None:
+                start_snapshot = message
+            if message["type"] == "action_prompt":
+                start_prompt = message
+                break
         peer_snapshots = [ws.receive_json() for ws in sockets[1:]]
 
+    assert start_snapshot is not None
     assert start_snapshot["type"] == "room_snapshot"
     assert start_snapshot["payload"]["phase"] == "playing"
     assert start_snapshot["payload"]["private_state"] is not None
+    assert start_prompt is not None
     assert start_prompt["type"] == "action_prompt"
     assert all(message["type"] == "room_snapshot" for message in peer_snapshots)
     assert all(message["payload"]["phase"] == "playing" for message in peer_snapshots)

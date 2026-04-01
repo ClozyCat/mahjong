@@ -3866,11 +3866,11 @@ input {
 @keyframes urgent-spotlight-pulse {
   0%,
   100% {
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
 
   50% {
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.05);
+    transform: translate(-50%, -50%) scale(1.05);
   }
 }
 
@@ -4056,6 +4056,9 @@ input {
   min-height: 100dvh;
   height: 100dvh;
   overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   padding: var(--battle-shell-top-gap) var(--battle-shell-gap) var(--battle-shell-bottom-gap);
   padding-bottom: max(var(--battle-shell-bottom-gap), env(safe-area-inset-bottom));
 }

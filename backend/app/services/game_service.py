@@ -41,6 +41,7 @@ from app.domain.reducer import (
 from app.domain.wall import WallState
 from app.services.presence_service import mark_connected, mark_disconnected
 from app.services.reconnect_service import consume_reconnect_token, issue_reconnect_token
+from app.services.bot_strategy import BotPersona, choose_active_turn_action, choose_claim_action
 from app.services.table_service import close_table, get_table_by_code
 from app.services.timeout_service import (
     ACTIVE_TURN_TIMEOUT_SECONDS,
@@ -118,6 +119,8 @@ class SeatReservation:
     connected: bool = False
     ready: bool = False
     is_bot: bool = False
+    bot_persona: BotPersona | None = None
+    bot_aggression: float | None = None
 
 
 @dataclass
@@ -500,6 +503,7 @@ class GameService:
                 reservation.connected = True
                 reservation.ready = True
                 reservation.is_bot = True
+                self._ensure_bot_profile(reservation)
                 if reservation.reconnect_token:
                     self._consume_reconnect_token(reservation.reconnect_token)
                     reservation.reconnect_token = None
@@ -789,6 +793,7 @@ class GameService:
         for seat_index in range(MAX_SEATS):
             if seat_index in room.seats:
                 continue
+            persona = self._roll_bot_persona()
             room.seats[seat_index] = SeatReservation(
                 seat_index=seat_index,
                 nickname=f"Bot {seat_index}",
@@ -797,6 +802,8 @@ class GameService:
                 connected=True,
                 ready=True,
                 is_bot=True,
+                bot_persona=persona,
+                bot_aggression=self._roll_bot_aggression(persona),
             )
 
     def _auto_advance_bot_seats_locked(self, room: RoomState) -> list[dict]:
@@ -816,8 +823,8 @@ class GameService:
                 pending_action = room.round_state.pending_action or {}
                 pending_type = pending_action.get("type")
                 responded_before = tuple(pending_action.get("responded_seats", []))
-                auto_pass_messages = self._auto_pass_claim_window_locked(room)
-                messages.extend(auto_pass_messages)
+                auto_claim_messages = self._auto_resolve_claim_window_locked(room)
+                messages.extend(auto_claim_messages)
                 next_pending_action = room.round_state.pending_action or {}
                 responded_after = tuple(next_pending_action.get("responded_seats", []))
                 if (
@@ -861,10 +868,17 @@ class GameService:
             if not self._is_bot_seat(room, actor):
                 break
 
-            room.round_state, events = discard_tile(
+            decision = choose_active_turn_action(
                 room.round_state,
                 actor,
-                self._random_bot_discard_tile_id(room.round_state, actor),
+                aggression=self._bot_aggression(room, actor),
+                persona=self._bot_persona(room, actor),
+            )
+            room.round_state, events = self._resolve_action_locked(
+                room.round_state,
+                seat_index=actor,
+                action_type=decision.action_type,
+                tile_ids=decision.tile_ids,
             )
             room.phase = room.round_state.phase
             room.pending_timeout = None
@@ -872,20 +886,28 @@ class GameService:
 
         return messages
 
-    def _auto_pass_claim_window_locked(self, room: RoomState) -> list[dict]:
+    def _auto_resolve_claim_window_locked(self, room: RoomState) -> list[dict]:
         assert room.round_state is not None
+        messages: list[dict] = []
 
         while (
             room.round_state.pending_action is not None
-            and room.round_state.pending_action.get("type") == "claim_window"
+            and room.round_state.pending_action.get("type") in {"claim_window", "rob_kong_window"}
         ):
             pending_action = room.round_state.pending_action
             responded = set(pending_action.get("responded_seats", []))
-            offered_seats = [
-                seat_index
-                for seat_index, claims in enumerate(pending_action.get("claim_window", []))
-                if claims and seat_index not in responded
-            ]
+            if pending_action.get("type") == "rob_kong_window":
+                offered_seats = [
+                    seat_index
+                    for seat_index in pending_action.get("offered_hu_seats", [])
+                    if seat_index not in responded
+                ]
+            else:
+                offered_seats = [
+                    seat_index
+                    for seat_index, claims in enumerate(pending_action.get("claim_window", []))
+                    if claims and seat_index not in responded
+                ]
             if not offered_seats:
                 break
 
@@ -895,29 +917,67 @@ class GameService:
                 if self._is_bot_seat(room, seat_index)
             ]
             if not bot_offered_seats:
-                return []
+                return messages
 
             seat_index = bot_offered_seats[0]
-            room.round_state, _ = apply_claim_action(
+            decision = choose_claim_action(
                 room.round_state,
-                seat=seat_index,
-                action_type="pass",
-                tiles=[],
+                seat_index,
+                aggression=self._bot_aggression(room, seat_index),
+                persona=self._bot_persona(room, seat_index),
+            )
+            room.round_state, events = self._resolve_action_locked(
+                room.round_state,
+                seat_index=seat_index,
+                action_type=decision.action_type,
+                tile_ids=decision.tile_ids,
             )
             room.phase = room.round_state.phase
+            messages.extend(self.round_event(event["type"], event) for event in events)
 
         room.pending_timeout = None
         if room.round_state.phase != "settlement":
             self._advance_round_locked(room)
-        return []
+        return messages
 
     def _is_bot_seat(self, room: RoomState, seat_index: int) -> bool:
         reservation = room.seats.get(seat_index)
         return reservation.is_bot if reservation is not None else False
 
-    def _random_bot_discard_tile_id(self, state: RoundState, seat_index: int) -> str:
-        concealed_tiles = state.players[seat_index].concealed_tiles
-        return random.choice(concealed_tiles).tile_id
+    def _bot_aggression(self, room: RoomState, seat_index: int) -> float:
+        reservation = room.seats.get(seat_index)
+        if reservation is None or not reservation.is_bot:
+            return 0.5
+        self._ensure_bot_profile(reservation)
+        return reservation.bot_aggression
+
+    def _bot_persona(self, room: RoomState, seat_index: int) -> BotPersona:
+        reservation = room.seats.get(seat_index)
+        if reservation is None or not reservation.is_bot:
+            return "balanced"
+        self._ensure_bot_profile(reservation)
+        return reservation.bot_persona or "balanced"
+
+    def _ensure_bot_profile(self, reservation: SeatReservation) -> None:
+        if reservation.bot_persona is None:
+            reservation.bot_persona = self._roll_bot_persona()
+        if reservation.bot_aggression is None:
+            reservation.bot_aggression = self._roll_bot_aggression(reservation.bot_persona)
+
+    def _roll_bot_persona(self) -> BotPersona:
+        roll = random.random()
+        if roll < 0.28:
+            return "menzen_attacker"
+        if roll < 0.74:
+            return "balanced"
+        return "defender"
+
+    def _roll_bot_aggression(self, persona: BotPersona | None = None) -> float:
+        if persona == "menzen_attacker":
+            return round(random.uniform(0.62, 0.9), 2)
+        if persona == "defender":
+            return round(random.uniform(0.15, 0.45), 2)
+        return round(random.uniform(0.35, 0.72), 2)
 
     async def _timeout_runner(
         self,
@@ -1712,6 +1772,8 @@ class GameService:
                     "connected": reservation.connected,
                     "ready": reservation.ready,
                     "is_bot": reservation.is_bot,
+                    "bot_persona": reservation.bot_persona,
+                    "bot_aggression": reservation.bot_aggression,
                 }
                 for seat_index, reservation in sorted(room.seats.items())
             ],
@@ -1737,6 +1799,8 @@ class GameService:
                 connected=seat_payload.get("connected", False),
                 ready=seat_payload.get("ready", False),
                 is_bot=seat_payload.get("is_bot", False),
+                bot_persona=seat_payload.get("bot_persona"),
+                bot_aggression=seat_payload.get("bot_aggression"),
             )
 
         room.match_state = self._deserialize_match_state(payload.get("match_state"))

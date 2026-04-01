@@ -63,6 +63,29 @@ def _advance_opening_flowers_single_socket(ws, snapshot: dict, prompt: dict) -> 
     return snapshot, prompt
 
 
+def _advance_to_human_active_turn_single_socket(ws, snapshot: dict, prompt: dict) -> tuple[dict, dict]:
+    while True:
+        pending_action = snapshot["payload"]["private_state"]["pending_action"]
+        if pending_action["type"] == "opening_flowers":
+            snapshot, prompt = _advance_opening_flowers_single_socket(ws, snapshot, prompt)
+            continue
+        if pending_action["type"] == "active_turn":
+            return snapshot, prompt
+
+        ws.send_json(
+            {
+                "type": "action_request",
+                "payload": {
+                    "action_type": "pass",
+                    "tile_ids": [],
+                },
+            }
+        )
+        snapshot, _ = _receive_until_snapshot(ws)
+        prompt = ws.receive_json()
+        assert prompt["type"] == "action_prompt"
+
+
 def _ready_all_and_start(*sockets) -> tuple[dict, dict]:
     for ready_index, ws in enumerate(sockets):
         ws.send_json({"type": "ready", "payload": {"ready": True}})
@@ -434,8 +457,13 @@ def test_active_player_can_discard_and_broadcast_updated_snapshot(test_app) -> N
     assert discard_event["payload"]["event_type"] == "tile_discarded"
     assert next_snapshot["type"] == "room_snapshot"
     assert next_snapshot["payload"]["private_state"]["last_discard"] is not None
-    assert next_snapshot["payload"]["private_state"]["players"][0]["concealed_count"] == 13
-    assert len(next_snapshot["payload"]["private_state"]["players"][0]["discards"]) == 1
+    assert (
+        next_snapshot["payload"]["private_state"]["players"][active_seat]["concealed_count"]
+        == 13
+    )
+    assert (
+        len(next_snapshot["payload"]["private_state"]["players"][active_seat]["discards"]) == 1
+    )
     assert peer_message["type"] in {"round_event", "room_snapshot", "action_prompt"}
 
 
@@ -589,12 +617,11 @@ def test_test_mode_bots_auto_advance_after_human_discard(test_mode_app) -> None:
         ws.send_json({"type": "join_table", "payload": {"nickname": "Solo"}})
         opening_snapshot = ws.receive_json()
         opening_prompt = ws.receive_json()
-        if opening_snapshot["payload"]["private_state"]["pending_action"]["type"] == "opening_flowers":
-            opening_snapshot, opening_prompt = _advance_opening_flowers_single_socket(
-                ws,
-                opening_snapshot,
-                opening_prompt,
-            )
+        opening_snapshot, opening_prompt = _advance_to_human_active_turn_single_socket(
+            ws,
+            opening_snapshot,
+            opening_prompt,
+        )
 
         drawn_tile_id = opening_snapshot["payload"]["private_state"]["pending_action"][
             "drawn_tile_id"
@@ -609,7 +636,18 @@ def test_test_mode_bots_auto_advance_after_human_discard(test_mode_app) -> None:
             }
         )
 
-        messages = [ws.receive_json() for _ in range(6)]
+        messages: list[dict] = []
+        latest_snapshot: dict | None = None
+        for _ in range(20):
+            message = ws.receive_json()
+            messages.append(message)
+            if message["type"] == "room_snapshot":
+                latest_snapshot = message
+            if (
+                message["type"] == "action_prompt"
+                and message["payload"]["seat_index"] == 0
+            ):
+                break
 
     assert opening_prompt["type"] == "action_prompt"
     assert messages[0]["type"] == "round_event"
@@ -619,10 +657,8 @@ def test_test_mode_bots_auto_advance_after_human_discard(test_mode_app) -> None:
         and message["payload"]["seat_index"] == 0
         for message in messages
     )
-    latest_snapshot = next(
-        message for message in reversed(messages) if message["type"] == "room_snapshot"
-    )
-    assert latest_snapshot["payload"]["private_state"]["current_actor"] == 0
+    assert latest_snapshot is not None
+    assert latest_snapshot["payload"]["private_state"]["pending_action"] is not None
 
 
 def test_reconnect_token_for_wrong_table_is_rejected(test_app) -> None:

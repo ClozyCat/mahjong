@@ -5,6 +5,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.domain.models import PlayerState, RoundState, Tile
 from app.domain.reducer import initialize_round
 from app.domain.wall import WallState
+from app.services.bot_strategy import BotDecision
 from app.services import game_service as game_service_module
 from app.services.game_service import GameService, MatchState, RoomState, SeatReservation
 from app.services.timeout_service import PendingTimeout
@@ -527,6 +528,8 @@ async def test_leave_table_during_active_match_keeps_seat_but_invalidates_reconn
     monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
     monkeypatch.setattr(service, "_auto_advance_bot_seats_locked", lambda _room: [])
     monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_roll_bot_persona", lambda: "defender")
+    monkeypatch.setattr(service, "_roll_bot_aggression", lambda _persona=None: 0.42)
     consumed_tokens: list[str] = []
     disconnected_sessions: list[int] = []
     monkeypatch.setattr(service, "_consume_reconnect_token", lambda token: consumed_tokens.append(token))
@@ -573,6 +576,8 @@ async def test_leave_table_during_active_match_keeps_seat_but_invalidates_reconn
     assert room.seats[0].connected is True
     assert room.seats[0].ready is True
     assert room.seats[0].is_bot is True
+    assert room.seats[0].bot_persona == "defender"
+    assert room.seats[0].bot_aggression == 0.42
     assert room.seats[0].reconnect_token is None
     assert consumed_tokens == ["token-0"]
     assert disconnected_sessions == [1]
@@ -593,6 +598,8 @@ async def test_leave_table_during_active_turn_lets_bot_play_immediately(monkeypa
     monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
     monkeypatch.setattr(service, "_consume_reconnect_token", lambda _token: None)
     monkeypatch.setattr(service, "_mark_disconnected", lambda **_kwargs: None)
+    monkeypatch.setattr(service, "_roll_bot_persona", lambda: "balanced")
+    monkeypatch.setattr(service, "_roll_bot_aggression", lambda _persona=None: 0.37)
 
     leaver = _RecordingWebSocket()
     peer = _RecordingWebSocket()
@@ -621,7 +628,192 @@ async def test_leave_table_during_active_turn_lets_bot_play_immediately(monkeypa
     await service.leave_table(table_code="ROOM26", websocket=leaver)
 
     assert room.seats[0].is_bot is True
+    assert room.seats[0].bot_persona == "balanced"
+    assert room.seats[0].bot_aggression == 0.37
     assert any(message["type"] == "round_event" for message in peer.messages)
+
+
+def test_add_bot_reservations_assigns_persona_and_aggression(monkeypatch) -> None:
+    service = GameService(sessionmaker(), test_mode=True)
+    persona_values = iter(["menzen_attacker", "balanced", "defender"])
+    aggression_values = iter([0.21, 0.44, 0.68])
+    monkeypatch.setattr(service, "_roll_bot_persona", lambda: next(persona_values))
+    monkeypatch.setattr(service, "_roll_bot_aggression", lambda _persona=None: next(aggression_values))
+
+    room = RoomState(table_code="ROOM-BOTS", test_mode=True)
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Human",
+        reconnect_token="token-0",
+        player_session_id=1,
+        connected=True,
+        ready=True,
+        is_bot=False,
+    )
+
+    service._add_bot_reservations_locked(room)
+
+    assert room.seats[1].is_bot is True
+    assert room.seats[1].bot_persona == "menzen_attacker"
+    assert room.seats[1].bot_aggression == 0.21
+    assert room.seats[2].bot_persona == "balanced"
+    assert room.seats[2].bot_aggression == 0.44
+    assert room.seats[3].bot_persona == "defender"
+    assert room.seats[3].bot_aggression == 0.68
+
+
+def test_auto_advance_bot_seats_passes_persona_into_active_turn_strategy(monkeypatch) -> None:
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOM-PERSONA-ACTIVE", phase="playing")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Bot 0",
+        reconnect_token=None,
+        player_session_id=-1,
+        connected=True,
+        ready=True,
+        is_bot=True,
+        bot_persona="defender",
+        bot_aggression=0.31,
+    )
+    room.round_state = RoundState(
+        round_id="room-persona-active",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(_make_suit_tile("w1", "w1#self"),),
+                melds=(),
+                flowers=(),
+                discards=(),
+            ),
+            PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="active_turn",
+        seat_index=0,
+        deadline_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_choose_active_turn_action(state, seat_index, aggression=0.5, persona="balanced"):
+        captured["seat_index"] = seat_index
+        captured["aggression"] = aggression
+        captured["persona"] = persona
+        return BotDecision(action_type="discard", tile_ids=["w1#self"])
+
+    monkeypatch.setattr(game_service_module, "choose_active_turn_action", fake_choose_active_turn_action)
+    monkeypatch.setattr(
+        service,
+        "_resolve_action_locked",
+        lambda state, **_kwargs: (__import__("dataclasses").replace(state, phase="settlement"), []),
+    )
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    service._auto_advance_bot_seats_locked(room)
+
+    assert captured == {
+        "seat_index": 0,
+        "aggression": 0.31,
+        "persona": "defender",
+    }
+
+
+def test_auto_resolve_claim_window_passes_persona_into_claim_strategy(monkeypatch) -> None:
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOM-PERSONA-CLAIM", phase="playing")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Human",
+        reconnect_token="token-0",
+        player_session_id=1,
+        connected=True,
+        ready=True,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="Bot 1",
+        reconnect_token=None,
+        player_session_id=-2,
+        connected=True,
+        ready=True,
+        is_bot=True,
+        bot_persona="menzen_attacker",
+        bot_aggression=0.77,
+    )
+    room.round_state = RoundState(
+        round_id="room-persona-claim",
+        dealer_seat=0,
+        current_actor=3,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=_make_suit_tile("w5", "w5#discard"),
+        pending_action={
+            "type": "claim_window",
+            "discarder_seat": 3,
+            "claim_window": [[], ["pung"], [], []],
+            "responded_seats": [],
+        },
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="claim_window",
+        seat_index=3,
+        deadline_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_choose_claim_action(state, seat_index, aggression=0.5, persona="balanced"):
+        captured["seat_index"] = seat_index
+        captured["aggression"] = aggression
+        captured["persona"] = persona
+        return BotDecision(action_type="pass", tile_ids=[])
+
+    monkeypatch.setattr(game_service_module, "choose_claim_action", fake_choose_claim_action)
+    monkeypatch.setattr(
+        service,
+        "_resolve_action_locked",
+        lambda state, **_kwargs: (
+            __import__("dataclasses").replace(
+                state,
+                pending_action={
+                    **(state.pending_action or {}),
+                    "responded_seats": [1],
+                },
+            ),
+            [],
+        ),
+    )
+    monkeypatch.setattr(service, "_advance_round_locked", lambda _room: None)
+
+    service._auto_resolve_claim_window_locked(room)
+
+    assert captured == {
+        "seat_index": 1,
+        "aggression": 0.77,
+        "persona": "menzen_attacker",
+    }
 
 
 def test_auto_pass_claim_window_in_test_mode_skips_human_hu_prompt() -> None:
@@ -692,7 +884,7 @@ def test_auto_pass_claim_window_in_test_mode_skips_human_hu_prompt() -> None:
         deadline_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
     )
 
-    messages = service._auto_pass_claim_window_locked(room)
+    messages = service._auto_resolve_claim_window_locked(room)
 
     assert messages == []
     assert room.pending_timeout is not None
@@ -770,7 +962,7 @@ def test_auto_advance_bot_seats_stops_when_only_human_claims_remain(monkeypatch)
         deadline_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
     )
 
-    original = service._auto_pass_claim_window_locked
+    original = service._auto_resolve_claim_window_locked
     call_count = 0
 
     def wrapped(target_room):
@@ -780,7 +972,7 @@ def test_auto_advance_bot_seats_stops_when_only_human_claims_remain(monkeypatch)
             raise AssertionError("claim window auto-pass loop did not stop")
         return original(target_room)
 
-    monkeypatch.setattr(service, "_auto_pass_claim_window_locked", wrapped)
+    monkeypatch.setattr(service, "_auto_resolve_claim_window_locked", wrapped)
 
     messages = service._auto_advance_bot_seats_locked(room)
 
