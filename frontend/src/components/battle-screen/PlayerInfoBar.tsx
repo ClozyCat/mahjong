@@ -51,11 +51,11 @@ export function buildPlayerAccentStyle(player: Pick<TableStagePlayer, 'seat' | '
   const hue = (Math.abs(hash) + SEAT_ACCENT_OFFSET[player.seat]) % 360;
 
   return {
-    '--table-player-accent': `hsl(${hue}, 82%, 68%)`,
-    '--table-player-accent-strong': `hsla(${hue}, 86%, 62%, 0.72)`,
-    '--table-player-accent-soft': `hsla(${hue}, 86%, 62%, 0.22)`,
-    '--table-player-accent-surface': `hsla(${hue}, 86%, 62%, 0.12)`,
-    '--table-player-accent-shadow': `hsla(${hue}, 92%, 58%, 0.28)`,
+    '--table-player-accent': `hsl(${hue}, 60%, 70%)`,
+    '--table-player-accent-strong': `hsla(${hue}, 64%, 62%, 0.68)`,
+    '--table-player-accent-soft': `hsla(${hue}, 64%, 62%, 0.2)`,
+    '--table-player-accent-surface': `hsla(${hue}, 64%, 62%, 0.12)`,
+    '--table-player-accent-shadow': `hsla(${hue}, 70%, 58%, 0.24)`,
   } as CSSProperties;
 }
 

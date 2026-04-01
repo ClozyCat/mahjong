@@ -1,4 +1,5 @@
 const SESSION_KEY = 'mahjong:session';
+const THEME_KEY = 'mahjong:theme';
 
 export interface StoredSession {
   tableCode: string;
@@ -34,4 +35,12 @@ export function saveStoredSession(session: StoredSession) {
 
 export function clearStoredSession() {
   localStorage.removeItem(SESSION_KEY);
+}
+
+export function loadStoredThemeId() {
+  return localStorage.getItem(THEME_KEY);
+}
+
+export function saveStoredThemeId(themeId: string) {
+  localStorage.setItem(THEME_KEY, themeId);
 }

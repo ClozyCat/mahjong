@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { TableStage } from './TableStage';
 
@@ -326,5 +326,37 @@ describe('TableStage', () => {
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '准备' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始对局' })).toBeInTheDocument();
+  });
+
+  it('renders a theme switch button beside the leave control and forwards clicks', () => {
+    const onCycleTheme = vi.fn();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        canLeaveTable
+        themeId="qiu-xiang"
+        themeLabel="秋香"
+        onLeaveTable={() => undefined}
+        onCycleTheme={onCycleTheme}
+      />,
+    );
+
+    const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
+
+    expect(themeButton).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '快捷离开牌桌' })).toBeInTheDocument();
+
+    fireEvent.click(themeButton);
+
+    expect(onCycleTheme).toHaveBeenCalledTimes(1);
   });
 });

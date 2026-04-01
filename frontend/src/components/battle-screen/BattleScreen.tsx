@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types/match';
+import type { ThemeId } from '../../lib/themes';
 import { ActionEffectsOverlay } from './ActionEffectsOverlay';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
@@ -9,6 +10,9 @@ import { TableStage } from './TableStage';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
+  themeId: ThemeId;
+  themeLabel: string;
+  onCycleTheme: () => void;
   onTileSelect: (tileId: string) => void;
   onTileDoubleClick: (tileId: string) => void;
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
@@ -29,6 +33,9 @@ const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
 
 export function BattleScreen({
   viewModel,
+  themeId,
+  themeLabel,
+  onCycleTheme,
   onTileSelect,
   onTileDoubleClick,
   onClaimCandidateSelect,
@@ -118,7 +125,10 @@ export function BattleScreen({
               canDecreaseTileScale={canDecreaseTableTileScale}
               canIncreaseTileScale={canIncreaseTableTileScale}
               canLeaveTable={viewModel.canLeaveTable}
+              themeId={themeId}
+              themeLabel={themeLabel}
               onLeaveTable={onLeaveTable}
+              onCycleTheme={onCycleTheme}
               onAction={onAction}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}

@@ -24,7 +24,14 @@ import {
   serializeClientMessage,
 } from './lib/socket';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
-import { clearStoredSession, loadStoredSession, saveStoredSession } from './lib/storage';
+import {
+  clearStoredSession,
+  loadStoredSession,
+  loadStoredThemeId,
+  saveStoredSession,
+  saveStoredThemeId,
+} from './lib/storage';
+import { DEFAULT_THEME_ID, getNextThemeId, getThemeLabel, isThemeId } from './lib/themes';
 import type { BackendActionType, BattleActionId, ClaimActionId, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -151,6 +158,11 @@ function canQuickDiscard(state: SessionState) {
 
 export default function App() {
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
+  const [themeId, setThemeId] = useState(() => {
+    const storedThemeId = loadStoredThemeId();
+
+    return isThemeId(storedThemeId) ? storedThemeId : DEFAULT_THEME_ID;
+  });
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
@@ -182,6 +194,15 @@ export default function App() {
   useEffect(() => {
     sessionRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.documentElement.dataset.theme = themeId;
+    saveStoredThemeId(themeId);
+  }, [themeId]);
 
   useEffect(() => {
     if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
@@ -633,6 +654,9 @@ export default function App() {
   return (
     <BattleScreen
       viewModel={viewModel}
+      themeId={themeId}
+      themeLabel={getThemeLabel(themeId)}
+      onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
       onTileSelect={handleTileSelect}
       onTileDoubleClick={handleTileDoubleClick}
       onClaimCandidateSelect={handleClaimCandidateSelect}

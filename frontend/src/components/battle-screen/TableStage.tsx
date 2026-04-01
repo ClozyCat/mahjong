@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties } from 'react';
 
+import type { ThemeId } from '../../lib/themes';
 import type { BattleActionView, BattlePromptView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
@@ -25,7 +26,10 @@ interface TableStageProps {
   canDecreaseTileScale?: boolean;
   canIncreaseTileScale?: boolean;
   canLeaveTable?: boolean;
+  themeId?: ThemeId;
+  themeLabel?: string;
   onLeaveTable?: () => void;
+  onCycleTheme?: () => void;
   onAction?: (actionId: BattleActionView['id']) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
@@ -53,7 +57,10 @@ export function TableStage({
   canDecreaseTileScale = false,
   canIncreaseTileScale = false,
   canLeaveTable = false,
+  themeId = 'tian-shui-bi',
+  themeLabel = '天水碧',
   onLeaveTable,
+  onCycleTheme,
   onAction,
   onDecreaseTileScale,
   onIncreaseTileScale,
@@ -92,15 +99,31 @@ export function TableStage({
               </span>
             </div>
           ) : null}
-          {canLeaveTable ? (
-            <button
-              type="button"
-              className="table-stage__leave-button"
-              aria-label="快捷离开牌桌"
-              onClick={onLeaveTable}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+          {onCycleTheme || canLeaveTable ? (
+            <div className="table-stage__corner-controls">
+              {onCycleTheme ? (
+                <button
+                  type="button"
+                  className="table-stage__theme-button"
+                  data-theme={themeId}
+                  aria-label={`切换整体配色，当前 ${themeLabel}`}
+                  title={`切换配色：${themeLabel}`}
+                  onClick={onCycleTheme}
+                >
+                  <span aria-hidden="true">换</span>
+                </button>
+              ) : null}
+              {canLeaveTable ? (
+                <button
+                  type="button"
+                  className="table-stage__leave-button"
+                  aria-label="快捷离开牌桌"
+                  onClick={onLeaveTable}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              ) : null}
+            </div>
           ) : null}
           <div
             className={`table-stage__center-meta ${promptCue ? 'table-stage__center-meta--with-cue' : ''} ${

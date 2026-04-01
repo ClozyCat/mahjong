@@ -140,6 +140,9 @@ function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<Comp
   return render(
     <BattleScreen
       viewModel={viewModel}
+      themeId="tian-shui-bi"
+      themeLabel="天水碧"
+      onCycleTheme={vi.fn()}
       onAction={vi.fn()}
       onTileSelect={vi.fn()}
       onTileDoubleClick={vi.fn()}
@@ -516,6 +519,9 @@ describe('BattleScreen', () => {
     render(
       <BattleScreen
         viewModel={createBattleViewModel()}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
         onAction={vi.fn()}
         onTileSelect={vi.fn()}
         onTileDoubleClick={vi.fn()}

@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearStoredSession, loadStoredSession, saveStoredSession } from './storage';
+import {
+  clearStoredSession,
+  loadStoredSession,
+  loadStoredThemeId,
+  saveStoredSession,
+  saveStoredThemeId,
+} from './storage';
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>();
@@ -63,5 +69,11 @@ describe('storage helpers', () => {
     clearStoredSession();
 
     expect(loadStoredSession()).toBeNull();
+  });
+
+  it('round-trips stored theme ids', () => {
+    saveStoredThemeId('qiu-xiang');
+
+    expect(loadStoredThemeId()).toBe('qiu-xiang');
   });
 });
