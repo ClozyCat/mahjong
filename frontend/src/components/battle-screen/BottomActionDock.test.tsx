@@ -264,6 +264,34 @@ describe('BottomActionDock', () => {
       '--action-dock-hand-count': '3',
       '--action-dock-effective-hand-count': '3',
       '--action-dock-gap-count': '2',
+      '--action-dock-drawn-gap-count': '0',
+    });
+  });
+
+  it('marks the freshly drawn tile button so layout can leave a gap before it', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const hand = screen.getByLabelText(/local hand/i);
+    const buttons = hand.querySelectorAll('.action-dock__tile');
+
+    expect(buttons[0]).not.toHaveClass('action-dock__tile--drawn');
+    expect(buttons[1]).toHaveClass('action-dock__tile--drawn');
+    expect(screen.getByTestId('action-dock')).toHaveStyle({
+      '--action-dock-drawn-gap-count': '1',
     });
   });
 

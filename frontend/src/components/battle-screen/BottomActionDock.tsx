@@ -43,6 +43,7 @@ export function BottomActionDock({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const handCount = hand.length;
+  const hasDrawnTile = hand.some((tile) => tile.isDrawn);
   const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
   const dockLabel = '手牌区';
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
@@ -50,6 +51,7 @@ export function BottomActionDock({
     '--action-dock-hand-count': `${handCount}`,
     '--action-dock-effective-hand-count': `${Math.max(handCount, 1)}`,
     '--action-dock-gap-count': `${Math.max(handCount - 1, 0)}`,
+    '--action-dock-drawn-gap-count': hasDrawnTile ? '1' : '0',
     '--action-dock-layout-hand-count': `${layoutHandCount}`,
     '--action-dock-layout-gap-count': `${Math.max(layoutHandCount - 1, 0)}`,
   } as CSSProperties;
@@ -162,7 +164,13 @@ export function BottomActionDock({
                     <button
                       key={`${tile.tileId}-${index}`}
                       type="button"
-                      className={tile.isSelected ? 'action-dock__tile action-dock__tile--selected' : 'action-dock__tile'}
+                      className={[
+                        'action-dock__tile',
+                        tile.isSelected ? 'action-dock__tile--selected' : '',
+                        tile.isDrawn ? 'action-dock__tile--drawn' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
                       onClick={(event) => {
                         if (event.detail > 1) {
                           return;

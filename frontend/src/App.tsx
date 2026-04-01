@@ -33,7 +33,8 @@ import {
   saveStoredSession,
   saveStoredThemeId,
 } from './lib/storage';
-import { DEFAULT_THEME_ID, getNextThemeId, getThemeLabel, isThemeId } from './lib/themes';
+import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
+import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
 import type { BackendActionType, BattleActionId, ClaimActionId, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -168,8 +169,9 @@ export default function App() {
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
+    const nextThemeId = isThemeId(storedThemeId) ? getRandomThemeId(storedThemeId) : getRandomThemeId();
 
-    return isThemeId(storedThemeId) ? storedThemeId : DEFAULT_THEME_ID;
+    return isThemeId(nextThemeId) ? nextThemeId : DEFAULT_THEME_ID;
   });
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
     tableCode: storedSession?.tableCode ?? '',
@@ -199,6 +201,7 @@ export default function App() {
   const leavingTableRef = useRef(false);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
+  const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
 
   useEffect(() => {
@@ -213,6 +216,14 @@ export default function App() {
     document.documentElement.dataset.theme = themeId;
     saveStoredThemeId(themeId);
   }, [themeId]);
+
+  useEffect(() => {
+    if (!state.roomSnapshot && previousHadRoomSnapshotRef.current) {
+      setThemeId((currentThemeId) => getRandomThemeId(currentThemeId));
+    }
+
+    previousHadRoomSnapshotRef.current = state.roomSnapshot !== null;
+  }, [state.roomSnapshot]);
 
   useEffect(() => {
     if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
@@ -407,6 +418,20 @@ export default function App() {
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const hasLocalTurnKongPrompt =
     localTurnKongPromptSignature !== null && localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature;
+  const normalizedRequestedTableCode = normalizeTableCode(connectValue.tableCode);
+  const tableCodeError = getTableCodeError(connectValue.tableCode);
+  const hasNickname = connectValue.nickname.trim().length > 0;
+  const canCreate =
+    state.connectionStatus !== 'connecting' &&
+    state.connectionStatus !== 'reconnecting' &&
+    hasNickname &&
+    tableCodeError === null;
+  const canJoin =
+    state.connectionStatus !== 'connecting' &&
+    state.connectionStatus !== 'reconnecting' &&
+    hasNickname &&
+    normalizedRequestedTableCode.length > 0 &&
+    tableCodeError === null;
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
@@ -457,10 +482,14 @@ export default function App() {
       return;
     }
 
+    if (tableCodeError) {
+      return;
+    }
+
     try {
       setStatusMessage('正在创建牌桌...');
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-      const requestedTableCode = connectValue.tableCode.trim().toUpperCase();
+      const requestedTableCode = normalizedRequestedTableCode;
       const table = await createTable(
         defaults.apiBaseUrl,
         requestedTableCode || undefined,
@@ -487,7 +516,7 @@ export default function App() {
         'detail' in error.detail &&
         (error.detail as { detail: unknown }).detail === 'table_code_exists'
       ) {
-        const requestedTableCode = connectValue.tableCode.trim().toUpperCase();
+        const requestedTableCode = normalizedRequestedTableCode;
         const shouldJoin = window.confirm(`牌桌编号 ${requestedTableCode} 已存在，是否直接加入该牌桌？`);
         if (shouldJoin) {
           handleJoin();
@@ -508,10 +537,14 @@ export default function App() {
       return;
     }
 
+    if (tableCodeError) {
+      return;
+    }
+
     setStatusMessage('正在加入牌桌...');
     dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
     openRoomSocket({
-      tableCode: connectValue.tableCode.trim().toUpperCase(),
+      tableCode: normalizedRequestedTableCode,
       nickname: connectValue.nickname.trim(),
       wsBaseUrl: defaults.wsBaseUrl,
     });
@@ -700,6 +733,10 @@ export default function App() {
         value={connectValue}
         status={state.connectionStatus === 'connecting' || state.connectionStatus === 'reconnecting' ? 'connecting' : statusMessage ? 'error' : 'idle'}
         message={statusMessage}
+        themeLabel={getThemeLabel(themeId)}
+        tableCodeError={tableCodeError}
+        canCreate={canCreate}
+        canJoin={canJoin}
         onChange={(patch) => {
           startTransition(() => {
             setConnectValue((current) => ({ ...current, ...patch }));

@@ -15,6 +15,9 @@ describe('ConnectGate', () => {
           enforceMinimumEightFan: true,
         }}
         status="idle"
+        themeLabel="天水碧"
+        canCreate={false}
+        canJoin={false}
         onChange={vi.fn()}
         onCreate={vi.fn()}
         onJoin={vi.fn()}
@@ -25,8 +28,10 @@ describe('ConnectGate', () => {
     expect(screen.queryByLabelText('服务地址')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('通信地址')).not.toBeInTheDocument();
     expect(screen.getByLabelText('昵称')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '测试模式：关' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '限制八番起胡：开' })).toBeInTheDocument();
+    expect(screen.getByText('当前配色')).toBeInTheDocument();
+    expect(screen.getByText('天水碧')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /测试模式/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /八番起胡/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建牌桌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
     expect(container.querySelector('.win10-window')).not.toBeNull();
@@ -47,6 +52,9 @@ describe('ConnectGate', () => {
           enforceMinimumEightFan: true,
         }}
         status="idle"
+        themeLabel="秋香"
+        canCreate={true}
+        canJoin={true}
         onChange={onChange}
         onCreate={onCreate}
         onJoin={onJoin}
@@ -54,8 +62,8 @@ describe('ConnectGate', () => {
     );
 
     await user.type(screen.getByLabelText(/牌桌编号/i), 'Z');
-    await user.click(screen.getByRole('button', { name: '测试模式：关' }));
-    await user.click(screen.getByRole('button', { name: '限制八番起胡：开' }));
+    await user.click(screen.getByRole('button', { name: /测试模式/i }));
+    await user.click(screen.getByRole('button', { name: /八番起胡/i }));
     await user.click(screen.getByRole('button', { name: '创建牌桌' }));
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
@@ -64,5 +72,31 @@ describe('ConnectGate', () => {
     expect(onChange).toHaveBeenCalledWith({ enforceMinimumEightFan: false });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a validation hint and disables create/join when the table code is invalid', () => {
+    render(
+      <ConnectGate
+        value={{
+          tableCode: '房间-01',
+          nickname: 'Player A',
+          testMode: false,
+          enforceMinimumEightFan: true,
+        }}
+        status="idle"
+        themeLabel="月白"
+        tableCodeError="牌桌编号仅支持数字和英文字母。"
+        canCreate={false}
+        canJoin={false}
+        onChange={vi.fn()}
+        onCreate={vi.fn()}
+        onJoin={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('牌桌编号仅支持数字和英文字母。')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '创建牌桌' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeDisabled();
+    expect(screen.getByLabelText('牌桌编号')).toHaveAttribute('aria-invalid', 'true');
   });
 });

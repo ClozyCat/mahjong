@@ -42,3 +42,13 @@ export function getNextThemeId(themeId: ThemeId): ThemeId {
 
   return THEME_OPTIONS[nextIndex].id;
 }
+
+export function getRandomThemeId(excludingThemeId?: ThemeId): ThemeId {
+  const availableThemes =
+    excludingThemeId && THEME_OPTIONS.length > 1
+      ? THEME_OPTIONS.filter((theme) => theme.id !== excludingThemeId)
+      : THEME_OPTIONS;
+  const randomIndex = Math.floor(Math.random() * availableThemes.length);
+
+  return availableThemes[randomIndex]?.id ?? DEFAULT_THEME_ID;
+}

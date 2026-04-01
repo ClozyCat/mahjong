@@ -639,7 +639,7 @@ function createLocalHand(state: SessionState) {
       ? state.roomSnapshot.payload.private_state.pending_action.drawn_tile_id
       : undefined;
 
-  return (localPlayer?.concealed_tiles ?? [])
+  const sortedHand = (localPlayer?.concealed_tiles ?? [])
     .map((tile) => ({
       tileId: tile.tile_id,
       code: tile.tile_key,
@@ -648,6 +648,18 @@ function createLocalHand(state: SessionState) {
       isFlower: isFlowerTileKey(tile.tile_key),
     }))
     .sort(compareLocalHandTiles);
+
+  if (!drawnTileId) {
+    return sortedHand;
+  }
+
+  const drawnTileIndex = sortedHand.findIndex((tile) => tile.tileId === drawnTileId);
+  if (drawnTileIndex < 0) {
+    return sortedHand;
+  }
+
+  const [drawnTile] = sortedHand.splice(drawnTileIndex, 1);
+  return [...sortedHand, drawnTile];
 }
 
 function hasMatchingTileSelection(selectedTileIds: string[], candidateTileIds: string[]) {

@@ -475,15 +475,24 @@ describe('BattleScreen', () => {
     );
   });
 
-  it('shows a drawn-tile arrow instead of a draw spectacle when a new drawnTileId is present', () => {
+  it('keeps the freshly drawn tile separated at the end of the hand instead of showing a draw spectacle', () => {
     renderBattleScreen(
       createBattleViewModel({
         actionEffect: null,
+        localHand: [
+          { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
+          { tileId: 'w2#2', code: 'w2', isSelected: false, isDrawn: false, isFlower: false },
+          { tileId: 'w9#draw-1', code: 'w9', isSelected: false, isDrawn: true, isFlower: false },
+        ],
         drawnTileId: 'w9#draw-1',
       }),
     );
 
-    expect(screen.getAllByTestId('mahjong-tile-drawn-indicator')).toHaveLength(1);
+    const hand = screen.getByLabelText(/local hand/i);
+    const buttons = hand.querySelectorAll('.action-dock__tile');
+
+    expect(buttons).toHaveLength(3);
+    expect(buttons[2]).toHaveClass('action-dock__tile--drawn');
   });
 
   it('does not replay the same sticky action effect after it fades when unrelated rerenders happen', () => {

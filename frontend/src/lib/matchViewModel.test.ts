@@ -703,7 +703,7 @@ describe('createMatchViewModel', () => {
     });
   });
 
-  it('sorts the local hand by wan, tong, sou, then honors from low to high', () => {
+  it('keeps the freshly drawn tile at the end of the local hand until the turn advances', () => {
     const viewModel = createMatchViewModel(
       createPlayingSessionState({
         roomSnapshot: {
@@ -716,7 +716,7 @@ describe('createMatchViewModel', () => {
                 type: 'active_turn',
                 seat_index: 2,
                 deadline_at: '2026-03-26T06:01:00Z',
-                drawn_tile_id: 'd1#p0-5',
+                drawn_tile_id: 'w1#p0-5',
                 options: ['discard'],
               },
               players: [
@@ -744,11 +744,11 @@ describe('createMatchViewModel', () => {
                   connected: true,
                   concealed_count: 6,
                   concealed_tiles: [
-                    { tile_id: 'd1#p0-5', tile_key: 'd1' },
+                    { tile_id: 'w1#p0-5', tile_key: 'w1' },
                     { tile_id: 't9#p0-4', tile_key: 't9' },
                     { tile_id: 'b3#p0-3', tile_key: 'b3' },
                     { tile_id: 'w7#p0-2', tile_key: 'w7' },
-                    { tile_id: 'w1#p0-1', tile_key: 'w1' },
+                    { tile_id: 'd1#p0-1', tile_key: 'd1' },
                     { tile_id: 'b1#p0-0', tile_key: 'b1' },
                   ],
                   melds: [],
@@ -771,6 +771,48 @@ describe('createMatchViewModel', () => {
       }),
     );
 
+    expect(viewModel.localHand.map((tile) => tile.code)).toEqual(['w7', 'b1', 'b3', 't9', 'd1', 'w1']);
+    expect(viewModel.localHand.at(-1)).toMatchObject({
+      tileId: 'w1#p0-5',
+      isDrawn: true,
+    });
+  });
+
+  it('returns the previously drawn tile to the normal sorted hand once active turn ends', () => {
+    const base = createPlayingSessionState();
+    const tiles = [
+      { tile_id: 'w1#p0-5', tile_key: 'w1' },
+      { tile_id: 't9#p0-4', tile_key: 't9' },
+      { tile_id: 'b3#p0-3', tile_key: 'b3' },
+      { tile_id: 'w7#p0-2', tile_key: 'w7' },
+      { tile_id: 'd1#p0-1', tile_key: 'd1' },
+      { tile_id: 'b1#p0-0', tile_key: 'b1' },
+    ];
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: null,
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    concealed_count: tiles.length,
+                    concealed_tiles: tiles,
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestActionPrompt: null,
+    });
+
     expect(viewModel.localHand.map((tile) => tile.code)).toEqual(['w1', 'w7', 'b1', 'b3', 't9', 'd1']);
+    expect(viewModel.localHand.some((tile) => tile.isDrawn)).toBe(false);
   });
 });

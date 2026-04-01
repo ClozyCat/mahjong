@@ -10,69 +10,127 @@ export interface ConnectGateValue {
 interface ConnectGateProps {
   value: ConnectGateValue;
   status: 'idle' | 'connecting' | 'error';
+  themeLabel: string;
+  tableCodeError?: string | null;
+  canCreate: boolean;
+  canJoin: boolean;
   message?: string | null;
   onChange: (patch: Partial<ConnectGateValue>) => void;
   onCreate: () => void;
   onJoin: () => void;
 }
 
-export function ConnectGate({ value, status, message, onChange, onCreate, onJoin }: ConnectGateProps) {
+export function ConnectGate({
+  value,
+  status,
+  themeLabel,
+  tableCodeError,
+  canCreate,
+  canJoin,
+  message,
+  onChange,
+  onCreate,
+  onJoin,
+}: ConnectGateProps) {
   const disabled = status === 'connecting';
-  const statusText = message ?? (disabled ? '正在连接牌桌，请稍候。' : '请输入昵称和牌桌编号后开始。');
+  const helperText = tableCodeError ?? '支持 1-12 位数字或英文字母；留空创建时将自动分配牌桌编号。';
+  const statusText =
+    message ??
+    tableCodeError ??
+    (disabled ? '正在连接牌桌，请稍候。' : '输入昵称后即可创建牌桌，或填写编号加入现有牌局。');
 
   return (
     <section className="connect-gate" aria-label="Room connection setup">
       <WindowFrame title="四风麻将客户端" status={statusText} className="connect-gate__window">
         <div className="connect-gate__panel">
-          <p className="connect-gate__eyebrow">联机大厅</p>
-          <h1>连接牌桌</h1>
+          <div className="connect-gate__shell">
+            <div className="connect-gate__hero">
+              <p className="connect-gate__eyebrow">联机大厅</p>
+              <h1>启局入席</h1>
+              <p className="connect-gate__lead">
+                大厅会在每次开启时随机取用一套中国色。保留当前牌桌内的沉静层次，也让每次入局都有一点新鲜气息。
+              </p>
 
-          <label className="connect-gate__field">
-            <span>牌桌编号</span>
-            <input
-              value={value.tableCode}
-              onChange={(event) => onChange({ tableCode: event.target.value.toUpperCase() })}
-              disabled={disabled}
-              aria-label="牌桌编号"
-            />
-          </label>
+              <div className="connect-gate__meta">
+                <article className="connect-gate__meta-card">
+                  <span>当前配色</span>
+                  <strong>{themeLabel}</strong>
+                  <em>入厅时随机换新</em>
+                </article>
+                <article className="connect-gate__meta-card">
+                  <span>编号规则</span>
+                  <strong>数字 / 英文</strong>
+                  <em>支持 1-12 位，留空时自动生成</em>
+                </article>
+              </div>
+            </div>
 
-          <label className="connect-gate__field">
-            <span>昵称</span>
-            <input
-              value={value.nickname}
-              onChange={(event) => onChange({ nickname: event.target.value })}
-              disabled={disabled}
-              aria-label="昵称"
-            />
-          </label>
+            <div className="connect-gate__form">
+              <label className="connect-gate__field">
+                <span>牌桌编号</span>
+                <input
+                  value={value.tableCode}
+                  onChange={(event) => onChange({ tableCode: event.target.value.toUpperCase() })}
+                  disabled={disabled}
+                  maxLength={12}
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  aria-label="牌桌编号"
+                  aria-invalid={tableCodeError ? 'true' : 'false'}
+                  aria-describedby="connect-gate-table-code-hint"
+                />
+                <small
+                  id="connect-gate-table-code-hint"
+                  className={tableCodeError ? 'connect-gate__hint connect-gate__hint--error' : 'connect-gate__hint'}
+                >
+                  {helperText}
+                </small>
+              </label>
 
-          <div className="connect-gate__actions connect-gate__actions--toggles">
-            <button
-              type="button"
-              onClick={() => onChange({ testMode: !value.testMode })}
-              disabled={disabled}
-              aria-pressed={value.testMode}
-            >
-              测试模式：{value.testMode ? '开' : '关'}
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange({ enforceMinimumEightFan: !value.enforceMinimumEightFan })}
-              disabled={disabled}
-              aria-pressed={value.enforceMinimumEightFan}
-            >
-              限制八番起胡：{value.enforceMinimumEightFan ? '开' : '关'}
-            </button>
-          </div>
+              <label className="connect-gate__field">
+                <span>昵称</span>
+                <input
+                  value={value.nickname}
+                  onChange={(event) => onChange({ nickname: event.target.value })}
+                  disabled={disabled}
+                  aria-label="昵称"
+                />
+              </label>
 
-          <div className="connect-gate__actions">
-            <button type="button" onClick={onCreate} disabled={disabled}>
-              创建牌桌
-            </button>
-            <button type="button" onClick={onJoin} disabled={disabled || !value.tableCode || !value.nickname.trim()}>
-              加入牌桌
-            </button>
+              <div className="connect-gate__actions connect-gate__actions--toggles">
+                <button
+                  type="button"
+                  className="connect-gate__toggle"
+                  onClick={() => onChange({ testMode: !value.testMode })}
+                  disabled={disabled}
+                  aria-pressed={value.testMode}
+                >
+                  <span>测试模式</span>
+                  <strong>{value.testMode ? '开启' : '关闭'}</strong>
+                </button>
+                <button
+                  type="button"
+                  className="connect-gate__toggle"
+                  onClick={() => onChange({ enforceMinimumEightFan: !value.enforceMinimumEightFan })}
+                  disabled={disabled}
+                  aria-pressed={value.enforceMinimumEightFan}
+                >
+                  <span>八番起胡</span>
+                  <strong>{value.enforceMinimumEightFan ? '限制中' : '已放宽'}</strong>
+                </button>
+              </div>
+
+              <div className="connect-gate__actions connect-gate__actions--primary">
+                <button type="button" className="connect-gate__button connect-gate__button--primary" onClick={onCreate} disabled={!canCreate}>
+                  创建牌桌
+                </button>
+                <button type="button" className="connect-gate__button connect-gate__button--secondary" onClick={onJoin} disabled={!canJoin}>
+                  加入牌桌
+                </button>
+              </div>
+
+              <p className="connect-gate__footnote">编号不合规时将直接拦截创建与加入，避免误入无效牌局。</p>
+            </div>
           </div>
         </div>
       </WindowFrame>

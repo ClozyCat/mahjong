@@ -47,10 +47,9 @@ describe('MahjongTile', () => {
     expect(screen.getByTestId('mahjong-tile')).toHaveClass('mahjong-tile--last-discard');
   });
 
-  it('renders a drawn indicator for freshly drawn hand tiles', () => {
+  it('marks freshly drawn hand tiles with the drawn state class', () => {
     render(<MahjongTile code="b4" variant="hand" isSelected isDrawn />);
 
     expect(screen.getByTestId('mahjong-tile')).toHaveClass('mahjong-tile--selected', 'mahjong-tile--drawn');
-    expect(screen.getByTestId('mahjong-tile-drawn-indicator')).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -190,6 +190,32 @@ describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('picks a random zhongguose theme when the lobby opens', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('tian-shui-bi');
+    });
+    expect(screen.getByText('当前配色')).toBeInTheDocument();
+    expect(screen.getByText('天水碧')).toBeInTheDocument();
+  });
+
+  it('blocks create and join when the table code contains non-alphanumeric characters', async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText('牌桌编号'), 'ROOM-01');
+    await user.type(screen.getByLabelText('昵称'), 'Player A');
+
+    expect(screen.getAllByText('牌桌编号仅支持数字和英文字母。')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '创建牌桌' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeDisabled();
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it('leaves immediately without confirmation while the room is still waiting', async () => {
