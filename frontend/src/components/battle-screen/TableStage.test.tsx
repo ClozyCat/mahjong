@@ -205,7 +205,7 @@ describe('TableStage', () => {
 
     expect(screen.getByLabelText('Player Top 信息栏')).toBeInTheDocument();
     expect(screen.getByLabelText('Player Left 信息栏')).toHaveTextContent('手牌 13 · 花 1');
-    expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveTextContent('庄家');
+    expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveTextContent('手牌 14 · 花 0');
     expect(container.querySelector('.table-stage__spotlight--left')?.getAttribute('style')).toContain('--table-player-accent');
   });
 

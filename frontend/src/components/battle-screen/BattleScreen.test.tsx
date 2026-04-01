@@ -493,6 +493,7 @@ describe('BattleScreen', () => {
   it('renders the local player identity inside the table info bar instead of the side drawer', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
+    expect(container.querySelector('.battle-stage .battle-stage__local-player-info')).toBeNull();
     expect(container.querySelector('.battle-stage .table-stage__player-info--bottom')).not.toBeNull();
     expect(screen.getByText('Player A')).toBeInTheDocument();
     expect(container.querySelector('.battle-drawer .player-ring')).toBeNull();
@@ -509,7 +510,7 @@ describe('BattleScreen', () => {
   });
 
   it('blocks interaction with a viewport guard when the browser window is below the required size', () => {
-    setViewportSize(1366, 768);
+    setViewportSize(1280, 720);
 
     render(
       <BattleScreen
@@ -524,7 +525,7 @@ describe('BattleScreen', () => {
       />,
     );
 
-    expect(screen.getByRole('alert')).toHaveTextContent('请把浏览器窗口调整到大于 1366 x 768，且宽高比大于 16:9');
+    expect(screen.getByRole('alert')).toHaveTextContent('请把浏览器窗口调整到大于 1280 x 720，且宽高比大于 16:9');
     expect(document.body.querySelector('.battle-screen--viewport-blocked')).not.toBeNull();
   });
 

@@ -273,6 +273,7 @@ button:active:not(:disabled) {
   position: relative;
   z-index: 1;
   width: var(--battle-stage-width);
+  overflow: visible;
 }
 
 .action-effects {
@@ -474,6 +475,7 @@ button:active:not(:disabled) {
   border-right-color: #6d6d6d;
   border-bottom-color: #6d6d6d;
   box-shadow: none;
+  overflow: visible;
 }
 
 .table-stage__core {
@@ -484,6 +486,7 @@ button:active:not(:disabled) {
   background:
     linear-gradient(180deg, #2f6c5e, #225548);
   border: 2px inset #fff;
+  overflow: visible;
 }
 
 .table-stage__center-sigil {
@@ -737,11 +740,14 @@ button:active:not(:disabled) {
   position: absolute;
   z-index: 3;
   display: grid;
-  gap: 0.16rem;
-  width: clamp(11.4rem, 16vw, 13.6rem);
+  place-content: center;
+  justify-items: center;
+  gap: clamp(0.12rem, calc(var(--table-stage-river-gap) * 0.5), 0.22rem);
+  width: clamp(5rem, calc(var(--table-stage-river-tile-width) * 2.42), 6rem);
+  aspect-ratio: 1;
   min-width: 0;
-  padding: 0.58rem 0.86rem 0.62rem;
-  border-radius: 999px;
+  padding: clamp(0.5rem, calc(var(--table-stage-river-gap) * 1.6), 0.76rem);
+  border-radius: 50%;
   border: 1px solid var(--table-player-accent);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03)),
@@ -754,54 +760,51 @@ button:active:not(:disabled) {
     0 0 24px var(--table-player-accent-shadow);
   backdrop-filter: blur(14px);
   pointer-events: none;
+  text-align: center;
 }
 
 .table-stage__player-info::after {
   content: '';
   position: absolute;
-  inset: 0.28rem;
+  inset: 0.38rem;
   border-radius: inherit;
   border: 1px solid rgba(255, 255, 255, 0.08);
   pointer-events: none;
 }
 
+.table-stage__player-info--top,
+.table-stage__player-info--bottom {
+  right: calc(100% + max(0.14rem, calc(var(--table-stage-river-gap) * 0.72)));
+  left: auto;
+  width: clamp(5.45rem, calc(var(--table-stage-river-tile-width) * 2.7), 6.45rem);
+  transform: none;
+}
+
 .table-stage__player-info--top {
-  left: 50%;
-  top: clamp(1.4rem, 6.8%, 2.5rem);
-  width: clamp(5.4rem, 7.6vw, 6.5rem);
-  min-height: clamp(8.8rem, 28%, 10.4rem);
-  padding: 0.76rem 0.58rem 0.84rem;
-  border-radius: 3rem;
-  align-content: center;
-  justify-items: start;
-  text-align: left;
-  transform: translateX(calc(-50% - clamp(8.2rem, 12.8vw, 10.2rem)));
+  top: 0;
+  bottom: auto;
+}
+
+.table-stage__player-info--bottom {
+  top: auto;
+  bottom: 0;
 }
 
 .table-stage__player-info--left,
 .table-stage__player-info--right {
-  top: clamp(3.8rem, 21.5%, 6.8rem);
-  width: clamp(10.8rem, 15vw, 12.8rem);
+  top: auto;
+  bottom: calc(100% + max(0.14rem, calc(var(--table-stage-river-gap) * 0.72)));
+  transform: none;
 }
 
 .table-stage__player-info--left {
-  left: clamp(0.8rem, 2.8%, 1.45rem);
-  justify-items: start;
-  text-align: left;
+  left: 0;
+  right: auto;
 }
 
 .table-stage__player-info--right {
-  right: clamp(0.8rem, 2.8%, 1.45rem);
-  justify-items: end;
-  text-align: right;
-}
-
-.table-stage__player-info--bottom {
-  left: clamp(0.9rem, 2.8%, 1.5rem);
-  bottom: clamp(0.8rem, 2.8%, 1.45rem);
-  width: clamp(12rem, 17vw, 14.4rem);
-  justify-items: start;
-  text-align: left;
+  right: 0;
+  left: auto;
 }
 
 .table-stage__player-info--active {
@@ -825,41 +828,39 @@ button:active:not(:disabled) {
   position: relative;
   z-index: 1;
   display: block;
+  width: 100%;
   min-width: 0;
   color: rgba(227, 240, 255, 0.76);
-  font-size: 0.56rem;
-  line-height: 1.18;
-  letter-spacing: 0.12em;
+  font-size: clamp(0.46rem, calc(var(--table-stage-river-tile-width) * 0.24), 0.54rem);
+  line-height: 1.15;
+  letter-spacing: 0.08em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
 .table-stage__player-info-name {
   position: relative;
   z-index: 1;
   display: block;
+  width: 100%;
   min-width: 0;
   color: #f8fbff;
-  font-size: 0.88rem;
-  line-height: 1.05;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: clamp(0.68rem, calc(var(--table-stage-river-tile-width) * 0.39), 0.82rem);
+  line-height: 1.08;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .table-stage__player-info-meta {
   color: rgba(244, 248, 255, 0.92);
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
+  font-size: clamp(0.5rem, calc(var(--table-stage-river-tile-width) * 0.27), 0.58rem);
+  letter-spacing: 0.04em;
 }
 
 .table-stage__player-info-detail {
   color: rgba(214, 229, 245, 0.74);
-  letter-spacing: 0.05em;
-}
-
-.table-stage__player-info--top .table-stage__player-info-name,
-.table-stage__player-info--top .table-stage__player-info-meta,
-.table-stage__player-info--top .table-stage__player-info-detail {
-  white-space: normal;
+  letter-spacing: 0.03em;
 }
 
 .table-stage__settlement-hand {
@@ -1708,10 +1709,12 @@ button:active:not(:disabled) {
 
 .action-dock__restore {
   position: fixed;
-  right: 1rem;
+  left: 50%;
+  right: auto;
   bottom: 1rem;
   z-index: 5;
   padding: 0.42rem 0.82rem;
+  transform: translateX(-50%);
   box-shadow: 0 14px 24px rgba(0, 0, 0, 0.24);
 }
 
@@ -2078,8 +2081,10 @@ button:active:not(:disabled) {
   }
 
   .action-dock__restore {
-    right: 0.75rem;
+    left: 50%;
+    right: auto;
     bottom: 0.75rem;
+    transform: translateX(-50%);
   }
 
   .result-overlay__header {
@@ -2953,36 +2958,29 @@ input {
 
   .table-stage__player-info {
     gap: 0.12rem;
-    padding: 0.42rem 0.62rem 0.48rem;
+    width: 4.6rem;
+    padding: 0.42rem;
   }
 
-  .table-stage__player-info--top {
-    top: 0.9rem;
-    width: 4.6rem;
-    min-height: 7.1rem;
-    transform: translateX(calc(-50% - clamp(6.4rem, 15vw, 7.8rem)));
+  .table-stage__player-info--top,
+  .table-stage__player-info--bottom {
+    width: 5rem;
+    transform: none;
   }
 
   .table-stage__player-info--left,
   .table-stage__player-info--right {
-    top: 20.5%;
-    width: clamp(8.8rem, 28vw, 10rem);
-  }
-
-  .table-stage__player-info--bottom {
-    left: 0.72rem;
-    bottom: 0.72rem;
-    width: clamp(10rem, 34vw, 11.2rem);
+    transform: none;
   }
 
   .table-stage__player-info-name {
-    font-size: 0.74rem;
+    font-size: 0.64rem;
   }
 
   .table-stage__player-info-eyebrow,
   .table-stage__player-info-meta,
   .table-stage__player-info-detail {
-    font-size: 0.5rem;
+    font-size: 0.42rem;
   }
 
   .action-dock {
@@ -4236,11 +4234,21 @@ input {
 
 .action-dock__restore {
   position: fixed;
-  right: calc(var(--battle-shell-gap) + max(0.1rem, env(safe-area-inset-right)));
+  left: 50%;
+  right: auto;
   bottom: calc(var(--battle-dock-bottom-gap) + env(safe-area-inset-bottom));
   z-index: 7;
   padding: 0.65rem 1rem;
   border-radius: 999px;
+  transform: translateX(-50%);
+}
+
+.action-dock__restore:hover:not(:disabled) {
+  transform: translateX(-50%);
+}
+
+.action-dock__restore:active:not(:disabled) {
+  transform: translateX(-50%);
 }
 
 .action-dock .mahjong-tile--hand {

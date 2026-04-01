@@ -1,11 +1,9 @@
 import { Fragment, type CSSProperties } from 'react';
 
-import type { BattlePromptView, PlayerView, Seat } from '../../types/match';
+import type { BattlePromptView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
-
-type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
-  Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>>;
+import { buildPlayerAccentStyle, PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
@@ -72,6 +70,7 @@ export function TableStage({
             const player = playerBySeat.get(seat);
             const finalHandTiles = settlementHands?.[seat] ?? [];
             const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
+            const shouldRenderSeatInfo = Boolean(player);
 
             return (
               <Fragment key={seat}>
@@ -122,8 +121,10 @@ export function TableStage({
                       </div>
                     </div>
                   ) : null}
+                  {shouldRenderSeatInfo && player ? (
+                    <PlayerInfoBar player={player} className={`table-stage__player-info--${seat}`} />
+                  ) : null}
                 </div>
-                {player ? renderPlayerInfoBar(player, playerAccentStyleBySeat.get(seat)) : null}
               </Fragment>
             );
           })}
@@ -160,69 +161,6 @@ const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
   left: '左家手牌',
   right: '右家手牌',
 };
-
-const WIND_LABELS: Partial<Record<PlayerView['wind'], string>> = {
-  East: '东',
-  South: '南',
-  West: '西',
-  North: '北',
-};
-
-const SEAT_ACCENT_OFFSET: Record<Seat, number> = {
-  bottom: 29,
-  left: 107,
-  top: 191,
-  right: 277,
-};
-
-function renderPlayerInfoBar(player: TableStagePlayer, accentStyle?: CSSProperties) {
-  const windLabel = player.wind ? (WIND_LABELS[player.wind] ?? player.wind) : null;
-  const presenceLabel = player.isBotControlled ? '离线' : player.connected === false ? '离线' : '在线';
-  const eyebrowText = [windLabel, player.isDealer ? '庄家' : null, presenceLabel].filter(Boolean).join(' · ');
-  const metaText = [
-    typeof player.score === 'number' ? player.score.toLocaleString() : null,
-    player.statusText ?? '待命',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const detailText = `手牌 ${typeof player.concealedCount === 'number' ? player.concealedCount : '--'} · 花 ${
-    typeof player.flowerCount === 'number' ? player.flowerCount : '--'
-  }`;
-
-  return (
-    <article
-      className={`table-stage__player-info table-stage__player-info--${player.seat} ${
-        player.isActive ? 'table-stage__player-info--active' : ''
-      } ${player.isLocal ? 'table-stage__player-info--local' : ''}`}
-      style={accentStyle}
-      aria-label={`${player.name} 信息栏`}
-    >
-      <span className="table-stage__player-info-eyebrow">{eyebrowText}</span>
-      <strong className="table-stage__player-info-name">{player.name}</strong>
-      <span className="table-stage__player-info-meta">{metaText}</span>
-      <span className="table-stage__player-info-detail">{detailText}</span>
-    </article>
-  );
-}
-
-function buildPlayerAccentStyle(player: Pick<TableStagePlayer, 'seat' | 'name'>): CSSProperties {
-  const seed = `${player.seat}:${player.name}`;
-  let hash = 0;
-
-  for (const char of seed) {
-    hash = (hash * 33 + char.charCodeAt(0)) | 0;
-  }
-
-  const hue = (Math.abs(hash) + SEAT_ACCENT_OFFSET[player.seat]) % 360;
-
-  return {
-    '--table-player-accent': `hsl(${hue}, 82%, 68%)`,
-    '--table-player-accent-strong': `hsla(${hue}, 86%, 62%, 0.72)`,
-    '--table-player-accent-soft': `hsla(${hue}, 86%, 62%, 0.22)`,
-    '--table-player-accent-surface': `hsla(${hue}, 86%, 62%, 0.12)`,
-    '--table-player-accent-shadow': `hsla(${hue}, 92%, 58%, 0.28)`,
-  } as CSSProperties;
-}
 
 function findLastDiscardPosition(
   discards: Record<Seat, string[]>,

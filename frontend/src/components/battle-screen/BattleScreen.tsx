@@ -25,8 +25,8 @@ const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
 const SETTLEMENT_PANEL_DELAY_MS = 420;
-const MIN_BATTLE_VIEWPORT_WIDTH = 1366;
-const MIN_BATTLE_VIEWPORT_HEIGHT = 768;
+const MIN_BATTLE_VIEWPORT_WIDTH = 1280;
+const MIN_BATTLE_VIEWPORT_HEIGHT = 720;
 const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
 
 export function BattleScreen({
@@ -168,7 +168,7 @@ export function BattleScreen({
         <div className="battle-screen__viewport-guard" role="alert" aria-live="assertive">
           <div className="battle-screen__viewport-guard-card">
             <span className="battle-screen__viewport-guard-eyebrow">显示条件不足</span>
-            <strong>请把浏览器窗口调整到大于 1366 x 768，且宽高比大于 16:9</strong>
+            <strong>请把浏览器窗口调整到大于 1280 x 720，且宽高比大于 16:9</strong>
             <p>
               当前可用区域为 {viewportState.width} x {viewportState.height}，宽高比 {viewportState.ratioLabel}。
             </p>
