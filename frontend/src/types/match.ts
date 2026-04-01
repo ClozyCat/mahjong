@@ -390,6 +390,7 @@ export interface BattleViewModel {
   deadlineAt: string | null;
   topStatusLabel: string;
   activePlayerSeat: Seat;
+  actionIndicatorSeat: Seat | null;
   isActionDockElevated: boolean;
   players: PlayerView[];
   actions: BattleActionView[];

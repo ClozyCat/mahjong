@@ -181,6 +181,57 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
   });
 
+  it('renders a small action pointer between the center info and the acting seat when a public action seat is provided', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1', 'b2'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="left"
+        actionIndicatorSeat="left"
+        lastDiscard="b2"
+        lastDiscardSeat="left"
+        promptText="左家正在出牌"
+      />,
+    );
+
+    expect(screen.getByLabelText('左家正在行动')).toHaveClass('table-stage__action-pointer--left');
+    expect(container.querySelector('.table-stage__spotlight--left')).not.toBeNull();
+  });
+
+  it('does not render the action pointer when the current prompt has no unique public actor', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="left"
+        actionIndicatorSeat={null}
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText="一名玩家正在响应"
+        promptCue={{
+          kind: 'claim',
+          tone: 'urgent',
+          title: '左家刚打出可响应牌',
+          detail: '你可以 吃 / 过',
+          actionIds: ['chow', 'pass'],
+          highlightedActionIds: ['chow'],
+          sourceSeat: 'left',
+          isUrgent: true,
+        }}
+      />,
+    );
+
+    expect(screen.queryByLabelText(/正在行动/)).toBeNull();
+  });
+
   it('renders player info bars on the table and reuses the same accent on the spotlight seat', () => {
     const { container } = render(
       <TableStage

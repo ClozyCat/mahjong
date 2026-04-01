@@ -1019,6 +1019,36 @@ function createRemainingTileCount(state: SessionState) {
   return typeof remaining === 'number' ? remaining : null;
 }
 
+function createActionIndicatorSeat(state: SessionState): Seat | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+
+  if (snapshot?.phase !== 'playing' || !privateState) {
+    return null;
+  }
+
+  const localSeat = getLocalSeat(state);
+  const pendingAction = privateState.pending_action;
+
+  if (pendingAction?.type === 'claim_window') {
+    return null;
+  }
+
+  if (pendingAction?.type === 'rob_kong_window' && typeof pendingAction.actor_seat === 'number') {
+    return toRelativeSeat(localSeat, pendingAction.actor_seat);
+  }
+
+  if (pendingAction?.type === 'active_turn' && typeof pendingAction.seat_index === 'number') {
+    return toRelativeSeat(localSeat, pendingAction.seat_index);
+  }
+
+  if (typeof privateState.current_actor === 'number') {
+    return toRelativeSeat(localSeat, privateState.current_actor);
+  }
+
+  return null;
+}
+
 function createActionEffect(state: SessionState): ActionEffectView | null {
   const snapshot = state.roomSnapshot?.payload;
   const event = state.latestRoundEvent?.payload;
@@ -1147,6 +1177,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
       ? String(snapshot.private_state.pending_action.deadline_at)
       : state.latestActionPrompt?.payload.deadline_at ?? null;
   const promptCue = createPromptCue(state, options);
+  const actionIndicatorSeat = createActionIndicatorSeat(state);
   const mode = !snapshot
     ? 'loading'
     : isFinished
@@ -1178,6 +1209,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
             ? '等待牌手'
             : '对局中',
     activePlayerSeat,
+    actionIndicatorSeat,
     isActionDockElevated: mode === 'my_turn' || Boolean(promptCue?.isUrgent),
     players: createPlayers(state),
     actions: createActionViews(state, waitingControls, options),

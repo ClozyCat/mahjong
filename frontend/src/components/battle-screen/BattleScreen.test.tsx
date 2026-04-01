@@ -31,6 +31,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     deadlineAt: null,
     topStatusLabel: 'Live Match',
     activePlayerSeat: 'bottom',
+    actionIndicatorSeat: null,
     isActionDockElevated: false,
     players: [
       {
@@ -408,6 +409,18 @@ describe('BattleScreen', () => {
     expect(screen.getByLabelText('Player Top 信息栏')).toBeInTheDocument();
     expect(screen.getByLabelText('Player Left 信息栏')).toBeInTheDocument();
     expect(screen.getByLabelText('Player A 信息栏')).toBeInTheDocument();
+  });
+
+  it('passes the public action indicator seat through to the table stage', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        actionIndicatorSeat: 'left',
+        activePlayerSeat: 'left',
+        promptText: 'Player Left正在执行操作：出牌',
+      }),
+    );
+
+    expect(screen.getByLabelText('左家正在行动')).toBeInTheDocument();
   });
 
   it('shows table info bars without exposing per-round delta values', () => {

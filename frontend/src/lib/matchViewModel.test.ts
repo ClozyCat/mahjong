@@ -281,6 +281,7 @@ describe('createMatchViewModel', () => {
       actionIds: ['hu', 'kong', 'discard'],
       highlightedActionIds: ['hu', 'kong', 'discard'],
     });
+    expect(viewModel.actionIndicatorSeat).toBe('bottom');
   });
 
   it('can synthesize a local kong-response prompt before the normal discard flow', () => {
@@ -399,6 +400,7 @@ describe('createMatchViewModel', () => {
       sourceSeat: 'left',
       highlightedActionIds: ['chow'],
     });
+    expect(viewModel.actionIndicatorSeat).toBeNull();
   });
 
   it('deduplicates visually identical claim candidates that only differ by tile ids', () => {
@@ -553,6 +555,7 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.promptText).toBe('Player A正在执行操作：出牌');
     expect(viewModel.activePlayerSeat).toBe('top');
+    expect(viewModel.actionIndicatorSeat).toBe('top');
     expect(viewModel.players.find((player) => player.name === 'Player A')?.isActive).toBe(true);
   });
 

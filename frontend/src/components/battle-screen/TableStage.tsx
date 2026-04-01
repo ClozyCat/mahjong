@@ -9,6 +9,7 @@ import { PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
 interface TableStageProps {
   discards: Record<Seat, string[]>;
   activeSeat: Seat;
+  actionIndicatorSeat?: Seat | null;
   lastDiscard: string | null;
   lastDiscardSeat?: Seat | null;
   remainingTileCount?: number | null;
@@ -40,6 +41,7 @@ const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
 export function TableStage({
   discards,
   activeSeat,
+  actionIndicatorSeat = null,
   lastDiscard,
   lastDiscardSeat = null,
   remainingTileCount = null,
@@ -138,6 +140,12 @@ export function TableStage({
             <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
             {promptText ? <em>{promptText}</em> : null}
           </div>
+          {actionIndicatorSeat ? (
+            <div
+              className={`table-stage__action-pointer table-stage__action-pointer--${actionIndicatorSeat}`}
+              aria-label={`${ACTION_POINTER_COPY[actionIndicatorSeat]}正在行动`}
+            />
+          ) : null}
           {shouldShowPreMatchActions ? (
             <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
               {preMatchActions.map((action) => (
@@ -279,6 +287,13 @@ const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
   top: '对家手牌',
   left: '左家手牌',
   right: '右家手牌',
+};
+
+const ACTION_POINTER_COPY: Record<Seat, string> = {
+  top: '对家',
+  left: '左家',
+  right: '右家',
+  bottom: '你',
 };
 
 function buildTableSummary(roundLabel: string, phaseLabel: string) {

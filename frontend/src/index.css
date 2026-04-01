@@ -456,6 +456,13 @@ button:active:not(:disabled) {
   --table-stage-settlement-tile-width: calc(var(--table-stage-settlement-base-width) * var(--table-stage-tile-scale));
   --table-stage-settlement-tile-height: calc(var(--table-stage-settlement-base-height) * var(--table-stage-tile-scale));
   --table-stage-river-gap: 0.4rem;
+  --table-stage-action-pointer-size: 1.42rem;
+  --table-stage-action-pointer-offset-x: 5.2rem;
+  --table-stage-action-pointer-offset-y: 4.35rem;
+  --table-stage-action-pointer-core: rgba(230, 207, 146, 0.94);
+  --table-stage-action-pointer-edge: rgba(255, 246, 221, 0.96);
+  --table-stage-action-pointer-shadow: rgba(255, 209, 120, 0.28);
+  --table-stage-action-pointer-ring: rgba(255, 241, 201, 0.16);
   --table-player-accent: rgba(170, 192, 186, 0.92);
   --table-player-accent-strong: rgba(170, 192, 186, 0.68);
   --table-player-accent-soft: rgba(170, 192, 186, 0.2);
@@ -1845,6 +1852,9 @@ button:active:not(:disabled) {
     --table-stage-river-tile-width: 2.18rem;
     --table-stage-river-tile-height: 2.96rem;
     --table-stage-river-gap: 0.34rem;
+    --table-stage-action-pointer-size: 1.3rem;
+    --table-stage-action-pointer-offset-x: 4.7rem;
+    --table-stage-action-pointer-offset-y: 3.95rem;
   }
 
   .ambient-overlay__message-window,
@@ -1964,6 +1974,9 @@ button:active:not(:disabled) {
     --table-stage-river-tile-width: 2.02rem;
     --table-stage-river-tile-height: 2.74rem;
     --table-stage-river-gap: 0.24rem;
+    --table-stage-action-pointer-size: 1.14rem;
+    --table-stage-action-pointer-offset-x: 4.05rem;
+    --table-stage-action-pointer-offset-y: 3.25rem;
     aspect-ratio: auto;
     min-height: 35rem;
   }
@@ -2275,6 +2288,58 @@ button:active:not(:disabled) {
   color: rgba(255, 243, 222, 0.8);
   font-size: 0.7rem;
   letter-spacing: 0.08em;
+}
+
+.table-stage__action-pointer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08rem;
+  width: var(--table-stage-action-pointer-size);
+  height: calc(var(--table-stage-action-pointer-size) * 1.08);
+  pointer-events: none;
+  opacity: 0.82;
+  filter: drop-shadow(0 0 10px var(--table-stage-action-pointer-shadow));
+  animation: table-action-pointer-pulse 2.7s ease-in-out infinite;
+}
+
+.table-stage__action-pointer::before {
+  content: '';
+  width: calc(var(--table-stage-action-pointer-size) * 0.18);
+  height: calc(var(--table-stage-action-pointer-size) * 0.48);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--table-stage-action-pointer-edge), var(--table-stage-action-pointer-core));
+  box-shadow: 0 0 0 1px var(--table-stage-action-pointer-ring);
+}
+
+.table-stage__action-pointer::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: calc(var(--table-stage-action-pointer-size) * 0.31) solid transparent;
+  border-right: calc(var(--table-stage-action-pointer-size) * 0.31) solid transparent;
+  border-top: calc(var(--table-stage-action-pointer-size) * 0.42) solid var(--table-stage-action-pointer-core);
+}
+
+.table-stage__action-pointer--top {
+  transform: translate(-50%, calc(-50% - var(--table-stage-action-pointer-offset-y))) rotate(180deg);
+}
+
+.table-stage__action-pointer--bottom {
+  transform: translate(-50%, calc(-50% + var(--table-stage-action-pointer-offset-y)));
+}
+
+.table-stage__action-pointer--left {
+  transform: translate(calc(-50% - var(--table-stage-action-pointer-offset-x)), -50%) rotate(90deg);
+}
+
+.table-stage__action-pointer--right {
+  transform: translate(calc(-50% + var(--table-stage-action-pointer-offset-x)), -50%) rotate(-90deg);
 }
 
 .table-stage__table-info {
@@ -3682,6 +3747,17 @@ input {
 
   50% {
     transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.05);
+  }
+}
+
+@keyframes table-action-pointer-pulse {
+  0%,
+  100% {
+    opacity: 0.34;
+  }
+
+  50% {
+    opacity: 0.92;
   }
 }
 
@@ -5297,6 +5373,10 @@ input {
   --table-player-dealer-accent-soft: color-mix(in srgb, var(--accent-2) 22%, transparent);
   --table-player-dealer-accent-surface: color-mix(in srgb, var(--accent-2) 14%, transparent);
   --table-player-dealer-accent-shadow: color-mix(in srgb, var(--accent-2) 28%, transparent);
+  --table-stage-action-pointer-core: color-mix(in srgb, var(--accent-2) 70%, var(--theme-paper));
+  --table-stage-action-pointer-edge: color-mix(in srgb, var(--theme-paper) 90%, var(--accent-2));
+  --table-stage-action-pointer-shadow: color-mix(in srgb, var(--accent) 24%, transparent);
+  --table-stage-action-pointer-ring: color-mix(in srgb, var(--accent-2) 18%, transparent);
 }
 
 .table-stage__melds,

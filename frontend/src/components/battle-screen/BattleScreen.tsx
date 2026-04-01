@@ -108,6 +108,7 @@ export function BattleScreen({
             <TableStage
               discards={viewModel.discards}
               activeSeat={viewModel.activePlayerSeat}
+              actionIndicatorSeat={viewModel.actionIndicatorSeat}
               lastDiscard={visibleLastDiscard}
               lastDiscardSeat={visibleLastDiscardSeat}
               remainingTileCount={viewModel.remainingTileCount}
