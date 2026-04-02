@@ -32,15 +32,19 @@ def create_table_endpoint(
     payload: CreateTableRequest | None = None,
     session: Session = Depends(get_db_session),
 ) -> WaitingRoomResponse:
+    requested_mode = None
+    if payload is not None:
+        if payload.mode is not None:
+            requested_mode = payload.mode
+        elif payload.test_mode is not None:
+            requested_mode = "test" if payload.test_mode else "normal"
+    resolved_mode = requested_mode or ("test" if request.app.state.settings.test_mode else "normal")
+
     try:
         table = create_table(
             session,
             payload.table_code if payload else None,
-            test_mode=(
-                payload.test_mode
-                if payload is not None and payload.test_mode is not None
-                else request.app.state.settings.test_mode
-            ),
+            mode=resolved_mode,
             enforce_minimum_eight_fan=(
                 payload.enforce_minimum_eight_fan
                 if payload is not None and payload.enforce_minimum_eight_fan is not None
@@ -54,4 +58,10 @@ def create_table_endpoint(
                 detail="table_code_exists",
             ) from exc
         raise
-    return WaitingRoomResponse.model_validate(to_waiting_room(table))
+    waiting_room = to_waiting_room(table)
+    return WaitingRoomResponse.model_validate(
+        {
+            **waiting_room.__dict__,
+            "mode": resolved_mode,
+        }
+    )

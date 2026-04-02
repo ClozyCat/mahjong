@@ -60,6 +60,7 @@ def test_create_table_accepts_test_mode_override(test_app) -> None:
     create_response = client.post("/api/tables", json={"table_code": "ROOM99", "test_mode": True})
 
     assert create_response.status_code == 201
+    assert create_response.json()["mode"] == "test"
     table_code = create_response.json()["table_code"]
 
     with client.websocket_connect(f"/ws/{table_code}") as websocket:
@@ -76,6 +77,7 @@ def test_create_table_can_disable_test_mode_even_when_app_default_is_true(test_m
     create_response = client.post("/api/tables", json={"table_code": "ROOM98", "test_mode": False})
 
     assert create_response.status_code == 201
+    assert create_response.json()["mode"] == "normal"
     table_code = create_response.json()["table_code"]
 
     with client.websocket_connect(f"/ws/{table_code}") as websocket:
@@ -84,6 +86,15 @@ def test_create_table_can_disable_test_mode_even_when_app_default_is_true(test_m
 
     assert snapshot["type"] == "room_snapshot"
     assert snapshot["payload"]["phase"] == "waiting"
+
+
+def test_create_table_accepts_ai_mode(test_app) -> None:
+    client = TestClient(test_app)
+
+    create_response = client.post("/api/tables", json={"table_code": "ROOM96", "mode": "ai"})
+
+    assert create_response.status_code == 201
+    assert create_response.json()["mode"] == "ai"
 
 
 def test_create_table_accepts_disabling_eight_fan_requirement(test_app) -> None:

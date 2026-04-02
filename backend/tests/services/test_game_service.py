@@ -666,6 +666,10 @@ async def test_leave_table_removes_waiting_seat_and_notifies_peers(monkeypatch):
             "connected": True,
             "ready": True,
             "is_bot": False,
+            "seat_type": "human",
+            "ai_status": None,
+            "ai_error": None,
+            "ai_controller_seat": None,
         }
     ]
 
@@ -736,7 +740,162 @@ async def test_leave_table_during_active_match_keeps_seat_but_invalidates_reconn
         "connected": True,
         "ready": True,
         "is_bot": True,
+        "seat_type": "bot",
+        "ai_status": None,
+        "ai_error": None,
+        "ai_controller_seat": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_ai_mode_can_reserve_and_validate_an_ai_seat(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+
+    async def fake_validate_config(_config):
+        return None
+
+    monkeypatch.setattr(service._ai_client, "validate_config", fake_validate_config)
+
+    owner = _RecordingWebSocket()
+    room = RoomState(table_code="ROOMAI01", phase="waiting", mode="ai")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Owner",
+        reconnect_token="token-owner",
+        player_session_id=1,
+        websocket=owner,
+        connected=True,
+        ready=True,
+    )
+    service._rooms["ROOMAI01"] = room
+
+    reserve_response = await service.reserve_ai_seat(
+        table_code="ROOMAI01",
+        websocket=owner,
+        seat_index=2,
+    )
+
+    assert reserve_response == {
+        "type": "reserve_ai_seat_accepted",
+        "payload": {"seat_index": 2},
+    }
+    assert room.seats[2].seat_type == "ai"
+    assert room.seats[2].ai_status == "configuring"
+    assert room.seats[2].ready is False
+
+    configure_response = await service.configure_ai_seat(
+        table_code="ROOMAI01",
+        websocket=owner,
+        seat_index=2,
+        api_key="sk-test",
+        base_url="https://example.invalid/v1",
+        model="gpt-test",
+    )
+
+    assert configure_response == {
+        "type": "configure_ai_seat_accepted",
+        "payload": {"seat_index": 2},
+    }
+    assert room.seats[2].seat_type == "ai"
+    assert room.seats[2].is_bot is True
+    assert room.seats[2].connected is False
+    assert room.seats[2].ready is True
+    assert room.seats[2].ai_status == "ready"
+    assert room.seats[2].ai_error is None
+    assert owner.messages[-1]["type"] == "room_snapshot"
+    assert owner.messages[-1]["payload"]["seats"][1] == {
+        "seat_index": 2,
+        "nickname": "AI 3",
+        "connected": False,
+        "ready": True,
+        "is_bot": True,
+        "seat_type": "ai",
+        "ai_status": "ready",
+        "ai_error": None,
+        "ai_controller_seat": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_ai_mode_can_fill_a_waiting_seat_with_default_bot(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_roll_bot_persona", lambda: "balanced")
+    monkeypatch.setattr(service, "_roll_bot_aggression", lambda _persona=None: 0.37)
+
+    owner = _RecordingWebSocket()
+    room = RoomState(table_code="ROOMAI02", phase="waiting", mode="ai")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="Owner",
+        reconnect_token="token-owner",
+        player_session_id=1,
+        websocket=owner,
+        connected=True,
+        ready=True,
+    )
+    service._rooms["ROOMAI02"] = room
+
+    response = await service.use_default_bot(
+        table_code="ROOMAI02",
+        websocket=owner,
+        seat_index=1,
+    )
+
+    assert response == {
+        "type": "use_default_bot_accepted",
+        "payload": {"seat_index": 1},
+    }
+    assert room.seats[1].seat_type == "bot"
+    assert room.seats[1].is_bot is True
+    assert room.seats[1].ready is True
+    assert room.seats[1].connected is True
+    assert room.seats[1].ai_controller_seat == 0
+
+
+def test_room_ready_to_start_accepts_ready_ai_seats_without_a_socket():
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOMAI03", phase="waiting", mode="ai")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token-0",
+        player_session_id=1,
+        connected=True,
+        ready=True,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="P1",
+        reconnect_token="token-1",
+        player_session_id=2,
+        connected=True,
+        ready=True,
+    )
+    room.seats[2] = SeatReservation(
+        seat_index=2,
+        nickname="AI 3",
+        reconnect_token=None,
+        player_session_id=-3,
+        connected=False,
+        ready=True,
+        is_bot=True,
+        seat_type="ai",
+        ai_status="ready",
+    )
+    room.seats[3] = SeatReservation(
+        seat_index=3,
+        nickname="P3",
+        reconnect_token="token-3",
+        player_session_id=4,
+        connected=True,
+        ready=True,
+    )
+
+    assert service._room_ready_to_start_locked(room) is True
+    room.seats[2].ready = False
+    assert service._room_ready_to_start_locked(room) is False
 
 
 @pytest.mark.asyncio
@@ -908,6 +1067,10 @@ async def test_disconnect_timeout_removes_waiting_seat_after_grace_period(monkey
             "connected": True,
             "ready": False,
             "is_bot": False,
+            "seat_type": "human",
+            "ai_status": None,
+            "ai_error": None,
+            "ai_controller_seat": None,
         }
     ]
 
@@ -976,6 +1139,10 @@ async def test_disconnect_timeout_turns_a_started_seat_into_a_bot(monkeypatch):
         "connected": True,
         "ready": True,
         "is_bot": True,
+        "seat_type": "bot",
+        "ai_status": None,
+        "ai_error": None,
+        "ai_controller_seat": None,
     }
 
 

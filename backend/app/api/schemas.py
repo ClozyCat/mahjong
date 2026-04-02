@@ -20,6 +20,11 @@ class TableSeatResponse(BaseModel):
     nickname: str | None = None
     connected: bool
     ready: bool = False
+    is_bot: bool = False
+    seat_type: str = "human"
+    ai_status: str | None = None
+    ai_error: str | None = None
+    ai_controller_seat: int | None = None
 
 
 class WaitingRoomResponse(BaseModel):
@@ -27,12 +32,14 @@ class WaitingRoomResponse(BaseModel):
 
     table_code: str
     phase: str
+    mode: str = "normal"
     created_at: datetime
     seats: list[TableSeatResponse]
 
 
 class CreateTableRequest(BaseModel):
     table_code: Annotated[str | None, StringConstraints(pattern=r"^[A-Z0-9]{1,12}$")] = None
+    mode: str | None = None
     test_mode: bool | None = None
     enforce_minimum_eight_fan: bool | None = None
 
@@ -69,6 +76,7 @@ class PlayerPresencePayload(BaseModel):
 class RoomSnapshotPayload(BaseModel):
     table_code: str
     phase: str
+    mode: str = "normal"
     seats: list[TableSeatResponse]
     local_seat: int
     reconnect_token: str

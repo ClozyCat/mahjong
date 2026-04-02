@@ -61,6 +61,50 @@ export function createReadyMessage(ready: boolean): ClientMessage {
   };
 }
 
+export function createReserveAiSeatMessage(seatIndex: number): ClientMessage {
+  return {
+    type: 'reserve_ai_seat',
+    payload: {
+      seat_index: seatIndex,
+    },
+  };
+}
+
+export function createConfigureAiSeatMessage(
+  seatIndex: number,
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+): ClientMessage {
+  return {
+    type: 'configure_ai_seat',
+    payload: {
+      seat_index: seatIndex,
+      api_key: apiKey,
+      base_url: baseUrl,
+      model,
+    },
+  };
+}
+
+export function createCancelAiSeatMessage(seatIndex: number): ClientMessage {
+  return {
+    type: 'cancel_ai_seat',
+    payload: {
+      seat_index: seatIndex,
+    },
+  };
+}
+
+export function createUseDefaultBotMessage(seatIndex: number): ClientMessage {
+  return {
+    type: 'use_default_bot',
+    payload: {
+      seat_index: seatIndex,
+    },
+  };
+}
+
 export function createStartMatchMessage(): ClientMessage {
   return {
     type: 'start_match',

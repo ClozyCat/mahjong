@@ -29,12 +29,18 @@ class WaitingRoomSeatDTO:
     nickname: str | None
     connected: bool
     ready: bool = False
+    is_bot: bool = False
+    seat_type: str = "human"
+    ai_status: str | None = None
+    ai_error: str | None = None
+    ai_controller_seat: int | None = None
 
 
 @dataclass(frozen=True)
 class WaitingRoomDTO:
     table_code: str
     phase: str
+    mode: str
     created_at: datetime
     seats: list[WaitingRoomSeatDTO]
 
@@ -47,11 +53,12 @@ def normalize_table_code(table_code: str) -> str:
     return table_code.strip().upper()
 
 
-def _initial_room_payload(*, table_code: str, test_mode: bool) -> dict:
+def _initial_room_payload(*, table_code: str, mode: str) -> dict:
     return {
         "table_code": table_code,
         "phase": "waiting",
-        "test_mode": test_mode,
+        "mode": mode,
+        "test_mode": mode == "test",
         "enforce_minimum_eight_fan": True,
         "seats": [],
         "match_state": None,
@@ -64,7 +71,7 @@ def _create_waiting_table(
     session: Session,
     *,
     table_code: str,
-    test_mode: bool,
+    mode: str,
     enforce_minimum_eight_fan: bool,
 ) -> TableDTO:
     record = create_table_record(session, table_code=table_code, phase="waiting")
@@ -73,7 +80,7 @@ def _create_waiting_table(
         table_id=record.id,
         room_version=0,
         payload={
-            **_initial_room_payload(table_code=table_code, test_mode=test_mode),
+            **_initial_room_payload(table_code=table_code, mode=mode),
             "enforce_minimum_eight_fan": enforce_minimum_eight_fan,
         },
     )
@@ -84,9 +91,13 @@ def create_table(
     session: Session,
     table_code: str | None = None,
     *,
-    test_mode: bool = False,
+    mode: str = "normal",
+    test_mode: bool | None = None,
     enforce_minimum_eight_fan: bool = True,
 ) -> TableDTO:
+    if test_mode is not None:
+        mode = "test" if test_mode else "normal"
+
     if table_code:
         normalized_table_code = normalize_table_code(table_code)
         existing_record = get_table_record_by_code(session, normalized_table_code)
@@ -97,7 +108,7 @@ def create_table(
         return _create_waiting_table(
             session,
             table_code=normalized_table_code,
-            test_mode=test_mode,
+            mode=mode,
             enforce_minimum_eight_fan=enforce_minimum_eight_fan,
         )
 
@@ -108,7 +119,7 @@ def create_table(
         return _create_waiting_table(
             session,
             table_code=table_code,
-            test_mode=test_mode,
+            mode=mode,
             enforce_minimum_eight_fan=enforce_minimum_eight_fan,
         )
     raise RuntimeError("Unable to generate a unique table code")
@@ -118,6 +129,7 @@ def to_waiting_room(table: TableDTO) -> WaitingRoomDTO:
     return WaitingRoomDTO(
         table_code=table.table_code,
         phase=table.phase,
+        mode="normal",
         created_at=table.created_at,
         seats=[],
     )

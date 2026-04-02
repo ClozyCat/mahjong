@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
+import type { TableMode } from '../../types/match';
 import { WindowFrame } from '../win10/WindowFrame';
 
 export interface ConnectGateValue {
   tableCode: string;
   nickname: string;
-  testMode: boolean;
+  tableMode: TableMode;
   enforceMinimumEightFan: boolean;
 }
 
@@ -78,6 +79,23 @@ export function ConnectGate({
   function commitNickname(nextValue: string) {
     setNicknameDraft(nextValue);
     onChange({ nickname: nextValue });
+  }
+
+  function renderModeToggle(mode: TableMode, label: string, description: string) {
+    const active = value.tableMode === mode;
+
+    return (
+      <button
+        type="button"
+        className="connect-gate__toggle"
+        onClick={() => onChange({ tableMode: mode })}
+        disabled={disabled}
+        aria-pressed={active}
+      >
+        <span>{label}</span>
+        <strong>{active ? '当前模式' : description}</strong>
+      </button>
+    );
   }
 
   return (
@@ -169,16 +187,9 @@ export function ConnectGate({
               </label>
 
               <div className="connect-gate__actions connect-gate__actions--toggles">
-                <button
-                  type="button"
-                  className="connect-gate__toggle"
-                  onClick={() => onChange({ testMode: !value.testMode })}
-                  disabled={disabled}
-                  aria-pressed={value.testMode}
-                >
-                  <span>测试模式</span>
-                  <strong>{value.testMode ? '开启' : '关闭'}</strong>
-                </button>
+                {renderModeToggle('normal', '普通模式', '手动准备开局')}
+                {renderModeToggle('test', '测试模式', '自动补满机器人')}
+                {renderModeToggle('ai', 'AI模式', '可配置 AI 座位')}
                 <button
                   type="button"
                   className="connect-gate__toggle"

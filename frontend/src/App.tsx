@@ -14,15 +14,19 @@ import { createClaimCandidates, createMatchViewModel } from './lib/matchViewMode
 import {
   buildWebSocketUrl,
   createActionRequestMessage,
+  createCancelAiSeatMessage,
+  createConfigureAiSeatMessage,
   createHeartbeatMessage,
   createJoinTableMessage,
   createLeaveTableMessage,
   createQuickChatMessage,
   createReadyMessage,
+  createReserveAiSeatMessage,
   createReconnectMessage,
   createRestartMatchMessage,
   createStartMatchMessage,
   createStartNextRoundMessage,
+  createUseDefaultBotMessage,
   parseServerMessage,
   serializeClientMessage,
 } from './lib/socket';
@@ -77,6 +81,10 @@ function getRejectedMessage(reason: string) {
     table_not_found: '牌桌不存在，请检查牌桌编号后重试。',
     table_full: '牌桌已经坐满了，请换一个牌桌试试。',
     invalid_reconnect_token: '上次的重连凭证已失效，需要重新加入牌桌。',
+    ai_mode_only: '当前牌桌不是 AI 模式，不能配置 AI 座位。',
+    invalid_ai_seat: '这个 AI 座位无效，请刷新房间状态后重试。',
+    seat_occupied: '这个座位已经被占用，请选择其他空位。',
+    ai_seat_not_owned: '这个 AI 座位不属于你，暂时无法配置。',
   };
 
   return lookup[reason] ?? '请求未被服务器接受，请按最新房间状态重试。';
@@ -177,7 +185,7 @@ export default function App() {
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
-    testMode: false,
+    tableMode: 'normal',
     enforceMinimumEightFan: true,
   });
   const [statusMessage, setStatusMessage] = useState<string | null>(
@@ -504,7 +512,7 @@ export default function App() {
       const table = await createTable(
         defaults.apiBaseUrl,
         requestedTableCode || undefined,
-        connectValue.testMode,
+        connectValue.tableMode,
         connectValue.enforceMinimumEightFan,
       );
       startTransition(() => {
@@ -699,6 +707,22 @@ export default function App() {
     sendMessage(serializeClientMessage(createQuickChatMessage(targetSeat, emoji)));
   }
 
+  function handleReserveAiSeat(seatIndex: number) {
+    sendMessage(serializeClientMessage(createReserveAiSeatMessage(seatIndex)));
+  }
+
+  function handleConfigureAiSeat(seatIndex: number, apiKey: string, baseUrl: string, model: string) {
+    sendMessage(serializeClientMessage(createConfigureAiSeatMessage(seatIndex, apiKey, baseUrl, model)));
+  }
+
+  function handleCancelAiSeat(seatIndex: number) {
+    sendMessage(serializeClientMessage(createCancelAiSeatMessage(seatIndex)));
+  }
+
+  function handleUseDefaultBot(seatIndex: number) {
+    sendMessage(serializeClientMessage(createUseDefaultBotMessage(seatIndex)));
+  }
+
   function handleTileDoubleClick(tileId: string) {
     if (!canQuickDiscard(state, hasLocalTurnKongPrompt)) {
       return;
@@ -777,6 +801,10 @@ export default function App() {
       onCopyTableCode={handleCopyTableCode}
       onLeaveTable={handleLeaveTable}
       onQuickChat={handleQuickChat}
+      onReserveAiSeat={handleReserveAiSeat}
+      onConfigureAiSeat={handleConfigureAiSeat}
+      onCancelAiSeat={handleCancelAiSeat}
+      onUseDefaultBot={handleUseDefaultBot}
     />
   );
 }

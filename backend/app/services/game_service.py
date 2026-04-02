@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
 import random
 import secrets
 import threading
@@ -42,6 +44,13 @@ from app.domain.wall import WallState
 from app.services.presence_service import mark_connected, mark_disconnected
 from app.services.reconnect_service import consume_reconnect_token, issue_reconnect_token
 from app.services.bot_strategy import BotPersona, choose_active_turn_action, choose_claim_action
+from app.services.openai_compatible_ai import (
+    AISeatConfig,
+    OpenAICompatibleAIClient,
+    OpenAICompatibleAIError,
+    deserialize_ai_config,
+    serialize_ai_config,
+)
 from app.services.table_service import close_table, get_table_by_code
 from app.services.timeout_service import (
     ACTIVE_TURN_TIMEOUT_SECONDS,
@@ -124,15 +133,21 @@ class SeatReservation:
     connected: bool = False
     ready: bool = False
     is_bot: bool = False
+    seat_type: str = "human"
     bot_persona: BotPersona | None = None
     bot_aggression: float | None = None
     disconnect_deadline_at: datetime | None = None
+    ai_status: str | None = None
+    ai_error: str | None = None
+    ai_controller_seat: int | None = None
+    ai_config: AISeatConfig | None = None
 
 
 @dataclass
 class RoomState:
     table_code: str
     phase: str = "waiting"
+    mode: str = "normal"
     test_mode: bool = False
     enforce_minimum_eight_fan: bool = True
     seats: dict[int, SeatReservation] = field(default_factory=dict)
@@ -150,6 +165,16 @@ class RoomState:
     bot_action_key: tuple[str, int, int, str | None, tuple[int, ...]] | None = None
     send_lock: LoopSafeLock = field(default_factory=LoopSafeLock)
 
+    def __post_init__(self) -> None:
+        if self.mode == "normal" and self.test_mode:
+            self.mode = "test"
+        elif self.mode == "test" and not self.test_mode:
+            self.test_mode = True
+
+    @property
+    def ai_mode(self) -> bool:
+        return self.mode == "ai"
+
 
 class GameService:
     def __init__(
@@ -162,6 +187,10 @@ class GameService:
         self._test_mode = test_mode
         self._rooms: dict[str, RoomState] = {}
         self._lock = LoopSafeLock()
+        self._ai_client = OpenAICompatibleAIClient()
+
+    def _default_room_mode(self) -> str:
+        return "test" if self._test_mode else "normal"
 
     async def join_table(
         self, *, table_code: str, nickname: str, websocket: WebSocket
@@ -173,7 +202,7 @@ class GameService:
         async with self._lock:
             room = self._get_or_restore_room_locked(table_code) or RoomState(
                 table_code=table_code,
-                test_mode=self._test_mode,
+                mode=self._default_room_mode(),
             )
             self._rooms[table_code] = room
             available_seats = [
@@ -236,7 +265,7 @@ class GameService:
         async with self._lock:
             room = self._get_or_restore_room_locked(table_code) or RoomState(
                 table_code=table_code,
-                test_mode=self._test_mode,
+                mode=self._default_room_mode(),
             )
             self._rooms[table_code] = room
             reservation = room.seats.get(reconnect_record.seat_index)
@@ -294,6 +323,301 @@ class GameService:
             )
             await self._send_prompt_targets(prompt_targets)
         return snapshot
+
+    def _owned_seat_locked(self, room: RoomState, websocket: WebSocket) -> int | None:
+        return next(
+            (
+                seat_index
+                for seat_index, reservation in room.seats.items()
+                if reservation.websocket is websocket
+            ),
+            None,
+        )
+
+    def _validate_waiting_ai_request_locked(
+        self,
+        room: RoomState,
+        websocket: WebSocket,
+        *,
+        seat_index: int,
+    ) -> tuple[int | None, dict | None]:
+        if not room.ai_mode:
+            return None, self._action_rejected("ai_mode_only")
+        if room.round_state is not None:
+            return None, self._action_rejected("room_already_started")
+        if seat_index < 0 or seat_index >= MAX_SEATS:
+            return None, self._action_rejected("invalid_ai_seat")
+
+        owned_seat = self._owned_seat_locked(room, websocket)
+        if owned_seat is None:
+            return None, self._action_rejected("seat_not_owned")
+
+        owner_reservation = room.seats.get(owned_seat)
+        if owner_reservation is None or owner_reservation.is_bot:
+            return None, self._action_rejected("seat_not_owned")
+        return owned_seat, None
+
+    def _create_ai_reservation(
+        self,
+        *,
+        seat_index: int,
+        controller_seat: int,
+    ) -> SeatReservation:
+        return SeatReservation(
+            seat_index=seat_index,
+            nickname=f"AI {seat_index + 1}",
+            reconnect_token=None,
+            player_session_id=-1000 - seat_index,
+            connected=False,
+            ready=False,
+            is_bot=True,
+            seat_type="ai",
+            ai_status="configuring",
+            ai_controller_seat=controller_seat,
+        )
+
+    def _remove_managed_automated_seats_for_controller_locked(
+        self,
+        room: RoomState,
+        *,
+        controller_seat: int,
+    ) -> None:
+        for seat_index, reservation in list(room.seats.items()):
+            if seat_index == controller_seat:
+                continue
+            if reservation.is_bot and reservation.ai_controller_seat == controller_seat:
+                room.seats.pop(seat_index, None)
+
+    def _has_human_seats_locked(self, room: RoomState) -> bool:
+        return any(not reservation.is_bot for reservation in room.seats.values())
+
+    async def reserve_ai_seat(
+        self,
+        *,
+        table_code: str,
+        websocket: WebSocket,
+        seat_index: int,
+    ) -> dict:
+        room: RoomState | None = None
+        snapshot_targets: list[tuple[WebSocket, dict]] = []
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return self._action_rejected("table_not_found")
+
+            owner_seat, rejection = self._validate_waiting_ai_request_locked(
+                room,
+                websocket,
+                seat_index=seat_index,
+            )
+            if rejection is not None or owner_seat is None:
+                return rejection or self._action_rejected("seat_not_owned")
+
+            if seat_index in room.seats:
+                return self._action_rejected("seat_occupied")
+
+            room.seats[seat_index] = self._create_ai_reservation(
+                seat_index=seat_index,
+                controller_seat=owner_seat,
+            )
+            self._persist_room_state_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+
+        async with room.send_lock:
+            await self._send_snapshot_targets(snapshot_targets)
+        return {"type": "reserve_ai_seat_accepted", "payload": {"seat_index": seat_index}}
+
+    async def cancel_ai_seat(
+        self,
+        *,
+        table_code: str,
+        websocket: WebSocket,
+        seat_index: int,
+    ) -> dict:
+        room: RoomState | None = None
+        snapshot_targets: list[tuple[WebSocket, dict]] = []
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return self._action_rejected("table_not_found")
+
+            owner_seat, rejection = self._validate_waiting_ai_request_locked(
+                room,
+                websocket,
+                seat_index=seat_index,
+            )
+            if rejection is not None or owner_seat is None:
+                return rejection or self._action_rejected("seat_not_owned")
+
+            reservation = room.seats.get(seat_index)
+            if (
+                reservation is None
+                or reservation.seat_type != "ai"
+                or reservation.ai_controller_seat != owner_seat
+            ):
+                return self._action_rejected("ai_seat_not_owned")
+
+            room.seats.pop(seat_index, None)
+            self._persist_room_state_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+
+        async with room.send_lock:
+            await self._send_snapshot_targets(snapshot_targets)
+        return {"type": "cancel_ai_seat_accepted", "payload": {"seat_index": seat_index}}
+
+    async def use_default_bot(
+        self,
+        *,
+        table_code: str,
+        websocket: WebSocket,
+        seat_index: int,
+    ) -> dict:
+        room: RoomState | None = None
+        snapshot_targets: list[tuple[WebSocket, dict]] = []
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return self._action_rejected("table_not_found")
+
+            owner_seat, rejection = self._validate_waiting_ai_request_locked(
+                room,
+                websocket,
+                seat_index=seat_index,
+            )
+            if rejection is not None or owner_seat is None:
+                return rejection or self._action_rejected("seat_not_owned")
+
+            reservation = room.seats.get(seat_index)
+            if reservation is None:
+                persona = self._roll_bot_persona()
+                reservation = SeatReservation(
+                    seat_index=seat_index,
+                    nickname=f"Bot {seat_index + 1}",
+                    reconnect_token=None,
+                    player_session_id=-2000 - seat_index,
+                    connected=True,
+                    ready=True,
+                    is_bot=True,
+                    seat_type="bot",
+                    bot_persona=persona,
+                    bot_aggression=self._roll_bot_aggression(persona),
+                    ai_controller_seat=owner_seat,
+                )
+                room.seats[seat_index] = reservation
+            else:
+                if reservation.seat_type != "ai" or reservation.ai_controller_seat != owner_seat:
+                    return self._action_rejected("seat_occupied")
+                persona = self._roll_bot_persona()
+                reservation.nickname = f"Bot {seat_index + 1}"
+                reservation.connected = True
+                reservation.ready = True
+                reservation.seat_type = "bot"
+                reservation.ai_status = None
+                reservation.ai_error = None
+                reservation.ai_config = None
+                reservation.bot_persona = persona
+                reservation.bot_aggression = self._roll_bot_aggression(persona)
+
+            self._persist_room_state_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+
+        async with room.send_lock:
+            await self._send_snapshot_targets(snapshot_targets)
+        return {"type": "use_default_bot_accepted", "payload": {"seat_index": seat_index}}
+
+    async def configure_ai_seat(
+        self,
+        *,
+        table_code: str,
+        websocket: WebSocket,
+        seat_index: int,
+        api_key: str,
+        base_url: str,
+        model: str,
+    ) -> dict:
+        room: RoomState | None = None
+        room_before_validation: RoomState | None = None
+        snapshot_targets: list[tuple[WebSocket, dict]] = []
+        config: AISeatConfig | None = None
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return self._action_rejected("table_not_found")
+
+            owner_seat, rejection = self._validate_waiting_ai_request_locked(
+                room,
+                websocket,
+                seat_index=seat_index,
+            )
+            if rejection is not None or owner_seat is None:
+                return rejection or self._action_rejected("seat_not_owned")
+
+            reservation = room.seats.get(seat_index)
+            if reservation is None:
+                reservation = self._create_ai_reservation(
+                    seat_index=seat_index,
+                    controller_seat=owner_seat,
+                )
+                room.seats[seat_index] = reservation
+            elif reservation.seat_type != "ai" or reservation.ai_controller_seat != owner_seat:
+                return self._action_rejected("ai_seat_not_owned")
+
+            config = AISeatConfig(
+                api_key=api_key.strip(),
+                base_url=base_url.strip(),
+                model=model.strip(),
+            )
+            reservation.connected = False
+            reservation.ready = False
+            reservation.is_bot = True
+            reservation.seat_type = "ai"
+            reservation.ai_status = "validating"
+            reservation.ai_error = None
+            reservation.ai_config = config
+            reservation.nickname = f"AI {seat_index + 1}"
+            self._persist_room_state_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+            room_before_validation = room
+
+        async with room.send_lock:
+            await self._send_snapshot_targets(snapshot_targets)
+
+        if config is None or room_before_validation is None:
+            return self._action_rejected("invalid_action")
+
+        validation_error: str | None = None
+        try:
+            await self._ai_client.validate_config(config)
+        except OpenAICompatibleAIError as exc:
+            validation_error = str(exc)
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return self._action_rejected("table_not_found")
+
+            reservation = room.seats.get(seat_index)
+            if reservation is None or reservation.ai_config != config:
+                return {"type": "configure_ai_seat_accepted", "payload": {"seat_index": seat_index}}
+
+            if validation_error is None:
+                reservation.ready = True
+                reservation.ai_status = "ready"
+                reservation.ai_error = None
+            else:
+                reservation.ready = False
+                reservation.ai_status = "error"
+                reservation.ai_error = validation_error
+            self._persist_room_state_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+
+        async with room.send_lock:
+            await self._send_snapshot_targets(snapshot_targets)
+        return {"type": "configure_ai_seat_accepted", "payload": {"seat_index": seat_index}}
 
     async def mark_ready(
         self,
@@ -493,11 +817,15 @@ class GameService:
 
             if room.round_state is None:
                 reservation = room.seats.pop(owned_seat)
+                self._remove_managed_automated_seats_for_controller_locked(
+                    room,
+                    controller_seat=owned_seat,
+                )
                 if reservation.reconnect_token:
                     self._consume_reconnect_token(reservation.reconnect_token)
                 self._mark_disconnected(player_session_id=reservation.player_session_id)
 
-                if room.seats:
+                if room.seats and self._has_human_seats_locked(room):
                     self._sync_disconnect_timeout_task_locked(room)
                     self._persist_room_state_locked(room)
                     peer_updates = self._peer_snapshot_updates_locked(
@@ -511,6 +839,10 @@ class GameService:
                 reservation.connected = True
                 reservation.ready = True
                 reservation.is_bot = True
+                reservation.seat_type = "bot"
+                reservation.ai_status = None
+                reservation.ai_error = None
+                reservation.ai_config = None
                 reservation.disconnect_deadline_at = None
                 self._ensure_bot_profile(reservation)
                 if reservation.reconnect_token:
@@ -689,8 +1021,12 @@ class GameService:
                 if reservation.reconnect_token:
                     self._consume_reconnect_token(reservation.reconnect_token)
                 room.seats.pop(seat_index, None)
+                self._remove_managed_automated_seats_for_controller_locked(
+                    room,
+                    controller_seat=seat_index,
+                )
 
-                if room.seats:
+                if room.seats and self._has_human_seats_locked(room):
                     self._sync_disconnect_timeout_task_locked(room)
                     self._persist_room_state_locked(room)
                     snapshot_targets = self._snapshot_targets_locked(room)
@@ -701,6 +1037,10 @@ class GameService:
                 reservation.connected = True
                 reservation.ready = True
                 reservation.is_bot = True
+                reservation.seat_type = "bot"
+                reservation.ai_status = None
+                reservation.ai_error = None
+                reservation.ai_config = None
                 self._ensure_bot_profile(reservation)
                 if reservation.reconnect_token:
                     self._consume_reconnect_token(reservation.reconnect_token)
@@ -1064,6 +1404,50 @@ class GameService:
             BOT_ACTION_DELAY_MAX_SECONDS,
         )
 
+    def _is_ai_seat(self, room: RoomState, seat_index: int) -> bool:
+        reservation = room.seats.get(seat_index)
+        return reservation is not None and reservation.seat_type == "ai"
+
+    def _ai_snapshot_payload_locked(self, room: RoomState, seat_index: int) -> dict:
+        snapshot = copy.deepcopy(self._room_snapshot(room=room, local_seat=seat_index)["payload"])
+        snapshot["reconnect_token"] = None
+        return snapshot
+
+    def _resolve_preferred_active_turn_locked(
+        self,
+        room: RoomState,
+        *,
+        actor: int,
+        decision,
+    ) -> list[dict]:
+        assert room.round_state is not None
+        room.round_state, events = self._resolve_action_locked(
+            room.round_state,
+            seat_index=actor,
+            action_type=decision.action_type,
+            tile_ids=decision.tile_ids,
+        )
+        room.phase = room.round_state.phase
+        room.pending_timeout = None
+        return [self.round_event(event["type"], event) for event in events]
+
+    def _resolve_preferred_claim_locked(
+        self,
+        room: RoomState,
+        *,
+        seat_index: int,
+        decision,
+    ) -> list[dict]:
+        assert room.round_state is not None
+        room.round_state, events = self._resolve_action_locked(
+            room.round_state,
+            seat_index=seat_index,
+            action_type=decision.action_type,
+            tile_ids=decision.tile_ids,
+        )
+        room.phase = room.round_state.phase
+        return [self.round_event(event["type"], event) for event in events]
+
     async def _bot_action_runner(
         self,
         table_code: str,
@@ -1081,6 +1465,12 @@ class GameService:
         snapshot_targets: list[tuple[WebSocket, list[dict]]] = []
         prompt_targets: list[tuple[WebSocket, dict]] = []
         broadcast_targets: list[WebSocket] = []
+        preferred_decision = None
+        automated_seat: int | None = None
+        is_active_turn = expected_key[0] == "active_turn"
+        ai_request_payload: dict | None = None
+        ai_config: AISeatConfig | None = None
+        room_mode = "normal"
 
         async with self._lock:
             room = self._rooms.get(table_code)
@@ -1091,11 +1481,68 @@ class GameService:
             if self._pending_bot_action_key_locked(room) != expected_key:
                 return
 
-            if expected_key[0] == "active_turn":
+            automated_seat = room.round_state.current_actor if is_active_turn else expected_key[1]
+            room_mode = room.mode
+            if automated_seat is not None and self._is_ai_seat(room, automated_seat):
+                reservation = room.seats.get(automated_seat)
+                if reservation is not None and reservation.ai_config is not None:
+                    ai_config = reservation.ai_config
+                    ai_request_payload = self._ai_snapshot_payload_locked(room, automated_seat)
+
+        if automated_seat is None:
+            return
+
+        if ai_config is not None and ai_request_payload is not None:
+            try:
+                preferred_decision = await self._ai_client.choose_action(
+                    config=ai_config,
+                    seat_index=automated_seat,
+                    room_mode=room_mode,
+                    room_snapshot=ai_request_payload,
+                )
+            except OpenAICompatibleAIError:
+                preferred_decision = None
+
+        async with self._lock:
+            room = self._rooms.get(table_code)
+            if room is None or room.round_state is None:
+                return
+            if room.bot_action_key != expected_key:
+                return
+            if self._pending_bot_action_key_locked(room) != expected_key:
+                return
+
+            if is_active_turn:
                 actor = room.round_state.current_actor
-                messages.extend(self._resolve_bot_active_turn_locked(room, actor=actor))
+                if preferred_decision is not None:
+                    try:
+                        messages.extend(
+                            self._resolve_preferred_active_turn_locked(
+                                room,
+                                actor=actor,
+                                decision=preferred_decision,
+                            )
+                        )
+                    except ValueError:
+                        messages.extend(self._resolve_bot_active_turn_locked(room, actor=actor))
+                else:
+                    messages.extend(self._resolve_bot_active_turn_locked(room, actor=actor))
             else:
-                messages.extend(self._resolve_bot_claim_locked(room, seat_index=expected_key[1]))
+                if preferred_decision is not None:
+                    try:
+                        messages.extend(
+                            self._resolve_preferred_claim_locked(
+                                room,
+                                seat_index=expected_key[1],
+                                decision=preferred_decision,
+                            )
+                        )
+                    except ValueError:
+                        messages.extend(
+                            self._resolve_bot_claim_locked(room, seat_index=expected_key[1])
+                        )
+                else:
+                    messages.extend(self._resolve_bot_claim_locked(room, seat_index=expected_key[1]))
                 room.pending_timeout = None
             self._apply_settlement_to_match_locked(room)
             messages.extend(self._auto_advance_bot_seats_locked(room))
@@ -1129,6 +1576,7 @@ class GameService:
                 connected=True,
                 ready=True,
                 is_bot=True,
+                seat_type="bot",
                 bot_persona=persona,
                 bot_aggression=self._roll_bot_aggression(persona),
             )
@@ -1887,6 +2335,10 @@ class GameService:
                 "connected": room.seats[seat_index].connected,
                 "ready": room.seats[seat_index].ready,
                 "is_bot": room.seats[seat_index].is_bot,
+                "seat_type": room.seats[seat_index].seat_type,
+                "ai_status": room.seats[seat_index].ai_status,
+                "ai_error": room.seats[seat_index].ai_error,
+                "ai_controller_seat": room.seats[seat_index].ai_controller_seat,
             }
             for seat_index in sorted(room.seats)
         ]
@@ -1902,6 +2354,7 @@ class GameService:
             "payload": {
                 "table_code": room.table_code,
                 "phase": room.phase,
+                "mode": room.mode,
                 "seats": seats,
                 "local_seat": local_seat,
                 "reconnect_token": reconnect_token,
@@ -2233,7 +2686,8 @@ class GameService:
 
     def _room_ready_to_start_locked(self, room: RoomState) -> bool:
         return len(room.seats) == MAX_SEATS and all(
-            reservation.ready and reservation.connected for reservation in room.seats.values()
+            reservation.ready and (reservation.connected or reservation.is_bot)
+            for reservation in room.seats.values()
         )
 
     def _start_match_locked(self, room: RoomState) -> None:
@@ -2262,6 +2716,7 @@ class GameService:
         return {
             "table_code": room.table_code,
             "phase": room.phase,
+            "mode": room.mode,
             "test_mode": room.test_mode,
             "enforce_minimum_eight_fan": room.enforce_minimum_eight_fan,
             "start_next_round_confirmed_seats": sorted(room.start_next_round_confirmed_seats),
@@ -2280,8 +2735,13 @@ class GameService:
                     "connected": reservation.connected,
                     "ready": reservation.ready,
                     "is_bot": reservation.is_bot,
+                    "seat_type": reservation.seat_type,
                     "bot_persona": reservation.bot_persona,
                     "bot_aggression": reservation.bot_aggression,
+                    "ai_status": reservation.ai_status,
+                    "ai_error": reservation.ai_error,
+                    "ai_controller_seat": reservation.ai_controller_seat,
+                    "ai_config": serialize_ai_config(reservation.ai_config),
                     "disconnect_deadline_at": (
                         reservation.disconnect_deadline_at.isoformat()
                         if reservation.disconnect_deadline_at is not None
@@ -2299,7 +2759,8 @@ class GameService:
         room = RoomState(
             table_code=payload["table_code"],
             phase=payload.get("phase", "waiting"),
-            test_mode=payload.get("test_mode", False),
+            mode=payload.get("mode")
+            or ("test" if payload.get("test_mode", False) else "normal"),
             enforce_minimum_eight_fan=payload.get("enforce_minimum_eight_fan", True),
         )
         room.start_next_round_confirmed_seats = {
@@ -2322,8 +2783,16 @@ class GameService:
                 connected=seat_payload.get("connected", False),
                 ready=seat_payload.get("ready", False),
                 is_bot=seat_payload.get("is_bot", False),
+                seat_type=seat_payload.get(
+                    "seat_type",
+                    "bot" if seat_payload.get("is_bot", False) else "human",
+                ),
                 bot_persona=seat_payload.get("bot_persona"),
                 bot_aggression=seat_payload.get("bot_aggression"),
+                ai_status=seat_payload.get("ai_status"),
+                ai_error=seat_payload.get("ai_error"),
+                ai_controller_seat=seat_payload.get("ai_controller_seat"),
+                ai_config=deserialize_ai_config(seat_payload.get("ai_config")),
                 disconnect_deadline_at=(
                     datetime.fromisoformat(seat_payload["disconnect_deadline_at"])
                     if seat_payload.get("disconnect_deadline_at") is not None

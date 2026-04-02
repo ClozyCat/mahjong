@@ -425,7 +425,9 @@ function createWaitingControls(state: SessionState): WaitingControls | null {
   const localSeat = snapshot.local_seat;
   const localSeatState = typeof localSeat === 'number' ? snapshot.seats.find((seat) => seat.seat_index === localSeat) : null;
   const occupiedSeats = snapshot.seats.length;
-  const allReady = occupiedSeats === 4 && snapshot.seats.every((seat) => seat.ready && seat.connected);
+  const allReady =
+    occupiedSeats === 4 &&
+    snapshot.seats.every((seat) => seat.ready && (seat.connected || seat.is_bot));
 
   return {
     canReady: Boolean(localSeatState),
@@ -606,6 +608,38 @@ function normalizeDisplayMelds(melds: string[][] | null | undefined) {
   return (melds ?? []).map((meld) => meld.slice().sort(compareTileCodes));
 }
 
+function createWaitingSeatSlots(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  if (!snapshot || snapshot.phase !== 'waiting') {
+    return [];
+  }
+
+  const localSeat = getLocalSeat(state);
+
+  return Array.from({ length: 4 }, (_, absoluteSeat) => {
+    const reservation = snapshot.seats.find((seat) => seat.seat_index === absoluteSeat);
+    const seatType = reservation?.seat_type ?? (reservation?.is_bot ? 'bot' : 'human');
+
+    return {
+      seat: toRelativeSeat(localSeat, absoluteSeat),
+      absoluteSeat,
+      occupied: Boolean(reservation),
+      canConfigureAi: snapshot.mode === 'ai' && !reservation,
+      seatType: reservation ? seatType : null,
+      aiStatus: reservation?.ai_status ?? null,
+      aiError: reservation?.ai_error ?? null,
+      occupiedByLocalAi:
+        Boolean(
+          reservation &&
+            seatType === 'ai' &&
+            typeof reservation.ai_controller_seat === 'number' &&
+            reservation.ai_controller_seat === localSeat,
+        ),
+      nickname: reservation?.nickname ?? null,
+    };
+  });
+}
+
 function createPlayers(state: SessionState): PlayerView[] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
@@ -624,11 +658,17 @@ function createPlayers(state: SessionState): PlayerView[] {
       const relativeSeat = toRelativeSeat(localSeat, seat.seat_index);
       const privatePlayer = findPrivatePlayer(state, seat.seat_index);
       const seatKey = String(seat.seat_index);
+      const seatType = seat.seat_type ?? (seat.is_bot ? 'bot' : 'human');
+      const isAiSeat = seatType === 'ai';
+      const isBotSeat = seatType === 'bot';
 
       return {
         seat: relativeSeat,
         absoluteSeat: seat.seat_index,
         name: seat.nickname,
+        seatType,
+        aiStatus: seat.ai_status ?? null,
+        aiError: seat.ai_error ?? null,
         score: displayedScores[seatKey] ?? 0,
         liveDelta: liveDeltaBySeat[seatKey] ?? 0,
         flowerCount: flowerCountBySeat[seatKey] ?? privatePlayer?.flowers.length ?? 0,
@@ -644,19 +684,29 @@ function createPlayers(state: SessionState): PlayerView[] {
         melds: normalizeDisplayMelds(privatePlayer?.melds),
         flowers: privatePlayer?.flowers ?? [],
         statusText:
-          seat.is_bot
+          isAiSeat
+            ? seat.ai_status === 'ready'
+              ? snapshot.phase === 'waiting'
+                ? 'AI已就绪'
+                : 'AI托管中'
+              : seat.ai_status === 'validating'
+                ? '验证中'
+                : seat.ai_status === 'error'
+                  ? '配置失败'
+                  : '配置中'
+            : isBotSeat
             ? 'Bot代打中'
             : !seat.connected
               ? '等待重连中'
               : snapshot.phase === 'waiting'
-            ? seat.ready
-              ? '已准备'
-              : '等待中'
-            : snapshot.phase === 'settlement'
-              ? '等待下一局'
-              : snapshot.phase === 'finished'
-                ? '整场完成'
-                : '对局中',
+                ? seat.ready
+                  ? '已准备'
+                  : '等待中'
+                : snapshot.phase === 'settlement'
+                  ? '等待下一局'
+                  : snapshot.phase === 'finished'
+                    ? '整场完成'
+                    : '对局中',
       };
     })
     .sort((left, right) => RELATIVE_SEATS.indexOf(left.seat) - RELATIVE_SEATS.indexOf(right.seat));
@@ -1291,6 +1341,7 @@ function getWinTypeLabel(result: MatchResultPayload) {
 export function createMatchViewModel(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
   const waitingControls = createWaitingControls(state);
+  const waitingSeatSlots = createWaitingSeatSlots(state);
   const isWaiting = snapshot?.phase === 'waiting';
   const isReconnecting = state.connectionStatus === 'reconnecting';
   const isSettlement = snapshot?.phase === 'settlement';
@@ -1319,6 +1370,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
             : 'watching';
 
   return {
+    roomMode: snapshot?.mode ?? 'normal',
     mode,
     tableCode: snapshot?.table_code ?? state.tableCode,
     canLeaveTable: Boolean(snapshot),
@@ -1341,6 +1393,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     players: createPlayers(state),
     actions: createActionViews(state, waitingControls, options),
     waitingControls,
+    waitingSeatSlots,
     discards: createDiscards(state),
     localHand: createLocalHand(state),
     claimCandidates: createClaimCandidates(state),

@@ -65,6 +65,45 @@ async def websocket_endpoint(websocket: WebSocket, table_code: str) -> None:
                 await _send_rejection_if_needed(websocket, response)
                 continue
 
+            if message_type == "reserve_ai_seat":
+                response = await game_service.reserve_ai_seat(
+                    table_code=table_code,
+                    websocket=websocket,
+                    seat_index=int(payload.get("seat_index", -1)),
+                )
+                await _send_rejection_if_needed(websocket, response)
+                continue
+
+            if message_type == "configure_ai_seat":
+                response = await game_service.configure_ai_seat(
+                    table_code=table_code,
+                    websocket=websocket,
+                    seat_index=int(payload.get("seat_index", -1)),
+                    api_key=str(payload.get("api_key", "")),
+                    base_url=str(payload.get("base_url", "")),
+                    model=str(payload.get("model", "")),
+                )
+                await _send_rejection_if_needed(websocket, response)
+                continue
+
+            if message_type == "cancel_ai_seat":
+                response = await game_service.cancel_ai_seat(
+                    table_code=table_code,
+                    websocket=websocket,
+                    seat_index=int(payload.get("seat_index", -1)),
+                )
+                await _send_rejection_if_needed(websocket, response)
+                continue
+
+            if message_type == "use_default_bot":
+                response = await game_service.use_default_bot(
+                    table_code=table_code,
+                    websocket=websocket,
+                    seat_index=int(payload.get("seat_index", -1)),
+                )
+                await _send_rejection_if_needed(websocket, response)
+                continue
+
             if message_type == "start_match":
                 response = await game_service.start_match(
                     table_code=table_code,

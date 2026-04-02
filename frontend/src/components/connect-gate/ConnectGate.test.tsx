@@ -11,7 +11,7 @@ describe('ConnectGate', () => {
         value={{
           tableCode: '',
           nickname: '',
-          testMode: false,
+          tableMode: 'normal',
           enforceMinimumEightFan: true,
         }}
         status="idle"
@@ -48,7 +48,7 @@ describe('ConnectGate', () => {
         value={{
           tableCode: 'AB12CD',
           nickname: 'Player A',
-          testMode: false,
+          tableMode: 'normal',
           enforceMinimumEightFan: true,
         }}
         status="idle"
@@ -68,7 +68,7 @@ describe('ConnectGate', () => {
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(onChange).toHaveBeenCalled();
-    expect(onChange).toHaveBeenCalledWith({ testMode: true });
+    expect(onChange).toHaveBeenCalledWith({ tableMode: 'test' });
     expect(onChange).toHaveBeenCalledWith({ enforceMinimumEightFan: false });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);
@@ -80,7 +80,7 @@ describe('ConnectGate', () => {
         value={{
           tableCode: '房间-01',
           nickname: 'Player A',
-          testMode: false,
+          tableMode: 'normal',
           enforceMinimumEightFan: true,
         }}
         status="idle"
@@ -108,7 +108,7 @@ describe('ConnectGate', () => {
         value={{
           tableCode: '',
           nickname: '',
-          testMode: false,
+          tableMode: 'normal',
           enforceMinimumEightFan: true,
         }}
         status="idle"

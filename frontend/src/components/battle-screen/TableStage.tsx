@@ -8,6 +8,8 @@ import type {
   QuickChatEmoji,
   QuickChatEventView,
   Seat,
+  TableMode,
+  WaitingSeatSlot,
 } from '../../types/match';
 import { FanGuideDialog } from './FanGuideDialog';
 import { MahjongTile } from './MahjongTile';
@@ -17,6 +19,7 @@ import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from '.
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
+  roomMode?: TableMode;
   activeSeat: Seat;
   actionIndicatorSeat?: Seat | null;
   lastDiscard: string | null;
@@ -38,6 +41,7 @@ interface TableStageProps {
   occupiedSeatCount?: number;
   seatCapacity?: number;
   preMatchActions?: BattleActionView[];
+  waitingSeatSlots?: WaitingSeatSlot[];
   tileScale?: number;
   canDecreaseTileScale?: boolean;
   canIncreaseTileScale?: boolean;
@@ -48,6 +52,10 @@ interface TableStageProps {
   onCycleTheme?: () => void;
   onAction?: (actionId: BattleActionView['id']) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
+  onReserveAiSeat?: (seatIndex: number) => void;
+  onConfigureAiSeat?: (seatIndex: number, apiKey: string, baseUrl: string, model: string) => void;
+  onCancelAiSeat?: (seatIndex: number) => void;
+  onUseDefaultBot?: (seatIndex: number) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
 }
@@ -56,6 +64,7 @@ const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
 
 export function TableStage({
   discards,
+  roomMode = 'normal',
   activeSeat,
   actionIndicatorSeat = null,
   lastDiscard,
@@ -77,6 +86,7 @@ export function TableStage({
   occupiedSeatCount,
   seatCapacity = 4,
   preMatchActions = [],
+  waitingSeatSlots = [],
   tileScale = 1,
   canDecreaseTileScale = false,
   canIncreaseTileScale = false,
@@ -87,16 +97,22 @@ export function TableStage({
   onCycleTheme,
   onAction,
   onQuickChat,
+  onReserveAiSeat,
+  onConfigureAiSeat,
+  onCancelAiSeat,
+  onUseDefaultBot,
   onDecreaseTileScale,
   onIncreaseTileScale,
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
+  const waitingSeatSlotBySeat = new Map(waitingSeatSlots.map((slot) => [slot.seat, slot]));
   const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const [openQuickChatSeat, setOpenQuickChatSeat] = useState<Seat | null>(null);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
+  const [aiSeatModalState, setAiSeatModalState] = useState<AiSeatModalState | null>(null);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const activeActionCalloutTimerRef = useRef<number | null>(null);
@@ -119,10 +135,22 @@ export function TableStage({
   const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
   const shouldShowPreMatchActions = preMatchActions.length > 0;
   const scalePercentLabel = `${Math.round(tileScale * 100)}%`;
+  const activeAiModalSlot = aiSeatModalState ? waitingSeatSlotBySeat.get(aiSeatModalState.seat) ?? null : null;
   const tableStageStyle = {
     '--table-stage-tile-scale': `${tileScale}`,
     '--table-stage-spotlight-scale': `${spotlightScale}`,
   } as CSSProperties;
+
+  function openAiSeatModal(slot: WaitingSeatSlot) {
+    setOpenQuickChatSeat(null);
+    setAiSeatModalState((currentState) => ({
+      seat: slot.seat,
+      seatIndex: slot.absoluteSeat,
+      apiKey: currentState?.seatIndex === slot.absoluteSeat ? currentState.apiKey : '',
+      baseUrl: currentState?.seatIndex === slot.absoluteSeat ? currentState.baseUrl : '',
+      model: currentState?.seatIndex === slot.absoluteSeat ? currentState.model : '',
+    }));
+  }
 
   useEffect(() => {
     activeActionCalloutRef.current = activeActionCallout;
@@ -146,6 +174,33 @@ export function TableStage({
       setOpenQuickChatSeat(null);
     }
   }, [openQuickChatSeat, playerBySeat]);
+
+  useEffect(() => {
+    if (!aiSeatModalState) {
+      return;
+    }
+
+    const slot = waitingSeatSlotBySeat.get(aiSeatModalState.seat);
+    if (!slot || roomMode !== 'ai') {
+      setAiSeatModalState(null);
+      return;
+    }
+
+    if (!slot.occupied && slot.canConfigureAi) {
+      return;
+    }
+
+    if (slot.seatType === 'ai') {
+      if (slot.aiStatus === 'ready') {
+        setAiSeatModalState(null);
+      }
+      return;
+    }
+
+    if (slot.seatType === 'bot' || (slot.occupied && !slot.occupiedByLocalAi)) {
+      setAiSeatModalState(null);
+    }
+  }, [aiSeatModalState, roomMode, waitingSeatSlotBySeat]);
 
   useEffect(() => {
     if (!openQuickChatSeat) {
@@ -387,10 +442,12 @@ export function TableStage({
           ) : null}
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
+            const waitingSeatSlot = waitingSeatSlotBySeat.get(seat);
             const hasMelds = (player?.melds.length ?? 0) > 0;
             const finalHandTiles = settlementHands?.[seat] ?? [];
             const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
             const shouldRenderSeatInfo = Boolean(player);
+            const canEditOwnedAi = Boolean(waitingSeatSlot?.occupiedByLocalAi);
             const settlementWinningTileIndex =
               settlementWinType === 'discard' &&
               settlementWinnerSeat === seat &&
@@ -463,17 +520,21 @@ export function TableStage({
                         className={`table-stage__player-info-button ${
                           openQuickChatSeat === seat ? 'table-stage__player-info-button--open' : ''
                         }`.trim()}
-                        aria-label={`打开${player.name}的快捷表情`}
-                        aria-expanded={openQuickChatSeat === seat}
-                        aria-controls={`table-stage-quick-chat-${seat}`}
+                        aria-label={canEditOwnedAi ? `打开${player.name}的AI配置` : `打开${player.name}的快捷表情`}
+                        aria-expanded={canEditOwnedAi ? undefined : openQuickChatSeat === seat}
+                        aria-controls={canEditOwnedAi ? undefined : `table-stage-quick-chat-${seat}`}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (canEditOwnedAi && waitingSeatSlot) {
+                            openAiSeatModal(waitingSeatSlot);
+                            return;
+                          }
                           setOpenQuickChatSeat((currentSeat) => (currentSeat === seat ? null : seat));
                         }}
                       >
                         <PlayerInfoBar player={player} />
                       </button>
-                      {openQuickChatSeat === seat ? (
+                      {openQuickChatSeat === seat && !canEditOwnedAi ? (
                         <QuickChatMenu
                           seat={seat}
                           player={player}
@@ -485,6 +546,24 @@ export function TableStage({
                           }}
                         />
                       ) : null}
+                    </div>
+                  ) : null}
+                  {!player && waitingSeatSlot?.canConfigureAi ? (
+                    <div className={`table-stage__ai-seat table-stage__ai-seat--${seat}`}>
+                      <button
+                        type="button"
+                        className="table-stage__ai-seat-button"
+                        aria-label={`为${SEAT_COPY[seat]}添加AI牌手`}
+                        onClick={() => {
+                          onReserveAiSeat?.(waitingSeatSlot.absoluteSeat);
+                          openAiSeatModal(waitingSeatSlot);
+                        }}
+                      >
+                        <span className="table-stage__ai-seat-plus" aria-hidden="true">
+                          +
+                        </span>
+                        <span className="table-stage__ai-seat-label">添加 AI</span>
+                      </button>
                     </div>
                   ) : null}
                 </div>
@@ -511,6 +590,39 @@ export function TableStage({
           {activeActionCallout ? <ActionCalloutMarker callout={activeActionCallout} phase="active" /> : null}
         </div>
       </div>
+      <AiSeatConfigDialog
+        state={aiSeatModalState}
+        slot={activeAiModalSlot}
+        onClose={() => setAiSeatModalState(null)}
+        onChange={(patch) => {
+          setAiSeatModalState((currentState) => (currentState ? { ...currentState, ...patch } : currentState));
+        }}
+        onSubmit={() => {
+          if (!aiSeatModalState) {
+            return;
+          }
+          onConfigureAiSeat?.(
+            aiSeatModalState.seatIndex,
+            aiSeatModalState.apiKey.trim(),
+            aiSeatModalState.baseUrl.trim(),
+            aiSeatModalState.model.trim(),
+          );
+        }}
+        onCancel={() => {
+          if (!aiSeatModalState) {
+            return;
+          }
+          onCancelAiSeat?.(aiSeatModalState.seatIndex);
+          setAiSeatModalState(null);
+        }}
+        onUseDefaultBot={() => {
+          if (!aiSeatModalState) {
+            return;
+          }
+          onUseDefaultBot?.(aiSeatModalState.seatIndex);
+          setAiSeatModalState(null);
+        }}
+      />
       <FanGuideDialog isOpen={isFanGuideOpen} onClose={() => setIsFanGuideOpen(false)} />
     </section>
   );
@@ -530,6 +642,13 @@ const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
 };
 
 const ACTION_POINTER_COPY: Record<Seat, string> = {
+  top: '对家',
+  left: '左家',
+  right: '右家',
+  bottom: '你',
+};
+
+const SEAT_COPY: Record<Seat, string> = {
   top: '对家',
   left: '左家',
   right: '右家',
@@ -576,6 +695,14 @@ type BarrageMessage = {
   topPercent: number;
 };
 
+type AiSeatModalState = {
+  seat: Seat;
+  seatIndex: number;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
 interface ActionCalloutMarkerProps {
   callout: ActionCallout;
   phase: 'active' | 'exit';
@@ -585,6 +712,16 @@ interface QuickChatMenuProps {
   seat: Seat;
   player: TableStagePlayer;
   onSelect: (emoji: QuickChatEmoji) => void;
+}
+
+interface AiSeatConfigDialogProps {
+  state: AiSeatModalState | null;
+  slot: WaitingSeatSlot | null;
+  onClose: () => void;
+  onChange: (patch: Partial<AiSeatModalState>) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  onUseDefaultBot: () => void;
 }
 
 function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
@@ -643,6 +780,101 @@ function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
           <span aria-hidden="true">{item.emoji}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function AiSeatConfigDialog({
+  state,
+  slot,
+  onClose,
+  onChange,
+  onSubmit,
+  onCancel,
+  onUseDefaultBot,
+}: AiSeatConfigDialogProps) {
+  if (!state) {
+    return null;
+  }
+
+  const isValidating = slot?.seatType === 'ai' && slot.aiStatus === 'validating';
+  const canSubmit =
+    !isValidating &&
+    state.apiKey.trim().length > 0 &&
+    state.baseUrl.trim().length > 0 &&
+    state.model.trim().length > 0;
+  const statusText =
+    slot?.seatType === 'ai'
+      ? slot.aiStatus === 'validating'
+        ? '正在验证 AI 接口连通性...'
+        : slot.aiStatus === 'error'
+          ? '验证失败，请检查配置后重试。'
+          : slot.aiStatus === 'configuring'
+            ? '座位已预留，填写配置后即可验证。'
+            : '配置已完成。'
+      : '座位已预留，填写配置后即可验证。';
+
+  return (
+    <div className="table-stage__modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="table-stage__modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`配置${SEAT_COPY[state.seat]}AI牌手`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="table-stage__modal-header">
+          <div>
+            <span className="table-stage__modal-eyebrow">{SEAT_COPY[state.seat]}座位</span>
+            <strong>配置 AI 牌手</strong>
+          </div>
+          <button type="button" className="table-stage__modal-close" aria-label="关闭AI配置弹窗" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="table-stage__modal-status">
+          <span>{statusText}</span>
+          {slot?.aiError ? <em>{slot.aiError}</em> : null}
+        </div>
+        <label className="table-stage__modal-field">
+          <span>OpenAI API Key</span>
+          <input
+            value={state.apiKey}
+            onChange={(event) => onChange({ apiKey: event.target.value })}
+            placeholder="sk-..."
+            disabled={isValidating}
+          />
+        </label>
+        <label className="table-stage__modal-field">
+          <span>Base URL</span>
+          <input
+            value={state.baseUrl}
+            onChange={(event) => onChange({ baseUrl: event.target.value })}
+            placeholder="https://api.openai.com/v1"
+            disabled={isValidating}
+          />
+        </label>
+        <label className="table-stage__modal-field">
+          <span>模型名称</span>
+          <input
+            value={state.model}
+            onChange={(event) => onChange({ model: event.target.value })}
+            placeholder="gpt-4.1-mini"
+            disabled={isValidating}
+          />
+        </label>
+        <div className="table-stage__modal-actions">
+          <button type="button" className="table-stage__modal-button table-stage__modal-button--primary" onClick={onSubmit} disabled={!canSubmit}>
+            确定
+          </button>
+          <button type="button" className="table-stage__modal-button" onClick={onCancel}>
+            取消
+          </button>
+          <button type="button" className="table-stage__modal-button table-stage__modal-button--ghost" onClick={onUseDefaultBot}>
+            使用默认BOT
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

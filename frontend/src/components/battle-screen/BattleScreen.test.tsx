@@ -22,6 +22,7 @@ function setViewportSize(width: number, height: number) {
 
 function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): BattleViewModel {
   return {
+    roomMode: 'normal',
     mode: 'watching',
     tableCode: 'AB12CD',
     canLeaveTable: false,
@@ -109,6 +110,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     ],
     actions: [],
     waitingControls: null,
+    waitingSeatSlots: [],
     discards: {
       bottom: ['w1'],
       left: [],
@@ -1974,7 +1976,7 @@ describe('BattleScreen', () => {
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
   });
 
-  it('prevents repeated ready clicks for 1.5 seconds', () => {
+  it('prevents repeated ready clicks for 3 seconds', () => {
     vi.useFakeTimers();
     const onAction = vi.fn();
 
@@ -2005,7 +2007,7 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('button', { name: '准备' })).toBeDisabled();
 
     act(() => {
-      vi.advanceTimersByTime(1499);
+      vi.advanceTimersByTime(2999);
       screen.getByRole('button', { name: '准备' }).click();
     });
 

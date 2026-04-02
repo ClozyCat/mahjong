@@ -10,7 +10,14 @@ interface PlayerInfoBarProps {
 
 export function PlayerInfoBar({ player, className = '' }: PlayerInfoBarProps) {
   const windLabel = player.wind ? (WIND_LABELS[player.wind] ?? player.wind) : null;
-  const presenceLabel = player.isBotControlled ? '离线' : player.connected === false ? '离线' : '在线';
+  const presenceLabel =
+    player.seatType === 'bot'
+      ? 'BOT'
+      : player.seatType === 'ai'
+        ? 'AI'
+        : player.connected === false
+          ? '离线'
+          : '在线';
   const eyebrowText = [windLabel, player.isDealer ? '庄家' : null, presenceLabel].filter(Boolean).join(' · ');
   const metaText = [
     typeof player.score === 'number' ? player.score.toLocaleString() : null,

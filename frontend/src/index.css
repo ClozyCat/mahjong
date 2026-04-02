@@ -996,6 +996,190 @@ button:active:not(:disabled) {
   line-height: 1;
 }
 
+.table-stage__ai-seat {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+}
+
+.table-stage__ai-seat-button {
+  display: grid;
+  place-items: center;
+  gap: 0.35rem;
+  width: 4.8rem;
+  height: 4.8rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(244, 236, 208, 0.26);
+  border-radius: 1.4rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
+    rgba(7, 24, 35, 0.76);
+  color: rgba(250, 244, 228, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 28px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.table-stage__ai-seat-button:hover:not(:disabled),
+.table-stage__ai-seat-button:focus-visible {
+  border-color: rgba(255, 244, 205, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.06)),
+    rgba(10, 30, 43, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 34px rgba(0, 0, 0, 0.24),
+    0 0 0 0.14rem rgba(255, 245, 214, 0.08);
+}
+
+.table-stage__ai-seat-plus {
+  font-family: 'Oswald', sans-serif;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.table-stage__ai-seat-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.table-stage__modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.2rem;
+  background:
+    linear-gradient(180deg, rgba(5, 18, 24, 0.56), rgba(5, 18, 24, 0.74));
+  backdrop-filter: blur(8px);
+}
+
+.table-stage__modal {
+  width: min(28rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(236, 226, 195, 0.28);
+  border-radius: 1.4rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(17, 54, 45, 0.94), rgba(10, 28, 24, 0.98));
+  color: rgba(251, 247, 233, 0.96);
+  box-shadow:
+    0 28px 50px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.table-stage__modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.table-stage__modal-header strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1.12rem;
+}
+
+.table-stage__modal-eyebrow {
+  color: rgba(241, 227, 178, 0.84);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+}
+
+.table-stage__modal-close {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid rgba(239, 226, 186, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(251, 247, 233, 0.92);
+}
+
+.table-stage__modal-status {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(239, 226, 186, 0.12);
+  border-radius: 1rem;
+  background: rgba(6, 18, 25, 0.28);
+  color: rgba(247, 242, 228, 0.86);
+  font-size: 0.86rem;
+}
+
+.table-stage__modal-status em {
+  color: rgba(255, 205, 160, 0.96);
+  font-style: normal;
+}
+
+.table-stage__modal-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.table-stage__modal-field span {
+  font-size: 0.82rem;
+  color: rgba(247, 241, 226, 0.88);
+}
+
+.table-stage__modal-field input {
+  width: 100%;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(239, 226, 186, 0.16);
+  border-radius: 0.95rem;
+  background: rgba(4, 16, 23, 0.42);
+  color: rgba(251, 247, 233, 0.96);
+  outline: none;
+}
+
+.table-stage__modal-field input::placeholder {
+  color: rgba(247, 241, 226, 0.38);
+}
+
+.table-stage__modal-field input:focus {
+  border-color: rgba(246, 228, 164, 0.34);
+  box-shadow: 0 0 0 0.14rem rgba(248, 232, 177, 0.08);
+}
+
+.table-stage__modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.table-stage__modal-button {
+  min-width: 5.6rem;
+  padding: 0.66rem 0.9rem;
+  border: 1px solid rgba(239, 226, 186, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(251, 247, 233, 0.94);
+}
+
+.table-stage__modal-button--primary {
+  background:
+    linear-gradient(180deg, rgba(245, 223, 156, 0.92), rgba(204, 164, 78, 0.92));
+  color: #2a1700;
+  border-color: rgba(255, 234, 184, 0.3);
+}
+
+.table-stage__modal-button--ghost {
+  background:
+    linear-gradient(180deg, rgba(102, 165, 140, 0.26), rgba(31, 82, 67, 0.4));
+}
+
+.table-stage__modal-button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
 .table-stage__player-info--active {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.14),

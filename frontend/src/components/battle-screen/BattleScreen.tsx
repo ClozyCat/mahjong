@@ -21,6 +21,10 @@ interface BattleScreenProps {
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
+  onReserveAiSeat?: (seatIndex: number) => void;
+  onConfigureAiSeat?: (seatIndex: number, apiKey: string, baseUrl: string, model: string) => void;
+  onCancelAiSeat?: (seatIndex: number) => void;
+  onUseDefaultBot?: (seatIndex: number) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -46,6 +50,10 @@ export function BattleScreen({
   onCopyTableCode,
   onLeaveTable,
   onQuickChat,
+  onReserveAiSeat,
+  onConfigureAiSeat,
+  onCancelAiSeat,
+  onUseDefaultBot,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [viewportState, setViewportState] = useState(getBattleViewportState);
@@ -256,6 +264,7 @@ export function BattleScreen({
           <div className="battle-stage__table-wrap">
             <TableStage
               discards={viewModel.discards}
+              roomMode={viewModel.roomMode}
               activeSeat={viewModel.activePlayerSeat}
               actionIndicatorSeat={viewModel.actionIndicatorSeat}
               lastDiscard={visibleLastDiscard}
@@ -277,6 +286,7 @@ export function BattleScreen({
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
               preMatchActions={viewModel.waitingControls ? preMatchActions : []}
+              waitingSeatSlots={viewModel.waitingSeatSlots}
               tileScale={tableTileScale}
               canDecreaseTileScale={canDecreaseTableTileScale}
               canIncreaseTileScale={canIncreaseTableTileScale}
@@ -287,6 +297,10 @@ export function BattleScreen({
               onCycleTheme={onCycleTheme}
               onAction={handleAction}
               onQuickChat={onQuickChat}
+              onReserveAiSeat={onReserveAiSeat}
+              onConfigureAiSeat={onConfigureAiSeat}
+              onCancelAiSeat={onCancelAiSeat}
+              onUseDefaultBot={onUseDefaultBot}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />

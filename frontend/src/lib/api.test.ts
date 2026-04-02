@@ -13,6 +13,7 @@ describe('api helpers', () => {
         JSON.stringify({
           table_code: 'AB12CD',
           phase: 'waiting',
+          mode: 'normal',
           created_at: '2026-03-26T06:00:00Z',
           seats: [],
         }),
@@ -31,7 +32,7 @@ describe('api helpers', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ test_mode: false, enforce_minimum_eight_fan: true }),
+      body: JSON.stringify({ mode: 'normal', enforce_minimum_eight_fan: true }),
     });
     expect(result.table_code).toBe('AB12CD');
   });
@@ -42,6 +43,7 @@ describe('api helpers', () => {
         JSON.stringify({
           table_code: 'ROOM42',
           phase: 'waiting',
+          mode: 'test',
           created_at: '2026-03-26T06:00:00Z',
           seats: [],
         }),
@@ -53,14 +55,14 @@ describe('api helpers', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createTable('http://localhost:8080', 'ROOM42', true, false);
+    await createTable('http://localhost:8080', 'ROOM42', 'test', false);
 
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/tables', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ table_code: 'ROOM42', test_mode: true, enforce_minimum_eight_fan: false }),
+      body: JSON.stringify({ table_code: 'ROOM42', mode: 'test', enforce_minimum_eight_fan: false }),
     });
   });
 
@@ -103,7 +105,7 @@ describe('api helpers', () => {
       ),
     );
 
-    await expect(createTable('http://localhost:8080', 'ROOM42', false)).rejects.toMatchObject({
+    await expect(createTable('http://localhost:8080', 'ROOM42', 'normal')).rejects.toMatchObject({
       status: 409,
       detail: { detail: 'table_code_exists' },
     });
