@@ -676,9 +676,9 @@ const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
 ];
 const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   top: 135,
-  left: 330,
   right: 220,
   bottom: 220,
+  left: 320,
 };
 
 type ActionCallout = {
@@ -932,7 +932,7 @@ function buildTableSummary(roundLabel: string, phaseLabel: string) {
 
 function getQuickChatItemStyle(seat: Seat, index: number): CSSProperties {
   const angles = getQuickChatAngles(seat);
-  const angle = angles[index] ?? QUICK_CHAT_ARC_CENTER_DEGREES[seat];
+  const angle = angles[index] ?? getQuickChatArcCenterDegrees(seat);
   const radians = (angle * Math.PI) / 180;
 
   return {
@@ -942,11 +942,27 @@ function getQuickChatItemStyle(seat: Seat, index: number): CSSProperties {
 }
 
 function getQuickChatAngles(seat: Seat) {
-  const center = QUICK_CHAT_ARC_CENTER_DEGREES[seat];
+  if (seat === 'left') {
+    return getQuickChatAngles('right').map((angle) => mirrorAngleHorizontally(angle));
+  }
+
+  const center = getQuickChatArcCenterDegrees(seat);
   const step = QUICK_CHAT_ITEMS.length > 1 ? QUICK_CHAT_ARC_SWEEP_DEGREES / (QUICK_CHAT_ITEMS.length - 1) : 0;
   const start = center - QUICK_CHAT_ARC_SWEEP_DEGREES / 2;
 
   return QUICK_CHAT_ITEMS.map((_, index) => start + step * index);
+}
+
+function getQuickChatArcCenterDegrees(seat: Seat) {
+  if (seat === 'left') {
+    return mirrorAngleHorizontally(QUICK_CHAT_ARC_CENTER_DEGREES.right);
+  }
+
+  return QUICK_CHAT_ARC_CENTER_DEGREES[seat];
+}
+
+function mirrorAngleHorizontally(angle: number) {
+  return (180 - angle + 360) % 360;
 }
 
 function getRandomBarrageTopPercent() {

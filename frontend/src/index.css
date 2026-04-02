@@ -2016,11 +2016,30 @@ button:active:not(:disabled) {
   min-height: 100%;
 }
 
+.action-dock__status-group {
+  display: grid;
+  justify-items: end;
+  width: max-content;
+  max-width: 100%;
+}
+
+.action-dock__status-group-standalone {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
 .action-dock__ready-hand-anchor {
   position: absolute;
-  right: calc(100% + 0.48rem);
-  top: 0.08rem;
+  right: calc(100% + 0.3rem);
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 3;
+}
+
+.action-dock__status-group-standalone .action-dock__ready-hand-anchor {
+  position: static;
+  transform: none;
 }
 
 .action-dock__ready-hand-trigger {
@@ -4269,6 +4288,15 @@ input {
   padding-right: 0.18rem;
 }
 
+.action-dock__countdown-head {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: max-content;
+  max-width: 100%;
+}
+
 .action-dock__countdown strong {
   color: #fff;
   font-family: 'Oswald', sans-serif;
@@ -4567,7 +4595,7 @@ input {
   }
 
   .action-dock__ready-hand-anchor {
-    right: calc(100% + 0.24rem);
+    right: calc(100% + 0.18rem);
   }
 
   .action-dock__ready-hand-popover {

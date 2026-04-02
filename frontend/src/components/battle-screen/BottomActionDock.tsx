@@ -126,6 +126,46 @@ export function BottomActionDock({
     setIsReadyHandPopoverPinned(false);
   }, [readyHandInsight]);
 
+  const readyHandControl = readyHandInsight ? (
+    <div
+      ref={readyHandPopoverRef}
+      className="action-dock__ready-hand-anchor"
+      onMouseEnter={() => setIsReadyHandPopoverHovered(true)}
+      onMouseLeave={() => setIsReadyHandPopoverHovered(false)}
+    >
+      <button
+        type="button"
+        className={`action-dock__ready-hand-trigger ${
+          isReadyHandPopoverOpen ? 'action-dock__ready-hand-trigger--open' : ''
+        }`.trim()}
+        aria-label={getReadyHandTriggerLabel(readyHandInsight)}
+        aria-expanded={isReadyHandPopoverOpen}
+        onClick={() => setIsReadyHandPopoverPinned((currentValue) => !currentValue)}
+      >
+        i
+      </button>
+      {isReadyHandPopoverOpen ? (
+        <section className="action-dock__ready-hand-popover" aria-label={getReadyHandPopoverLabel(readyHandInsight)}>
+          <div className="action-dock__ready-hand-popover-head">
+            <strong>{getReadyHandPopoverTitle(readyHandInsight)}</strong>
+            <span>{getReadyHandPopoverSummary(readyHandInsight)}</span>
+          </div>
+          <div className="action-dock__ready-hand-list" role="list">
+            {readyHandInsight.waits.map((wait) => (
+              <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
+                <div className="action-dock__ready-hand-tile">
+                  <MahjongTile code={wait.code} variant="discard" className="action-dock__ready-hand-preview-tile" />
+                  <span>{formatTileName(wait.code, wait.code)}</span>
+                </div>
+                <strong>{wait.availableCount}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  ) : null;
+
   const content = (
     <>
       {!isCollapsed ? (
@@ -230,55 +270,22 @@ export function BottomActionDock({
               )}
             </div>
             <div className="action-dock__info-rail">
-              {readyHandInsight ? (
-                <div
-                  ref={readyHandPopoverRef}
-                  className="action-dock__ready-hand-anchor"
-                  onMouseEnter={() => setIsReadyHandPopoverHovered(true)}
-                  onMouseLeave={() => setIsReadyHandPopoverHovered(false)}
-                >
-                  <button
-                    type="button"
-                    className={`action-dock__ready-hand-trigger ${
-                      isReadyHandPopoverOpen ? 'action-dock__ready-hand-trigger--open' : ''
-                    }`.trim()}
-                    aria-label={getReadyHandTriggerLabel(readyHandInsight)}
-                    aria-expanded={isReadyHandPopoverOpen}
-                    onClick={() => setIsReadyHandPopoverPinned((currentValue) => !currentValue)}
-                  >
-                    i
-                  </button>
-                  {isReadyHandPopoverOpen ? (
-                    <section
-                      className="action-dock__ready-hand-popover"
-                      aria-label={getReadyHandPopoverLabel(readyHandInsight)}
+              {readyHandControl || shouldShowCountdown ? (
+                <div className="action-dock__status-group">
+                  {shouldShowCountdown ? (
+                    <div
+                      className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
+                      aria-label={`剩余 ${remainingSeconds} 秒`}
                     >
-                      <div className="action-dock__ready-hand-popover-head">
-                        <strong>{getReadyHandPopoverTitle(readyHandInsight)}</strong>
-                        <span>{getReadyHandPopoverSummary(readyHandInsight)}</span>
+                      <div className="action-dock__countdown-head">
+                        {readyHandControl}
+                        <span>倒计时</span>
                       </div>
-                      <div className="action-dock__ready-hand-list" role="list">
-                        {readyHandInsight.waits.map((wait) => (
-                          <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
-                            <div className="action-dock__ready-hand-tile">
-                              <MahjongTile code={wait.code} variant="discard" className="action-dock__ready-hand-preview-tile" />
-                              <span>{formatTileName(wait.code, wait.code)}</span>
-                            </div>
-                            <strong>{wait.availableCount}</strong>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
-                </div>
-              ) : null}
-              {shouldShowCountdown ? (
-                <div
-                  className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
-                  aria-label={`剩余 ${remainingSeconds} 秒`}
-                >
-                  <span>倒计时</span>
-                  <strong>{remainingSeconds}</strong>
+                      <strong>{remainingSeconds}</strong>
+                    </div>
+                  ) : (
+                    <div className="action-dock__status-group-standalone">{readyHandControl}</div>
+                  )}
                 </div>
               ) : null}
               <button

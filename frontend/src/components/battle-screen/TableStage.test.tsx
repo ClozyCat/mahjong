@@ -900,6 +900,39 @@ describe('TableStage', () => {
     expect(screen.queryByRole('menuitem', { name: '向Player Top发送笑表情' })).toBeNull();
   });
 
+  it('mirrors the left quick-chat layout from the right seat', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'left', absoluteSeat: 3, name: 'Player Left', melds: [] },
+          { seat: 'right', absoluteSeat: 1, name: 'Player Right', melds: [] },
+          { seat: 'bottom', absoluteSeat: 0, name: 'Player Bottom', melds: [], isLocal: true },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
+    const leftOffsets = readQuickChatOffsets('table-stage-quick-chat-left');
+
+    fireEvent.click(screen.getByRole('button', { name: '打开Player Right的快捷表情' }));
+    const rightOffsets = readQuickChatOffsets('table-stage-quick-chat-right');
+
+    expect(leftOffsets).toHaveLength(rightOffsets.length);
+    leftOffsets.forEach((offset, index) => {
+      expect(offset.x).toBeCloseTo(-rightOffsets[index].x, 5);
+      expect(offset.y).toBeCloseTo(rightOffsets[index].y, 5);
+    });
+  });
+
   it('renders quick-chat barrage text above the table felt and below the tiles layer', () => {
     const { rerender } = render(
       <TableStage
@@ -942,3 +975,13 @@ describe('TableStage', () => {
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
 });
+
+function readQuickChatOffsets(menuId: string) {
+  const menu = document.getElementById(menuId);
+  expect(menu).not.toBeNull();
+
+  return Array.from(menu?.querySelectorAll<HTMLButtonElement>('.table-stage__quick-chat-item') ?? []).map((item) => ({
+    x: Number.parseFloat(item.style.getPropertyValue('--quick-chat-x')),
+    y: Number.parseFloat(item.style.getPropertyValue('--quick-chat-y')),
+  }));
+}
