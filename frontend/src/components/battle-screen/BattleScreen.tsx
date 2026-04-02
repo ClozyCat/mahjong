@@ -55,6 +55,9 @@ export function BattleScreen({
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
+  const trackedLastDiscardKeyRef = useRef<string | null>(null);
+  const trackedLastDiscardStartedAtRef = useRef<number>(0);
+  const trackedLastDiscardActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
@@ -110,6 +113,17 @@ export function BattleScreen({
   }, []);
 
   useEffect(() => {
+    if (lastDiscardSpotlightKey === trackedLastDiscardKeyRef.current) {
+      return;
+    }
+
+    trackedLastDiscardKeyRef.current = lastDiscardSpotlightKey;
+    trackedLastDiscardStartedAtRef.current = lastDiscardSpotlightKey ? Date.now() : 0;
+    trackedLastDiscardActionEffectKeyRef.current = viewModel.actionEffect?.key ?? null;
+    setReturnedLastDiscardKey(null);
+  }, [lastDiscardSpotlightKey, viewModel.actionEffect?.key]);
+
+  useEffect(() => {
     if (lastDiscardReturnTimerRef.current !== null) {
       window.clearTimeout(lastDiscardReturnTimerRef.current);
       lastDiscardReturnTimerRef.current = null;
@@ -126,17 +140,28 @@ export function BattleScreen({
     }
 
     if (!viewModel.shouldAutoReturnLastDiscardToRiver) {
-      setReturnedLastDiscardKey((currentKey) => (currentKey === lastDiscardSpotlightKey ? null : currentKey));
       return undefined;
     }
 
-    setReturnedLastDiscardKey((currentKey) => (currentKey === lastDiscardSpotlightKey ? null : currentKey));
+    if (shouldReturnDiscardImmediatelyForNextAction(viewModel.actionEffect, trackedLastDiscardActionEffectKeyRef.current)) {
+      setReturnedLastDiscardKey(lastDiscardSpotlightKey);
+      return undefined;
+    }
+
+    const elapsedMs = Math.max(0, Date.now() - trackedLastDiscardStartedAtRef.current);
+    const remainingMs = Math.max(0, LAST_DISCARD_SPOTLIGHT_LINGER_MS - elapsedMs);
+
+    if (remainingMs === 0) {
+      setReturnedLastDiscardKey(lastDiscardSpotlightKey);
+      return undefined;
+    }
+
     lastDiscardReturnTimerRef.current = window.setTimeout(() => {
       setReturnedLastDiscardKey((currentKey) =>
         currentKey === null || currentKey === lastDiscardSpotlightKey ? lastDiscardSpotlightKey : currentKey,
       );
       lastDiscardReturnTimerRef.current = null;
-    }, LAST_DISCARD_SPOTLIGHT_LINGER_MS);
+    }, remainingMs);
 
     return () => {
       if (lastDiscardReturnTimerRef.current !== null) {
@@ -147,6 +172,7 @@ export function BattleScreen({
   }, [
     lastDiscardSpotlightKey,
     shouldReturnLastDiscardToRiver,
+    viewModel.actionEffect?.key,
     viewModel.shouldAutoReturnLastDiscardToRiver,
   ]);
 
@@ -304,6 +330,17 @@ function getSettlementPanelDelayMs(winType: string | null, hasObservedNoResult: 
   }
 
   return 0;
+}
+
+function shouldReturnDiscardImmediatelyForNextAction(
+  actionEffect: BattleViewModel['actionEffect'],
+  trackedDiscardActionEffectKey: string | null,
+) {
+  if (!actionEffect?.key || actionEffect.key === trackedDiscardActionEffectKey) {
+    return false;
+  }
+
+  return actionEffect.emphasis === 'draw' || actionEffect.emphasis === 'kong' || actionEffect.emphasis === 'system';
 }
 
 function getSettlementVisibilityKey(result: BattleViewModel['result']) {

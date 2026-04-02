@@ -9,11 +9,11 @@ from app.domain.actions import (
     tile_discarded_event,
     tile_drawn_event,
 )
-from app.domain.hand_eval import decompose_winning_hand
+from app.domain.hand_eval import decompose_winning_hand_with_melds
 from app.domain.claims import compute_claim_window, is_valid_chow_sequence, resolve_claims
 from app.domain.fan_eval import evaluate_fans
 from app.domain.hand_features import extract_hand_features
-from app.domain.hand_eval import is_winning_hand
+from app.domain.hand_eval import is_winning_hand_with_melds
 from app.domain.models import PlayerState, RoundState, Tile
 from app.domain.wall import WallState, build_wall, draw_live_tile, draw_replacement_tile
 
@@ -890,7 +890,15 @@ def apply_flower_action(
 def can_declare_hu(state: RoundState, seat: int, incoming_tile: str | None) -> bool:
     if (state.pending_action or {}).get("type") == "opening_flowers":
         return False
-    if not is_winning_hand(_player_tile_keys(state, seat=seat, incoming_tile=incoming_tile)):
+    player = state.players[seat]
+    concealed_tile_keys = [tile.tile_key for tile in player.concealed_tiles]
+    if incoming_tile is not None:
+        concealed_tile_keys.append(incoming_tile)
+    meld_tile_key_groups = [
+        [tile.tile_key for tile in meld]
+        for meld in player.melds
+    ]
+    if not is_winning_hand_with_melds(concealed_tile_keys, meld_tile_key_groups):
         return False
 
     try:
@@ -1437,7 +1445,13 @@ def _fan_result_for_win(
     ]
     concealed_tile_keys = [tile.tile_key for tile in player.concealed_tiles]
     tile_keys = _player_tile_keys(state, seat=winner_seat, incoming_tile=incoming_tile)
-    decompositions = decompose_winning_hand(tile_keys)
+    effective_concealed_tile_keys = list(concealed_tile_keys)
+    if incoming_tile is not None:
+        effective_concealed_tile_keys.append(incoming_tile)
+    decompositions = decompose_winning_hand_with_melds(
+        effective_concealed_tile_keys,
+        meld_tile_key_groups,
+    )
     win_type = "self_draw" if incoming_tile is None else "discard"
     timing = (
         _timing_features_for_self_draw(state)
@@ -1511,9 +1525,8 @@ def _append_kong_entry(
     payer_seats: list[int],
     tile_key: str | None = None,
 ) -> dict:
-    trackers = {
-        "kong_entries": list((score_trackers or _empty_score_trackers()).get("kong_entries", []))
-    }
+    trackers = dict(score_trackers or _empty_score_trackers())
+    trackers["kong_entries"] = list(trackers.get("kong_entries", []))
     entry = {
         "kong_type": kong_type,
         "actor_seat": actor_seat,

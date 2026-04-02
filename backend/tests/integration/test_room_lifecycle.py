@@ -17,6 +17,13 @@ def _leave_table(ws) -> None:
     ws.send_json({"type": "leave_table", "payload": {}})
 
 
+def _receive_until_snapshot(ws) -> dict:
+    while True:
+        message = ws.receive_json()
+        if message["type"] == "room_snapshot":
+            return message
+
+
 def test_four_players_join_room_without_auto_start(test_app) -> None:
     client = TestClient(test_app)
     table_code = client.post("/api/tables").json()["table_code"]
@@ -75,16 +82,20 @@ def test_room_starts_only_after_all_players_ready_and_start_request(test_app) ->
                 assert peer_snapshot["payload"]["seats"][ready_index]["ready"] is True
 
         sockets[0].send_json({"type": "start_match", "payload": {}})
-        start_snapshot = None
-        start_prompt = None
-        for _ in range(6):
-            message = sockets[0].receive_json()
-            if message["type"] == "room_snapshot" and start_snapshot is None:
-                start_snapshot = message
-            if message["type"] == "action_prompt":
-                start_prompt = message
-                break
-        peer_snapshots = [ws.receive_json() for ws in sockets[1:]]
+        snapshots = [_receive_until_snapshot(ws) for ws in sockets]
+        start_snapshot = next(
+            snapshot
+            for snapshot in snapshots
+            if snapshot["payload"]["local_seat"] == 0
+        )
+        active_snapshot = next(
+            snapshot
+            for snapshot in snapshots
+            if snapshot["payload"]["private_state"]["pending_action"] is not None
+        )
+        active_seat = active_snapshot["payload"]["private_state"]["pending_action"]["seat_index"]
+        start_prompt = sockets[active_seat].receive_json()
+        peer_snapshots = [snapshot for snapshot in snapshots if snapshot is not start_snapshot]
 
     assert start_snapshot is not None
     assert start_snapshot["type"] == "room_snapshot"

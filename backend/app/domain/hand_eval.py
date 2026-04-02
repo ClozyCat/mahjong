@@ -22,9 +22,21 @@ def _parse_suit(tile_key: str) -> tuple[str, int] | None:
 
 
 def _is_seven_pairs(counts: Counter[str]) -> bool:
-    if len(counts) != 7:
+    if sum(counts.values()) != 14:
         return False
-    return all(count == 2 for count in counts.values())
+    pair_count = 0
+    for count in counts.values():
+        if count not in {2, 4}:
+            return False
+        pair_count += count // 2
+    return pair_count == 7
+
+
+def _seven_pairs_pair_tiles(counts: Counter[str]) -> list[str]:
+    pair_tiles: list[str] = []
+    for tile_key in sorted(counts):
+        pair_tiles.extend([tile_key] * (counts[tile_key] // 2))
+    return pair_tiles
 
 
 def _is_thirteen_orphans(counts: Counter[str]) -> bool:
@@ -239,7 +251,7 @@ def decompose_winning_hand(tile_keys: list[str]) -> list[dict]:
         decompositions.append(
             {
                 "kind": "seven_pairs",
-                "pairs": sorted(counts.keys()),
+                "pairs": _seven_pairs_pair_tiles(counts),
             }
         )
     if _is_thirteen_orphans(counts):
@@ -254,6 +266,42 @@ def decompose_winning_hand(tile_keys: list[str]) -> list[dict]:
     decompositions.extend(_special_knitted_decompositions(counts))
     decompositions.extend(_standard_decompositions_from_counts(counts))
     return decompositions
+
+
+def decompose_winning_hand_with_melds(
+    concealed_tile_keys: list[str],
+    meld_tile_key_groups: list[list[str]],
+) -> list[dict]:
+    if not meld_tile_key_groups:
+        return decompose_winning_hand(concealed_tile_keys)
+
+    normalized_melds = [_normalize_meld_tile_key_group(meld_group) for meld_group in meld_tile_key_groups]
+    if any(meld is None for meld in normalized_melds):
+        return []
+
+    remaining_meld_count = 4 - len(normalized_melds)
+    if remaining_meld_count < 0:
+        return []
+    if len(concealed_tile_keys) != remaining_meld_count * 3 + 2:
+        return []
+
+    base_decompositions = _standard_decompositions_from_counts(Counter(concealed_tile_keys))
+    fixed_melds = [list(meld) for meld in normalized_melds if meld is not None]
+    return [
+        {
+            "kind": "standard",
+            "pair": decomposition["pair"],
+            "melds": [*fixed_melds, *decomposition["melds"]],
+        }
+        for decomposition in base_decompositions
+    ]
+
+
+def is_winning_hand_with_melds(
+    concealed_tile_keys: list[str],
+    meld_tile_key_groups: list[list[str]],
+) -> bool:
+    return bool(decompose_winning_hand_with_melds(concealed_tile_keys, meld_tile_key_groups))
 
 
 def _standard_decompositions_from_counts(counts: Counter[str]) -> list[dict]:
@@ -280,6 +328,14 @@ def _standard_decompositions_from_counts(counts: Counter[str]) -> list[dict]:
                 }
             )
     return decompositions
+
+
+def _normalize_meld_tile_key_group(meld_tile_keys: list[str]) -> list[str] | None:
+    if len(meld_tile_keys) == 3:
+        return list(meld_tile_keys)
+    if len(meld_tile_keys) == 4 and len(set(meld_tile_keys)) == 1:
+        return list(meld_tile_keys[:3])
+    return None
 
 
 def _extract_all_melds(counts: Counter[str]) -> list[list[list[str]]]:

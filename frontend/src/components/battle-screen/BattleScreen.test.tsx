@@ -128,7 +128,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     settlementHands: null,
     lastDiscard: 'b4',
     lastDiscardSeat: 'left',
-    lastDiscardEventKey: null,
     shouldAutoReturnLastDiscardToRiver: false,
     actionEffect: null,
     toasts: [],
@@ -492,7 +491,6 @@ describe('BattleScreen', () => {
         },
         lastDiscard: 'b4',
         lastDiscardSeat: 'left',
-        lastDiscardEventKey: 'tile_discarded:1:b4#discard-1',
         shouldAutoReturnLastDiscardToRiver: true,
       }),
     );
@@ -528,7 +526,6 @@ describe('BattleScreen', () => {
         },
         lastDiscard: 'b4',
         lastDiscardSeat: 'left',
-        lastDiscardEventKey: 'tile_discarded:1:b4#discard-1',
         shouldAutoReturnLastDiscardToRiver: false,
       }),
     );
@@ -555,7 +552,6 @@ describe('BattleScreen', () => {
         },
         lastDiscard: 'b4',
         lastDiscardSeat: 'left',
-        lastDiscardEventKey: null,
         shouldAutoReturnLastDiscardToRiver: true,
       }),
     );
@@ -570,6 +566,186 @@ describe('BattleScreen', () => {
 
     act(() => {
       vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('counts the 1.5 second linger from the discard itself and only waits the remaining time after a claim window closes', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        shouldAutoReturnLastDiscardToRiver: false,
+      }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          shouldAutoReturnLastDiscardToRiver: true,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('returns the discard immediately when the claim window closes after the 1.5 second linger has already elapsed', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        shouldAutoReturnLastDiscardToRiver: false,
+      }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          shouldAutoReturnLastDiscardToRiver: true,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('returns the discard immediately when a different follow-up action happens before 1.5 seconds elapse', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        shouldAutoReturnLastDiscardToRiver: true,
+        actionEffect: {
+          key: 'discard-1',
+          label: '出牌',
+          emphasis: 'discard',
+          seat: 'left',
+        },
+      }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    act(() => {
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            discards: {
+              bottom: ['w1'],
+              left: ['b4'],
+              top: [],
+              right: [],
+            },
+            lastDiscard: 'b4',
+            lastDiscardSeat: 'left',
+            shouldAutoReturnLastDiscardToRiver: true,
+            actionEffect: {
+              key: 'draw-1',
+              label: '摸牌',
+              emphasis: 'draw',
+              seat: 'top',
+            },
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
     });
 
     expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
@@ -884,7 +1060,7 @@ describe('BattleScreen', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
     expect(container.querySelector('.battle-stage .battle-stage__local-player-info')).toBeNull();
-    expect(container.querySelector('.battle-stage .table-stage__player-info--bottom')).not.toBeNull();
+    expect(container.querySelector('.battle-stage .table-stage__player-info-cluster--bottom')).not.toBeNull();
     expect(screen.getByText('Player A')).toBeInTheDocument();
     expect(container.querySelector('.battle-drawer .player-ring')).toBeNull();
     expect(document.body.querySelector('.action-dock__player')).toBeNull();

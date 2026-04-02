@@ -458,6 +458,101 @@ def test_can_declare_hu_accepts_supported_eight_fan_hand():
     assert can_declare_hu(state, 0, None) is True
 
 
+def test_can_declare_hu_does_not_remix_open_meld_tiles():
+    player = PlayerState(
+        seat=0,
+        concealed_tiles=(
+            _make_tile("w1", "w1#c1"),
+            _make_tile("w1", "w1#c2"),
+            _make_tile("w1", "w1#c3"),
+            _make_tile("w1", "w1#c4"),
+            _make_tile("w2", "w2#c1"),
+            _make_tile("w2", "w2#c2"),
+            _make_tile("w2", "w2#c3"),
+            _make_tile("w3", "w3#c1"),
+            _make_tile("w4", "w4#c1"),
+            _make_tile("w4", "w4#c2"),
+            _make_tile("w5", "w5#c1"),
+        ),
+        melds=((
+            _make_tile("w1", "w1#m1"),
+            _make_tile("w2", "w2#m1"),
+            _make_tile("w3", "w3#m1"),
+        ),),
+        flowers=(),
+        discards=(),
+    )
+    state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(player,)
+        + tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(1, 4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+        enforce_minimum_eight_fan=False,
+    )
+
+    assert can_declare_hu(state, 0, None) is False
+
+
+def test_can_declare_hu_accepts_seven_pairs_with_quad():
+    state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(
+                    _make_tile("w1", "w1#0"),
+                    _make_tile("w1", "w1#1"),
+                    _make_tile("w1", "w1#2"),
+                    _make_tile("w1", "w1#3"),
+                    _make_tile("w2", "w2#0"),
+                    _make_tile("w2", "w2#1"),
+                    _make_tile("w3", "w3#0"),
+                    _make_tile("w3", "w3#1"),
+                    _make_tile("w4", "w4#0"),
+                    _make_tile("w4", "w4#1"),
+                    _make_tile("w5", "w5#0"),
+                    _make_tile("w5", "w5#1"),
+                    _make_tile("w6", "w6#0"),
+                    _make_tile("w6", "w6#1"),
+                ),
+                melds=(),
+                flowers=(),
+                discards=(),
+            ),
+        )
+        + tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(1, 4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+    )
+
+    assert can_declare_hu(state, 0, None) is True
+
+
 def test_can_declare_hu_allows_low_fan_win_when_eight_fan_rule_is_disabled():
     state = RoundState(
         round_id="round-test",
@@ -1186,6 +1281,7 @@ def test_apply_self_kong_action_supports_concealed_kong():
         phase="playing",
         settlement=None,
         version=0,
+        score_trackers={"kong_entries": [], "opening_flowers_completed": True},
     )
 
     assert can_declare_self_kong(state, 0) is True
@@ -1199,6 +1295,7 @@ def test_apply_self_kong_action_supports_concealed_kong():
     assert any(event["type"] == "self_kong_declared" for event in events)
     assert any(event["type"] == "replacement_draw" for event in events)
     assert len(next_state.players[0].melds[0]) == 4
+    assert next_state.score_trackers["opening_flowers_completed"] is True
 
 
 def test_can_declare_self_kong_is_blocked_after_last_live_tile_draw():

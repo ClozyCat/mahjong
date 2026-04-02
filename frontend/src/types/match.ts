@@ -427,7 +427,6 @@ export interface BattleViewModel {
   settlementHands: Partial<Record<Seat, string[]>> | null;
   lastDiscard: string | null;
   lastDiscardSeat: Seat | null;
-  lastDiscardEventKey: string | null;
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;

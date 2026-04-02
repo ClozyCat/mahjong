@@ -41,6 +41,34 @@ def test_seven_pairs_is_winning():
     assert is_winning_hand(hand) is True
 
 
+def test_seven_pairs_with_quad_is_winning():
+    hand = [
+        "w1",
+        "w1",
+        "w1",
+        "w1",
+        "w2",
+        "w2",
+        "w3",
+        "w3",
+        "w4",
+        "w4",
+        "w5",
+        "w5",
+        "w6",
+        "w6",
+    ]
+
+    decompositions = decompose_winning_hand(hand)
+
+    assert is_winning_hand(hand) is True
+    assert {
+        tuple(decomposition["pairs"])
+        for decomposition in decompositions
+        if decomposition["kind"] == "seven_pairs"
+    } == {("w1", "w1", "w2", "w3", "w4", "w5", "w6")}
+
+
 def test_thirteen_orphans_is_winning():
     hand = [
         "w1",

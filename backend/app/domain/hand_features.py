@@ -74,7 +74,12 @@ def _is_seven_pairs(
     if meld_tile_key_groups or len(tile_keys) != 14:
         return False
     counts = Counter(tile_keys)
-    return len(counts) == 7 and all(count == 2 for count in counts.values())
+    pair_count = 0
+    for count in counts.values():
+        if count not in {2, 4}:
+            return False
+        pair_count += count // 2
+    return pair_count == 7
 
 
 def _is_thirteen_orphans(
@@ -173,13 +178,23 @@ def _extract_triplet_keys(
     triplet_keys: list[str] = []
     decomposition = _standard_decomposition(tile_keys, decompositions=decompositions)
     if decomposition is not None:
-        for meld in decomposition["melds"]:
-            if len(set(meld)) == 1:
-                triplet_keys.append(meld[0])
+        triplet_keys.extend(
+            [
+                meld[0]
+                for meld in decomposition["melds"]
+                if len(meld) >= 3 and len(set(meld)) == 1
+            ]
+        )
+        if decompositions is not None:
+            return triplet_keys
 
-    for meld_group in meld_tile_key_groups:
-        if len(meld_group) >= 3 and len(set(meld_group)) == 1:
-            triplet_keys.append(meld_group[0])
+    triplet_keys.extend(
+        [
+            meld[0]
+            for meld in meld_tile_key_groups
+            if len(meld) >= 3 and len(set(meld)) == 1
+        ]
+    )
     return triplet_keys
 
 

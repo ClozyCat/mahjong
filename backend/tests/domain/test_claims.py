@@ -231,6 +231,7 @@ def test_apply_claim_action_kong_draws_replacement_from_tail():
         phase="playing",
         settlement=None,
         version=0,
+        score_trackers={"kong_entries": [], "opening_flowers_completed": True},
     )
 
     next_state, events = apply_claim_action(
@@ -244,6 +245,7 @@ def test_apply_claim_action_kong_draws_replacement_from_tail():
     assert any(tile.tile_id == "t9#r1" for tile in updated_player.concealed_tiles)
     assert next_state.wall.tail_index == -1
     assert any(event["type"] == "replacement_draw" for event in events)
+    assert next_state.score_trackers["opening_flowers_completed"] is True
 
 
 def test_pending_action_claim_window_is_json_friendly():

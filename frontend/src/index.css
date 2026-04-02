@@ -636,14 +636,6 @@ button:active:not(:disabled) {
   transform-origin: center bottom;
 }
 
-.table-stage__seat-zone--fixed-meld-anchor .table-stage__seat-panel--top,
-.table-stage__seat-zone--fixed-meld-anchor .table-stage__seat-panel--bottom {
-  min-height: calc(
-    var(--table-stage-horizontal-river-reference-height) +
-    (var(--table-stage-seat-panel-padding-block) * 2)
-  );
-}
-
 .table-stage__river-track {
   display: grid;
   gap: var(--table-stage-river-gap);
@@ -717,24 +709,30 @@ button:active:not(:disabled) {
 
 .table-stage__melds--top {
   left: 100%;
-  top: 50%;
+  top: calc(
+    var(--table-stage-seat-panel-padding-block) +
+    (var(--table-stage-horizontal-river-reference-height) / 2)
+  );
   transform: translate(clamp(0.36rem, 1vw, 0.56rem), -50%);
 }
 
 .table-stage__melds--bottom {
   left: 100%;
-  top: 50%;
+  top: calc(
+    var(--table-stage-seat-panel-padding-block) +
+    (var(--table-stage-horizontal-river-reference-height) / 2)
+  );
   transform: translate(clamp(0.36rem, 1vw, 0.56rem), -50%);
 }
 
 .table-stage__melds--top.table-stage__melds--dense {
-  top: 0;
+  top: var(--table-stage-seat-panel-padding-block);
   transform: translate(clamp(0.36rem, 1vw, 0.56rem), 0);
 }
 
 .table-stage__melds--bottom.table-stage__melds--dense {
   top: auto;
-  bottom: 0;
+  bottom: var(--table-stage-seat-panel-padding-block);
   transform: translate(clamp(0.36rem, 1vw, 0.56rem), 0);
 }
 

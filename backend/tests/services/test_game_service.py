@@ -243,6 +243,75 @@ def test_action_prompt_includes_kong_when_current_actor_can_self_kong():
     assert prompt_targets[0][1]["payload"]["options"] == ["discard", "kong"]
 
 
+def test_action_prompt_includes_hu_alongside_kong_for_seven_pairs_with_quad():
+    service = GameService(sessionmaker())
+    websocket = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM42", phase="playing")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token",
+        player_session_id=1,
+        websocket=websocket,
+        connected=True,
+        ready=True,
+    )
+    room.round_state = RoundState(
+        round_id="round-test",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(
+                    _make_suit_tile("w1", "w1#1"),
+                    _make_suit_tile("w1", "w1#2"),
+                    _make_suit_tile("w1", "w1#3"),
+                    _make_suit_tile("w1", "w1#4"),
+                    _make_suit_tile("w2", "w2#1"),
+                    _make_suit_tile("w2", "w2#2"),
+                    _make_suit_tile("w3", "w3#1"),
+                    _make_suit_tile("w3", "w3#2"),
+                    _make_suit_tile("w4", "w4#1"),
+                    _make_suit_tile("w4", "w4#2"),
+                    _make_suit_tile("w5", "w5#1"),
+                    _make_suit_tile("w5", "w5#2"),
+                    _make_suit_tile("w6", "w6#1"),
+                    _make_suit_tile("w6", "w6#2"),
+                ),
+                melds=(),
+                flowers=(),
+                discards=(),
+            ),
+        )
+        + tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(1, 4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="active_turn",
+        seat_index=0,
+        deadline_at=__import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ),
+        drawn_tile_id="w6#2",
+    )
+
+    prompt_targets = service._prompt_targets_locked(room)
+
+    assert prompt_targets[0][1]["payload"]["options"] == ["discard", "kong", "hu"]
+
+
 def test_action_prompt_includes_flower_when_current_actor_can_declare_flower():
     service = GameService(sessionmaker())
     websocket = _RecordingWebSocket()

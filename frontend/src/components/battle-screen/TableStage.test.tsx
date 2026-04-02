@@ -117,7 +117,7 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__seat-zone--bottom .table-stage__melds--bottom')).not.toBeNull();
   });
 
-  it('locks top and bottom meld anchors to the two-row river footprint', () => {
+  it('does not force top and bottom rivers into a two-row container when melds are present', () => {
     const { container } = render(
       <TableStage
         discards={{
@@ -139,10 +139,9 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(container.querySelector('.table-stage__seat-zone--top')).toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
-    expect(container.querySelector('.table-stage__seat-zone--bottom')).toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
-    expect(container.querySelector('.table-stage__seat-zone--left')).not.toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
-    expect(container.querySelector('.table-stage__seat-zone--right')).not.toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
+    expect(container.querySelector('.table-stage__seat-zone--fixed-meld-anchor')).toBeNull();
+    expect(container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
+    expect(container.querySelector('.table-stage__river-track--bottom')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
   });
 
   it('pins dense top and bottom meld racks to the river edge to keep them within the table frame', () => {
