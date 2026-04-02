@@ -12,7 +12,7 @@ describe('MahjongTile', () => {
 
     expect(tile).toHaveClass('mahjong-tile--retro');
     expect(tile).toHaveAttribute('aria-label', '一万');
-    expect(image).toHaveAttribute('data-asset-name', '1man.svg');
+    expect(image).toHaveAttribute('data-asset-name', '0101一萬.svg');
     expect(tile.querySelector('.mahjong-tile__face-image')).not.toBeNull();
     expect(screen.queryByText('万')).not.toBeInTheDocument();
     expect(screen.queryByText('一')).not.toBeInTheDocument();
@@ -22,23 +22,24 @@ describe('MahjongTile', () => {
     render(<MahjongTile code="c7" variant="discard" />);
 
     const tile = screen.getByTestId('mahjong-tile');
-    expect(screen.getByRole('img', { name: '七条牌面' })).toHaveAttribute('data-asset-name', '7sou.svg');
+    expect(screen.getByRole('img', { name: '七条牌面' })).toHaveAttribute('data-asset-name', '0307七條.svg');
     expect(tile.querySelector('.mahjong-tile__face-viewport')).not.toBeNull();
   });
 
   it('renders flower tiles with the uploaded flower-face svg assets', () => {
     render(<MahjongTile code="f6" variant="discard" />);
 
-    expect(screen.getByRole('img', { name: '兰牌面' })).toHaveAttribute('data-asset-name', 'orchid.svg');
+    expect(screen.getByRole('img', { name: '兰牌面' })).toHaveAttribute('data-asset-name', '0506蘭.svg');
   });
 
-  it('renders white dragon as a blank face without an image', () => {
+  it('renders white dragon with the dedicated white-tile svg asset', () => {
     render(<MahjongTile code="white" variant="discard" />);
 
     const tile = screen.getByTestId('mahjong-tile');
+    const image = screen.getByRole('img', { name: '白板牌面' });
 
-    expect(tile.querySelector('.mahjong-tile__face-blank')).not.toBeNull();
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(tile.querySelector('.mahjong-tile__face-image')).not.toBeNull();
+    expect(image).toHaveAttribute('data-asset-name', '0407白.svg');
   });
 
   it('marks the last discard variant with a dedicated state class', () => {

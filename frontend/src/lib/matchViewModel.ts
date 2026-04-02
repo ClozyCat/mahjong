@@ -1008,6 +1008,39 @@ function createLastDiscardSeat(state: SessionState): Seat | null {
   return toRelativeSeat(localSeat, (privateState.current_actor + 3) % 4);
 }
 
+function createLastDiscardEventKey(state: SessionState): string | null {
+  const lastDiscard = state.roomSnapshot?.payload.private_state?.last_discard ?? null;
+  const event = state.latestRoundEvent?.payload;
+
+  if (!lastDiscard || event?.event_type !== 'tile_discarded') {
+    return null;
+  }
+
+  const tileId = typeof event.event?.tile_id === 'string' ? event.event.tile_id : null;
+  if (!tileId) {
+    return null;
+  }
+
+  const [eventTileCode] = tileId.split('#');
+  if (eventTileCode?.trim().toLowerCase() !== lastDiscard.trim().toLowerCase()) {
+    return null;
+  }
+
+  const eventSeat = typeof event.event?.seat === 'number' ? event.event.seat : 'unknown';
+  return `tile_discarded:${eventSeat}:${tileId}`;
+}
+
+function createShouldAutoReturnLastDiscardToRiver(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+
+  if (snapshot?.phase !== 'playing' || !privateState?.last_discard) {
+    return false;
+  }
+
+  return privateState.pending_action?.type !== 'claim_window';
+}
+
 function createRoundLabel(state: SessionState) {
   const snapshot = state.roomSnapshot?.payload;
   const matchState = snapshot?.match_state;
@@ -1271,6 +1304,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     settlementHands: createSettlementHands(state),
     lastDiscard: snapshot?.private_state?.last_discard ?? null,
     lastDiscardSeat: createLastDiscardSeat(state),
+    lastDiscardEventKey: createLastDiscardEventKey(state),
+    shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state),
     toasts: state.toasts,
   };

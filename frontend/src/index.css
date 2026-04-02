@@ -456,6 +456,13 @@ button:active:not(:disabled) {
   --table-stage-settlement-tile-width: calc(var(--table-stage-settlement-base-width) * var(--table-stage-tile-scale));
   --table-stage-settlement-tile-height: calc(var(--table-stage-settlement-base-height) * var(--table-stage-tile-scale));
   --table-stage-river-gap: 0.4rem;
+  --table-stage-seat-panel-padding-block: 0.72rem;
+  --table-stage-seat-panel-padding-inline: 0.82rem;
+  --table-stage-horizontal-river-reference-rows: 2;
+  --table-stage-horizontal-river-reference-height: calc(
+    (var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) +
+    (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1))
+  );
   --table-stage-action-pointer-size: 1.42rem;
   --table-stage-action-pointer-offset-x: 5.2rem;
   --table-stage-action-pointer-offset-y: 4.35rem;
@@ -575,7 +582,7 @@ button:active:not(:disabled) {
   --seat-panel-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 45%);
   position: relative;
   display: block;
-  padding: 0.72rem 0.82rem;
+  padding: var(--table-stage-seat-panel-padding-block) var(--table-stage-seat-panel-padding-inline);
   border-radius: 1.1rem;
   background:
     var(--seat-panel-sheen),
@@ -627,6 +634,14 @@ button:active:not(:disabled) {
 .table-stage__seat-panel--bottom {
   transform: perspective(18rem) rotateX(3deg);
   transform-origin: center bottom;
+}
+
+.table-stage__seat-zone--fixed-meld-anchor .table-stage__seat-panel--top,
+.table-stage__seat-zone--fixed-meld-anchor .table-stage__seat-panel--bottom {
+  min-height: calc(
+    var(--table-stage-horizontal-river-reference-height) +
+    (var(--table-stage-seat-panel-padding-block) * 2)
+  );
 }
 
 .table-stage__river-track {
@@ -2039,7 +2054,8 @@ button:active:not(:disabled) {
 
   .table-stage__seat-panel {
     gap: 0.55rem;
-    padding: 0.56rem 0.62rem;
+    --table-stage-seat-panel-padding-block: 0.56rem;
+    --table-stage-seat-panel-padding-inline: 0.62rem;
   }
 
   .table-stage__seat-panel--left,
@@ -4164,6 +4180,8 @@ input {
   --table-stage-river-base-width: var(--battle-stage-discard-width);
   --table-stage-river-base-height: var(--battle-stage-discard-height);
   --table-stage-river-gap: var(--battle-stage-gap);
+  --table-stage-seat-panel-padding-block: clamp(0.3rem, 0.65vw, 0.46rem);
+  --table-stage-seat-panel-padding-inline: clamp(0.3rem, 0.65vw, 0.46rem);
   width: 100%;
 }
 
@@ -4207,7 +4225,6 @@ input {
 }
 
 .table-stage__seat-panel {
-  padding: clamp(0.3rem, 0.65vw, 0.46rem);
   border-radius: clamp(0.75rem, 1.2vw, 1rem);
 }
 

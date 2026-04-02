@@ -6,22 +6,22 @@ describe('getTileAsset', () => {
   it('maps suited tiles to the expected svg file names', () => {
     expect(getTileAsset('w1')).toMatchObject({
       kind: 'image',
-      assetName: '1man.svg',
+      assetName: '0101一萬.svg',
     });
     expect(getTileAsset('b4')).toMatchObject({
       kind: 'image',
-      assetName: '4pin.svg',
+      assetName: '0204四餅.svg',
     });
     expect(getTileAsset('c7')).toMatchObject({
       kind: 'image',
-      assetName: '7sou.svg',
+      assetName: '0307七條.svg',
     });
   });
 
   it('supports alternate suited aliases so sou tiles still resolve when keyed as t-rank', () => {
     expect(getTileAsset('t7')).toMatchObject({
       kind: 'image',
-      assetName: '7sou.svg',
+      assetName: '0307七條.svg',
     });
   });
 
@@ -30,7 +30,7 @@ describe('getTileAsset', () => {
 
     expect(tile).toMatchObject({
       kind: 'image',
-      assetName: '7sou.svg',
+      assetName: '0307七條.svg',
     });
     expect(tile.kind === 'image' ? tile.src : '').toContain('viewBox');
     expect(tile.kind === 'image' ? tile.src : '').toContain('preserveAspectRatio');
@@ -39,36 +39,42 @@ describe('getTileAsset', () => {
   it('maps honors and dragon aliases to the expected assets', () => {
     expect(getTileAsset('east')).toMatchObject({
       kind: 'image',
-      assetName: 'east.svg',
+      assetName: '0401東風.svg',
     });
     expect(getTileAsset('d5')).toMatchObject({
       kind: 'image',
-      assetName: 'zhong.svg',
+      assetName: '0405中.svg',
     });
     expect(getTileAsset('d6')).toMatchObject({
       kind: 'image',
-      assetName: 'fa.svg',
+      assetName: '0406發.svg',
     });
   });
 
   it('maps flower tiles to the newly added flower-face assets', () => {
     expect(getTileAsset('f1')).toMatchObject({
       kind: 'image',
-      assetName: 'spring.svg',
+      assetName: '0501春.svg',
     });
     expect(getTileAsset('f4')).toMatchObject({
       kind: 'image',
-      assetName: 'winter.svg',
+      assetName: '0504冬.svg',
     });
     expect(getTileAsset('f8')).toMatchObject({
       kind: 'image',
-      assetName: 'chrysanthemum.svg',
+      assetName: '0507菊.svg',
     });
   });
 
-  it('renders white dragon aliases as blank faces', () => {
-    expect(getTileAsset('white')).toEqual({ kind: 'blank' });
-    expect(getTileAsset('d7')).toEqual({ kind: 'blank' });
+  it('maps white dragon aliases to the dedicated white-tile asset', () => {
+    expect(getTileAsset('white')).toMatchObject({
+      kind: 'image',
+      assetName: '0407白.svg',
+    });
+    expect(getTileAsset('d7')).toMatchObject({
+      kind: 'image',
+      assetName: '0407白.svg',
+    });
   });
 
   it('returns a neutral placeholder for unknown tile codes', () => {

@@ -262,9 +262,11 @@ export function TableStage({
           ) : null}
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
+            const hasMelds = (player?.melds.length ?? 0) > 0;
             const finalHandTiles = settlementHands?.[seat] ?? [];
             const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
             const shouldRenderSeatInfo = Boolean(player);
+            const shouldFixMeldAnchor = shouldFixHorizontalMeldAnchor(seat, player?.melds.length ?? 0);
             const settlementWinningTileIndex =
               settlementWinType === 'discard' &&
               settlementWinnerSeat === seat &&
@@ -275,7 +277,11 @@ export function TableStage({
 
             return (
               <Fragment key={seat}>
-                <div className={`table-stage__seat-zone table-stage__seat-zone--${seat}`}>
+                <div
+                  className={`table-stage__seat-zone table-stage__seat-zone--${seat} ${
+                    shouldFixMeldAnchor ? 'table-stage__seat-zone--fixed-meld-anchor' : ''
+                  }`.trim()}
+                >
                   <div className={`table-stage__seat-panel table-stage__seat-panel--${seat}`}>
                     <div
                       className={`table-stage__river table-stage__river--${seat} ${
@@ -299,7 +305,7 @@ export function TableStage({
                       </div>
                     </div>
                   </div>
-                  {player && player.melds.length > 0 ? (
+                  {player && hasMelds ? (
                     <div
                       className={`table-stage__melds table-stage__melds--${seat} ${
                         shouldPinDenseMeldRack(seat, player.melds.length) ? 'table-stage__melds--dense' : ''
@@ -465,4 +471,8 @@ function findLastDiscardPosition(
 
 function shouldPinDenseMeldRack(seat: Seat, meldCount: number) {
   return (seat === 'top' || seat === 'bottom') && meldCount >= 3;
+}
+
+function shouldFixHorizontalMeldAnchor(seat: Seat, meldCount: number) {
+  return (seat === 'top' || seat === 'bottom') && meldCount > 0;
 }

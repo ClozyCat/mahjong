@@ -128,6 +128,8 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     settlementHands: null,
     lastDiscard: 'b4',
     lastDiscardSeat: 'left',
+    lastDiscardEventKey: null,
+    shouldAutoReturnLastDiscardToRiver: false,
     actionEffect: null,
     toasts: [],
     ...overrides,
@@ -471,6 +473,166 @@ describe('BattleScreen', () => {
 
     act(() => {
       vi.advanceTimersByTime(420);
+    });
+
+    expect(screen.getByText('本局结算')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('returns an unclaimed discard to the river 1.5 seconds after the next turn begins', () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        lastDiscardEventKey: 'tile_discarded:1:b4#discard-1',
+        shouldAutoReturnLastDiscardToRiver: true,
+      }),
+    );
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+
+    act(() => {
+      vi.advanceTimersByTime(1499);
+    });
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('keeps the discard in the spotlight while the claim window is still open', () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        lastDiscardEventKey: 'tile_discarded:1:b4#discard-1',
+        shouldAutoReturnLastDiscardToRiver: false,
+      }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it.each([
+    {
+      winType: 'discard',
+      winTypeLabel: '荣和',
+      summary: '荣和，等待下一局',
+      winnerSeat: 'right' as const,
+      discarderSeat: 'left' as const,
+      scoreDeltaBySeat: {
+        bottom: 0,
+        left: -8,
+        right: 8,
+      },
+      seats: [
+        { seat: 'right' as const, name: 'Player B', score: 25008, delta: 8 },
+        { seat: 'left' as const, name: 'Player Left', score: 24292, delta: -8 },
+      ],
+    },
+    {
+      winType: 'self_draw',
+      winTypeLabel: '自摸',
+      summary: '自摸，等待下一局',
+      winnerSeat: 'bottom' as const,
+      discarderSeat: null,
+      scoreDeltaBySeat: {
+        bottom: 8,
+        left: -3,
+        top: -3,
+        right: -2,
+      },
+      seats: [
+        { seat: 'bottom' as const, name: 'Player A', score: 25008, delta: 8 },
+        { seat: 'left' as const, name: 'Player Left', score: 24297, delta: -3 },
+      ],
+    },
+  ])('waits 2 seconds before showing the settlement panel after a %s win appears mid-hand', ({ winType, winTypeLabel, summary, winnerSeat, discarderSeat, scoreDeltaBySeat, seats }) => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        result: null,
+      }),
+    );
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          result: {
+            title: '本局结算',
+            summary,
+            fanTotal: 8,
+            winnerSeat,
+            discarderSeat,
+            winType,
+            winTypeLabel,
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            scoreDeltaBySeat,
+            seats,
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1999);
+    });
+
+    expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(screen.getByText('本局结算')).toBeInTheDocument();

@@ -1,39 +1,42 @@
-const SUITED_ASSET_NAMES = {
-  w: 'man',
-  m: 'man',
-  b: 'pin',
-  p: 'pin',
-  c: 'sou',
-  t: 'sou',
+const RANK_GLYPHS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'] as const;
+
+const SUITED_ASSET_METADATA = {
+  w: { group: '01', suffix: '萬' },
+  m: { group: '01', suffix: '萬' },
+  b: { group: '02', suffix: '餅' },
+  p: { group: '02', suffix: '餅' },
+  c: { group: '03', suffix: '條' },
+  t: { group: '03', suffix: '條' },
 } as const;
 
 const HONOR_ASSET_NAMES: Record<string, string> = {
-  east: 'east.svg',
-  south: 'south.svg',
-  west: 'west.svg',
-  north: 'north.svg',
-  red: 'zhong.svg',
-  green: 'fa.svg',
-  d1: 'east.svg',
-  d2: 'south.svg',
-  d3: 'west.svg',
-  d4: 'north.svg',
-  d5: 'zhong.svg',
-  d6: 'fa.svg',
+  east: '0401東風.svg',
+  south: '0403南風.svg',
+  west: '0402西風.svg',
+  north: '0404北風.svg',
+  red: '0405中.svg',
+  green: '0406發.svg',
+  white: '0407白.svg',
+  d1: '0401東風.svg',
+  d2: '0403南風.svg',
+  d3: '0402西風.svg',
+  d4: '0404北風.svg',
+  d5: '0405中.svg',
+  d6: '0406發.svg',
+  d7: '0407白.svg',
 };
 
 const FLOWER_ASSET_NAMES: Record<string, string> = {
-  f1: 'spring.svg',
-  f2: 'summer.svg',
-  f3: 'autumn.svg',
-  f4: 'winter.svg',
-  f5: 'plum.svg',
-  f6: 'orchid.svg',
-  f7: 'bamboo.svg',
-  f8: 'chrysanthemum.svg',
+  f1: '0501春.svg',
+  f2: '0502夏.svg',
+  f3: '0503秋.svg',
+  f4: '0504冬.svg',
+  f5: '0505梅.svg',
+  f6: '0506蘭.svg',
+  f7: '0508竹.svg',
+  f8: '0507菊.svg',
 };
 
-const BLANK_CODES = new Set(['white', 'd7']);
 const SVG_VIEWBOX = '0 0 320 446';
 const SVG_SOURCE_MAP = import.meta.glob('../../images/*.svg', {
   eager: true,
@@ -87,18 +90,14 @@ export function getTileAsset(code: string): TileAsset {
 
   if (suited) {
     const [, prefix, rank] = suited;
-    const fileName = `${rank}${SUITED_ASSET_NAMES[prefix as keyof typeof SUITED_ASSET_NAMES]}.svg`;
+    const rankValue = Number(rank);
+    const suit = SUITED_ASSET_METADATA[prefix as keyof typeof SUITED_ASSET_METADATA];
+    const fileName = `${suit.group}${rank.padStart(2, '0')}${RANK_GLYPHS[rankValue - 1]}${suit.suffix}.svg`;
 
     return {
       kind: 'image',
       assetName: fileName,
       src: assetUrl(fileName),
-    };
-  }
-
-  if (BLANK_CODES.has(normalized)) {
-    return {
-      kind: 'blank',
     };
   }
 

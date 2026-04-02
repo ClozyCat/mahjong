@@ -25,7 +25,9 @@ const DEFAULT_TABLE_TILE_SCALE = 1.12;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
-const SETTLEMENT_PANEL_DELAY_MS = 420;
+const DRAW_SETTLEMENT_PANEL_DELAY_MS = 420;
+const HU_SETTLEMENT_PANEL_DELAY_MS = 2000;
+const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const MIN_BATTLE_VIEWPORT_WIDTH = 1280;
 const MIN_BATTLE_VIEWPORT_HEIGHT = 720;
 const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
@@ -47,7 +49,10 @@ export function BattleScreen({
   const [viewportState, setViewportState] = useState(getBattleViewportState);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
+  const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
+  const hasObservedNoResultRef = useRef(viewModel.result === null);
+  const lastDiscardReturnTimerRef = useRef<number | null>(null);
   const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
@@ -57,11 +62,14 @@ export function BattleScreen({
     Boolean(viewModel.result) &&
     Boolean(viewModel.lastDiscard) &&
     (viewModel.result?.winType === 'draw' || viewModel.result?.winType === 'self_draw');
-  const shouldDelaySettlementPanel =
-    Boolean(viewModel.result) && Boolean(viewModel.lastDiscard) && viewModel.result?.winType === 'draw';
-  const visibleLastDiscard = shouldReturnLastDiscardToRiver ? null : viewModel.lastDiscard;
-  const visibleLastDiscardSeat = shouldReturnLastDiscardToRiver ? null : viewModel.lastDiscardSeat;
+  const lastDiscardSpotlightKey = getLastDiscardSpotlightKey(viewModel);
+  const shouldHideLastDiscardSpotlight =
+    shouldReturnLastDiscardToRiver ||
+    (lastDiscardSpotlightKey !== null && returnedLastDiscardKey === lastDiscardSpotlightKey);
+  const visibleLastDiscard = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscard;
+  const visibleLastDiscardSeat = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscardSeat;
   const visibleResult = isSettlementPanelReady ? viewModel.result : null;
+  const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
 
   function adjustTableTileScale(offset: number) {
     setTableTileScale((currentScale) => {
@@ -100,12 +108,66 @@ export function BattleScreen({
   }, []);
 
   useEffect(() => {
+    if (lastDiscardReturnTimerRef.current !== null) {
+      window.clearTimeout(lastDiscardReturnTimerRef.current);
+      lastDiscardReturnTimerRef.current = null;
+    }
+
+    if (!lastDiscardSpotlightKey) {
+      setReturnedLastDiscardKey(null);
+      return undefined;
+    }
+
+    if (shouldReturnLastDiscardToRiver) {
+      setReturnedLastDiscardKey(lastDiscardSpotlightKey);
+      return undefined;
+    }
+
+    if (!viewModel.shouldAutoReturnLastDiscardToRiver) {
+      setReturnedLastDiscardKey((currentKey) => (currentKey === lastDiscardSpotlightKey ? null : currentKey));
+      return undefined;
+    }
+
+    if (!viewModel.lastDiscardEventKey) {
+      setReturnedLastDiscardKey(lastDiscardSpotlightKey);
+      return undefined;
+    }
+
+    setReturnedLastDiscardKey((currentKey) => (currentKey === lastDiscardSpotlightKey ? null : currentKey));
+    lastDiscardReturnTimerRef.current = window.setTimeout(() => {
+      setReturnedLastDiscardKey((currentKey) =>
+        currentKey === null || currentKey === lastDiscardSpotlightKey ? lastDiscardSpotlightKey : currentKey,
+      );
+      lastDiscardReturnTimerRef.current = null;
+    }, LAST_DISCARD_SPOTLIGHT_LINGER_MS);
+
+    return () => {
+      if (lastDiscardReturnTimerRef.current !== null) {
+        window.clearTimeout(lastDiscardReturnTimerRef.current);
+        lastDiscardReturnTimerRef.current = null;
+      }
+    };
+  }, [
+    lastDiscardSpotlightKey,
+    shouldReturnLastDiscardToRiver,
+    viewModel.lastDiscardEventKey,
+    viewModel.shouldAutoReturnLastDiscardToRiver,
+  ]);
+
+  useEffect(() => {
     if (!viewModel.result) {
+      hasObservedNoResultRef.current = true;
       setIsSettlementPanelReady(true);
       return undefined;
     }
 
-    if (!shouldDelaySettlementPanel) {
+    const settlementPanelDelayMs = getSettlementPanelDelayMs(
+      viewModel.result.winType,
+      hasObservedNoResultRef.current,
+    );
+    hasObservedNoResultRef.current = false;
+
+    if (settlementPanelDelayMs <= 0) {
       setIsSettlementPanelReady(true);
       return undefined;
     }
@@ -113,10 +175,10 @@ export function BattleScreen({
     setIsSettlementPanelReady(false);
     const timer = window.setTimeout(() => {
       setIsSettlementPanelReady(true);
-    }, SETTLEMENT_PANEL_DELAY_MS);
+    }, settlementPanelDelayMs);
 
     return () => window.clearTimeout(timer);
-  }, [shouldDelaySettlementPanel, viewModel.result]);
+  }, [settlementVisibilityKey, viewModel.result?.winType]);
 
   return (
     <main className={`battle-screen ${viewportState.isSupported ? '' : 'battle-screen--viewport-blocked'}`}>
@@ -223,4 +285,45 @@ function getBattleViewportState() {
       height > MIN_BATTLE_VIEWPORT_HEIGHT &&
       ratio > MIN_BATTLE_VIEWPORT_RATIO,
   };
+}
+
+function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
+  if (!viewModel.lastDiscard || !viewModel.lastDiscardSeat) {
+    return null;
+  }
+
+  const discardCount = viewModel.discards[viewModel.lastDiscardSeat]?.length ?? 0;
+  return `${viewModel.lastDiscardSeat}:${viewModel.lastDiscard}:${discardCount}`;
+}
+
+function getSettlementPanelDelayMs(winType: string | null, hasObservedNoResult: boolean) {
+  if (winType === 'draw') {
+    return DRAW_SETTLEMENT_PANEL_DELAY_MS;
+  }
+
+  if (winType === 'discard' || winType === 'self_draw') {
+    return hasObservedNoResult ? HU_SETTLEMENT_PANEL_DELAY_MS : 0;
+  }
+
+  return 0;
+}
+
+function getSettlementVisibilityKey(result: BattleViewModel['result']) {
+  if (!result) {
+    return null;
+  }
+
+  return JSON.stringify({
+    title: result.title,
+    summary: result.summary,
+    fanTotal: result.fanTotal,
+    winnerSeat: result.winnerSeat,
+    discarderSeat: result.discarderSeat,
+    winType: result.winType,
+    winTypeLabel: result.winTypeLabel,
+    provisional: result.provisional,
+    flowerCount: result.flowerCount,
+    fanBreakdown: result.fanBreakdown,
+    seats: result.seats,
+  });
 }

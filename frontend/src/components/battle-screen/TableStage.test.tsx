@@ -117,6 +117,34 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__seat-zone--bottom .table-stage__melds--bottom')).not.toBeNull();
   });
 
+  it('locks top and bottom meld anchors to the two-row river footprint', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: ['b1'],
+          right: ['c1'],
+          bottom: ['d1'],
+        }}
+        activeSeat="bottom"
+        lastDiscard="d1"
+        lastDiscardSeat="bottom"
+        promptText={null}
+        players={[
+          { seat: 'top', name: 'Player Top', melds: [['w3', 'w4', 'w5']] },
+          { seat: 'left', name: 'Player Left', melds: [['b3', 'b4', 'b5']] },
+          { seat: 'right', name: 'Player Right', melds: [['c3', 'c4', 'c5']] },
+          { seat: 'bottom', name: 'Player Bottom', melds: [['d3', 'd4', 'd5']] },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__seat-zone--top')).toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
+    expect(container.querySelector('.table-stage__seat-zone--bottom')).toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
+    expect(container.querySelector('.table-stage__seat-zone--left')).not.toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
+    expect(container.querySelector('.table-stage__seat-zone--right')).not.toHaveClass('table-stage__seat-zone--fixed-meld-anchor');
+  });
+
   it('pins dense top and bottom meld racks to the river edge to keep them within the table frame', () => {
     const { container } = render(
       <TableStage
