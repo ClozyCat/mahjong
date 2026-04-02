@@ -1,6 +1,9 @@
+from collections import Counter
+
 from app.domain.models import PlayerState, RoundState, Tile
 from app.domain.wall import WallState
 from app.services.bot_strategy import (
+    _effective_tile_count,
     _tile_risk_against_opponent,
     choose_active_turn_action,
     choose_claim_action,
@@ -703,3 +706,152 @@ def test_choose_active_turn_action_avoids_restricted_same_turn_discard() -> None
 
     assert decision.action_type == "discard"
     assert decision.tile_ids == ["restricted-1-b1"]
+
+
+def test_choose_active_turn_action_avoids_kong_that_crushes_tenpai_width() -> None:
+    state = RoundState(
+        round_id="seven-pairs-kong",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=_make_tiles(
+                    ["w1", "w1", "w1", "w1", "w2", "w2", "w3", "w3", "w4", "w4", "w5", "w5", "w6", "w7"],
+                    "tenpai-kong",
+                ),
+                melds=(),
+                flowers=(),
+                discards=(),
+            ),
+            PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+        enforce_minimum_eight_fan=False,
+    )
+
+    decision = choose_active_turn_action(state, 0)
+
+    assert decision.action_type == "discard"
+
+
+def test_choose_active_turn_action_prefers_discarding_more_visible_honor() -> None:
+    concealed_tiles = _make_tiles(
+        ["w8", "w6", "t9", "t9", "w8", "b3", "t1", "t5", "south", "red", "white", "t8", "b9", "b2"],
+        "visible-honor",
+    )
+    state = RoundState(
+        round_id="visible-honor",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(seat=0, concealed_tiles=concealed_tiles, melds=(), flowers=(), discards=()),
+            PlayerState(
+                seat=1,
+                concealed_tiles=(),
+                melds=(),
+                flowers=(),
+                discards=_make_tiles(["north", "t2", "east", "t7", "t2"], "visible-honor-d1"),
+            ),
+            PlayerState(
+                seat=2,
+                concealed_tiles=(),
+                melds=(),
+                flowers=(),
+                discards=_make_tiles(["red", "b9", "b1", "t4", "t5"], "visible-honor-d2"),
+            ),
+            PlayerState(
+                seat=3,
+                concealed_tiles=(),
+                melds=(),
+                flowers=(),
+                discards=_make_tiles(["w1", "b1", "south", "t9", "red"], "visible-honor-d3"),
+            ),
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+        enforce_minimum_eight_fan=False,
+    )
+
+    plain_discard = choose_discard(state.players[0])
+    decision = choose_active_turn_action(state, 0)
+    discard_tile = next(tile for tile in concealed_tiles if tile.tile_id == decision.tile_ids[0])
+
+    assert plain_discard.tile_key == "south"
+    assert discard_tile.tile_key == "red"
+
+
+def test_choose_active_turn_action_pushes_faster_low_fan_shape_when_eight_fan_is_disabled() -> None:
+    concealed_tiles = _make_tiles(
+        ["w4", "w5", "w5", "w9", "t4", "t9", "b1", "b8", "east", "south", "red", "red", "green", "white"],
+        "rule-aware-speed",
+    )
+
+    def _state(enforce_minimum_eight_fan: bool) -> RoundState:
+        return RoundState(
+            round_id=f"rule-aware-{enforce_minimum_eight_fan}",
+            dealer_seat=0,
+            current_actor=0,
+            wall=WallState(tiles=(), head_index=0, tail_index=-1),
+            players=(
+                PlayerState(seat=0, concealed_tiles=concealed_tiles, melds=(), flowers=(), discards=()),
+                PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
+                PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+                PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            ),
+            last_discard=None,
+            pending_action=None,
+            phase="playing",
+            settlement=None,
+            version=0,
+            score_trackers={"kong_entries": []},
+            last_action_context=None,
+            round_wind="east",
+            enforce_minimum_eight_fan=enforce_minimum_eight_fan,
+        )
+
+    strict_decision = choose_active_turn_action(_state(True), 0)
+    relaxed_decision = choose_active_turn_action(_state(False), 0)
+
+    strict_tile = next(tile for tile in concealed_tiles if tile.tile_id == strict_decision.tile_ids[0])
+    relaxed_tile = next(tile for tile in concealed_tiles if tile.tile_id == relaxed_decision.tile_ids[0])
+
+    assert strict_tile.tile_key == "t9"
+    assert relaxed_tile.tile_key == "south"
+
+
+def test_effective_tile_count_respects_just_discarded_visible_tile() -> None:
+    tile_keys = ["w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "east"]
+
+    shanten = 0
+    live_waits = _effective_tile_count(
+        tile_keys,
+        open_meld_count=0,
+        current_shanten=shanten,
+    )
+    waits_after_discarding_east = _effective_tile_count(
+        tile_keys,
+        open_meld_count=0,
+        current_shanten=shanten,
+        visible_counts=Counter([*tile_keys, "east"]),
+    )
+
+    assert live_waits == 3
+    assert waits_after_discarding_east == 2

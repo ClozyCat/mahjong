@@ -6,6 +6,9 @@ from functools import lru_cache
 from itertools import combinations
 from typing import Literal
 
+from app.domain.fan_eval import evaluate_fans
+from app.domain.hand_eval import decompose_winning_hand_with_melds
+from app.domain.hand_features import extract_hand_features
 from app.domain.models import PlayerState, RoundState, Tile
 from app.domain.reducer import can_declare_flower, can_declare_hu, can_declare_self_kong
 
@@ -59,6 +62,8 @@ class _BotStyleProfile:
     pung_call_bias: float
     kong_call_bias: float
     closed_hand_bias: float
+    speed_focus: float
+    fan_focus: float
 
 
 def choose_active_turn_action(
@@ -68,6 +73,10 @@ def choose_active_turn_action(
     persona: BotPersona = "balanced",
 ) -> BotDecision:
     style = _style_profile(persona=persona, aggression=aggression)
+    style = _apply_rule_speed_profile(
+        style,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+    )
     if can_declare_hu(state, seat_index, None):
         return BotDecision(action_type="hu", tile_ids=[])
 
@@ -99,6 +108,10 @@ def choose_claim_action(
     persona: BotPersona = "balanced",
 ) -> BotDecision:
     style = _style_profile(persona=persona, aggression=aggression)
+    style = _apply_rule_speed_profile(
+        style,
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+    )
     pending_action = state.pending_action or {}
     pending_type = pending_action.get("type")
 
@@ -166,9 +179,12 @@ def _choose_structured_claim(
         return None
 
     player = state.players[seat_index]
-    current_shanten, current_effective, current_score = _hand_quality(
-        [tile.tile_key for tile in player.concealed_tiles],
-        open_meld_count=len(player.melds),
+    current_shanten, current_effective, current_score = _hand_quality_for_state(
+        state,
+        seat_index=seat_index,
+        concealed_tiles=player.concealed_tiles,
+        meld_tile_key_groups=_player_meld_tile_key_groups(player),
+        style=style,
     )
 
     candidate_plans: list[_ClaimPlan] = []
@@ -223,23 +239,35 @@ def _claim_plans_for_type(
         discard=state.last_discard,
         action_type=action_type,
     )
-    open_meld_count = len(player.melds) + 1
+    current_meld_groups = _player_meld_tile_key_groups(player)
 
     plans: list[_ClaimPlan] = []
     for tile_ids in candidate_tile_ids:
         remaining_tiles = _remove_tiles_by_id(player.concealed_tiles, tile_ids)
-        remaining_keys = [tile.tile_key for tile in remaining_tiles]
+        projected_meld_groups = (
+            *current_meld_groups,
+            _project_claim_meld_tile_key_group(
+                discard=state.last_discard,
+                tile_ids=tile_ids,
+                action_type=action_type,
+                player=player,
+            ),
+        )
         if action_type == "kong":
-            shanten, effective_tiles, hand_score = _hand_quality(
-                remaining_keys,
-                open_meld_count=open_meld_count,
+            shanten, effective_tiles, hand_score = _hand_quality_for_state(
+                state,
+                seat_index=seat_index,
+                concealed_tiles=tuple(remaining_tiles),
+                meld_tile_key_groups=projected_meld_groups,
+                style=style,
             )
         else:
             best_discard = _choose_discard_plan_for_state(
                 state,
                 seat_index=seat_index,
                 concealed_tiles=tuple(remaining_tiles),
-                open_meld_count=open_meld_count,
+                open_meld_count=len(projected_meld_groups),
+                projected_meld_tile_key_groups=projected_meld_groups,
                 style=style,
             )
             shanten = best_discard.shanten
@@ -292,6 +320,15 @@ def _claim_is_worth_taking(
     if claim.shanten == current_shanten and claim.effective_tiles > current_effective:
         improves_shape = True
 
+    quality_delta = _plan_delta_score(
+        current_shanten=current_shanten,
+        next_shanten=claim.shanten,
+        current_effective=current_effective,
+        next_effective=claim.effective_tiles,
+        current_score=current_score,
+        next_score=claim.hand_score,
+    )
+
     if (
         style.persona == "menzen_attacker"
         and not has_open_meld
@@ -305,7 +342,12 @@ def _claim_is_worth_taking(
     if claim.action_type == "kong":
         if pressure >= max(0.5, style.fold_pressure - 0.05) and claim.shanten >= current_shanten and style.kong_call_bias < 1.0:
             return False
-        return (
+        min_delta = 0.25
+        if value_tile:
+            min_delta -= 0.35
+        if pressure >= style.fold_pressure:
+            min_delta += 0.5
+        return quality_delta >= min_delta and (
             value_tile
             or has_open_meld
             or claim.shanten < current_shanten
@@ -337,7 +379,18 @@ def _claim_is_worth_taking(
             return False
         if style.persona == "defender" and pressure >= 0.45 and not value_tile and not has_open_meld:
             return False
-        return has_open_meld or current_shanten <= 2 or style.pung_call_bias > 1.05
+        min_delta = 0.45
+        if value_tile:
+            min_delta -= 0.4
+        if not has_open_meld:
+            min_delta += 0.2
+        if pressure >= style.fold_pressure:
+            min_delta += 0.35
+        if style.persona == "defender":
+            min_delta += 0.15
+        return quality_delta >= min_delta and (
+            has_open_meld or current_shanten <= 2 or style.pung_call_bias > 1.05
+        )
 
     if claim.action_type == "chow":
         if current_shanten >= 3 and not has_open_meld:
@@ -361,7 +414,20 @@ def _claim_is_worth_taking(
             return False
         if style.persona == "defender" and pressure >= 0.4 and not has_open_meld:
             return False
-        return has_open_meld or claim.shanten <= 1 or style.chow_call_bias > 1.08
+        min_delta = 0.6 - style.aggression * 0.35
+        if has_open_meld:
+            min_delta -= 0.15
+        if pressure >= style.fold_pressure - 0.05:
+            min_delta += max(0.0, 0.35 - style.aggression * 0.35)
+        if style.chow_call_bias > 1.0:
+            min_delta -= 0.1
+        if style.persona == "menzen_attacker":
+            min_delta += 0.25
+        if style.persona == "defender":
+            min_delta += 0.1
+        return quality_delta >= min_delta and (
+            has_open_meld or claim.shanten <= 1 or style.chow_call_bias > 1.08
+        )
 
     return False
 
@@ -377,38 +443,79 @@ def _choose_self_kong(
     if not candidate_groups:
         return None
 
-    current_shanten, current_effective, current_score = _hand_quality(
-        [tile.tile_key for tile in player.concealed_tiles],
-        open_meld_count=len(player.melds),
+    current_meld_groups = _player_meld_tile_key_groups(player)
+    current_shanten, current_effective, current_score = _hand_quality_for_state(
+        state,
+        seat_index=seat_index,
+        concealed_tiles=player.concealed_tiles,
+        meld_tile_key_groups=current_meld_groups,
+        style=style,
     )
     pressure = _table_pressure(state, seat_index)
-    best_candidate: tuple[int, int, float, list[str]] | None = None
+    best_candidate: tuple[float, int, int, float, list[str]] | None = None
     for tile_ids in candidate_groups:
         remaining_tiles = _remove_tiles_by_id(player.concealed_tiles, tile_ids)
-        shanten, effective_tiles, hand_score = _hand_quality(
-            [tile.tile_key for tile in remaining_tiles],
-            open_meld_count=len(player.melds) + 1,
+        projected_meld_groups = (
+            *current_meld_groups,
+            _project_self_kong_meld_tile_key_group(player=player, tile_ids=tile_ids),
         )
-        candidate = (shanten, -effective_tiles, -hand_score, tile_ids)
-        if best_candidate is None or candidate < best_candidate:
+        shanten, effective_tiles, hand_score = _hand_quality_for_state(
+            state,
+            seat_index=seat_index,
+            concealed_tiles=tuple(remaining_tiles),
+            meld_tile_key_groups=projected_meld_groups,
+            style=style,
+        )
+        tile_key = next(tile.tile_key for tile in player.concealed_tiles if tile.tile_id == tile_ids[0])
+        value_tile = _is_value_tile(
+            tile_key,
+            seat_index=seat_index,
+            dealer_seat=state.dealer_seat,
+            round_wind=state.round_wind,
+        )
+        if current_shanten == 0 and effective_tiles < current_effective and not value_tile:
+            continue
+        if current_shanten <= 1 and effective_tiles + 3 < current_effective and not value_tile:
+            continue
+        kong_bonus = 1.6 if len(tile_ids) >= 4 else 1.1
+        if value_tile:
+            kong_bonus += 0.8
+        quality_delta = _plan_delta_score(
+            current_shanten=current_shanten,
+            next_shanten=shanten,
+            current_effective=current_effective,
+            next_effective=effective_tiles,
+            current_score=current_score,
+            next_score=hand_score,
+        ) + kong_bonus
+        candidate = (
+            quality_delta,
+            shanten,
+            effective_tiles,
+            hand_score,
+            tile_ids,
+        )
+        if best_candidate is None or candidate > best_candidate:
             best_candidate = candidate
 
     if best_candidate is None:
         return None
 
-    shanten = best_candidate[0]
-    effective_tiles = -best_candidate[1]
-    hand_score = -best_candidate[2]
-    if (
-        shanten < current_shanten
-        or shanten == current_shanten
-        or effective_tiles >= current_effective
-        or hand_score >= current_score
-    ):
-        if pressure >= style.fold_pressure and shanten >= current_shanten and style.kong_call_bias < 1.0:
-            return None
-        return BotDecision(action_type="kong", tile_ids=best_candidate[3])
-    return None
+    quality_delta, shanten, _effective_tiles, _hand_score, tile_ids = best_candidate
+    min_delta = 1.0
+    if pressure >= style.fold_pressure:
+        min_delta += 0.6
+    if pressure >= style.hard_fold_pressure:
+        min_delta += 0.4
+    if style.kong_call_bias < 1.0:
+        min_delta += 0.2
+    if shanten > current_shanten:
+        return None
+    if pressure >= style.fold_pressure and shanten >= current_shanten and style.kong_call_bias < 1.0:
+        return None
+    if quality_delta < min_delta:
+        return None
+    return BotDecision(action_type="kong", tile_ids=tile_ids)
 
 
 def _self_kong_tile_groups(player: PlayerState) -> list[list[str]]:
@@ -504,6 +611,7 @@ def _choose_discard_plan_for_state(
     seat_index: int,
     concealed_tiles: tuple[Tile, ...],
     open_meld_count: int,
+    projected_meld_tile_key_groups: tuple[tuple[str, ...], ...] | None = None,
     style: _BotStyleProfile,
 ) -> _DiscardPlan:
     candidate_plans = [
@@ -513,6 +621,8 @@ def _choose_discard_plan_for_state(
             concealed_tiles=concealed_tiles,
             tile_id=tile.tile_id,
             open_meld_count=open_meld_count,
+            projected_meld_tile_key_groups=projected_meld_tile_key_groups,
+            style=style,
         )
         for tile in concealed_tiles
         if tile.kind != "flower"
@@ -527,6 +637,8 @@ def _choose_discard_plan_for_state(
             concealed_tiles=concealed_tiles,
             tile_id=fallback_tile.tile_id,
             open_meld_count=open_meld_count,
+            projected_meld_tile_key_groups=projected_meld_tile_key_groups,
+            style=style,
         )
 
     pressure = _table_pressure(state, seat_index)
@@ -592,28 +704,117 @@ def _discard_plan_with_risk(
     concealed_tiles: tuple[Tile, ...],
     tile_id: str,
     open_meld_count: int,
+    projected_meld_tile_key_groups: tuple[tuple[str, ...], ...] | None = None,
+    style: _BotStyleProfile,
 ) -> _DiscardPlan:
-    offensive_plan = _discard_plan_from_tiles(
-        concealed_tiles,
-        tile_id,
-        open_meld_count=open_meld_count,
-    )
     tile = next(candidate for candidate in concealed_tiles if candidate.tile_id == tile_id)
+    remaining_tiles = tuple(tile for tile in concealed_tiles if tile.tile_id != tile_id)
+    meld_tile_key_groups = projected_meld_tile_key_groups
+    if meld_tile_key_groups is None:
+        meld_tile_key_groups = _player_meld_tile_key_groups(state.players[seat_index])
+    visible_counts = _known_tile_counts(
+        state,
+        seat_index=seat_index,
+        concealed_tiles=remaining_tiles,
+        meld_tile_key_groups=meld_tile_key_groups,
+    )
+    visible_counts[tile.tile_key] += 1
+    visible_tile_keys = _projected_visible_tile_keys(
+        state,
+        seat_index=seat_index,
+        meld_tile_key_groups=meld_tile_key_groups,
+    )
+    shanten, effective_tiles, hand_score = _hand_quality(
+        [candidate.tile_key for candidate in remaining_tiles],
+        open_meld_count=len(meld_tile_key_groups),
+        visible_counts=visible_counts,
+        seat_wind_key=_seat_wind_key(seat_index, state.dealer_seat),
+        round_wind_key=state.round_wind,
+        meld_tile_key_groups=meld_tile_key_groups,
+        open_meld_tile_key_groups=meld_tile_key_groups,
+        visible_tile_keys=(*visible_tile_keys, tile.tile_key),
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+        seat_count=len(state.players),
+        speed_focus=style.speed_focus,
+        fan_focus=style.fan_focus,
+    )
+    if (
+        not state.enforce_minimum_eight_fan
+        and shanten == 1
+        and len(meld_tile_key_groups) <= 1
+        and effective_tiles >= 6
+    ):
+        hand_score += _one_shanten_path_score(
+            [candidate.tile_key for candidate in remaining_tiles],
+            open_meld_count=len(meld_tile_key_groups),
+            visible_counts=visible_counts,
+            meld_tile_key_groups=meld_tile_key_groups,
+            seat_wind_key=_seat_wind_key(seat_index, state.dealer_seat),
+            round_wind_key=state.round_wind,
+            speed_focus=style.speed_focus,
+        )
     return _DiscardPlan(
         tile_id=tile_id,
-        shanten=offensive_plan.shanten,
-        effective_tiles=offensive_plan.effective_tiles,
-        hand_score=offensive_plan.hand_score,
+        shanten=shanten,
+        effective_tiles=effective_tiles,
+        hand_score=hand_score,
         risk_score=_discard_risk_score(state, seat_index=seat_index, tile=tile),
-        keep_score=offensive_plan.keep_score,
+        keep_score=(shanten, effective_tiles, hand_score),
     )
 
 
-def _hand_quality(tile_keys: list[str], *, open_meld_count: int) -> tuple[int, int, float]:
+def _hand_quality(
+    tile_keys: list[str],
+    *,
+    open_meld_count: int,
+    visible_counts: Counter[str] | None = None,
+    seat_wind_key: str | None = None,
+    round_wind_key: str | None = None,
+    meld_tile_key_groups: tuple[tuple[str, ...], ...] = (),
+    open_meld_tile_key_groups: tuple[tuple[str, ...], ...] | None = None,
+    visible_tile_keys: tuple[str, ...] = (),
+    enforce_minimum_eight_fan: bool = True,
+    seat_count: int = 4,
+    speed_focus: float = 1.0,
+    fan_focus: float = 1.0,
+) -> tuple[int, int, float]:
     shanten = _best_shanten(tile_keys, open_meld_count=open_meld_count)
-    effective_tiles = _effective_tile_count(tile_keys, open_meld_count=open_meld_count, current_shanten=shanten)
-    shape_score = _shape_score(tile_keys)
-    return shanten, effective_tiles, shape_score
+    effective_tiles = _effective_tile_count(
+        tile_keys,
+        open_meld_count=open_meld_count,
+        current_shanten=shanten,
+        visible_counts=visible_counts,
+    )
+    pattern_score = _pattern_potential_score(
+        tile_keys,
+        open_meld_count=open_meld_count,
+        seat_wind_key=seat_wind_key,
+        round_wind_key=round_wind_key,
+    )
+    base_score = _shape_score(tile_keys) + pattern_score * fan_focus
+    hand_score = base_score + _improvement_score(
+        tile_keys,
+        open_meld_count=open_meld_count,
+        current_shanten=shanten,
+        current_base_score=base_score,
+        visible_counts=visible_counts,
+        seat_wind_key=seat_wind_key,
+        round_wind_key=round_wind_key,
+    ) * speed_focus
+    open_meld_tile_key_groups = open_meld_tile_key_groups or meld_tile_key_groups
+    hand_score += _tenpai_wait_score(
+        tile_keys,
+        shanten=shanten,
+        visible_counts=visible_counts,
+        meld_tile_key_groups=meld_tile_key_groups,
+        open_meld_tile_key_groups=open_meld_tile_key_groups,
+        visible_tile_keys=visible_tile_keys,
+        seat_wind_key=seat_wind_key,
+        round_wind_key=round_wind_key,
+        enforce_minimum_eight_fan=enforce_minimum_eight_fan,
+        seat_count=seat_count,
+    ) * max(0.9, speed_focus)
+    return shanten, effective_tiles, hand_score
 
 
 def _effective_tile_count(
@@ -621,15 +822,25 @@ def _effective_tile_count(
     *,
     open_meld_count: int,
     current_shanten: int,
+    visible_counts: Counter[str] | None = None,
 ) -> int:
     counts = Counter(tile_keys)
     total = 0
+    signature = tuple(sorted(tile_keys))
     for tile_key in ALL_TILE_KEYS:
-        if counts.get(tile_key, 0) >= 4:
+        available = _available_tile_count(
+            tile_key,
+            hand_counts=counts,
+            visible_counts=visible_counts,
+        )
+        if available <= 0:
             continue
-        next_shanten = _best_shanten(tile_keys + [tile_key], open_meld_count=open_meld_count)
+        next_shanten = _best_shanten_cached(
+            tuple(sorted((*signature, tile_key))),
+            open_meld_count=open_meld_count,
+        )
         if next_shanten < current_shanten:
-            total += 4 - counts.get(tile_key, 0)
+            total += available
     return total
 
 
@@ -637,6 +848,15 @@ def _best_shanten(tile_keys: list[str], *, open_meld_count: int) -> int:
     standard_shanten = _standard_shanten(tile_keys, open_meld_count=open_meld_count)
     seven_pairs = _seven_pairs_shanten(tile_keys) if open_meld_count == 0 else 8
     return min(standard_shanten, seven_pairs)
+
+
+@lru_cache(maxsize=50000)
+def _best_shanten_cached(
+    tile_keys_signature: tuple[str, ...],
+    *,
+    open_meld_count: int,
+) -> int:
+    return _best_shanten(list(tile_keys_signature), open_meld_count=open_meld_count)
 
 
 def _standard_shanten(tile_keys: list[str], *, open_meld_count: int) -> int:
@@ -784,6 +1004,490 @@ def _shape_score(tile_keys: list[str]) -> float:
     return score
 
 
+def _pattern_potential_score(
+    tile_keys: list[str],
+    *,
+    open_meld_count: int,
+    seat_wind_key: str | None,
+    round_wind_key: str | None,
+) -> float:
+    if not tile_keys:
+        return 0.0
+
+    counts = Counter(tile_keys)
+    suited_tiles = [tile_key for tile_key in tile_keys if _parse_suit_rank(tile_key) is not None]
+    honor_tiles = [tile_key for tile_key in tile_keys if tile_key in HONOR_KEYS]
+    suit_counts = Counter(tile_key[0] for tile_key in suited_tiles)
+    pair_slots = sum(count // 2 for count in counts.values())
+    triplet_count = sum(1 for count in counts.values() if count >= 3)
+    simple_count = sum(1 for tile_key in tile_keys if _is_simple_tile(tile_key))
+    score = 0.0
+    route_score = 0.0
+
+    if open_meld_count == 0 and pair_slots >= 4:
+        seven_pairs_bonus = 2.0 + pair_slots * 1.85
+        if all(count <= 2 for count in counts.values()):
+            seven_pairs_bonus += 1.5
+        score += seven_pairs_bonus
+        route_score += seven_pairs_bonus * 0.35
+    elif open_meld_count == 0 and pair_slots == 3:
+        score += 2.4
+        route_score += 1.0
+
+    if triplet_count:
+        pung_bonus = triplet_count * 1.45 + max(0, pair_slots - triplet_count) * 0.35
+        score += pung_bonus
+        route_score += pung_bonus * 0.45
+
+    if suit_counts:
+        dominant_suit_count = suit_counts.most_common(1)[0][1]
+        off_suit_count = len(suited_tiles) - dominant_suit_count
+        if off_suit_count <= 1:
+            flush_bonus = 6.4 if not honor_tiles else 4.8
+            score += flush_bonus
+            route_score += flush_bonus
+        elif off_suit_count <= 3:
+            flush_bonus = 3.1 if not honor_tiles else 2.2
+            score += flush_bonus
+            route_score += flush_bonus * 0.75
+
+    if honor_tiles:
+        isolated_honor_penalty = 0.0
+        for tile_key in set(honor_tiles):
+            count = counts[tile_key]
+            is_value_honor = tile_key in DRAGON_KEYS or tile_key in {seat_wind_key, round_wind_key}
+            if is_value_honor:
+                value_bonus = {1: 0.8, 2: 3.1}.get(count, 6.2 if count >= 3 else 0.0)
+                score += value_bonus
+                route_score += value_bonus
+            elif count == 1:
+                isolated_honor_penalty += 1.35
+            elif count == 2:
+                score += 0.55
+        score -= isolated_honor_penalty
+    else:
+        simple_ratio = simple_count / len(tile_keys)
+        if simple_ratio >= 0.86:
+            score += 2.8
+            route_score += 1.4
+        elif simple_ratio >= 0.7:
+            score += 1.1
+            route_score += 0.5
+
+    if open_meld_count > 0:
+        if route_score < 3.0:
+            score -= 4.2
+        elif route_score < 5.0:
+            score -= 1.9
+
+    return score
+
+
+def _speed_pattern_bonus(
+    tile_key: str,
+    *,
+    seat_wind_key: str | None,
+    round_wind_key: str | None,
+) -> float:
+    if tile_key in DRAGON_KEYS or tile_key in {seat_wind_key, round_wind_key}:
+        return 1.1
+    parsed = _parse_suit_rank(tile_key)
+    if parsed is None:
+        return 0.2
+    _suit, rank = parsed
+    if 3 <= rank <= 7:
+        return 0.8
+    if rank in {2, 8}:
+        return 0.45
+    return 0.2
+
+
+def _improvement_score(
+    tile_keys: list[str],
+    *,
+    open_meld_count: int,
+    current_shanten: int,
+    current_base_score: float,
+    visible_counts: Counter[str] | None,
+    seat_wind_key: str | None,
+    round_wind_key: str | None,
+) -> float:
+    counts = Counter(tile_keys)
+    signature = tuple(sorted(tile_keys))
+    total = 0.0
+    for tile_key in ALL_TILE_KEYS:
+        available = _available_tile_count(
+            tile_key,
+            hand_counts=counts,
+            visible_counts=visible_counts,
+        )
+        if available <= 0:
+            continue
+        next_tile_keys = [*tile_keys, tile_key]
+        next_shanten = _best_shanten_cached(
+            tuple(sorted((*signature, tile_key))),
+            open_meld_count=open_meld_count,
+        )
+        next_base_score = _shape_score(next_tile_keys) + _pattern_potential_score(
+            next_tile_keys,
+            open_meld_count=open_meld_count,
+            seat_wind_key=seat_wind_key,
+            round_wind_key=round_wind_key,
+        )
+        shanten_gain = current_shanten - next_shanten
+        shape_gain = next_base_score - current_base_score
+        if shanten_gain > 0:
+            total += available * (shanten_gain * 3.6 + max(0.0, shape_gain) * 0.12)
+        elif shape_gain > 0.75:
+            total += available * shape_gain * 0.05
+    return total / 4.0
+
+
+def _tenpai_wait_score(
+    tile_keys: list[str],
+    *,
+    shanten: int,
+    visible_counts: Counter[str] | None,
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    open_meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    visible_tile_keys: tuple[str, ...],
+    seat_wind_key: str | None,
+    round_wind_key: str | None,
+    enforce_minimum_eight_fan: bool,
+    seat_count: int,
+) -> float:
+    normalized_total = len(tile_keys) + sum(_normalized_meld_tile_count(meld) for meld in meld_tile_key_groups)
+    if shanten > 1 or normalized_total % 3 != 1:
+        return 0.0
+
+    counts = Counter(tile_keys)
+    total = 0.0
+    for tile_key in ALL_TILE_KEYS:
+        available = _available_tile_count(
+            tile_key,
+            hand_counts=counts,
+            visible_counts=visible_counts,
+        )
+        if available <= 0:
+            continue
+        wait_value = _qualifying_wait_value(
+            tile_keys=tile_keys,
+            incoming_tile=tile_key,
+            meld_tile_key_groups=meld_tile_key_groups,
+            open_meld_tile_key_groups=open_meld_tile_key_groups,
+            visible_tile_keys=visible_tile_keys,
+            seat_wind_key=seat_wind_key,
+            round_wind_key=round_wind_key,
+            enforce_minimum_eight_fan=enforce_minimum_eight_fan,
+            seat_count=seat_count,
+        )
+        if wait_value <= 0.0:
+            continue
+        total += available * (1.8 + wait_value * 0.35)
+    return total
+
+
+def _one_shanten_path_score(
+    tile_keys: list[str],
+    *,
+    open_meld_count: int,
+    visible_counts: Counter[str] | None,
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    seat_wind_key: str | None,
+    round_wind_key: str | None,
+    speed_focus: float,
+) -> float:
+    counts = Counter(tile_keys)
+    total = 0.0
+    for draw_tile_key in ALL_TILE_KEYS:
+        available = _available_tile_count(
+            draw_tile_key,
+            hand_counts=counts,
+            visible_counts=visible_counts,
+        )
+        if available <= 0:
+            continue
+
+        drawn_tile_keys = [*tile_keys, draw_tile_key]
+        next_visible_counts = None
+        if visible_counts is not None:
+            next_visible_counts = visible_counts.copy()
+            next_visible_counts[draw_tile_key] += 1
+
+        best_wait_width = 0
+        seen_signatures: set[tuple[str, ...]] = set()
+        for discard_index, _discarded_tile_key in enumerate(drawn_tile_keys):
+            next_tile_keys = drawn_tile_keys[:discard_index] + drawn_tile_keys[discard_index + 1 :]
+            next_signature = tuple(sorted(next_tile_keys))
+            if next_signature in seen_signatures:
+                continue
+            seen_signatures.add(next_signature)
+
+            next_shanten = _best_shanten_cached(
+                next_signature,
+                open_meld_count=open_meld_count,
+            )
+            if next_shanten != 0:
+                continue
+            wait_width = _effective_tile_count(
+                next_tile_keys,
+                open_meld_count=open_meld_count,
+                current_shanten=0,
+                visible_counts=next_visible_counts,
+            )
+            if wait_width > best_wait_width:
+                best_wait_width = wait_width
+
+        if best_wait_width <= 0:
+            continue
+
+        draw_shape_bonus = _speed_pattern_bonus(
+            draw_tile_key,
+            seat_wind_key=seat_wind_key,
+            round_wind_key=round_wind_key,
+        )
+        total += available * (
+            best_wait_width * 0.34
+            + draw_shape_bonus * 0.2
+        )
+
+    return (total / 6.0) * max(0.9, speed_focus)
+
+
+def _qualifying_wait_value(
+    *,
+    tile_keys: list[str],
+    incoming_tile: str,
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    open_meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    visible_tile_keys: tuple[str, ...],
+    seat_wind_key: str | None,
+    round_wind_key: str | None,
+    enforce_minimum_eight_fan: bool,
+    seat_count: int,
+) -> float:
+    decompositions = decompose_winning_hand_with_melds(
+        [*tile_keys, incoming_tile],
+        [list(meld) for meld in meld_tile_key_groups],
+    )
+    if not decompositions:
+        return 0.0
+
+    features = extract_hand_features(
+        concealed_tile_keys=tile_keys,
+        meld_tile_key_groups=[list(meld) for meld in meld_tile_key_groups],
+        meld_open_flags=[
+            meld in set(open_meld_tile_key_groups)
+            for meld in meld_tile_key_groups
+        ],
+        incoming_tile=incoming_tile,
+        seat_wind_key=seat_wind_key,
+        round_wind_key=round_wind_key,
+        decompositions=decompositions,
+    )
+    all_tile_keys = _full_hand_tile_keys(
+        concealed_tile_keys=tile_keys,
+        meld_tile_key_groups=meld_tile_key_groups,
+        incoming_tile=incoming_tile,
+    )
+
+    best_wait_value = 0.0
+    for win_type in ("discard", "self_draw"):
+        result = evaluate_fans(
+            win_type=win_type,
+            winner_seat=0,
+            discarder_seat=1 if win_type == "discard" else None,
+            flower_count=0,
+            seat_count=seat_count,
+            features=features,
+            timing={},
+            kong_entries=[],
+            tile_keys=all_tile_keys,
+            visible_tile_keys=list(visible_tile_keys),
+            concealed_tile_keys=tile_keys,
+            meld_tile_key_groups=[list(meld) for meld in meld_tile_key_groups],
+            open_meld_tile_key_groups=[list(meld) for meld in open_meld_tile_key_groups],
+            incoming_tile=incoming_tile,
+            decompositions=decompositions,
+            seat_wind_key=seat_wind_key,
+            round_wind_key=round_wind_key,
+        )
+        qualifying_fan = result["minimum_qualifying_fan_total"]
+        if enforce_minimum_eight_fan and qualifying_fan < 8:
+            continue
+        best_wait_value = max(best_wait_value, float(qualifying_fan))
+    return best_wait_value
+
+
+def _full_hand_tile_keys(
+    *,
+    concealed_tile_keys: list[str],
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    incoming_tile: str | None,
+) -> list[str]:
+    tile_keys = list(concealed_tile_keys)
+    for meld in meld_tile_key_groups:
+        tile_keys.extend(meld[:3] if len(meld) == 4 and len(set(meld)) == 1 else meld)
+    if incoming_tile is not None:
+        tile_keys.append(incoming_tile)
+    return tile_keys
+
+
+def _normalized_meld_tile_count(meld_tile_keys: tuple[str, ...]) -> int:
+    if len(meld_tile_keys) == 4 and len(set(meld_tile_keys)) == 1:
+        return 3
+    return len(meld_tile_keys)
+
+
+def _available_tile_count(
+    tile_key: str,
+    *,
+    hand_counts: Counter[str],
+    visible_counts: Counter[str] | None,
+) -> int:
+    if visible_counts is not None:
+        return max(0, 4 - visible_counts.get(tile_key, 0))
+    return max(0, 4 - hand_counts.get(tile_key, 0))
+
+
+def _plan_delta_score(
+    *,
+    current_shanten: int,
+    next_shanten: int,
+    current_effective: int,
+    next_effective: int,
+    current_score: float,
+    next_score: float,
+) -> float:
+    return (
+        (current_shanten - next_shanten) * 8.5
+        + (next_effective - current_effective) * 0.45
+        + (next_score - current_score) * 0.14
+    )
+
+
+def _hand_quality_for_state(
+    state: RoundState,
+    *,
+    seat_index: int,
+    concealed_tiles: tuple[Tile, ...],
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+    style: _BotStyleProfile,
+) -> tuple[int, int, float]:
+    return _hand_quality(
+        [tile.tile_key for tile in concealed_tiles],
+        open_meld_count=len(meld_tile_key_groups),
+        visible_counts=_known_tile_counts(
+            state,
+            seat_index=seat_index,
+            concealed_tiles=concealed_tiles,
+            meld_tile_key_groups=meld_tile_key_groups,
+        ),
+        seat_wind_key=_seat_wind_key(seat_index, state.dealer_seat),
+        round_wind_key=state.round_wind,
+        meld_tile_key_groups=meld_tile_key_groups,
+        open_meld_tile_key_groups=meld_tile_key_groups,
+        visible_tile_keys=_projected_visible_tile_keys(
+            state,
+            seat_index=seat_index,
+            meld_tile_key_groups=meld_tile_key_groups,
+        ),
+        enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+        seat_count=len(state.players),
+        speed_focus=style.speed_focus,
+        fan_focus=style.fan_focus,
+    )
+
+
+def _player_meld_tile_key_groups(player: PlayerState) -> tuple[tuple[str, ...], ...]:
+    return tuple(tuple(tile.tile_key for tile in meld) for meld in player.melds)
+
+
+def _project_claim_meld_tile_key_group(
+    *,
+    discard: Tile | None,
+    tile_ids: list[str],
+    action_type: str,
+    player: PlayerState,
+) -> tuple[str, ...]:
+    if discard is None:
+        raise ValueError("Discard is required to project a claim meld")
+    selected_tile_keys = [
+        tile.tile_key
+        for tile in player.concealed_tiles
+        if tile.tile_id in set(tile_ids)
+    ]
+    if action_type == "chow":
+        return tuple(sorted([discard.tile_key, *selected_tile_keys], key=_tile_sort_key))
+    if action_type == "pung":
+        return (discard.tile_key, discard.tile_key, discard.tile_key)
+    if action_type == "kong":
+        return (discard.tile_key, discard.tile_key, discard.tile_key, discard.tile_key)
+    raise ValueError(f"Unsupported claim projection: {action_type}")
+
+
+def _project_self_kong_meld_tile_key_group(
+    *,
+    player: PlayerState,
+    tile_ids: list[str],
+) -> tuple[str, ...]:
+    if len(tile_ids) >= 4:
+        tile_key = next(tile.tile_key for tile in player.concealed_tiles if tile.tile_id == tile_ids[0])
+        return (tile_key, tile_key, tile_key, tile_key)
+
+    tile_key = next(tile.tile_key for tile in player.concealed_tiles if tile.tile_id == tile_ids[0])
+    return (tile_key, tile_key, tile_key, tile_key)
+
+
+def _projected_visible_tile_keys(
+    state: RoundState,
+    *,
+    seat_index: int,
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+) -> tuple[str, ...]:
+    tile_keys: list[str] = []
+    for opponent_seat, player in enumerate(state.players):
+        tile_keys.extend(tile.tile_key for tile in player.discards)
+        groups = meld_tile_key_groups if opponent_seat == seat_index else _player_meld_tile_key_groups(player)
+        for meld in groups:
+            tile_keys.extend(meld[:3] if len(meld) == 4 and len(set(meld)) == 1 else meld)
+    return tuple(tile_keys)
+
+
+def _known_tile_counts(
+    state: RoundState,
+    *,
+    seat_index: int,
+    concealed_tiles: tuple[Tile, ...],
+    meld_tile_key_groups: tuple[tuple[str, ...], ...],
+) -> Counter[str]:
+    counts: Counter[str] = Counter(tile.tile_key for tile in concealed_tiles)
+    for player_index, player in enumerate(state.players):
+        counts.update(tile.tile_key for tile in player.discards)
+        counts.update(tile.tile_key for tile in player.flowers)
+        groups = meld_tile_key_groups if player_index == seat_index else _player_meld_tile_key_groups(player)
+        for meld in groups:
+            counts.update(meld)
+    return counts
+
+
+def _tile_sort_key(tile_key: str) -> tuple[int, int, str]:
+    parsed = _parse_suit_rank(tile_key)
+    if parsed is not None:
+        suit_order = {"w": 0, "t": 1, "b": 2}
+        return (0, suit_order[parsed[0]] * 10 + parsed[1], tile_key)
+    honor_order = {
+        "east": 0,
+        "south": 1,
+        "west": 2,
+        "north": 3,
+        "red": 4,
+        "green": 5,
+        "white": 6,
+    }
+    return (1, honor_order.get(tile_key, 99), tile_key)
+
+
 def _remove_tiles_by_id(tiles: tuple[Tile, ...], tile_ids: list[str]) -> list[Tile]:
     pending = Counter(tile_ids)
     remaining: list[Tile] = []
@@ -827,6 +1531,7 @@ def _opponent_threat(state: RoundState, *, seat_index: int, opponent_seat: int) 
     player = state.players[opponent_seat]
     open_melds = len(player.melds)
     discards = len(player.discards)
+    wall_tiles_remaining = max(0, state.wall.tail_index - state.wall.head_index + 1)
     threat = 0.0
     if open_melds >= 3:
         threat += 0.75
@@ -855,6 +1560,15 @@ def _opponent_threat(state: RoundState, *, seat_index: int, opponent_seat: int) 
         )
     )
     threat += min(0.2, value_melds * 0.1)
+
+    if open_melds == 0 and discards >= 10:
+        threat += 0.04
+    if discards >= 13:
+        threat += 0.04
+    if wall_tiles_remaining <= 24:
+        threat += 0.05
+    elif wall_tiles_remaining <= 40:
+        threat += 0.02
 
     return min(1.0, threat)
 
@@ -1046,6 +1760,8 @@ def _style_profile(*, persona: BotPersona, aggression: float) -> _BotStyleProfil
             pung_call_bias=0.82 + bounded_aggression * 0.16,
             kong_call_bias=0.92 + bounded_aggression * 0.14,
             closed_hand_bias=1.25,
+            speed_focus=1.0,
+            fan_focus=1.0,
         )
     if persona == "defender":
         return _BotStyleProfile(
@@ -1060,6 +1776,8 @@ def _style_profile(*, persona: BotPersona, aggression: float) -> _BotStyleProfil
             pung_call_bias=0.62 + bounded_aggression * 0.14,
             kong_call_bias=0.76 + bounded_aggression * 0.12,
             closed_hand_bias=1.08,
+            speed_focus=1.0,
+            fan_focus=1.0,
         )
     return _BotStyleProfile(
         persona=persona,
@@ -1073,6 +1791,32 @@ def _style_profile(*, persona: BotPersona, aggression: float) -> _BotStyleProfil
         pung_call_bias=0.8 + bounded_aggression * 0.16,
         kong_call_bias=0.9 + bounded_aggression * 0.12,
         closed_hand_bias=1.0,
+        speed_focus=1.0,
+        fan_focus=1.0,
+    )
+
+
+def _apply_rule_speed_profile(
+    style: _BotStyleProfile,
+    *,
+    enforce_minimum_eight_fan: bool,
+) -> _BotStyleProfile:
+    if enforce_minimum_eight_fan:
+        return style
+    return _BotStyleProfile(
+        persona=style.persona,
+        aggression=style.aggression,
+        defense_bias=max(0.18, style.defense_bias - 0.16),
+        fold_pressure=min(0.98, style.fold_pressure + 0.12),
+        hard_fold_pressure=min(1.0, style.hard_fold_pressure + 0.1),
+        risk_tolerance=min(0.95, style.risk_tolerance + 0.08),
+        shanten_tolerance=style.shanten_tolerance,
+        chow_call_bias=style.chow_call_bias + 0.12,
+        pung_call_bias=style.pung_call_bias + 0.1,
+        kong_call_bias=style.kong_call_bias,
+        closed_hand_bias=max(0.82, style.closed_hand_bias - 0.18),
+        speed_focus=1.18,
+        fan_focus=0.78,
     )
 
 
@@ -1092,6 +1836,11 @@ def _is_value_tile(
 
 def _seat_wind_key(seat_index: int, dealer_seat: int) -> str:
     return WIND_ORDER[(seat_index - dealer_seat) % 4]
+
+
+def _is_simple_tile(tile_key: str) -> bool:
+    parsed = _parse_suit_rank(tile_key)
+    return parsed is not None and 2 <= parsed[1] <= 8
 
 
 def _offset_tile(tile_key: str, delta: int) -> str | None:
