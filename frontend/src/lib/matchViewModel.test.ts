@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { SessionState } from '../types/match';
 import { createMatchViewModel } from './matchViewModel';
@@ -387,6 +387,36 @@ describe('createMatchViewModel', () => {
     expect(viewModel.topStatusLabel).toBe('等待再来一局');
   });
 
+  it('keeps the restart action clickable for players who have not confirmed yet', () => {
+    const base = createFinishedSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          continue_action: {
+            action_id: 'restart_match',
+            confirmed_seats: [1],
+            required_seats: [0, 1, 2, 3],
+            online_seats: [0, 1, 2],
+          },
+        },
+      },
+    });
+
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'restart_match',
+      label: '再来一局',
+      enabled: true,
+      confirmation: {
+        confirmedCount: 1,
+        requiredCount: 4,
+        isLocalConfirmed: false,
+      },
+    });
+  });
+
   it('shows local claim options when the local seat can respond in a claim window', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
@@ -628,6 +658,74 @@ describe('createMatchViewModel', () => {
       bottom: ['w2', 't9'],
       right: ['d1', 'd2'],
     });
+  });
+
+  it('marks the next-round action as confirmed for the local player after they click it', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          continue_action: {
+            action_id: 'start_next_round',
+            confirmed_seats: [2],
+            required_seats: [0, 1, 2, 3],
+            online_seats: [0, 1, 2],
+          },
+        },
+      },
+    });
+
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'start_next_round',
+      label: '已确认 1/4',
+      enabled: false,
+      confirmation: {
+        confirmedCount: 1,
+        requiredCount: 4,
+        isLocalConfirmed: true,
+      },
+    });
+  });
+
+  it('shows a countdown after all online players confirm while offline humans are still pending', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-02T12:00:00Z'));
+
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          continue_action: {
+            action_id: 'start_next_round',
+            confirmed_seats: [0, 1, 2],
+            required_seats: [0, 1, 2, 3],
+            online_seats: [0, 1, 2],
+            auto_advance_deadline_at: '2026-04-02T12:01:00Z',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'start_next_round',
+      label: '60s后自动推进',
+      enabled: false,
+      countdownDeadlineAt: '2026-04-02T12:01:00Z',
+      confirmation: {
+        confirmedCount: 3,
+        requiredCount: 4,
+        isLocalConfirmed: true,
+        countdownDeadlineAt: '2026-04-02T12:01:00Z',
+      },
+    });
+
+    vi.useRealTimers();
   });
 
   it('uses 屁和 copy for low-fan wins when eight-fan restriction is disabled', () => {

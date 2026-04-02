@@ -320,6 +320,104 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('自摸 · 胜者 Player A（本家）')).toBeNull();
   });
 
+  it('disables the continue button and shows confirmation progress after the local player confirms', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '已确认 2/3',
+            enabled: false,
+            confirmation: {
+              confirmedCount: 2,
+              requiredCount: 3,
+              isLocalConfirmed: true,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: '已确认 2/3' })).toBeDisabled();
+  });
+
+  it('shows a live countdown instead of confirmation progress once all online players have confirmed', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-02T12:00:00Z'));
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '60s后自动推进',
+            enabled: false,
+            countdownDeadlineAt: '2026-04-02T12:01:00Z',
+            confirmation: {
+              confirmedCount: 3,
+              requiredCount: 4,
+              isLocalConfirmed: true,
+              countdownDeadlineAt: '2026-04-02T12:01:00Z',
+            },
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: '60s后自动推进' })).toBeDisabled();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByRole('button', { name: '59s后自动推进' })).toBeDisabled();
+    vi.useRealTimers();
+  });
+
   it('shows all player scores directly without section expansion controls', () => {
     renderBattleScreen(
       createBattleViewModel({

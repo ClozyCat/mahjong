@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
 import pytest
 from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
@@ -1765,7 +1768,7 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
         reconnect_token="token-1",
         player_session_id=2,
         websocket=_RecordingWebSocket(),
-        connected=True,
+        connected=False,
         ready=True,
     )
     room.seats[2] = SeatReservation(
@@ -1774,7 +1777,7 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
         reconnect_token="token-2",
         player_session_id=3,
         websocket=_RecordingWebSocket(),
-        connected=True,
+        connected=False,
         ready=True,
     )
     room.seats[3] = SeatReservation(
@@ -1783,7 +1786,7 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
         reconnect_token="token-3",
         player_session_id=4,
         websocket=_RecordingWebSocket(),
-        connected=True,
+        connected=False,
         ready=True,
     )
     room.match_state = MatchState(
@@ -1835,6 +1838,191 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
     assert response["payload"]["match_state"]["hand_number"] == 2
     assert response["payload"]["private_state"]["dealer_seat"] == 1
     assert response["payload"]["private_state"]["round_wind"] == "east"
+
+
+@pytest.mark.asyncio
+async def test_start_next_round_starts_auto_advance_after_all_online_players_confirm(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_continue_action_task_locked", lambda _room: None)
+
+    room, websocket = _make_settlement_room(
+        table_code="ROOM_CONFIRM",
+        match_state=MatchState(
+            prevailing_wind="east",
+            hand_number=1,
+            dealer_seat=0,
+            cumulative_scores={0: 0, 1: 0, 2: 0, 3: 0},
+        ),
+        settlement={
+            "win_type": "draw",
+            "fan_total": 0,
+            "fan_keys": [],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 0,
+                "fan_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+            },
+        },
+    )
+    room.seats[2].connected = False
+    room.seats[3].connected = False
+    service._rooms["ROOM_CONFIRM"] = room
+
+    response = await service.start_next_round(table_code="ROOM_CONFIRM", websocket=websocket)
+
+    assert response["payload"]["phase"] == "settlement"
+    assert response["payload"]["continue_action"] == {
+        "action_id": "start_next_round",
+        "confirmed_seats": [0],
+        "required_seats": [0, 1, 2, 3],
+        "online_seats": [0, 1],
+        "auto_advance_deadline_at": None,
+    }
+    assert room.phase == "settlement"
+    assert room.start_next_round_confirmed_seats == {0}
+    assert room.continue_action_auto_advance_deadline_at is None
+
+    second_websocket = room.seats[1].websocket
+    assert second_websocket is not None
+
+    response = await service.start_next_round(table_code="ROOM_CONFIRM", websocket=second_websocket)
+
+    assert response["payload"]["phase"] == "settlement"
+    assert response["payload"]["continue_action"]["confirmed_seats"] == [0, 1]
+    assert response["payload"]["continue_action"]["required_seats"] == [0, 1, 2, 3]
+    assert response["payload"]["continue_action"]["online_seats"] == [0, 1]
+    assert response["payload"]["continue_action"]["auto_advance_deadline_at"] is not None
+    assert room.phase == "settlement"
+    assert room.continue_action_auto_advance_deadline_at is not None
+
+
+@pytest.mark.asyncio
+async def test_start_next_round_auto_advances_after_countdown_for_offline_humans(
+    monkeypatch,
+):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_continue_action_task_locked", lambda _room: None)
+
+    room, websocket = _make_settlement_room(
+        table_code="ROOM_CONFIRM_TIMEOUT",
+        match_state=MatchState(
+            prevailing_wind="east",
+            hand_number=1,
+            dealer_seat=0,
+            cumulative_scores={0: 0, 1: 0, 2: 0, 3: 0},
+        ),
+        settlement={
+            "win_type": "draw",
+            "fan_total": 0,
+            "fan_keys": [],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 0,
+                "fan_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+            },
+        },
+    )
+    room.seats[2].connected = False
+    room.seats[3].connected = False
+    room.start_next_round_confirmed_seats = {0, 1}
+    deadline_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    room.continue_action_auto_advance_deadline_at = deadline_at
+    service._rooms["ROOM_CONFIRM_TIMEOUT"] = room
+
+    await service._process_due_continue_action(
+        "ROOM_CONFIRM_TIMEOUT",
+        expected_action_id="start_next_round",
+        expected_deadline_at=deadline_at,
+    )
+
+    assert room.phase == "playing"
+    assert room.continue_action_auto_advance_deadline_at is None
+    assert room.start_next_round_confirmed_seats == set()
+    assert websocket.messages[-1]["payload"]["phase"] == "playing"
+
+
+@pytest.mark.asyncio
+async def test_reconnect_cancels_continue_action_countdown_when_the_player_returns(
+    monkeypatch,
+):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(
+        service,
+        "_get_reconnect_record",
+        lambda _token: SimpleNamespace(table_id=1, seat_index=2, player_session_id=3),
+    )
+    monkeypatch.setattr(service, "_get_table_record", lambda _table_code: SimpleNamespace(id=1))
+    monkeypatch.setattr(service, "_consume_reconnect_token", lambda _token: object())
+    monkeypatch.setattr(service, "_issue_reconnect_token", lambda **_kwargs: "new-token-2")
+    monkeypatch.setattr(service, "_mark_connected", lambda *, player_session_id: None)
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_continue_action_task_locked", lambda _room: None)
+
+    room, websocket = _make_settlement_room(
+        table_code="ROOM_RECONNECT",
+        match_state=MatchState(
+            prevailing_wind="east",
+            hand_number=1,
+            dealer_seat=0,
+            cumulative_scores={0: 0, 1: 0, 2: 0, 3: 0},
+        ),
+        settlement={
+            "win_type": "draw",
+            "fan_total": 0,
+            "fan_keys": [],
+            "fan_breakdown": [],
+            "flower_count": 0,
+            "kong_score_detail": [],
+            "score_delta": {
+                "provisional": True,
+                "fan_total": 0,
+                "fan_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "kong_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+                "total_delta_by_seat": {0: 0, 1: 0, 2: 0, 3: 0},
+            },
+        },
+    )
+    room.seats[2].connected = False
+    room.seats[2].websocket = None
+    room.seats[2].reconnect_token = "token-2"
+    room.seats[3].connected = False
+    room.start_next_round_confirmed_seats = {0, 1}
+    room.continue_action_auto_advance_deadline_at = datetime.now(timezone.utc) + timedelta(
+        seconds=30
+    )
+    service._rooms["ROOM_RECONNECT"] = room
+
+    reconnecting_websocket = _RecordingWebSocket()
+    response = await service.reconnect(
+        table_code="ROOM_RECONNECT",
+        token="token-2",
+        websocket=reconnecting_websocket,
+    )
+
+    assert response["payload"]["continue_action"] == {
+        "action_id": "start_next_round",
+        "confirmed_seats": [0, 1],
+        "required_seats": [0, 1, 2, 3],
+        "online_seats": [0, 1, 2],
+        "auto_advance_deadline_at": None,
+    }
+    assert room.continue_action_auto_advance_deadline_at is None
+    assert room.seats[2].connected is True
+    assert room.seats[2].websocket is reconnecting_websocket
 
 
 @pytest.mark.asyncio
@@ -2021,7 +2209,7 @@ async def test_restart_match_resets_match_state_after_finish(monkeypatch):
             reconnect_token=f"token-{seat}",
             player_session_id=seat + 1,
             websocket=websocket if seat == 0 else _RecordingWebSocket(),
-            connected=True,
+            connected=seat == 0,
             ready=True,
         )
     room.match_state = MatchState(
@@ -2065,6 +2253,143 @@ async def test_restart_match_resets_match_state_after_finish(monkeypatch):
     assert room.round_state is not None
     assert room.round_state.round_wind == "east"
     assert room.round_state.dealer_seat == 2
+
+
+@pytest.mark.asyncio
+async def test_restart_match_starts_auto_advance_after_all_online_players_confirm(
+    monkeypatch,
+):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_continue_action_task_locked", lambda _room: None)
+    monkeypatch.setattr(game_service_module.random, "choice", lambda seats: 2)
+
+    websocket = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM_RESTART", phase="finished")
+    for seat in range(4):
+        room.seats[seat] = SeatReservation(
+            seat_index=seat,
+            nickname=f"P{seat}",
+            reconnect_token=f"token-{seat}",
+            player_session_id=seat + 1,
+            websocket=websocket if seat == 0 else _RecordingWebSocket(),
+            connected=seat < 2,
+            ready=True,
+        )
+    room.match_state = MatchState(
+        prevailing_wind="north",
+        hand_number=4,
+        dealer_seat=3,
+        cumulative_scores={0: 10, 1: -5, 2: -2, 3: -3},
+        match_finished=True,
+        last_completed_round_id="north-4-finished",
+    )
+    room.round_state = RoundState(
+        round_id="north-4-finished",
+        dealer_seat=3,
+        current_actor=3,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="settlement",
+        settlement={"win_type": "draw"},
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="north",
+    )
+    service._rooms["ROOM_RESTART"] = room
+
+    response = await service.restart_match(table_code="ROOM_RESTART", websocket=websocket)
+
+    assert response == {"type": "restart_match_accepted", "payload": {}}
+    assert room.phase == "finished"
+    assert room.restart_match_confirmed_seats == {0}
+    assert websocket.messages[0]["payload"]["continue_action"] == {
+        "action_id": "restart_match",
+        "confirmed_seats": [0],
+        "required_seats": [0, 1, 2, 3],
+        "online_seats": [0, 1],
+        "auto_advance_deadline_at": None,
+    }
+
+    second_websocket = room.seats[1].websocket
+    assert second_websocket is not None
+
+    response = await service.restart_match(table_code="ROOM_RESTART", websocket=second_websocket)
+
+    assert response == {"type": "restart_match_accepted", "payload": {}}
+    assert room.phase == "finished"
+    assert room.continue_action_auto_advance_deadline_at is not None
+
+
+@pytest.mark.asyncio
+async def test_restart_match_auto_advances_after_countdown_for_offline_humans(
+    monkeypatch,
+):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_continue_action_task_locked", lambda _room: None)
+    monkeypatch.setattr(game_service_module.random, "choice", lambda seats: 2)
+
+    websocket = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM_RESTART_TIMEOUT", phase="finished")
+    for seat in range(4):
+        room.seats[seat] = SeatReservation(
+            seat_index=seat,
+            nickname=f"P{seat}",
+            reconnect_token=f"token-{seat}",
+            player_session_id=seat + 1,
+            websocket=websocket if seat == 0 else _RecordingWebSocket(),
+            connected=seat < 2,
+            ready=True,
+        )
+    room.match_state = MatchState(
+        prevailing_wind="north",
+        hand_number=4,
+        dealer_seat=3,
+        cumulative_scores={0: 10, 1: -5, 2: -2, 3: -3},
+        match_finished=True,
+        last_completed_round_id="north-4-finished",
+    )
+    room.round_state = RoundState(
+        round_id="north-4-finished",
+        dealer_seat=3,
+        current_actor=3,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="settlement",
+        settlement={"win_type": "draw"},
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="north",
+    )
+    room.restart_match_confirmed_seats = {0, 1}
+    deadline_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    room.continue_action_auto_advance_deadline_at = deadline_at
+    service._rooms["ROOM_RESTART_TIMEOUT"] = room
+
+    await service._process_due_continue_action(
+        "ROOM_RESTART_TIMEOUT",
+        expected_action_id="restart_match",
+        expected_deadline_at=deadline_at,
+    )
+
+    assert room.phase == "playing"
+    assert room.continue_action_auto_advance_deadline_at is None
+    assert room.restart_match_confirmed_seats == set()
 
 
 def test_room_snapshot_exposes_in_round_score_state() -> None:

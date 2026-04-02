@@ -453,6 +453,8 @@ function createActionViews(
   options: MatchViewModelOptions = {},
 ): BattleActionView[] {
   const snapshot = state.roomSnapshot?.payload;
+  const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
+  const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
   const promptOptions = new Set<BackendActionType>(getPromptOptions(state));
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const kongCandidateGroups = options.showLocalTurnKongPrompt
@@ -478,9 +480,9 @@ function createActionViews(
     } else if (id === 'start_match') {
       enabled = waitingControls?.canStart ?? false;
     } else if (id === 'start_next_round') {
-      enabled = canContinueRound;
+      enabled = canContinueRound && !nextRoundConfirmation?.isLocalConfirmed;
     } else if (id === 'restart_match') {
-      enabled = canRestartMatch;
+      enabled = canRestartMatch && !restartMatchConfirmation?.isLocalConfirmed;
     } else if (options.showLocalTurnKongPrompt && id === 'kong') {
       enabled = kongCandidateGroups.length > 0;
     } else if (options.showLocalTurnKongPrompt && id === 'pass') {
@@ -508,16 +510,40 @@ function createActionViews(
           : 'low';
     return {
       id,
-      label: getActionLabel(id, waitingControls),
+      label: getActionLabel(id, waitingControls, {
+        startNextRound: nextRoundConfirmation,
+        restartMatch: restartMatchConfirmation,
+      }),
       enabled,
       emphasis,
     };
   });
 }
 
-function getActionLabel(id: BattleActionId, waitingControls: WaitingControls | null) {
+function getActionLabel(
+  id: BattleActionId,
+  waitingControls: WaitingControls | null,
+  continueActionConfirmations?: {
+    startNextRound: ReturnType<typeof createContinueActionConfirmation>;
+    restartMatch: ReturnType<typeof createContinueActionConfirmation>;
+  },
+) {
   if (id === 'ready' && waitingControls?.isReady) {
     return '取消准备';
+  }
+
+  const confirmation =
+    id === 'start_next_round'
+      ? continueActionConfirmations?.startNextRound
+      : id === 'restart_match'
+        ? continueActionConfirmations?.restartMatch
+        : null;
+  if (confirmation?.countdownDeadlineAt) {
+    return formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt);
+  }
+
+  if (confirmation?.isLocalConfirmed) {
+    return formatContinueActionConfirmedLabel(confirmation.confirmedCount, confirmation.requiredCount);
   }
 
   return ACTION_LABELS[id];
@@ -922,6 +948,8 @@ function createResult(state: SessionState): BattleViewModel['result'] {
   }
 
   const localSeat = getLocalSeat(state);
+  const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
+  const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
 
   if (snapshot.phase === 'settlement' && state.latestMatchResult) {
     const result = state.latestMatchResult.payload;
@@ -953,8 +981,17 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       seats: createResultSeats(state, result.score_delta.total_delta_by_seat),
       continueAction: {
         id: 'start_next_round',
-        label: ACTION_LABELS.start_next_round,
-        enabled: typeof snapshot.local_seat === 'number',
+        label: nextRoundConfirmation?.countdownDeadlineAt
+          ? formatContinueActionCountdownLabel(nextRoundConfirmation.countdownDeadlineAt)
+          : nextRoundConfirmation?.isLocalConfirmed
+            ? formatContinueActionConfirmedLabel(
+                nextRoundConfirmation.confirmedCount,
+                nextRoundConfirmation.requiredCount,
+              )
+            : ACTION_LABELS.start_next_round,
+        enabled: typeof snapshot.local_seat === 'number' && !nextRoundConfirmation?.isLocalConfirmed,
+        countdownDeadlineAt: nextRoundConfirmation?.countdownDeadlineAt ?? undefined,
+        confirmation: nextRoundConfirmation ?? undefined,
       },
     };
   }
@@ -975,8 +1012,20 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       seats: createResultSeats(state, null),
       continueAction: {
         id: 'restart_match',
-        label: ACTION_LABELS.restart_match,
-        enabled: snapshot.match_state?.match_finished === true && typeof snapshot.local_seat === 'number',
+        label: restartMatchConfirmation?.countdownDeadlineAt
+          ? formatContinueActionCountdownLabel(restartMatchConfirmation.countdownDeadlineAt)
+          : restartMatchConfirmation?.isLocalConfirmed
+            ? formatContinueActionConfirmedLabel(
+                restartMatchConfirmation.confirmedCount,
+                restartMatchConfirmation.requiredCount,
+              )
+            : ACTION_LABELS.restart_match,
+        enabled:
+          snapshot.match_state?.match_finished === true &&
+          typeof snapshot.local_seat === 'number' &&
+          !restartMatchConfirmation?.isLocalConfirmed,
+        countdownDeadlineAt: restartMatchConfirmation?.countdownDeadlineAt ?? undefined,
+        confirmation: restartMatchConfirmation ?? undefined,
       },
     };
   }
@@ -1365,4 +1414,40 @@ function createQuickChatEvent(state: SessionState): QuickChatEventView | null {
         ? `${actorName}：${message.payload.emoji}`
         : `${actorName} -> ${targetName} : ${message.payload.emoji}`,
   };
+}
+
+function createContinueActionConfirmation(
+  state: SessionState,
+  actionId: Extract<BattleActionId, 'start_next_round' | 'restart_match'>,
+) {
+  const snapshot = state.roomSnapshot?.payload;
+  const continueAction = snapshot?.continue_action;
+  const localSeat = snapshot?.local_seat;
+
+  if (!continueAction || continueAction.action_id !== actionId) {
+    return null;
+  }
+
+  const confirmedSeats = Array.isArray(continueAction.confirmed_seats) ? continueAction.confirmed_seats : [];
+  const requiredSeats = Array.isArray(continueAction.required_seats) ? continueAction.required_seats : [];
+  const onlineSeats = Array.isArray(continueAction.online_seats) ? continueAction.online_seats : [];
+  const countdownDeadlineAt =
+    typeof continueAction.auto_advance_deadline_at === 'string' ? continueAction.auto_advance_deadline_at : null;
+  const requiredCount = requiredSeats.length > 0 ? requiredSeats.length : onlineSeats.length;
+
+  return {
+    confirmedCount: confirmedSeats.length,
+    requiredCount,
+    isLocalConfirmed: typeof localSeat === 'number' && confirmedSeats.includes(localSeat),
+    countdownDeadlineAt,
+  };
+}
+
+function formatContinueActionConfirmedLabel(confirmedCount: number, requiredCount: number) {
+  return `已确认 ${confirmedCount}/${requiredCount}`;
+}
+
+function formatContinueActionCountdownLabel(deadlineAt: string) {
+  const remainingSeconds = Math.max(0, Math.ceil((new Date(deadlineAt).getTime() - Date.now()) / 1000));
+  return `${remainingSeconds}s后自动推进`;
 }

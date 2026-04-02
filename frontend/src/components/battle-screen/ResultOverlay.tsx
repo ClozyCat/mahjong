@@ -11,6 +11,7 @@ interface ResultOverlayProps {
 export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [fanPanelHeight, setFanPanelHeight] = useState<number | null>(null);
+  const [continueActionRemainingSeconds, setContinueActionRemainingSeconds] = useState<number | null>(null);
   const scorePanelRef = useRef<HTMLDivElement | null>(null);
   const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
@@ -26,6 +27,23 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   useEffect(() => {
     setIsCollapsed(false);
   }, [result]);
+
+  useEffect(() => {
+    const deadlineAt = result.continueAction?.countdownDeadlineAt;
+    if (!deadlineAt) {
+      setContinueActionRemainingSeconds(null);
+      return undefined;
+    }
+
+    const update = () => {
+      const nextRemaining = Math.max(0, Math.ceil((new Date(deadlineAt).getTime() - Date.now()) / 1000));
+      setContinueActionRemainingSeconds(nextRemaining);
+    };
+
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [result.continueAction?.countdownDeadlineAt]);
 
   useEffect(() => {
     if (!hasFanPanel) {
@@ -189,7 +207,9 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
               disabled={!result.continueAction.enabled}
               onClick={() => onAction(result.continueAction!.id)}
             >
-              {result.continueAction.label}
+              {continueActionRemainingSeconds !== null
+                ? `${continueActionRemainingSeconds}s后自动推进`
+                : result.continueAction.label}
             </button>
           </div>
         ) : null}

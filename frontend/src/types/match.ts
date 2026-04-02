@@ -127,6 +127,15 @@ export interface RoomSnapshotPayload {
   reconnect_token?: string | null;
   match_state?: MatchState | null;
   private_state?: PrivateState | null;
+  continue_action?:
+    | {
+        action_id: Extract<BattleActionId, 'start_next_round' | 'restart_match'>;
+        confirmed_seats: number[];
+        required_seats: number[];
+        online_seats: number[];
+        auto_advance_deadline_at?: string | null;
+      }
+    | null;
 }
 
 export interface RoomSnapshotMessage {
@@ -367,6 +376,13 @@ export interface ResultView {
         id: Extract<BattleActionId, 'start_next_round' | 'restart_match'>;
         label: string;
         enabled: boolean;
+        confirmation?: {
+          confirmedCount: number;
+          requiredCount: number;
+          isLocalConfirmed: boolean;
+          countdownDeadlineAt?: string | null;
+        };
+        countdownDeadlineAt?: string | null;
       }
     | null;
 }

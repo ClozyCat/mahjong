@@ -72,7 +72,9 @@ class RoomSnapshotPayload(BaseModel):
     seats: list[TableSeatResponse]
     local_seat: int
     reconnect_token: str
+    match_state: dict | None = None
     private_state: dict | None = None
+    continue_action: dict | None = None
 
 
 class RoundEventPayload(BaseModel):

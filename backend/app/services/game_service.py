@@ -57,6 +57,7 @@ WIND_ORDER = ("east", "south", "west", "north")
 BOT_ACTION_DELAY_MIN_SECONDS = 0.5
 BOT_ACTION_DELAY_MAX_SECONDS = 1.5
 ALLOWED_QUICK_CHAT_EMOJIS = ("😄", "😭", "🀄", "☠️", "😡", "🤮")
+CONTINUE_ACTION_AUTO_ADVANCE_SECONDS = 60
 
 
 class LoopSafeLock:
@@ -135,8 +136,12 @@ class RoomState:
     seats: dict[int, SeatReservation] = field(default_factory=dict)
     match_state: MatchState | None = None
     round_state: RoundState | None = None
+    start_next_round_confirmed_seats: set[int] = field(default_factory=set)
+    restart_match_confirmed_seats: set[int] = field(default_factory=set)
+    continue_action_auto_advance_deadline_at: datetime | None = None
     pending_timeout: PendingTimeout | None = None
     timeout_task: asyncio.Task[None] | None = None
+    continue_action_task: asyncio.Task[None] | None = None
     bot_action_task: asyncio.Task[None] | None = None
     bot_action_key: tuple[str, int, int, str | None, tuple[int, ...]] | None = None
     send_lock: LoopSafeLock = field(default_factory=LoopSafeLock)
@@ -258,6 +263,8 @@ class GameService:
             reservation.websocket = websocket
             reservation.connected = True
             self._mark_connected(player_session_id=reservation.player_session_id)
+            self._reconcile_continue_action_locked(room)
+            self._sync_continue_action_task_locked(room)
             self._persist_room_state_locked(room)
 
             snapshot = self._room_snapshot(room=room, local_seat=reservation.seat_index)
@@ -386,34 +393,16 @@ class GameService:
             if owned_seat is None:
                 return self._action_rejected("seat_not_owned")
 
-            self._apply_settlement_to_match_locked(room)
-            if room.match_state is None:
-                return self._action_rejected("round_not_ready")
-
-            next_match_state = self._next_match_state_after_settlement(room.match_state, room.round_state)
-            if next_match_state.match_finished:
-                room.match_state = next_match_state
-                room.phase = "finished"
-                self._persist_room_state_locked(room)
-                snapshot_targets = self._snapshot_targets_locked(room)
-            else:
-                room.match_state = next_match_state
-                room.round_state = initialize_round(
-                    seed=self._round_seed(table_code),
-                    dealer_seat=next_match_state.dealer_seat,
-                    round_id=self._round_id_for_match(next_match_state),
-                    round_wind=next_match_state.prevailing_wind,
-                    enforce_minimum_eight_fan=room.enforce_minimum_eight_fan,
-                )
-                room.phase = room.round_state.phase
-                room.pending_timeout = None
-                self._advance_round_locked(room)
-                self._auto_advance_bot_seats_locked(room)
-                self._sync_timeout_task_locked(room)
-                self._sync_bot_action_task_locked(room)
+            room.start_next_round_confirmed_seats.add(owned_seat)
+            if self._reconcile_continue_action_locked(room):
+                self._sync_continue_action_task_locked(room)
                 self._persist_room_state_locked(room)
                 snapshot_targets = self._snapshot_targets_locked(room)
                 prompt_targets = self._prompt_targets_locked(room)
+            else:
+                self._sync_continue_action_task_locked(room)
+                self._persist_room_state_locked(room)
+                snapshot_targets = self._snapshot_targets_locked(room)
 
         if room is None:
             return self._action_rejected("table_not_found")
@@ -450,10 +439,16 @@ class GameService:
             if owned_seat is None:
                 return self._action_rejected("seat_not_owned")
 
-            self._start_match_locked(room)
-            self._persist_room_state_locked(room)
-            snapshot_targets = self._snapshot_targets_locked(room)
-            prompt_targets = self._prompt_targets_locked(room)
+            room.restart_match_confirmed_seats.add(owned_seat)
+            if self._reconcile_continue_action_locked(room):
+                self._sync_continue_action_task_locked(room)
+                self._persist_room_state_locked(room)
+                snapshot_targets = self._snapshot_targets_locked(room)
+                prompt_targets = self._prompt_targets_locked(room)
+            else:
+                self._sync_continue_action_task_locked(room)
+                self._persist_room_state_locked(room)
+                snapshot_targets = self._snapshot_targets_locked(room)
 
         async with room.send_lock:
             await self._send_snapshot_targets(snapshot_targets)
@@ -518,9 +513,12 @@ class GameService:
                 if self._should_terminate_unattended_room_locked(room):
                     self._close_room_locked(room)
                 else:
-                    messages = self._auto_advance_bot_seats_locked(room)
-                    self._sync_timeout_task_locked(room)
-                    self._sync_bot_action_task_locked(room)
+                    continue_action_completed = self._reconcile_continue_action_locked(room)
+                    if not continue_action_completed:
+                        messages = self._auto_advance_bot_seats_locked(room)
+                        self._sync_timeout_task_locked(room)
+                        self._sync_bot_action_task_locked(room)
+                    self._sync_continue_action_task_locked(room)
                     self._persist_room_state_locked(room)
                     broadcast_targets = self._connected_websockets_locked(room)
                     snapshot_targets = self._snapshot_targets_locked(room)
@@ -547,6 +545,9 @@ class GameService:
         }
 
     async def disconnect(self, table_code: str, websocket: WebSocket) -> None:
+        peer_updates: list[tuple[WebSocket, list[dict]]] = []
+        prompt_targets: list[tuple[WebSocket, dict]] = []
+
         async with self._lock:
             room = self._get_or_restore_room_locked(table_code)
             if room is None:
@@ -562,7 +563,13 @@ class GameService:
                     if self._should_terminate_unattended_room_locked(room):
                         self._close_room_locked(room)
                     else:
+                        self._reconcile_continue_action_locked(room)
+                        self._sync_continue_action_task_locked(room)
                         self._persist_room_state_locked(room)
+                        peer_updates = self._peer_snapshot_updates_locked(
+                            room, exclude_seat=seat_index
+                        )
+                        prompt_targets = self._prompt_targets_locked(room)
                     break
 
             if disconnected_seat is None:
@@ -575,6 +582,8 @@ class GameService:
                 room=room,
                 table_code=table_code,
                 seat_index=disconnected_seat,
+                peer_updates=peer_updates,
+                prompt_targets=prompt_targets,
             )
         )
 
@@ -866,6 +875,28 @@ class GameService:
             return
         room.timeout_task = asyncio.create_task(
             self._timeout_runner(room.table_code, room.pending_timeout)
+        )
+
+    def _sync_continue_action_task_locked(self, room: RoomState) -> None:
+        current_task = asyncio.current_task()
+        if (
+            room.continue_action_task is not None
+            and room.continue_action_task is not current_task
+        ):
+            room.continue_action_task.cancel()
+        room.continue_action_task = None
+
+        action_id = self._current_continue_action_id_locked(room)
+        deadline_at = room.continue_action_auto_advance_deadline_at
+        if action_id is None or deadline_at is None:
+            return
+
+        room.continue_action_task = asyncio.create_task(
+            self._continue_action_runner(
+                room.table_code,
+                action_id=action_id,
+                deadline_at=deadline_at,
+            )
         )
 
     def _pending_bot_action_key_locked(
@@ -1245,6 +1276,24 @@ class GameService:
             return
         await self._process_due_timeout(table_code, expected_timeout=pending_timeout)
 
+    async def _continue_action_runner(
+        self,
+        table_code: str,
+        *,
+        action_id: str,
+        deadline_at: datetime,
+    ) -> None:
+        delay = max(0.0, (deadline_at - datetime.now(timezone.utc)).total_seconds())
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        await self._process_due_continue_action(
+            table_code,
+            expected_action_id=action_id,
+            expected_deadline_at=deadline_at,
+        )
+
     def _active_turn_drawn_tile_id(self, state: RoundState) -> str | None:
         actor = state.current_actor
         concealed_tiles = state.players[actor].concealed_tiles
@@ -1434,24 +1483,23 @@ class GameService:
         room: RoomState,
         table_code: str,
         seat_index: int,
+        peer_updates: list[tuple[WebSocket, list[dict]]],
+        prompt_targets: list[tuple[WebSocket, dict]],
     ) -> None:
-        async with self._lock:
+        async with room.send_lock:
             current_room = self._rooms.get(table_code)
             if current_room is not room:
                 return
             reservation = current_room.seats.get(seat_index)
             if reservation is None or reservation.connected:
                 return
-            peer_updates = self._peer_snapshot_updates_locked(
-                current_room, exclude_seat=seat_index
-            )
-        async with room.send_lock:
             await self._send_presence_and_snapshots(
                 table_code=table_code,
                 seat_index=seat_index,
                 connected=False,
                 peer_updates=peer_updates,
             )
+            await self._send_prompt_targets(prompt_targets)
 
     async def _send_snapshot_targets(
         self, snapshot_targets: list[tuple[WebSocket, dict | list[dict]]]
@@ -1570,6 +1618,7 @@ class GameService:
 
         self._rooms[table_code] = room
         self._sync_timeout_task_locked(room)
+        self._sync_continue_action_task_locked(room)
         self._sync_bot_action_task_locked(room)
         return room
 
@@ -1597,6 +1646,9 @@ class GameService:
         if room.timeout_task is not None:
             room.timeout_task.cancel()
             room.timeout_task = None
+        if room.continue_action_task is not None:
+            room.continue_action_task.cancel()
+            room.continue_action_task = None
         if room.bot_action_task is not None:
             room.bot_action_task.cancel()
             room.bot_action_task = None
@@ -1680,6 +1732,7 @@ class GameService:
             if room.round_state is not None
             else None
         )
+        continue_action = self._continue_action_snapshot_locked(room)
         return {
             "type": "room_snapshot",
             "payload": {
@@ -1690,6 +1743,7 @@ class GameService:
                 "reconnect_token": reconnect_token,
                 "match_state": self._public_match_state(room.match_state),
                 "private_state": private_state,
+                "continue_action": continue_action,
             },
         }
 
@@ -2012,6 +2066,7 @@ class GameService:
         )
 
     def _start_match_locked(self, room: RoomState) -> None:
+        self._reset_continue_action_confirmations_locked(room)
         room.match_state = self._initial_match_state(room)
         room.round_state = initialize_round(
             seed=self._round_seed(room.table_code),
@@ -2024,6 +2079,7 @@ class GameService:
         self._advance_round_locked(room)
         self._auto_advance_bot_seats_locked(room)
         self._sync_timeout_task_locked(room)
+        self._sync_continue_action_task_locked(room)
         self._sync_bot_action_task_locked(room)
 
     def _room_version(self, room: RoomState) -> int:
@@ -2037,6 +2093,13 @@ class GameService:
             "phase": room.phase,
             "test_mode": room.test_mode,
             "enforce_minimum_eight_fan": room.enforce_minimum_eight_fan,
+            "start_next_round_confirmed_seats": sorted(room.start_next_round_confirmed_seats),
+            "restart_match_confirmed_seats": sorted(room.restart_match_confirmed_seats),
+            "continue_action_auto_advance_deadline_at": (
+                room.continue_action_auto_advance_deadline_at.isoformat()
+                if room.continue_action_auto_advance_deadline_at is not None
+                else None
+            ),
             "seats": [
                 {
                     "seat_index": seat_index,
@@ -2062,6 +2125,16 @@ class GameService:
             phase=payload.get("phase", "waiting"),
             test_mode=payload.get("test_mode", False),
             enforce_minimum_eight_fan=payload.get("enforce_minimum_eight_fan", True),
+        )
+        room.start_next_round_confirmed_seats = {
+            int(seat) for seat in payload.get("start_next_round_confirmed_seats", [])
+        }
+        room.restart_match_confirmed_seats = {
+            int(seat) for seat in payload.get("restart_match_confirmed_seats", [])
+        }
+        deadline_at = payload.get("continue_action_auto_advance_deadline_at")
+        room.continue_action_auto_advance_deadline_at = (
+            datetime.fromisoformat(deadline_at) if deadline_at is not None else None
         )
         for seat_payload in payload.get("seats", []):
             seat_index = seat_payload["seat_index"]
@@ -2211,3 +2284,185 @@ class GameService:
             int(seat): score for seat, score in serialized["cumulative_scores"].items()
         }
         return serialized
+
+    def _reset_continue_action_confirmations_locked(self, room: RoomState) -> None:
+        room.start_next_round_confirmed_seats.clear()
+        room.restart_match_confirmed_seats.clear()
+        room.continue_action_auto_advance_deadline_at = None
+
+    def _current_continue_action_id_locked(self, room: RoomState) -> str | None:
+        if room.phase == "settlement":
+            return "start_next_round"
+        if room.phase == "finished":
+            return "restart_match"
+        return None
+
+    def _continue_action_confirmation_set_locked(
+        self,
+        room: RoomState,
+        action_id: str,
+    ) -> set[int]:
+        if action_id == "start_next_round":
+            return room.start_next_round_confirmed_seats
+        if action_id == "restart_match":
+            return room.restart_match_confirmed_seats
+        raise ValueError(f"Unsupported continue action: {action_id}")
+
+    def _continue_action_required_seats_locked(self, room: RoomState) -> set[int]:
+        return {
+            seat_index
+            for seat_index, reservation in room.seats.items()
+            if not reservation.is_bot
+        }
+
+    def _continue_action_online_seats_locked(self, room: RoomState) -> set[int]:
+        return {
+            seat_index
+            for seat_index, reservation in room.seats.items()
+            if reservation.connected and not reservation.is_bot
+        }
+
+    def _continue_action_progress_locked(
+        self,
+        room: RoomState,
+        action_id: str,
+    ) -> tuple[list[int], list[int], list[int]]:
+        required_seats = self._continue_action_required_seats_locked(room)
+        online_seats = self._continue_action_online_seats_locked(room)
+        confirmed_seats = self._continue_action_confirmation_set_locked(room, action_id)
+        normalized_confirmed_seats = confirmed_seats & required_seats
+        return (
+            sorted(normalized_confirmed_seats),
+            sorted(required_seats),
+            sorted(online_seats),
+        )
+
+    def _continue_action_snapshot_locked(self, room: RoomState) -> dict | None:
+        action_id = self._current_continue_action_id_locked(room)
+        if action_id is None:
+            return None
+
+        confirmed_seats, required_seats, online_seats = self._continue_action_progress_locked(
+            room, action_id
+        )
+        return {
+            "action_id": action_id,
+            "confirmed_seats": confirmed_seats,
+            "required_seats": required_seats,
+            "online_seats": online_seats,
+            "auto_advance_deadline_at": (
+                room.continue_action_auto_advance_deadline_at.isoformat()
+                if room.continue_action_auto_advance_deadline_at is not None
+                else None
+            ),
+        }
+
+    def _reconcile_continue_action_locked(self, room: RoomState) -> bool:
+        action_id = self._current_continue_action_id_locked(room)
+        if action_id is None:
+            room.continue_action_auto_advance_deadline_at = None
+            return False
+
+        required_seats = self._continue_action_required_seats_locked(room)
+        confirmed_seats = self._continue_action_confirmation_set_locked(room, action_id)
+        confirmed_seats.intersection_update(required_seats)
+        online_seats = self._continue_action_online_seats_locked(room)
+
+        if confirmed_seats >= required_seats:
+            self._complete_continue_action_locked(room, action_id)
+            return True
+
+        online_unconfirmed_seats = online_seats - confirmed_seats
+        if online_unconfirmed_seats:
+            room.continue_action_auto_advance_deadline_at = None
+            return False
+
+        offline_unconfirmed_seats = required_seats - online_seats - confirmed_seats
+        if not offline_unconfirmed_seats:
+            self._complete_continue_action_locked(room, action_id)
+            return True
+
+        if room.continue_action_auto_advance_deadline_at is None:
+            room.continue_action_auto_advance_deadline_at = datetime.now(
+                timezone.utc
+            ) + timedelta(seconds=CONTINUE_ACTION_AUTO_ADVANCE_SECONDS)
+
+        if room.continue_action_auto_advance_deadline_at <= datetime.now(timezone.utc):
+            self._complete_continue_action_locked(room, action_id)
+            return True
+
+        return False
+
+    async def _process_due_continue_action(
+        self,
+        table_code: str,
+        *,
+        expected_action_id: str,
+        expected_deadline_at: datetime,
+    ) -> None:
+        room: RoomState | None = None
+        snapshot_targets: list[tuple[WebSocket, dict]] = []
+        prompt_targets: list[tuple[WebSocket, dict]] = []
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return
+            if self._current_continue_action_id_locked(room) != expected_action_id:
+                return
+            if room.continue_action_auto_advance_deadline_at != expected_deadline_at:
+                return
+            if expected_deadline_at > datetime.now(timezone.utc):
+                return
+
+            self._complete_continue_action_locked(room, expected_action_id)
+            self._sync_continue_action_task_locked(room)
+            self._persist_room_state_locked(room)
+            snapshot_targets = self._snapshot_targets_locked(room)
+            prompt_targets = self._prompt_targets_locked(room)
+
+        if room is None:
+            return
+        async with room.send_lock:
+            await self._send_snapshot_targets(snapshot_targets)
+            await self._send_prompt_targets(prompt_targets)
+
+    def _complete_continue_action_locked(self, room: RoomState, action_id: str) -> None:
+        room.continue_action_auto_advance_deadline_at = None
+        if action_id == "start_next_round":
+            self._complete_start_next_round_locked(room)
+            return
+        if action_id == "restart_match":
+            self._start_match_locked(room)
+            return
+        raise ValueError(f"Unsupported continue action: {action_id}")
+
+    def _complete_start_next_round_locked(self, room: RoomState) -> None:
+        self._apply_settlement_to_match_locked(room)
+        if room.match_state is None or room.round_state is None:
+            raise ValueError("Round is not ready to continue")
+
+        next_match_state = self._next_match_state_after_settlement(room.match_state, room.round_state)
+        self._reset_continue_action_confirmations_locked(room)
+        if next_match_state.match_finished:
+            room.match_state = next_match_state
+            room.phase = "finished"
+            room.pending_timeout = None
+            self._sync_continue_action_task_locked(room)
+            return
+
+        room.match_state = next_match_state
+        room.round_state = initialize_round(
+            seed=self._round_seed(room.table_code),
+            dealer_seat=next_match_state.dealer_seat,
+            round_id=self._round_id_for_match(next_match_state),
+            round_wind=next_match_state.prevailing_wind,
+            enforce_minimum_eight_fan=room.enforce_minimum_eight_fan,
+        )
+        room.phase = room.round_state.phase
+        room.pending_timeout = None
+        self._advance_round_locked(room)
+        self._auto_advance_bot_seats_locked(room)
+        self._sync_timeout_task_locked(room)
+        self._sync_continue_action_task_locked(room)
+        self._sync_bot_action_task_locked(room)
