@@ -128,11 +128,6 @@ export function BattleScreen({
       return undefined;
     }
 
-    if (!viewModel.lastDiscardEventKey) {
-      setReturnedLastDiscardKey(lastDiscardSpotlightKey);
-      return undefined;
-    }
-
     setReturnedLastDiscardKey((currentKey) => (currentKey === lastDiscardSpotlightKey ? null : currentKey));
     lastDiscardReturnTimerRef.current = window.setTimeout(() => {
       setReturnedLastDiscardKey((currentKey) =>
@@ -150,7 +145,6 @@ export function BattleScreen({
   }, [
     lastDiscardSpotlightKey,
     shouldReturnLastDiscardToRiver,
-    viewModel.lastDiscardEventKey,
     viewModel.shouldAutoReturnLastDiscardToRiver,
   ]);
 

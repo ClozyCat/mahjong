@@ -542,6 +542,41 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
+  it('also lingers for 1.5 seconds before returning to the river when the next player is opening flowers', () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        lastDiscardEventKey: null,
+        shouldAutoReturnLastDiscardToRiver: true,
+      }),
+    );
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1499);
+    });
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
   it.each([
     {
       winType: 'discard',
