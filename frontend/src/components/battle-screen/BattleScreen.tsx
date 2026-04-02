@@ -28,6 +28,7 @@ const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
+const READY_ACTION_COOLDOWN_MS = 3000;
 const MIN_BATTLE_VIEWPORT_WIDTH = 1280;
 const MIN_BATTLE_VIEWPORT_HEIGHT = 720;
 const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
@@ -51,13 +52,25 @@ export function BattleScreen({
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
+  const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
+  const isReadyActionCoolingDownRef = useRef(false);
+  const readyActionCooldownTimerRef = useRef<number | null>(null);
   const trackedLastDiscardKeyRef = useRef<string | null>(null);
   const trackedLastDiscardStartedAtRef = useRef<number>(0);
   const trackedLastDiscardActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
-  const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
+  const preMatchActions = viewModel.actions
+    .filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id))
+    .map((action) =>
+      action.id === 'ready'
+        ? {
+            ...action,
+            enabled: action.enabled && !isReadyActionCoolingDown,
+          }
+        : action,
+    );
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
@@ -83,6 +96,27 @@ export function BattleScreen({
 
       return Math.min(MAX_TABLE_TILE_SCALE, Math.max(MIN_TABLE_TILE_SCALE, nextScale));
     });
+  }
+
+  function handleAction(actionId: BattleActionId) {
+    if (actionId === 'ready') {
+      if (isReadyActionCoolingDownRef.current) {
+        return;
+      }
+
+      isReadyActionCoolingDownRef.current = true;
+      setIsReadyActionCoolingDown(true);
+      if (readyActionCooldownTimerRef.current !== null) {
+        window.clearTimeout(readyActionCooldownTimerRef.current);
+      }
+      readyActionCooldownTimerRef.current = window.setTimeout(() => {
+        isReadyActionCoolingDownRef.current = false;
+        setIsReadyActionCoolingDown(false);
+        readyActionCooldownTimerRef.current = null;
+      }, READY_ACTION_COOLDOWN_MS);
+    }
+
+    onAction(actionId);
   }
 
   useEffect(() => {
@@ -179,6 +213,16 @@ export function BattleScreen({
   ]);
 
   useEffect(() => {
+    return () => {
+      if (readyActionCooldownTimerRef.current !== null) {
+        window.clearTimeout(readyActionCooldownTimerRef.current);
+        readyActionCooldownTimerRef.current = null;
+      }
+      isReadyActionCoolingDownRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!viewModel.result) {
       hasObservedNoResultRef.current = true;
       setIsSettlementPanelReady(true);
@@ -241,7 +285,7 @@ export function BattleScreen({
               themeLabel={themeLabel}
               onLeaveTable={onLeaveTable}
               onCycleTheme={onCycleTheme}
-              onAction={onAction}
+              onAction={handleAction}
               onQuickChat={onQuickChat}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
@@ -269,7 +313,7 @@ export function BattleScreen({
         onTileDoubleClick={onTileDoubleClick}
         onClaimCandidateSelect={onClaimCandidateSelect}
         onClaimCandidateActivate={onClaimCandidateActivate}
-        onAction={onAction}
+        onAction={handleAction}
       />
       {viewportState.isSupported ? null : (
         <div className="battle-screen__viewport-guard" role="alert" aria-live="assertive">

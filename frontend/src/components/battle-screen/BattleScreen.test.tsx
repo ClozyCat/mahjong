@@ -1876,6 +1876,57 @@ describe('BattleScreen', () => {
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
   });
 
+  it('prevents repeated ready clicks for 1.5 seconds', () => {
+    vi.useFakeTimers();
+    const onAction = vi.fn();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'disconnected_or_waiting',
+        actions: [
+          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
+          { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
+        ],
+        waitingControls: {
+          canReady: true,
+          canStart: false,
+          isReady: false,
+          occupiedSeats: 2,
+        },
+      }),
+      { onAction },
+    );
+
+    act(() => {
+      screen.getByRole('button', { name: '准备' }).click();
+      screen.getByRole('button', { name: '准备' }).click();
+    });
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith('ready');
+    expect(screen.getByRole('button', { name: '准备' })).toBeDisabled();
+
+    act(() => {
+      vi.advanceTimersByTime(1499);
+      screen.getByRole('button', { name: '准备' }).click();
+    });
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.getByRole('button', { name: '准备' })).toBeEnabled();
+
+    act(() => {
+      screen.getByRole('button', { name: '准备' }).click();
+    });
+
+    expect(onAction).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it('renders dedicated meld areas only for remote seats', () => {
     renderBattleScreen(createBattleViewModel());
 

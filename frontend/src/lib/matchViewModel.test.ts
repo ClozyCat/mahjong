@@ -267,6 +267,30 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.canStart).toBe(false);
   });
 
+  it('shows cancel-ready when the local seat is already ready in the waiting room', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: base.roomSnapshot!.payload.seats.map((seat) =>
+            seat.seat_index === 0
+              ? {
+                  ...seat,
+                  ready: true,
+                }
+              : seat,
+          ),
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls?.isReady).toBe(true);
+    expect(viewModel.actions.find((action) => action.id === 'ready')?.label).toBe('取消准备');
+  });
+
   it('maps a local active turn into selectable discard controls', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 

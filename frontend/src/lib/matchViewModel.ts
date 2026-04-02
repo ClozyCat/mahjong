@@ -508,11 +508,19 @@ function createActionViews(
           : 'low';
     return {
       id,
-      label: ACTION_LABELS[id],
+      label: getActionLabel(id, waitingControls),
       enabled,
       emphasis,
     };
   });
+}
+
+function getActionLabel(id: BattleActionId, waitingControls: WaitingControls | null) {
+  if (id === 'ready' && waitingControls?.isReady) {
+    return '取消准备';
+  }
+
+  return ACTION_LABELS[id];
 }
 
 function findPrivatePlayer(state: SessionState, seatIndex: number): PrivatePlayerState | undefined {

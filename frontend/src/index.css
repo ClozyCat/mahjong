@@ -464,8 +464,8 @@ button:active:not(:disabled) {
     (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1))
   );
   --table-stage-action-pointer-size: 1.42rem;
-  --table-stage-action-pointer-offset-x: 5.2rem;
   --table-stage-action-pointer-offset-y: 4.35rem;
+  --table-stage-action-pointer-offset-x: calc(var(--table-stage-action-pointer-offset-y) * 2);
   --table-stage-action-pointer-core: rgba(230, 207, 146, 0.94);
   --table-stage-action-pointer-edge: rgba(255, 246, 221, 0.96);
   --table-stage-action-pointer-shadow: rgba(255, 209, 120, 0.28);
@@ -2164,8 +2164,8 @@ button:active:not(:disabled) {
     --table-stage-river-tile-height: 2.96rem;
     --table-stage-river-gap: 0.34rem;
     --table-stage-action-pointer-size: 1.3rem;
-    --table-stage-action-pointer-offset-x: 4.7rem;
     --table-stage-action-pointer-offset-y: 3.95rem;
+    --table-stage-action-pointer-offset-x: calc(var(--table-stage-action-pointer-offset-y) * 2);
   }
 
   .ambient-overlay__message-window,
@@ -2286,8 +2286,8 @@ button:active:not(:disabled) {
     --table-stage-river-tile-height: 2.74rem;
     --table-stage-river-gap: 0.24rem;
     --table-stage-action-pointer-size: 1.14rem;
-    --table-stage-action-pointer-offset-x: 4.05rem;
     --table-stage-action-pointer-offset-y: 3.25rem;
+    --table-stage-action-pointer-offset-x: calc(var(--table-stage-action-pointer-offset-y) * 2);
     aspect-ratio: auto;
     min-height: 35rem;
   }
