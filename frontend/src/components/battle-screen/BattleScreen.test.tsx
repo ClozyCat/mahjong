@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BattleViewModel } from '../../types/match';
 import { BattleScreen } from './BattleScreen';
@@ -156,7 +156,72 @@ function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<Comp
   );
 }
 
+function mockResultOverlayPaginationLayout({ panelHeight, pageSize }: { panelHeight: number; pageSize: number }) {
+  const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement | null;
+  const fanPanel = document.body.querySelector('.result-overlay__fan-panel') as HTMLElement | null;
+  const fanViewport = document.body.querySelector('.result-overlay__fan-list-viewport') as HTMLElement | null;
+  const measureList = document.body.querySelector('.result-overlay__fan-measure .result-overlay__fan-list') as HTMLElement | null;
+
+  if (!scorePanel || !fanPanel || !fanViewport || !measureList) {
+    throw new Error('result overlay pagination nodes are missing');
+  }
+
+  const rowHeight = 64;
+  const rowGap = 6;
+
+  Object.defineProperty(scorePanel, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({
+      width: 360,
+      height: panelHeight,
+      top: 0,
+      right: 360,
+      bottom: panelHeight,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => '',
+    }),
+  });
+
+  Object.defineProperty(fanViewport, 'clientHeight', {
+    configurable: true,
+    get: () => (pageSize * rowHeight) + (Math.max(pageSize - 1, 0) * rowGap),
+  });
+
+  Array.from(measureList.children).forEach((row, index) => {
+    Object.defineProperty(row, 'offsetTop', {
+      configurable: true,
+      get: () => index * (rowHeight + rowGap),
+    });
+    Object.defineProperty(row, 'offsetHeight', {
+      configurable: true,
+      get: () => rowHeight,
+    });
+  });
+
+  act(() => {
+    window.dispatchEvent(new Event('resize'));
+  });
+
+  return { fanPanel };
+}
+
+function getVisibleFanList() {
+  const fanViewport = document.body.querySelector('.result-overlay__fan-list-viewport') as HTMLElement | null;
+
+  if (!fanViewport) {
+    throw new Error('visible fan list is missing');
+  }
+
+  return within(fanViewport);
+}
+
 describe('BattleScreen', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows ready and start controls in waiting state', () => {
     renderBattleScreen(
       createBattleViewModel({
@@ -221,14 +286,16 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByText('8 番')).toBeInTheDocument();
-    expect(screen.getByText('平胡')).toBeInTheDocument();
-    expect(screen.getByText('清一色')).toBeInTheDocument();
+    const visibleFanList = getVisibleFanList();
+
+    expect(visibleFanList.getByText('平胡')).toBeInTheDocument();
+    expect(visibleFanList.getByText('清一色')).toBeInTheDocument();
     expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
     expect(screen.getByText(/放铳 Player Left（左家）/)).toBeInTheDocument();
     expect(screen.queryByText(/胜者 right/)).not.toBeInTheDocument();
     expect(screen.queryByText(/放铳 left/)).not.toBeInTheDocument();
-    expect(screen.getByText('幺九刻')).toBeInTheDocument();
-    expect(screen.getByText('七对')).toBeInTheDocument();
+    expect(visibleFanList.getByText('幺九刻')).toBeInTheDocument();
+    expect(visibleFanList.getByText('七对')).toBeInTheDocument();
     expect(screen.queryByText('当前为临时结算结果')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
   });
@@ -361,11 +428,209 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByText('七对')).toBeInTheDocument();
+    expect(getVisibleFanList().getByText('七对')).toBeInTheDocument();
     expect(document.body.querySelector('.result-overlay__columns')).not.toBeNull();
     expect(document.body.querySelector('.result-overlay__fan-list')).not.toBeNull();
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
     expect(screen.queryByRole('button', { name: '收起番种' })).toBeNull();
+  });
+
+  it('locks the fan panel to the score panel height and paginates overflowing fan rows', async () => {
+    const user = userEvent.setup();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 24,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 2,
+          fanBreakdown: [
+            { fanKey: 'ping_hu', fanValue: 2 },
+            { fanKey: 'self_draw', fanValue: 1 },
+            { fanKey: 'full_flush', fanValue: 6 },
+            { fanKey: 'all_pungs', fanValue: 2 },
+            { fanKey: 'seven_pairs', fanValue: 3 },
+            { fanKey: 'three_concealed_pungs', fanValue: 2 },
+            { fanKey: 'all_simples', fanValue: 1 },
+          ],
+          scoreDeltaBySeat: {
+            bottom: 24,
+            left: -8,
+            top: -8,
+            right: -8,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25024, delta: 24 },
+            { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+            { seat: 'top', name: 'Player Top', score: 26792, delta: -8 },
+            { seat: 'right', name: 'Player B', score: 24992, delta: -8 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    const { fanPanel } = mockResultOverlayPaginationLayout({ panelHeight: 420, pageSize: 3 });
+
+    await waitFor(() => {
+      expect(fanPanel.style.height).toBe('420px');
+      expect(screen.getByText('第 1 / 3 页')).toBeInTheDocument();
+    });
+
+    const firstPageFanList = getVisibleFanList();
+
+    expect(firstPageFanList.getByText('平胡')).toBeInTheDocument();
+    expect(firstPageFanList.getByText('自摸')).toBeInTheDocument();
+    expect(firstPageFanList.getByText('清一色')).toBeInTheDocument();
+    expect(firstPageFanList.queryByText('对对胡')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '下一页' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('第 2 / 3 页')).toBeInTheDocument();
+    });
+
+    const secondPageFanList = getVisibleFanList();
+
+    expect(secondPageFanList.getByText('对对胡')).toBeInTheDocument();
+    expect(secondPageFanList.getByText('七对')).toBeInTheDocument();
+    expect(secondPageFanList.getByText('三暗刻')).toBeInTheDocument();
+    expect(secondPageFanList.queryByText('平胡')).toBeNull();
+  });
+
+  it('resets fan pagination back to the first page when a new settlement result arrives', async () => {
+    const user = userEvent.setup();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 18,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [
+            { fanKey: 'ping_hu', fanValue: 2 },
+            { fanKey: 'self_draw', fanValue: 1 },
+            { fanKey: 'full_flush', fanValue: 6 },
+            { fanKey: 'all_pungs', fanValue: 2 },
+            { fanKey: 'seven_pairs', fanValue: 3 },
+            { fanKey: 'three_concealed_pungs', fanValue: 2 },
+          ],
+          scoreDeltaBySeat: {
+            bottom: 18,
+            left: -6,
+            top: -6,
+            right: -6,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25018, delta: 18 },
+            { seat: 'left', name: 'Player Left', score: 24294, delta: -6 },
+            { seat: 'top', name: 'Player Top', score: 26794, delta: -6 },
+            { seat: 'right', name: 'Player B', score: 24994, delta: -6 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    mockResultOverlayPaginationLayout({ panelHeight: 420, pageSize: 2 });
+
+    await waitFor(() => {
+      expect(screen.getByText('第 1 / 3 页')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: '下一页' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('第 2 / 3 页')).toBeInTheDocument();
+      expect(getVisibleFanList().getByText('清一色')).toBeInTheDocument();
+    });
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          result: {
+            title: '本局结算',
+            summary: '新的结算结果',
+            fanTotal: 6,
+            winnerSeat: 'right',
+            discarderSeat: 'left',
+            winType: 'discard',
+            winTypeLabel: '荣和',
+            provisional: false,
+            flowerCount: 1,
+            fanBreakdown: [
+              { fanKey: 'mixed_double_chow', fanValue: 1 },
+              { fanKey: 'short_straight', fanValue: 1 },
+              { fanKey: 'double_pung', fanValue: 2 },
+              { fanKey: 'dragon_pung', fanValue: 2 },
+            ],
+            scoreDeltaBySeat: {
+              bottom: 0,
+              left: -6,
+              right: 6,
+            },
+            seats: [
+              { seat: 'right', name: 'Player B', score: 25000, delta: 6 },
+              { seat: 'left', name: 'Player Left', score: 24288, delta: -6 },
+              { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    mockResultOverlayPaginationLayout({ panelHeight: 420, pageSize: 2 });
+
+    await waitFor(() => {
+      expect(screen.getByText('第 1 / 2 页')).toBeInTheDocument();
+    });
+
+    const resetFanList = getVisibleFanList();
+
+    expect(resetFanList.getByText('喜相逢')).toBeInTheDocument();
+    expect(resetFanList.getByText('连六')).toBeInTheDocument();
+    expect(resetFanList.queryByText('箭刻')).toBeNull();
   });
 
   it('can collapse the settlement panel and restore it from the table center', async () => {
@@ -982,6 +1247,177 @@ describe('BattleScreen', () => {
         },
       }),
     );
+  });
+
+  it('passes settlement hu styling context through to the table-stage callout', () => {
+    const { container } = renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        actionEffect: {
+          key: 'claim-hu-1',
+          label: '胡牌',
+          emphasis: 'claim',
+          seat: null,
+          calloutTone: 'hu',
+        },
+        result: {
+          title: '本局结算',
+          summary: '自摸，等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: -3,
+            left: -3,
+            top: -2,
+            right: 8,
+          },
+          seats: [
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', score: 24997, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByText('和')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout--hu-self-draw')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+  });
+
+  it('keeps a kong callout visible when the next action effect is the automatic replacement draw', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        actionEffect: {
+          key: 'kong-1',
+          label: '杠',
+          emphasis: 'kong',
+          seat: 'left',
+          calloutTone: 'kong',
+        },
+      }),
+    );
+
+    expect(screen.getByText('杠')).toBeInTheDocument();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          actionEffect: {
+            key: 'replacement-1',
+            label: '补牌',
+            emphasis: 'draw',
+            seat: 'left',
+            calloutTone: null,
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(screen.getByText('杠')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('keeps a hu callout visible when settlement appears without a new spotlight on the same seat', () => {
+    vi.useFakeTimers();
+
+    const { rerender, container } = renderBattleScreen(
+      createBattleViewModel({
+        actionEffect: {
+          key: 'hu-1',
+          label: '和',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'hu',
+        },
+        result: null,
+      }),
+    );
+
+    expect(screen.getByText('和')).toBeInTheDocument();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          actionEffect: {
+            key: 'round-done-1',
+            label: '结算',
+            emphasis: 'system',
+            seat: null,
+            calloutTone: null,
+          },
+          result: {
+            title: '本局结算',
+            summary: '荣和，等待下一局',
+            fanTotal: 8,
+            winnerSeat: 'right',
+            discarderSeat: 'left',
+            winType: 'discard',
+            winTypeLabel: '荣和',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            scoreDeltaBySeat: {
+              left: -8,
+              right: 8,
+            },
+            seats: [
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(container.querySelector('.table-stage__action-callout--exit')).toBeNull();
+    expect(screen.getByText('和')).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('keeps the freshly drawn tile separated at the end of the hand instead of showing a draw spectacle', () => {

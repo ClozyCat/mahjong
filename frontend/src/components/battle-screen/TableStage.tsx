@@ -21,6 +21,7 @@ interface TableStageProps {
   lastDiscardSeat?: Seat | null;
   settlementWinnerSeat?: Seat | null;
   settlementWinType?: string | null;
+  settlementWinTypeLabel?: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
@@ -58,6 +59,7 @@ export function TableStage({
   lastDiscardSeat = null,
   settlementWinnerSeat = null,
   settlementWinType = null,
+  settlementWinTypeLabel = null,
   remainingTileCount = null,
   promptText,
   promptCue = null,
@@ -94,6 +96,7 @@ export function TableStage({
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const activeActionCalloutTimerRef = useRef<number | null>(null);
   const exitingActionCalloutTimerRef = useRef<number | null>(null);
+  const trackedSpotlightKeyRef = useRef<string | null>(null);
   const consumedQuickChatKeyRef = useRef<string | null>(quickChatEvent?.key ?? null);
   const barrageRemovalTimersRef = useRef<Map<string, number>>(new Map());
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
@@ -102,6 +105,10 @@ export function TableStage({
   const spotlightTile = spotlightSeat !== null && lastDiscardPosition !== null
     ? discards[spotlightSeat][lastDiscardPosition.index]
     : null;
+  const spotlightKey =
+    spotlightSeat !== null && spotlightTile !== null && lastDiscardPosition !== null
+      ? `${spotlightSeat}:${lastDiscardPosition.index}:${spotlightTile}`
+      : null;
   const spotlightScale = Math.round(tileScale * 125) / 100;
   const tableSummary = buildTableSummary(roundLabel, phaseLabel);
   const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
@@ -157,14 +164,19 @@ export function TableStage({
       return;
     }
 
-    const nextActionCallout = createActionCallout(actionEffect);
+    const nextActionCallout = createActionCallout(
+      actionEffect,
+      settlementWinnerSeat,
+      settlementWinType,
+      settlementWinTypeLabel,
+    );
     const actionCalloutKey = nextActionCallout?.key ?? actionEffect?.key;
     const currentActionCallout = activeActionCalloutRef.current;
     if (!actionCalloutKey) {
       return;
     }
 
-    if (!nextActionCallout && (!currentActionCallout || currentActionCallout.key === actionCalloutKey)) {
+    if (!nextActionCallout) {
       return;
     }
 
@@ -172,20 +184,13 @@ export function TableStage({
       return;
     }
 
+    if (currentActionCallout) {
+      return;
+    }
+
     if (activeActionCalloutTimerRef.current !== null) {
       window.clearTimeout(activeActionCalloutTimerRef.current);
       activeActionCalloutTimerRef.current = null;
-    }
-
-    if (currentActionCallout) {
-      setExitingActionCallout(currentActionCallout);
-      if (exitingActionCalloutTimerRef.current !== null) {
-        window.clearTimeout(exitingActionCalloutTimerRef.current);
-      }
-      exitingActionCalloutTimerRef.current = window.setTimeout(() => {
-        setExitingActionCallout(null);
-        exitingActionCalloutTimerRef.current = null;
-      }, ACTION_CALLOUT_FAST_EXIT_MS);
     }
 
     setActiveActionCallout(nextActionCallout);
@@ -196,7 +201,32 @@ export function TableStage({
         activeActionCalloutTimerRef.current = null;
       }, ACTION_CALLOUT_LINGER_MS);
     }
-  }, [actionEffect]);
+  }, [actionEffect, settlementWinnerSeat, settlementWinType, settlementWinTypeLabel]);
+
+  useEffect(() => {
+    if (spotlightKey === trackedSpotlightKeyRef.current) {
+      return;
+    }
+
+    trackedSpotlightKeyRef.current = spotlightKey;
+    const currentActionCallout = activeActionCalloutRef.current;
+
+    if (!spotlightKey || !spotlightSeat || !currentActionCallout || currentActionCallout.seat !== spotlightSeat) {
+      return;
+    }
+
+    if (activeActionCalloutTimerRef.current !== null) {
+      window.clearTimeout(activeActionCalloutTimerRef.current);
+      activeActionCalloutTimerRef.current = null;
+    }
+
+    setActiveActionCallout(null);
+    if (exitingActionCalloutTimerRef.current !== null) {
+      window.clearTimeout(exitingActionCalloutTimerRef.current);
+      exitingActionCalloutTimerRef.current = null;
+    }
+    setExitingActionCallout(null);
+  }, [spotlightKey, spotlightSeat]);
 
   useEffect(() => {
     if (!quickChatEvent?.key || consumedQuickChatKeyRef.current === quickChatEvent.key) {
@@ -494,7 +524,6 @@ const ACTION_CALLOUT_COPY = {
 } as const;
 
 const ACTION_CALLOUT_LINGER_MS = 3000;
-const ACTION_CALLOUT_FAST_EXIT_MS = 250;
 const QUICK_CHAT_BARRAGE_LINGER_MS = 9000;
 const QUICK_CHAT_ARC_SWEEP_DEGREES = 150;
 const QUICK_CHAT_ITEM_RADIUS_REM = 5.1;
@@ -518,6 +547,7 @@ type ActionCallout = {
   seat: Seat;
   tone: keyof typeof ACTION_CALLOUT_COPY;
   label: (typeof ACTION_CALLOUT_COPY)[keyof typeof ACTION_CALLOUT_COPY];
+  huVariant: 'discard' | 'self-draw' | 'low-fan' | null;
 };
 
 type BarrageMessage = {
@@ -540,7 +570,9 @@ interface QuickChatMenuProps {
 function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
   return (
     <div
-      className={`table-stage__action-callout table-stage__spotlight--${callout.seat} table-stage__action-callout--${callout.tone} table-stage__action-callout--${phase}`}
+      className={`table-stage__action-callout table-stage__spotlight--${callout.seat} table-stage__action-callout--${callout.tone} ${
+        callout.huVariant ? `table-stage__action-callout--hu-${callout.huVariant}` : ''
+      } table-stage__action-callout--${phase}`.trim()}
       aria-hidden="true"
     >
       <span className="table-stage__action-callout-glyph">{callout.label}</span>
@@ -582,17 +614,47 @@ function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
   );
 }
 
-function createActionCallout(actionEffect: ActionEffectView | null): ActionCallout | null {
-  if (!actionEffect?.seat || !actionEffect.calloutTone) {
+function createActionCallout(
+  actionEffect: ActionEffectView | null,
+  settlementWinnerSeat: Seat | null,
+  settlementWinType: string | null,
+  settlementWinTypeLabel: string | null,
+): ActionCallout | null {
+  if (!actionEffect?.calloutTone) {
+    return null;
+  }
+
+  const seat = actionEffect.seat ?? (actionEffect.calloutTone === 'hu' ? settlementWinnerSeat : null);
+  if (!seat) {
     return null;
   }
 
   return {
     key: actionEffect.key,
-    seat: actionEffect.seat,
+    seat,
     tone: actionEffect.calloutTone,
     label: ACTION_CALLOUT_COPY[actionEffect.calloutTone],
+    huVariant:
+      actionEffect.calloutTone === 'hu'
+        ? getHuCalloutVariant(settlementWinType, settlementWinTypeLabel)
+        : null,
   };
+}
+
+function getHuCalloutVariant(settlementWinType: string | null, settlementWinTypeLabel: string | null) {
+  if (settlementWinType === 'self_draw') {
+    return 'self-draw';
+  }
+
+  if (settlementWinTypeLabel === '屁和') {
+    return 'low-fan';
+  }
+
+  if (settlementWinType === 'discard') {
+    return 'discard';
+  }
+
+  return null;
 }
 
 function buildTableSummary(roundLabel: string, phaseLabel: string) {

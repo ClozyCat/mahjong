@@ -216,6 +216,7 @@ export function BattleScreen({
               lastDiscardSeat={visibleLastDiscardSeat}
               settlementWinnerSeat={viewModel.result?.winnerSeat ?? null}
               settlementWinType={viewModel.result?.winType ?? null}
+              settlementWinTypeLabel={viewModel.result?.winTypeLabel ?? null}
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}

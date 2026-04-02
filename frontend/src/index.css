@@ -1203,6 +1203,11 @@ button:active:not(:disabled) {
   --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent));
   --table-stage-action-callout-shadow: color-mix(in srgb, var(--theme-shadow) 68%, transparent);
   --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-paper) 22%, transparent);
+  --table-stage-action-callout-plaque-fill: transparent;
+  --table-stage-action-callout-plaque-rim: transparent;
+  --table-stage-action-callout-plaque-shadow: transparent;
+  --table-stage-action-callout-aura-core: transparent;
+  --table-stage-action-callout-aura-ring: transparent;
   position: absolute;
   left: var(--spotlight-left);
   top: var(--spotlight-top);
@@ -1214,6 +1219,8 @@ button:active:not(:disabled) {
 }
 
 .table-stage__action-callout-glyph {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1247,6 +1254,102 @@ button:active:not(:disabled) {
 .table-stage__action-callout--hu {
   --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-warning) 86%, var(--theme-paper-strong));
   --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-warning) 36%, transparent);
+  --table-stage-action-callout-plaque-fill:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-paper) 26%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg) 34%, transparent)
+    );
+  --table-stage-action-callout-plaque-rim: color-mix(in srgb, var(--theme-warning) 34%, var(--theme-border));
+  --table-stage-action-callout-plaque-shadow: color-mix(in srgb, var(--theme-warning) 28%, transparent);
+  --table-stage-action-callout-aura-core: color-mix(in srgb, var(--theme-warning) 30%, transparent);
+  --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 42%, transparent);
+}
+
+.table-stage__action-callout--hu::before,
+.table-stage__action-callout--hu::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.table-stage__action-callout--hu::before {
+  width: 3.3em;
+  height: 3.3em;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--table-stage-action-callout-aura-core), transparent 72%);
+  filter: blur(0.3rem);
+  opacity: 0.95;
+}
+
+.table-stage__action-callout--hu::after {
+  width: 2.28em;
+  height: 2.28em;
+  border-radius: 50%;
+  border: 1px solid var(--table-stage-action-callout-aura-ring);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--table-stage-action-callout-aura-ring) 42%, transparent),
+    0 0 1.2rem color-mix(in srgb, var(--table-stage-action-callout-aura-core) 44%, transparent);
+  opacity: 0.72;
+}
+
+.table-stage__action-callout--hu .table-stage__action-callout-glyph {
+  min-width: 1.16em;
+  padding: 0.08em 0.18em 0.12em;
+  border: 1px solid var(--table-stage-action-callout-plaque-rim);
+  border-radius: 0.34em;
+  background: var(--table-stage-action-callout-plaque-fill);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
+    0 0.28rem 0.7rem var(--table-stage-action-callout-plaque-shadow);
+}
+
+.table-stage__action-callout--hu-discard {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-warning) 88%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-warning) 42%, transparent);
+  --table-stage-action-callout-plaque-fill:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-paper) 30%, transparent),
+      color-mix(in srgb, var(--accent-2) 18%, var(--theme-panel-bg)) 88%
+    );
+  --table-stage-action-callout-plaque-rim: color-mix(in srgb, var(--accent-2) 52%, var(--theme-paper-line));
+  --table-stage-action-callout-plaque-shadow: color-mix(in srgb, var(--accent-2) 34%, transparent);
+  --table-stage-action-callout-aura-core: color-mix(in srgb, var(--accent-2) 34%, transparent);
+  --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 48%, var(--accent-2));
+}
+
+.table-stage__action-callout--hu-self-draw {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-danger) 78%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-danger) 42%, transparent);
+  --table-stage-action-callout-plaque-fill:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-paper) 22%, transparent),
+      color-mix(in srgb, var(--theme-danger) 18%, var(--theme-panel-bg-strong)) 90%
+    );
+  --table-stage-action-callout-plaque-rim: color-mix(in srgb, var(--theme-danger) 46%, var(--theme-border-strong));
+  --table-stage-action-callout-plaque-shadow: color-mix(in srgb, var(--theme-danger) 32%, transparent);
+  --table-stage-action-callout-aura-core: color-mix(in srgb, var(--theme-danger) 34%, transparent);
+  --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 42%, var(--theme-danger));
+}
+
+.table-stage__action-callout--hu-low-fan {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-paper-strong) 86%, var(--accent));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-paper) 28%, transparent);
+  --table-stage-action-callout-plaque-fill:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-paper) 18%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)
+    );
+  --table-stage-action-callout-plaque-rim: color-mix(in srgb, var(--theme-paper-line) 64%, var(--theme-border));
+  --table-stage-action-callout-plaque-shadow: color-mix(in srgb, var(--theme-shadow) 26%, transparent);
+  --table-stage-action-callout-aura-core: color-mix(in srgb, var(--theme-paper) 18%, transparent);
+  --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 24%, transparent);
 }
 
 .table-stage__action-callout--active {
@@ -6314,7 +6417,7 @@ input {
   grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.95fr);
   gap: 1rem;
   margin-top: 1rem;
-  align-items: stretch;
+  align-items: start;
 }
 
 .result-overlay__columns--score-only {
@@ -6410,14 +6513,90 @@ input {
   min-height: 0;
 }
 
+.result-overlay__fan-list-viewport {
+  margin: 0.75rem 0 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .result-overlay__fan-list {
   gap: 0.42rem;
-  margin: 0.75rem 0 0;
   padding-right: 0.2rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  flex: 1 1 auto;
+  align-content: start;
+}
+
+.result-overlay__fan-measure {
+  position: absolute;
+  inset: 0.9rem;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.result-overlay__fan-measure .result-overlay__fan-list {
+  margin-top: 0.75rem;
+}
+
+.result-overlay__fan-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--accent-2) 14%, var(--theme-border));
+}
+
+.result-overlay__fan-pagination-status {
+  color: color-mix(in srgb, var(--theme-paper) 62%, var(--accent-3));
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.result-overlay__fan-pagination-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.result-overlay__fan-pagination-button {
+  min-width: 4.8rem;
+  min-height: 2.2rem;
+  padding: 0.38rem 0.82rem;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 24%, var(--theme-border));
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 10%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
+    color-mix(in srgb, var(--panel) 94%, black);
+  color: color-mix(in srgb, var(--theme-paper-strong) 78%, var(--accent-2));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
+    0 8px 16px color-mix(in srgb, var(--theme-shadow-soft) 84%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 8%, transparent);
+}
+
+.result-overlay__fan-pagination-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-2) 34%, var(--theme-border-strong));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 12%, transparent), color-mix(in srgb, var(--theme-paper) 5%, transparent)),
+    color-mix(in srgb, var(--panel) 92%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
+    0 10px 18px color-mix(in srgb, var(--theme-shadow-soft) 88%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent);
+}
+
+.result-overlay__fan-pagination-button:disabled {
+  color: color-mix(in srgb, var(--theme-paper) 38%, transparent);
+  border-color: color-mix(in srgb, var(--theme-border) 64%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 4%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
+    color-mix(in srgb, var(--panel) 88%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 5%, transparent),
+    0 6px 12px color-mix(in srgb, var(--theme-shadow-soft) 72%, transparent);
+  cursor: default;
 }
 
 .result-overlay__row {

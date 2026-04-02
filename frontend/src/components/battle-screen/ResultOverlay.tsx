@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { BattleActionId, ResultView, ResultSeatView, Seat } from '../../types/match';
 
@@ -9,6 +9,12 @@ interface ResultOverlayProps {
 
 export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [fanPanelHeight, setFanPanelHeight] = useState<number | null>(null);
+  const [fanPage, setFanPage] = useState(0);
+  const [fanPageSize, setFanPageSize] = useState(() => Math.max(result.fanBreakdown.length, 1));
+  const scorePanelRef = useRef<HTMLDivElement | null>(null);
+  const fanListViewportRef = useRef<HTMLDivElement | null>(null);
+  const fanMeasureListRef = useRef<HTMLDivElement | null>(null);
   const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const fanMeta = [
@@ -19,10 +25,107 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   ]
     .filter((item): item is string => Boolean(item))
     .join(' · ');
+  const pageCount = hasFanPanel ? Math.max(1, Math.ceil(result.fanBreakdown.length / fanPageSize)) : 1;
+  const currentFanPage = Math.min(fanPage, pageCount - 1);
+  const pagedFanBreakdown =
+    pageCount > 1
+      ? result.fanBreakdown.slice(currentFanPage * fanPageSize, (currentFanPage + 1) * fanPageSize)
+      : result.fanBreakdown;
 
   useEffect(() => {
     setIsCollapsed(false);
+    setFanPage(0);
   }, [result]);
+
+  useEffect(() => {
+    if (!hasFanPanel) {
+      setFanPageSize(1);
+      setFanPanelHeight(null);
+      return;
+    }
+
+    setFanPageSize(Math.max(result.fanBreakdown.length, 1));
+  }, [hasFanPanel, result.fanBreakdown.length]);
+
+  useEffect(() => {
+    setFanPage((currentPage) => Math.min(currentPage, pageCount - 1));
+  }, [pageCount]);
+
+  useLayoutEffect(() => {
+    if (!hasFanPanel || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let animationFrameId = 0;
+
+    const measurePanels = () => {
+      const nextScorePanelHeight = scorePanelRef.current?.getBoundingClientRect().height ?? 0;
+
+      setFanPanelHeight((currentHeight) => {
+        if (nextScorePanelHeight <= 0) {
+          return currentHeight;
+        }
+
+        return Math.abs((currentHeight ?? 0) - nextScorePanelHeight) < 1 ? currentHeight : nextScorePanelHeight;
+      });
+
+      const viewportHeight = fanListViewportRef.current?.clientHeight ?? 0;
+      const measureRows = Array.from(fanMeasureListRef.current?.children ?? []) as HTMLElement[];
+
+      if (measureRows.length === 0) {
+        return;
+      }
+
+      if (viewportHeight <= 0) {
+        setFanPageSize((currentSize) => (currentSize > 0 ? currentSize : Math.max(result.fanBreakdown.length, 1)));
+        return;
+      }
+
+      let nextPageSize = 0;
+
+      for (const row of measureRows) {
+        if (row.offsetTop + row.offsetHeight <= viewportHeight + 1) {
+          nextPageSize += 1;
+          continue;
+        }
+
+        break;
+      }
+
+      setFanPageSize(Math.max(nextPageSize, 1));
+    };
+
+    const requestMeasurement = () => {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(measurePanels);
+    };
+
+    requestMeasurement();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(requestMeasurement);
+
+    if (resizeObserver) {
+      if (scorePanelRef.current) {
+        resizeObserver.observe(scorePanelRef.current);
+      }
+      if (fanListViewportRef.current) {
+        resizeObserver.observe(fanListViewportRef.current);
+      }
+      if (fanMeasureListRef.current) {
+        resizeObserver.observe(fanMeasureListRef.current);
+      }
+    } else {
+      window.addEventListener('resize', requestMeasurement);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      resizeObserver?.disconnect();
+      if (!resizeObserver) {
+        window.removeEventListener('resize', requestMeasurement);
+      }
+    };
+  }, [hasFanPanel, result.fanBreakdown.length, fanMeta]);
 
   if (isCollapsed) {
     return (
@@ -60,7 +163,10 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
 
         <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
           {hasFanPanel ? (
-            <div className="result-overlay__fan-panel">
+            <div
+              className="result-overlay__fan-panel"
+              style={fanPanelHeight ? { height: `${fanPanelHeight}px` } : undefined}
+            >
               <div className="result-overlay__section-head">
                 <span className="result-overlay__section-label">番型明细</span>
                 {result.fanTotal !== null ? <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong> : null}
@@ -68,19 +174,61 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
               {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
 
               {result.fanBreakdown.length > 0 ? (
-                <div className="result-overlay__fan-list" aria-label="番型明细列表">
-                  {result.fanBreakdown.map((item) => (
-                    <div key={item.fanKey} className="result-overlay__row">
-                      <span>{getFanLabel(item.fanKey)}</span>
-                      <strong>{item.fanValue}</strong>
+                <>
+                  <div ref={fanListViewportRef} className="result-overlay__fan-list-viewport">
+                    <div className="result-overlay__fan-list" aria-label="番型明细列表">
+                      {pagedFanBreakdown.map((item, index) => (
+                        <div key={`${item.fanKey}-${currentFanPage}-${index}`} className="result-overlay__row">
+                          <span>{getFanLabel(item.fanKey)}</span>
+                          <strong>{item.fanValue}</strong>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                  {pageCount > 1 ? (
+                    <div className="result-overlay__fan-pagination" role="group" aria-label="番型明细分页">
+                      <span className="result-overlay__fan-pagination-status">
+                        第 {currentFanPage + 1} / {pageCount} 页
+                      </span>
+                      <div className="result-overlay__fan-pagination-actions">
+                        <button
+                          type="button"
+                          className="result-overlay__fan-pagination-button"
+                          onClick={() => setFanPage((currentPage) => Math.max(0, currentPage - 1))}
+                          disabled={currentFanPage === 0}
+                        >
+                          上一页
+                        </button>
+                        <button
+                          type="button"
+                          className="result-overlay__fan-pagination-button"
+                          onClick={() => setFanPage((currentPage) => Math.min(pageCount - 1, currentPage + 1))}
+                          disabled={currentFanPage >= pageCount - 1}
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="result-overlay__fan-measure" aria-hidden="true">
+                    <div ref={fanMeasureListRef} className="result-overlay__fan-list">
+                      {result.fanBreakdown.map((item, index) => (
+                        <div key={`${item.fanKey}-measure-${index}`} className="result-overlay__row">
+                          <span>{getFanLabel(item.fanKey)}</span>
+                          <strong>{item.fanValue}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
               ) : null}
             </div>
           ) : null}
 
-          <div className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}>
+          <div
+            ref={scorePanelRef}
+            className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}
+          >
             <div className="result-overlay__section-head">
               <span className="result-overlay__section-label">玩家分数</span>
               <span className="result-overlay__score-hint">本局结算后总分</span>
