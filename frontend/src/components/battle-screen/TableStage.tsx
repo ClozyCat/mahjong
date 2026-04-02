@@ -1,7 +1,14 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import type { ThemeId } from '../../lib/themes';
-import type { ActionEffectView, BattleActionView, BattlePromptView, Seat } from '../../types/match';
+import type {
+  ActionEffectView,
+  BattleActionView,
+  BattlePromptView,
+  QuickChatEmoji,
+  QuickChatEventView,
+  Seat,
+} from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 import { PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
@@ -18,6 +25,7 @@ interface TableStageProps {
   promptText: string | null;
   promptCue?: BattlePromptView | null;
   actionEffect?: ActionEffectView | null;
+  quickChatEvent?: QuickChatEventView | null;
   players?: TableStagePlayer[];
   settlementHands?: Partial<Record<Seat, string[]>> | null;
   tableCode?: string;
@@ -35,6 +43,7 @@ interface TableStageProps {
   onLeaveTable?: () => void;
   onCycleTheme?: () => void;
   onAction?: (actionId: BattleActionView['id']) => void;
+  onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
 }
@@ -53,6 +62,7 @@ export function TableStage({
   promptText,
   promptCue = null,
   actionEffect = null,
+  quickChatEvent = null,
   players = [],
   settlementHands = null,
   tableCode = '',
@@ -70,6 +80,7 @@ export function TableStage({
   onLeaveTable,
   onCycleTheme,
   onAction,
+  onQuickChat,
   onDecreaseTileScale,
   onIncreaseTileScale,
 }: TableStageProps) {
@@ -78,9 +89,13 @@ export function TableStage({
   const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
+  const [openQuickChatSeat, setOpenQuickChatSeat] = useState<Seat | null>(null);
+  const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const activeActionCalloutTimerRef = useRef<number | null>(null);
   const exitingActionCalloutTimerRef = useRef<number | null>(null);
+  const consumedQuickChatKeyRef = useRef<string | null>(quickChatEvent?.key ?? null);
+  const barrageRemovalTimersRef = useRef<Map<string, number>>(new Map());
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
   const spotlightPlayer = spotlightSeat ? playerBySeat.get(spotlightSeat) : null;
@@ -109,8 +124,33 @@ export function TableStage({
       if (exitingActionCalloutTimerRef.current !== null) {
         window.clearTimeout(exitingActionCalloutTimerRef.current);
       }
+      barrageRemovalTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      barrageRemovalTimersRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (openQuickChatSeat && !playerBySeat.has(openQuickChatSeat)) {
+      setOpenQuickChatSeat(null);
+    }
+  }, [openQuickChatSeat, playerBySeat]);
+
+  useEffect(() => {
+    if (!openQuickChatSeat) {
+      return undefined;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-quick-chat-root="true"]')) {
+        return;
+      }
+      setOpenQuickChatSeat(null);
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [openQuickChatSeat]);
 
   useEffect(() => {
     if (!actionEffect) {
@@ -157,6 +197,28 @@ export function TableStage({
       }, ACTION_CALLOUT_LINGER_MS);
     }
   }, [actionEffect]);
+
+  useEffect(() => {
+    if (!quickChatEvent?.key || consumedQuickChatKeyRef.current === quickChatEvent.key) {
+      return;
+    }
+
+    consumedQuickChatKeyRef.current = quickChatEvent.key;
+    const nextBarrageMessage: BarrageMessage = {
+      key: quickChatEvent.key,
+      text: quickChatEvent.text,
+      topPercent: getRandomBarrageTopPercent(),
+    };
+
+    setBarrageMessages((current) => [...current, nextBarrageMessage]);
+
+    const timer = window.setTimeout(() => {
+      setBarrageMessages((current) => current.filter((message) => message.key !== quickChatEvent.key));
+      barrageRemovalTimersRef.current.delete(quickChatEvent.key);
+    }, QUICK_CHAT_BARRAGE_LINGER_MS);
+
+    barrageRemovalTimersRef.current.set(quickChatEvent.key, timer);
+  }, [quickChatEvent]);
 
   return (
     <section
@@ -260,6 +322,19 @@ export function TableStage({
               </button>
             </div>
           ) : null}
+          {barrageMessages.length > 0 ? (
+            <div className="table-stage__barrage-layer" aria-hidden="true">
+              {barrageMessages.map((message) => (
+                <div
+                  key={message.key}
+                  className="table-stage__barrage-message"
+                  style={{ '--table-stage-barrage-top': `${message.topPercent}%` } as CSSProperties}
+                >
+                  {message.text}
+                </div>
+              ))}
+            </div>
+          ) : null}
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
             const hasMelds = (player?.melds.length ?? 0) > 0;
@@ -334,7 +409,38 @@ export function TableStage({
                     </div>
                   ) : null}
                   {shouldRenderSeatInfo && player ? (
-                    <PlayerInfoBar player={player} className={`table-stage__player-info--${seat}`} />
+                    <div
+                      className={`table-stage__player-info-cluster table-stage__player-info-cluster--${seat}`}
+                      data-quick-chat-root="true"
+                    >
+                      <button
+                        type="button"
+                        className={`table-stage__player-info-button ${
+                          openQuickChatSeat === seat ? 'table-stage__player-info-button--open' : ''
+                        }`.trim()}
+                        aria-label={`打开${player.name}的快捷表情`}
+                        aria-expanded={openQuickChatSeat === seat}
+                        aria-controls={`table-stage-quick-chat-${seat}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenQuickChatSeat((currentSeat) => (currentSeat === seat ? null : seat));
+                        }}
+                      >
+                        <PlayerInfoBar player={player} />
+                      </button>
+                      {openQuickChatSeat === seat ? (
+                        <QuickChatMenu
+                          seat={seat}
+                          player={player}
+                          onSelect={(emoji) => {
+                            if (typeof player.absoluteSeat === 'number') {
+                              onQuickChat?.(player.absoluteSeat, emoji);
+                            }
+                            setOpenQuickChatSeat(null);
+                          }}
+                        />
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </Fragment>
@@ -394,6 +500,23 @@ const ACTION_CALLOUT_COPY = {
 
 const ACTION_CALLOUT_LINGER_MS = 3000;
 const ACTION_CALLOUT_FAST_EXIT_MS = 250;
+const QUICK_CHAT_BARRAGE_LINGER_MS = 9000;
+const QUICK_CHAT_ARC_SWEEP_DEGREES = 150;
+const QUICK_CHAT_ITEM_RADIUS_REM = 5.1;
+const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
+  { emoji: '😄', label: '笑' },
+  { emoji: '😭', label: '哭' },
+  { emoji: '🀄', label: '红中' },
+  { emoji: '☠️', label: '骷髅' },
+  { emoji: '😡', label: '生气' },
+  { emoji: '🤮', label: '呕吐' },
+];
+const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
+  top: 135,
+  left: 330,
+  right: 220,
+  bottom: 220,
+};
 
 type ActionCallout = {
   key: string;
@@ -402,9 +525,21 @@ type ActionCallout = {
   label: (typeof ACTION_CALLOUT_COPY)[keyof typeof ACTION_CALLOUT_COPY];
 };
 
+type BarrageMessage = {
+  key: string;
+  text: string;
+  topPercent: number;
+};
+
 interface ActionCalloutMarkerProps {
   callout: ActionCallout;
   phase: 'active' | 'exit';
+}
+
+interface QuickChatMenuProps {
+  seat: Seat;
+  player: TableStagePlayer;
+  onSelect: (emoji: QuickChatEmoji) => void;
 }
 
 function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
@@ -414,6 +549,40 @@ function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
       aria-hidden="true"
     >
       <span className="table-stage__action-callout-glyph">{callout.label}</span>
+    </div>
+  );
+}
+
+function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
+  const menuId = `table-stage-quick-chat-${seat}`;
+  const isLocalTarget = Boolean(player.isLocal);
+
+  return (
+    <div
+      id={menuId}
+      className={`table-stage__quick-chat-menu table-stage__quick-chat-menu--${seat}`}
+      role="menu"
+      aria-label={`${player.name} 快捷表情`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {QUICK_CHAT_ITEMS.map((item, index) => (
+        <button
+          key={`${seat}-${item.label}`}
+          type="button"
+          className="table-stage__quick-chat-item"
+          role="menuitem"
+          aria-label={`${isLocalTarget ? '发送' : `向${player.name}发送`}${item.label}表情`}
+          title={`${isLocalTarget ? '发送' : `向${player.name}发送`}${item.label}表情`}
+          style={getQuickChatItemStyle(seat, index)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(item.emoji);
+          }}
+        >
+          <span aria-hidden="true">{item.emoji}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -437,6 +606,29 @@ function buildTableSummary(roundLabel: string, phaseLabel: string) {
   }
 
   return roundLabel || phaseLabel || null;
+}
+
+function getQuickChatItemStyle(seat: Seat, index: number): CSSProperties {
+  const angles = getQuickChatAngles(seat);
+  const angle = angles[index] ?? QUICK_CHAT_ARC_CENTER_DEGREES[seat];
+  const radians = (angle * Math.PI) / 180;
+
+  return {
+    '--quick-chat-x': `${Math.cos(radians) * QUICK_CHAT_ITEM_RADIUS_REM}rem`,
+    '--quick-chat-y': `${Math.sin(radians) * QUICK_CHAT_ITEM_RADIUS_REM}rem`,
+  } as CSSProperties;
+}
+
+function getQuickChatAngles(seat: Seat) {
+  const center = QUICK_CHAT_ARC_CENTER_DEGREES[seat];
+  const step = QUICK_CHAT_ITEMS.length > 1 ? QUICK_CHAT_ARC_SWEEP_DEGREES / (QUICK_CHAT_ITEMS.length - 1) : 0;
+  const start = center - QUICK_CHAT_ARC_SWEEP_DEGREES / 2;
+
+  return QUICK_CHAT_ITEMS.map((_, index) => start + step * index);
+}
+
+function getRandomBarrageTopPercent() {
+  return 18 + Math.round(Math.random() * 60);
 }
 
 function findLastDiscardPosition(

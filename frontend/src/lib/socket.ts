@@ -1,4 +1,4 @@
-import type { BackendActionType, ClientMessage, ServerMessage } from '../types/match';
+import type { BackendActionType, ClientMessage, QuickChatEmoji, ServerMessage } from '../types/match';
 
 function normalizeBaseUrl(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, '');
@@ -97,6 +97,16 @@ export function createHeartbeatMessage(sentAt: string): ClientMessage {
     type: 'heartbeat',
     payload: {
       sent_at: sentAt,
+    },
+  };
+}
+
+export function createQuickChatMessage(targetSeat: number, emoji: QuickChatEmoji): ClientMessage {
+  return {
+    type: 'quick_chat',
+    payload: {
+      target_seat: targetSeat,
+      emoji,
     },
   };
 }

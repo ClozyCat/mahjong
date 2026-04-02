@@ -14,6 +14,7 @@ export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecti
 
 export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
+export type QuickChatEmoji = '😄' | '😭' | '🀄' | '☠️' | '😡' | '🤮';
 
 export interface HealthResponse {
   status: string;
@@ -215,6 +216,17 @@ export interface LeaveTableAcceptedMessage {
   };
 }
 
+export interface QuickChatMessage {
+  type: 'quick_chat';
+  payload: {
+    message_id: string;
+    actor_seat: number;
+    target_seat: number;
+    emoji: QuickChatEmoji;
+    sent_at: string;
+  };
+}
+
 export type ServerMessage =
   | RoomSnapshotMessage
   | MatchResultMessage
@@ -223,6 +235,7 @@ export type ServerMessage =
   | RoundEventMessage
   | ActionRejectedMessage
   | LeaveTableAcceptedMessage
+  | QuickChatMessage
   | HeartbeatMessage;
 
 export type ClientMessage =
@@ -234,6 +247,7 @@ export type ClientMessage =
   | { type: 'start_next_round'; payload: Record<string, never> }
   | { type: 'restart_match'; payload: Record<string, never> }
   | { type: 'action_request'; payload: { action_type: BackendActionType; tile_ids: string[] } }
+  | { type: 'quick_chat'; payload: { target_seat: number; emoji: QuickChatEmoji } }
   | { type: 'heartbeat'; payload: { sent_at: string } };
 
 export interface ToastMessage {
@@ -253,6 +267,7 @@ export interface SessionState {
   latestMatchResult: MatchResultMessage | null;
   latestActionPrompt: ActionPromptMessage | null;
   latestRoundEvent: RoundEventMessage | null;
+  latestQuickChatMessage?: QuickChatMessage | null;
   lastRejectedAction: ActionRejectedMessage | null;
   reconnectToken: string | null;
   selectedTileIds: string[];
@@ -276,6 +291,7 @@ export interface BattleActionView {
 
 export interface PlayerView {
   seat: Seat;
+  absoluteSeat?: number;
   name: string;
   score: number;
   liveDelta: number;
@@ -374,6 +390,16 @@ export interface BattlePromptView {
   isUrgent: boolean;
 }
 
+export interface QuickChatEventView {
+  key: string;
+  actorSeat: Seat;
+  targetSeat: Seat;
+  actorName: string;
+  targetName: string;
+  emoji: QuickChatEmoji;
+  text: string;
+}
+
 export interface BattleViewModel {
   mode: MatchPhase;
   tableCode: string;
@@ -404,5 +430,6 @@ export interface BattleViewModel {
   lastDiscardEventKey: string | null;
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
+  quickChatEvent?: QuickChatEventView | null;
   toasts: ToastMessage[];
 }

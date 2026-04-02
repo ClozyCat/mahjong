@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { BattleActionId, BattleViewModel, ClaimActionId } from '../../types/match';
+import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
@@ -19,6 +19,7 @@ interface BattleScreenProps {
   onAction: (actionId: BattleActionId) => void;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
+  onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -44,6 +45,7 @@ export function BattleScreen({
   onAction,
   onCopyTableCode,
   onLeaveTable,
+  onQuickChat,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [viewportState, setViewportState] = useState(getBattleViewportState);
@@ -192,6 +194,7 @@ export function BattleScreen({
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
               actionEffect={consumedActionEffect}
+              quickChatEvent={viewModel.quickChatEvent}
               players={viewModel.players}
               settlementHands={viewModel.settlementHands}
               tableCode={viewModel.tableCode}
@@ -209,6 +212,7 @@ export function BattleScreen({
               onLeaveTable={onLeaveTable}
               onCycleTheme={onCycleTheme}
               onAction={onAction}
+              onQuickChat={onQuickChat}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />

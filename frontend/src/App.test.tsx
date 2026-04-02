@@ -1141,4 +1141,51 @@ describe('App', () => {
       { type: 'action_request', payload: { action_type: 'chow', tile_ids: ['w1#1', 'w2#2'] } },
     ]);
   });
+
+  it('sends a quick-chat websocket message after choosing an emoji from a player info bar', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: '打开Player B的快捷表情' }));
+    await user.click(screen.getByRole('menuitem', { name: '向Player B发送红中表情' }));
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'quick_chat',
+      payload: { target_seat: 1, emoji: '🀄' },
+    });
+  });
+
+  it('renders a barrage line when a quick-chat broadcast arrives from the server', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'quick_chat',
+        payload: {
+          message_id: 'quick-chat-1',
+          actor_seat: 0,
+          target_seat: 1,
+          emoji: '🀄',
+          sent_at: '2026-04-02T02:00:00Z',
+        },
+      });
+    });
+
+    expect(screen.getByText('Player A -> Player B : 🀄')).toBeInTheDocument();
+  });
 });

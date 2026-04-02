@@ -653,4 +653,81 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__action-callout')).toBeNull();
     vi.useRealTimers();
   });
+
+  it('shows only one quick-chat menu at a time and sends the selected emoji to the chosen seat', () => {
+    const onQuickChat = vi.fn();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'top', absoluteSeat: 2, name: 'Player Top', melds: [] },
+          { seat: 'left', absoluteSeat: 3, name: 'Player Left', melds: [] },
+          { seat: 'bottom', absoluteSeat: 0, name: 'Player Bottom', melds: [], isLocal: true },
+        ]}
+        onQuickChat={onQuickChat}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
+    expect(screen.getByRole('menuitem', { name: '向Player Left发送笑表情' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开Player Top的快捷表情' }));
+    expect(screen.queryByRole('menuitem', { name: '向Player Left发送笑表情' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('menuitem', { name: '向Player Top发送红中表情' }));
+
+    expect(onQuickChat).toHaveBeenCalledWith(2, '🀄');
+    expect(screen.queryByRole('menuitem', { name: '向Player Top发送笑表情' })).toBeNull();
+  });
+
+  it('renders quick-chat barrage text above the table felt and below the tiles layer', () => {
+    const { rerender } = render(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+      />,
+    );
+
+    rerender(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        quickChatEvent={{
+          key: 'quick-chat-1',
+          actorSeat: 'bottom',
+          targetSeat: 'right',
+          actorName: 'Player A',
+          targetName: 'Player B',
+          emoji: '🀄',
+          text: 'Player A -> Player B : 🀄',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Player A -> Player B : 🀄')).toBeInTheDocument();
+    expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
+  });
 });

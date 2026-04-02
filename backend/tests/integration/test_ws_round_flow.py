@@ -238,6 +238,41 @@ def test_four_players_join_same_table_and_receive_room_snapshot(test_app) -> Non
     assert all(seat["ready"] is False for seat in fourth_join["payload"]["seats"])
 
 
+def test_quick_chat_broadcasts_to_all_connected_players(test_app) -> None:
+    client = TestClient(test_app)
+    table_code = client.post("/api/tables").json()["table_code"]
+
+    with ExitStack() as stack:
+        ws_0 = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+        ws_1 = stack.enter_context(client.websocket_connect(f"/ws/{table_code}"))
+
+        _join_player(ws_0, "P0")
+        _join_player(ws_1, "P1")
+        assert ws_0.receive_json()["type"] == "player_presence"
+        assert ws_0.receive_json()["type"] == "room_snapshot"
+
+        ws_0.send_json(
+            {
+                "type": "quick_chat",
+                "payload": {
+                    "target_seat": 1,
+                    "emoji": "🀄",
+                },
+            }
+        )
+
+        sender_message = ws_0.receive_json()
+        receiver_message = ws_1.receive_json()
+
+    assert sender_message["type"] == "quick_chat"
+    assert sender_message["payload"] == receiver_message["payload"]
+    assert sender_message["payload"]["actor_seat"] == 0
+    assert sender_message["payload"]["target_seat"] == 1
+    assert sender_message["payload"]["emoji"] == "🀄"
+    assert sender_message["payload"]["message_id"]
+    assert sender_message["payload"]["sent_at"]
+
+
 def test_disconnect_and_reconnect_during_active_round_after_server_timeout(
     monkeypatch,
     test_app,

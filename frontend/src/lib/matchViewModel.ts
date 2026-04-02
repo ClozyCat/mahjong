@@ -12,6 +12,7 @@ import type {
   PlayerView,
   PrivatePlayerState,
   PrivateState,
+  QuickChatEventView,
   ResultSeatView,
   Seat,
   SessionState,
@@ -580,6 +581,7 @@ function createPlayers(state: SessionState): PlayerView[] {
 
       return {
         seat: relativeSeat,
+        absoluteSeat: seat.seat_index,
         name: seat.nickname,
         score: displayedScores[seatKey] ?? 0,
         liveDelta: liveDeltaBySeat[seatKey] ?? 0,
@@ -1307,6 +1309,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     lastDiscardEventKey: createLastDiscardEventKey(state),
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state),
+    quickChatEvent: createQuickChatEvent(state),
     toasts: state.toasts,
   };
 }
@@ -1349,4 +1352,32 @@ function resolveActionEffectCalloutTone(claimType: string): ActionEffectView['ca
   }
 
   return null;
+}
+
+function createQuickChatEvent(state: SessionState): QuickChatEventView | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const message = state.latestQuickChatMessage;
+
+  if (!snapshot || !message) {
+    return null;
+  }
+
+  const localSeat = getLocalSeat(state);
+  const actorSeat = toRelativeSeat(localSeat, message.payload.actor_seat);
+  const targetSeat = toRelativeSeat(localSeat, message.payload.target_seat);
+  const actorName = getSeatName(state, message.payload.actor_seat);
+  const targetName = getSeatName(state, message.payload.target_seat);
+
+  return {
+    key: message.payload.message_id,
+    actorSeat,
+    targetSeat,
+    actorName,
+    targetName,
+    emoji: message.payload.emoji,
+    text:
+      message.payload.actor_seat === message.payload.target_seat
+        ? `${actorName}：${message.payload.emoji}`
+        : `${actorName} -> ${targetName} : ${message.payload.emoji}`,
+  };
 }

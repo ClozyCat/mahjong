@@ -56,6 +56,7 @@ MAX_SEATS = 4
 WIND_ORDER = ("east", "south", "west", "north")
 BOT_ACTION_DELAY_MIN_SECONDS = 0.5
 BOT_ACTION_DELAY_MAX_SECONDS = 1.5
+ALLOWED_QUICK_CHAT_EMOJIS = ("😄", "😭", "🀄", "☠️", "😡", "🤮")
 
 
 class LoopSafeLock:
@@ -718,6 +719,56 @@ class GameService:
     async def handle_heartbeat(self, websocket: WebSocket, payload: dict) -> None:
         await websocket.send_json({"type": "heartbeat", "payload": payload})
 
+    async def handle_quick_chat(
+        self, table_code: str, websocket: WebSocket, payload: dict
+    ) -> None:
+        room: RoomState | None = None
+        broadcast_targets: list[WebSocket] = []
+        message: dict | None = None
+        reason: str | None = None
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                reason = "table_not_found"
+            else:
+                owned_seat = next(
+                    (
+                        seat_index
+                        for seat_index, reservation in room.seats.items()
+                        if reservation.websocket is websocket
+                    ),
+                    None,
+                )
+                if owned_seat is None:
+                    reason = "seat_not_owned"
+                else:
+                    target_seat = payload.get("target_seat")
+                    emoji = str(payload.get("emoji", "")).strip()
+                    if (
+                        not isinstance(target_seat, int)
+                        or target_seat not in room.seats
+                        or emoji not in ALLOWED_QUICK_CHAT_EMOJIS
+                    ):
+                        reason = "invalid_action"
+                    else:
+                        broadcast_targets = self._connected_websockets_locked(room)
+                        message = self.quick_chat_message(
+                            actor_seat=owned_seat,
+                            target_seat=target_seat,
+                            emoji=emoji,
+                        )
+
+        if reason is not None:
+            await websocket.send_json(self._action_rejected(reason))
+            return
+
+        if room is None or message is None:
+            return
+
+        async with room.send_lock:
+            await self._broadcast_messages(broadcast_targets, [message])
+
     def action_prompt(
         self,
         seat_index: int,
@@ -742,6 +793,18 @@ class GameService:
         return {
             "type": "round_event",
             "payload": {"event_type": event_type, "event": payload or {}},
+        }
+
+    def quick_chat_message(self, *, actor_seat: int, target_seat: int, emoji: str) -> dict:
+        return {
+            "type": "quick_chat",
+            "payload": {
+                "message_id": secrets.token_hex(8),
+                "actor_seat": actor_seat,
+                "target_seat": target_seat,
+                "emoji": emoji,
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+            },
         }
 
     def _advance_round_locked(self, room: RoomState) -> None:

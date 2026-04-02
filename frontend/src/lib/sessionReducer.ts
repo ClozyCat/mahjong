@@ -70,6 +70,7 @@ export function createInitialSessionState(): SessionState {
     latestMatchResult: null,
     latestActionPrompt: null,
     latestRoundEvent: null,
+    latestQuickChatMessage: null,
     lastRejectedAction: null,
     reconnectToken: null,
     selectedTileIds: [],
@@ -128,6 +129,11 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         toasts: appendToast(state, 'event', text),
       };
     }
+    case 'quick_chat':
+      return {
+        ...state,
+        latestQuickChatMessage: message,
+      };
     case 'player_presence':
       return {
         ...state,

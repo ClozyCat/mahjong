@@ -17,6 +17,7 @@ import {
   createHeartbeatMessage,
   createJoinTableMessage,
   createLeaveTableMessage,
+  createQuickChatMessage,
   createReadyMessage,
   createReconnectMessage,
   createRestartMatchMessage,
@@ -35,7 +36,7 @@ import {
 } from './lib/storage';
 import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
-import type { BackendActionType, BattleActionId, ClaimActionId, SessionState } from './types/match';
+import type { BackendActionType, BattleActionId, ClaimActionId, QuickChatEmoji, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
@@ -694,6 +695,10 @@ export default function App() {
     dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
   }
 
+  function handleQuickChat(targetSeat: number, emoji: QuickChatEmoji) {
+    sendMessage(serializeClientMessage(createQuickChatMessage(targetSeat, emoji)));
+  }
+
   function handleTileDoubleClick(tileId: string) {
     if (!canQuickDiscard(state, hasLocalTurnKongPrompt)) {
       return;
@@ -771,6 +776,7 @@ export default function App() {
       onAction={handleAction}
       onCopyTableCode={handleCopyTableCode}
       onLeaveTable={handleLeaveTable}
+      onQuickChat={handleQuickChat}
     />
   );
 }

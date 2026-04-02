@@ -109,6 +109,10 @@ async def websocket_endpoint(websocket: WebSocket, table_code: str) -> None:
                 await game_service.handle_heartbeat(websocket, payload)
                 continue
 
+            if message_type == "quick_chat":
+                await game_service.handle_quick_chat(table_code, websocket, payload)
+                continue
+
             await websocket.send_json(
                 {"type": "action_rejected", "payload": {"reason": "unsupported_message"}}
             )
