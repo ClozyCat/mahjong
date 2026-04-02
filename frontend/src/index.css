@@ -1419,36 +1419,6 @@ button:active:not(:disabled) {
   --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 42%, transparent);
 }
 
-.table-stage__action-callout--hu::before,
-.table-stage__action-callout--hu::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-}
-
-.table-stage__action-callout--hu::before {
-  width: 3.3em;
-  height: 3.3em;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--table-stage-action-callout-aura-core), transparent 72%);
-  filter: blur(0.3rem);
-  opacity: 0.95;
-}
-
-.table-stage__action-callout--hu::after {
-  width: 2.28em;
-  height: 2.28em;
-  border-radius: 50%;
-  border: 1px solid var(--table-stage-action-callout-aura-ring);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--table-stage-action-callout-aura-ring) 42%, transparent),
-    0 0 1.2rem color-mix(in srgb, var(--table-stage-action-callout-aura-core) 44%, transparent);
-  opacity: 0.72;
-}
-
 .table-stage__action-callout--hu .table-stage__action-callout-glyph {
   min-width: 1em;
   padding: 0;
@@ -1497,36 +1467,6 @@ button:active:not(:disabled) {
   --table-stage-action-callout-plaque-shadow: color-mix(in srgb, var(--accent-3) 28%, transparent);
   --table-stage-action-callout-aura-core: color-mix(in srgb, var(--accent-3) 26%, transparent);
   --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 42%, var(--accent-3));
-}
-
-.table-stage__action-callout--draw::before,
-.table-stage__action-callout--draw::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-}
-
-.table-stage__action-callout--draw::before {
-  width: 4em;
-  height: 4em;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--table-stage-action-callout-aura-core), transparent 74%);
-  filter: blur(0.45rem);
-  opacity: 0.92;
-}
-
-.table-stage__action-callout--draw::after {
-  width: 2.9em;
-  height: 2.9em;
-  border-radius: 50%;
-  border: 1px solid var(--table-stage-action-callout-aura-ring);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--table-stage-action-callout-aura-ring) 34%, transparent),
-    0 0 1.4rem color-mix(in srgb, var(--table-stage-action-callout-aura-core) 40%, transparent);
-  opacity: 0.68;
 }
 
 .table-stage__action-callout--draw .table-stage__action-callout-glyph {
