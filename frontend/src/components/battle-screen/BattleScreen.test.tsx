@@ -156,18 +156,14 @@ function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<Comp
   );
 }
 
-function mockResultOverlayPaginationLayout({ panelHeight, pageSize }: { panelHeight: number; pageSize: number }) {
+function mockResultOverlayScrollLayout({ panelHeight }: { panelHeight: number }) {
   const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement | null;
   const fanPanel = document.body.querySelector('.result-overlay__fan-panel') as HTMLElement | null;
   const fanViewport = document.body.querySelector('.result-overlay__fan-list-viewport') as HTMLElement | null;
-  const measureList = document.body.querySelector('.result-overlay__fan-measure .result-overlay__fan-list') as HTMLElement | null;
 
-  if (!scorePanel || !fanPanel || !fanViewport || !measureList) {
-    throw new Error('result overlay pagination nodes are missing');
+  if (!scorePanel || !fanPanel || !fanViewport) {
+    throw new Error('result overlay scroll nodes are missing');
   }
-
-  const rowHeight = 64;
-  const rowGap = 6;
 
   Object.defineProperty(scorePanel, 'getBoundingClientRect', {
     configurable: true,
@@ -184,27 +180,11 @@ function mockResultOverlayPaginationLayout({ panelHeight, pageSize }: { panelHei
     }),
   });
 
-  Object.defineProperty(fanViewport, 'clientHeight', {
-    configurable: true,
-    get: () => (pageSize * rowHeight) + (Math.max(pageSize - 1, 0) * rowGap),
-  });
-
-  Array.from(measureList.children).forEach((row, index) => {
-    Object.defineProperty(row, 'offsetTop', {
-      configurable: true,
-      get: () => index * (rowHeight + rowGap),
-    });
-    Object.defineProperty(row, 'offsetHeight', {
-      configurable: true,
-      get: () => rowHeight,
-    });
-  });
-
   act(() => {
     window.dispatchEvent(new Event('resize'));
   });
 
-  return { fanPanel };
+  return { fanPanel, fanViewport };
 }
 
 function getVisibleFanList() {
@@ -435,9 +415,7 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '收起番种' })).toBeNull();
   });
 
-  it('locks the fan panel to the score panel height and paginates overflowing fan rows', async () => {
-    const user = userEvent.setup();
-
+  it('locks the fan panel to the score panel height and renders overflowing fan rows in a scroll area', async () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'resolving',
@@ -482,37 +460,28 @@ describe('BattleScreen', () => {
       }),
     );
 
-    const { fanPanel } = mockResultOverlayPaginationLayout({ panelHeight: 420, pageSize: 3 });
+    const { fanPanel, fanViewport } = mockResultOverlayScrollLayout({ panelHeight: 420 });
 
     await waitFor(() => {
       expect(fanPanel.style.height).toBe('420px');
-      expect(screen.getByText('第 1 / 3 页')).toBeInTheDocument();
     });
 
-    const firstPageFanList = getVisibleFanList();
+    const visibleFanList = getVisibleFanList();
 
-    expect(firstPageFanList.getByText('平胡')).toBeInTheDocument();
-    expect(firstPageFanList.getByText('自摸')).toBeInTheDocument();
-    expect(firstPageFanList.getByText('清一色')).toBeInTheDocument();
-    expect(firstPageFanList.queryByText('对对胡')).toBeNull();
-
-    await user.click(screen.getByRole('button', { name: '下一页' }));
-
-    await waitFor(() => {
-      expect(screen.getByText('第 2 / 3 页')).toBeInTheDocument();
-    });
-
-    const secondPageFanList = getVisibleFanList();
-
-    expect(secondPageFanList.getByText('对对胡')).toBeInTheDocument();
-    expect(secondPageFanList.getByText('七对')).toBeInTheDocument();
-    expect(secondPageFanList.getByText('三暗刻')).toBeInTheDocument();
-    expect(secondPageFanList.queryByText('平胡')).toBeNull();
+    expect(visibleFanList.getByText('平胡')).toBeInTheDocument();
+    expect(visibleFanList.getByText('自摸')).toBeInTheDocument();
+    expect(visibleFanList.getByText('清一色')).toBeInTheDocument();
+    expect(visibleFanList.getByText('对对胡')).toBeInTheDocument();
+    expect(visibleFanList.getByText('七对')).toBeInTheDocument();
+    expect(visibleFanList.getByText('三暗刻')).toBeInTheDocument();
+    expect(visibleFanList.getByText('断幺')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '番型明细分页' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '上一页' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下一页' })).toBeNull();
+    expect(fanViewport.className).toContain('result-overlay__fan-list-viewport');
   });
 
-  it('resets fan pagination back to the first page when a new settlement result arrives', async () => {
-    const user = userEvent.setup();
-
+  it('updates the scrollable fan list without reintroducing pagination when a new settlement result arrives', async () => {
     const { rerender } = renderBattleScreen(
       createBattleViewModel({
         mode: 'resolving',
@@ -556,18 +525,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    mockResultOverlayPaginationLayout({ panelHeight: 420, pageSize: 2 });
-
-    await waitFor(() => {
-      expect(screen.getByText('第 1 / 3 页')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: '下一页' }));
-
-    await waitFor(() => {
-      expect(screen.getByText('第 2 / 3 页')).toBeInTheDocument();
-      expect(getVisibleFanList().getByText('清一色')).toBeInTheDocument();
-    });
+    mockResultOverlayScrollLayout({ panelHeight: 420 });
 
     rerender(
       <BattleScreen
@@ -620,17 +578,19 @@ describe('BattleScreen', () => {
       />,
     );
 
-    mockResultOverlayPaginationLayout({ panelHeight: 420, pageSize: 2 });
+    mockResultOverlayScrollLayout({ panelHeight: 420 });
+
+    const updatedFanList = getVisibleFanList();
 
     await waitFor(() => {
-      expect(screen.getByText('第 1 / 2 页')).toBeInTheDocument();
+      expect(updatedFanList.getByText('喜相逢')).toBeInTheDocument();
     });
 
-    const resetFanList = getVisibleFanList();
-
-    expect(resetFanList.getByText('喜相逢')).toBeInTheDocument();
-    expect(resetFanList.getByText('连六')).toBeInTheDocument();
-    expect(resetFanList.queryByText('箭刻')).toBeNull();
+    expect(updatedFanList.getByText('连六')).toBeInTheDocument();
+    expect(updatedFanList.getByText('双同刻')).toBeInTheDocument();
+    expect(updatedFanList.getByText('箭刻')).toBeInTheDocument();
+    expect(updatedFanList.queryByText('平胡')).toBeNull();
+    expect(screen.queryByRole('group', { name: '番型明细分页' })).toBeNull();
   });
 
   it('can collapse the settlement panel and restore it from the table center', async () => {
@@ -687,59 +647,185 @@ describe('BattleScreen', () => {
     expect(screen.getByText('本局结算')).toBeInTheDocument();
   });
 
-  it('waits to show the settlement panel until the final discard returns to the river when no response is needed', () => {
+  it('holds settlement hands and the settlement panel until the hu callout has fully finished', () => {
     vi.useFakeTimers();
 
-    renderBattleScreen(
+    const { rerender } = renderBattleScreen(
       createBattleViewModel({
-        mode: 'resolving',
-        discards: {
-          bottom: ['w1'],
-          left: ['b4'],
-          top: [],
-          right: [],
+        actionEffect: {
+          key: 'hu-1',
+          label: '和',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'hu',
         },
-        lastDiscard: 'b4',
-        lastDiscardSeat: 'left',
-        result: {
-          title: '本局结算',
-          summary: '本局流局，等待下一局',
-          fanTotal: null,
-          winnerSeat: null,
-          discarderSeat: null,
-          winType: 'draw',
-          winTypeLabel: '流局',
-          provisional: false,
-          flowerCount: 0,
-          fanBreakdown: [],
-          scoreDeltaBySeat: {
-            bottom: 0,
-            left: 0,
-            top: 0,
-            right: 0,
-          },
-          seats: [
-            { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
-            { seat: 'left', name: 'Player Left', score: 24300, delta: 0 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
+        result: null,
+        settlementHands: null,
       }),
     );
 
+    expect(screen.getByText('和')).toBeInTheDocument();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          actionEffect: {
+            key: 'round-done-1',
+            label: '结算',
+            emphasis: 'system',
+            seat: null,
+            calloutTone: null,
+          },
+          settlementHands: {
+            top: ['w1', 'w2'],
+            left: ['b1', 'b2', 'b3', 'b4'],
+            right: ['c1', 'c2'],
+            bottom: ['d1', 'd2'],
+          },
+          result: {
+            title: '本局结算',
+            summary: '荣和，等待下一局',
+            fanTotal: 8,
+            winnerSeat: 'right',
+            discarderSeat: 'left',
+            winType: 'discard',
+            winTypeLabel: '荣和',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            scoreDeltaBySeat: {
+              left: -8,
+              right: 8,
+            },
+            seats: [
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('和')).toBeInTheDocument();
+    expect(screen.queryByText('本局结算')).toBeNull();
+    expect(screen.queryByLabelText('对家手牌')).toBeNull();
+    expect(screen.queryByLabelText('左家手牌')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(2999);
+    });
+
+    expect(screen.getByText('和')).toBeInTheDocument();
+    expect(screen.queryByText('本局结算')).toBeNull();
+    expect(screen.queryByLabelText('对家手牌')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.getByText('本局结算')).toBeInTheDocument();
+    expect(screen.getByLabelText('对家手牌')).toBeInTheDocument();
+    expect(screen.getByLabelText('左家手牌')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('waits to show the settlement panel until the final discard returns to the river when no response is needed', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        result: null,
+      }),
+    );
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          result: {
+            title: '本局结算',
+            summary: '本局流局，等待下一局',
+            fanTotal: null,
+            winnerSeat: null,
+            discarderSeat: null,
+            winType: 'draw',
+            winTypeLabel: '流局',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [],
+            scoreDeltaBySeat: {
+              bottom: 0,
+              left: 0,
+              top: 0,
+              right: 0,
+            },
+            seats: [
+              { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
+              { seat: 'left', name: 'Player Left', score: 24300, delta: 0 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('流局')).toBeInTheDocument();
     expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
     expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
 
     act(() => {
-      vi.advanceTimersByTime(420);
+      vi.advanceTimersByTime(2999);
+    });
+
+    expect(screen.getByText('流局')).toBeInTheDocument();
+    expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(screen.getByText('本局结算')).toBeInTheDocument();
+    expect(screen.queryByText('流局')).toBeNull();
     vi.useRealTimers();
   });
 
@@ -1052,7 +1138,7 @@ describe('BattleScreen', () => {
         { seat: 'left' as const, name: 'Player Left', score: 24297, delta: -3 },
       ],
     },
-  ])('waits 2 seconds before showing the settlement panel after a %s win appears mid-hand', ({ winType, winTypeLabel, summary, winnerSeat, discarderSeat, scoreDeltaBySeat, seats }) => {
+  ])('waits 3 seconds before showing the settlement panel after a %s win appears mid-hand', ({ winType, winTypeLabel, summary, winnerSeat, discarderSeat, scoreDeltaBySeat, seats }) => {
     vi.useFakeTimers();
 
     const { rerender } = renderBattleScreen(
@@ -1102,7 +1188,7 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('本局结算')).not.toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(1999);
+      vi.advanceTimersByTime(2999);
     });
 
     expect(screen.queryByText('本局结算')).not.toBeInTheDocument();

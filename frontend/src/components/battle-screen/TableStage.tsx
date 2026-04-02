@@ -9,9 +9,11 @@ import type {
   QuickChatEventView,
   Seat,
 } from '../../types/match';
+import { FanGuideDialog } from './FanGuideDialog';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 import { PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
+import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
@@ -29,6 +31,7 @@ interface TableStageProps {
   quickChatEvent?: QuickChatEventView | null;
   players?: TableStagePlayer[];
   settlementHands?: Partial<Record<Seat, string[]>> | null;
+  settlementCenterCalloutLabel?: string | null;
   tableCode?: string;
   roundLabel?: string;
   phaseLabel?: string;
@@ -67,6 +70,7 @@ export function TableStage({
   quickChatEvent = null,
   players = [],
   settlementHands = null,
+  settlementCenterCalloutLabel = null,
   tableCode = '',
   roundLabel = '',
   phaseLabel = '',
@@ -92,6 +96,7 @@ export function TableStage({
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const [openQuickChatSeat, setOpenQuickChatSeat] = useState<Seat | null>(null);
+  const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const activeActionCalloutTimerRef = useRef<number | null>(null);
@@ -101,7 +106,6 @@ export function TableStage({
   const barrageRemovalTimersRef = useRef<Map<string, number>>(new Map());
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
-  const spotlightPlayer = spotlightSeat ? playerBySeat.get(spotlightSeat) : null;
   const spotlightTile = spotlightSeat !== null && lastDiscardPosition !== null
     ? discards[spotlightSeat][lastDiscardPosition.index]
     : null;
@@ -266,32 +270,42 @@ export function TableStage({
               </span>
             </div>
           ) : null}
-          {onCycleTheme || canLeaveTable ? (
-            <div className="table-stage__corner-controls">
-              {onCycleTheme ? (
-                <button
-                  type="button"
-                  className="table-stage__theme-button"
-                  data-theme={themeId}
-                  aria-label={`切换整体配色，当前 ${themeLabel}`}
-                  title={`切换配色：${themeLabel}`}
-                  onClick={onCycleTheme}
-                >
-                  <span aria-hidden="true">换</span>
-                </button>
-              ) : null}
-              {canLeaveTable ? (
-                <button
-                  type="button"
-                  className="table-stage__leave-button"
-                  aria-label="快捷离开牌桌"
-                  onClick={onLeaveTable}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="table-stage__corner-controls">
+            <button
+              type="button"
+              className="table-stage__help-button"
+              aria-label="打开国标麻将番种说明"
+              title="国标麻将番种说明"
+              onClick={() => {
+                setOpenQuickChatSeat(null);
+                setIsFanGuideOpen(true);
+              }}
+            >
+              <span aria-hidden="true">?</span>
+            </button>
+            {onCycleTheme ? (
+              <button
+                type="button"
+                className="table-stage__theme-button"
+                data-theme={themeId}
+                aria-label={`切换整体配色，当前 ${themeLabel}`}
+                title={`切换配色：${themeLabel}`}
+                onClick={onCycleTheme}
+              >
+                <span aria-hidden="true">换</span>
+              </button>
+            ) : null}
+            {canLeaveTable ? (
+              <button
+                type="button"
+                className="table-stage__leave-button"
+                aria-label="快捷离开牌桌"
+                onClick={onLeaveTable}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            ) : null}
+          </div>
           <div
             className={`table-stage__center-meta ${promptCue ? 'table-stage__center-meta--with-cue' : ''} ${
               promptCue?.isUrgent ? 'table-stage__center-meta--urgent' : ''
@@ -474,8 +488,6 @@ export function TableStage({
           {!hasSettlementHands && spotlightSeat && spotlightTile ? (
             <div
               className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
-                spotlightPlayer?.isDealer ? 'table-stage__spotlight--dealer' : ''
-              } ${
                 promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
               }`}
               aria-label="Latest discard spotlight"
@@ -488,10 +500,12 @@ export function TableStage({
               />
             </div>
           ) : null}
+          {settlementCenterCalloutLabel ? <SettlementCenterCallout label={settlementCenterCalloutLabel} /> : null}
           {exitingActionCallout ? <ActionCalloutMarker callout={exitingActionCallout} phase="exit" /> : null}
           {activeActionCallout ? <ActionCalloutMarker callout={activeActionCallout} phase="active" /> : null}
         </div>
       </div>
+      <FanGuideDialog isOpen={isFanGuideOpen} onClose={() => setIsFanGuideOpen(false)} />
     </section>
   );
 }
@@ -523,7 +537,7 @@ const ACTION_CALLOUT_COPY = {
   hu: '和',
 } as const;
 
-const ACTION_CALLOUT_LINGER_MS = 3000;
+const ACTION_CALLOUT_LINGER_MS = SETTLEMENT_CALLOUT_LINGER_MS;
 const QUICK_CHAT_BARRAGE_LINGER_MS = 9000;
 const QUICK_CHAT_ARC_SWEEP_DEGREES = 150;
 const QUICK_CHAT_ITEM_RADIUS_REM = 5.1;
@@ -574,8 +588,21 @@ function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
         callout.huVariant ? `table-stage__action-callout--hu-${callout.huVariant}` : ''
       } table-stage__action-callout--${phase}`.trim()}
       aria-hidden="true"
+      style={getSettlementCalloutStyle()}
     >
       <span className="table-stage__action-callout-glyph">{callout.label}</span>
+    </div>
+  );
+}
+
+function SettlementCenterCallout({ label }: { label: string }) {
+  return (
+    <div
+      className="table-stage__action-callout table-stage__action-callout--center table-stage__action-callout--draw table-stage__action-callout--active"
+      aria-hidden="true"
+      style={getSettlementCalloutStyle()}
+    >
+      <span className="table-stage__action-callout-glyph">{label}</span>
     </div>
   );
 }
@@ -686,6 +713,12 @@ function getQuickChatAngles(seat: Seat) {
 
 function getRandomBarrageTopPercent() {
   return 18 + Math.round(Math.random() * 60);
+}
+
+function getSettlementCalloutStyle(): CSSProperties {
+  return {
+    '--table-stage-action-callout-duration': SETTLEMENT_CALLOUT_DURATION_CSS,
+  } as CSSProperties;
 }
 
 function findLastDiscardPosition(

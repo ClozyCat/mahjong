@@ -1036,7 +1036,10 @@ def apply_discard_win(
         round_wind=state.round_wind,
         enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
     )
-    events = [{"type": "settlement_ready", "round_id": state.round_id}]
+    events = [
+        claim_made_event(winner_seat, "hu", state.last_discard),
+        {"type": "settlement_ready", "round_id": state.round_id},
+    ]
     return new_state, events
 
 

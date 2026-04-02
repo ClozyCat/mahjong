@@ -109,6 +109,44 @@ describe('sessionReducer', () => {
     expect(next.latestRoundEvent).toEqual(roundEventMessage);
   });
 
+  it('keeps a hu round_event active when settlement_ready arrives immediately after it', () => {
+    const huRoundEventMessage = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'self_hu_declared',
+        event: {
+          seat: 0,
+          tile_id: 't5#discard',
+        },
+      },
+    };
+
+    const next = sessionReducer(
+      {
+        ...createInitialSessionState(),
+        latestRoundEvent: huRoundEventMessage,
+      },
+      {
+        type: 'ws_message',
+        message: {
+          type: 'round_event',
+          payload: {
+            event_type: 'settlement_ready',
+            event: {
+              round_id: 'round-1',
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.latestRoundEvent).toEqual(huRoundEventMessage);
+    expect(next.toasts.at(-1)).toMatchObject({
+      kind: 'event',
+      text: '本局已进入结算',
+    });
+  });
+
   it('keeps room_snapshot authoritative when player_presence arrives', () => {
     const next = sessionReducer(
       {

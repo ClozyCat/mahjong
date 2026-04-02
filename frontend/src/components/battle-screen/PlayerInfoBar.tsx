@@ -24,9 +24,9 @@ export function PlayerInfoBar({ player, className = '' }: PlayerInfoBarProps) {
 
   return (
     <article
-      className={`table-stage__player-info ${player.isDealer ? 'table-stage__player-info--dealer' : ''} ${
-        player.isActive ? 'table-stage__player-info--active' : ''
-      } ${player.isLocal ? 'table-stage__player-info--local' : ''} ${className}`.trim()}
+      className={`table-stage__player-info ${player.isActive ? 'table-stage__player-info--active' : ''} ${
+        player.isLocal ? 'table-stage__player-info--local' : ''
+      } ${className}`.trim()}
       aria-label={`${player.name} 信息栏`}
     >
       <span className="table-stage__player-info-eyebrow">{eyebrowText}</span>

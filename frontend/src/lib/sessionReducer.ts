@@ -59,6 +59,34 @@ function getActionRejectedCopy(reason: string) {
   return ACTION_REJECTION_COPY[reason] ?? reason;
 }
 
+function isHuRoundEvent(
+  message: Extract<ServerMessage, { type: 'round_event' }> | null,
+) {
+  if (!message) {
+    return false;
+  }
+
+  if (message.payload.event_type === 'self_hu_declared') {
+    return true;
+  }
+
+  return (
+    message.payload.event_type === 'claim_made' &&
+    message.payload.event?.claim_type === 'hu'
+  );
+}
+
+function getNextLatestRoundEvent(
+  current: SessionState['latestRoundEvent'],
+  incoming: Extract<ServerMessage, { type: 'round_event' }>,
+) {
+  if (incoming.payload.event_type === 'settlement_ready' && isHuRoundEvent(current)) {
+    return current;
+  }
+
+  return incoming;
+}
+
 export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
@@ -125,7 +153,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
 
       return {
         ...state,
-        latestRoundEvent: message,
+        latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
         toasts: appendToast(state, 'event', text),
       };
     }

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TableStage } from './TableStage';
@@ -343,7 +343,7 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__spotlight--left')).not.toBeNull();
   });
 
-  it('uses a unified theme-driven player info style and marks the dealer separately', () => {
+  it('uses a unified theme-driven player info style without visually marking the dealer', () => {
     render(
       <TableStage
         discards={{
@@ -365,10 +365,11 @@ describe('TableStage', () => {
     );
 
     expect(screen.getByLabelText('Player Top 信息栏')).not.toHaveClass('table-stage__player-info--dealer');
-    expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveClass('table-stage__player-info--dealer');
+    expect(screen.getByLabelText('Player Bottom 信息栏')).not.toHaveClass('table-stage__player-info--dealer');
+    expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveTextContent('庄家');
   });
 
-  it('marks the dealer spotlight with the dealer style modifier', () => {
+  it('does not apply a separate dealer style modifier to the spotlight', () => {
     const { container } = render(
       <TableStage
         discards={{
@@ -385,7 +386,7 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(container.querySelector('.table-stage__spotlight--bottom')).toHaveClass('table-stage__spotlight--dealer');
+    expect(container.querySelector('.table-stage__spotlight--bottom')).not.toHaveClass('table-stage__spotlight--dealer');
   });
 
   it('renders settlement hands beside each seat when the round has ended', () => {
@@ -534,6 +535,53 @@ describe('TableStage', () => {
     fireEvent.click(themeButton);
 
     expect(onCycleTheme).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the fan guide dialog from the corner help button and paginates low-fan entries first', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        canLeaveTable
+        themeId="qiu-xiang"
+        themeLabel="秋香"
+        onLeaveTable={() => undefined}
+        onCycleTheme={() => undefined}
+      />,
+    );
+
+    const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
+    const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
+    const controls = helpButton.parentElement;
+
+    expect(controls?.firstElementChild).toBe(helpButton);
+    expect(controls?.children[1]).toBe(themeButton);
+
+    fireEvent.click(helpButton);
+
+    const dialog = screen.getByRole('dialog', { name: '国标麻将番种说明' });
+
+    expect(within(dialog).getByText('自摸')).toBeInTheDocument();
+    expect(within(dialog).getByText('一般高')).toBeInTheDocument();
+    expect(within(dialog).queryByText('大三元')).toBeNull();
+    expect(within(dialog).getByText('第 1 / 14 页')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '下一页' }));
+
+    expect(within(dialog).getByText('无字')).toBeInTheDocument();
+    expect(within(dialog).queryByText('自摸')).toBeNull();
+    expect(within(dialog).getByText('第 2 / 14 页')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭番种说明' }));
+
+    expect(screen.queryByRole('dialog', { name: '国标麻将番种说明' })).toBeNull();
   });
 
   it('shows a themed callout on the matching seat when a chow, pung, kong, or hu effect arrives', () => {

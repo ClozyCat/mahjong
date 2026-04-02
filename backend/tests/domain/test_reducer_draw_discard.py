@@ -267,6 +267,9 @@ def test_apply_discard_win_transitions_round_to_settlement():
     )
     next_state, events = apply_discard_win(winning_state, winner_seat=1)
     assert next_state.phase == "settlement"
+    assert events[0]["type"] == "claim_made"
+    assert events[0]["claim_type"] == "hu"
+    assert events[0]["seat"] == 1
     assert events[-1]["type"] == "settlement_ready"
     assert next_state.settlement["win_type"] == "discard"
     assert next_state.settlement["winner_seat"] == 1
@@ -1700,6 +1703,8 @@ def test_rob_kong_hu_cancels_add_kong_and_settles_as_discard_win():
 
     assert next_state.phase == "settlement"
     assert next_state.settlement["discarder_seat"] == 0
+    assert events[0]["type"] == "claim_made"
+    assert events[0]["claim_type"] == "hu"
     assert events[-1]["type"] == "settlement_ready"
 
 

@@ -1532,6 +1532,13 @@ async def test_handle_action_request_resolves_claims_by_priority_after_all_respo
     assert room.round_state.phase == "settlement"
     assert room.round_state.settlement["winner_seat"] == 2
     assert room.round_state.settlement["discarder_seat"] == 0
+    assert any(
+        message["type"] == "round_event"
+        and message["payload"]["event_type"] == "claim_made"
+        and message["payload"]["event"]["seat"] == 2
+        and message["payload"]["event"]["claim_type"] == "hu"
+        for message in websockets[0].messages
+    )
 
 
 @pytest.mark.asyncio
@@ -1567,6 +1574,18 @@ async def test_handle_action_request_resolves_immediately_when_higher_priority_c
     assert room.round_state.phase == "settlement"
     assert room.round_state.settlement["winner_seat"] == 2
     assert room.round_state.settlement["discarder_seat"] == 0
+    assert any(
+        message["type"] == "round_event"
+        and message["payload"]["event_type"] == "claim_made"
+        and message["payload"]["event"]["seat"] == 2
+        and message["payload"]["event"]["claim_type"] == "hu"
+        for message in websockets[0].messages
+    )
+    assert any(
+        message["type"] == "round_event"
+        and message["payload"]["event_type"] == "settlement_ready"
+        for message in websockets[0].messages
+    )
 
 
 @pytest.mark.asyncio

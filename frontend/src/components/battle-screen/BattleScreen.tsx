@@ -5,6 +5,7 @@ import type { ThemeId } from '../../lib/themes';
 import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
+import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 import { TableStage } from './TableStage';
 
 interface BattleScreenProps {
@@ -26,8 +27,6 @@ const DEFAULT_TABLE_TILE_SCALE = 1.12;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
-const DRAW_SETTLEMENT_PANEL_DELAY_MS = 420;
-const HU_SETTLEMENT_PANEL_DELAY_MS = 2000;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const MIN_BATTLE_VIEWPORT_WIDTH = 1280;
 const MIN_BATTLE_VIEWPORT_HEIGHT = 720;
@@ -74,6 +73,8 @@ export function BattleScreen({
   const visibleLastDiscard = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscard;
   const visibleLastDiscardSeat = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscardSeat;
   const visibleResult = isSettlementPanelReady ? viewModel.result : null;
+  const visibleSettlementCenterCalloutLabel =
+    !isSettlementPanelReady && viewModel.result?.winType === 'draw' ? '流局' : null;
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
 
   function adjustTableTileScale(offset: number) {
@@ -223,7 +224,8 @@ export function BattleScreen({
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
               players={viewModel.players}
-              settlementHands={viewModel.settlementHands}
+              settlementHands={isSettlementPanelReady ? viewModel.settlementHands : null}
+              settlementCenterCalloutLabel={visibleSettlementCenterCalloutLabel}
               tableCode={viewModel.tableCode}
               roundLabel={viewModel.roundLabel}
               phaseLabel={viewModel.phaseLabel}
@@ -322,12 +324,8 @@ function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
 }
 
 function getSettlementPanelDelayMs(winType: string | null, hasObservedNoResult: boolean) {
-  if (winType === 'draw') {
-    return DRAW_SETTLEMENT_PANEL_DELAY_MS;
-  }
-
-  if (winType === 'discard' || winType === 'self_draw') {
-    return hasObservedNoResult ? HU_SETTLEMENT_PANEL_DELAY_MS : 0;
+  if (winType === 'draw' || winType === 'discard' || winType === 'self_draw') {
+    return hasObservedNoResult ? SETTLEMENT_CALLOUT_LINGER_MS : 0;
   }
 
   return 0;
