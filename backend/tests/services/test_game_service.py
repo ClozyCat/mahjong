@@ -244,6 +244,28 @@ def _make_settlement_room(
     return room, websocket
 
 
+async def _confirm_continue_action_for_all_players(
+    service: GameService,
+    room: RoomState,
+    *,
+    action_id: str,
+) -> dict:
+    response: dict | None = None
+    for seat_index in sorted(room.seats):
+        websocket = room.seats[seat_index].websocket
+        assert websocket is not None
+        if action_id == "start_next_round":
+            response = await service.start_next_round(table_code=room.table_code, websocket=websocket)
+            continue
+        if action_id == "restart_match":
+            response = await service.restart_match(table_code=room.table_code, websocket=websocket)
+            continue
+        raise ValueError(f"Unsupported continue action for test helper: {action_id}")
+
+    assert response is not None
+    return response
+
+
 def test_action_prompt_includes_kong_when_current_actor_can_self_kong():
     service = GameService(sessionmaker())
     websocket = _RecordingWebSocket()
@@ -1892,7 +1914,7 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
         reconnect_token="token-1",
         player_session_id=2,
         websocket=_RecordingWebSocket(),
-        connected=False,
+        connected=True,
         ready=True,
     )
     room.seats[2] = SeatReservation(
@@ -1901,7 +1923,7 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
         reconnect_token="token-2",
         player_session_id=3,
         websocket=_RecordingWebSocket(),
-        connected=False,
+        connected=True,
         ready=True,
     )
     room.seats[3] = SeatReservation(
@@ -1910,7 +1932,7 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
         reconnect_token="token-3",
         player_session_id=4,
         websocket=_RecordingWebSocket(),
-        connected=False,
+        connected=True,
         ready=True,
     )
     room.match_state = MatchState(
@@ -1954,7 +1976,11 @@ async def test_start_next_round_rotates_dealer_and_keeps_match_scores(monkeypatc
     )
     service._rooms["ROOM99"] = room
 
-    response = await service.start_next_round(table_code="ROOM99", websocket=websocket)
+    response = await _confirm_continue_action_for_all_players(
+        service,
+        room,
+        action_id="start_next_round",
+    )
 
     assert response["type"] == "room_snapshot"
     assert response["payload"]["phase"] == "playing"
@@ -2182,7 +2208,11 @@ async def test_start_next_round_rotates_dealer_after_dealer_self_draw(monkeypatc
     )
     service._rooms["ROOM100"] = room
 
-    response = await service.start_next_round(table_code="ROOM100", websocket=websocket)
+    response = await _confirm_continue_action_for_all_players(
+        service,
+        room,
+        action_id="start_next_round",
+    )
 
     assert response["payload"]["match_state"]["dealer_seat"] == 1
     assert response["payload"]["match_state"]["hand_number"] == 2
@@ -2227,7 +2257,11 @@ async def test_start_next_round_advances_round_wind_after_fourth_hand_draw(monke
     )
     service._rooms["ROOM101"] = room
 
-    response = await service.start_next_round(table_code="ROOM101", websocket=websocket)
+    response = await _confirm_continue_action_for_all_players(
+        service,
+        room,
+        action_id="start_next_round",
+    )
 
     assert response["payload"]["match_state"]["prevailing_wind"] == "south"
     assert response["payload"]["match_state"]["hand_number"] == 1
@@ -2270,7 +2304,11 @@ async def test_start_next_round_finishes_match_after_north_four(monkeypatch):
     )
     service._rooms["ROOM102"] = room
 
-    response = await service.start_next_round(table_code="ROOM102", websocket=websocket)
+    response = await _confirm_continue_action_for_all_players(
+        service,
+        room,
+        action_id="start_next_round",
+    )
 
     assert response["payload"]["phase"] == "finished"
     assert response["payload"]["match_state"]["match_finished"] is True
@@ -2394,7 +2432,14 @@ async def test_restart_match_resets_match_state_after_finish(monkeypatch):
     )
     service._rooms["ROOM77"] = room
 
-    response = await service.restart_match(table_code="ROOM77", websocket=websocket)
+    for seat in range(1, 4):
+        room.seats[seat].connected = True
+
+    response = await _confirm_continue_action_for_all_players(
+        service,
+        room,
+        action_id="restart_match",
+    )
 
     assert response == {"type": "restart_match_accepted", "payload": {}}
     assert room.phase == "playing"

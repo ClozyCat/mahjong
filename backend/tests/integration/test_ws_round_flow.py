@@ -628,8 +628,11 @@ def test_finished_room_can_restart_match(test_app, monkeypatch) -> None:
             last_completed_round_id="done",
         )
 
-        sockets[0].send_json({"type": "restart_match", "payload": {}})
-        restart_snapshot = sockets[0].receive_json()
+        for ws in sockets:
+            ws.send_json({"type": "restart_match", "payload": {}})
+        restart_snapshot = None
+        for _ in sockets:
+            restart_snapshot = sockets[0].receive_json()
 
     assert restart_snapshot["type"] == "room_snapshot"
     assert restart_snapshot["payload"]["phase"] == "playing"
