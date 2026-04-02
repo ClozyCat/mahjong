@@ -829,6 +829,107 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
+  it('does not replay the draw callout after the next round starts', () => {
+    vi.useFakeTimers();
+
+    const { rerender, container } = renderBattleScreen(
+      createBattleViewModel({
+        result: null,
+      }),
+    );
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          actionEffect: null,
+          result: {
+            title: '本局结算',
+            summary: '本局流局，等待下一局',
+            fanTotal: null,
+            winnerSeat: null,
+            discarderSeat: null,
+            winType: 'draw',
+            winTypeLabel: '流局',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [],
+            scoreDeltaBySeat: {
+              bottom: 0,
+              left: 0,
+              top: 0,
+              right: 0,
+            },
+            seats: [
+              { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
+              { seat: 'left', name: 'Player Left', score: 24300, delta: 0 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--draw')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.getByText('本局结算')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout--draw')).toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'watching',
+          phaseLabel: 'playing',
+          promptText: '新一局开始',
+          result: null,
+          actionEffect: null,
+          lastDiscard: null,
+          lastDiscardSeat: null,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--draw')).toBeNull();
+    expect(screen.queryByText('流局')).toBeNull();
+    vi.useRealTimers();
+  });
+
   it('returns an unclaimed discard to the river 1.5 seconds after the next turn begins', () => {
     vi.useFakeTimers();
 
@@ -1503,6 +1604,105 @@ describe('BattleScreen', () => {
 
     expect(container.querySelector('.table-stage__action-callout--exit')).toBeNull();
     expect(screen.getByText('和')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('does not replay a stale hu callout after settlement and next round rerenders', () => {
+    vi.useFakeTimers();
+
+    const { rerender, container } = renderBattleScreen(
+      createBattleViewModel({
+        actionEffect: {
+          key: 'hu-1',
+          label: '和',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'hu',
+        },
+        result: null,
+      }),
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--hu')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(container.querySelector('.table-stage__action-callout--hu')).toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          actionEffect: null,
+          result: {
+            title: '本局结算',
+            summary: '荣和，等待下一局',
+            fanTotal: 8,
+            winnerSeat: 'right',
+            discarderSeat: 'left',
+            winType: 'discard',
+            winTypeLabel: '荣和',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            scoreDeltaBySeat: {
+              left: -8,
+              right: 8,
+            },
+            seats: [
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--hu')).toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'watching',
+          phaseLabel: 'playing',
+          promptText: '新一局开始',
+          result: null,
+          actionEffect: null,
+          lastDiscard: null,
+          lastDiscardSeat: null,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--hu')).toBeNull();
     vi.useRealTimers();
   });
 

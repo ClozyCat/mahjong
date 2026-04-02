@@ -102,6 +102,7 @@ export function TableStage({
   const activeActionCalloutTimerRef = useRef<number | null>(null);
   const exitingActionCalloutTimerRef = useRef<number | null>(null);
   const trackedSpotlightKeyRef = useRef<string | null>(null);
+  const consumedActionCalloutKeyRef = useRef<string | null>(null);
   const consumedQuickChatKeyRef = useRef<string | null>(quickChatEvent?.key ?? null);
   const barrageRemovalTimersRef = useRef<Map<string, number>>(new Map());
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
@@ -184,6 +185,10 @@ export function TableStage({
       return;
     }
 
+    if (consumedActionCalloutKeyRef.current === actionCalloutKey) {
+      return;
+    }
+
     if (currentActionCallout?.key === actionCalloutKey) {
       return;
     }
@@ -197,6 +202,7 @@ export function TableStage({
       activeActionCalloutTimerRef.current = null;
     }
 
+    consumedActionCalloutKeyRef.current = actionCalloutKey;
     setActiveActionCallout(nextActionCallout);
 
     if (nextActionCallout) {

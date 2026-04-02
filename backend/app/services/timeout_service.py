@@ -38,7 +38,7 @@ class TimeoutResolution:
 def schedule_active_turn_timeout(
     *,
     state: RoundState,
-    drawn_tile_id: str,
+    drawn_tile_id: str | None,
     now: datetime | None = None,
 ) -> PendingTimeout:
     return PendingTimeout(
@@ -117,13 +117,17 @@ def _resolve_active_turn_timeout(
 ) -> TimeoutResolution:
     if pending_timeout.seat_index != state.current_actor:
         raise ValueError("Timeout seat no longer matches current actor")
-    if pending_timeout.drawn_tile_id is None:
-        raise ValueError("Active turn timeout requires the most recently drawn tile")
+    tile_id = pending_timeout.drawn_tile_id
+    if tile_id is None:
+        concealed_tiles = state.players[state.current_actor].concealed_tiles
+        if not concealed_tiles:
+            raise ValueError("Active turn timeout requires at least one discardable tile")
+        tile_id = concealed_tiles[-1].tile_id
 
     next_state, events = discard_tile(
         state,
         seat=state.current_actor,
-        tile_id=pending_timeout.drawn_tile_id,
+        tile_id=tile_id,
     )
     next_timeout = None
     if next_state.pending_action is not None:

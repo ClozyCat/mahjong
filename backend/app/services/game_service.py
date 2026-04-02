@@ -848,13 +848,13 @@ class GameService:
             room.pending_timeout = schedule_claim_window_timeout(state=room.round_state)
             return
 
-        drawn_tile_id = self._active_turn_drawn_tile_id(room.round_state)
-        if drawn_tile_id is None:
+        actor = room.round_state.current_actor
+        if not room.round_state.players[actor].concealed_tiles:
             room.pending_timeout = None
             return
         room.pending_timeout = schedule_active_turn_timeout(
             state=room.round_state,
-            drawn_tile_id=drawn_tile_id,
+            drawn_tile_id=self._active_turn_drawn_tile_id(room.round_state),
         )
 
     def _sync_timeout_task_locked(self, room: RoomState) -> None:
@@ -1248,9 +1248,19 @@ class GameService:
     def _active_turn_drawn_tile_id(self, state: RoundState) -> str | None:
         actor = state.current_actor
         concealed_tiles = state.players[actor].concealed_tiles
-        if len(concealed_tiles) % 3 != 2 or not concealed_tiles:
+        if not concealed_tiles:
             return None
-        return concealed_tiles[-1].tile_id
+        last_action = state.last_action_context or {}
+        if last_action.get("kind") not in {"draw", "replacement_draw"}:
+            return None
+        if last_action.get("seat") != actor:
+            return None
+        tile_id = last_action.get("tile_id")
+        if not isinstance(tile_id, str):
+            return None
+        if not any(tile.tile_id == tile_id for tile in concealed_tiles):
+            return None
+        return tile_id
 
     def _peer_snapshot_updates_locked(
         self, room: RoomState, *, exclude_seat: int
@@ -1856,13 +1866,15 @@ class GameService:
                 options.append("kong")
             if can_declare_hu(room.round_state, local_seat, None):
                 options.append("hu")
-            return {
+            payload = {
                 "type": "active_turn",
                 "seat_index": local_seat,
                 "deadline_at": pending_timeout.deadline_at.isoformat(),
-                "drawn_tile_id": pending_timeout.drawn_tile_id,
                 "options": options,
             }
+            if pending_timeout.drawn_tile_id is not None:
+                payload["drawn_tile_id"] = pending_timeout.drawn_tile_id
+            return payload
 
         pending_action = room.round_state.pending_action or {}
         if pending_action.get("type") == "rob_kong_window":

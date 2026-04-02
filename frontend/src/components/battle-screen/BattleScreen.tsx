@@ -88,6 +88,7 @@ export function BattleScreen({
   useEffect(() => {
     const nextActionEffect = viewModel.actionEffect;
     if (!nextActionEffect?.key) {
+      setConsumedActionEffect(null);
       return;
     }
 

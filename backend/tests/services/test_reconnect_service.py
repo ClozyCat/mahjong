@@ -128,6 +128,58 @@ def test_active_turn_timeout_auto_discards_most_recently_drawn_tile() -> None:
     )
 
 
+def test_active_turn_timeout_discards_last_concealed_tile_when_no_drawn_tile_is_marked() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    state = RoundState(
+        round_id="round-claim-discard-timeout",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(
+                    _make_suit_tile("w3", "w3#keep"),
+                    _make_suit_tile("w7", "w7#fallback"),
+                ),
+                melds=((_make_suit_tile("b2", "b2#m1"), _make_suit_tile("b3", "b3#m2"), _make_suit_tile("b4", "b4#m3")),),
+                flowers=(),
+                discards=(),
+            ),
+        )
+        + tuple(
+            PlayerState(seat=seat, concealed_tiles=(), melds=(), flowers=(), discards=())
+            for seat in range(1, 4)
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context={
+            "kind": "discard",
+            "seat": 3,
+            "tile_id": "b4#discard",
+            "from_kong_replacement": False,
+            "was_last_live_tile": False,
+            "was_last_discard": False,
+        },
+    )
+
+    pending_timeout = schedule_active_turn_timeout(
+        state=state,
+        drawn_tile_id=None,
+        now=now,
+    )
+
+    resolution = resolve_timeout(state=state, pending_timeout=pending_timeout)
+
+    assert resolution.messages[0]["payload"]["event_type"] == "tile_discarded"
+    assert resolution.messages[0]["payload"]["event"]["tile_id"] == "w7#fallback"
+    assert [tile.tile_id for tile in resolution.state.players[0].concealed_tiles] == ["w3#keep"]
+
+
 def test_claim_window_timeout_auto_passes_unresolved_claims() -> None:
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     discard = _make_suit_tile("t3", "t3#discard")

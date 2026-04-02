@@ -144,6 +144,58 @@ def _make_suit_tile(tile_key: str, tile_id: str) -> Tile:
     )
 
 
+def test_active_turn_after_claim_keeps_prompt_without_marking_a_drawn_tile() -> None:
+    service = GameService(sessionmaker())
+    room = RoomState(table_code="ROOM-CLAIM-ACTIVE", phase="playing")
+    room.round_state = RoundState(
+        round_id="round-claim-active",
+        dealer_seat=0,
+        current_actor=1,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(seat=0, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(
+                seat=1,
+                concealed_tiles=(
+                    _make_suit_tile("w3", "w3#0"),
+                    _make_suit_tile("w7", "w7#1"),
+                ),
+                melds=((_make_suit_tile("b2", "b2#m1"), _make_suit_tile("b3", "b3#m2"), _make_suit_tile("b4", "b4#m3")),),
+                flowers=(),
+                discards=(),
+            ),
+            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": [], "opening_flowers_completed": True},
+        last_action_context={
+            "kind": "discard",
+            "seat": 0,
+            "tile_id": "b4#discard",
+            "from_kong_replacement": False,
+            "was_last_live_tile": False,
+            "was_last_discard": False,
+        },
+    )
+
+    service._advance_round_locked(room)
+
+    assert room.pending_timeout is not None
+    assert room.pending_timeout.kind == "active_turn"
+    assert room.pending_timeout.drawn_tile_id is None
+    assert service._private_pending_action(room=room, local_seat=1) == {
+        "type": "active_turn",
+        "seat_index": 1,
+        "deadline_at": room.pending_timeout.deadline_at.isoformat(),
+        "options": ["discard"],
+    }
+
+
 def _make_settlement_room(
     *,
     table_code: str,
