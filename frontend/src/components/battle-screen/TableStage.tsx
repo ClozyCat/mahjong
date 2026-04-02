@@ -941,7 +941,7 @@ function getQuickChatItemStyle(seat: Seat, index: number): CSSProperties {
   } as CSSProperties;
 }
 
-function getQuickChatAngles(seat: Seat) {
+function getQuickChatAngles(seat: Seat): number[] {
   if (seat === 'left') {
     return getQuickChatAngles('right').map((angle) => mirrorAngleHorizontally(angle));
   }
