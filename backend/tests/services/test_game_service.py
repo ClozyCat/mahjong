@@ -854,6 +854,131 @@ async def test_ai_mode_can_fill_a_waiting_seat_with_default_bot(monkeypatch):
     assert room.seats[1].ai_controller_seat == 0
 
 
+@pytest.mark.asyncio
+async def test_ai_mode_uses_openai_compatible_response_during_active_turn(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_auto_advance_bot_seats_locked", lambda _room: [])
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_bot_action_task_locked", lambda _room: None)
+
+    captured_request: dict[str, object] = {}
+
+    async def fake_choose_action(*, config, seat_index, room_mode, room_snapshot):
+        captured_request.update(
+            {
+                "config": config,
+                "seat_index": seat_index,
+                "room_mode": room_mode,
+                "room_snapshot": room_snapshot,
+            }
+        )
+        return BotDecision(action_type="discard", tile_ids=["w1#1"])
+
+    monkeypatch.setattr(service._ai_client, "choose_action", fake_choose_action)
+
+    spectator = _RecordingWebSocket()
+    room = RoomState(table_code="ROOMAI03", phase="playing", mode="ai")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="AI 1",
+        reconnect_token=None,
+        player_session_id=-1,
+        connected=False,
+        ready=True,
+        is_bot=True,
+        seat_type="ai",
+        ai_status="ready",
+        ai_config=SimpleNamespace(
+            api_key="sk-test",
+            base_url="https://example.invalid/v1",
+            model="gpt-test",
+        ),
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="Spectator",
+        reconnect_token="token-1",
+        player_session_id=1,
+        websocket=spectator,
+        connected=True,
+        ready=True,
+    )
+    room.round_state = RoundState(
+        round_id="round-ai-active",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=(_make_suit_tile("w1", "w1#1"),),
+                melds=(),
+                flowers=(),
+                discards=(),
+            ),
+            PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=12,
+        score_trackers={"kong_entries": []},
+        last_action_context={
+            "kind": "draw",
+            "seat": 0,
+            "tile_id": "w1#1",
+            "from_kong_replacement": False,
+            "was_last_live_tile": False,
+            "was_last_discard": False,
+        },
+        round_wind="east",
+    )
+    room.pending_timeout = PendingTimeout(
+        kind="active_turn",
+        seat_index=0,
+        deadline_at=datetime.now(timezone.utc) + timedelta(seconds=30),
+        drawn_tile_id="w1#1",
+    )
+    expected_key = service._pending_bot_action_key_locked(room)
+    assert expected_key is not None
+    room.bot_action_key = expected_key
+    service._rooms["ROOMAI03"] = room
+
+    await service._bot_action_runner(
+        "ROOMAI03",
+        expected_key=expected_key,
+        delay=0.0,
+    )
+
+    assert captured_request["seat_index"] == 0
+    assert captured_request["room_mode"] == "ai"
+    assert captured_request["config"] == room.seats[0].ai_config
+    request_snapshot = captured_request["room_snapshot"]
+    assert isinstance(request_snapshot, dict)
+    assert request_snapshot["table_code"] == "ROOMAI03"
+    assert request_snapshot["local_seat"] == 0
+    assert request_snapshot["reconnect_token"] is None
+    assert request_snapshot["private_state"]["pending_action"]["type"] == "active_turn"
+    assert request_snapshot["private_state"]["pending_action"]["options"] == ["discard"]
+    assert request_snapshot["private_state"]["players"][0]["concealed_tiles"] == [
+        {"tile_id": "w1#1", "tile_key": "w1"}
+    ]
+
+    assert room.round_state is not None
+    assert room.round_state.last_discard is not None
+    assert room.round_state.last_discard.tile_id == "w1#1"
+    assert spectator.messages[0]["type"] == "round_event"
+    assert spectator.messages[0]["payload"]["event_type"] == "tile_discarded"
+    assert spectator.messages[0]["payload"]["event"]["seat"] == 0
+    assert spectator.messages[0]["payload"]["event"]["tile_id"] == "w1#1"
+    assert spectator.messages[1]["type"] == "room_snapshot"
+    assert spectator.messages[1]["payload"]["private_state"]["last_discard"] == "w1"
+
+
 def test_room_ready_to_start_accepts_ready_ai_seats_without_a_socket():
     service = GameService(sessionmaker())
     room = RoomState(table_code="ROOMAI03", phase="waiting", mode="ai")

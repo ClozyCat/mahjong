@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import Engine
@@ -19,6 +21,15 @@ DEV_CORS_ORIGINS = [
 ]
 
 
+def get_dev_cors_origins() -> list[str]:
+    origins = list(DEV_CORS_ORIGINS)
+    extra_origins = os.getenv("MAHJONG_DEV_CORS_ORIGINS", "")
+    for origin in (value.strip() for value in extra_origins.split(",")):
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -28,7 +39,7 @@ def create_app(
     app = FastAPI()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=DEV_CORS_ORIGINS,
+        allow_origins=get_dev_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

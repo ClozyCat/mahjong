@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1160,6 +1160,91 @@ describe('App', () => {
       type: 'quick_chat',
       payload: { target_seat: 1, emoji: '🀄' },
     });
+  });
+
+  it('reserves an AI seat and submits OpenAI-compatible credentials from the seat dialog', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          mode: 'ai',
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+        },
+      });
+    });
+
+    const addAiButton = screen
+      .getAllByRole('button', { name: /AI/ })
+      .find((button) => button.textContent?.includes('+'));
+
+    expect(addAiButton).toBeDefined();
+    await user.click(addAiButton!);
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(screen.getByLabelText('OpenAI API Key'), 'sk-test');
+    await user.type(screen.getByLabelText('Base URL'), 'https://example.invalid/v1');
+    await user.type(screen.getByPlaceholderText('gpt-4.1-mini'), 'gpt-test');
+    await user.click(within(dialog).getAllByRole('button')[1]);
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'reserve_ai_seat', payload: { seat_index: 2 } },
+      {
+        type: 'configure_ai_seat',
+        payload: {
+          seat_index: 2,
+          api_key: 'sk-test',
+          base_url: 'https://example.invalid/v1',
+          model: 'gpt-test',
+        },
+      },
+    ]);
+  });
+
+  it('can use the default bot from the AI seat dialog', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          mode: 'ai',
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+        },
+      });
+    });
+
+    const addAiButton = screen
+      .getAllByRole('button', { name: /AI/ })
+      .find((button) => button.textContent?.includes('+'));
+
+    expect(addAiButton).toBeDefined();
+    await user.click(addAiButton!);
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /BOT/ }));
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'reserve_ai_seat', payload: { seat_index: 2 } },
+      { type: 'use_default_bot', payload: { seat_index: 2 } },
+    ]);
   });
 
   it('renders a barrage line when a quick-chat broadcast arrives from the server', async () => {
