@@ -738,21 +738,6 @@ def _discard_plan_with_risk(
         speed_focus=style.speed_focus,
         fan_focus=style.fan_focus,
     )
-    if (
-        not state.enforce_minimum_eight_fan
-        and shanten == 1
-        and len(meld_tile_key_groups) <= 1
-        and effective_tiles >= 6
-    ):
-        hand_score += _one_shanten_path_score(
-            [candidate.tile_key for candidate in remaining_tiles],
-            open_meld_count=len(meld_tile_key_groups),
-            visible_counts=visible_counts,
-            meld_tile_key_groups=meld_tile_key_groups,
-            seat_wind_key=_seat_wind_key(seat_index, state.dealer_seat),
-            round_wind_key=state.round_wind,
-            speed_focus=style.speed_focus,
-        )
     return _DiscardPlan(
         tile_id=tile_id,
         shanten=shanten,
@@ -1083,25 +1068,6 @@ def _pattern_potential_score(
     return score
 
 
-def _speed_pattern_bonus(
-    tile_key: str,
-    *,
-    seat_wind_key: str | None,
-    round_wind_key: str | None,
-) -> float:
-    if tile_key in DRAGON_KEYS or tile_key in {seat_wind_key, round_wind_key}:
-        return 1.1
-    parsed = _parse_suit_rank(tile_key)
-    if parsed is None:
-        return 0.2
-    _suit, rank = parsed
-    if 3 <= rank <= 7:
-        return 0.8
-    if rank in {2, 8}:
-        return 0.45
-    return 0.2
-
-
 def _improvement_score(
     tile_keys: list[str],
     *,
@@ -1185,73 +1151,6 @@ def _tenpai_wait_score(
             continue
         total += available * (1.8 + wait_value * 0.35)
     return total
-
-
-def _one_shanten_path_score(
-    tile_keys: list[str],
-    *,
-    open_meld_count: int,
-    visible_counts: Counter[str] | None,
-    meld_tile_key_groups: tuple[tuple[str, ...], ...],
-    seat_wind_key: str | None,
-    round_wind_key: str | None,
-    speed_focus: float,
-) -> float:
-    counts = Counter(tile_keys)
-    total = 0.0
-    for draw_tile_key in ALL_TILE_KEYS:
-        available = _available_tile_count(
-            draw_tile_key,
-            hand_counts=counts,
-            visible_counts=visible_counts,
-        )
-        if available <= 0:
-            continue
-
-        drawn_tile_keys = [*tile_keys, draw_tile_key]
-        next_visible_counts = None
-        if visible_counts is not None:
-            next_visible_counts = visible_counts.copy()
-            next_visible_counts[draw_tile_key] += 1
-
-        best_wait_width = 0
-        seen_signatures: set[tuple[str, ...]] = set()
-        for discard_index, _discarded_tile_key in enumerate(drawn_tile_keys):
-            next_tile_keys = drawn_tile_keys[:discard_index] + drawn_tile_keys[discard_index + 1 :]
-            next_signature = tuple(sorted(next_tile_keys))
-            if next_signature in seen_signatures:
-                continue
-            seen_signatures.add(next_signature)
-
-            next_shanten = _best_shanten_cached(
-                next_signature,
-                open_meld_count=open_meld_count,
-            )
-            if next_shanten != 0:
-                continue
-            wait_width = _effective_tile_count(
-                next_tile_keys,
-                open_meld_count=open_meld_count,
-                current_shanten=0,
-                visible_counts=next_visible_counts,
-            )
-            if wait_width > best_wait_width:
-                best_wait_width = wait_width
-
-        if best_wait_width <= 0:
-            continue
-
-        draw_shape_bonus = _speed_pattern_bonus(
-            draw_tile_key,
-            seat_wind_key=seat_wind_key,
-            round_wind_key=round_wind_key,
-        )
-        total += available * (
-            best_wait_width * 0.34
-            + draw_shape_bonus * 0.2
-        )
-
-    return (total / 6.0) * max(0.9, speed_focus)
 
 
 def _qualifying_wait_value(
