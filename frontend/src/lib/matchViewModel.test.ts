@@ -291,6 +291,35 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actions.find((action) => action.id === 'ready')?.label).toBe('取消准备');
   });
 
+  it('keeps a disconnected waiting player seated but blocks match start until they reconnect', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
+            { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+            { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
+            { seat_index: 3, nickname: 'Player D', connected: false, ready: true },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls).toMatchObject({
+      occupiedSeats: 4,
+      canStart: false,
+    });
+    expect(viewModel.players.find((player) => player.name === 'Player D')).toMatchObject({
+      connected: false,
+      statusText: '等待重连中',
+    });
+    expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(false);
+  });
+
   it('maps a local active turn into selectable discard controls', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 

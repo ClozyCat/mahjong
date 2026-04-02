@@ -58,6 +58,7 @@ BOT_ACTION_DELAY_MIN_SECONDS = 0.5
 BOT_ACTION_DELAY_MAX_SECONDS = 1.5
 ALLOWED_QUICK_CHAT_EMOJIS = ("😄", "😭", "🀄", "☠️", "😡", "🤮")
 CONTINUE_ACTION_AUTO_ADVANCE_SECONDS = 30
+DISCONNECT_GRACE_SECONDS = 120
 
 
 class LoopSafeLock:
@@ -125,6 +126,7 @@ class SeatReservation:
     is_bot: bool = False
     bot_persona: BotPersona | None = None
     bot_aggression: float | None = None
+    disconnect_deadline_at: datetime | None = None
 
 
 @dataclass
@@ -141,6 +143,8 @@ class RoomState:
     continue_action_auto_advance_deadline_at: datetime | None = None
     pending_timeout: PendingTimeout | None = None
     timeout_task: asyncio.Task[None] | None = None
+    disconnect_timeout_task: asyncio.Task[None] | None = None
+    disconnect_timeout_key: tuple[int, datetime] | None = None
     continue_action_task: asyncio.Task[None] | None = None
     bot_action_task: asyncio.Task[None] | None = None
     bot_action_key: tuple[str, int, int, str | None, tuple[int, ...]] | None = None
@@ -262,9 +266,11 @@ class GameService:
             )
             reservation.websocket = websocket
             reservation.connected = True
+            reservation.disconnect_deadline_at = None
             self._mark_connected(player_session_id=reservation.player_session_id)
             self._reconcile_continue_action_locked(room)
             self._sync_continue_action_task_locked(room)
+            self._sync_disconnect_timeout_task_locked(room)
             self._persist_room_state_locked(room)
 
             snapshot = self._room_snapshot(room=room, local_seat=reservation.seat_index)
@@ -492,6 +498,7 @@ class GameService:
                 self._mark_disconnected(player_session_id=reservation.player_session_id)
 
                 if room.seats:
+                    self._sync_disconnect_timeout_task_locked(room)
                     self._persist_room_state_locked(room)
                     peer_updates = self._peer_snapshot_updates_locked(
                         room, exclude_seat=owned_seat
@@ -504,6 +511,7 @@ class GameService:
                 reservation.connected = True
                 reservation.ready = True
                 reservation.is_bot = True
+                reservation.disconnect_deadline_at = None
                 self._ensure_bot_profile(reservation)
                 if reservation.reconnect_token:
                     self._consume_reconnect_token(reservation.reconnect_token)
@@ -519,6 +527,7 @@ class GameService:
                         self._sync_timeout_task_locked(room)
                         self._sync_bot_action_task_locked(room)
                     self._sync_continue_action_task_locked(room)
+                    self._sync_disconnect_timeout_task_locked(room)
                     self._persist_room_state_locked(room)
                     broadcast_targets = self._connected_websockets_locked(room)
                     snapshot_targets = self._snapshot_targets_locked(room)
@@ -559,17 +568,18 @@ class GameService:
                     disconnected_seat = seat_index
                     reservation.websocket = None
                     reservation.connected = False
+                    reservation.disconnect_deadline_at = datetime.now(
+                        timezone.utc
+                    ) + timedelta(seconds=DISCONNECT_GRACE_SECONDS)
                     self._mark_disconnected(player_session_id=reservation.player_session_id)
-                    if self._should_terminate_unattended_room_locked(room):
-                        self._close_room_locked(room)
-                    else:
-                        self._reconcile_continue_action_locked(room)
-                        self._sync_continue_action_task_locked(room)
-                        self._persist_room_state_locked(room)
-                        peer_updates = self._peer_snapshot_updates_locked(
-                            room, exclude_seat=seat_index
-                        )
-                        prompt_targets = self._prompt_targets_locked(room)
+                    self._reconcile_continue_action_locked(room)
+                    self._sync_continue_action_task_locked(room)
+                    self._sync_disconnect_timeout_task_locked(room)
+                    self._persist_room_state_locked(room)
+                    peer_updates = self._peer_snapshot_updates_locked(
+                        room, exclude_seat=seat_index
+                    )
+                    prompt_targets = self._prompt_targets_locked(room)
                     break
 
             if disconnected_seat is None:
@@ -645,6 +655,78 @@ class GameService:
             )
             if resolution.room_snapshot_required:
                 await self._send_snapshot_targets(snapshot_targets)
+            await self._send_prompt_targets(prompt_targets)
+
+    async def _process_due_disconnect_timeout(
+        self,
+        table_code: str,
+        *,
+        seat_index: int,
+        expected_deadline_at: datetime,
+    ) -> None:
+        room: RoomState | None = None
+        messages: list[dict] = []
+        snapshot_targets: list[tuple[WebSocket, dict | list[dict]]] = []
+        prompt_targets: list[tuple[WebSocket, dict]] = []
+        broadcast_targets: list[WebSocket] = []
+
+        async with self._lock:
+            room = self._get_or_restore_room_locked(table_code)
+            if room is None:
+                return
+
+            reservation = room.seats.get(seat_index)
+            if reservation is None:
+                return
+            if reservation.disconnect_deadline_at != expected_deadline_at:
+                return
+            if expected_deadline_at > datetime.now(timezone.utc):
+                return
+
+            reservation.disconnect_deadline_at = None
+
+            if room.round_state is None:
+                if reservation.reconnect_token:
+                    self._consume_reconnect_token(reservation.reconnect_token)
+                room.seats.pop(seat_index, None)
+
+                if room.seats:
+                    self._sync_disconnect_timeout_task_locked(room)
+                    self._persist_room_state_locked(room)
+                    snapshot_targets = self._snapshot_targets_locked(room)
+                else:
+                    self._close_room_locked(room)
+            else:
+                reservation.websocket = None
+                reservation.connected = True
+                reservation.ready = True
+                reservation.is_bot = True
+                self._ensure_bot_profile(reservation)
+                if reservation.reconnect_token:
+                    self._consume_reconnect_token(reservation.reconnect_token)
+                    reservation.reconnect_token = None
+
+                if self._should_terminate_unattended_room_locked(room):
+                    self._close_room_locked(room)
+                else:
+                    continue_action_completed = self._reconcile_continue_action_locked(room)
+                    if not continue_action_completed:
+                        messages = self._auto_advance_bot_seats_locked(room)
+                        self._sync_timeout_task_locked(room)
+                        self._sync_bot_action_task_locked(room)
+                    self._sync_continue_action_task_locked(room)
+                    self._sync_disconnect_timeout_task_locked(room)
+                    self._persist_room_state_locked(room)
+                    broadcast_targets = self._connected_websockets_locked(room)
+                    snapshot_targets = self._snapshot_targets_locked(room)
+                    prompt_targets = self._prompt_targets_locked(room)
+
+        if room is None:
+            return
+
+        async with room.send_lock:
+            await self._broadcast_messages(broadcast_targets, messages)
+            await self._send_snapshot_targets(snapshot_targets)
             await self._send_prompt_targets(prompt_targets)
 
     async def handle_action_request(
@@ -1261,6 +1343,60 @@ class GameService:
             return round(random.uniform(0.15, 0.45), 2)
         return round(random.uniform(0.35, 0.72), 2)
 
+    def _pending_disconnect_timeout_key_locked(
+        self,
+        room: RoomState,
+    ) -> tuple[int, datetime] | None:
+        pending: tuple[int, datetime] | None = None
+        for seat_index, reservation in sorted(room.seats.items()):
+            deadline_at = reservation.disconnect_deadline_at
+            if (
+                reservation.websocket is not None
+                or reservation.connected
+                or reservation.is_bot
+                or deadline_at is None
+            ):
+                continue
+            if pending is None or deadline_at < pending[1]:
+                pending = (seat_index, deadline_at)
+        return pending
+
+    def _sync_disconnect_timeout_task_locked(self, room: RoomState) -> None:
+        current_task = asyncio.current_task()
+        desired_key = self._pending_disconnect_timeout_key_locked(room)
+
+        if desired_key is None:
+            if (
+                room.disconnect_timeout_task is not None
+                and room.disconnect_timeout_task is not current_task
+            ):
+                room.disconnect_timeout_task.cancel()
+            room.disconnect_timeout_task = None
+            room.disconnect_timeout_key = None
+            return
+
+        if (
+            room.disconnect_timeout_task is not None
+            and not room.disconnect_timeout_task.done()
+            and room.disconnect_timeout_key == desired_key
+        ):
+            return
+
+        if (
+            room.disconnect_timeout_task is not None
+            and room.disconnect_timeout_task is not current_task
+        ):
+            room.disconnect_timeout_task.cancel()
+
+        room.disconnect_timeout_key = desired_key
+        room.disconnect_timeout_task = asyncio.create_task(
+            self._disconnect_timeout_runner(
+                room.table_code,
+                seat_index=desired_key[0],
+                deadline_at=desired_key[1],
+            )
+        )
+
     async def _timeout_runner(
         self,
         table_code: str,
@@ -1275,6 +1411,24 @@ class GameService:
         except asyncio.CancelledError:
             return
         await self._process_due_timeout(table_code, expected_timeout=pending_timeout)
+
+    async def _disconnect_timeout_runner(
+        self,
+        table_code: str,
+        *,
+        seat_index: int,
+        deadline_at: datetime,
+    ) -> None:
+        delay = max(0.0, (deadline_at - datetime.now(timezone.utc)).total_seconds())
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        await self._process_due_disconnect_timeout(
+            table_code,
+            seat_index=seat_index,
+            expected_deadline_at=deadline_at,
+        )
 
     async def _continue_action_runner(
         self,
@@ -1341,8 +1495,11 @@ class GameService:
         ]
 
     def _should_terminate_unattended_room_locked(self, room: RoomState) -> bool:
-        return len(room.seats) == MAX_SEATS and not any(
-            reservation.websocket is not None for reservation in room.seats.values()
+        if any(reservation.websocket is not None for reservation in room.seats.values()):
+            return False
+        return all(
+            reservation.is_bot or reservation.reconnect_token is None
+            for reservation in room.seats.values()
         )
 
     def _prompt_targets_locked(
@@ -1618,6 +1775,7 @@ class GameService:
 
         self._rooms[table_code] = room
         self._sync_timeout_task_locked(room)
+        self._sync_disconnect_timeout_task_locked(room)
         self._sync_continue_action_task_locked(room)
         self._sync_bot_action_task_locked(room)
         return room
@@ -1646,6 +1804,10 @@ class GameService:
         if room.timeout_task is not None:
             room.timeout_task.cancel()
             room.timeout_task = None
+        if room.disconnect_timeout_task is not None:
+            room.disconnect_timeout_task.cancel()
+            room.disconnect_timeout_task = None
+        room.disconnect_timeout_key = None
         if room.continue_action_task is not None:
             room.continue_action_task.cancel()
             room.continue_action_task = None
@@ -2062,7 +2224,7 @@ class GameService:
 
     def _room_ready_to_start_locked(self, room: RoomState) -> bool:
         return len(room.seats) == MAX_SEATS and all(
-            reservation.ready for reservation in room.seats.values()
+            reservation.ready and reservation.connected for reservation in room.seats.values()
         )
 
     def _start_match_locked(self, room: RoomState) -> None:
@@ -2111,6 +2273,11 @@ class GameService:
                     "is_bot": reservation.is_bot,
                     "bot_persona": reservation.bot_persona,
                     "bot_aggression": reservation.bot_aggression,
+                    "disconnect_deadline_at": (
+                        reservation.disconnect_deadline_at.isoformat()
+                        if reservation.disconnect_deadline_at is not None
+                        else None
+                    ),
                 }
                 for seat_index, reservation in sorted(room.seats.items())
             ],
@@ -2148,6 +2315,11 @@ class GameService:
                 is_bot=seat_payload.get("is_bot", False),
                 bot_persona=seat_payload.get("bot_persona"),
                 bot_aggression=seat_payload.get("bot_aggression"),
+                disconnect_deadline_at=(
+                    datetime.fromisoformat(seat_payload["disconnect_deadline_at"])
+                    if seat_payload.get("disconnect_deadline_at") is not None
+                    else None
+                ),
             )
 
         room.match_state = self._deserialize_match_state(payload.get("match_state"))

@@ -779,9 +779,10 @@ async def test_leave_table_closes_unattended_active_room(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_disconnect_closes_room_when_all_four_seats_are_offline(monkeypatch):
+async def test_disconnect_keeps_room_open_while_the_grace_period_is_active(monkeypatch):
     service = GameService(sessionmaker())
     monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_disconnect_timeout_task_locked", lambda _room: None)
     disconnected_sessions: list[int] = []
     monkeypatch.setattr(
         service,
@@ -829,8 +830,129 @@ async def test_disconnect_closes_room_when_all_four_seats_are_offline(monkeypatc
     await service.disconnect("ROOM25C", leaver)
 
     assert disconnected_sessions == [1]
-    assert closed_rooms == ["ROOM25C"]
-    assert "ROOM25C" not in service._rooms
+    assert closed_rooms == []
+    assert service._rooms["ROOM25C"] is room
+    assert room.seats[0].connected is False
+    assert room.seats[0].disconnect_deadline_at is not None
+
+
+@pytest.mark.asyncio
+async def test_disconnect_timeout_removes_waiting_seat_after_grace_period(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_disconnect_timeout_task_locked", lambda _room: None)
+    consumed_tokens: list[str] = []
+    monkeypatch.setattr(service, "_consume_reconnect_token", lambda token: consumed_tokens.append(token))
+
+    peer = _RecordingWebSocket()
+    expired_deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+    room = RoomState(table_code="ROOM25D", phase="waiting")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=None,
+        connected=False,
+        ready=True,
+        disconnect_deadline_at=expired_deadline,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="P1",
+        reconnect_token="token-1",
+        player_session_id=2,
+        websocket=peer,
+        connected=True,
+        ready=False,
+    )
+    service._rooms["ROOM25D"] = room
+
+    await service._process_due_disconnect_timeout(
+        "ROOM25D",
+        seat_index=0,
+        expected_deadline_at=expired_deadline,
+    )
+
+    assert 0 not in room.seats
+    assert consumed_tokens == ["token-0"]
+    assert peer.messages[0]["type"] == "room_snapshot"
+    assert peer.messages[0]["payload"]["seats"] == [
+        {
+            "seat_index": 1,
+            "nickname": "P1",
+            "connected": True,
+            "ready": False,
+            "is_bot": False,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_disconnect_timeout_turns_a_started_seat_into_a_bot(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_disconnect_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_bot_action_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_continue_action_task_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_auto_advance_bot_seats_locked", lambda _room: [])
+    monkeypatch.setattr(service, "_roll_bot_persona", lambda: "balanced")
+    monkeypatch.setattr(service, "_roll_bot_aggression", lambda _persona=None: 0.37)
+    consumed_tokens: list[str] = []
+    monkeypatch.setattr(service, "_consume_reconnect_token", lambda token: consumed_tokens.append(token))
+
+    peer = _RecordingWebSocket()
+    expired_deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+    room = RoomState(table_code="ROOM25E", phase="playing")
+    room.seats[0] = SeatReservation(
+        seat_index=0,
+        nickname="P0",
+        reconnect_token="token-0",
+        player_session_id=1,
+        websocket=None,
+        connected=False,
+        ready=True,
+        disconnect_deadline_at=expired_deadline,
+    )
+    room.seats[1] = SeatReservation(
+        seat_index=1,
+        nickname="P1",
+        reconnect_token="token-1",
+        player_session_id=2,
+        websocket=peer,
+        connected=True,
+        ready=True,
+    )
+    room.round_state = initialize_round(
+        seed=123,
+        dealer_seat=0,
+        round_id="round-25e",
+        round_wind="east",
+    )
+    service._rooms["ROOM25E"] = room
+
+    await service._process_due_disconnect_timeout(
+        "ROOM25E",
+        seat_index=0,
+        expected_deadline_at=expired_deadline,
+    )
+
+    assert room.seats[0].connected is True
+    assert room.seats[0].is_bot is True
+    assert room.seats[0].bot_persona == "balanced"
+    assert room.seats[0].bot_aggression == 0.37
+    assert room.seats[0].reconnect_token is None
+    assert room.seats[0].disconnect_deadline_at is None
+    assert consumed_tokens == ["token-0"]
+    assert peer.messages[0]["type"] == "room_snapshot"
+    assert peer.messages[0]["payload"]["seats"][0] == {
+        "seat_index": 0,
+        "nickname": "P0",
+        "connected": True,
+        "ready": True,
+        "is_bot": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -2191,6 +2313,36 @@ async def test_start_match_uses_random_initial_dealer(monkeypatch):
     assert room.round_state is not None
     assert room.round_state.dealer_seat == 2
     assert room.round_state.current_actor == 2
+
+
+@pytest.mark.asyncio
+async def test_start_match_rejects_when_a_waiting_player_is_disconnected(monkeypatch):
+    service = GameService(sessionmaker())
+    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
+    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
+
+    websocket = _RecordingWebSocket()
+    room = RoomState(table_code="ROOM70B", phase="waiting")
+    for seat in range(4):
+        room.seats[seat] = SeatReservation(
+            seat_index=seat,
+            nickname=f"P{seat}",
+            reconnect_token=f"token-{seat}",
+            player_session_id=seat + 1,
+            websocket=websocket if seat == 0 else _RecordingWebSocket(),
+            connected=True,
+            ready=True,
+        )
+    room.seats[3].connected = False
+    room.seats[3].websocket = None
+    service._rooms["ROOM70B"] = room
+
+    response = await service.start_match(table_code="ROOM70B", websocket=websocket)
+
+    assert response == {"type": "action_rejected", "payload": {"reason": "room_not_ready"}}
+    assert room.phase == "waiting"
+    assert room.match_state is None
+    assert room.round_state is None
 
 
 @pytest.mark.asyncio
