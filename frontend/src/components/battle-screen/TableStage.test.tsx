@@ -584,6 +584,65 @@ describe('TableStage', () => {
     expect(screen.queryByRole('dialog', { name: '国标麻将番种说明' })).toBeNull();
   });
 
+  it('keeps the fan guide dialog open when the backdrop is clicked', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        canLeaveTable
+        themeId="qiu-xiang"
+        themeLabel="秋香"
+        onLeaveTable={() => undefined}
+        onCycleTheme={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开国标麻将番种说明' }));
+
+    const dialog = screen.getByRole('dialog', { name: '国标麻将番种说明' });
+    const backdrop = document.querySelector('.fan-guide__backdrop');
+
+    expect(backdrop).not.toBeNull();
+    fireEvent.click(backdrop!);
+
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭番种说明' })).toBeInTheDocument();
+  });
+
+  it('keeps the fan guide dialog open when Escape is pressed', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        canLeaveTable
+        themeId="qiu-xiang"
+        themeLabel="秋香"
+        onLeaveTable={() => undefined}
+        onCycleTheme={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开国标麻将番种说明' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.getByRole('dialog', { name: '国标麻将番种说明' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭番种说明' })).toBeInTheDocument();
+  });
+
   it('shows a themed callout on the matching seat when a chow, pung, kong, or hu effect arrives', () => {
     const { container } = render(
       <TableStage

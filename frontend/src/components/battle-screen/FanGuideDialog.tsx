@@ -25,21 +25,6 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
     setPage(0);
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen) {
     return null;
   }
@@ -49,14 +34,8 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
   }
 
   return createPortal(
-    <div className="fan-guide__backdrop" role="presentation" onClick={onClose}>
-      <section
-        className="fan-guide__dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="国标麻将番种说明"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <div className="fan-guide__backdrop" role="presentation">
+      <section className="fan-guide__dialog" role="dialog" aria-modal="true" aria-label="国标麻将番种说明">
         <header className="fan-guide__header">
           <div className="fan-guide__title-block">
             <span className="fan-guide__eyebrow">国标麻将番种说明</span>
