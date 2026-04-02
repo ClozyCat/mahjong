@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { formatTileName } from '../../lib/tileNames';
 import type {
   BackendActionType,
   BattleActionView,
@@ -13,6 +14,7 @@ import { MahjongTile } from './MahjongTile';
 
 interface BottomActionDockProps {
   hand: BattleViewModel['localHand'];
+  readyHandInsight?: BattleViewModel['readyHandInsight'];
   claimCandidates: BattleViewModel['claimCandidates'];
   actions: BattleActionView[];
   isElevated: boolean;
@@ -28,6 +30,7 @@ interface BottomActionDockProps {
 
 export function BottomActionDock({
   hand,
+  readyHandInsight = null,
   claimCandidates,
   actions,
   isElevated,
@@ -42,6 +45,9 @@ export function BottomActionDock({
 }: BottomActionDockProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [isReadyHandPopoverHovered, setIsReadyHandPopoverHovered] = useState(false);
+  const [isReadyHandPopoverPinned, setIsReadyHandPopoverPinned] = useState(false);
+  const readyHandPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
   const hasDrawnTile = hand.some((tile) => tile.isDrawn);
   const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
@@ -74,6 +80,8 @@ export function BottomActionDock({
     );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
   const shouldShowCountdown = Boolean(promptCue) && remainingSeconds !== null;
+  const isReadyHandPopoverOpen =
+    Boolean(readyHandInsight) && (isReadyHandPopoverHovered || isReadyHandPopoverPinned);
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -93,6 +101,30 @@ export function BottomActionDock({
       window.clearInterval(timer);
     };
   }, [deadlineAt]);
+
+  useEffect(() => {
+    if (!isReadyHandPopoverPinned) {
+      return undefined;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!readyHandPopoverRef.current?.contains(event.target as Node)) {
+        setIsReadyHandPopoverPinned(false);
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [isReadyHandPopoverPinned]);
+
+  useEffect(() => {
+    if (readyHandInsight) {
+      return;
+    }
+
+    setIsReadyHandPopoverHovered(false);
+    setIsReadyHandPopoverPinned(false);
+  }, [readyHandInsight]);
 
   const content = (
     <>
@@ -198,6 +230,48 @@ export function BottomActionDock({
               )}
             </div>
             <div className="action-dock__info-rail">
+              {readyHandInsight ? (
+                <div
+                  ref={readyHandPopoverRef}
+                  className="action-dock__ready-hand-anchor"
+                  onMouseEnter={() => setIsReadyHandPopoverHovered(true)}
+                  onMouseLeave={() => setIsReadyHandPopoverHovered(false)}
+                >
+                  <button
+                    type="button"
+                    className={`action-dock__ready-hand-trigger ${
+                      isReadyHandPopoverOpen ? 'action-dock__ready-hand-trigger--open' : ''
+                    }`.trim()}
+                    aria-label={getReadyHandTriggerLabel(readyHandInsight)}
+                    aria-expanded={isReadyHandPopoverOpen}
+                    onClick={() => setIsReadyHandPopoverPinned((currentValue) => !currentValue)}
+                  >
+                    i
+                  </button>
+                  {isReadyHandPopoverOpen ? (
+                    <section
+                      className="action-dock__ready-hand-popover"
+                      aria-label={getReadyHandPopoverLabel(readyHandInsight)}
+                    >
+                      <div className="action-dock__ready-hand-popover-head">
+                        <strong>{getReadyHandPopoverTitle(readyHandInsight)}</strong>
+                        <span>{getReadyHandPopoverSummary(readyHandInsight)}</span>
+                      </div>
+                      <div className="action-dock__ready-hand-list" role="list">
+                        {readyHandInsight.waits.map((wait) => (
+                          <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
+                            <div className="action-dock__ready-hand-tile">
+                              <MahjongTile code={wait.code} variant="discard" className="action-dock__ready-hand-preview-tile" />
+                              <span>{formatTileName(wait.code, wait.code)}</span>
+                            </div>
+                            <strong>{wait.availableCount}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              ) : null}
               {shouldShowCountdown ? (
                 <div
                   className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
@@ -249,4 +323,26 @@ const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
 
 function isResponsePrompt(promptCue: BattlePromptView | null) {
   return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong' || promptCue?.kind === 'turn_kong';
+}
+
+function getReadyHandTriggerLabel(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
+  return readyHandInsight.source === 'selected_discard'
+    ? '查看打出当前选中牌后的听牌信息'
+    : '查看当前听牌信息';
+}
+
+function getReadyHandPopoverLabel(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
+  return readyHandInsight.source === 'selected_discard' ? '打出后听牌信息' : '当前听牌信息';
+}
+
+function getReadyHandPopoverTitle(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
+  if (readyHandInsight.source !== 'selected_discard' || !readyHandInsight.discardTileCode) {
+    return '当前听牌';
+  }
+
+  return `打出 ${formatTileName(readyHandInsight.discardTileCode, readyHandInsight.discardTileCode)} 后听牌`;
+}
+
+function getReadyHandPopoverSummary(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
+  return `${readyHandInsight.waits.length} 种可和牌 · 显示玩家视角剩余张数`;
 }

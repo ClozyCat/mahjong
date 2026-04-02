@@ -381,6 +381,18 @@ export interface ClaimCandidateView {
   isSelected: boolean;
 }
 
+export interface ReadyHandWaitView {
+  code: string;
+  availableCount: number;
+}
+
+export interface ReadyHandInsightView {
+  source: 'current' | 'selected_discard';
+  discardTileId: string | null;
+  discardTileCode: string | null;
+  waits: ReadyHandWaitView[];
+}
+
 export interface ResultSeatView {
   seat: Seat;
   name: string;
@@ -468,6 +480,7 @@ export interface BattleViewModel {
   waitingSeatSlots: WaitingSeatSlot[];
   discards: Record<Seat, string[]>;
   localHand: LocalTileView[];
+  readyHandInsight: ReadyHandInsightView | null;
   claimCandidates: ClaimCandidateView[];
   drawnTileId: string | null;
   centerBanner: string | null;

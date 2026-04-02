@@ -317,6 +317,7 @@ export function BattleScreen({
       </div>
       <BottomActionDock
         hand={viewModel.localHand}
+        readyHandInsight={viewModel.readyHandInsight}
         claimCandidates={viewModel.claimCandidates}
         actions={battleActions}
         isElevated={viewModel.isActionDockElevated}

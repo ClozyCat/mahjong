@@ -121,6 +121,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
       { tileId: 'w2#2', code: 'w2', isSelected: true, isDrawn: true, isFlower: false },
     ],
+    readyHandInsight: null,
     claimCandidates: [],
     drawnTileId: 'w2#2',
     centerBanner: 'Opponent Turn',

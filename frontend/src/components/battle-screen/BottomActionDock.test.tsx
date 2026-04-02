@@ -204,6 +204,49 @@ describe('BottomActionDock', () => {
     expect(screen.queryByLabelText(/剩余 \d+ 秒/)).toBeNull();
   });
 
+  it('shows the ready-hand trigger and popover without shifting the dock controls', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        readyHandInsight={{
+          source: 'current',
+          discardTileId: null,
+          discardTileCode: null,
+          waits: [
+            { code: 't1', availableCount: 2 },
+            { code: 't4', availableCount: 3 },
+          ],
+        }}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: '查看当前听牌信息' });
+
+    expect(screen.getByRole('button', { name: '收起手牌区' })).toBeInTheDocument();
+
+    await user.hover(trigger);
+
+    expect(screen.getByLabelText('当前听牌信息')).toBeInTheDocument();
+    expect(screen.getByText('当前听牌')).toBeInTheDocument();
+    expect(screen.getByText('2 种可和牌 · 显示玩家视角剩余张数')).toBeInTheDocument();
+    expect(screen.getByText('一条')).toBeInTheDocument();
+    expect(screen.getByText('四条')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
   it('keeps pass available during opening flower prompts', () => {
     render(
       <BottomActionDock

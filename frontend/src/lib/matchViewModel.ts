@@ -24,6 +24,7 @@ import {
   getLocalTurnKongCandidateGroups,
   isFlowerTileKey,
 } from './kongSelection';
+import { getReadyHandWaits } from './readyHand';
 
 const RELATIVE_SEATS: Seat[] = ['bottom', 'right', 'top', 'left'];
 const WINDS: PlayerView['wind'][] = ['East', 'South', 'West', 'North'];
@@ -764,6 +765,109 @@ function createLocalHand(state: SessionState) {
   return [...sortedHand, drawnTile];
 }
 
+function createReadyHandInsight(state: SessionState): BattleViewModel['readyHandInsight'] {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+  const localSeat = snapshot?.local_seat;
+  if (!privateState || typeof localSeat !== 'number') {
+    return null;
+  }
+
+  const localPlayer = findPrivatePlayer(state, localSeat);
+  const concealedTiles = localPlayer?.concealed_tiles ?? [];
+  if (concealedTiles.length === 0) {
+    return null;
+  }
+
+  const selectedDiscardTile =
+    state.selectedTileIds.length === 1
+      ? concealedTiles.find((tile) => tile.tile_id === state.selectedTileIds[0]) ?? null
+      : null;
+
+  if (
+    selectedDiscardTile &&
+    !getRestrictedDiscardTileIdSet(state).has(selectedDiscardTile.tile_id) &&
+    !isFlowerTileKey(selectedDiscardTile.tile_key)
+  ) {
+    const waits = getReadyHandWaitsForLocalPlayer(state, selectedDiscardTile.tile_id);
+    return waits.length > 0
+      ? {
+          source: 'selected_discard',
+          discardTileId: selectedDiscardTile.tile_id,
+          discardTileCode: selectedDiscardTile.tile_key,
+          waits,
+        }
+      : null;
+  }
+
+  const waits = getReadyHandWaitsForLocalPlayer(state, null);
+  return waits.length > 0
+    ? {
+        source: 'current',
+        discardTileId: null,
+        discardTileCode: null,
+        waits,
+      }
+    : null;
+}
+
+function getReadyHandWaitsForLocalPlayer(state: SessionState, discardTileId: string | null) {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+  const localSeat = snapshot?.local_seat;
+  if (!privateState || typeof localSeat !== 'number') {
+    return [];
+  }
+
+  const localPlayer = findPrivatePlayer(state, localSeat);
+  const concealedTiles = localPlayer?.concealed_tiles ?? [];
+  const concealedTileKeys = concealedTiles
+    .filter((tile) => tile.tile_id !== discardTileId)
+    .map((tile) => tile.tile_key);
+  const knownTileKeys = collectKnownTileKeys(state, concealedTileKeys, discardTileId);
+
+  if (discardTileId) {
+    const discardedTile = concealedTiles.find((tile) => tile.tile_id === discardTileId);
+    if (discardedTile) {
+      knownTileKeys.push(discardedTile.tile_key);
+    }
+  }
+
+  return getReadyHandWaits({
+    concealedTileKeys,
+    meldTileKeyGroups: localPlayer?.melds ?? [],
+    knownTileKeys,
+  });
+}
+
+function collectKnownTileKeys(
+  state: SessionState,
+  localConcealedTileKeys: string[],
+  discardedTileId: string | null,
+) {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+  const localSeat = snapshot?.local_seat;
+  if (!privateState || typeof localSeat !== 'number') {
+    return [];
+  }
+
+  const knownTileKeys = [...localConcealedTileKeys];
+  for (const player of privateState.players) {
+    knownTileKeys.push(...player.discards);
+    knownTileKeys.push(...player.flowers);
+    for (const meld of player.melds) {
+      knownTileKeys.push(...meld);
+    }
+  }
+
+  if (!discardedTileId) {
+    return knownTileKeys;
+  }
+
+  return knownTileKeys;
+}
+
 function hasMatchingTileSelection(selectedTileIds: string[], candidateTileIds: string[]) {
   if (selectedTileIds.length !== candidateTileIds.length) {
     return false;
@@ -1396,6 +1500,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     waitingSeatSlots,
     discards: createDiscards(state),
     localHand: createLocalHand(state),
+    readyHandInsight: createReadyHandInsight(state),
     claimCandidates: createClaimCandidates(state),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),

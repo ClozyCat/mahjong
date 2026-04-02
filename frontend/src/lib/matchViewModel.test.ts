@@ -291,6 +291,132 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actions.find((action) => action.id === 'ready')?.label).toBe('取消准备');
   });
 
+  it('derives current ready-hand waits when the local hand is already in tenpai', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            current_actor: 1,
+            pending_action: null,
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    concealed_count: 13,
+                    concealed_tiles: [
+                      { tile_id: 'w1#0', tile_key: 'w1' },
+                      { tile_id: 'w2#0', tile_key: 'w2' },
+                      { tile_id: 'w3#0', tile_key: 'w3' },
+                      { tile_id: 'w4#0', tile_key: 'w4' },
+                      { tile_id: 'w5#0', tile_key: 'w5' },
+                      { tile_id: 'w6#0', tile_key: 'w6' },
+                      { tile_id: 'w7#0', tile_key: 'w7' },
+                      { tile_id: 'w8#0', tile_key: 'w8' },
+                      { tile_id: 'w9#0', tile_key: 'w9' },
+                      { tile_id: 't1#0', tile_key: 't1' },
+                      { tile_id: 't2#0', tile_key: 't2' },
+                      { tile_id: 't3#0', tile_key: 't3' },
+                      { tile_id: 't4#0', tile_key: 't4' },
+                    ],
+                    melds: [],
+                    flowers: [],
+                    discards: [],
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestActionPrompt: null,
+      selectedTileIds: [],
+    });
+
+    expect(viewModel.readyHandInsight).toEqual({
+      source: 'current',
+      discardTileId: null,
+      discardTileCode: null,
+      waits: [
+        { code: 't1', availableCount: 2 },
+        { code: 't4', availableCount: 3 },
+      ],
+    });
+  });
+
+  it('switches to the waits produced by the currently selected discard', () => {
+    const base = createPlayingSessionState();
+    const selectedTileId = 'b9#0';
+    const viewModel = createMatchViewModel({
+      ...base,
+      selectedTileIds: [selectedTileId],
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 2,
+              deadline_at: '2026-03-26T06:01:00Z',
+              drawn_tile_id: selectedTileId,
+              options: ['discard'],
+            },
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    concealed_count: 14,
+                    concealed_tiles: [
+                      { tile_id: 'w1#0', tile_key: 'w1' },
+                      { tile_id: 'w2#0', tile_key: 'w2' },
+                      { tile_id: 'w3#0', tile_key: 'w3' },
+                      { tile_id: 'w4#0', tile_key: 'w4' },
+                      { tile_id: 'w5#0', tile_key: 'w5' },
+                      { tile_id: 'w6#0', tile_key: 'w6' },
+                      { tile_id: 'w7#0', tile_key: 'w7' },
+                      { tile_id: 'w8#0', tile_key: 'w8' },
+                      { tile_id: 'w9#0', tile_key: 'w9' },
+                      { tile_id: 't1#0', tile_key: 't1' },
+                      { tile_id: 't2#0', tile_key: 't2' },
+                      { tile_id: 't3#0', tile_key: 't3' },
+                      { tile_id: 't4#0', tile_key: 't4' },
+                      { tile_id: selectedTileId, tile_key: 'b9' },
+                    ],
+                    melds: [],
+                    flowers: [],
+                    discards: [],
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 2,
+          options: ['discard'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.readyHandInsight).toEqual({
+      source: 'selected_discard',
+      discardTileId: selectedTileId,
+      discardTileCode: 'b9',
+      waits: [
+        { code: 't1', availableCount: 2 },
+        { code: 't4', availableCount: 3 },
+      ],
+    });
+  });
+
   it('keeps a disconnected waiting player seated but blocks match start until they reconnect', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({
