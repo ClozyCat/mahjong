@@ -447,6 +447,16 @@ function getPromptOptions(state: SessionState): BackendActionType[] {
   return state.latestActionPrompt?.payload.options ?? [];
 }
 
+function getRestrictedDiscardTileIdSet(state: SessionState) {
+  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+  const restrictedDiscardTileIds =
+    pendingAction?.type === 'active_turn' && Array.isArray(pendingAction.restricted_discard_tile_ids)
+      ? pendingAction.restricted_discard_tile_ids
+      : [];
+
+  return new Set(restrictedDiscardTileIds);
+}
+
 function createActionViews(
   state: SessionState,
   waitingControls: WaitingControls | null,
@@ -463,9 +473,11 @@ function createActionViews(
   const chowCandidateGroups = getActionCandidateGroups(state, 'chow');
   const pungCandidateGroups = getActionCandidateGroups(state, 'pung');
   const flowerCandidateTileIds = getFlowerCandidateTileIds(state);
+  const restrictedDiscardTileIdSet = getRestrictedDiscardTileIdSet(state);
   const hasSelectedFlower =
     state.selectedTileIds.length === 1 && flowerCandidateTileIds.includes(state.selectedTileIds[0]);
-  const hasSelectedDiscard = state.selectedTileIds.length === 1;
+  const hasSelectedDiscard =
+    state.selectedTileIds.length === 1 && !restrictedDiscardTileIdSet.has(state.selectedTileIds[0]);
   const canContinueRound = snapshot?.phase === 'settlement' && typeof snapshot.local_seat === 'number';
   const canRestartMatch =
     snapshot?.phase === 'finished' &&
@@ -674,10 +686,9 @@ function createDiscards(state: SessionState): Record<Seat, string[]> {
 function createLocalHand(state: SessionState) {
   const localSeat = getLocalSeat(state);
   const localPlayer = findPrivatePlayer(state, localSeat);
-  const drawnTileId =
-    state.roomSnapshot?.payload.private_state?.pending_action?.type === 'active_turn'
-      ? state.roomSnapshot.payload.private_state.pending_action.drawn_tile_id
-      : undefined;
+  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+  const drawnTileId = pendingAction?.type === 'active_turn' ? pendingAction.drawn_tile_id : undefined;
+  const restrictedDiscardTileIdSet = getRestrictedDiscardTileIdSet(state);
 
   const sortedHand = (localPlayer?.concealed_tiles ?? [])
     .map((tile) => ({
@@ -686,6 +697,7 @@ function createLocalHand(state: SessionState) {
       isSelected: state.selectedTileIds.includes(tile.tile_id),
       isDrawn: tile.tile_id === drawnTileId,
       isFlower: isFlowerTileKey(tile.tile_key),
+      isDisabled: restrictedDiscardTileIdSet.has(tile.tile_id),
     }))
     .sort(compareLocalHandTiles);
 

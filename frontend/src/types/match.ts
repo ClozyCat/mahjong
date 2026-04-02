@@ -88,6 +88,7 @@ export type PendingAction =
       seat_index: number;
       deadline_at: string;
       drawn_tile_id?: string;
+      restricted_discard_tile_ids?: string[];
       options: BackendActionType[];
     }
   | {
@@ -332,6 +333,7 @@ export interface LocalTileView {
   isSelected: boolean;
   isDrawn: boolean;
   isFlower: boolean;
+  isDisabled?: boolean;
 }
 
 export interface ClaimCandidateTileView {

@@ -168,9 +168,12 @@ export function BottomActionDock({
                         'action-dock__tile',
                         tile.isSelected ? 'action-dock__tile--selected' : '',
                         tile.isDrawn ? 'action-dock__tile--drawn' : '',
+                        tile.isDisabled ? 'action-dock__tile--disabled' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
+                      disabled={tile.isDisabled}
+                      aria-label={tile.isDisabled ? `${tile.code} 当前回合禁止打出` : undefined}
                       onClick={(event) => {
                         if (event.detail > 1) {
                           return;
@@ -185,6 +188,7 @@ export function BottomActionDock({
                         variant="hand"
                         isSelected={tile.isSelected}
                         isDrawn={tile.isDrawn}
+                        isDisabled={tile.isDisabled}
                       />
                     </button>
                   ))}

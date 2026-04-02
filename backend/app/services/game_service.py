@@ -1869,6 +1869,8 @@ class GameService:
             return "invalid_action"
         if "tile not found" in normalized:
             return "invalid_action"
+        if "claimed tile in the same turn" in normalized:
+            return "restricted_same_turn_discard"
         if "unsupported" in normalized:
             return "invalid_action"
         if "select_tile_first" in normalized:
@@ -2082,12 +2084,19 @@ class GameService:
                 options.append("kong")
             if can_declare_hu(room.round_state, local_seat, None):
                 options.append("hu")
+            restricted_discard_tile_ids = [
+                tile.tile_id
+                for tile in room.round_state.players[local_seat].concealed_tiles
+                if tile.tile_key == room.round_state.restricted_discard_tile_key
+            ]
             payload = {
                 "type": "active_turn",
                 "seat_index": local_seat,
                 "deadline_at": pending_timeout.deadline_at.isoformat(),
                 "options": options,
             }
+            if restricted_discard_tile_ids:
+                payload["restricted_discard_tile_ids"] = restricted_discard_tile_ids
             if pending_timeout.drawn_tile_id is not None:
                 payload["drawn_tile_id"] = pending_timeout.drawn_tile_id
             return payload
@@ -2386,6 +2395,7 @@ class GameService:
             last_action_context=payload.get("last_action_context"),
             round_wind=payload.get("round_wind", "east"),
             enforce_minimum_eight_fan=payload.get("enforce_minimum_eight_fan", True),
+            restricted_discard_tile_key=payload.get("restricted_discard_tile_key"),
         )
 
     def _deserialize_tile(self, payload: dict) -> Tile:

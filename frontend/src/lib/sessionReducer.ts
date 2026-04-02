@@ -28,6 +28,7 @@ const ACTION_REJECTION_COPY: Record<string, string> = {
   not_your_turn: '还没轮到你操作。',
   invalid_action: '当前动作不合法，已按服务器状态为准。',
   select_tile_first: '请先选择需要操作的牌。',
+  restricted_same_turn_discard: '吃、碰、杠后的同名牌本回合不能立即打出。',
   unsupported_message: '客户端发送了服务器不支持的消息。',
 };
 
@@ -115,7 +116,15 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         typeof localSeat === 'number'
           ? message.payload.private_state?.players.find((player) => player.seat_index === localSeat)
           : null;
-      const availableTileIds = localPlayer?.concealed_tiles?.map((tile) => tile.tile_id) ?? null;
+      const restrictedDiscardTileIds =
+        message.payload.private_state?.pending_action?.type === 'active_turn' &&
+        Array.isArray(message.payload.private_state.pending_action.restricted_discard_tile_ids)
+          ? new Set(message.payload.private_state.pending_action.restricted_discard_tile_ids)
+          : new Set<string>();
+      const availableTileIds =
+        localPlayer?.concealed_tiles
+          ?.map((tile) => tile.tile_id)
+          .filter((tileId) => !restrictedDiscardTileIds.has(tileId)) ?? null;
       const nextSelectedTileIds =
         availableTileIds === null
           ? []

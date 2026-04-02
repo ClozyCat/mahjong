@@ -111,6 +111,7 @@ def initialize_round(
         last_action_context=None,
         round_wind=round_wind,
         enforce_minimum_eight_fan=enforce_minimum_eight_fan,
+        restricted_discard_tile_key=None,
     )
 
 
@@ -130,6 +131,7 @@ def _replace_round_state(state: RoundState, **changes) -> RoundState:
         "last_action_context": state.last_action_context,
         "round_wind": state.round_wind,
         "enforce_minimum_eight_fan": state.enforce_minimum_eight_fan,
+        "restricted_discard_tile_key": state.restricted_discard_tile_key,
     }
     payload.update(changes)
     return RoundState(**payload)
@@ -311,6 +313,13 @@ def discard_tile(
     if tile_index is None:
         raise ValueError("Tile not found in concealed hand")
 
+    selected_tile = concealed_list[tile_index]
+    if (
+        state.restricted_discard_tile_key is not None
+        and selected_tile.tile_key == state.restricted_discard_tile_key
+    ):
+        raise ValueError("Cannot discard the claimed tile in the same turn")
+
     tile = concealed_list.pop(tile_index)
     new_concealed = tuple(concealed_list)
     new_discards = player.discards + (tile,)
@@ -353,6 +362,7 @@ def discard_tile(
         },
         round_wind=state.round_wind,
         enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+        restricted_discard_tile_key=None,
     )
 
     claim_window = compute_claim_window(base_state)
@@ -382,6 +392,7 @@ def discard_tile(
             last_action_context=base_state.last_action_context,
             round_wind=base_state.round_wind,
             enforce_minimum_eight_fan=base_state.enforce_minimum_eight_fan,
+            restricted_discard_tile_key=base_state.restricted_discard_tile_key,
         )
     else:
         next_actor = (seat + 1) % len(state.players)
@@ -400,6 +411,7 @@ def discard_tile(
             last_action_context=base_state.last_action_context,
             round_wind=base_state.round_wind,
             enforce_minimum_eight_fan=base_state.enforce_minimum_eight_fan,
+            restricted_discard_tile_key=base_state.restricted_discard_tile_key,
         )
 
     events = [tile_discarded_event(seat, tile)]
@@ -665,6 +677,7 @@ def _apply_selected_claim(
         new_players.append(current_player)
     wall = state.wall
     events = [claim_made_event(seat, action_type, state.last_discard)]
+    restricted_discard_tile_key = state.last_discard.tile_key
 
     if action_type == "kong":
         try:
@@ -736,6 +749,7 @@ def _apply_selected_claim(
             }
             if action_type == "kong"
             else state.last_action_context,
+            restricted_discard_tile_key=restricted_discard_tile_key,
         ),
         events,
     )
@@ -1168,6 +1182,7 @@ def _maybe_start_rob_kong_window(
         last_action_context=state.last_action_context,
         round_wind=state.round_wind,
         enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+        restricted_discard_tile_key=state.restricted_discard_tile_key,
     )
 
 
@@ -1209,6 +1224,7 @@ def _apply_rob_kong_pass(
                 last_action_context=state.last_action_context,
                 round_wind=state.round_wind,
                 enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+                restricted_discard_tile_key=state.restricted_discard_tile_key,
             ),
             [],
         )
@@ -1241,6 +1257,7 @@ def _complete_add_kong_after_passes(state: RoundState) -> tuple[RoundState, list
             last_action_context=state.last_action_context,
             round_wind=state.round_wind,
             enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+            restricted_discard_tile_key=state.restricted_discard_tile_key,
         ),
         seat=actor_seat,
         kong_type="add_kong",
@@ -1321,6 +1338,7 @@ def _complete_self_kong(
         },
         round_wind=state.round_wind,
         enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+        restricted_discard_tile_key=state.restricted_discard_tile_key,
     )
 
     try:
@@ -1368,6 +1386,7 @@ def _complete_self_kong(
             },
             round_wind=state.round_wind,
             enforce_minimum_eight_fan=state.enforce_minimum_eight_fan,
+            restricted_discard_tile_key=state.restricted_discard_tile_key,
         ),
         events,
     )

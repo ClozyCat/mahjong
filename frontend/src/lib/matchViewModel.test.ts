@@ -992,4 +992,55 @@ describe('createMatchViewModel', () => {
     expect(viewModel.localHand.map((tile) => tile.code)).toEqual(['w1', 'w7', 'b1', 'b3', 't9', 'd1']);
     expect(viewModel.localHand.some((tile) => tile.isDrawn)).toBe(false);
   });
+
+  it('marks same-turn restricted tiles as disabled and keeps discard unavailable for them', () => {
+    const base = createPlayingSessionState({
+      selectedTileIds: ['w1#p0-0'],
+    });
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 2,
+              deadline_at: '2026-03-26T06:01:00Z',
+              drawn_tile_id: 'w2#p0-1',
+              restricted_discard_tile_ids: ['w1#p0-0'],
+              options: ['discard'],
+            },
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    concealed_count: 2,
+                    concealed_tiles: [
+                      { tile_id: 'w1#p0-0', tile_key: 'w1' },
+                      { tile_id: 'w2#p0-1', tile_key: 'w2' },
+                    ],
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 2,
+          options: ['discard'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.localHand.find((tile) => tile.tileId === 'w1#p0-0')).toMatchObject({
+      isDisabled: true,
+    });
+    expect(viewModel.actions.find((action) => action.id === 'discard')?.enabled).toBe(false);
+  });
 });

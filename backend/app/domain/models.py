@@ -47,3 +47,4 @@ class RoundState:
     last_action_context: dict | None = None
     round_wind: str = "east"
     enforce_minimum_eight_fan: bool = True
+    restricted_discard_tile_key: str | None = None

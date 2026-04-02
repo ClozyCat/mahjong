@@ -7,6 +7,7 @@ interface MahjongTileProps {
   isSelected?: boolean;
   isDrawn?: boolean;
   isLastDiscard?: boolean;
+  isDisabled?: boolean;
   className?: string;
 }
 
@@ -16,6 +17,7 @@ export function MahjongTile({
   isSelected = false,
   isDrawn = false,
   isLastDiscard = false,
+  isDisabled = false,
   className,
 }: MahjongTileProps) {
   const asset = getTileAsset(code);
@@ -27,6 +29,7 @@ export function MahjongTile({
     isSelected ? 'mahjong-tile--selected' : '',
     isDrawn ? 'mahjong-tile--drawn' : '',
     isLastDiscard ? 'mahjong-tile--last-discard' : '',
+    isDisabled ? 'mahjong-tile--disabled' : '',
     className ?? '',
   ]
     .filter(Boolean)

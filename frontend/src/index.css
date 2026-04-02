@@ -2033,6 +2033,10 @@ button:active:not(:disabled) {
   z-index: 4;
 }
 
+.action-dock__tile--disabled {
+  cursor: not-allowed;
+}
+
 .action-dock__tile .mahjong-tile {
   pointer-events: none;
 }
@@ -3621,6 +3625,23 @@ input {
 .action-dock__tile:hover:not(:disabled) .mahjong-tile--hand:not(.mahjong-tile--selected) {
   transform: translateY(-0.22rem);
   filter: drop-shadow(0 14px 26px rgba(95, 199, 255, 0.22));
+}
+
+.mahjong-tile--disabled {
+  opacity: 0.88;
+}
+
+.mahjong-tile--disabled .mahjong-tile__shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.mahjong-tile--disabled .mahjong-tile__shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(28, 34, 44, 0.24);
+  pointer-events: none;
 }
 
 .action-dock__action,

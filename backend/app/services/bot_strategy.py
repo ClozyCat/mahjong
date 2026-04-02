@@ -516,9 +516,11 @@ def _choose_discard_plan_for_state(
         )
         for tile in concealed_tiles
         if tile.kind != "flower"
+        and tile.tile_key != state.restricted_discard_tile_key
     ]
     if not candidate_plans:
-        fallback_tile = concealed_tiles[-1]
+        unrestricted_tiles = [tile for tile in concealed_tiles if tile.kind != "flower"]
+        fallback_tile = unrestricted_tiles[-1] if unrestricted_tiles else concealed_tiles[-1]
         return _discard_plan_with_risk(
             state,
             seat_index=seat_index,

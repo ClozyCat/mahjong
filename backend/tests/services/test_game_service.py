@@ -184,6 +184,7 @@ def test_active_turn_after_claim_keeps_prompt_without_marking_a_drawn_tile() -> 
             "was_last_live_tile": False,
             "was_last_discard": False,
         },
+        restricted_discard_tile_key="w3",
     )
 
     service._advance_round_locked(room)
@@ -196,6 +197,7 @@ def test_active_turn_after_claim_keeps_prompt_without_marking_a_drawn_tile() -> 
         "seat_index": 1,
         "deadline_at": room.pending_timeout.deadline_at.isoformat(),
         "options": ["discard"],
+        "restricted_discard_tile_ids": ["w3#0"],
     }
 
 

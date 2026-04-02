@@ -220,6 +220,53 @@ def test_discard_tile_sets_last_discard_and_advances_version():
     assert events[-1]["type"] == "tile_discarded"
 
 
+def test_claimed_tile_cannot_be_discarded_immediately_in_same_turn():
+    import pytest
+
+    state = make_round_state(
+        current_actor=0,
+        discarder_seat=0,
+        last_discard="w6",
+        player_hands={
+            1: ["w4", "w5", "w6", "b1"],
+        },
+    )
+    state = RoundState(
+        round_id=state.round_id,
+        dealer_seat=state.dealer_seat,
+        current_actor=state.current_actor,
+        wall=state.wall,
+        players=state.players,
+        last_discard=state.players[0].discards[-1],
+        pending_action={
+            "type": "claim_window",
+            "discarder_seat": 0,
+            "claim_window": [[], ["chow"], [], []],
+            "responded_seats": [],
+        },
+        phase=state.phase,
+        settlement=state.settlement,
+        version=state.version,
+    )
+
+    claimed_state, _events = apply_claim_action(
+        state,
+        seat=1,
+        action_type="chow",
+        tiles=["w4#p1-0", "w5#p1-1"],
+    )
+
+    assert claimed_state.current_actor == 1
+    assert claimed_state.restricted_discard_tile_key == "w6"
+
+    with pytest.raises(ValueError, match="same turn"):
+        discard_tile(claimed_state, 1, "w6#p1-2")
+
+    next_state, _events = discard_tile(claimed_state, 1, "b1#p1-3")
+
+    assert next_state.restricted_discard_tile_key is None
+
+
 def test_draw_for_turn_increments_version():
     state = initialize_round(seed=4)
     next_state, _ = draw_for_turn(state)

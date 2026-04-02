@@ -667,3 +667,39 @@ def test_choose_active_turn_action_declares_self_hu_before_discarding() -> None:
 
     assert decision.action_type == "hu"
     assert decision.tile_ids == []
+
+
+def test_choose_active_turn_action_avoids_restricted_same_turn_discard() -> None:
+    state = RoundState(
+        round_id="restricted-discard",
+        dealer_seat=0,
+        current_actor=0,
+        wall=WallState(tiles=(), head_index=0, tail_index=-1),
+        players=(
+            PlayerState(
+                seat=0,
+                concealed_tiles=_make_tiles(["w6", "b1"], "restricted"),
+                melds=(_make_tiles(["w4", "w5", "w6"], "claim-meld"),),
+                flowers=(),
+                discards=(),
+            ),
+            PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
+            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
+        ),
+        last_discard=None,
+        pending_action=None,
+        phase="playing",
+        settlement=None,
+        version=0,
+        score_trackers={"kong_entries": []},
+        last_action_context=None,
+        round_wind="east",
+        enforce_minimum_eight_fan=False,
+        restricted_discard_tile_key="w6",
+    )
+
+    decision = choose_active_turn_action(state, 0)
+
+    assert decision.action_type == "discard"
+    assert decision.tile_ids == ["restricted-1-b1"]

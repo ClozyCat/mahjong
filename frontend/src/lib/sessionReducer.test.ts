@@ -195,4 +195,59 @@ describe('sessionReducer', () => {
       text: '小李打出五条',
     });
   });
+
+  it('clears selected tiles that become restricted for same-turn discard', () => {
+    const next = sessionReducer(
+      {
+        ...createInitialSessionState(),
+        selectedTileIds: ['w1#0'],
+        selectionMode: 'single',
+      },
+      {
+        type: 'ws_message',
+        message: {
+          type: 'room_snapshot',
+          payload: {
+            table_code: 'AB12CD',
+            phase: 'playing',
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            local_seat: 0,
+            reconnect_token: 'token-1',
+            private_state: {
+              round_id: 'round-1',
+              round_wind: 'east',
+              dealer_seat: 0,
+              current_actor: 0,
+              last_discard: null,
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 0,
+                deadline_at: '2026-03-26T06:01:00Z',
+                restricted_discard_tile_ids: ['w1#0'],
+                options: ['discard'],
+              },
+              players: [
+                {
+                  seat_index: 0,
+                  nickname: 'Player A',
+                  connected: true,
+                  concealed_count: 2,
+                  concealed_tiles: [
+                    { tile_id: 'w1#0', tile_key: 'w1' },
+                    { tile_id: 'w2#0', tile_key: 'w2' },
+                  ],
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.selectedTileIds).toEqual([]);
+    expect(next.selectionMode).toBeNull();
+  });
 });

@@ -449,6 +449,42 @@ describe('BottomActionDock', () => {
 
     expect(onTileDoubleClick).toHaveBeenCalledWith('w1#1');
   });
+
+  it('renders same-turn restricted tiles as disabled and ignores interaction', () => {
+    const onTileSelect = vi.fn();
+    const onTileDoubleClick = vi.fn();
+
+    render(
+      <BottomActionDock
+        hand={[
+          { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false, isDisabled: true },
+          { tileId: 'w2#2', code: 'w2', isSelected: false, isDrawn: false, isFlower: false },
+        ]}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={onTileSelect}
+        onTileDoubleClick={onTileDoubleClick}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const disabledButton = getLocalHandButton(0);
+
+    expect(disabledButton).toBeDisabled();
+    expect(disabledButton).toHaveClass('action-dock__tile--disabled');
+    expect(disabledButton.querySelector('.mahjong-tile--disabled')).not.toBeNull();
+
+    fireEvent.click(disabledButton);
+    fireEvent.doubleClick(disabledButton);
+
+    expect(onTileSelect).not.toHaveBeenCalled();
+    expect(onTileDoubleClick).not.toHaveBeenCalled();
+  });
 });
 
 function getLocalHandButton(index: number) {
