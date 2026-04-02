@@ -93,15 +93,17 @@ export function ConnectGate({
               </p>
 
               <div className="connect-gate__meta">
-                <article className="connect-gate__meta-card">
-                  <span>当前配色</span>
+                <article className="connect-gate__meta-card connect-gate__meta-card--palette">
+                  <div className="connect-gate__meta-heading">
+                    <span>当前配色</span>
+                    <em>入厅时随机换新</em>
+                  </div>
                   <strong>{themeLabel}</strong>
-                  <em>入厅时随机换新</em>
-                </article>
-                <article className="connect-gate__meta-card">
-                  <span>编号规则</span>
-                  <strong>数字 / 英文</strong>
-                  <em>支持 1-12 位，留空时自动生成</em>
+                  <div className="connect-gate__palette-preview" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
                 </article>
               </div>
             </div>
