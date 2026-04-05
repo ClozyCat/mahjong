@@ -4,8 +4,6 @@ set -eu
 : "${MAHJONG_DATABASE_URL:=sqlite+pysqlite:////data/mahjong.db}"
 export MAHJONG_DATABASE_URL
 
-cd /app/backend
+cd /app
 
-alembic upgrade head
-
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+exec /usr/local/bin/backend-rust

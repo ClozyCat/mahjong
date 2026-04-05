@@ -9,30 +9,19 @@ COPY frontend/ ./
 RUN npm run build
 
 
-FROM python:3.12-slim AS backend-builder
+FROM rust:1.94-bookworm AS rust-backend-builder
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    UV_LINK_MODE=copy
+WORKDIR /app/backend-rust
 
-WORKDIR /app/backend
-
-RUN pip install --no-cache-dir uv
-
-COPY backend/pyproject.toml backend/uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+COPY backend-rust/ ./
+RUN cargo build --release
 
 
-FROM python:3.12-slim AS backend-runtime
+FROM debian:bookworm-slim AS backend-runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/app/backend/.venv/bin:${PATH}"
+WORKDIR /app
 
-WORKDIR /app/backend
-
-COPY --from=backend-builder /app/backend/.venv /app/backend/.venv
-COPY backend/ ./
+COPY --from=rust-backend-builder /app/backend-rust/target/release/backend-rust /usr/local/bin/backend-rust
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
 RUN useradd --create-home --shell /bin/bash appuser \

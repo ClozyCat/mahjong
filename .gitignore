@@ -1,2 +1,5 @@
 output/
 .playwright-cli
+backend-rust/target/
+backend-rust/__pycache__/
+backend-rust/*.log
