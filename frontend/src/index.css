@@ -6646,6 +6646,10 @@ input {
   color: var(--muted);
 }
 
+.action-dock {
+  --action-dock-drawn-gap-extra: 0.4rem;
+}
+
 .action-dock--elevated {
   border-color: color-mix(in srgb, var(--accent-3) 34%, var(--theme-border-strong));
   box-shadow:
@@ -6661,6 +6665,31 @@ input {
 
 .action-dock__tile:hover:not(:disabled) .mahjong-tile--hand:not(.mahjong-tile--selected) {
   filter: drop-shadow(0 14px 26px color-mix(in srgb, var(--accent-3) 26%, transparent));
+}
+
+.action-dock__tile--drawn::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--action-dock-drawn-gap-extra) * -0.56);
+  bottom: 0.42rem;
+  width: 1px;
+  height: calc(100% - 1rem);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--accent-2) 34%, transparent) 18%,
+    color-mix(in srgb, var(--accent) 22%, transparent) 82%,
+    transparent
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-2) 14%, transparent);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.action-dock__tile--selected .mahjong-tile--hand {
+  filter:
+    drop-shadow(0 14px 24px color-mix(in srgb, var(--theme-shadow) 28%, transparent))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--accent-2) 16%, transparent));
 }
 
 .mahjong-tile--disabled .mahjong-tile__shell::after {
@@ -6917,6 +6946,25 @@ input {
   border-color: color-mix(in srgb, var(--accent) 88%, var(--theme-paper-line));
   border-right-color: color-mix(in srgb, var(--accent) 72%, var(--theme-paper-line-strong));
   border-bottom-color: color-mix(in srgb, var(--accent) 72%, var(--theme-paper-line-strong));
+}
+
+.action-dock__tile--selected .mahjong-tile__shell {
+  border-color: color-mix(in srgb, var(--accent-2) 82%, var(--theme-paper-line));
+  border-right-color: color-mix(in srgb, var(--accent-2) 68%, var(--theme-paper-line-strong));
+  border-bottom-color: color-mix(in srgb, var(--accent-2) 68%, var(--theme-paper-line-strong));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-paper) 94%, var(--accent-2)),
+      color-mix(in srgb, var(--theme-paper) 70%, var(--accent-2)) 80%,
+      color-mix(in srgb, var(--theme-paper-edge) 86%, var(--accent-2))
+    );
+  box-shadow:
+    inset 1px 1px 0 color-mix(in srgb, var(--theme-paper-strong) 86%, transparent),
+    inset -1px -1px 0 color-mix(in srgb, var(--theme-paper-edge) 88%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 16%, transparent),
+    0 12px 22px color-mix(in srgb, var(--theme-shadow) 30%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent-2) 18%, transparent);
 }
 
 .mahjong-tile--last-discard .mahjong-tile__shell {
