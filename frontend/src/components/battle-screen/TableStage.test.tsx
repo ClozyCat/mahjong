@@ -437,6 +437,7 @@ describe('TableStage', () => {
           bottom: [],
         }}
         activeSeat="bottom"
+        lastDiscard={null}
         promptText={null}
         players={[{ seat: 'right', name: 'Player Right', melds: [] }]}
         settlementHands={{
