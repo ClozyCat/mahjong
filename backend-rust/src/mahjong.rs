@@ -949,8 +949,6 @@ fn fan_result_for_win(
         open_meld_tile_key_groups,
         incoming_tile: incoming_tile.map(ToString::to_string),
         decompositions,
-        seat_wind_key: Some(seat_wind_key(winner_seat, dealer_seat(room))),
-        round_wind_key: room_round_wind(room),
     }))
 }
 

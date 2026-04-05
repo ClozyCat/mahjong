@@ -24,7 +24,10 @@ WORKDIR /app
 COPY --from=rust-backend-builder /app/backend-rust/target/release/backend-rust /usr/local/bin/backend-rust
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
-RUN useradd --create-home --shell /bin/bash appuser \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash appuser \
     && mkdir -p /data \
     && chmod +x /usr/local/bin/backend-entrypoint.sh \
     && chown -R appuser:appuser /app /data

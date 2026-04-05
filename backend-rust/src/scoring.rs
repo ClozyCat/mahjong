@@ -45,12 +45,9 @@ pub struct HandFeatures {
     pub pung_hand: bool,
     pub mixed_one_suit: bool,
     pub pure_one_suit: bool,
-    pub ping_hu: bool,
-    pub yi_ban_gao: bool,
     pub duan_yao: bool,
     pub hun_yao_jiu: bool,
     pub qing_yao_jiu: bool,
-    pub triplet_keys: Vec<String>,
     pub seat_wind_triplet: bool,
     pub round_wind_triplet: bool,
     pub dragon_triplet_count: usize,
@@ -91,8 +88,6 @@ pub struct EvaluationInput {
     pub open_meld_tile_key_groups: Vec<Vec<String>>,
     pub incoming_tile: Option<String>,
     pub decompositions: Vec<Decomposition>,
-    pub seat_wind_key: Option<String>,
-    pub round_wind_key: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -175,11 +170,8 @@ struct FanContext {
     kong_entries: Vec<KongEntry>,
     visible_tile_keys: Vec<String>,
     concealed_tile_keys: Vec<String>,
-    meld_tile_key_groups: Vec<Vec<String>>,
     open_meld_tile_key_groups: Vec<Vec<String>>,
     decompositions: Vec<Decomposition>,
-    seat_wind_key: Option<String>,
-    round_wind_key: Option<String>,
     standard_decompositions: Vec<Decomposition>,
     all_tile_keys: Vec<String>,
     wait_types: Vec<String>,
@@ -214,15 +206,12 @@ impl FanContext {
             kong_entries: input.kong_entries,
             visible_tile_keys: input.visible_tile_keys,
             concealed_tile_keys: input.concealed_tile_keys,
-            meld_tile_key_groups: input.meld_tile_key_groups.clone(),
             open_meld_tile_key_groups: if input.open_meld_tile_key_groups.is_empty() {
                 input.meld_tile_key_groups
             } else {
                 input.open_meld_tile_key_groups
             },
             decompositions,
-            seat_wind_key: input.seat_wind_key,
-            round_wind_key: input.round_wind_key,
             standard_decompositions,
             all_tile_keys: input.tile_keys,
             wait_types,
@@ -342,7 +331,6 @@ pub fn extract_hand_features(
         all_tile_keys.extend(meld_group.clone());
     }
 
-    let sequence_groups = extract_sequences(&effective_concealed, decompositions);
     let triplet_keys =
         extract_triplet_keys(&effective_concealed, meld_tile_key_groups, decompositions);
     let has_open_meld = meld_open_flags
@@ -363,8 +351,6 @@ pub fn extract_hand_features(
         pung_hand: features_is_pung_hand(&effective_concealed, meld_tile_key_groups),
         mixed_one_suit: is_mixed_one_suit(&all_tile_keys),
         pure_one_suit: is_pure_one_suit(&all_tile_keys),
-        ping_hu: is_ping_hu(&effective_concealed, meld_tile_key_groups, decompositions),
-        yi_ban_gao: has_yi_ban_gao(&sequence_groups),
         duan_yao: is_duan_yao(&all_tile_keys),
         hun_yao_jiu: is_hun_yao_jiu(&all_tile_keys),
         qing_yao_jiu: is_qing_yao_jiu(&all_tile_keys),
@@ -384,7 +370,6 @@ pub fn extract_hand_features(
                     && round_wind_key != Some(tile_key.as_str())
             })
             .count(),
-        triplet_keys,
         seat_wind_triplet,
         round_wind_triplet,
     }
@@ -460,13 +445,6 @@ pub fn decompose_winning_hand_with_melds(
 
 pub fn is_winning_hand(tile_keys: &[String]) -> bool {
     !decompose_winning_hand(tile_keys).is_empty()
-}
-
-pub fn is_winning_hand_with_melds(
-    concealed_tile_keys: &[String],
-    meld_tile_key_groups: &[Vec<String>],
-) -> bool {
-    !decompose_winning_hand_with_melds(concealed_tile_keys, meld_tile_key_groups).is_empty()
 }
 
 fn fan_scenarios(context: &FanContext) -> Vec<FanContext> {
@@ -1827,32 +1805,6 @@ fn features_is_pung_hand(tile_keys: &[String], meld_tile_key_groups: &[Vec<Strin
     can_form_all_pungs(&tile_counts(tile_keys.iter().map(String::as_str)))
 }
 
-fn is_ping_hu(
-    tile_keys: &[String],
-    meld_tile_key_groups: &[Vec<String>],
-    decompositions: Option<&[Decomposition]>,
-) -> bool {
-    if !meld_tile_key_groups.is_empty() || tile_keys.len() != 14 {
-        return false;
-    }
-    standard_decomposition(tile_keys, decompositions)
-        .map(|decomposition| {
-            decomposition
-                .melds
-                .iter()
-                .all(|meld| meld_is_sequence(meld))
-        })
-        .unwrap_or(false)
-}
-
-fn has_yi_ban_gao(sequence_groups: &[Vec<String>]) -> bool {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for sequence in sequence_groups {
-        *counts.entry(sequence.join(",")).or_insert(0) += 1;
-    }
-    counts.values().any(|count| *count >= 2)
-}
-
 fn is_duan_yao(tile_keys: &[String]) -> bool {
     tile_keys.iter().all(|tile_key| is_simple_tile(tile_key))
 }
@@ -1874,22 +1826,6 @@ fn is_qing_yao_jiu(tile_keys: &[String]) -> bool {
         && tile_keys
             .iter()
             .all(|tile_key| is_terminal_suit_tile(tile_key))
-}
-
-fn extract_sequences(
-    tile_keys: &[String],
-    decompositions: Option<&[Decomposition]>,
-) -> Vec<Vec<String>> {
-    standard_decomposition(tile_keys, decompositions)
-        .map(|decomposition| {
-            decomposition
-                .melds
-                .iter()
-                .filter(|meld| meld_is_sequence(meld))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default()
 }
 
 fn extract_triplet_keys(
@@ -3167,8 +3103,6 @@ mod tests {
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
             decompositions,
-            seat_wind_key: Some("east".to_string()),
-            round_wind_key: Some("east".to_string()),
         });
 
         assert!(result.fan_keys.iter().any(|fan| fan == "big_three_dragons"));
@@ -3208,8 +3142,6 @@ mod tests {
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
             decompositions,
-            seat_wind_key: Some("east".to_string()),
-            round_wind_key: Some("east".to_string()),
         });
 
         assert!(result.fan_keys.iter().any(|fan| fan == "nine_gates"));
@@ -3250,8 +3182,6 @@ mod tests {
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
             decompositions,
-            seat_wind_key: Some("east".to_string()),
-            round_wind_key: Some("east".to_string()),
         });
 
         assert!(result.fan_keys.iter().any(|fan| fan == "chicken_hand"));
