@@ -53,6 +53,12 @@ interface TableStageProps {
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
+const SETTLEMENT_HAND_COLUMN_COUNT: Record<Seat, number> = {
+  top: 7,
+  left: 4,
+  right: 4,
+  bottom: 7,
+};
 
 export function TableStage({
   discards,
@@ -441,15 +447,23 @@ export function TableStage({
                     >
                       <span className="table-stage__settlement-hand-eyebrow">{settlementHandLabel}</span>
                       <div className={`table-stage__settlement-hand-grid table-stage__settlement-hand-grid--${seat}`}>
-                        {finalHandTiles.map((tile, index) => (
-                          <MahjongTile
-                            key={`${seat}-settlement-${tile}-${index}`}
-                            code={tile}
-                            variant="discard"
-                            isLastDiscard={index === settlementWinningTileIndex}
-                            className="table-stage__settlement-hand-tile"
-                          />
-                        ))}
+                        {buildSettlementHandCells(seat, finalHandTiles).map((cell) =>
+                          cell.kind === 'placeholder' ? (
+                            <span
+                              key={cell.key}
+                              className="table-stage__settlement-hand-placeholder"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <MahjongTile
+                              key={cell.key}
+                              code={cell.tile}
+                              variant="discard"
+                              isLastDiscard={cell.index === settlementWinningTileIndex}
+                              className="table-stage__settlement-hand-tile"
+                            />
+                          ),
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -582,6 +596,52 @@ type BarrageMessage = {
   text: string;
   topPercent: number;
 };
+
+type SettlementHandCell =
+  | {
+      kind: 'placeholder';
+      key: string;
+    }
+  | {
+      kind: 'tile';
+      key: string;
+      tile: string;
+      index: number;
+    };
+
+function buildSettlementHandCells(seat: Seat, tiles: string[]): SettlementHandCell[] {
+  const tileCells = tiles.map(
+    (tile, index): SettlementHandCell => ({
+      kind: 'tile',
+      key: `${seat}-settlement-${tile}-${index}`,
+      tile,
+      index,
+    }),
+  );
+
+  if (seat !== 'right') {
+    return tileCells;
+  }
+
+  const columnCount = SETTLEMENT_HAND_COLUMN_COUNT[seat];
+  const remainder = tiles.length % columnCount;
+
+  if (remainder === 0) {
+    return tileCells;
+  }
+
+  const lastRowStartIndex = tiles.length - remainder;
+  const placeholderCount = columnCount - remainder;
+
+  return [
+    ...tileCells.slice(0, lastRowStartIndex),
+    ...Array.from({ length: placeholderCount }, (_, index): SettlementHandCell => ({
+      kind: 'placeholder',
+      key: `${seat}-settlement-placeholder-${tiles.length}-${index}`,
+    })),
+    ...tileCells.slice(lastRowStartIndex),
+  ];
+}
 
 
 interface ActionCalloutMarkerProps {

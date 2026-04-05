@@ -427,6 +427,29 @@ describe('TableStage', () => {
     expect(screen.queryByLabelText('本家手牌')).toBeNull();
   });
 
+  it('right-aligns a short right-side settlement hand within the final row', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        promptText={null}
+        players={[{ seat: 'right', name: 'Player Right', melds: [] }]}
+        settlementHands={{
+          right: ['c1'],
+        }}
+      />,
+    );
+
+    const rightSettlementGrid = container.querySelector('.table-stage__settlement-hand-grid--right');
+    expect(rightSettlementGrid?.querySelectorAll('.table-stage__settlement-hand-placeholder')).toHaveLength(3);
+    expect(rightSettlementGrid?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+  });
+
   it('uses the provided discard seat to avoid spotlighting the same tile in another river', () => {
     const { container } = render(
       <TableStage

@@ -1313,6 +1313,15 @@ button:active:not(:disabled) {
   min-height: var(--table-stage-settlement-tile-height);
 }
 
+.table-stage__settlement-hand-placeholder {
+  display: block;
+  width: var(--table-stage-settlement-tile-width);
+  height: var(--table-stage-settlement-tile-height);
+  min-width: var(--table-stage-settlement-tile-width);
+  min-height: var(--table-stage-settlement-tile-height);
+  visibility: hidden;
+}
+
 .table-stage__settlement-hand-grid .mahjong-tile__shell {
   padding: 0.05rem;
 }
