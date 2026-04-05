@@ -2045,14 +2045,14 @@ button:active:not(:disabled) {
 .action-dock__ready-hand-trigger {
   display: inline-grid;
   place-items: center;
-  width: 1.72rem;
-  height: 1.72rem;
+  width: 1.52rem;
+  height: 1.52rem;
   padding: 0;
   border: 0;
   border-radius: 999px;
   background: #d4d0c8;
   color: #111;
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);

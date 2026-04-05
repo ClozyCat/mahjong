@@ -148,7 +148,6 @@ export function BottomActionDock({
         <section className="action-dock__ready-hand-popover" aria-label={getReadyHandPopoverLabel(readyHandInsight)}>
           <div className="action-dock__ready-hand-popover-head">
             <strong>{getReadyHandPopoverTitle(readyHandInsight)}</strong>
-            <span>{getReadyHandPopoverSummary(readyHandInsight)}</span>
           </div>
           <div className="action-dock__ready-hand-list" role="list">
             {readyHandInsight.waits.map((wait) => (
