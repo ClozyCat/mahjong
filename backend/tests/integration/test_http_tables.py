@@ -88,13 +88,12 @@ def test_create_table_can_disable_test_mode_even_when_app_default_is_true(test_m
     assert snapshot["payload"]["phase"] == "waiting"
 
 
-def test_create_table_accepts_ai_mode(test_app) -> None:
+def test_create_table_rejects_removed_ai_mode(test_app) -> None:
     client = TestClient(test_app)
 
     create_response = client.post("/api/tables", json={"table_code": "ROOM96", "mode": "ai"})
 
-    assert create_response.status_code == 201
-    assert create_response.json()["mode"] == "ai"
+    assert create_response.status_code == 422
 
 
 def test_create_table_accepts_disabling_eight_fan_requirement(test_app) -> None:

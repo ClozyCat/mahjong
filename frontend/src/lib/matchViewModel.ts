@@ -609,38 +609,6 @@ function normalizeDisplayMelds(melds: string[][] | null | undefined) {
   return (melds ?? []).map((meld) => meld.slice().sort(compareTileCodes));
 }
 
-function createWaitingSeatSlots(state: SessionState) {
-  const snapshot = state.roomSnapshot?.payload;
-  if (!snapshot || snapshot.phase !== 'waiting') {
-    return [];
-  }
-
-  const localSeat = getLocalSeat(state);
-
-  return Array.from({ length: 4 }, (_, absoluteSeat) => {
-    const reservation = snapshot.seats.find((seat) => seat.seat_index === absoluteSeat);
-    const seatType = reservation?.seat_type ?? (reservation?.is_bot ? 'bot' : 'human');
-
-    return {
-      seat: toRelativeSeat(localSeat, absoluteSeat),
-      absoluteSeat,
-      occupied: Boolean(reservation),
-      canConfigureAi: snapshot.mode === 'ai' && !reservation,
-      seatType: reservation ? seatType : null,
-      aiStatus: reservation?.ai_status ?? null,
-      aiError: reservation?.ai_error ?? null,
-      occupiedByLocalAi:
-        Boolean(
-          reservation &&
-            seatType === 'ai' &&
-            typeof reservation.ai_controller_seat === 'number' &&
-            reservation.ai_controller_seat === localSeat,
-        ),
-      nickname: reservation?.nickname ?? null,
-    };
-  });
-}
-
 function createPlayers(state: SessionState): PlayerView[] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
@@ -660,7 +628,6 @@ function createPlayers(state: SessionState): PlayerView[] {
       const privatePlayer = findPrivatePlayer(state, seat.seat_index);
       const seatKey = String(seat.seat_index);
       const seatType = seat.seat_type ?? (seat.is_bot ? 'bot' : 'human');
-      const isAiSeat = seatType === 'ai';
       const isBotSeat = seatType === 'bot';
 
       return {
@@ -668,8 +635,6 @@ function createPlayers(state: SessionState): PlayerView[] {
         absoluteSeat: seat.seat_index,
         name: seat.nickname,
         seatType,
-        aiStatus: seat.ai_status ?? null,
-        aiError: seat.ai_error ?? null,
         score: displayedScores[seatKey] ?? 0,
         liveDelta: liveDeltaBySeat[seatKey] ?? 0,
         flowerCount: flowerCountBySeat[seatKey] ?? privatePlayer?.flowers.length ?? 0,
@@ -685,17 +650,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         melds: normalizeDisplayMelds(privatePlayer?.melds),
         flowers: privatePlayer?.flowers ?? [],
         statusText:
-          isAiSeat
-            ? seat.ai_status === 'ready'
-              ? snapshot.phase === 'waiting'
-                ? 'AI已就绪'
-                : 'AI托管中'
-              : seat.ai_status === 'validating'
-                ? '验证中'
-                : seat.ai_status === 'error'
-                  ? '配置失败'
-                  : '配置中'
-            : isBotSeat
+          isBotSeat
             ? 'Bot代打中'
             : !seat.connected
               ? '等待重连中'
@@ -1445,7 +1400,6 @@ function getWinTypeLabel(result: MatchResultPayload) {
 export function createMatchViewModel(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
   const waitingControls = createWaitingControls(state);
-  const waitingSeatSlots = createWaitingSeatSlots(state);
   const isWaiting = snapshot?.phase === 'waiting';
   const isReconnecting = state.connectionStatus === 'reconnecting';
   const isSettlement = snapshot?.phase === 'settlement';
@@ -1497,7 +1451,6 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     players: createPlayers(state),
     actions: createActionViews(state, waitingControls, options),
     waitingControls,
-    waitingSeatSlots,
     discards: createDiscards(state),
     localHand: createLocalHand(state),
     readyHandInsight: createReadyHandInsight(state),

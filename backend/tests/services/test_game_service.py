@@ -667,9 +667,6 @@ async def test_leave_table_removes_waiting_seat_and_notifies_peers(monkeypatch):
             "ready": True,
             "is_bot": False,
             "seat_type": "human",
-            "ai_status": None,
-            "ai_error": None,
-            "ai_controller_seat": None,
         }
     ]
 
@@ -741,247 +738,12 @@ async def test_leave_table_during_active_match_keeps_seat_but_invalidates_reconn
         "ready": True,
         "is_bot": True,
         "seat_type": "bot",
-        "ai_status": None,
-        "ai_error": None,
-        "ai_controller_seat": None,
     }
 
 
-@pytest.mark.asyncio
-async def test_ai_mode_can_reserve_and_validate_an_ai_seat(monkeypatch):
+def test_room_ready_to_start_accepts_ready_bot_seats_without_a_socket():
     service = GameService(sessionmaker())
-    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
-
-    async def fake_validate_config(_config):
-        return None
-
-    monkeypatch.setattr(service._ai_client, "validate_config", fake_validate_config)
-
-    owner = _RecordingWebSocket()
-    room = RoomState(table_code="ROOMAI01", phase="waiting", mode="ai")
-    room.seats[0] = SeatReservation(
-        seat_index=0,
-        nickname="Owner",
-        reconnect_token="token-owner",
-        player_session_id=1,
-        websocket=owner,
-        connected=True,
-        ready=True,
-    )
-    service._rooms["ROOMAI01"] = room
-
-    reserve_response = await service.reserve_ai_seat(
-        table_code="ROOMAI01",
-        websocket=owner,
-        seat_index=2,
-    )
-
-    assert reserve_response == {
-        "type": "reserve_ai_seat_accepted",
-        "payload": {"seat_index": 2},
-    }
-    assert room.seats[2].seat_type == "ai"
-    assert room.seats[2].ai_status == "configuring"
-    assert room.seats[2].ready is False
-
-    configure_response = await service.configure_ai_seat(
-        table_code="ROOMAI01",
-        websocket=owner,
-        seat_index=2,
-        api_key="sk-test",
-        base_url="https://example.invalid/v1",
-        model="gpt-test",
-    )
-
-    assert configure_response == {
-        "type": "configure_ai_seat_accepted",
-        "payload": {"seat_index": 2},
-    }
-    assert room.seats[2].seat_type == "ai"
-    assert room.seats[2].is_bot is True
-    assert room.seats[2].connected is False
-    assert room.seats[2].ready is True
-    assert room.seats[2].ai_status == "ready"
-    assert room.seats[2].ai_error is None
-    assert owner.messages[-1]["type"] == "room_snapshot"
-    assert owner.messages[-1]["payload"]["seats"][1] == {
-        "seat_index": 2,
-        "nickname": "AI 3",
-        "connected": False,
-        "ready": True,
-        "is_bot": True,
-        "seat_type": "ai",
-        "ai_status": "ready",
-        "ai_error": None,
-        "ai_controller_seat": 0,
-    }
-
-
-@pytest.mark.asyncio
-async def test_ai_mode_can_fill_a_waiting_seat_with_default_bot(monkeypatch):
-    service = GameService(sessionmaker())
-    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
-    monkeypatch.setattr(service, "_roll_bot_persona", lambda: "balanced")
-    monkeypatch.setattr(service, "_roll_bot_aggression", lambda _persona=None: 0.37)
-
-    owner = _RecordingWebSocket()
-    room = RoomState(table_code="ROOMAI02", phase="waiting", mode="ai")
-    room.seats[0] = SeatReservation(
-        seat_index=0,
-        nickname="Owner",
-        reconnect_token="token-owner",
-        player_session_id=1,
-        websocket=owner,
-        connected=True,
-        ready=True,
-    )
-    service._rooms["ROOMAI02"] = room
-
-    response = await service.use_default_bot(
-        table_code="ROOMAI02",
-        websocket=owner,
-        seat_index=1,
-    )
-
-    assert response == {
-        "type": "use_default_bot_accepted",
-        "payload": {"seat_index": 1},
-    }
-    assert room.seats[1].seat_type == "bot"
-    assert room.seats[1].is_bot is True
-    assert room.seats[1].ready is True
-    assert room.seats[1].connected is True
-    assert room.seats[1].ai_controller_seat == 0
-
-
-@pytest.mark.asyncio
-async def test_ai_mode_uses_openai_compatible_response_during_active_turn(monkeypatch):
-    service = GameService(sessionmaker())
-    monkeypatch.setattr(service, "_persist_room_state_locked", lambda _room: None)
-    monkeypatch.setattr(service, "_auto_advance_bot_seats_locked", lambda _room: [])
-    monkeypatch.setattr(service, "_sync_timeout_task_locked", lambda _room: None)
-    monkeypatch.setattr(service, "_sync_bot_action_task_locked", lambda _room: None)
-
-    captured_request: dict[str, object] = {}
-
-    async def fake_choose_action(*, config, seat_index, room_mode, room_snapshot):
-        captured_request.update(
-            {
-                "config": config,
-                "seat_index": seat_index,
-                "room_mode": room_mode,
-                "room_snapshot": room_snapshot,
-            }
-        )
-        return BotDecision(action_type="discard", tile_ids=["w1#1"])
-
-    monkeypatch.setattr(service._ai_client, "choose_action", fake_choose_action)
-
-    spectator = _RecordingWebSocket()
-    room = RoomState(table_code="ROOMAI03", phase="playing", mode="ai")
-    room.seats[0] = SeatReservation(
-        seat_index=0,
-        nickname="AI 1",
-        reconnect_token=None,
-        player_session_id=-1,
-        connected=False,
-        ready=True,
-        is_bot=True,
-        seat_type="ai",
-        ai_status="ready",
-        ai_config=SimpleNamespace(
-            api_key="sk-test",
-            base_url="https://example.invalid/v1",
-            model="gpt-test",
-        ),
-    )
-    room.seats[1] = SeatReservation(
-        seat_index=1,
-        nickname="Spectator",
-        reconnect_token="token-1",
-        player_session_id=1,
-        websocket=spectator,
-        connected=True,
-        ready=True,
-    )
-    room.round_state = RoundState(
-        round_id="round-ai-active",
-        dealer_seat=0,
-        current_actor=0,
-        wall=WallState(tiles=(), head_index=0, tail_index=-1),
-        players=(
-            PlayerState(
-                seat=0,
-                concealed_tiles=(_make_suit_tile("w1", "w1#1"),),
-                melds=(),
-                flowers=(),
-                discards=(),
-            ),
-            PlayerState(seat=1, concealed_tiles=(), melds=(), flowers=(), discards=()),
-            PlayerState(seat=2, concealed_tiles=(), melds=(), flowers=(), discards=()),
-            PlayerState(seat=3, concealed_tiles=(), melds=(), flowers=(), discards=()),
-        ),
-        last_discard=None,
-        pending_action=None,
-        phase="playing",
-        settlement=None,
-        version=12,
-        score_trackers={"kong_entries": []},
-        last_action_context={
-            "kind": "draw",
-            "seat": 0,
-            "tile_id": "w1#1",
-            "from_kong_replacement": False,
-            "was_last_live_tile": False,
-            "was_last_discard": False,
-        },
-        round_wind="east",
-    )
-    room.pending_timeout = PendingTimeout(
-        kind="active_turn",
-        seat_index=0,
-        deadline_at=datetime.now(timezone.utc) + timedelta(seconds=30),
-        drawn_tile_id="w1#1",
-    )
-    expected_key = service._pending_bot_action_key_locked(room)
-    assert expected_key is not None
-    room.bot_action_key = expected_key
-    service._rooms["ROOMAI03"] = room
-
-    await service._bot_action_runner(
-        "ROOMAI03",
-        expected_key=expected_key,
-        delay=0.0,
-    )
-
-    assert captured_request["seat_index"] == 0
-    assert captured_request["room_mode"] == "ai"
-    assert captured_request["config"] == room.seats[0].ai_config
-    request_snapshot = captured_request["room_snapshot"]
-    assert isinstance(request_snapshot, dict)
-    assert request_snapshot["table_code"] == "ROOMAI03"
-    assert request_snapshot["local_seat"] == 0
-    assert request_snapshot["reconnect_token"] is None
-    assert request_snapshot["private_state"]["pending_action"]["type"] == "active_turn"
-    assert request_snapshot["private_state"]["pending_action"]["options"] == ["discard"]
-    assert request_snapshot["private_state"]["players"][0]["concealed_tiles"] == [
-        {"tile_id": "w1#1", "tile_key": "w1"}
-    ]
-
-    assert room.round_state is not None
-    assert room.round_state.last_discard is not None
-    assert room.round_state.last_discard.tile_id == "w1#1"
-    assert spectator.messages[0]["type"] == "round_event"
-    assert spectator.messages[0]["payload"]["event_type"] == "tile_discarded"
-    assert spectator.messages[0]["payload"]["event"]["seat"] == 0
-    assert spectator.messages[0]["payload"]["event"]["tile_id"] == "w1#1"
-    assert spectator.messages[1]["type"] == "room_snapshot"
-    assert spectator.messages[1]["payload"]["private_state"]["last_discard"] == "w1"
-
-
-def test_room_ready_to_start_accepts_ready_ai_seats_without_a_socket():
-    service = GameService(sessionmaker())
-    room = RoomState(table_code="ROOMAI03", phase="waiting", mode="ai")
+    room = RoomState(table_code="ROOMBOT03", phase="waiting")
     room.seats[0] = SeatReservation(
         seat_index=0,
         nickname="P0",
@@ -1000,14 +762,13 @@ def test_room_ready_to_start_accepts_ready_ai_seats_without_a_socket():
     )
     room.seats[2] = SeatReservation(
         seat_index=2,
-        nickname="AI 3",
+        nickname="Bot 3",
         reconnect_token=None,
         player_session_id=-3,
-        connected=False,
+        connected=True,
         ready=True,
         is_bot=True,
-        seat_type="ai",
-        ai_status="ready",
+        seat_type="bot",
     )
     room.seats[3] = SeatReservation(
         seat_index=3,
@@ -1193,9 +954,6 @@ async def test_disconnect_timeout_removes_waiting_seat_after_grace_period(monkey
             "ready": False,
             "is_bot": False,
             "seat_type": "human",
-            "ai_status": None,
-            "ai_error": None,
-            "ai_controller_seat": None,
         }
     ]
 
@@ -1265,9 +1023,6 @@ async def test_disconnect_timeout_turns_a_started_seat_into_a_bot(monkeypatch):
         "ready": True,
         "is_bot": True,
         "seat_type": "bot",
-        "ai_status": None,
-        "ai_error": None,
-        "ai_controller_seat": None,
     }
 
 

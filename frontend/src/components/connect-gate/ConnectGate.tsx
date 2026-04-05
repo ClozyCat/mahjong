@@ -189,7 +189,6 @@ export function ConnectGate({
               <div className="connect-gate__actions connect-gate__actions--toggles">
                 {renderModeToggle('normal', '普通模式', '手动准备开局')}
                 {renderModeToggle('test', '测试模式', '自动补满机器人')}
-                {renderModeToggle('ai', 'AI模式', '可配置 AI 座位')}
                 <button
                   type="button"
                   className="connect-gate__toggle"

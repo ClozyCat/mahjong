@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import StringConstraints
-from typing import Annotated
 
 
 class HealthResponse(BaseModel):
@@ -22,9 +22,6 @@ class TableSeatResponse(BaseModel):
     ready: bool = False
     is_bot: bool = False
     seat_type: str = "human"
-    ai_status: str | None = None
-    ai_error: str | None = None
-    ai_controller_seat: int | None = None
 
 
 class WaitingRoomResponse(BaseModel):
@@ -39,7 +36,7 @@ class WaitingRoomResponse(BaseModel):
 
 class CreateTableRequest(BaseModel):
     table_code: Annotated[str | None, StringConstraints(pattern=r"^[A-Z0-9]{1,12}$")] = None
-    mode: str | None = None
+    mode: Literal["normal", "test"] | None = None
     test_mode: bool | None = None
     enforce_minimum_eight_fan: bool | None = None
 

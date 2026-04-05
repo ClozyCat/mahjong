@@ -31,9 +31,6 @@ class WaitingRoomSeatDTO:
     ready: bool = False
     is_bot: bool = False
     seat_type: str = "human"
-    ai_status: str | None = None
-    ai_error: str | None = None
-    ai_controller_seat: int | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +94,8 @@ def create_table(
 ) -> TableDTO:
     if test_mode is not None:
         mode = "test" if test_mode else "normal"
+    if mode not in {"normal", "test"}:
+        raise ValueError("unsupported_mode")
 
     if table_code:
         normalized_table_code = normalize_table_code(table_code)

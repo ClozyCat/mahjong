@@ -13,9 +13,7 @@ export function PlayerInfoBar({ player, className = '' }: PlayerInfoBarProps) {
   const presenceLabel =
     player.seatType === 'bot'
       ? 'BOT'
-      : player.seatType === 'ai'
-        ? 'AI'
-        : player.connected === false
+      : player.connected === false
           ? '离线'
           : '在线';
   const eyebrowText = [windLabel, player.isDealer ? '庄家' : null, presenceLabel].filter(Boolean).join(' · ');

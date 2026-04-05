@@ -110,7 +110,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     ],
     actions: [],
     waitingControls: null,
-    waitingSeatSlots: [],
     discards: {
       bottom: ['w1'],
       left: [],

@@ -1,7 +1,6 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
-export type TableMode = 'normal' | 'test' | 'ai';
-export type SeatType = 'human' | 'bot' | 'ai';
-export type AiSeatStatus = 'configuring' | 'validating' | 'ready' | 'error';
+export type TableMode = 'normal' | 'test';
+export type SeatType = 'human' | 'bot';
 
 export type MatchPhase =
   | 'loading'
@@ -38,9 +37,6 @@ export interface SeatSnapshot {
   ready: boolean;
   is_bot?: boolean;
   seat_type?: SeatType;
-  ai_status?: AiSeatStatus | null;
-  ai_error?: string | null;
-  ai_controller_seat?: number | null;
 }
 
 export interface ConcealedTile {
@@ -262,13 +258,6 @@ export type ClientMessage =
   | { type: 'reconnect'; payload: { reconnect_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
-  | { type: 'reserve_ai_seat'; payload: { seat_index: number } }
-  | {
-      type: 'configure_ai_seat';
-      payload: { seat_index: number; api_key: string; base_url: string; model: string };
-    }
-  | { type: 'cancel_ai_seat'; payload: { seat_index: number } }
-  | { type: 'use_default_bot'; payload: { seat_index: number } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
   | { type: 'restart_match'; payload: Record<string, never> }
@@ -320,8 +309,6 @@ export interface PlayerView {
   absoluteSeat?: number;
   name: string;
   seatType?: SeatType;
-  aiStatus?: AiSeatStatus | null;
-  aiError?: string | null;
   score: number;
   liveDelta: number;
   flowerCount: number;
@@ -337,18 +324,6 @@ export interface PlayerView {
   melds: string[][];
   flowers: string[];
   statusText?: string;
-}
-
-export interface WaitingSeatSlot {
-  seat: Seat;
-  absoluteSeat: number;
-  occupied: boolean;
-  canConfigureAi: boolean;
-  seatType?: SeatType | null;
-  aiStatus?: AiSeatStatus | null;
-  aiError?: string | null;
-  occupiedByLocalAi?: boolean;
-  nickname?: string | null;
 }
 
 export interface WaitingControls {
@@ -477,7 +452,6 @@ export interface BattleViewModel {
   players: PlayerView[];
   actions: BattleActionView[];
   waitingControls: WaitingControls | null;
-  waitingSeatSlots: WaitingSeatSlot[];
   discards: Record<Seat, string[]>;
   localHand: LocalTileView[];
   readyHandInsight: ReadyHandInsightView | null;

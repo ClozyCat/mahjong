@@ -59,15 +59,9 @@ def test_create_table_persists_requested_test_mode_in_room_snapshot(db_session):
     assert persisted_snapshot.payload["test_mode"] is True
 
 
-def test_create_table_persists_requested_ai_mode_in_room_snapshot(db_session):
-    room = create_table(db_session, "ROOM43A", mode="ai")
-    persisted_snapshot = db_session.scalar(
-        select(RoomSnapshotRecord).join(TableRecord, RoomSnapshotRecord.table_id == TableRecord.id).where(TableRecord.table_code == room.table_code)
-    )
-
-    assert persisted_snapshot is not None
-    assert persisted_snapshot.payload["mode"] == "ai"
-    assert persisted_snapshot.payload["test_mode"] is False
+def test_create_table_rejects_removed_ai_mode(db_session):
+    with pytest.raises(ValueError, match="unsupported_mode"):
+        create_table(db_session, "ROOM43A", mode="ai")
 
 
 def test_create_table_persists_eight_fan_rule_toggle_in_room_snapshot(db_session):
