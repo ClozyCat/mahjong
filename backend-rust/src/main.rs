@@ -107,6 +107,12 @@ struct ReconnectTokenRecord {
     player_session_id: i64,
 }
 
+struct SqliteColumn {
+    name: String,
+    not_null: bool,
+    primary_key: bool,
+}
+
 impl Database {
     fn open(path: &str) -> Result<Self> {
         if let Some(parent) = Path::new(path).parent() {
@@ -123,16 +129,139 @@ impl Database {
     }
 
     fn initialize(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        self.ensure_tables_schema()?;
+        self.ensure_reconnect_tokens_schema()?;
+        Ok(())
+    }
+
+    fn ensure_tables_schema(&self) -> Result<()> {
+        let columns = self.table_columns("tables")?;
+        if columns.is_empty() {
+            self.create_tables_table()?;
+            return Ok(());
+        }
+
+        if self.tables_schema_is_current(&columns) {
+            return Ok(());
+        }
+
+        let room_source = if columns.iter().any(|column| column.name == "room_json") {
+            Some("room_json")
+        } else if columns.iter().any(|column| column.name == "state_json") {
+            Some("state_json")
+        } else {
+            None
+        };
+
+        eprintln!("detected legacy sqlite schema for `tables`; rebuilding it");
+        if room_source.is_none() {
+            eprintln!(
+                "legacy `tables` rows do not contain a room snapshot column; starting with an empty table store"
+            );
+        }
+
+        self.with_schema_rebuild("migrate `tables` schema", |db| {
+            db.conn.execute_batch(
+                "
+                DROP TABLE IF EXISTS tables_legacy;
+                ALTER TABLE tables RENAME TO tables_legacy;
+                ",
+            )?;
+            db.create_tables_table()?;
+            if let Some(room_source) = room_source {
+                let copy_sql = format!(
+                    "
+                    INSERT INTO tables (table_code, created_at, room_json)
+                    SELECT table_code, created_at, {room_source}
+                    FROM tables_legacy
+                    WHERE table_code IS NOT NULL
+                      AND created_at IS NOT NULL
+                      AND {room_source} IS NOT NULL
+                    "
+                );
+                db.conn.execute_batch(&copy_sql)?;
+            }
+            db.conn.execute_batch(
+                "
+                DROP TABLE IF EXISTS player_sessions;
+                DROP TABLE IF EXISTS table_seats;
+                DROP TABLE IF EXISTS room_snapshots;
+                DROP TABLE IF EXISTS round_snapshots;
+                DROP TABLE IF EXISTS settlements;
+                DROP TABLE IF EXISTS round_events;
+                DROP TABLE IF EXISTS alembic_version;
+                DROP TABLE tables_legacy;
+                ",
+            )?;
+            Ok(())
+        })
+    }
+
+    fn ensure_reconnect_tokens_schema(&self) -> Result<()> {
+        let columns = self.table_columns("reconnect_tokens")?;
+        if columns.is_empty() {
+            self.create_reconnect_tokens_table()?;
+            return Ok(());
+        }
+
+        if self.reconnect_tokens_schema_is_current(&columns) {
+            return Ok(());
+        }
+
+        let can_copy_rows = columns.iter().any(|column| column.name == "token")
+            && columns.iter().any(|column| column.name == "table_code")
+            && columns.iter().any(|column| column.name == "seat_index")
+            && columns
+                .iter()
+                .any(|column| column.name == "player_session_id");
+
+        eprintln!("detected legacy sqlite schema for `reconnect_tokens`; rebuilding it");
+        if !can_copy_rows {
+            eprintln!("legacy reconnect tokens cannot be migrated and will be reset");
+        }
+
+        self.with_schema_rebuild("migrate `reconnect_tokens` schema", |db| {
+            db.conn.execute_batch(
+                "
+                DROP TABLE IF EXISTS reconnect_tokens_legacy;
+                ALTER TABLE reconnect_tokens RENAME TO reconnect_tokens_legacy;
+                ",
+            )?;
+            db.create_reconnect_tokens_table()?;
+            if can_copy_rows {
+                db.conn.execute_batch(
+                    "
+                    INSERT INTO reconnect_tokens (token, table_code, seat_index, player_session_id)
+                    SELECT token, table_code, seat_index, player_session_id
+                    FROM reconnect_tokens_legacy
+                    WHERE token IS NOT NULL
+                      AND table_code IS NOT NULL
+                    ",
+                )?;
+            }
+            db.conn
+                .execute_batch("DROP TABLE reconnect_tokens_legacy;")?;
+            Ok(())
+        })
+    }
+
+    fn create_tables_table(&self) -> Result<()> {
         self.conn.execute_batch(
             "
-            PRAGMA foreign_keys = ON;
-
             CREATE TABLE IF NOT EXISTS tables (
                 table_code TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
                 room_json TEXT NOT NULL
             );
+            ",
+        )?;
+        Ok(())
+    }
 
+    fn create_reconnect_tokens_table(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
             CREATE TABLE IF NOT EXISTS reconnect_tokens (
                 token TEXT PRIMARY KEY,
                 table_code TEXT NOT NULL,
@@ -142,6 +271,87 @@ impl Database {
             ",
         )?;
         Ok(())
+    }
+
+    fn tables_schema_is_current(&self, columns: &[SqliteColumn]) -> bool {
+        columns.len() == 3
+            && columns
+                .iter()
+                .any(|column| column.name == "table_code" && column.primary_key)
+            && columns
+                .iter()
+                .any(|column| column.name == "created_at" && column.not_null)
+            && columns
+                .iter()
+                .any(|column| column.name == "room_json" && column.not_null)
+    }
+
+    fn reconnect_tokens_schema_is_current(&self, columns: &[SqliteColumn]) -> bool {
+        columns.len() == 4
+            && columns
+                .iter()
+                .any(|column| column.name == "token" && column.primary_key)
+            && columns
+                .iter()
+                .any(|column| column.name == "table_code" && column.not_null)
+            && columns
+                .iter()
+                .any(|column| column.name == "seat_index" && column.not_null)
+            && columns
+                .iter()
+                .any(|column| column.name == "player_session_id" && column.not_null)
+    }
+
+    fn table_columns(&self, table_name: &str) -> Result<Vec<SqliteColumn>> {
+        let pragma = match table_name {
+            "tables" => "PRAGMA table_info(tables)",
+            "reconnect_tokens" => "PRAGMA table_info(reconnect_tokens)",
+            _ => return Err(anyhow!("unsupported table inspection target: {table_name}")),
+        };
+
+        let mut statement = self.conn.prepare(pragma)?;
+        let columns = statement
+            .query_map([], |row| {
+                Ok(SqliteColumn {
+                    name: row.get(1)?,
+                    not_null: row.get::<_, i64>(3)? != 0,
+                    primary_key: row.get::<_, i64>(5)? != 0,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(columns)
+    }
+
+    fn with_schema_rebuild<F>(&self, context: &str, work: F) -> Result<()>
+    where
+        F: FnOnce(&Database) -> Result<()>,
+    {
+        self.conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+        if let Err(error) = self.conn.execute_batch("BEGIN IMMEDIATE;") {
+            let _ = self.conn.execute_batch("PRAGMA foreign_keys = ON;");
+            return Err(error)
+                .with_context(|| format!("failed to start sqlite transaction for {context}"));
+        }
+
+        let result = work(self);
+        match result {
+            Ok(()) => {
+                if let Err(error) = self.conn.execute_batch("COMMIT;") {
+                    let _ = self.conn.execute_batch("ROLLBACK;");
+                    let _ = self.conn.execute_batch("PRAGMA foreign_keys = ON;");
+                    return Err(error).with_context(|| {
+                        format!("failed to commit sqlite transaction for {context}")
+                    });
+                }
+                self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+                Ok(())
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK;");
+                let _ = self.conn.execute_batch("PRAGMA foreign_keys = ON;");
+                Err(error).with_context(|| context.to_string())
+            }
+        }
     }
 
     fn get_table(&self, table_code: &str) -> Result<Option<TableRecord>> {
@@ -2099,4 +2309,125 @@ fn generate_short_hex(bytes: usize) -> String {
     let mut data = vec![0_u8; bytes];
     rng.fill(data.as_mut_slice());
     data.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn in_memory_database(schema_sql: &str) -> Result<Database> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(schema_sql)?;
+        Ok(Database { conn })
+    }
+
+    #[test]
+    fn initialize_migrates_legacy_tables_with_state_json() -> Result<()> {
+        let db = in_memory_database(
+            "
+            CREATE TABLE tables (
+                table_code TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                state_json TEXT NOT NULL
+            );
+
+            INSERT INTO tables (table_code, created_at, state_json)
+            VALUES ('ROOM42', '2026-04-06T00:00:00Z', '{\"table_code\":\"ROOM42\",\"seats\":[]}');
+            ",
+        )?;
+
+        db.initialize()?;
+
+        let record = db.get_table("ROOM42")?.expect("room should be migrated");
+        assert_eq!(record.created_at, "2026-04-06T00:00:00Z");
+        assert_eq!(record.room_json, "{\"table_code\":\"ROOM42\",\"seats\":[]}");
+        Ok(())
+    }
+
+    #[test]
+    fn initialize_resets_incompatible_python_schema() -> Result<()> {
+        let db = in_memory_database(
+            "
+            CREATE TABLE tables (
+                id INTEGER PRIMARY KEY,
+                table_code TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                current_round_id TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX ix_tables_table_code ON tables(table_code);
+            INSERT INTO tables (table_code, phase, current_round_id, created_at)
+            VALUES ('ROOM42', 'waiting', NULL, '2026-04-06T00:00:00Z');
+
+            CREATE TABLE player_sessions (
+                id INTEGER PRIMARY KEY,
+                table_id INTEGER NOT NULL,
+                nickname TEXT NOT NULL,
+                connected INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(table_id) REFERENCES tables(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE reconnect_tokens (
+                id INTEGER PRIMARY KEY,
+                table_id INTEGER NOT NULL,
+                seat_index INTEGER NOT NULL,
+                player_session_id INTEGER NOT NULL,
+                token TEXT NOT NULL,
+                issued_at TEXT NOT NULL,
+                consumed_at TEXT,
+                FOREIGN KEY(table_id) REFERENCES tables(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE alembic_version (
+                version_num TEXT NOT NULL
+            );
+            INSERT INTO alembic_version (version_num) VALUES ('0001_initial_schema');
+            ",
+        )?;
+
+        db.initialize()?;
+
+        assert!(db.get_table("ROOM42")?.is_none());
+
+        let room_json = serde_json::to_string(&json!({
+            "table_code": "ROOM99",
+            "seats": []
+        }))?;
+        db.save_table("ROOM99", "2026-04-06T01:00:00Z", &room_json)?;
+        db.store_reconnect_token("token-1", "ROOM99", 1, 42)?;
+
+        let table = db
+            .get_table("ROOM99")?
+            .expect("new room should be stored after reset");
+        assert_eq!(table.room_json, room_json);
+
+        let reconnect = db
+            .get_reconnect_token("token-1")?
+            .expect("new reconnect token should be stored after reset");
+        assert_eq!(reconnect.table_code, "ROOM99");
+        assert_eq!(reconnect.seat_index, 1);
+        assert_eq!(reconnect.player_session_id, 42);
+
+        let player_sessions_exists = db
+            .conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'player_sessions'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        let alembic_version_exists = db
+            .conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'alembic_version'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+
+        assert!(player_sessions_exists.is_none());
+        assert!(alembic_version_exists.is_none());
+        Ok(())
+    }
 }
