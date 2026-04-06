@@ -914,10 +914,7 @@ async fn handle_join_table(
         }));
         seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
     }
-    if room_mode(&runtime.room) == "test" && runtime.room.get("round_state").is_none() {
-        rust_add_bot_seats_for_test(&mut runtime.room);
-        rust_start_match(&mut runtime.room, 0, rand::random::<u64>());
-    }
+    maybe_start_test_match(&mut runtime.room);
     runtime.connections.insert(seat_index, connection.clone());
     let room_to_persist = runtime.room.clone();
     if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
@@ -1068,9 +1065,7 @@ async fn handle_ready(
     let Some(runtime) = inner.rooms.get_mut(table_code) else {
         return reject_to(connection, "table_not_found");
     };
-    if runtime.room.get("round_state").is_some()
-        && !runtime.room.get("round_state").is_some_and(Value::is_null)
-    {
+    if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
     if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
@@ -1119,9 +1114,7 @@ async fn handle_start_match(
         .get(table_code)
         .map(|runtime| runtime.room.clone())
         .unwrap();
-    if current_room.get("round_state").is_some()
-        && !current_room.get("round_state").is_some_and(Value::is_null)
-    {
+    if room_has_round_state(&current_room) {
         return reject_to(connection, "room_already_started");
     }
     if !rust_room_ready_to_start(&current_room) {
@@ -1621,9 +1614,7 @@ async fn process_due_disconnect_timeout(
             return;
         };
         runtime.connections.remove(&seat_index);
-        if runtime.room.get("round_state").is_some()
-            && !runtime.room.get("round_state").is_some_and(Value::is_null)
-        {
+        if room_has_round_state(&runtime.room) {
             convert_seat_to_bot(&mut runtime.room, seat_index);
             let _ = rust_reconcile_continue_action_state(&mut runtime.room);
         } else {
@@ -2146,6 +2137,20 @@ fn room_mode(room: &Value) -> String {
         .to_string()
 }
 
+fn room_has_round_state(room: &Value) -> bool {
+    room.get("round_state")
+        .is_some_and(|state| !state.is_null())
+}
+
+fn maybe_start_test_match(room: &mut Value) {
+    if room_mode(room) != "test" || room_has_round_state(room) {
+        return;
+    }
+
+    rust_add_bot_seats_for_test(room);
+    rust_start_match(room, 0, rand::random::<u64>());
+}
+
 fn room_phase(room: &Value) -> String {
     room.get("phase")
         .and_then(Value::as_str)
@@ -2342,6 +2347,32 @@ mod tests {
         assert_eq!(record.created_at, "2026-04-06T00:00:00Z");
         assert_eq!(record.room_json, "{\"table_code\":\"ROOM42\",\"seats\":[]}");
         Ok(())
+    }
+
+    #[test]
+    fn maybe_start_test_match_starts_when_round_state_is_null() {
+        let mut room = initial_room_payload("ROOM42", "test", true);
+        room["seats"] = json!([{
+            "seat_index": 0,
+            "nickname": "Solo",
+            "reconnect_token": "token-1",
+            "player_session_id": 1,
+            "connected": true,
+            "ready": false,
+            "is_bot": false,
+            "seat_type": "human",
+            "bot_persona": Value::Null,
+            "bot_aggression": Value::Null,
+            "disconnect_deadline_at": Value::Null,
+        }]);
+
+        maybe_start_test_match(&mut room);
+
+        assert_eq!(room["phase"], "playing");
+        assert_eq!(room["mode"], "test");
+        assert_eq!(room["seats"].as_array().map(Vec::len), Some(4));
+        assert!(room_has_round_state(&room));
+        assert_eq!(room["match_state"]["dealer_seat"], 0);
     }
 
     #[test]
