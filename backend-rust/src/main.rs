@@ -76,9 +76,11 @@ struct AppState {
 }
 
 type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
+type SeatConnections = Vec<(usize, ConnectionHandle)>;
 
 struct RoomHandle {
     closed: AtomicBool,
+    persist: Mutex<()>,
     runtime: Mutex<RoomRuntime>,
 }
 
@@ -102,6 +104,7 @@ impl RoomHandle {
     fn new(runtime: RoomRuntime) -> Self {
         Self {
             closed: AtomicBool::new(false),
+            persist: Mutex::new(()),
             runtime: Mutex::new(runtime),
         }
     }
@@ -618,6 +621,7 @@ impl Database {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn rotate_reconnect_token(
         &self,
         table_code: &str,
@@ -741,6 +745,7 @@ impl DbWorker {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn rotate_reconnect_token(
         &self,
         table_code: &str,
@@ -1302,10 +1307,12 @@ async fn handle_join_table(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     if runtime
         .connections
         .values()
@@ -1342,9 +1349,11 @@ async fn handle_join_table(
         seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
     }
     maybe_start_test_match(&mut runtime.room);
-    replace_connection(&mut runtime, seat_index, connection);
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
@@ -1361,9 +1370,19 @@ async fn handle_join_table(
         )
         .await
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    let outbound = collect_join_outbound(&runtime, table_code, connection, seat_index, true);
+    let outbound = collect_join_outbound_from_snapshot(
+        &room,
+        &connections,
+        table_code,
+        connection,
+        seat_index,
+        true,
+    );
+    let mut runtime = room_handle.runtime.lock().await;
+    replace_connection(&mut runtime, seat_index, connection);
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -1401,10 +1420,12 @@ async fn handle_reconnect(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     if runtime
         .connections
         .values()
@@ -1438,9 +1459,11 @@ async fn handle_reconnect(
         object.insert("disconnect_deadline_at".to_string(), Value::Null);
     }
     let _ = rust_reconcile_continue_action_state(&mut runtime.room);
-    replace_connection(&mut runtime, token_record.seat_index, connection);
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
@@ -1458,16 +1481,20 @@ async fn handle_reconnect(
         )
         .await
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
 
-    let outbound = collect_join_outbound(
-        &runtime,
+    let outbound = collect_join_outbound_from_snapshot(
+        &room,
+        &connections,
         table_code,
         connection,
         token_record.seat_index,
         true,
     );
+    let mut runtime = room_handle.runtime.lock().await;
+    replace_connection(&mut runtime, token_record.seat_index, connection);
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -1496,10 +1523,12 @@ async fn handle_ready(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
@@ -1515,20 +1544,23 @@ async fn handle_ready(
         object.insert("ready".to_string(), Value::Bool(ready));
     }
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
         .save_table(table_code, &created_at, &room_json)
         .await
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    drop(runtime);
     let outcome = MessageOutcome {
         outbound,
         owned_seat: None,
@@ -1551,10 +1583,12 @@ async fn handle_start_match(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     let already_started = room_has_round_state(&runtime.room);
     let ready_to_start = rust_room_ready_to_start(&runtime.room);
     let occupied = occupied_seats(&runtime.room);
@@ -1571,20 +1605,23 @@ async fn handle_start_match(
     };
     rust_start_match(&mut runtime.room, dealer_seat, rand::random::<u64>());
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
         .save_table(table_code, &created_at, &room_json)
         .await
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    drop(runtime);
     let outcome = MessageOutcome {
         outbound,
         owned_seat: None,
@@ -1608,28 +1645,33 @@ async fn handle_continue_action(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     if let Err(reason) = rust_record_continue_action(&mut runtime.room, seat_index, action_id) {
         return reject_to(connection, &reason);
     }
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
         .save_table(table_code, &created_at, &room_json)
         .await
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    drop(runtime);
     let outcome = MessageOutcome {
         outbound,
         owned_seat: None,
@@ -1671,10 +1713,12 @@ async fn handle_action_request(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     let rust_handled_messages = match try_rust_action(
         &mut runtime.room,
         seat_index,
@@ -1687,22 +1731,28 @@ async fn handle_action_request(
     };
 
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    let broadcast_handles = connections
+        .iter()
+        .map(|(_, handle)| handle.clone())
+        .collect::<Vec<_>>();
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let connections = runtime.connections.values().cloned().collect::<Vec<_>>();
-    let snapshot_outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
         .save_table(table_code, &created_at, &room_json)
         .await
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    drop(runtime);
-    let mut outbound = broadcast_to_handles(&connections, Some(&rust_handled_messages));
+    let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&rust_handled_messages));
     outbound.extend(snapshot_outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -1763,10 +1813,11 @@ async fn handle_quick_chat(
             "sent_at": now_iso(),
         }
     });
-    let outbound = runtime
-        .connections
-        .values()
-        .map(|handle| handle.outbound(payload.clone()))
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let outbound = connections
+        .into_iter()
+        .map(|(_, handle)| handle.outbound(payload.clone()))
         .collect();
     MessageOutcome {
         outbound,
@@ -1788,13 +1839,14 @@ async fn handle_leave_table(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let previous_room = runtime.room.clone();
     let created_at = runtime.created_at.clone();
     let phase = room_phase(&runtime.room);
-    runtime.connections.remove(&seat_index);
     if phase == "waiting" {
         remove_seat_from_room(&mut runtime.room, seat_index);
     } else {
@@ -1817,20 +1869,30 @@ async fn handle_leave_table(
             drop(runtime);
             unregister_room_handle(&state, table_code, &room_handle).await;
             state.inner.db.delete_table(table_code).await.ok();
-            schedule_room_tasks(state, table_code.to_string()).await;
-            return MessageOutcome {
+            schedule_room_tasks_detached(state, table_code.to_string());
+            MessageOutcome {
                 outbound,
                 owned_seat: None,
                 clear_owned_seat: true,
                 close_socket: true,
-            };
+            }
         } else {
-            let room_json = match serialize_room(&runtime.room) {
+            let room = runtime.room.clone();
+            let connections = snapshot_connections(&runtime)
+                .into_iter()
+                .filter(|(other_seat, _)| *other_seat != seat_index)
+                .collect::<Vec<_>>();
+            drop(runtime);
+            let room_json = match serialize_room(&room) {
                 Ok(value) => value,
                 Err(error) => return internal_error_to(connection, error),
             };
-            outbound.extend(presence_and_snapshot_for_all(
-                &runtime, table_code, seat_index, false,
+            outbound.extend(presence_and_snapshot_for_all_from_snapshot(
+                &room,
+                &connections,
+                table_code,
+                seat_index,
+                false,
             ));
             if let Err(error) = state
                 .inner
@@ -1843,7 +1905,18 @@ async fn handle_leave_table(
                 )
                 .await
             {
+                restore_room_snapshot(&room_handle, previous_room).await;
                 return internal_error_to(connection, error);
+            }
+            let mut runtime = room_handle.runtime.lock().await;
+            runtime.connections.remove(&seat_index);
+            drop(runtime);
+            schedule_room_tasks_detached(state, table_code.to_string());
+            MessageOutcome {
+                outbound,
+                owned_seat: None,
+                clear_owned_seat: true,
+                close_socket: true,
             }
         }
     } else {
@@ -1853,19 +1926,28 @@ async fn handle_leave_table(
             drop(runtime);
             unregister_room_handle(&state, table_code, &room_handle).await;
             state.inner.db.delete_table(table_code).await.ok();
-            schedule_room_tasks(state, table_code.to_string()).await;
-            return MessageOutcome {
+            schedule_room_tasks_detached(state, table_code.to_string());
+            MessageOutcome {
                 outbound,
                 owned_seat: None,
                 clear_owned_seat: true,
                 close_socket: true,
-            };
+            }
         } else {
-            let room_json = match serialize_room(&runtime.room) {
+            let room = runtime.room.clone();
+            let connections = snapshot_connections(&runtime)
+                .into_iter()
+                .filter(|(other_seat, _)| *other_seat != seat_index)
+                .collect::<Vec<_>>();
+            drop(runtime);
+            let room_json = match serialize_room(&room) {
                 Ok(value) => value,
                 Err(error) => return internal_error_to(connection, error),
             };
-            outbound.extend(collect_snapshot_and_prompt_outbound(&runtime));
+            outbound.extend(collect_snapshot_and_prompt_outbound_from_snapshot(
+                &room,
+                &connections,
+            ));
             if let Err(error) = state
                 .inner
                 .db
@@ -1877,17 +1959,20 @@ async fn handle_leave_table(
                 )
                 .await
             {
+                restore_room_snapshot(&room_handle, previous_room).await;
                 return internal_error_to(connection, error);
             }
+            let mut runtime = room_handle.runtime.lock().await;
+            runtime.connections.remove(&seat_index);
+            drop(runtime);
+            schedule_room_tasks_detached(state, table_code.to_string());
+            MessageOutcome {
+                outbound,
+                owned_seat: None,
+                clear_owned_seat: true,
+                close_socket: true,
+            }
         }
-    }
-    drop(runtime);
-    schedule_room_tasks(state, table_code.to_string()).await;
-    MessageOutcome {
-        outbound,
-        owned_seat: None,
-        clear_owned_seat: true,
-        close_socket: true,
     }
 }
 
@@ -1907,17 +1992,18 @@ async fn handle_disconnect(
     if room_handle.is_closed() {
         return;
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return;
     }
+    let previous_room = runtime.room.clone();
     let Some(current_handle) = runtime.connections.get(&seat_index).cloned() else {
         return;
     };
     if current_handle.id != connection_id {
         return;
     }
-    runtime.connections.remove(&seat_index);
     set_seat_connected(
         &mut runtime.room,
         seat_index,
@@ -1926,11 +2012,20 @@ async fn handle_disconnect(
     );
     let _ = rust_reconcile_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let outbound = presence_and_snapshot_for_all(&runtime, table_code, seat_index, false);
+    let outbound = presence_and_snapshot_for_all_from_snapshot(
+        &room,
+        &connections,
+        table_code,
+        seat_index,
+        false,
+    );
     if state
         .inner
         .db
@@ -1938,11 +2033,20 @@ async fn handle_disconnect(
         .await
         .is_err()
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return;
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if runtime
+        .connections
+        .get(&seat_index)
+        .is_some_and(|handle| handle.id == connection_id)
+    {
+        runtime.connections.remove(&seat_index);
     }
     drop(runtime);
     send_outbound(outbound);
-    schedule_room_tasks(state, table_code.to_string()).await;
+    schedule_room_tasks_detached(state, table_code.to_string());
 }
 
 async fn process_due_pending_timeout(state: AppContext, table_code: String, expected_nonce: u64) {
@@ -1952,10 +2056,12 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     if room_handle.is_closed() {
         return;
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return;
     }
+    let previous_room = runtime.room.clone();
     if runtime.timeout_nonce != expected_nonce {
         return;
     }
@@ -1970,12 +2076,18 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         return;
     };
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    let broadcast_handles = connections
+        .iter()
+        .map(|(_, handle)| handle.clone())
+        .collect::<Vec<_>>();
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let connections = runtime.connections.values().cloned().collect::<Vec<_>>();
-    let snapshot_outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if state
         .inner
         .db
@@ -1983,10 +2095,10 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         .await
         .is_err()
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    drop(runtime);
-    let mut outbound = broadcast_to_handles(&connections, Some(&rust_messages));
+    let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&rust_messages));
     outbound.extend(snapshot_outbound);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -1999,10 +2111,12 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     if room_handle.is_closed() {
         return;
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return;
     }
+    let previous_room = runtime.room.clone();
     if runtime.continue_nonce != expected_nonce {
         return;
     }
@@ -2016,11 +2130,14 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
         return;
     }
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if state
         .inner
         .db
@@ -2028,9 +2145,9 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
         .await
         .is_err()
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
@@ -2047,10 +2164,12 @@ async fn process_due_disconnect_timeout(
     if room_handle.is_closed() {
         return;
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return;
     }
+    let previous_room = runtime.room.clone();
     if runtime.disconnect_nonce != expected_nonce {
         return;
     }
@@ -2061,7 +2180,6 @@ async fn process_due_disconnect_timeout(
         return;
     }
 
-    runtime.connections.remove(&seat_index);
     if room_has_round_state(&runtime.room) {
         convert_seat_to_bot(&mut runtime.room, seat_index);
         let _ = rust_reconcile_continue_action_state(&mut runtime.room);
@@ -2081,11 +2199,14 @@ async fn process_due_disconnect_timeout(
     }
 
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if state
         .inner
         .db
@@ -2093,8 +2214,11 @@ async fn process_due_disconnect_timeout(
         .await
         .is_err()
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
+    let mut runtime = room_handle.runtime.lock().await;
+    runtime.connections.remove(&seat_index);
     drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -2107,10 +2231,12 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
     if room_handle.is_closed() {
         return;
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return;
     }
+    let previous_room = runtime.room.clone();
     if runtime.bot_nonce != expected_nonce {
         return;
     }
@@ -2131,12 +2257,18 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
     };
 
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    let broadcast_handles = connections
+        .iter()
+        .map(|(_, handle)| handle.clone())
+        .collect::<Vec<_>>();
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let connections = runtime.connections.values().cloned().collect::<Vec<_>>();
-    let snapshot_outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if state
         .inner
         .db
@@ -2144,10 +2276,10 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         .await
         .is_err()
     {
+        restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    drop(runtime);
-    let mut outbound = broadcast_to_handles(&connections, Some(&messages));
+    let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&messages));
     outbound.extend(snapshot_outbound);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -2160,6 +2292,7 @@ async fn schedule_room_tasks(state: AppContext, table_code: String) {
     if room_handle.is_closed() {
         return;
     }
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return;
@@ -2294,8 +2427,14 @@ async fn ensure_room_loaded(state: &AppContext, table_code: &str) -> Result<Opti
 
 async fn close_room_handle(room_handle: &RoomHandle) {
     room_handle.mark_closed();
+    let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     close_runtime(&mut runtime);
+}
+
+async fn restore_room_snapshot(room_handle: &RoomHandle, room: Value) {
+    let mut runtime = room_handle.runtime.lock().await;
+    runtime.room = room;
 }
 
 async fn unregister_room_handle(state: &AppContext, table_code: &str, room_handle: &RoomRef) {
@@ -2391,25 +2530,25 @@ fn replace_connection(runtime: &mut RoomRuntime, seat_index: usize, connection: 
     }
 }
 
-fn collect_join_outbound(
-    runtime: &RoomRuntime,
+fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
+    runtime
+        .connections
+        .iter()
+        .map(|(seat, handle)| (*seat, handle.clone()))
+        .collect()
+}
+
+fn collect_join_outbound_from_snapshot(
+    room: &Value,
+    connections: &[(usize, ConnectionHandle)],
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let connections: Vec<(usize, ConnectionHandle)> = runtime
-        .connections
-        .iter()
-        .map(|(seat, handle)| (*seat, handle.clone()))
-        .collect();
-    outbound.extend(build_room_messages_for_seat(
-        &runtime.room,
-        seat_index,
-        connection,
-    ));
-    if let Some(prompt) = build_prompt_for_seat(&runtime.room, seat_index) {
+    outbound.extend(build_room_messages_for_seat(room, seat_index, connection));
+    if let Some(prompt) = build_prompt_for_seat(room, seat_index) {
         outbound.push(connection.outbound(prompt));
     }
 
@@ -2421,40 +2560,32 @@ fn collect_join_outbound(
             "connected": connected,
         }
     });
-    for (other_seat, handle) in &connections {
+    for (other_seat, handle) in connections {
         if *other_seat == seat_index {
             continue;
         }
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat(
-            &runtime.room,
-            *other_seat,
-            handle,
-        ));
+        outbound.extend(build_room_messages_for_seat(room, *other_seat, handle));
     }
-    for (other_seat, handle) in &connections {
+    for (other_seat, handle) in connections {
         if *other_seat == seat_index {
             continue;
         }
-        if let Some(prompt) = build_prompt_for_seat(&runtime.room, *other_seat) {
+        if let Some(prompt) = build_prompt_for_seat(room, *other_seat) {
             outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
-fn presence_and_snapshot_for_all(
-    runtime: &RoomRuntime,
+fn presence_and_snapshot_for_all_from_snapshot(
+    room: &Value,
+    connections: &[(usize, ConnectionHandle)],
     table_code: &str,
     seat_index: usize,
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let connections: Vec<(usize, ConnectionHandle)> = runtime
-        .connections
-        .iter()
-        .map(|(seat, handle)| (*seat, handle.clone()))
-        .collect();
     let presence = json!({
         "type": "player_presence",
         "payload": {
@@ -2463,36 +2594,26 @@ fn presence_and_snapshot_for_all(
             "connected": connected,
         }
     });
-    for (target_seat, handle) in &connections {
+    for (target_seat, handle) in connections {
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat(
-            &runtime.room,
-            *target_seat,
-            handle,
-        ));
-        if let Some(prompt) = build_prompt_for_seat(&runtime.room, *target_seat) {
+        outbound.extend(build_room_messages_for_seat(room, *target_seat, handle));
+        if let Some(prompt) = build_prompt_for_seat(room, *target_seat) {
             outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
-fn collect_snapshot_and_prompt_outbound(runtime: &RoomRuntime) -> Vec<OutboundMessage> {
+fn collect_snapshot_and_prompt_outbound_from_snapshot(
+    room: &Value,
+    connections: &[(usize, ConnectionHandle)],
+) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let connections: Vec<(usize, ConnectionHandle)> = runtime
-        .connections
-        .iter()
-        .map(|(seat, handle)| (*seat, handle.clone()))
-        .collect();
-    for (seat_index, handle) in &connections {
-        outbound.extend(build_room_messages_for_seat(
-            &runtime.room,
-            *seat_index,
-            handle,
-        ));
+    for (seat_index, handle) in connections {
+        outbound.extend(build_room_messages_for_seat(room, *seat_index, handle));
     }
-    for (seat_index, handle) in &connections {
-        if let Some(prompt) = build_prompt_for_seat(&runtime.room, *seat_index) {
+    for (seat_index, handle) in connections {
+        if let Some(prompt) = build_prompt_for_seat(room, *seat_index) {
             outbound.push(handle.outbound(prompt));
         }
     }

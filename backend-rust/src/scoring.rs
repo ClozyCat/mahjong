@@ -213,7 +213,7 @@ impl FanContext {
             tile_keys,
             visible_tile_keys,
             concealed_tile_keys,
-            meld_tile_key_groups,
+            meld_tile_key_groups: _,
             open_meld_tile_key_groups,
             incoming_tile,
             decompositions: input_decompositions,
@@ -252,11 +252,7 @@ impl FanContext {
             kong_entries,
             visible_tile_keys,
             concealed_tile_keys,
-            open_meld_tile_key_groups: if open_meld_tile_key_groups.is_empty() {
-                meld_tile_key_groups
-            } else {
-                open_meld_tile_key_groups
-            },
+            open_meld_tile_key_groups,
             decompositions,
             standard_decompositions,
             all_tile_keys: tile_keys,
@@ -285,12 +281,14 @@ impl FanContext {
     }
 }
 
+type FanValueResolver = fn(&FanContext, usize, i64) -> Vec<i64>;
+
 #[derive(Clone, Copy)]
 struct FanRule {
     fan_key: &'static str,
     fan_value: i64,
     matcher: fn(&FanContext) -> usize,
-    value_resolver: Option<fn(&FanContext, usize, i64) -> Vec<i64>>,
+    value_resolver: Option<FanValueResolver>,
     excludes: &'static [&'static str],
     forbidden_with: &'static [&'static str],
 }
@@ -802,6 +800,7 @@ fn select_best_candidates(candidates: &[FanCandidate]) -> Vec<FanCandidate> {
     let mut best_score = -1_i64;
     let mut best_selected = Vec::<FanCandidate>::new();
 
+    #[allow(clippy::too_many_arguments)]
     fn dfs(
         index: usize,
         score: i64,
@@ -929,8 +928,8 @@ fn normalize_kong_entries(
 fn sum_delta_by_seat(entries: &[KongScoreDetailEntry], seat_count: usize) -> Vec<i64> {
     let mut totals = vec![0_i64; seat_count];
     for entry in entries {
-        for seat in 0..seat_count {
-            totals[seat] += entry.delta_by_seat.get(seat).copied().unwrap_or(0);
+        for (seat, total) in totals.iter_mut().enumerate().take(seat_count) {
+            *total += entry.delta_by_seat.get(seat).copied().unwrap_or(0);
         }
     }
     totals
@@ -953,27 +952,29 @@ fn fan_delta_by_seat(
 
     if win_type == "self_draw" {
         let payment = fan_total + MCR_BASE_POINTS;
-        for seat in 0..seat_count {
+        let mut winner_gain = 0_i64;
+        for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {
             if seat == winner_seat {
                 continue;
             }
-            deltas[seat] -= payment;
-            deltas[winner_seat] += payment;
+            *delta -= payment;
+            winner_gain += payment;
         }
+        deltas[winner_seat] += winner_gain;
         return deltas;
     }
 
     if let Some(discarder_seat) = discarder_seat {
         deltas[winner_seat] +=
             fan_total + (MCR_BASE_POINTS * (seat_count.saturating_sub(1) as i64));
-        for seat in 0..seat_count {
+        for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {
             if seat == winner_seat {
                 continue;
             }
             if seat == discarder_seat {
-                deltas[seat] -= fan_total + MCR_BASE_POINTS;
+                *delta -= fan_total + MCR_BASE_POINTS;
             } else {
-                deltas[seat] -= MCR_BASE_POINTS;
+                *delta -= MCR_BASE_POINTS;
             }
         }
     }
@@ -2719,19 +2720,19 @@ fn resolve_wait_types(
                 .collect::<Vec<_>>();
             ranks.sort_unstable();
             let incoming_rank = parse_suit(incoming_tile).map(|(_, rank)| rank).unwrap_or(0);
-            let next = if ranks == vec![1, 2, 3] && incoming_rank == 3 {
-                Some("edge_wait")
-            } else if ranks == vec![7, 8, 9] && incoming_rank == 7 {
+            let next = if (ranks == [1, 2, 3] && incoming_rank == 3)
+                || (ranks == [7, 8, 9] && incoming_rank == 7)
+            {
                 Some("edge_wait")
             } else if incoming_rank == ranks[1] {
                 Some("closed_wait")
             } else {
                 None
             };
-            if let Some(wait_type) = next {
-                if !wait_types.iter().any(|value| value == wait_type) {
-                    wait_types.push(wait_type.to_string());
-                }
+            if let Some(wait_type) = next
+                && !wait_types.iter().any(|value| value == wait_type)
+            {
+                wait_types.push(wait_type.to_string());
             }
         }
     }
@@ -2953,18 +2954,19 @@ fn extract_all_melds(
         current.pop();
         counts[tile_index] += 3;
     }
-    if let Some((second, third)) = sequence_tile_indices(tile_index) {
-        if counts[second] > 0 && counts[third] > 0 {
-            counts[tile_index] -= 1;
-            counts[second] -= 1;
-            counts[third] -= 1;
-            current.push(sequence_meld(tile_index));
-            extract_all_melds(counts, current, results);
-            current.pop();
-            counts[tile_index] += 1;
-            counts[second] += 1;
-            counts[third] += 1;
-        }
+    if let Some((second, third)) = sequence_tile_indices(tile_index)
+        && counts[second] > 0
+        && counts[third] > 0
+    {
+        counts[tile_index] -= 1;
+        counts[second] -= 1;
+        counts[third] -= 1;
+        current.push(sequence_meld(tile_index));
+        extract_all_melds(counts, current, results);
+        current.pop();
+        counts[tile_index] += 1;
+        counts[second] += 1;
+        counts[third] += 1;
     }
 }
 
@@ -2981,20 +2983,21 @@ fn extract_first_melds(counts: &mut TileCounts, melds: &mut Vec<CompactMeld>) ->
         melds.pop();
         counts[tile_index] += 3;
     }
-    if let Some((second, third)) = sequence_tile_indices(tile_index) {
-        if counts[second] > 0 && counts[third] > 0 {
-            counts[tile_index] -= 1;
-            counts[second] -= 1;
-            counts[third] -= 1;
-            melds.push(sequence_meld(tile_index));
-            if extract_first_melds(counts, melds) {
-                return true;
-            }
-            melds.pop();
-            counts[tile_index] += 1;
-            counts[second] += 1;
-            counts[third] += 1;
+    if let Some((second, third)) = sequence_tile_indices(tile_index)
+        && counts[second] > 0
+        && counts[third] > 0
+    {
+        counts[tile_index] -= 1;
+        counts[second] -= 1;
+        counts[third] -= 1;
+        melds.push(sequence_meld(tile_index));
+        if extract_first_melds(counts, melds) {
+            return true;
         }
+        melds.pop();
+        counts[tile_index] += 1;
+        counts[second] += 1;
+        counts[third] += 1;
     }
     false
 }
@@ -3028,8 +3031,7 @@ fn is_thirteen_orphans(counts: &TileCounts) -> bool {
         return false;
     }
     let mut pair_count = 0usize;
-    for tile_index in 0..TILE_KIND_COUNT {
-        let count = counts[tile_index];
+    for (tile_index, count) in counts.iter().copied().enumerate().take(TILE_KIND_COUNT) {
         if count == 0 {
             continue;
         }
@@ -3273,10 +3275,12 @@ fn single_meld(counts: &TileCounts) -> Option<CompactMeld> {
     if counts[tile_index] == 3 {
         return Some(triplet_meld(tile_index));
     }
-    if let Some((second, third)) = sequence_tile_indices(tile_index) {
-        if counts[tile_index] == 1 && counts[second] == 1 && counts[third] == 1 {
-            return Some(sequence_meld(tile_index));
-        }
+    if let Some((second, third)) = sequence_tile_indices(tile_index)
+        && counts[tile_index] == 1
+        && counts[second] == 1
+        && counts[third] == 1
+    {
+        return Some(sequence_meld(tile_index));
     }
     None
 }
@@ -3571,5 +3575,57 @@ mod tests {
         let first_result = evaluate_fans(input.clone());
         let second_result = evaluate_fans(input);
         assert_eq!(first_result, second_result);
+    }
+
+    #[test]
+    fn does_not_treat_all_melds_as_open_when_open_groups_are_empty() {
+        let concealed_tile_keys = vec!["red", "red"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let meld_tile_key_groups = vec![
+            vec!["w1", "w2", "w3"],
+            vec!["w4", "w5", "w6"],
+            vec!["t1", "t2", "t3"],
+            vec!["b4", "b5", "b6"],
+        ]
+        .into_iter()
+        .map(|meld| meld.into_iter().map(ToString::to_string).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+        let tile_keys = concealed_tile_keys
+            .iter()
+            .cloned()
+            .chain(
+                meld_tile_key_groups
+                    .iter()
+                    .flat_map(|meld| meld.iter().cloned()),
+            )
+            .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: meld_tile_key_groups.clone(),
+            ..Default::default()
+        }];
+
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            flower_count: 0,
+            seat_count: 4,
+            features: HandFeatures::default(),
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys,
+            meld_tile_key_groups,
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: Some("red".to_string()),
+            decompositions,
+        });
+
+        assert!(!result.fan_keys.iter().any(|fan| fan == "melded_hand"));
     }
 }
