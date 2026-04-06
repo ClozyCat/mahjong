@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
@@ -30,13 +30,15 @@ use rand::Rng;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, Notify, mpsc};
+use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
 
 const MAX_SEATS: usize = 4;
 const DISCONNECT_GRACE_SECONDS: i64 = 120;
 const BOT_ACTION_DELAY_TEST_MS: u64 = 0;
 const BOT_ACTION_DELAY_NORMAL_MS: u64 = 800;
+const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 struct Settings {
@@ -73,22 +75,51 @@ struct AppState {
 }
 
 struct RoomRuntime {
+    created_at: String,
     room: Value,
     connections: HashMap<usize, ConnectionHandle>,
     timeout_nonce: u64,
     continue_nonce: u64,
     disconnect_nonce: u64,
     bot_nonce: u64,
+    timeout_task: Option<JoinHandle<()>>,
+    continue_task: Option<JoinHandle<()>>,
+    disconnect_task: Option<JoinHandle<()>>,
+    bot_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Clone)]
 struct ConnectionHandle {
     id: u64,
-    sender: mpsc::UnboundedSender<String>,
+    sender: mpsc::Sender<String>,
+    close_requested: Arc<AtomicBool>,
+    close_notify: Arc<Notify>,
+}
+
+impl ConnectionHandle {
+    fn outbound(&self, payload: Value) -> OutboundMessage {
+        OutboundMessage {
+            connection: self.clone(),
+            payload,
+        }
+    }
+
+    fn try_send(&self, message: String) -> Result<(), mpsc::error::TrySendError<String>> {
+        self.sender.try_send(message)
+    }
+
+    fn request_close(&self) {
+        self.close_requested.store(true, Ordering::Relaxed);
+        self.close_notify.notify_waiters();
+    }
+
+    fn should_close(&self) -> bool {
+        self.close_requested.load(Ordering::Relaxed)
+    }
 }
 
 struct OutboundMessage {
-    sender: mpsc::UnboundedSender<String>,
+    connection: ConnectionHandle,
     payload: Value,
 }
 
@@ -115,11 +146,11 @@ struct SqliteColumn {
 
 impl Database {
     fn open(path: &str) -> Result<Self> {
-        if let Some(parent) = Path::new(path).parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("failed to create database directory for {path}"))?;
-            }
+        if let Some(parent) = Path::new(path).parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create database directory for {path}"))?;
         }
         let conn = Connection::open(path)
             .with_context(|| format!("failed to open sqlite database at {path}"))?;
@@ -636,7 +667,9 @@ fn create_or_replace_table_locked(
         }
     }
 
-    inner.rooms.remove(&table_code);
+    if let Some(mut runtime) = inner.rooms.remove(&table_code) {
+        abort_room_tasks(&mut runtime);
+    }
     let created_at = now_iso();
     let room = initial_room_payload(&table_code, mode, enforce_minimum_eight_fan);
     inner
@@ -694,24 +727,58 @@ fn resolve_database_path(database_url: &str) -> String {
 async fn websocket_session(state: AppContext, socket: WebSocket, table_code: String) {
     let connection_id = state.next_connection_id.fetch_add(1, Ordering::Relaxed);
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<String>();
+    let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<String>(OUTBOUND_CHANNEL_CAPACITY);
+    let close_requested = Arc::new(AtomicBool::new(false));
+    let close_notify = Arc::new(Notify::new());
     let handle = ConnectionHandle {
         id: connection_id,
         sender: outgoing_tx.clone(),
+        close_requested: close_requested.clone(),
+        close_notify: close_notify.clone(),
     };
 
+    let writer_close_requested = close_requested.clone();
+    let writer_close_notify = close_notify.clone();
     let writer = tokio::spawn(async move {
-        while let Some(message) = outgoing_rx.recv().await {
-            if ws_sender.send(Message::Text(message.into())).await.is_err() {
-                break;
+        loop {
+            tokio::select! {
+                maybe_message = outgoing_rx.recv() => {
+                    let Some(message) = maybe_message else {
+                        break;
+                    };
+                    if ws_sender.send(Message::Text(message.into())).await.is_err() {
+                        break;
+                    }
+                }
+                _ = writer_close_notify.notified() => {
+                    if writer_close_requested.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
             }
         }
+        let _ = ws_sender.close().await;
     });
 
     let mut owned_seat: Option<usize> = None;
     let mut close_socket = false;
 
-    while let Some(next) = ws_receiver.next().await {
+    loop {
+        if handle.should_close() {
+            break;
+        }
+        let next = tokio::select! {
+            next = ws_receiver.next() => next,
+            _ = close_notify.notified() => {
+                if handle.should_close() {
+                    break;
+                }
+                continue;
+            }
+        };
+        let Some(next) = next else {
+            break;
+        };
         let Ok(message) = next else {
             break;
         };
@@ -721,10 +788,10 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
         let envelope: ClientEnvelope = match serde_json::from_str(text.as_str()) {
             Ok(value) => value,
             Err(_) => {
-                let _ = outgoing_tx.send(serialize_payload(&json!({
+                send_outbound(vec![handle.outbound(json!({
                     "type": "action_rejected",
                     "payload": { "reason": "unsupported_message" }
-                })));
+                }))]);
                 continue;
             }
         };
@@ -739,6 +806,9 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
             owned_seat = None;
         }
         send_outbound(outcome.outbound);
+        if handle.should_close() {
+            break;
+        }
         if outcome.close_socket {
             close_socket = true;
             break;
@@ -748,6 +818,7 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
     if !close_socket {
         handle_disconnect(state, &table_code, owned_seat, connection_id).await;
     }
+    handle.request_close();
     drop(outgoing_tx);
     let _ = writer.await;
 }
@@ -826,13 +897,10 @@ async fn handle_client_message(
             handle_quick_chat(state, table_code, connection, seat_index, envelope).await
         }
         "heartbeat" => MessageOutcome {
-            outbound: vec![OutboundMessage {
-                sender: connection.sender.clone(),
-                payload: json!({
+            outbound: vec![connection.outbound(json!({
                     "type": "heartbeat",
                     "payload": envelope.payload.clone(),
-                }),
-            }],
+                }))],
             owned_seat: None,
             clear_owned_seat: false,
             close_socket: false,
@@ -878,12 +946,11 @@ async fn handle_join_table(
     else {
         return reject_to(connection, "table_not_found");
     };
-    let current_room = inner
+    let occupied = inner
         .rooms
         .get(table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap_or_else(|| initial_room_payload(table_code, "normal", true));
-    let occupied = occupied_seats(&current_room);
+        .map(|runtime| occupied_seats(&runtime.room))
+        .unwrap_or_default();
     let Some(seat_index) = (0..MAX_SEATS).find(|seat| !occupied.contains(seat)) else {
         return reject_to(connection, "table_full");
     };
@@ -928,8 +995,7 @@ async fn handle_join_table(
         return internal_error_to(connection, error);
     }
 
-    let outbound =
-        collect_join_outbound_locked(&mut inner, table_code, connection, seat_index, true);
+    let outbound = collect_join_outbound_locked(&inner, table_code, connection, seat_index, true);
     drop(inner);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -972,12 +1038,10 @@ async fn handle_reconnect(
     else {
         return reject_to(connection, "table_not_found");
     };
-    let current_room = inner
+    let Some(current_session_id) = inner
         .rooms
         .get(table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap();
-    let Some(current_session_id) = room_player_session_id(&current_room, token_record.seat_index)
+        .and_then(|runtime| room_player_session_id(&runtime.room, token_record.seat_index))
     else {
         return reject_to(connection, "invalid_reconnect_token");
     };
@@ -989,22 +1053,21 @@ async fn handle_reconnect(
     let Some(runtime) = inner.rooms.get_mut(table_code) else {
         return reject_to(connection, "table_not_found");
     };
-    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
-        if let Some(seat) = seats.iter_mut().find(|seat| {
+    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut)
+        && let Some(seat) = seats.iter_mut().find(|seat| {
             seat.get("seat_index")
                 .and_then(Value::as_u64)
                 .map(|value| value as usize == token_record.seat_index)
                 .unwrap_or(false)
-        }) {
-            if let Some(object) = seat.as_object_mut() {
-                object.insert(
-                    "reconnect_token".to_string(),
-                    Value::String(new_token.clone()),
-                );
-                object.insert("connected".to_string(), Value::Bool(true));
-                object.insert("disconnect_deadline_at".to_string(), Value::Null);
-            }
-        }
+        })
+        && let Some(object) = seat.as_object_mut()
+    {
+        object.insert(
+            "reconnect_token".to_string(),
+            Value::String(new_token.clone()),
+        );
+        object.insert("connected".to_string(), Value::Bool(true));
+        object.insert("disconnect_deadline_at".to_string(), Value::Null);
     }
     let _ = rust_reconcile_continue_action_state(&mut runtime.room);
     runtime
@@ -1026,13 +1089,8 @@ async fn handle_reconnect(
         return internal_error_to(connection, error);
     }
 
-    let outbound = collect_join_outbound_locked(
-        &mut inner,
-        table_code,
-        connection,
-        token_record.seat_index,
-        true,
-    );
+    let outbound =
+        collect_join_outbound_locked(&inner, table_code, connection, token_record.seat_index, true);
     drop(inner);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -1068,23 +1126,22 @@ async fn handle_ready(
     if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
-    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
-        if let Some(seat) = seats.iter_mut().find(|seat| {
+    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut)
+        && let Some(seat) = seats.iter_mut().find(|seat| {
             seat.get("seat_index")
                 .and_then(Value::as_u64)
                 .map(|value| value as usize == seat_index)
                 .unwrap_or(false)
-        }) {
-            if let Some(object) = seat.as_object_mut() {
-                object.insert("ready".to_string(), Value::Bool(ready));
-            }
-        }
+        })
+        && let Some(object) = seat.as_object_mut()
+    {
+        object.insert("ready".to_string(), Value::Bool(ready));
     }
     let room_to_persist = runtime.room.clone();
     if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
         return internal_error_to(connection, error);
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&mut inner, table_code);
+    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, table_code);
     drop(inner);
     let outcome = MessageOutcome {
         outbound,
@@ -1109,34 +1166,37 @@ async fn handle_start_match(
     else {
         return reject_to(connection, "table_not_found");
     };
-    let current_room = inner
-        .rooms
-        .get(table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap();
-    if room_has_round_state(&current_room) {
+    let Some((already_started, ready_to_start, occupied)) = inner.rooms.get(table_code).map(|runtime| {
+        (
+            room_has_round_state(&runtime.room),
+            rust_room_ready_to_start(&runtime.room),
+            occupied_seats(&runtime.room),
+        )
+    }) else {
+        return reject_to(connection, "table_not_found");
+    };
+    if already_started {
         return reject_to(connection, "room_already_started");
     }
-    if !rust_room_ready_to_start(&current_room) {
+    if !ready_to_start {
         return reject_to(connection, "room_not_ready");
     }
     let dealer_seat = {
-        let occupied: Vec<usize> = occupied_seats(&current_room).into_iter().collect();
+        let occupied: Vec<usize> = occupied.into_iter().collect();
         let mut rng = rand::rng();
         occupied[rng.random_range(0..occupied.len())]
     };
-    if let Some(runtime) = inner.rooms.get_mut(table_code) {
+    let room_to_persist = {
+        let Some(runtime) = inner.rooms.get_mut(table_code) else {
+            return reject_to(connection, "table_not_found");
+        };
         rust_start_match(&mut runtime.room, dealer_seat, rand::random::<u64>());
-    }
-    let room_to_persist = inner
-        .rooms
-        .get(table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap();
+        runtime.room.clone()
+    };
     if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
         return internal_error_to(connection, error);
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&mut inner, table_code);
+    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, table_code);
     drop(inner);
     let outcome = MessageOutcome {
         outbound,
@@ -1172,7 +1232,7 @@ async fn handle_continue_action(
     if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
         return internal_error_to(connection, error);
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&mut inner, table_code);
+    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, table_code);
     drop(inner);
     let outcome = MessageOutcome {
         outbound,
@@ -1257,9 +1317,7 @@ async fn handle_action_request(
         return internal_error_to(connection, error);
     }
     let mut outbound = broadcast_to_handles(&connections, Some(&messages));
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(
-        &mut inner, table_code,
-    ));
+    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, table_code));
     drop(inner);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -1317,10 +1375,7 @@ async fn handle_quick_chat(
     let outbound = runtime
         .connections
         .values()
-        .map(|handle| OutboundMessage {
-            sender: handle.sender.clone(),
-            payload: payload.clone(),
-        })
+        .map(|handle| handle.outbound(payload.clone()))
         .collect();
     MessageOutcome {
         outbound,
@@ -1344,12 +1399,11 @@ async fn handle_leave_table(
         return reject_to(connection, "table_not_found");
     };
     inner.db.delete_tokens_for_seat(table_code, seat_index).ok();
-    let current_room = inner
+    let phase = inner
         .rooms
         .get(table_code)
-        .map(|runtime| runtime.room.clone())
+        .map(|runtime| room_phase(&runtime.room))
         .unwrap();
-    let phase = room_phase(&current_room);
 
     let Some(runtime) = inner.rooms.get_mut(table_code) else {
         return reject_to(connection, "table_not_found");
@@ -1362,20 +1416,19 @@ async fn handle_leave_table(
         let _ = rust_reconcile_continue_action_state(&mut runtime.room);
     }
 
-    let mut outbound = vec![OutboundMessage {
-        sender: connection.sender.clone(),
-        payload: json!({
+    let mut outbound = vec![connection.outbound(json!({
             "type": "leave_table_accepted",
             "payload": {
                 "table_code": table_code,
                 "seat_index": seat_index,
             }
-        }),
-    }];
+        }))];
 
     if phase == "waiting" {
         if room_seats(&runtime.room).is_empty() {
-            inner.rooms.remove(table_code);
+            if let Some(mut runtime) = inner.rooms.remove(table_code) {
+                abort_room_tasks(&mut runtime);
+            }
             inner.db.delete_table(table_code).ok();
         } else {
             let room_to_persist = runtime.room.clone();
@@ -1385,12 +1438,14 @@ async fn handle_leave_table(
                 return internal_error_to(connection, error);
             }
             outbound.extend(presence_and_snapshot_for_all_locked(
-                &mut inner, table_code, seat_index, false,
+                &inner, table_code, seat_index, false,
             ));
         }
     } else {
         if should_terminate_unattended(runtime) {
-            inner.rooms.remove(table_code);
+            if let Some(mut runtime) = inner.rooms.remove(table_code) {
+                abort_room_tasks(&mut runtime);
+            }
             inner.db.delete_table(table_code).ok();
         } else {
             let room_to_persist = runtime.room.clone();
@@ -1400,7 +1455,7 @@ async fn handle_leave_table(
                 return internal_error_to(connection, error);
             }
             outbound.extend(collect_snapshot_and_prompt_outbound_locked(
-                &mut inner, table_code,
+                &inner, table_code,
             ));
         }
     }
@@ -1464,7 +1519,7 @@ async fn handle_disconnect(
     if persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist).is_err() {
         return;
     }
-    let outbound = presence_and_snapshot_for_all_locked(&mut inner, table_code, seat_index, false);
+    let outbound = presence_and_snapshot_for_all_locked(&inner, table_code, seat_index, false);
     drop(inner);
     send_outbound(outbound);
     schedule_room_tasks(state, table_code.to_string()).await;
@@ -1478,11 +1533,6 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     else {
         return;
     };
-    let current_room = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap();
     let current_nonce = inner
         .rooms
         .get(&table_code)
@@ -1491,7 +1541,11 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     if current_nonce != expected_nonce {
         return;
     }
-    let Some(deadline) = pending_timeout_deadline(&current_room) else {
+    let Some(deadline) = inner
+        .rooms
+        .get(&table_code)
+        .and_then(|runtime| pending_timeout_deadline(&runtime.room))
+    else {
         return;
     };
     if deadline > Utc::now() {
@@ -1520,10 +1574,7 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         return;
     }
     let mut outbound = broadcast_to_handles(&connections, Some(&messages));
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(
-        &mut inner,
-        &table_code,
-    ));
+    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, &table_code));
     drop(inner);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -1537,11 +1588,6 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     else {
         return;
     };
-    let current_room = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap();
     let current_nonce = inner
         .rooms
         .get(&table_code)
@@ -1550,7 +1596,11 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     if current_nonce != expected_nonce {
         return;
     }
-    let Some(deadline) = continue_action_deadline(&current_room) else {
+    let Some(deadline) = inner
+        .rooms
+        .get(&table_code)
+        .and_then(|runtime| continue_action_deadline(&runtime.room))
+    else {
         return;
     };
     if deadline > Utc::now() {
@@ -1566,7 +1616,7 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     if persist_room_locked(&inner.db, &table_code, &created_at, &room_to_persist).is_err() {
         return;
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&mut inner, &table_code);
+    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, &table_code);
     drop(inner);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -1585,11 +1635,6 @@ async fn process_due_disconnect_timeout(
     else {
         return;
     };
-    let current_room = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.room.clone())
-        .unwrap();
     let current_nonce = inner
         .rooms
         .get(&table_code)
@@ -1598,7 +1643,11 @@ async fn process_due_disconnect_timeout(
     if current_nonce != expected_nonce {
         return;
     }
-    let Some(deadline) = disconnect_deadline_for_seat(&current_room, seat_index) else {
+    let Some(deadline) = inner
+        .rooms
+        .get(&table_code)
+        .and_then(|runtime| disconnect_deadline_for_seat(&runtime.room, seat_index))
+    else {
         return;
     };
     if deadline > Utc::now() {
@@ -1625,7 +1674,9 @@ async fn process_due_disconnect_timeout(
     };
 
     if should_close {
-        inner.rooms.remove(&table_code);
+        if let Some(mut runtime) = inner.rooms.remove(&table_code) {
+            abort_room_tasks(&mut runtime);
+        }
         inner.db.delete_table(&table_code).ok();
         return;
     }
@@ -1634,10 +1685,7 @@ async fn process_due_disconnect_timeout(
         return;
     }
     let mut outbound = Vec::new();
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(
-        &mut inner,
-        &table_code,
-    ));
+    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, &table_code));
     drop(inner);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -1696,10 +1744,7 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         return;
     }
     let mut outbound = broadcast_to_handles(&connections, Some(&messages));
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(
-        &mut inner,
-        &table_code,
-    ));
+    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, &table_code));
     drop(inner);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -1710,6 +1755,10 @@ async fn schedule_room_tasks(state: AppContext, table_code: String) {
     let Some(runtime) = inner.rooms.get_mut(&table_code) else {
         return;
     };
+    abort_join_handle(&mut runtime.timeout_task);
+    abort_join_handle(&mut runtime.continue_task);
+    abort_join_handle(&mut runtime.disconnect_task);
+    abort_join_handle(&mut runtime.bot_task);
     runtime.timeout_nonce = runtime.timeout_nonce.wrapping_add(1);
     runtime.continue_nonce = runtime.continue_nonce.wrapping_add(1);
     runtime.disconnect_nonce = runtime.disconnect_nonce.wrapping_add(1);
@@ -1719,30 +1768,30 @@ async fn schedule_room_tasks(state: AppContext, table_code: String) {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.timeout_nonce;
-        tokio::spawn(async move {
+        runtime.timeout_task = Some(tokio::spawn(async move {
             sleep_until(deadline).await;
             process_due_pending_timeout(state_clone, table_clone, nonce).await;
-        });
+        }));
     }
 
     if let Some(deadline) = continue_action_deadline(&runtime.room) {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.continue_nonce;
-        tokio::spawn(async move {
+        runtime.continue_task = Some(tokio::spawn(async move {
             sleep_until(deadline).await;
             process_due_continue_action(state_clone, table_clone, nonce).await;
-        });
+        }));
     }
 
     if let Some((seat_index, deadline)) = next_disconnect_deadline(&runtime.room) {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.disconnect_nonce;
-        tokio::spawn(async move {
+        runtime.disconnect_task = Some(tokio::spawn(async move {
             sleep_until(deadline).await;
             process_due_disconnect_timeout(state_clone, table_clone, seat_index, nonce).await;
-        });
+        }));
     }
 
     if rust_next_bot_action(&runtime.room).is_some() {
@@ -1754,10 +1803,10 @@ async fn schedule_room_tasks(state: AppContext, table_code: String) {
         } else {
             BOT_ACTION_DELAY_NORMAL_MS
         };
-        tokio::spawn(async move {
+        runtime.bot_task = Some(tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             process_due_bot_action(state_clone, table_clone, nonce).await;
-        });
+        }));
     }
 }
 
@@ -1765,6 +1814,19 @@ fn schedule_room_tasks_detached(state: AppContext, table_code: String) {
     tokio::spawn(async move {
         schedule_room_tasks(state, table_code).await;
     });
+}
+
+fn abort_join_handle(handle: &mut Option<JoinHandle<()>>) {
+    if let Some(handle) = handle.take() {
+        handle.abort();
+    }
+}
+
+fn abort_room_tasks(runtime: &mut RoomRuntime) {
+    abort_join_handle(&mut runtime.timeout_task);
+    abort_join_handle(&mut runtime.continue_task);
+    abort_join_handle(&mut runtime.disconnect_task);
+    abort_join_handle(&mut runtime.bot_task);
 }
 
 fn ensure_room_loaded_locked(inner: &mut AppState, table_code: &str) -> Result<Option<String>> {
@@ -1782,21 +1844,26 @@ fn ensure_room_loaded_locked(inner: &mut AppState, table_code: &str) -> Result<O
         inner.rooms.insert(
             table_code.to_string(),
             RoomRuntime {
+                created_at: record.created_at,
                 room,
                 connections: HashMap::new(),
                 timeout_nonce: 0,
                 continue_nonce: 0,
                 disconnect_nonce: 0,
                 bot_nonce: 0,
+                timeout_task: None,
+                continue_task: None,
+                disconnect_task: None,
+                bot_task: None,
             },
         );
     }
 
     let created_at = inner
-        .db
-        .get_table(table_code)?
-        .ok_or_else(|| anyhow!("table disappeared during restore"))?
-        .created_at;
+        .rooms
+        .get(table_code)
+        .map(|runtime| runtime.created_at.clone())
+        .ok_or_else(|| anyhow!("table disappeared during restore"))?;
     Ok(Some(created_at))
 }
 
@@ -1816,10 +1883,10 @@ fn mark_restored_room_disconnected(room: &mut Value) {
     }
 }
 
-fn find_seat_mut<'a>(
-    room: &'a mut Value,
+fn find_seat_mut(
+    room: &mut Value,
     seat_index: usize,
-) -> Option<&'a mut serde_json::Map<String, Value>> {
+) -> Option<&mut serde_json::Map<String, Value>> {
     room.get_mut("seats")
         .and_then(Value::as_array_mut)
         .and_then(|seats| {
@@ -1834,15 +1901,15 @@ fn find_seat_mut<'a>(
 }
 
 fn remove_seat_from_room(room: &mut Value, seat_index: usize) {
-    if let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut) {
-        if let Some(index) = seats.iter().position(|seat| {
+    if let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut)
+        && let Some(index) = seats.iter().position(|seat| {
             seat.get("seat_index")
                 .and_then(Value::as_u64)
                 .map(|value| value as usize == seat_index)
                 .unwrap_or(false)
-        }) {
-            seats.remove(index);
-        }
+        })
+    {
+        seats.remove(index);
     }
 }
 
@@ -1873,7 +1940,7 @@ fn set_seat_connected(
 }
 
 fn collect_join_outbound_locked(
-    inner: &mut AppState,
+    inner: &AppState,
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
@@ -1883,23 +1950,18 @@ fn collect_join_outbound_locked(
     let Some(runtime) = inner.rooms.get(table_code) else {
         return outbound;
     };
-    let room = runtime.room.clone();
     let connections: Vec<(usize, ConnectionHandle)> = runtime
         .connections
         .iter()
         .map(|(seat, handle)| (*seat, handle.clone()))
         .collect();
     outbound.extend(build_room_messages_for_seat_locked(
-        inner,
-        &room,
+        &runtime.room,
         seat_index,
-        connection.sender.clone(),
+        connection,
     ));
-    if let Some(prompt) = build_prompt_for_seat_locked(inner, &room, seat_index) {
-        outbound.push(OutboundMessage {
-            sender: connection.sender.clone(),
-            payload: prompt,
-        });
+    if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, seat_index) {
+        outbound.push(connection.outbound(prompt));
     }
 
     let presence = json!({
@@ -1914,33 +1976,26 @@ fn collect_join_outbound_locked(
         if *other_seat == seat_index {
             continue;
         }
-        outbound.push(OutboundMessage {
-            sender: handle.sender.clone(),
-            payload: presence.clone(),
-        });
+        outbound.push(handle.outbound(presence.clone()));
         outbound.extend(build_room_messages_for_seat_locked(
-            inner,
-            &room,
+            &runtime.room,
             *other_seat,
-            handle.sender.clone(),
+            handle,
         ));
     }
     for (other_seat, handle) in &connections {
         if *other_seat == seat_index {
             continue;
         }
-        if let Some(prompt) = build_prompt_for_seat_locked(inner, &room, *other_seat) {
-            outbound.push(OutboundMessage {
-                sender: handle.sender.clone(),
-                payload: prompt,
-            });
+        if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, *other_seat) {
+            outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
 fn presence_and_snapshot_for_all_locked(
-    inner: &mut AppState,
+    inner: &AppState,
     table_code: &str,
     seat_index: usize,
     connected: bool,
@@ -1949,7 +2004,6 @@ fn presence_and_snapshot_for_all_locked(
     let Some(runtime) = inner.rooms.get(table_code) else {
         return outbound;
     };
-    let room = runtime.room.clone();
     let connections: Vec<(usize, ConnectionHandle)> = runtime
         .connections
         .iter()
@@ -1964,35 +2018,27 @@ fn presence_and_snapshot_for_all_locked(
         }
     });
     for (target_seat, handle) in &connections {
-        outbound.push(OutboundMessage {
-            sender: handle.sender.clone(),
-            payload: presence.clone(),
-        });
+        outbound.push(handle.outbound(presence.clone()));
         outbound.extend(build_room_messages_for_seat_locked(
-            inner,
-            &room,
+            &runtime.room,
             *target_seat,
-            handle.sender.clone(),
+            handle,
         ));
-        if let Some(prompt) = build_prompt_for_seat_locked(inner, &room, *target_seat) {
-            outbound.push(OutboundMessage {
-                sender: handle.sender.clone(),
-                payload: prompt,
-            });
+        if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, *target_seat) {
+            outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
 fn collect_snapshot_and_prompt_outbound_locked(
-    inner: &mut AppState,
+    inner: &AppState,
     table_code: &str,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
     let Some(runtime) = inner.rooms.get(table_code) else {
         return outbound;
     };
-    let room = runtime.room.clone();
     let connections: Vec<(usize, ConnectionHandle)> = runtime
         .connections
         .iter()
@@ -2000,43 +2046,31 @@ fn collect_snapshot_and_prompt_outbound_locked(
         .collect();
     for (seat_index, handle) in &connections {
         outbound.extend(build_room_messages_for_seat_locked(
-            inner,
-            &room,
+            &runtime.room,
             *seat_index,
-            handle.sender.clone(),
+            handle,
         ));
     }
     for (seat_index, handle) in &connections {
-        if let Some(prompt) = build_prompt_for_seat_locked(inner, &room, *seat_index) {
-            outbound.push(OutboundMessage {
-                sender: handle.sender.clone(),
-                payload: prompt,
-            });
+        if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, *seat_index) {
+            outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
 fn build_room_messages_for_seat_locked(
-    _inner: &mut AppState,
     room: &Value,
     local_seat: usize,
-    sender: mpsc::UnboundedSender<String>,
+    connection: &ConnectionHandle,
 ) -> Vec<OutboundMessage> {
     build_room_messages(room, local_seat)
         .into_iter()
-        .map(|payload| OutboundMessage {
-            sender: sender.clone(),
-            payload,
-        })
+        .map(|payload| connection.outbound(payload))
         .collect()
 }
 
-fn build_prompt_for_seat_locked(
-    _inner: &mut AppState,
-    room: &Value,
-    local_seat: usize,
-) -> Option<Value> {
+fn build_prompt_for_seat_locked(room: &Value, local_seat: usize) -> Option<Value> {
     build_action_prompt(room, local_seat)
 }
 
@@ -2050,10 +2084,7 @@ fn broadcast_to_handles(
     };
     for handle in handles {
         for payload in messages {
-            outbound.push(OutboundMessage {
-                sender: handle.sender.clone(),
-                payload: payload.clone(),
-            });
+            outbound.push(handle.outbound(payload.clone()));
         }
     }
     outbound
@@ -2071,13 +2102,10 @@ fn persist_room_locked(
 
 fn reject_to(connection: &ConnectionHandle, reason: &str) -> MessageOutcome {
     MessageOutcome {
-        outbound: vec![OutboundMessage {
-            sender: connection.sender.clone(),
-            payload: json!({
+        outbound: vec![connection.outbound(json!({
                 "type": "action_rejected",
                 "payload": { "reason": reason }
-            }),
-        }],
+            }))],
         owned_seat: None,
         clear_owned_seat: false,
         close_socket: false,
@@ -2090,7 +2118,12 @@ fn internal_error_to(connection: &ConnectionHandle, error: anyhow::Error) -> Mes
 
 fn send_outbound(outbound: Vec<OutboundMessage>) {
     for message in outbound {
-        let _ = message.sender.send(serialize_payload(&message.payload));
+        let payload = serialize_payload(&message.payload);
+        if let Err(error) = message.connection.try_send(payload)
+            && matches!(error, mpsc::error::TrySendError::Full(_))
+        {
+            message.connection.request_close();
+        }
     }
 }
 
@@ -2326,6 +2359,19 @@ mod tests {
         Ok(Database { conn })
     }
 
+    fn test_connection_handle(capacity: usize) -> (ConnectionHandle, mpsc::Receiver<String>) {
+        let (sender, receiver) = mpsc::channel(capacity);
+        (
+            ConnectionHandle {
+                id: 1,
+                sender,
+                close_requested: Arc::new(AtomicBool::new(false)),
+                close_notify: Arc::new(Notify::new()),
+            },
+            receiver,
+        )
+    }
+
     #[test]
     fn initialize_migrates_legacy_tables_with_state_json() -> Result<()> {
         let db = in_memory_database(
@@ -2373,6 +2419,18 @@ mod tests {
         assert_eq!(room["seats"].as_array().map(Vec::len), Some(4));
         assert!(room_has_round_state(&room));
         assert_eq!(room["match_state"]["dealer_seat"], 0);
+    }
+
+    #[test]
+    fn send_outbound_requests_close_when_channel_is_full() {
+        let (handle, _receiver) = test_connection_handle(1);
+
+        send_outbound(vec![
+            handle.outbound(json!({ "type": "first" })),
+            handle.outbound(json!({ "type": "second" })),
+        ]);
+
+        assert!(handle.should_close());
     }
 
     #[test]
