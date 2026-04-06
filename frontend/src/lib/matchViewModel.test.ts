@@ -988,6 +988,32 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([['w6', 'w7', 'w8']]);
   });
 
+  it('ignores invalid meld tile codes instead of crashing the table view', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 1
+                ? {
+                    ...player,
+                    melds: [['w8', null as unknown as string, 'w6', 'w7']],
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+    });
+
+    expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([['w6', 'w7', 'w8']]);
+  });
+
   it('computes player winds relative to the current dealer seat', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 

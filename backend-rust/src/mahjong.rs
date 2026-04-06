@@ -3277,11 +3277,11 @@ fn private_round_state(room: &Value, local_seat: usize) -> Value {
                 },
                 "melds": Value::Array(player.get("melds").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|meld| {
                     Value::Array(meld.as_array().cloned().unwrap_or_default().into_iter().map(|tile| {
-                        tile.get("tile_key").cloned().unwrap_or(Value::Null)
+                        tile_key_value(&tile)
                     }).collect())
                 }).collect()),
-                "flowers": Value::Array(player.get("flowers").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null)).collect()),
-                "discards": Value::Array(player.get("discards").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null)).collect()),
+                "flowers": Value::Array(player.get("flowers").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| tile_key_value(&tile)).collect()),
+                "discards": Value::Array(player.get("discards").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| tile_key_value(&tile)).collect()),
             })
         })
         .collect::<Vec<_>>();
@@ -3296,11 +3296,19 @@ fn private_round_state(room: &Value, local_seat: usize) -> Value {
             let tail = wall.get("tail_index")?.as_i64()?;
             Some(Value::Number((tail - head + 1).max(0).into()))
         }).unwrap_or(Value::Null),
-        "last_discard": round_state.get("last_discard").and_then(|value| value.get("tile_key")).cloned().unwrap_or(Value::Null),
+        "last_discard": round_state.get("last_discard").map(tile_key_value).unwrap_or(Value::Null),
         "pending_action": private_pending_action(room, local_seat),
         "score_state": round_score_state(room),
         "players": private_players,
     })
+}
+
+fn tile_key_value(tile: &Value) -> Value {
+    if let Some(tile_key) = tile.as_str() {
+        Value::String(tile_key.to_string())
+    } else {
+        tile.get("tile_key").cloned().unwrap_or(Value::Null)
+    }
 }
 
 fn private_pending_action(room: &Value, local_seat: usize) -> Option<Value> {
@@ -4935,6 +4943,32 @@ mod tests {
         assert_eq!(room["round_state"]["restricted_discard_tile_key"], "w3");
         assert_eq!(room["pending_timeout"]["kind"], "active_turn");
         assert_eq!(room["pending_timeout"]["seat_index"], 2);
+    }
+
+    #[test]
+    fn room_snapshot_preserves_chow_meld_tile_codes() {
+        let mut room = room_for_local_claim_window();
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        let _ = try_handle_action(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled locally")
+        .expect("chow should succeed");
+        let _ = try_handle_action(&mut room, 2, "pass", &[])
+            .expect("pass should be handled locally")
+            .expect("pass should succeed");
+
+        let snapshot = room_snapshot(&room, 1);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["players"][1]["melds"][0],
+            json!(["w2", "w3", "w4"])
+        );
     }
 
     #[test]

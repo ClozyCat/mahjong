@@ -605,8 +605,14 @@ function getFlowerCountBySeat(state: SessionState) {
   return state.roomSnapshot?.payload.private_state?.score_state?.flower_count_by_seat ?? {};
 }
 
+function normalizeTileCodeList(tileCodes: readonly (string | null | undefined)[] | null | undefined) {
+  return (tileCodes ?? []).filter((tileCode): tileCode is string => typeof tileCode === 'string' && tileCode.trim().length > 0);
+}
+
 function normalizeDisplayMelds(melds: string[][] | null | undefined) {
-  return (melds ?? []).map((meld) => meld.slice().sort(compareTileCodes));
+  return (melds ?? [])
+    .map((meld) => normalizeTileCodeList(meld).sort(compareTileCodes))
+    .filter((meld) => meld.length > 0);
 }
 
 function createPlayers(state: SessionState): PlayerView[] {
@@ -648,7 +654,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: normalizeDisplayMelds(privatePlayer?.melds),
-        flowers: privatePlayer?.flowers ?? [],
+        flowers: normalizeTileCodeList(privatePlayer?.flowers),
         statusText:
           isBotSeat
             ? 'Bot代打中'
@@ -683,7 +689,7 @@ function createDiscards(state: SessionState): Record<Seat, string[]> {
 
   const localSeat = getLocalSeat(state);
   for (const player of snapshot.private_state.players) {
-    empty[toRelativeSeat(localSeat, player.seat_index)] = player.discards;
+    empty[toRelativeSeat(localSeat, player.seat_index)] = normalizeTileCodeList(player.discards);
   }
 
   return empty;
@@ -999,8 +1005,8 @@ function compareLocalHandTiles(
   return codeComparison !== 0 ? codeComparison : left.tileId.localeCompare(right.tileId);
 }
 
-function getTileSortKey(code: string) {
-  const normalized = code.trim().toLowerCase();
+function getTileSortKey(code: string | null | undefined) {
+  const normalized = typeof code === 'string' ? code.trim().toLowerCase() : '';
   const suited = normalized.match(/^([wbcmpt])([1-9])$/);
 
   if (suited) {
@@ -1025,9 +1031,11 @@ function getTileSortKey(code: string) {
   };
 }
 
-function compareTileCodes(left: string, right: string) {
+function compareTileCodes(left: string | null | undefined, right: string | null | undefined) {
   const leftKey = getTileSortKey(left);
   const rightKey = getTileSortKey(right);
+  const leftText = typeof left === 'string' ? left : '';
+  const rightText = typeof right === 'string' ? right : '';
 
   if (leftKey.group !== rightKey.group) {
     return leftKey.group - rightKey.group;
@@ -1037,7 +1045,7 @@ function compareTileCodes(left: string, right: string) {
     return leftKey.order - rightKey.order;
   }
 
-  return left.localeCompare(right);
+  return leftText.localeCompare(rightText);
 }
 
 function createResultSeats(state: SessionState, scoreDeltaBySeat: Record<string, number> | null): ResultSeatView[] {
@@ -1159,7 +1167,7 @@ function createLastDiscardSeat(state: SessionState): Seat | null {
   const privateState = snapshot?.private_state;
   const lastDiscard = privateState?.last_discard ?? null;
 
-  if (!snapshot || !privateState || !lastDiscard) {
+  if (!snapshot || !privateState || typeof lastDiscard !== 'string' || lastDiscard.trim().length === 0) {
     return null;
   }
 
