@@ -1,5 +1,7 @@
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use std::sync::{Mutex, OnceLock};
 
 const SUIT_KEYS: [char; 3] = ['w', 't', 'b'];
 const HONOR_KEYS: [&str; 7] = ["east", "south", "west", "north", "red", "green", "white"];
@@ -26,6 +28,9 @@ const MCR_BASE_POINTS: i64 = 8;
 const TILE_KIND_COUNT: usize = 34;
 const HONOR_TILE_START: usize = 27;
 const THIRTEEN_ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
+const DECOMPOSITION_CACHE_LIMIT: usize = 4096;
+const HAND_FEATURE_CACHE_LIMIT: usize = 4096;
+const FAN_RESULT_CACHE_LIMIT: usize = 2048;
 
 type TileCounts = [u8; TILE_KIND_COUNT];
 
@@ -38,7 +43,7 @@ struct StandardDecompositionSignature {
     melds: Vec<CompactMeld>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Decomposition {
     pub kind: String,
     pub pair: Option<String>,
@@ -51,7 +56,7 @@ pub struct Decomposition {
     pub orphans: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct HandFeatures {
     pub concealed_hand: bool,
     pub thirteen_orphans: bool,
@@ -69,7 +74,7 @@ pub struct HandFeatures {
     pub non_seat_non_round_wind_triplet_count: usize,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TimingFeatures {
     pub gang_shang_hua: bool,
     pub hai_di_lao_yue: bool,
@@ -77,7 +82,7 @@ pub struct TimingFeatures {
     pub robbing_the_kong: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct KongEntry {
     pub kong_type: String,
     pub actor_seat: usize,
@@ -85,7 +90,7 @@ pub struct KongEntry {
     pub tile_key: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EvaluationInput {
     pub win_type: String,
     pub winner_seat: Option<usize>,
@@ -348,7 +353,81 @@ struct AllTileDerivedData {
     tile_hog: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct DecompositionCacheKey {
+    concealed_tile_keys: Vec<String>,
+    meld_tile_key_groups: Vec<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct HandFeatureCacheKey {
+    concealed_tile_keys: Vec<String>,
+    meld_tile_key_groups: Vec<Vec<String>>,
+    meld_open_flags: Option<Vec<bool>>,
+    incoming_tile: Option<String>,
+    seat_wind_key: Option<String>,
+    round_wind_key: Option<String>,
+    decompositions: Option<Vec<Decomposition>>,
+}
+
+fn cached_clone<K, V, F>(
+    cache: &'static OnceLock<Mutex<HashMap<K, V>>>,
+    limit: usize,
+    key: K,
+    compute: F,
+) -> V
+where
+    K: Eq + Hash,
+    V: Clone,
+    F: FnOnce() -> V,
+{
+    let cache = cache.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(value) = cache
+        .lock()
+        .expect("cache mutex poisoned")
+        .get(&key)
+        .cloned()
+    {
+        return value;
+    }
+
+    let value = compute();
+    let mut cache_guard = cache.lock().expect("cache mutex poisoned");
+    if cache_guard.len() >= limit && !cache_guard.contains_key(&key) {
+        cache_guard.clear();
+    }
+    cache_guard.insert(key, value.clone());
+    value
+}
+
+fn decomposition_cache()
+-> &'static OnceLock<Mutex<HashMap<DecompositionCacheKey, Vec<Decomposition>>>> {
+    static CACHE: OnceLock<Mutex<HashMap<DecompositionCacheKey, Vec<Decomposition>>>> =
+        OnceLock::new();
+    &CACHE
+}
+
+fn hand_feature_cache() -> &'static OnceLock<Mutex<HashMap<HandFeatureCacheKey, HandFeatures>>> {
+    static CACHE: OnceLock<Mutex<HashMap<HandFeatureCacheKey, HandFeatures>>> = OnceLock::new();
+    &CACHE
+}
+
+fn fan_result_cache() -> &'static OnceLock<Mutex<HashMap<EvaluationInput, FanResult>>> {
+    static CACHE: OnceLock<Mutex<HashMap<EvaluationInput, FanResult>>> = OnceLock::new();
+    &CACHE
+}
+
 pub fn evaluate_fans(input: EvaluationInput) -> FanResult {
+    let cache_key = input.clone();
+    cached_clone(
+        fan_result_cache(),
+        FAN_RESULT_CACHE_LIMIT,
+        cache_key,
+        || evaluate_fans_uncached(input),
+    )
+}
+
+fn evaluate_fans_uncached(input: EvaluationInput) -> FanResult {
     let context = FanContext::from_input(input);
     let best_result = fan_scenarios(&context)
         .into_iter()
@@ -403,6 +482,42 @@ pub fn evaluate_fans(input: EvaluationInput) -> FanResult {
 }
 
 pub fn extract_hand_features(
+    concealed_tile_keys: &[String],
+    meld_tile_key_groups: &[Vec<String>],
+    meld_open_flags: Option<&[bool]>,
+    incoming_tile: Option<&str>,
+    seat_wind_key: Option<&str>,
+    round_wind_key: Option<&str>,
+    decompositions: Option<&[Decomposition]>,
+) -> HandFeatures {
+    let cache_key = HandFeatureCacheKey {
+        concealed_tile_keys: concealed_tile_keys.to_vec(),
+        meld_tile_key_groups: meld_tile_key_groups.to_vec(),
+        meld_open_flags: meld_open_flags.map(|flags| flags.to_vec()),
+        incoming_tile: incoming_tile.map(ToString::to_string),
+        seat_wind_key: seat_wind_key.map(ToString::to_string),
+        round_wind_key: round_wind_key.map(ToString::to_string),
+        decompositions: decompositions.map(|items| items.to_vec()),
+    };
+    cached_clone(
+        hand_feature_cache(),
+        HAND_FEATURE_CACHE_LIMIT,
+        cache_key,
+        || {
+            extract_hand_features_uncached(
+                concealed_tile_keys,
+                meld_tile_key_groups,
+                meld_open_flags,
+                incoming_tile,
+                seat_wind_key,
+                round_wind_key,
+                decompositions,
+            )
+        },
+    )
+}
+
+fn extract_hand_features_uncached(
     concealed_tile_keys: &[String],
     meld_tile_key_groups: &[Vec<String>],
     meld_open_flags: Option<&[bool]>,
@@ -470,6 +585,19 @@ pub fn extract_hand_features(
 }
 
 pub fn decompose_winning_hand(tile_keys: &[String]) -> Vec<Decomposition> {
+    let cache_key = DecompositionCacheKey {
+        concealed_tile_keys: tile_keys.to_vec(),
+        meld_tile_key_groups: vec![],
+    };
+    cached_clone(
+        decomposition_cache(),
+        DECOMPOSITION_CACHE_LIMIT,
+        cache_key,
+        || decompose_winning_hand_uncached(tile_keys),
+    )
+}
+
+fn decompose_winning_hand_uncached(tile_keys: &[String]) -> Vec<Decomposition> {
     if tile_keys.len() != 14 {
         return vec![];
     }
@@ -508,6 +636,22 @@ pub fn decompose_winning_hand(tile_keys: &[String]) -> Vec<Decomposition> {
 }
 
 pub fn decompose_winning_hand_with_melds(
+    concealed_tile_keys: &[String],
+    meld_tile_key_groups: &[Vec<String>],
+) -> Vec<Decomposition> {
+    let cache_key = DecompositionCacheKey {
+        concealed_tile_keys: concealed_tile_keys.to_vec(),
+        meld_tile_key_groups: meld_tile_key_groups.to_vec(),
+    };
+    cached_clone(
+        decomposition_cache(),
+        DECOMPOSITION_CACHE_LIMIT,
+        cache_key,
+        || decompose_winning_hand_with_melds_uncached(concealed_tile_keys, meld_tile_key_groups),
+    )
+}
+
+fn decompose_winning_hand_with_melds_uncached(
     concealed_tile_keys: &[String],
     meld_tile_key_groups: &[Vec<String>],
 ) -> Vec<Decomposition> {
@@ -3370,5 +3514,62 @@ mod tests {
         });
 
         assert!(result.fan_keys.iter().any(|fan| fan == "chicken_hand"));
+    }
+
+    #[test]
+    fn repeated_precheck_calls_return_identical_results() {
+        let tile_keys = vec![
+            "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "red", "red", "red", "green",
+            "green",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+        let first_decompositions = decompose_winning_hand(&tile_keys);
+        let second_decompositions = decompose_winning_hand(&tile_keys);
+        assert_eq!(first_decompositions, second_decompositions);
+
+        let first_features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&first_decompositions),
+        );
+        let second_features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&second_decompositions),
+        );
+        assert_eq!(first_features, second_features);
+
+        let input = EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            flower_count: 0,
+            seat_count: 4,
+            features: first_features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions: first_decompositions,
+        };
+
+        let first_result = evaluate_fans(input.clone());
+        let second_result = evaluate_fans(input);
+        assert_eq!(first_result, second_result);
     }
 }

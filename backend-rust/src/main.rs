@@ -6,6 +6,7 @@ use std::env;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc as std_mpsc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
@@ -30,7 +31,7 @@ use rand::Rng;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, Notify, mpsc};
+use tokio::sync::{Mutex, Notify, RwLock, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -66,13 +67,22 @@ impl Settings {
 struct AppContext {
     settings: Settings,
     next_connection_id: Arc<AtomicU64>,
-    inner: Arc<Mutex<AppState>>,
+    inner: Arc<AppState>,
 }
 
 struct AppState {
-    db: Database,
-    rooms: HashMap<String, RoomRuntime>,
+    db: DbWorker,
+    rooms: RwLock<HashMap<String, Arc<RoomHandle>>>,
 }
+
+type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
+
+struct RoomHandle {
+    closed: AtomicBool,
+    runtime: Mutex<RoomRuntime>,
+}
+
+type RoomRef = Arc<RoomHandle>;
 
 struct RoomRuntime {
     created_at: String,
@@ -86,6 +96,23 @@ struct RoomRuntime {
     continue_task: Option<JoinHandle<()>>,
     disconnect_task: Option<JoinHandle<()>>,
     bot_task: Option<JoinHandle<()>>,
+}
+
+impl RoomHandle {
+    fn new(runtime: RoomRuntime) -> Self {
+        Self {
+            closed: AtomicBool::new(false),
+            runtime: Mutex::new(runtime),
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed)
+    }
+
+    fn mark_closed(&self) {
+        self.closed.store(true, Ordering::Relaxed);
+    }
 }
 
 #[derive(Clone)]
@@ -127,6 +154,11 @@ struct Database {
     conn: Connection,
 }
 
+#[derive(Clone)]
+struct DbWorker {
+    sender: std_mpsc::Sender<DbTask>,
+}
+
 struct TableRecord {
     created_at: String,
     room_json: String,
@@ -160,9 +192,30 @@ impl Database {
     }
 
     fn initialize(&self) -> Result<()> {
-        self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        self.conn.busy_timeout(Duration::from_secs(5))?;
+        self.conn.execute_batch(
+            "
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA foreign_keys = ON;
+            ",
+        )?;
         self.ensure_tables_schema()?;
         self.ensure_reconnect_tokens_schema()?;
+        self.ensure_indexes()?;
+        Ok(())
+    }
+
+    fn ensure_indexes(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_reconnect_tokens_table_code
+            ON reconnect_tokens(table_code);
+
+            CREATE INDEX IF NOT EXISTS idx_reconnect_tokens_table_seat
+            ON reconnect_tokens(table_code, seat_index);
+            ",
+        )?;
         Ok(())
     }
 
@@ -385,6 +438,102 @@ impl Database {
         }
     }
 
+    fn with_transaction<T, F>(&self, context: &str, work: F) -> Result<T>
+    where
+        F: FnOnce(&Connection) -> Result<T>,
+    {
+        if let Err(error) = self.conn.execute_batch("BEGIN IMMEDIATE;") {
+            return Err(error)
+                .with_context(|| format!("failed to start sqlite transaction for {context}"));
+        }
+
+        let result = work(&self.conn);
+        match result {
+            Ok(value) => {
+                if let Err(error) = self.conn.execute_batch("COMMIT;") {
+                    let _ = self.conn.execute_batch("ROLLBACK;");
+                    return Err(error).with_context(|| {
+                        format!("failed to commit sqlite transaction for {context}")
+                    });
+                }
+                Ok(value)
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK;");
+                Err(error).with_context(|| context.to_string())
+            }
+        }
+    }
+
+    fn save_table_with_conn(
+        conn: &Connection,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+    ) -> Result<()> {
+        conn.execute(
+            "
+            INSERT INTO tables (table_code, created_at, room_json)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(table_code) DO UPDATE
+            SET created_at = excluded.created_at,
+                room_json = excluded.room_json
+            ",
+            params![table_code, created_at, room_json],
+        )?;
+        Ok(())
+    }
+
+    fn delete_tokens_for_table_with_conn(conn: &Connection, table_code: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM reconnect_tokens WHERE table_code = ?1",
+            params![table_code],
+        )?;
+        Ok(())
+    }
+
+    fn delete_table_row_with_conn(conn: &Connection, table_code: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM tables WHERE table_code = ?1",
+            params![table_code],
+        )?;
+        Ok(())
+    }
+
+    fn store_reconnect_token_with_conn(
+        conn: &Connection,
+        token: &str,
+        table_code: &str,
+        seat_index: usize,
+        player_session_id: i64,
+    ) -> Result<()> {
+        conn.execute(
+            "INSERT INTO reconnect_tokens (token, table_code, seat_index, player_session_id) VALUES (?1, ?2, ?3, ?4)",
+            params![token, table_code, seat_index as i64, player_session_id],
+        )?;
+        Ok(())
+    }
+
+    fn delete_reconnect_token_with_conn(conn: &Connection, token: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM reconnect_tokens WHERE token = ?1",
+            params![token],
+        )?;
+        Ok(())
+    }
+
+    fn delete_tokens_for_seat_with_conn(
+        conn: &Connection,
+        table_code: &str,
+        seat_index: usize,
+    ) -> Result<()> {
+        conn.execute(
+            "DELETE FROM reconnect_tokens WHERE table_code = ?1 AND seat_index = ?2",
+            params![table_code, seat_index as i64],
+        )?;
+        Ok(())
+    }
+
     fn get_table(&self, table_code: &str) -> Result<Option<TableRecord>> {
         self.conn
             .query_row(
@@ -402,31 +551,18 @@ impl Database {
     }
 
     fn save_table(&self, table_code: &str, created_at: &str, room_json: &str) -> Result<()> {
-        self.conn.execute(
-            "
-            INSERT INTO tables (table_code, created_at, room_json)
-            VALUES (?1, ?2, ?3)
-            ON CONFLICT(table_code) DO UPDATE
-            SET created_at = excluded.created_at,
-                room_json = excluded.room_json
-            ",
-            params![table_code, created_at, room_json],
-        )?;
-        Ok(())
+        Self::save_table_with_conn(&self.conn, table_code, created_at, room_json)
     }
 
     fn delete_table(&self, table_code: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM reconnect_tokens WHERE table_code = ?1",
-            params![table_code],
-        )?;
-        self.conn.execute(
-            "DELETE FROM tables WHERE table_code = ?1",
-            params![table_code],
-        )?;
-        Ok(())
+        self.with_transaction("delete table", |conn| {
+            Self::delete_tokens_for_table_with_conn(conn, table_code)?;
+            Self::delete_table_row_with_conn(conn, table_code)?;
+            Ok(())
+        })
     }
 
+    #[cfg(test)]
     fn store_reconnect_token(
         &self,
         token: &str,
@@ -434,11 +570,13 @@ impl Database {
         seat_index: usize,
         player_session_id: i64,
     ) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO reconnect_tokens (token, table_code, seat_index, player_session_id) VALUES (?1, ?2, ?3, ?4)",
-            params![token, table_code, seat_index as i64, player_session_id],
-        )?;
-        Ok(())
+        Self::store_reconnect_token_with_conn(
+            &self.conn,
+            token,
+            table_code,
+            seat_index,
+            player_session_id,
+        )
     }
 
     fn get_reconnect_token(&self, token: &str) -> Result<Option<ReconnectTokenRecord>> {
@@ -458,20 +596,199 @@ impl Database {
             .map_err(Into::into)
     }
 
-    fn delete_reconnect_token(&self, token: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM reconnect_tokens WHERE token = ?1",
-            params![token],
-        )?;
-        Ok(())
+    fn save_table_and_store_reconnect_token(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+    ) -> Result<()> {
+        self.with_transaction("save room and reconnect token", |conn| {
+            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Self::store_reconnect_token_with_conn(
+                conn,
+                token,
+                table_code,
+                seat_index,
+                player_session_id,
+            )?;
+            Ok(())
+        })
     }
 
-    fn delete_tokens_for_seat(&self, table_code: &str, seat_index: usize) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM reconnect_tokens WHERE table_code = ?1 AND seat_index = ?2",
-            params![table_code, seat_index as i64],
-        )?;
-        Ok(())
+    fn rotate_reconnect_token(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        old_token: &str,
+        new_token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+    ) -> Result<()> {
+        self.with_transaction("rotate reconnect token", |conn| {
+            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Self::delete_reconnect_token_with_conn(conn, old_token)?;
+            Self::store_reconnect_token_with_conn(
+                conn,
+                new_token,
+                table_code,
+                seat_index,
+                player_session_id,
+            )?;
+            Ok(())
+        })
+    }
+
+    fn save_table_and_delete_tokens_for_seat(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        seat_index: usize,
+    ) -> Result<()> {
+        self.with_transaction("save room and delete seat reconnect tokens", |conn| {
+            Self::delete_tokens_for_seat_with_conn(conn, table_code, seat_index)?;
+            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Ok(())
+        })
+    }
+}
+
+impl DbWorker {
+    fn start(db: Database) -> Result<Self> {
+        let (sender, receiver) = std_mpsc::channel::<DbTask>();
+        std::thread::Builder::new()
+            .name("mahjong-db-worker".to_string())
+            .spawn(move || {
+                while let Ok(task) = receiver.recv() {
+                    task(&db);
+                }
+            })
+            .context("failed to spawn database worker thread")?;
+        Ok(Self { sender })
+    }
+
+    async fn call<T, F>(&self, work: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Database) -> Result<T> + Send + 'static,
+    {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.sender
+            .send(Box::new(move |db| {
+                let _ = reply_tx.send(work(db));
+            }))
+            .map_err(|_| anyhow!("database worker stopped"))?;
+        reply_rx
+            .await
+            .map_err(|_| anyhow!("database worker stopped"))?
+    }
+
+    async fn get_table(&self, table_code: &str) -> Result<Option<TableRecord>> {
+        let table_code = table_code.to_string();
+        self.call(move |db| db.get_table(&table_code)).await
+    }
+
+    async fn generate_table_code(&self, runtime_codes: HashSet<String>) -> Result<String> {
+        self.call(move |db| generate_table_code(&runtime_codes, db))
+            .await
+    }
+
+    async fn save_table(&self, table_code: &str, created_at: &str, room_json: &str) -> Result<()> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        let room_json = room_json.to_string();
+        self.call(move |db| db.save_table(&table_code, &created_at, &room_json))
+            .await
+    }
+
+    async fn delete_table(&self, table_code: &str) -> Result<()> {
+        let table_code = table_code.to_string();
+        self.call(move |db| db.delete_table(&table_code)).await
+    }
+
+    async fn get_reconnect_token(&self, token: &str) -> Result<Option<ReconnectTokenRecord>> {
+        let token = token.to_string();
+        self.call(move |db| db.get_reconnect_token(&token)).await
+    }
+
+    async fn save_table_and_store_reconnect_token(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+    ) -> Result<()> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        let room_json = room_json.to_string();
+        let token = token.to_string();
+        self.call(move |db| {
+            db.save_table_and_store_reconnect_token(
+                &table_code,
+                &created_at,
+                &room_json,
+                &token,
+                seat_index,
+                player_session_id,
+            )
+        })
+        .await
+    }
+
+    async fn rotate_reconnect_token(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        old_token: &str,
+        new_token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+    ) -> Result<()> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        let room_json = room_json.to_string();
+        let old_token = old_token.to_string();
+        let new_token = new_token.to_string();
+        self.call(move |db| {
+            db.rotate_reconnect_token(
+                &table_code,
+                &created_at,
+                &room_json,
+                &old_token,
+                &new_token,
+                seat_index,
+                player_session_id,
+            )
+        })
+        .await
+    }
+
+    async fn save_table_and_delete_tokens_for_seat(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        seat_index: usize,
+    ) -> Result<()> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        let room_json = room_json.to_string();
+        self.call(move |db| {
+            db.save_table_and_delete_tokens_for_seat(
+                &table_code,
+                &created_at,
+                &room_json,
+                seat_index,
+            )
+        })
+        .await
     }
 }
 
@@ -501,15 +818,15 @@ struct MessageOutcome {
 #[tokio::main]
 async fn main() -> Result<()> {
     let settings = Settings::from_env()?;
-    let db = Database::open(&settings.database_path)?;
+    let db = DbWorker::start(Database::open(&settings.database_path)?)?;
 
     let app_state = AppContext {
         settings: settings.clone(),
         next_connection_id: Arc::new(AtomicU64::new(1)),
-        inner: Arc::new(Mutex::new(AppState {
+        inner: Arc::new(AppState {
             db,
-            rooms: HashMap::new(),
-        })),
+            rooms: RwLock::new(HashMap::new()),
+        }),
     };
 
     let app = Router::new()
@@ -598,14 +915,13 @@ async fn create_table(
         .and_then(|body| body.enforce_minimum_eight_fan)
         .unwrap_or(true);
 
-    let mut inner = state.inner.lock().await;
-    let result = create_or_replace_table_locked(
-        &mut inner,
+    let result = create_or_replace_table(
+        &state,
         requested_code,
         &resolved_mode,
         enforce_minimum_eight_fan,
-    );
-    drop(inner);
+    )
+    .await;
 
     match result {
         Ok((table_code, created_at, room)) => (
@@ -637,24 +953,32 @@ enum CreateTableError {
     Internal(anyhow::Error),
 }
 
-fn create_or_replace_table_locked(
-    inner: &mut AppState,
+async fn create_or_replace_table(
+    state: &AppContext,
     requested_code: Option<String>,
     mode: &str,
     enforce_minimum_eight_fan: bool,
 ) -> std::result::Result<(String, String, Value), CreateTableError> {
-    let runtime_codes: HashSet<String> = inner.rooms.keys().cloned().collect();
+    let mut rooms = state.inner.rooms.write().await;
+    let runtime_codes: HashSet<String> = rooms.keys().cloned().collect();
     let table_code = if let Some(code) = requested_code {
         code
     } else {
-        generate_table_code(&runtime_codes, &inner.db).map_err(CreateTableError::Internal)?
+        state
+            .inner
+            .db
+            .generate_table_code(runtime_codes)
+            .await
+            .map_err(CreateTableError::Internal)?
     };
 
-    if let Some(record) = inner
+    let existing_record = state
+        .inner
         .db
         .get_table(&table_code)
-        .map_err(CreateTableError::Internal)?
-    {
+        .await
+        .map_err(CreateTableError::Internal)?;
+    if let Some(record) = existing_record {
         let existing_room: Value = serde_json::from_str(&record.room_json)
             .map_err(|error| CreateTableError::Internal(error.into()))?;
         let occupied = existing_room
@@ -667,20 +991,40 @@ fn create_or_replace_table_locked(
         }
     }
 
-    if let Some(mut runtime) = inner.rooms.remove(&table_code) {
-        abort_room_tasks(&mut runtime);
+    let replaced = rooms.remove(&table_code);
+    if let Some(room_handle) = &replaced {
+        room_handle.mark_closed();
     }
+    drop(rooms);
     let created_at = now_iso();
     let room = initial_room_payload(&table_code, mode, enforce_minimum_eight_fan);
-    inner
+    let room_json = serialize_room(&room).map_err(CreateTableError::Internal)?;
+    state
+        .inner
         .db
-        .save_table(
-            &table_code,
-            &created_at,
-            &serde_json::to_string(&room)
-                .map_err(|error| CreateTableError::Internal(error.into()))?,
-        )
+        .save_table(&table_code, &created_at, &room_json)
+        .await
         .map_err(CreateTableError::Internal)?;
+    let room_handle = Arc::new(RoomHandle::new(RoomRuntime {
+        created_at: created_at.clone(),
+        room: room.clone(),
+        connections: HashMap::new(),
+        timeout_nonce: 0,
+        continue_nonce: 0,
+        disconnect_nonce: 0,
+        bot_nonce: 0,
+        timeout_task: None,
+        continue_task: None,
+        disconnect_task: None,
+        bot_task: None,
+    }));
+    let replaced_after_insert = {
+        let mut rooms = state.inner.rooms.write().await;
+        rooms.insert(table_code.clone(), room_handle)
+    };
+    if let Some(old_room) = replaced.or(replaced_after_insert) {
+        close_room_handle(&old_room).await;
+    }
     Ok((table_code, created_at, room))
 }
 
@@ -831,8 +1175,18 @@ async fn handle_client_message(
     envelope: &ClientEnvelope,
 ) -> MessageOutcome {
     match envelope.kind.as_str() {
-        "join_table" => handle_join_table(state, table_code, connection, envelope).await,
-        "reconnect" => handle_reconnect(state, table_code, connection, envelope).await,
+        "join_table" => {
+            if owned_seat.is_some() {
+                return reject_to(connection, "seat_already_owned");
+            }
+            handle_join_table(state, table_code, connection, envelope).await
+        }
+        "reconnect" => {
+            if owned_seat.is_some() {
+                return reject_to(connection, "seat_already_owned");
+            }
+            handle_reconnect(state, table_code, connection, envelope).await
+        }
         "ready" => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
@@ -898,9 +1252,9 @@ async fn handle_client_message(
         }
         "heartbeat" => MessageOutcome {
             outbound: vec![connection.outbound(json!({
-                    "type": "heartbeat",
-                    "payload": envelope.payload.clone(),
-                }))],
+                "type": "heartbeat",
+                "payload": envelope.payload.clone(),
+            }))],
             owned_seat: None,
             clear_owned_seat: false,
             close_socket: false,
@@ -916,8 +1270,11 @@ async fn assert_active_owned_seat(
     owned_seat: Option<usize>,
 ) -> Option<usize> {
     let seat_index = owned_seat?;
-    let inner = state.inner.lock().await;
-    let runtime = inner.rooms.get(table_code)?;
+    let room_handle = room_handle(state, table_code).await?;
+    if room_handle.is_closed() {
+        return None;
+    }
+    let runtime = room_handle.runtime.lock().await;
     let current = runtime.connections.get(&seat_index)?;
     if current.id == connection.id {
         Some(seat_index)
@@ -939,27 +1296,30 @@ async fn handle_join_table(
         .unwrap_or("Player")
         .to_string();
 
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
-    let occupied = inner
-        .rooms
-        .get(table_code)
-        .map(|runtime| occupied_seats(&runtime.room))
-        .unwrap_or_default();
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    if runtime
+        .connections
+        .values()
+        .any(|handle| handle.id == connection.id)
+    {
+        return reject_to(connection, "seat_already_owned");
+    }
+    let occupied = occupied_seats(&runtime.room);
     let Some(seat_index) = (0..MAX_SEATS).find(|seat| !occupied.contains(seat)) else {
         return reject_to(connection, "table_full");
     };
 
     let player_session_id = generate_player_session_id();
     let reconnect_token = generate_reconnect_token();
-    let Some(runtime) = inner.rooms.get_mut(table_code) else {
-        return reject_to(connection, "table_not_found");
-    };
     {
         let seats = runtime
             .room
@@ -982,21 +1342,29 @@ async fn handle_join_table(
         seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
     }
     maybe_start_test_match(&mut runtime.room);
-    runtime.connections.insert(seat_index, connection.clone());
-    let room_to_persist = runtime.room.clone();
-    if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
-        return internal_error_to(connection, error);
-    }
-    if let Err(error) =
-        inner
-            .db
-            .store_reconnect_token(&reconnect_token, table_code, seat_index, player_session_id)
+    replace_connection(&mut runtime, seat_index, connection);
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table_and_store_reconnect_token(
+            table_code,
+            &created_at,
+            &room_json,
+            &reconnect_token,
+            seat_index,
+            player_session_id,
+        )
+        .await
     {
         return internal_error_to(connection, error);
     }
-
-    let outbound = collect_join_outbound_locked(&inner, table_code, connection, seat_index, true);
-    drop(inner);
+    let outbound = collect_join_outbound(&runtime, table_code, connection, seat_index, true);
+    drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
@@ -1019,29 +1387,32 @@ async fn handle_reconnect(
         .unwrap_or("")
         .to_string();
 
-    let mut inner = state.inner.lock().await;
-    let Some(token_record) = inner
-        .db
-        .get_reconnect_token(&reconnect_token)
-        .ok()
-        .flatten()
-    else {
-        return reject_to(connection, "invalid_reconnect_token");
+    let token_record = match state.inner.db.get_reconnect_token(&reconnect_token).await {
+        Ok(Some(token_record)) => token_record,
+        Ok(None) | Err(_) => return reject_to(connection, "invalid_reconnect_token"),
     };
     if token_record.table_code != table_code {
         return reject_to(connection, "table_not_found");
     }
 
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
-    let Some(current_session_id) = inner
-        .rooms
-        .get(table_code)
-        .and_then(|runtime| room_player_session_id(&runtime.room, token_record.seat_index))
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    if runtime
+        .connections
+        .values()
+        .any(|handle| handle.id == connection.id)
+    {
+        return reject_to(connection, "seat_already_owned");
+    }
+    let Some(current_session_id) = room_player_session_id(&runtime.room, token_record.seat_index)
     else {
         return reject_to(connection, "invalid_reconnect_token");
     };
@@ -1050,9 +1421,6 @@ async fn handle_reconnect(
     }
 
     let new_token = generate_reconnect_token();
-    let Some(runtime) = inner.rooms.get_mut(table_code) else {
-        return reject_to(connection, "table_not_found");
-    };
     if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut)
         && let Some(seat) = seats.iter_mut().find(|seat| {
             seat.get("seat_index")
@@ -1070,28 +1438,37 @@ async fn handle_reconnect(
         object.insert("disconnect_deadline_at".to_string(), Value::Null);
     }
     let _ = rust_reconcile_continue_action_state(&mut runtime.room);
-    runtime
-        .connections
-        .insert(token_record.seat_index, connection.clone());
-    let room_to_persist = runtime.room.clone();
-    if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
-        return internal_error_to(connection, error);
-    }
-    if let Err(error) = inner.db.delete_reconnect_token(&reconnect_token) {
-        return internal_error_to(connection, error);
-    }
-    if let Err(error) = inner.db.store_reconnect_token(
-        &new_token,
-        table_code,
-        token_record.seat_index,
-        token_record.player_session_id,
-    ) {
+    replace_connection(&mut runtime, token_record.seat_index, connection);
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    if let Err(error) = state
+        .inner
+        .db
+        .rotate_reconnect_token(
+            table_code,
+            &created_at,
+            &room_json,
+            &reconnect_token,
+            &new_token,
+            token_record.seat_index,
+            token_record.player_session_id,
+        )
+        .await
+    {
         return internal_error_to(connection, error);
     }
 
-    let outbound =
-        collect_join_outbound_locked(&inner, table_code, connection, token_record.seat_index, true);
-    drop(inner);
+    let outbound = collect_join_outbound(
+        &runtime,
+        table_code,
+        connection,
+        token_record.seat_index,
+        true,
+    );
+    drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
@@ -1113,16 +1490,16 @@ async fn handle_ready(
         .get("ready")
         .and_then(Value::as_bool)
         .unwrap_or(true);
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
-    let Some(runtime) = inner.rooms.get_mut(table_code) else {
+    if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
-    };
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
     if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
@@ -1137,12 +1514,21 @@ async fn handle_ready(
     {
         object.insert("ready".to_string(), Value::Bool(ready));
     }
-    let room_to_persist = runtime.room.clone();
-    if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
         return internal_error_to(connection, error);
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, table_code);
-    drop(inner);
+    drop(runtime);
     let outcome = MessageOutcome {
         outbound,
         owned_seat: None,
@@ -1159,22 +1545,19 @@ async fn handle_start_match(
     connection: &ConnectionHandle,
     _seat_index: usize,
 ) -> MessageOutcome {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
-    let Some((already_started, ready_to_start, occupied)) = inner.rooms.get(table_code).map(|runtime| {
-        (
-            room_has_round_state(&runtime.room),
-            rust_room_ready_to_start(&runtime.room),
-            occupied_seats(&runtime.room),
-        )
-    }) else {
+    if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
-    };
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let already_started = room_has_round_state(&runtime.room);
+    let ready_to_start = rust_room_ready_to_start(&runtime.room);
+    let occupied = occupied_seats(&runtime.room);
     if already_started {
         return reject_to(connection, "room_already_started");
     }
@@ -1186,18 +1569,22 @@ async fn handle_start_match(
         let mut rng = rand::rng();
         occupied[rng.random_range(0..occupied.len())]
     };
-    let room_to_persist = {
-        let Some(runtime) = inner.rooms.get_mut(table_code) else {
-            return reject_to(connection, "table_not_found");
-        };
-        rust_start_match(&mut runtime.room, dealer_seat, rand::random::<u64>());
-        runtime.room.clone()
+    rust_start_match(&mut runtime.room, dealer_seat, rand::random::<u64>());
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
     };
-    if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
+    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
         return internal_error_to(connection, error);
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, table_code);
-    drop(inner);
+    drop(runtime);
     let outcome = MessageOutcome {
         outbound,
         owned_seat: None,
@@ -1215,25 +1602,34 @@ async fn handle_continue_action(
     seat_index: usize,
     action_id: &str,
 ) -> MessageOutcome {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
-    let Some(runtime) = inner.rooms.get_mut(table_code) else {
+    if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
-    };
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
     if let Err(reason) = rust_record_continue_action(&mut runtime.room, seat_index, action_id) {
         return reject_to(connection, &reason);
     }
-    let room_to_persist = runtime.room.clone();
-    if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
         return internal_error_to(connection, error);
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, table_code);
-    drop(inner);
+    drop(runtime);
     let outcome = MessageOutcome {
         outbound,
         owned_seat: None,
@@ -1269,56 +1665,45 @@ async fn handle_action_request(
         .unwrap_or("")
         .to_string();
 
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "round_not_ready");
     };
-    let mut rust_handled_messages: Option<Vec<Value>> = None;
-    {
-        let Some(runtime) = inner.rooms.get_mut(table_code) else {
-            return reject_to(connection, "table_not_found");
-        };
-        if let Some(result) = try_rust_action(
-            &mut runtime.room,
-            seat_index,
-            &action_type,
-            &tile_id_strings,
-        ) {
-            match result {
-                Ok(messages) => {
-                    rust_handled_messages = Some(messages);
-                }
-                Err(reason) => {
-                    return reject_to(connection, &reason);
-                }
-            }
-        }
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
     }
-
-    if rust_handled_messages.is_none() {
-        return reject_to(connection, "invalid_action");
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
     }
-
-    let (room_to_persist, connections, messages) = {
-        let Some(runtime) = inner.rooms.get_mut(table_code) else {
-            return reject_to(connection, "table_not_found");
-        };
-        let messages = rust_handled_messages.unwrap_or_default();
-        (
-            runtime.room.clone(),
-            runtime.connections.values().cloned().collect::<Vec<_>>(),
-            messages,
-        )
+    let rust_handled_messages = match try_rust_action(
+        &mut runtime.room,
+        seat_index,
+        &action_type,
+        &tile_id_strings,
+    ) {
+        Some(Ok(messages)) => messages,
+        Some(Err(reason)) => return reject_to(connection, &reason),
+        None => return reject_to(connection, "invalid_action"),
     };
-    if let Err(error) = persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist) {
+
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    let connections = runtime.connections.values().cloned().collect::<Vec<_>>();
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
         return internal_error_to(connection, error);
     }
-    let mut outbound = broadcast_to_handles(&connections, Some(&messages));
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, table_code));
-    drop(inner);
+    drop(runtime);
+    let mut outbound = broadcast_to_handles(&connections, Some(&rust_handled_messages));
+    outbound.extend(snapshot_outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
@@ -1351,10 +1736,16 @@ async fn handle_quick_chat(
         return reject_to(connection, "invalid_action");
     }
 
-    let inner = state.inner.lock().await;
-    let Some(runtime) = inner.rooms.get(table_code) else {
+    let Some(room_handle) = room_handle(&state, table_code).await else {
         return reject_to(connection, "table_not_found");
     };
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
     let Some(target_seat) = target_seat else {
         return reject_to(connection, "invalid_action");
     };
@@ -1391,23 +1782,18 @@ async fn handle_leave_table(
     connection: &ConnectionHandle,
     seat_index: usize,
 ) -> MessageOutcome {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
-    inner.db.delete_tokens_for_seat(table_code, seat_index).ok();
-    let phase = inner
-        .rooms
-        .get(table_code)
-        .map(|runtime| room_phase(&runtime.room))
-        .unwrap();
-
-    let Some(runtime) = inner.rooms.get_mut(table_code) else {
+    if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
-    };
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let created_at = runtime.created_at.clone();
+    let phase = room_phase(&runtime.room);
     runtime.connections.remove(&seat_index);
     if phase == "waiting" {
         remove_seat_from_room(&mut runtime.room, seat_index);
@@ -1417,50 +1803,85 @@ async fn handle_leave_table(
     }
 
     let mut outbound = vec![connection.outbound(json!({
-            "type": "leave_table_accepted",
-            "payload": {
-                "table_code": table_code,
-                "seat_index": seat_index,
-            }
-        }))];
+        "type": "leave_table_accepted",
+        "payload": {
+            "table_code": table_code,
+            "seat_index": seat_index,
+        }
+    }))];
 
     if phase == "waiting" {
         if room_seats(&runtime.room).is_empty() {
-            if let Some(mut runtime) = inner.rooms.remove(table_code) {
-                abort_room_tasks(&mut runtime);
-            }
-            inner.db.delete_table(table_code).ok();
+            room_handle.mark_closed();
+            close_runtime(&mut runtime);
+            drop(runtime);
+            unregister_room_handle(&state, table_code, &room_handle).await;
+            state.inner.db.delete_table(table_code).await.ok();
+            schedule_room_tasks(state, table_code.to_string()).await;
+            return MessageOutcome {
+                outbound,
+                owned_seat: None,
+                clear_owned_seat: true,
+                close_socket: true,
+            };
         } else {
-            let room_to_persist = runtime.room.clone();
-            if let Err(error) =
-                persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist)
+            let room_json = match serialize_room(&runtime.room) {
+                Ok(value) => value,
+                Err(error) => return internal_error_to(connection, error),
+            };
+            outbound.extend(presence_and_snapshot_for_all(
+                &runtime, table_code, seat_index, false,
+            ));
+            if let Err(error) = state
+                .inner
+                .db
+                .save_table_and_delete_tokens_for_seat(
+                    table_code,
+                    &created_at,
+                    &room_json,
+                    seat_index,
+                )
+                .await
             {
                 return internal_error_to(connection, error);
             }
-            outbound.extend(presence_and_snapshot_for_all_locked(
-                &inner, table_code, seat_index, false,
-            ));
         }
     } else {
-        if should_terminate_unattended(runtime) {
-            if let Some(mut runtime) = inner.rooms.remove(table_code) {
-                abort_room_tasks(&mut runtime);
-            }
-            inner.db.delete_table(table_code).ok();
+        if should_terminate_unattended(&runtime) {
+            room_handle.mark_closed();
+            close_runtime(&mut runtime);
+            drop(runtime);
+            unregister_room_handle(&state, table_code, &room_handle).await;
+            state.inner.db.delete_table(table_code).await.ok();
+            schedule_room_tasks(state, table_code.to_string()).await;
+            return MessageOutcome {
+                outbound,
+                owned_seat: None,
+                clear_owned_seat: true,
+                close_socket: true,
+            };
         } else {
-            let room_to_persist = runtime.room.clone();
-            if let Err(error) =
-                persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist)
+            let room_json = match serialize_room(&runtime.room) {
+                Ok(value) => value,
+                Err(error) => return internal_error_to(connection, error),
+            };
+            outbound.extend(collect_snapshot_and_prompt_outbound(&runtime));
+            if let Err(error) = state
+                .inner
+                .db
+                .save_table_and_delete_tokens_for_seat(
+                    table_code,
+                    &created_at,
+                    &room_json,
+                    seat_index,
+                )
+                .await
             {
                 return internal_error_to(connection, error);
             }
-            outbound.extend(collect_snapshot_and_prompt_outbound_locked(
-                &inner, table_code,
-            ));
         }
     }
-
-    drop(inner);
+    drop(runtime);
     schedule_room_tasks(state, table_code.to_string()).await;
     MessageOutcome {
         outbound,
@@ -1480,144 +1901,136 @@ async fn handle_disconnect(
         return;
     };
 
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = room_handle(&state, table_code).await else {
         return;
     };
-    let Some(current_handle) = inner
-        .rooms
-        .get(table_code)
-        .and_then(|runtime| runtime.connections.get(&seat_index))
-        .cloned()
-    else {
+    if room_handle.is_closed() {
+        return;
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
+    let Some(current_handle) = runtime.connections.get(&seat_index).cloned() else {
         return;
     };
     if current_handle.id != connection_id {
         return;
     }
-    if let Some(runtime) = inner.rooms.get_mut(table_code) {
-        runtime.connections.remove(&seat_index);
-        let disconnect_deadline_at = (Utc::now()
-            + chrono::TimeDelta::seconds(DISCONNECT_GRACE_SECONDS))
-        .to_rfc3339_opts(SecondsFormat::Micros, true);
-        set_seat_connected(
-            &mut runtime.room,
-            seat_index,
-            false,
-            Some(disconnect_deadline_at),
-        );
-        let _ = rust_reconcile_continue_action_state(&mut runtime.room);
-    }
-
-    let Some(runtime) = inner.rooms.get_mut(table_code) else {
-        return;
+    runtime.connections.remove(&seat_index);
+    set_seat_connected(
+        &mut runtime.room,
+        seat_index,
+        false,
+        Some(disconnect_deadline_iso()),
+    );
+    let _ = rust_reconcile_continue_action_state(&mut runtime.room);
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(_) => return,
     };
-    let room_to_persist = runtime.room.clone();
-    if persist_room_locked(&inner.db, table_code, &created_at, &room_to_persist).is_err() {
+    let outbound = presence_and_snapshot_for_all(&runtime, table_code, seat_index, false);
+    if state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+        .is_err()
+    {
         return;
     }
-    let outbound = presence_and_snapshot_for_all_locked(&inner, table_code, seat_index, false);
-    drop(inner);
+    drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks(state, table_code.to_string()).await;
 }
 
 async fn process_due_pending_timeout(state: AppContext, table_code: String, expected_nonce: u64) {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, &table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
     };
-    let current_nonce = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.timeout_nonce)
-        .unwrap_or_default();
-    if current_nonce != expected_nonce {
+    if room_handle.is_closed() {
         return;
     }
-    let Some(deadline) = inner
-        .rooms
-        .get(&table_code)
-        .and_then(|runtime| pending_timeout_deadline(&runtime.room))
-    else {
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
+    if runtime.timeout_nonce != expected_nonce {
+        return;
+    }
+    let Some(deadline) = pending_timeout_deadline(&runtime.room) else {
         return;
     };
     if deadline > Utc::now() {
         return;
     }
-    let rust_messages = {
-        let Some(runtime) = inner.rooms.get_mut(&table_code) else {
-            return;
-        };
-        try_rust_process_due_timeout(&mut runtime.room)
-    };
+    let rust_messages = try_rust_process_due_timeout(&mut runtime.room);
     let Some(rust_messages) = rust_messages else {
         return;
     };
-    let (room_to_persist, connections, messages) = {
-        let Some(runtime) = inner.rooms.get_mut(&table_code) else {
-            return;
-        };
-        (
-            runtime.room.clone(),
-            runtime.connections.values().cloned().collect::<Vec<_>>(),
-            rust_messages,
-        )
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(_) => return,
     };
-    if persist_room_locked(&inner.db, &table_code, &created_at, &room_to_persist).is_err() {
+    let connections = runtime.connections.values().cloned().collect::<Vec<_>>();
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if state
+        .inner
+        .db
+        .save_table(&table_code, &created_at, &room_json)
+        .await
+        .is_err()
+    {
         return;
     }
-    let mut outbound = broadcast_to_handles(&connections, Some(&messages));
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, &table_code));
-    drop(inner);
+    drop(runtime);
+    let mut outbound = broadcast_to_handles(&connections, Some(&rust_messages));
+    outbound.extend(snapshot_outbound);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
 
 async fn process_due_continue_action(state: AppContext, table_code: String, expected_nonce: u64) {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, &table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
     };
-    let current_nonce = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.continue_nonce)
-        .unwrap_or_default();
-    if current_nonce != expected_nonce {
+    if room_handle.is_closed() {
         return;
     }
-    let Some(deadline) = inner
-        .rooms
-        .get(&table_code)
-        .and_then(|runtime| continue_action_deadline(&runtime.room))
-    else {
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
+    if runtime.continue_nonce != expected_nonce {
+        return;
+    }
+    let Some(deadline) = continue_action_deadline(&runtime.room) else {
         return;
     };
     if deadline > Utc::now() {
         return;
     }
-    let Some(runtime) = inner.rooms.get_mut(&table_code) else {
-        return;
-    };
     if rust_process_due_continue_action(&mut runtime.room).ok() != Some(true) {
         return;
     }
-    let room_to_persist = runtime.room.clone();
-    if persist_room_locked(&inner.db, &table_code, &created_at, &room_to_persist).is_err() {
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if state
+        .inner
+        .db
+        .save_table(&table_code, &created_at, &room_json)
+        .await
+        .is_err()
+    {
         return;
     }
-    let outbound = collect_snapshot_and_prompt_outbound_locked(&inner, &table_code);
-    drop(inner);
+    drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
@@ -1628,133 +2041,129 @@ async fn process_due_disconnect_timeout(
     seat_index: usize,
     expected_nonce: u64,
 ) {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, &table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
     };
-    let current_nonce = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.disconnect_nonce)
-        .unwrap_or_default();
-    if current_nonce != expected_nonce {
+    if room_handle.is_closed() {
         return;
     }
-    let Some(deadline) = inner
-        .rooms
-        .get(&table_code)
-        .and_then(|runtime| disconnect_deadline_for_seat(&runtime.room, seat_index))
-    else {
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
+    if runtime.disconnect_nonce != expected_nonce {
+        return;
+    }
+    let Some(deadline) = disconnect_deadline_for_seat(&runtime.room, seat_index) else {
         return;
     };
     if deadline > Utc::now() {
         return;
     }
 
-    inner
-        .db
-        .delete_tokens_for_seat(&table_code, seat_index)
-        .ok();
-    let (room_to_persist, should_close) = {
-        let Some(runtime) = inner.rooms.get_mut(&table_code) else {
-            return;
-        };
-        runtime.connections.remove(&seat_index);
-        if room_has_round_state(&runtime.room) {
-            convert_seat_to_bot(&mut runtime.room, seat_index);
-            let _ = rust_reconcile_continue_action_state(&mut runtime.room);
-        } else {
-            remove_seat_from_room(&mut runtime.room, seat_index);
-        }
-        let close = room_seats(&runtime.room).is_empty() || should_terminate_unattended(runtime);
-        (runtime.room.clone(), close)
-    };
+    runtime.connections.remove(&seat_index);
+    if room_has_round_state(&runtime.room) {
+        convert_seat_to_bot(&mut runtime.room, seat_index);
+        let _ = rust_reconcile_continue_action_state(&mut runtime.room);
+    } else {
+        remove_seat_from_room(&mut runtime.room, seat_index);
+    }
+    let should_close =
+        room_seats(&runtime.room).is_empty() || should_terminate_unattended(&runtime);
 
     if should_close {
-        if let Some(mut runtime) = inner.rooms.remove(&table_code) {
-            abort_room_tasks(&mut runtime);
-        }
-        inner.db.delete_table(&table_code).ok();
+        room_handle.mark_closed();
+        close_runtime(&mut runtime);
+        drop(runtime);
+        unregister_room_handle(&state, &table_code, &room_handle).await;
+        state.inner.db.delete_table(&table_code).await.ok();
         return;
     }
 
-    if persist_room_locked(&inner.db, &table_code, &created_at, &room_to_persist).is_err() {
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if state
+        .inner
+        .db
+        .save_table_and_delete_tokens_for_seat(&table_code, &created_at, &room_json, seat_index)
+        .await
+        .is_err()
+    {
         return;
     }
-    let mut outbound = Vec::new();
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, &table_code));
-    drop(inner);
+    drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
 
 async fn process_due_bot_action(state: AppContext, table_code: String, expected_nonce: u64) {
-    let mut inner = state.inner.lock().await;
-    let Some(created_at) = ensure_room_loaded_locked(&mut inner, &table_code)
-        .ok()
-        .flatten()
-    else {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
     };
-    let current_nonce = inner
-        .rooms
-        .get(&table_code)
-        .map(|runtime| runtime.bot_nonce)
-        .unwrap_or_default();
-    if current_nonce != expected_nonce {
+    if room_handle.is_closed() {
+        return;
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
+    if runtime.bot_nonce != expected_nonce {
         return;
     }
 
-    let action = inner
-        .rooms
-        .get(&table_code)
-        .and_then(|runtime| rust_next_bot_action(&runtime.room));
+    let action = rust_next_bot_action(&runtime.room);
     let Some(action) = action else {
         return;
     };
 
-    let messages = {
-        let Some(runtime) = inner.rooms.get_mut(&table_code) else {
-            return;
-        };
-        match try_rust_action(
-            &mut runtime.room,
-            action.seat_index,
-            &action.action_type,
-            &action.tile_ids,
-        ) {
-            Some(Ok(messages)) => messages,
-            Some(Err(_)) | None => return,
-        }
+    let messages = match try_rust_action(
+        &mut runtime.room,
+        action.seat_index,
+        &action.action_type,
+        &action.tile_ids,
+    ) {
+        Some(Ok(messages)) => messages,
+        Some(Err(_)) | None => return,
     };
 
-    let (room_to_persist, connections) = {
-        let Some(runtime) = inner.rooms.get_mut(&table_code) else {
-            return;
-        };
-        (
-            runtime.room.clone(),
-            runtime.connections.values().cloned().collect::<Vec<_>>(),
-        )
+    let created_at = runtime.created_at.clone();
+    let room_json = match serialize_room(&runtime.room) {
+        Ok(value) => value,
+        Err(_) => return,
     };
-    if persist_room_locked(&inner.db, &table_code, &created_at, &room_to_persist).is_err() {
+    let connections = runtime.connections.values().cloned().collect::<Vec<_>>();
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound(&runtime);
+    if state
+        .inner
+        .db
+        .save_table(&table_code, &created_at, &room_json)
+        .await
+        .is_err()
+    {
         return;
     }
+    drop(runtime);
     let mut outbound = broadcast_to_handles(&connections, Some(&messages));
-    outbound.extend(collect_snapshot_and_prompt_outbound_locked(&inner, &table_code));
-    drop(inner);
+    outbound.extend(snapshot_outbound);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
 
 async fn schedule_room_tasks(state: AppContext, table_code: String) {
-    let mut inner = state.inner.lock().await;
-    let Some(runtime) = inner.rooms.get_mut(&table_code) else {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
     };
+    if room_handle.is_closed() {
+        return;
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
     abort_join_handle(&mut runtime.timeout_task);
     abort_join_handle(&mut runtime.continue_task);
     abort_join_handle(&mut runtime.disconnect_task);
@@ -1829,42 +2238,74 @@ fn abort_room_tasks(runtime: &mut RoomRuntime) {
     abort_join_handle(&mut runtime.bot_task);
 }
 
-fn ensure_room_loaded_locked(inner: &mut AppState, table_code: &str) -> Result<Option<String>> {
-    if !inner.rooms.contains_key(table_code) {
-        let Some(record) = inner.db.get_table(table_code)? else {
-            return Ok(None);
-        };
-        let mut room: Value = serde_json::from_str(&record.room_json)?;
-        mark_restored_room_disconnected(&mut room);
-        inner.db.save_table(
-            table_code,
-            &record.created_at,
-            &serde_json::to_string(&room)?,
-        )?;
-        inner.rooms.insert(
-            table_code.to_string(),
-            RoomRuntime {
-                created_at: record.created_at,
-                room,
-                connections: HashMap::new(),
-                timeout_nonce: 0,
-                continue_nonce: 0,
-                disconnect_nonce: 0,
-                bot_nonce: 0,
-                timeout_task: None,
-                continue_task: None,
-                disconnect_task: None,
-                bot_task: None,
-            },
-        );
+fn close_runtime(runtime: &mut RoomRuntime) {
+    for connection in runtime.connections.values() {
+        connection.request_close();
+    }
+    runtime.connections.clear();
+    abort_room_tasks(runtime);
+}
+
+async fn room_handle(state: &AppContext, table_code: &str) -> Option<RoomRef> {
+    let rooms = state.inner.rooms.read().await;
+    rooms.get(table_code).cloned()
+}
+
+async fn ensure_room_loaded(state: &AppContext, table_code: &str) -> Result<Option<RoomRef>> {
+    if let Some(handle) = room_handle(state, table_code).await {
+        return Ok(Some(handle));
     }
 
-    let created_at = inner
-        .rooms
+    let record = state.inner.db.get_table(table_code).await?;
+    let Some(record) = record else {
+        return Ok(None);
+    };
+
+    let mut room: Value = serde_json::from_str(&record.room_json)?;
+    mark_restored_room_disconnected(&mut room);
+    let _ = rust_reconcile_continue_action_state(&mut room);
+    state
+        .inner
+        .db
+        .save_table(table_code, &record.created_at, &serialize_room(&room)?)
+        .await?;
+
+    let handle = Arc::new(RoomHandle::new(RoomRuntime {
+        created_at: record.created_at,
+        room,
+        connections: HashMap::new(),
+        timeout_nonce: 0,
+        continue_nonce: 0,
+        disconnect_nonce: 0,
+        bot_nonce: 0,
+        timeout_task: None,
+        continue_task: None,
+        disconnect_task: None,
+        bot_task: None,
+    }));
+
+    let mut rooms = state.inner.rooms.write().await;
+    if let Some(existing) = rooms.get(table_code).cloned() {
+        return Ok(Some(existing));
+    }
+    rooms.insert(table_code.to_string(), handle.clone());
+    Ok(Some(handle))
+}
+
+async fn close_room_handle(room_handle: &RoomHandle) {
+    room_handle.mark_closed();
+    let mut runtime = room_handle.runtime.lock().await;
+    close_runtime(&mut runtime);
+}
+
+async fn unregister_room_handle(state: &AppContext, table_code: &str, room_handle: &RoomRef) {
+    let mut rooms = state.inner.rooms.write().await;
+    if rooms
         .get(table_code)
-        .map(|runtime| runtime.created_at.clone())
-        .ok_or_else(|| anyhow!("table disappeared during restore"))?;
-    Ok(Some(created_at))
+        .is_some_and(|current| Arc::ptr_eq(current, room_handle))
+    {
+        rooms.remove(table_code);
+    }
 }
 
 fn mark_restored_room_disconnected(room: &mut Value) {
@@ -1878,7 +2319,10 @@ fn mark_restored_room_disconnected(room: &mut Value) {
         }
         if let Some(object) = seat.as_object_mut() {
             object.insert("connected".to_string(), Value::Bool(false));
-            object.insert("disconnect_deadline_at".to_string(), Value::Null);
+            object.insert(
+                "disconnect_deadline_at".to_string(),
+                Value::String(disconnect_deadline_iso()),
+            );
         }
     }
 }
@@ -1939,28 +2383,33 @@ fn set_seat_connected(
     }
 }
 
-fn collect_join_outbound_locked(
-    inner: &AppState,
+fn replace_connection(runtime: &mut RoomRuntime, seat_index: usize, connection: &ConnectionHandle) {
+    if let Some(previous) = runtime.connections.insert(seat_index, connection.clone())
+        && previous.id != connection.id
+    {
+        previous.request_close();
+    }
+}
+
+fn collect_join_outbound(
+    runtime: &RoomRuntime,
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let Some(runtime) = inner.rooms.get(table_code) else {
-        return outbound;
-    };
     let connections: Vec<(usize, ConnectionHandle)> = runtime
         .connections
         .iter()
         .map(|(seat, handle)| (*seat, handle.clone()))
         .collect();
-    outbound.extend(build_room_messages_for_seat_locked(
+    outbound.extend(build_room_messages_for_seat(
         &runtime.room,
         seat_index,
         connection,
     ));
-    if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, seat_index) {
+    if let Some(prompt) = build_prompt_for_seat(&runtime.room, seat_index) {
         outbound.push(connection.outbound(prompt));
     }
 
@@ -1977,7 +2426,7 @@ fn collect_join_outbound_locked(
             continue;
         }
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat_locked(
+        outbound.extend(build_room_messages_for_seat(
             &runtime.room,
             *other_seat,
             handle,
@@ -1987,23 +2436,20 @@ fn collect_join_outbound_locked(
         if *other_seat == seat_index {
             continue;
         }
-        if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, *other_seat) {
+        if let Some(prompt) = build_prompt_for_seat(&runtime.room, *other_seat) {
             outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
-fn presence_and_snapshot_for_all_locked(
-    inner: &AppState,
+fn presence_and_snapshot_for_all(
+    runtime: &RoomRuntime,
     table_code: &str,
     seat_index: usize,
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let Some(runtime) = inner.rooms.get(table_code) else {
-        return outbound;
-    };
     let connections: Vec<(usize, ConnectionHandle)> = runtime
         .connections
         .iter()
@@ -2019,47 +2465,41 @@ fn presence_and_snapshot_for_all_locked(
     });
     for (target_seat, handle) in &connections {
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat_locked(
+        outbound.extend(build_room_messages_for_seat(
             &runtime.room,
             *target_seat,
             handle,
         ));
-        if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, *target_seat) {
+        if let Some(prompt) = build_prompt_for_seat(&runtime.room, *target_seat) {
             outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
-fn collect_snapshot_and_prompt_outbound_locked(
-    inner: &AppState,
-    table_code: &str,
-) -> Vec<OutboundMessage> {
+fn collect_snapshot_and_prompt_outbound(runtime: &RoomRuntime) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let Some(runtime) = inner.rooms.get(table_code) else {
-        return outbound;
-    };
     let connections: Vec<(usize, ConnectionHandle)> = runtime
         .connections
         .iter()
         .map(|(seat, handle)| (*seat, handle.clone()))
         .collect();
     for (seat_index, handle) in &connections {
-        outbound.extend(build_room_messages_for_seat_locked(
+        outbound.extend(build_room_messages_for_seat(
             &runtime.room,
             *seat_index,
             handle,
         ));
     }
     for (seat_index, handle) in &connections {
-        if let Some(prompt) = build_prompt_for_seat_locked(&runtime.room, *seat_index) {
+        if let Some(prompt) = build_prompt_for_seat(&runtime.room, *seat_index) {
             outbound.push(handle.outbound(prompt));
         }
     }
     outbound
 }
 
-fn build_room_messages_for_seat_locked(
+fn build_room_messages_for_seat(
     room: &Value,
     local_seat: usize,
     connection: &ConnectionHandle,
@@ -2070,7 +2510,7 @@ fn build_room_messages_for_seat_locked(
         .collect()
 }
 
-fn build_prompt_for_seat_locked(room: &Value, local_seat: usize) -> Option<Value> {
+fn build_prompt_for_seat(room: &Value, local_seat: usize) -> Option<Value> {
     build_action_prompt(room, local_seat)
 }
 
@@ -2090,22 +2530,16 @@ fn broadcast_to_handles(
     outbound
 }
 
-fn persist_room_locked(
-    db: &Database,
-    table_code: &str,
-    created_at: &str,
-    room: &Value,
-) -> Result<()> {
-    db.save_table(table_code, created_at, &serde_json::to_string(room)?)?;
-    Ok(())
+fn serialize_room(room: &Value) -> Result<String> {
+    serde_json::to_string(room).map_err(Into::into)
 }
 
 fn reject_to(connection: &ConnectionHandle, reason: &str) -> MessageOutcome {
     MessageOutcome {
         outbound: vec![connection.outbound(json!({
-                "type": "action_rejected",
-                "payload": { "reason": reason }
-            }))],
+            "type": "action_rejected",
+            "payload": { "reason": reason }
+        }))],
         owned_seat: None,
         clear_owned_seat: false,
         close_socket: false,
@@ -2313,6 +2747,11 @@ fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
+fn disconnect_deadline_iso() -> String {
+    (Utc::now() + chrono::TimeDelta::seconds(DISCONNECT_GRACE_SECONDS))
+        .to_rfc3339_opts(SecondsFormat::Micros, true)
+}
+
 fn generate_table_code(existing_runtime_codes: &HashSet<String>, db: &Database) -> Result<String> {
     let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let mut rng = rand::rng();
@@ -2517,6 +2956,137 @@ mod tests {
 
         assert!(player_sessions_exists.is_none());
         assert!(alembic_version_exists.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn replace_connection_closes_previous_socket() {
+        let (previous, _receiver) = test_connection_handle(1);
+        let replacement = ConnectionHandle {
+            id: 2,
+            sender: previous.sender.clone(),
+            close_requested: Arc::new(AtomicBool::new(false)),
+            close_notify: Arc::new(Notify::new()),
+        };
+        let mut runtime = RoomRuntime {
+            created_at: now_iso(),
+            room: initial_room_payload("ROOM42", "normal", true),
+            connections: HashMap::from([(0, previous.clone())]),
+            timeout_nonce: 0,
+            continue_nonce: 0,
+            disconnect_nonce: 0,
+            bot_nonce: 0,
+            timeout_task: None,
+            continue_task: None,
+            disconnect_task: None,
+            bot_task: None,
+        };
+
+        replace_connection(&mut runtime, 0, &replacement);
+
+        assert!(previous.should_close());
+        assert_eq!(runtime.connections.get(&0).map(|handle| handle.id), Some(2));
+    }
+
+    #[test]
+    fn restored_human_seats_receive_disconnect_deadline() {
+        let mut room = initial_room_payload("ROOM42", "normal", true);
+        room["seats"] = json!([
+            {
+                "seat_index": 0,
+                "nickname": "Alice",
+                "reconnect_token": "token-1",
+                "player_session_id": 1,
+                "connected": true,
+                "ready": true,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            },
+            {
+                "seat_index": 1,
+                "nickname": "Bot 1",
+                "reconnect_token": Value::Null,
+                "player_session_id": -2,
+                "connected": true,
+                "ready": true,
+                "is_bot": true,
+                "seat_type": "bot",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }
+        ]);
+
+        mark_restored_room_disconnected(&mut room);
+
+        let human_deadline = room["seats"][0]["disconnect_deadline_at"]
+            .as_str()
+            .and_then(parse_datetime);
+        assert!(human_deadline.is_some());
+        assert_eq!(room["seats"][0]["connected"], Value::Bool(false));
+        assert!(room["seats"][1]["disconnect_deadline_at"].is_null());
+    }
+
+    #[test]
+    fn save_table_and_store_reconnect_token_writes_both_records() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+
+        let room_json = serde_json::to_string(&initial_room_payload("ROOM42", "normal", true))?;
+        db.save_table_and_store_reconnect_token(
+            "ROOM42",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "token-1",
+            0,
+            42,
+        )?;
+
+        let table = db.get_table("ROOM42")?.expect("table should exist");
+        let reconnect = db
+            .get_reconnect_token("token-1")?
+            .expect("token should exist");
+        assert_eq!(table.created_at, "2026-04-06T00:00:00Z");
+        assert_eq!(reconnect.table_code, "ROOM42");
+        assert_eq!(reconnect.seat_index, 0);
+        assert_eq!(reconnect.player_session_id, 42);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn db_worker_round_trips_room_and_token() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+
+        let room_json = serde_json::to_string(&initial_room_payload("ROOM42", "normal", true))?;
+        worker
+            .save_table_and_store_reconnect_token(
+                "ROOM42",
+                "2026-04-07T00:00:00Z",
+                &room_json,
+                "token-1",
+                0,
+                42,
+            )
+            .await?;
+
+        let table = worker
+            .get_table("ROOM42")
+            .await?
+            .expect("table should exist");
+        let reconnect = worker
+            .get_reconnect_token("token-1")
+            .await?
+            .expect("token should exist");
+        assert_eq!(table.created_at, "2026-04-07T00:00:00Z");
+        assert_eq!(table.room_json, room_json);
+        assert_eq!(reconnect.table_code, "ROOM42");
+        assert_eq!(reconnect.seat_index, 0);
+        assert_eq!(reconnect.player_session_id, 42);
         Ok(())
     }
 }

@@ -307,68 +307,29 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
         "claim_window" => {
             let pending_action = room
                 .get("round_state")
-                .and_then(|round| round.get("pending_action"))
-                .cloned()
-                .unwrap_or(Value::Null);
+                .and_then(|round| round.get("pending_action"))?;
             match pending_action.get("type").and_then(Value::as_str) {
                 Some("rob_kong_window") => {
-                    let cache = RoomScoringCache::from_room(room);
-                    let offered = pending_action
+                    let seat_index = pending_action
                         .get("offered_hu_seats")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let responded = pending_action
-                        .get("responded_seats")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let seat_index = offered
+                        .and_then(Value::as_array)?
                         .iter()
                         .filter_map(|value| value.as_u64().map(|seat| seat as usize))
                         .find(|seat| {
                             is_bot_seat(room, *seat)
-                                && !responded.iter().any(|value| {
-                                    value
-                                        .as_u64()
-                                        .map(|done| done as usize == *seat)
-                                        .unwrap_or(false)
-                                })
+                                && !seat_has_responded_to_pending_action(pending_action, *seat)
                         })?;
-                    let tile_key = pending_action.get("tile_key").and_then(Value::as_str);
-                    let action_type = if can_declare_hu_with_cache(
-                        room,
-                        &cache,
-                        seat_index,
-                        tile_key,
-                        pending_action
-                            .get("actor_seat")
-                            .and_then(Value::as_u64)
-                            .map(|value| value as usize),
-                    ) {
-                        "hu"
-                    } else {
-                        "pass"
-                    };
                     Some(BotAction {
                         seat_index,
-                        action_type: action_type.to_string(),
+                        action_type: "hu".to_string(),
                         tile_ids: vec![],
                     })
                 }
                 Some("claim_window") => {
                     let cache = RoomScoringCache::from_room(room);
-                    let responded = pending_action
-                        .get("responded_seats")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let claim_window = pending_action
+                    let seat_index = pending_action
                         .get("claim_window")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let seat_index = claim_window
+                        .and_then(Value::as_array)?
                         .iter()
                         .enumerate()
                         .find(|(seat, claims)| {
@@ -377,12 +338,7 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
                                     .as_array()
                                     .map(|items| !items.is_empty())
                                     .unwrap_or(false)
-                                && !responded.iter().any(|value| {
-                                    value
-                                        .as_u64()
-                                        .map(|done| done as usize == *seat)
-                                        .unwrap_or(false)
-                                })
+                                && !seat_has_responded_to_pending_action(pending_action, *seat)
                         })
                         .map(|(seat, _)| seat)?;
                     choose_bot_claim_action_with_cache(room, &cache, seat_index)
@@ -507,11 +463,13 @@ fn start_round(
 
     let draw_tile = wall_tiles[head_index].clone();
     head_index += 1;
-    players[current_actor]
+    if let Some(tiles) = players[current_actor]
         .as_object_mut()
         .and_then(|player| player.get_mut("concealed_tiles"))
         .and_then(Value::as_array_mut)
-        .map(|tiles| tiles.push(draw_tile.clone()));
+    {
+        tiles.push(draw_tile.clone());
+    }
 
     if opening_completed {
         pending_action = Value::Null;
@@ -712,44 +670,61 @@ pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
         }
         return None;
     }
-    match pending
-        .and_then(|value| value.get("type"))
-        .and_then(Value::as_str)
-    {
-        Some("claim_window") => {
-            let claim_window = pending
-                .and_then(|value| value.get("claim_window"))
-                .and_then(Value::as_array)?;
-            let offered = claim_window
-                .get(seat_index)
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            if offered.iter().any(|value| value.as_str() == Some("hu")) {
-                Some("discard")
-            } else {
-                None
-            }
+    let pending_action = pending?;
+    match pending_action.get("type").and_then(Value::as_str) {
+        Some("claim_window") if claim_window_offers_claim(pending_action, seat_index, "hu") => {
+            Some("discard")
         }
-        Some("rob_kong_window") => {
-            let offered = pending
-                .and_then(|value| value.get("offered_hu_seats"))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            if offered.iter().any(|value| {
-                value
-                    .as_u64()
-                    .map(|seat| seat as usize == seat_index)
-                    .unwrap_or(false)
-            }) {
-                Some("discard")
-            } else {
-                None
-            }
+        Some("rob_kong_window") if rob_kong_window_offers_seat(pending_action, seat_index) => {
+            Some("discard")
         }
+        Some("claim_window") | Some("rob_kong_window") => None,
         _ => None,
     }
+}
+
+fn seat_has_responded_to_pending_action(pending_action: &Value, seat_index: usize) -> bool {
+    json_array_contains_seat(
+        pending_action
+            .get("responded_seats")
+            .and_then(Value::as_array),
+        seat_index,
+    )
+}
+
+fn claim_window_offers_claim(pending_action: &Value, seat_index: usize, claim_type: &str) -> bool {
+    json_array_contains_str(
+        pending_action
+            .get("claim_window")
+            .and_then(Value::as_array)
+            .and_then(|claim_window| claim_window.get(seat_index))
+            .and_then(Value::as_array),
+        claim_type,
+    )
+}
+
+fn rob_kong_window_offers_seat(pending_action: &Value, seat_index: usize) -> bool {
+    json_array_contains_seat(
+        pending_action
+            .get("offered_hu_seats")
+            .and_then(Value::as_array),
+        seat_index,
+    )
+}
+
+fn json_array_contains_seat(values: Option<&Vec<Value>>, seat_index: usize) -> bool {
+    values.is_some_and(|items| {
+        items.iter().any(|value| {
+            value
+                .as_u64()
+                .map(|seat| seat as usize == seat_index)
+                .unwrap_or(false)
+        })
+    })
+}
+
+fn json_array_contains_str(values: Option<&Vec<Value>>, needle: &str) -> bool {
+    values.is_some_and(|items| items.iter().any(|value| value.as_str() == Some(needle)))
 }
 
 pub fn record_continue_action(
@@ -901,24 +876,15 @@ fn compute_hu_settlement(
         }
         None
     } else {
-        let pending_action = room
+        let Some(pending_action) = room
             .get("round_state")
             .and_then(|round| round.get("pending_action"))
-            .cloned()
-            .unwrap_or(Value::Null);
+        else {
+            return Err("invalid_action".to_string());
+        };
         match pending_action.get("type").and_then(Value::as_str) {
             Some("claim_window") => {
-                let claim_window = pending_action
-                    .get("claim_window")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                let offered = claim_window
-                    .get(winner_seat)
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                if !offered.iter().any(|value| value.as_str() == Some("hu")) {
+                if !claim_window_offers_claim(pending_action, winner_seat, "hu") {
                     return Err("invalid_action".to_string());
                 }
                 pending_action
@@ -927,17 +893,7 @@ fn compute_hu_settlement(
                     .map(|value| value as usize)
             }
             Some("rob_kong_window") => {
-                let offered = pending_action
-                    .get("offered_hu_seats")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                if !offered.iter().any(|value| {
-                    value
-                        .as_u64()
-                        .map(|seat| seat as usize == winner_seat)
-                        .unwrap_or(false)
-                }) {
+                if !rob_kong_window_offers_seat(pending_action, winner_seat) {
                     return Err("invalid_action".to_string());
                 }
                 pending_action
@@ -4206,12 +4162,12 @@ fn choose_bot_discard_tile_id_with_cache(
         .and_then(Value::as_str);
     let concealed_tiles = &cache.player(seat_index)?.concealed_tiles;
 
-    if let Some(tile_id) = drawn_tile_id {
-        if let Some(tile) = concealed_tiles.iter().find(|tile| tile.tile_id == tile_id) {
-            if !tile.is_flower && Some(tile.tile_key.as_str()) != restricted_discard_tile_key {
-                return Some(tile.tile_id.clone());
-            }
-        }
+    if let Some(tile_id) = drawn_tile_id
+        && let Some(tile) = concealed_tiles.iter().find(|tile| tile.tile_id == tile_id)
+        && !tile.is_flower
+        && Some(tile.tile_key.as_str()) != restricted_discard_tile_key
+    {
+        return Some(tile.tile_id.clone());
     }
 
     concealed_tiles
@@ -4228,34 +4184,8 @@ fn choose_bot_claim_action_with_cache(
 ) -> Option<BotAction> {
     let pending_action = room
         .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let claim_window = pending_action
-        .get("claim_window")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let offered_claims = claim_window
-        .get(seat_index)
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let incoming_tile = room
-        .get("round_state")
-        .and_then(|round| round.get("last_discard"))
-        .and_then(|tile| tile.get("tile_key"))
-        .and_then(Value::as_str);
-    let discarder_seat = pending_action
-        .get("discarder_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize);
-
-    if offered_claims
-        .iter()
-        .any(|value| value.as_str() == Some("hu"))
-        && can_declare_hu_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
-    {
+        .and_then(|round| round.get("pending_action"))?;
+    if claim_window_offers_claim(pending_action, seat_index, "hu") {
         return Some(BotAction {
             seat_index,
             action_type: "hu".to_string(),
@@ -4264,10 +4194,7 @@ fn choose_bot_claim_action_with_cache(
     }
 
     for claim_type in ["kong", "pung", "chow"] {
-        if !offered_claims
-            .iter()
-            .any(|value| value.as_str() == Some(claim_type))
-        {
+        if !claim_window_offers_claim(pending_action, seat_index, claim_type) {
             continue;
         }
         if let Some(tile_ids) =
