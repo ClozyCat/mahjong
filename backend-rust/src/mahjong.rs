@@ -1,6 +1,6 @@
 use crate::scoring::{
-    EvaluationInput as ScoringEvaluationInput, KongEntry as ScoringKongEntry,
-    TimingFeatures as ScoringTimingFeatures,
+    Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
+    KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
 };
@@ -9,13 +9,21 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use serde_json::{Map, Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const MAX_SEATS: usize = 4;
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 30;
-const SUIT_KEYS: [&str; 3] = ["w", "t", "b"];
+const STANDARD_TILE_KEYS: [&str; 34] = [
+    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+    "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
+    "north", "red", "green", "white",
+];
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
+const TILE_KIND_COUNT: usize = 34;
+const HONOR_TILE_START: usize = 27;
+
+type TileCounts = [u8; TILE_KIND_COUNT];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SelfKongKind {
@@ -36,6 +44,152 @@ pub struct BotAction {
     pub seat_index: usize,
     pub action_type: String,
     pub tile_ids: Vec<String>,
+}
+
+struct PreparedWinEvaluation {
+    concealed_tile_keys: Vec<String>,
+    meld_tile_key_groups: Vec<Vec<String>>,
+    open_meld_tile_key_groups: Vec<Vec<String>>,
+    meld_open_flags: Vec<bool>,
+    decompositions: Vec<ScoringDecomposition>,
+    kong_entries: Vec<ScoringKongEntry>,
+}
+
+struct RoomScoringPlayer {
+    concealed_tiles: Vec<ConcealedTileView>,
+    concealed_tile_keys: Vec<String>,
+    concealed_tile_counts: TileCounts,
+    meld_tile_key_groups: Vec<Vec<String>>,
+    flower_count: usize,
+}
+
+#[derive(Clone)]
+struct ConcealedTileView {
+    tile_id: String,
+    tile_key: String,
+    is_flower: bool,
+}
+
+struct RoomScoringCache {
+    seat_count: usize,
+    dealer_seat: usize,
+    round_wind: Option<String>,
+    visible_tile_keys: Vec<String>,
+    kong_entries: Vec<ScoringKongEntry>,
+    players: Vec<RoomScoringPlayer>,
+}
+
+impl RoomScoringCache {
+    fn from_room(room: &Value) -> Self {
+        let seat_count = room_seat_count(room);
+        let dealer_seat = dealer_seat(room);
+        let round_wind = room_round_wind(room);
+        let kong_entries = room_kong_entries(room);
+
+        let mut players = Vec::with_capacity(seat_count);
+        let mut visible_tile_keys = Vec::new();
+        if let Some(player_values) = room
+            .get("round_state")
+            .and_then(|round| round.get("players"))
+            .and_then(Value::as_array)
+        {
+            for player in player_values {
+                if let Some(discards) = player.get("discards").and_then(Value::as_array) {
+                    visible_tile_keys.extend(discards.iter().filter_map(|tile| {
+                        tile.get("tile_key")
+                            .and_then(Value::as_str)
+                            .map(ToString::to_string)
+                    }));
+                }
+
+                let mut meld_tile_key_groups = Vec::new();
+                if let Some(melds) = player.get("melds").and_then(Value::as_array) {
+                    meld_tile_key_groups.reserve(melds.len());
+                    for meld in melds {
+                        let meld_tile_keys = meld
+                            .as_array()
+                            .map(|tiles| {
+                                tiles
+                                    .iter()
+                                    .filter_map(|tile| tile.as_str().map(ToString::to_string))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        extend_visible_meld_tile_keys(&mut visible_tile_keys, &meld_tile_keys);
+                        meld_tile_key_groups.push(meld_tile_keys);
+                    }
+                }
+
+                let concealed_tiles = player
+                    .get("concealed_tiles")
+                    .and_then(Value::as_array)
+                    .map(|tiles| {
+                        tiles
+                            .iter()
+                            .map(|tile| ConcealedTileView {
+                                tile_id: tile
+                                    .get("tile_id")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                tile_key: tile
+                                    .get("tile_key")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                is_flower: tile.get("kind").and_then(Value::as_str)
+                                    == Some("flower"),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let concealed_tile_keys = concealed_tiles
+                    .iter()
+                    .map(|tile| tile.tile_key.clone())
+                    .collect::<Vec<_>>();
+                let concealed_tile_counts =
+                    tile_counts34(concealed_tile_keys.iter().map(String::as_str));
+                let flower_count = player
+                    .get("flowers")
+                    .and_then(Value::as_array)
+                    .map(|flowers| flowers.len())
+                    .unwrap_or(0);
+
+                players.push(RoomScoringPlayer {
+                    concealed_tiles,
+                    concealed_tile_keys,
+                    concealed_tile_counts,
+                    meld_tile_key_groups,
+                    flower_count,
+                });
+            }
+        }
+
+        Self {
+            seat_count,
+            dealer_seat,
+            round_wind,
+            visible_tile_keys,
+            kong_entries,
+            players,
+        }
+    }
+
+    fn player(&self, seat_index: usize) -> Option<&RoomScoringPlayer> {
+        self.players.get(seat_index)
+    }
+}
+
+fn extend_visible_meld_tile_keys(target: &mut Vec<String>, meld_tile_keys: &[String]) {
+    if meld_tile_keys.len() == 4
+        && meld_tile_keys
+            .iter()
+            .all(|tile_key| tile_key == &meld_tile_keys[0])
+    {
+        target.extend(meld_tile_keys.iter().take(3).cloned());
+    } else {
+        target.extend(meld_tile_keys.iter().cloned());
+    }
 }
 
 pub fn room_messages(room: &Value, local_seat: usize) -> Vec<Value> {
@@ -99,10 +253,9 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
             if !is_bot_seat(room, seat_index) {
                 return None;
             }
-            let tile_ids = player_first_flower_tile_id(room, seat_index)
-                .as_ref()
-                .and_then(Value::as_str)
-                .map(|value| vec![value.to_string()])
+            let cache = RoomScoringCache::from_room(room);
+            let tile_ids = player_first_flower_tile_id_from_cache(&cache, seat_index)
+                .map(|value| vec![value])
                 .unwrap_or_default();
             Some(BotAction {
                 seat_index,
@@ -119,32 +272,32 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
             if !is_bot_seat(room, seat_index) {
                 return None;
             }
-            if can_declare_hu(room, seat_index, None, None) {
+            let cache = RoomScoringCache::from_room(room);
+            if can_declare_hu_with_cache(room, &cache, seat_index, None, None) {
                 return Some(BotAction {
                     seat_index,
                     action_type: "hu".to_string(),
                     tile_ids: vec![],
                 });
             }
-            if let Some(tile_id) = player_first_flower_tile_id(room, seat_index)
-                .as_ref()
-                .and_then(Value::as_str)
-                .map(ToString::to_string)
-            {
+            if let Some(tile_id) = player_first_flower_tile_id_from_cache(&cache, seat_index) {
                 return Some(BotAction {
                     seat_index,
                     action_type: "flower".to_string(),
                     tile_ids: vec![tile_id],
                 });
             }
-            if let Some(selection) = available_self_kongs(room, seat_index).into_iter().next() {
+            if let Some(selection) = available_self_kongs_from_cache(&cache, seat_index)
+                .into_iter()
+                .next()
+            {
                 return Some(BotAction {
                     seat_index,
                     action_type: "kong".to_string(),
                     tile_ids: selection.tile_ids,
                 });
             }
-            let tile_id = choose_bot_discard_tile_id(room, seat_index)?;
+            let tile_id = choose_bot_discard_tile_id_with_cache(room, &cache, seat_index)?;
             Some(BotAction {
                 seat_index,
                 action_type: "discard".to_string(),
@@ -159,6 +312,7 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
                 .unwrap_or(Value::Null);
             match pending_action.get("type").and_then(Value::as_str) {
                 Some("rob_kong_window") => {
+                    let cache = RoomScoringCache::from_room(room);
                     let offered = pending_action
                         .get("offered_hu_seats")
                         .and_then(Value::as_array)
@@ -182,8 +336,9 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
                                 })
                         })?;
                     let tile_key = pending_action.get("tile_key").and_then(Value::as_str);
-                    let action_type = if can_declare_hu(
+                    let action_type = if can_declare_hu_with_cache(
                         room,
+                        &cache,
                         seat_index,
                         tile_key,
                         pending_action
@@ -202,6 +357,7 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
                     })
                 }
                 Some("claim_window") => {
+                    let cache = RoomScoringCache::from_room(room);
                     let responded = pending_action
                         .get("responded_seats")
                         .and_then(Value::as_array)
@@ -229,7 +385,7 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
                                 })
                         })
                         .map(|(seat, _)| seat)?;
-                    choose_bot_claim_action(room, seat_index)
+                    choose_bot_claim_action_with_cache(room, &cache, seat_index)
                 }
                 _ => None,
             }
@@ -841,6 +997,17 @@ fn can_declare_hu(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
+    let cache = RoomScoringCache::from_room(room);
+    can_declare_hu_with_cache(room, &cache, seat_index, incoming_tile, discarder_seat)
+}
+
+fn can_declare_hu_with_cache(
+    room: &Value,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+    incoming_tile: Option<&str>,
+    discarder_seat: Option<usize>,
+) -> bool {
     if room
         .get("round_state")
         .and_then(|round| round.get("pending_action"))
@@ -851,32 +1018,19 @@ fn can_declare_hu(
         return false;
     }
 
-    let concealed_tile_keys = player_concealed_tiles(room, seat_index)
-        .iter()
-        .map(tile_key_of)
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    let meld_tile_key_groups = player_meld_tile_key_groups(room, seat_index);
-    let mut effective_concealed = concealed_tile_keys.clone();
-    if let Some(tile_key) = incoming_tile {
-        effective_concealed.push(tile_key.to_string());
-    }
-    if !scoring_decompose_winning_hand_with_melds(&effective_concealed, &meld_tile_key_groups)
-        .is_empty()
+    if let Ok(fan_result) =
+        fan_result_for_win_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
     {
-        if let Ok(fan_result) = fan_result_for_win(room, seat_index, incoming_tile, discarder_seat)
-        {
-            let enforce_minimum_eight_fan = room
-                .get("round_state")
-                .and_then(|round| round.get("enforce_minimum_eight_fan"))
-                .and_then(Value::as_bool)
-                .or_else(|| {
-                    room.get("enforce_minimum_eight_fan")
-                        .and_then(Value::as_bool)
-                })
-                .unwrap_or(true);
-            return !enforce_minimum_eight_fan || fan_result.minimum_qualifying_fan_total >= 8;
-        }
+        let enforce_minimum_eight_fan = room
+            .get("round_state")
+            .and_then(|round| round.get("enforce_minimum_eight_fan"))
+            .and_then(Value::as_bool)
+            .or_else(|| {
+                room.get("enforce_minimum_eight_fan")
+                    .and_then(Value::as_bool)
+            })
+            .unwrap_or(true);
+        return !enforce_minimum_eight_fan || fan_result.minimum_qualifying_fan_total >= 8;
     }
     false
 }
@@ -887,29 +1041,25 @@ fn fan_result_for_win(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> Result<crate::scoring::FanResult, String> {
-    let concealed_tile_keys = player_concealed_tiles(room, winner_seat)
-        .iter()
-        .map(tile_key_of)
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    let meld_tile_key_groups = player_meld_tile_key_groups(room, winner_seat);
-    let open_meld_tile_key_groups = open_meld_tile_key_groups(room, winner_seat);
-    let meld_open_flags = meld_tile_key_groups
-        .iter()
-        .map(|meld| open_meld_tile_key_groups.contains(meld))
-        .collect::<Vec<_>>();
+    let cache = RoomScoringCache::from_room(room);
+    fan_result_for_win_with_cache(room, &cache, winner_seat, incoming_tile, discarder_seat)
+}
 
-    let mut effective_concealed_tile_keys = concealed_tile_keys.clone();
-    if let Some(tile_key) = incoming_tile {
-        effective_concealed_tile_keys.push(tile_key.to_string());
-    }
-    let decompositions = scoring_decompose_winning_hand_with_melds(
-        &effective_concealed_tile_keys,
-        &meld_tile_key_groups,
-    );
-    if decompositions.is_empty() {
-        return Err("invalid_action".to_string());
-    }
+fn fan_result_for_win_with_cache(
+    _room: &Value,
+    cache: &RoomScoringCache,
+    winner_seat: usize,
+    incoming_tile: Option<&str>,
+    discarder_seat: Option<usize>,
+) -> Result<crate::scoring::FanResult, String> {
+    let PreparedWinEvaluation {
+        concealed_tile_keys,
+        meld_tile_key_groups,
+        open_meld_tile_key_groups,
+        meld_open_flags,
+        decompositions,
+        kong_entries,
+    } = prepare_win_evaluation(cache, winner_seat, incoming_tile)?;
 
     let win_type = if incoming_tile.is_none() {
         "self_draw"
@@ -922,34 +1072,79 @@ fn fan_result_for_win(
         &meld_tile_key_groups,
         Some(&meld_open_flags),
         incoming_tile,
-        Some(&seat_wind_key(winner_seat, dealer_seat(room))),
-        room_round_wind(room).as_deref(),
+        Some(&seat_wind_key(winner_seat, cache.dealer_seat)),
+        cache.round_wind.as_deref(),
         Some(&decompositions),
     );
 
-    let player_tile_keys = player_tile_keys(room, winner_seat, incoming_tile);
-    let winner_kong_entries = room_kong_entries(room)
-        .into_iter()
+    let player_tile_keys =
+        player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
+    let winner_kong_entries = kong_entries
+        .iter()
         .filter(|entry| entry.actor_seat == winner_seat)
+        .cloned()
         .collect::<Vec<_>>();
 
     Ok(scoring_evaluate_fans(ScoringEvaluationInput {
         win_type,
         winner_seat: Some(winner_seat),
         discarder_seat,
-        flower_count: player_flower_count(room, winner_seat),
-        seat_count: room_seat_count(room),
+        flower_count: cache
+            .player(winner_seat)
+            .map(|player| player.flower_count)
+            .unwrap_or(0),
+        seat_count: cache.seat_count,
         features,
-        timing: timing_features_for_win(room, incoming_tile.is_none()),
+        timing: timing_features_for_win(_room, incoming_tile.is_none()),
         kong_entries: winner_kong_entries,
         tile_keys: player_tile_keys,
-        visible_tile_keys: visible_tile_keys(room),
+        visible_tile_keys: cache.visible_tile_keys.clone(),
         concealed_tile_keys,
         meld_tile_key_groups,
         open_meld_tile_key_groups,
         incoming_tile: incoming_tile.map(ToString::to_string),
         decompositions,
     }))
+}
+
+fn prepare_win_evaluation(
+    cache: &RoomScoringCache,
+    winner_seat: usize,
+    incoming_tile: Option<&str>,
+) -> Result<PreparedWinEvaluation, String> {
+    let player = cache
+        .player(winner_seat)
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let concealed_tile_keys = player.concealed_tile_keys.clone();
+    let meld_tile_key_groups = player.meld_tile_key_groups.clone();
+
+    let mut effective_concealed_tile_keys =
+        Vec::with_capacity(concealed_tile_keys.len() + usize::from(incoming_tile.is_some()));
+    effective_concealed_tile_keys.extend(concealed_tile_keys.iter().cloned());
+    if let Some(tile_key) = incoming_tile {
+        effective_concealed_tile_keys.push(tile_key.to_string());
+    }
+
+    let decompositions = scoring_decompose_winning_hand_with_melds(
+        &effective_concealed_tile_keys,
+        &meld_tile_key_groups,
+    );
+    if decompositions.is_empty() {
+        return Err("invalid_action".to_string());
+    }
+
+    let kong_entries = cache.kong_entries.clone();
+    let (open_meld_tile_key_groups, meld_open_flags) =
+        classify_meld_groups(winner_seat, &meld_tile_key_groups, &kong_entries);
+
+    Ok(PreparedWinEvaluation {
+        concealed_tile_keys,
+        meld_tile_key_groups,
+        open_meld_tile_key_groups,
+        meld_open_flags,
+        decompositions,
+        kong_entries,
+    })
 }
 
 fn room_seat_count(room: &Value) -> usize {
@@ -979,17 +1174,30 @@ fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
     WIND_ORDER[(seat_index + MAX_SEATS - dealer_seat) % MAX_SEATS].to_string()
 }
 
-fn player_tile_keys(room: &Value, seat_index: usize, incoming_tile: Option<&str>) -> Vec<String> {
-    let mut tile_keys = player_concealed_tiles(room, seat_index)
+fn player_tile_keys_from_parts(
+    concealed_tile_keys: &[String],
+    meld_tile_key_groups: &[Vec<String>],
+    incoming_tile: Option<&str>,
+) -> Vec<String> {
+    let meld_tile_count = meld_tile_key_groups
         .iter()
-        .map(tile_key_of)
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    for meld in player_meld_tile_key_groups(room, seat_index) {
+        .map(|meld| {
+            if meld.len() == 4 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
+                3
+            } else {
+                meld.len()
+            }
+        })
+        .sum::<usize>();
+    let mut tile_keys = Vec::with_capacity(
+        concealed_tile_keys.len() + meld_tile_count + usize::from(incoming_tile.is_some()),
+    );
+    tile_keys.extend(concealed_tile_keys.iter().cloned());
+    for meld in meld_tile_key_groups {
         if meld.len() == 4 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
-            tile_keys.extend(meld[0..3].to_vec());
+            tile_keys.extend(meld.iter().take(3).cloned());
         } else {
-            tile_keys.extend(meld);
+            tile_keys.extend(meld.iter().cloned());
         }
     }
     if let Some(tile_key) = incoming_tile {
@@ -998,20 +1206,34 @@ fn player_tile_keys(room: &Value, seat_index: usize, incoming_tile: Option<&str>
     tile_keys
 }
 
-fn open_meld_tile_key_groups(room: &Value, seat_index: usize) -> Vec<Vec<String>> {
-    player_meld_tile_key_groups(room, seat_index)
-        .into_iter()
-        .filter(|meld| meld_is_open(room, seat_index, meld))
-        .collect()
+fn classify_meld_groups(
+    seat_index: usize,
+    meld_tile_key_groups: &[Vec<String>],
+    kong_entries: &[ScoringKongEntry],
+) -> (Vec<Vec<String>>, Vec<bool>) {
+    let mut open_meld_tile_key_groups = Vec::new();
+    let mut meld_open_flags = Vec::with_capacity(meld_tile_key_groups.len());
+    for meld in meld_tile_key_groups {
+        let is_open = meld_is_open_with_entries(seat_index, meld, kong_entries);
+        meld_open_flags.push(is_open);
+        if is_open {
+            open_meld_tile_key_groups.push(meld.clone());
+        }
+    }
+    (open_meld_tile_key_groups, meld_open_flags)
 }
 
-fn meld_is_open(room: &Value, seat_index: usize, meld: &[String]) -> bool {
+fn meld_is_open_with_entries(
+    seat_index: usize,
+    meld: &[String],
+    kong_entries: &[ScoringKongEntry],
+) -> bool {
     if meld.len() != 4 || !meld.iter().all(|tile_key| tile_key == &meld[0]) {
         return true;
     }
 
-    let tile_key = meld[0].clone();
-    for entry in room_kong_entries(room).into_iter().rev() {
+    let tile_key = meld[0].as_str();
+    for entry in kong_entries.iter().rev() {
         if entry.actor_seat != seat_index {
             continue;
         }
@@ -1027,91 +1249,43 @@ fn meld_is_open(room: &Value, seat_index: usize, meld: &[String]) -> bool {
     true
 }
 
-fn visible_tile_keys(room: &Value) -> Vec<String> {
-    let mut tile_keys = Vec::new();
-    let Some(players) = room
-        .get("round_state")
-        .and_then(|round| round.get("players"))
-        .and_then(Value::as_array)
-    else {
-        return tile_keys;
-    };
-
-    for player in players {
-        tile_keys.extend(
-            player
-                .get("discards")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|tile| {
-                    tile.get("tile_key")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string()
-                }),
-        );
-        for meld in player
-            .get("melds")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-        {
-            let meld_tile_keys = meld
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|value| value.as_str().map(ToString::to_string))
-                .collect::<Vec<_>>();
-            if meld_tile_keys.len() == 4
-                && meld_tile_keys
-                    .iter()
-                    .all(|tile_key| tile_key == &meld_tile_keys[0])
-            {
-                tile_keys.extend(meld_tile_keys[0..3].to_vec());
-            } else {
-                tile_keys.extend(meld_tile_keys);
-            }
-        }
-    }
-    tile_keys
-}
-
 fn room_kong_entries(room: &Value) -> Vec<ScoringKongEntry> {
     room.get("round_state")
         .and_then(|round| round.get("score_trackers"))
         .and_then(|trackers| trackers.get("kong_entries"))
         .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|entry| ScoringKongEntry {
-            kong_type: entry
-                .get("kong_type")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            actor_seat: entry
-                .get("actor_seat")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
-                .unwrap_or(0),
-            payer_seats: entry
-                .get("payer_seats")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|value| value.as_u64().map(|seat| seat as usize))
-                .collect(),
-            tile_key: entry
-                .get("tile_key")
-                .and_then(Value::as_str)
-                .map(ToString::to_string),
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| ScoringKongEntry {
+                    kong_type: entry
+                        .get("kong_type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    actor_seat: entry
+                        .get("actor_seat")
+                        .and_then(Value::as_u64)
+                        .map(|value| value as usize)
+                        .unwrap_or(0),
+                    payer_seats: entry
+                        .get("payer_seats")
+                        .and_then(Value::as_array)
+                        .map(|seats| {
+                            seats
+                                .iter()
+                                .filter_map(|value| value.as_u64().map(|seat| seat as usize))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    tile_key: entry
+                        .get("tile_key")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string),
+                })
+                .collect()
         })
-        .collect()
+        .unwrap_or_default()
 }
 
 fn timing_features_for_win(room: &Value, self_draw: bool) -> ScoringTimingFeatures {
@@ -1585,13 +1759,17 @@ fn start_rob_kong_window(
     selection: &SelfKongCandidate,
     offered_hu_seats: Vec<usize>,
 ) -> Result<Vec<Value>, String> {
-    let selected_tile = player_concealed_tiles(room, seat_index)
-        .into_iter()
-        .find(|tile| {
-            tile.get("tile_id").and_then(Value::as_str)
-                == selection.tile_ids.first().map(String::as_str)
-        })
-        .ok_or_else(|| "invalid_action".to_string())?;
+    let selected_tile = player_concealed_tile(
+        room,
+        seat_index,
+        selection
+            .tile_ids
+            .first()
+            .map(String::as_str)
+            .unwrap_or_default(),
+    )
+    .cloned()
+    .ok_or_else(|| "invalid_action".to_string())?;
     if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
         round_state.insert("last_discard".to_string(), selected_tile.clone());
         round_state.insert(
@@ -2107,7 +2285,10 @@ fn validate_claim_selection(
     let last_discard = room
         .get("round_state")
         .and_then(|round| round.get("last_discard"))
-        .cloned()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let last_discard_tile_key = last_discard
+        .get("tile_key")
+        .and_then(Value::as_str)
         .ok_or_else(|| "invalid_action".to_string())?;
     let expected = match action_type {
         "chow" | "pung" => 2,
@@ -2117,56 +2298,63 @@ fn validate_claim_selection(
     if tile_ids.len() != expected {
         return Err("invalid_action".to_string());
     }
-    let player_tiles = player_concealed_tiles(room, seat_index);
-    let mut claimed_tiles = Vec::new();
-    let mut remaining = player_tiles.clone();
+    let player_tiles = player_concealed_tiles_slice(room, seat_index)
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let mut claimed_tile_keys = Vec::with_capacity(tile_ids.len());
+    let mut used_indices = HashSet::with_capacity(tile_ids.len());
     for tile_id in tile_ids {
-        let Some(index) = remaining
-            .iter()
-            .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str()))
-        else {
+        let Some((index, tile)) = player_tiles.iter().enumerate().find(|(index, tile)| {
+            !used_indices.contains(index)
+                && tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
+        }) else {
             return Err("invalid_action".to_string());
         };
-        claimed_tiles.push(remaining.remove(index));
+        used_indices.insert(index);
+        claimed_tile_keys.push(
+            tile.get("tile_key")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid_action".to_string())?,
+        );
     }
 
     if action_type == "pung" || action_type == "kong" {
-        if claimed_tiles
+        if claimed_tile_keys
             .iter()
-            .any(|tile| tile.get("tile_key") != last_discard.get("tile_key"))
+            .any(|tile_key| *tile_key != last_discard_tile_key)
         {
             return Err("invalid_action".to_string());
         }
     }
-    if action_type == "chow" && !is_valid_chow_sequence(&last_discard, &claimed_tiles) {
+    if action_type == "chow"
+        && !is_valid_chow_sequence_by_keys(last_discard_tile_key, &claimed_tile_keys)
+    {
         return Err("invalid_action".to_string());
     }
     Ok(())
 }
 
-fn is_valid_chow_sequence(discard: &Value, tiles: &[Value]) -> bool {
+fn is_valid_chow_sequence_by_keys(discard_tile_key: &str, tiles: &[&str]) -> bool {
     if tiles.len() != 2 {
         return false;
     }
-    let Some((prefix, discard_rank)) = parse_suit(
-        discard
-            .get("tile_key")
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-    ) else {
+    let Some(discard_index) = tile_index(discard_tile_key) else {
         return false;
     };
-    let mut ranks = vec![discard_rank];
-    for tile in tiles {
-        let Some((tile_prefix, rank)) =
-            parse_suit(tile.get("tile_key").and_then(Value::as_str).unwrap_or(""))
-        else {
+    let Some((discard_suit, discard_rank)) = suited_tile_components(discard_index) else {
+        return false;
+    };
+    let mut ranks = vec![discard_rank as i32];
+    for tile_key in tiles {
+        let Some(tile_index) = tile_index(tile_key) else {
             return false;
         };
-        if tile_prefix != prefix {
+        let Some((tile_suit, rank)) = suited_tile_components(tile_index) else {
+            return false;
+        };
+        if tile_suit != discard_suit {
             return false;
         }
-        ranks.push(rank);
+        ranks.push(rank as i32);
     }
     ranks.sort_unstable();
     ranks[0] + 1 == ranks[1] && ranks[1] + 1 == ranks[2]
@@ -2465,20 +2653,23 @@ fn can_resolve_claim_window_timeout_locally(room: &Value) -> bool {
 }
 
 fn available_self_kongs(room: &Value, seat_index: usize) -> Vec<SelfKongCandidate> {
-    let concealed = player_concealed_tiles(room, seat_index);
+    let cache = RoomScoringCache::from_room(room);
+    available_self_kongs_from_cache(&cache, seat_index)
+}
+
+fn available_self_kongs_from_cache(
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Vec<SelfKongCandidate> {
+    let Some(player) = cache.player(seat_index) else {
+        return Vec::new();
+    };
     let mut by_key: HashMap<String, Vec<String>> = HashMap::new();
-    for tile in &concealed {
-        let tile_key = tile
-            .get("tile_key")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let tile_id = tile
-            .get("tile_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        by_key.entry(tile_key).or_default().push(tile_id);
+    for tile in &player.concealed_tiles {
+        by_key
+            .entry(tile.tile_key.clone())
+            .or_default()
+            .push(tile.tile_id.clone());
     }
 
     let mut candidates = Vec::new();
@@ -2493,8 +2684,7 @@ fn available_self_kongs(room: &Value, seat_index: usize) -> Vec<SelfKongCandidat
         }
     }
 
-    let melds = player_meld_tile_key_groups(room, seat_index);
-    for (meld_index, meld) in melds.iter().enumerate() {
+    for (meld_index, meld) in player.meld_tile_key_groups.iter().enumerate() {
         if meld.len() == 3 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
             if let Some(tile_ids) = by_key.get(&meld[0]) {
                 if let Some(tile_id) = tile_ids.first() {
@@ -2553,9 +2743,12 @@ fn replacement_tile_from_tail(room: &Value) -> Option<Value> {
 }
 
 fn seats_with_hu_candidate_for_tile(room: &Value, actor_seat: usize, tile_key: &str) -> Vec<usize> {
+    let cache = RoomScoringCache::from_room(room);
     (0..MAX_SEATS)
         .filter(|seat_index| *seat_index != actor_seat)
-        .filter(|seat_index| can_declare_hu(room, *seat_index, Some(tile_key), None))
+        .filter(|seat_index| {
+            can_declare_hu_with_cache(room, &cache, *seat_index, Some(tile_key), None)
+        })
         .collect()
 }
 
@@ -3696,19 +3889,20 @@ fn zero_score_map(seat_count: usize) -> Value {
 }
 
 fn player_first_flower_tile_id(room: &Value, seat_index: usize) -> Option<Value> {
-    room.get("round_state")
-        .and_then(|round| round.get("players"))
-        .and_then(Value::as_array)
-        .and_then(|players| players.get(seat_index))
-        .and_then(|player| player.get("concealed_tiles"))
-        .and_then(Value::as_array)
-        .and_then(|tiles| {
-            tiles
-                .iter()
-                .find(|tile| tile.get("kind").and_then(Value::as_str) == Some("flower"))
-                .and_then(|tile| tile.get("tile_id"))
-                .cloned()
-        })
+    let cache = RoomScoringCache::from_room(room);
+    player_first_flower_tile_id_from_cache(&cache, seat_index).map(Value::String)
+}
+
+fn player_first_flower_tile_id_from_cache(
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Option<String> {
+    cache
+        .player(seat_index)?
+        .concealed_tiles
+        .iter()
+        .find(|tile| tile.is_flower)
+        .map(|tile| tile.tile_id.clone())
 }
 
 fn is_last_live_tile_point(room: &Value) -> bool {
@@ -3747,10 +3941,7 @@ fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -
         return false;
     }
 
-    let Some(discarded_tile) = player_concealed_tiles(room, seat_index)
-        .into_iter()
-        .find(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
-    else {
+    let Some(discarded_tile) = player_concealed_tile(room, seat_index, tile_id) else {
         return false;
     };
     if let Some(restricted) = room
@@ -3801,56 +3992,110 @@ fn wall_is_exhausted(room: &Value) -> bool {
     wall_live_tiles_remaining(room) == 0
 }
 
-fn player_concealed_tiles(room: &Value, seat_index: usize) -> Vec<Value> {
+fn player_concealed_tiles_slice(room: &Value, seat_index: usize) -> Option<&[Value]> {
     room.get("round_state")
         .and_then(|round| round.get("players"))
         .and_then(Value::as_array)
         .and_then(|players| players.get(seat_index))
         .and_then(|player| player.get("concealed_tiles"))
         .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
+        .map(Vec::as_slice)
 }
 
-fn player_meld_tile_key_groups(room: &Value, seat_index: usize) -> Vec<Vec<String>> {
-    room.get("round_state")
-        .and_then(|round| round.get("players"))
-        .and_then(Value::as_array)
-        .and_then(|players| players.get(seat_index))
-        .and_then(|player| player.get("melds"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|meld| {
-            meld.as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|tile| tile.as_str().map(ToString::to_string))
-                .collect()
-        })
-        .collect()
+fn player_concealed_tile<'a>(
+    room: &'a Value,
+    seat_index: usize,
+    tile_id: &str,
+) -> Option<&'a Value> {
+    player_concealed_tiles_slice(room, seat_index)?
+        .iter()
+        .find(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
 }
 
 fn last_concealed_tile_id(room: &Value, seat_index: usize) -> Option<String> {
-    player_concealed_tiles(room, seat_index)
+    let cache = RoomScoringCache::from_room(room);
+    last_concealed_tile_id_from_cache(&cache, seat_index)
+}
+
+fn last_concealed_tile_id_from_cache(
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Option<String> {
+    cache
+        .player(seat_index)?
+        .concealed_tiles
         .last()
-        .and_then(|tile| tile.get("tile_id"))
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
+        .map(|tile| tile.tile_id.clone())
 }
 
-fn tile_key_of(tile: &Value) -> &str {
-    tile.get("tile_key").and_then(Value::as_str).unwrap_or("")
-}
-
-fn tile_counts<'a>(tile_keys: impl Iterator<Item = &'a str>) -> HashMap<String, usize> {
-    let mut counts = HashMap::new();
+fn tile_counts34<'a>(tile_keys: impl Iterator<Item = &'a str>) -> TileCounts {
+    let mut counts = [0_u8; TILE_KIND_COUNT];
     for tile_key in tile_keys {
-        *counts.entry(tile_key.to_string()).or_insert(0) += 1;
+        if let Some(tile_index) = tile_index(tile_key) {
+            counts[tile_index] = counts[tile_index].saturating_add(1);
+        }
     }
     counts
+}
+
+fn tile_index(tile_key: &str) -> Option<usize> {
+    match tile_key {
+        "east" => Some(27),
+        "south" => Some(28),
+        "west" => Some(29),
+        "north" => Some(30),
+        "red" => Some(31),
+        "green" => Some(32),
+        "white" => Some(33),
+        _ => {
+            let bytes = tile_key.as_bytes();
+            if bytes.len() != 2 {
+                return None;
+            }
+            let suit_offset = match bytes[0] {
+                b'w' => 0,
+                b't' => 9,
+                b'b' => 18,
+                _ => return None,
+            };
+            let rank = usize::from(bytes[1].checked_sub(b'0')?);
+            if !(1..=9).contains(&rank) {
+                return None;
+            }
+            Some(suit_offset + rank - 1)
+        }
+    }
+}
+
+fn tile_key_for_index(tile_index: usize) -> &'static str {
+    STANDARD_TILE_KEYS
+        .get(tile_index)
+        .copied()
+        .unwrap_or_default()
+}
+
+fn suited_tile_components(tile_index: usize) -> Option<(usize, usize)> {
+    if tile_index >= HONOR_TILE_START {
+        return None;
+    }
+    Some((tile_index / 9, (tile_index % 9) + 1))
+}
+
+fn chow_required_tile_pairs(tile_index: usize) -> Vec<(usize, usize)> {
+    let Some((_, rank)) = suited_tile_components(tile_index) else {
+        return Vec::new();
+    };
+    let mut pairs = Vec::with_capacity(3);
+    if rank >= 3 {
+        pairs.push((tile_index - 2, tile_index - 1));
+    }
+    if (2..=8).contains(&rank) {
+        pairs.push((tile_index - 1, tile_index + 1));
+    }
+    if rank <= 7 {
+        pairs.push((tile_index + 1, tile_index + 2));
+    }
+    pairs
 }
 
 fn compute_claim_window_without_hu(
@@ -3865,17 +4110,22 @@ fn compute_claim_window_without_hu(
         .to_string();
     let ltw_after_discard = is_last_tile_wall_point_after_discard(room);
     let next_player = (discarder_seat + 1) % MAX_SEATS;
+    let scoring_cache = RoomScoringCache::from_room(room);
 
     (0..MAX_SEATS)
         .map(|seat_index| {
             if seat_index == discarder_seat {
                 return Value::Array(vec![]);
             }
-            let concealed = player_concealed_tiles(room, seat_index);
-            let counts = tile_counts(concealed.iter().map(tile_key_of));
+            let counts = scoring_cache
+                .player(seat_index)
+                .map(|player| player.concealed_tile_counts)
+                .unwrap_or([0; TILE_KIND_COUNT]);
             let mut claims = Vec::new();
             if !ltw_after_discard {
-                let same_tile_count = counts.get(&discarded_tile_key).copied().unwrap_or(0);
+                let same_tile_count = tile_index(&discarded_tile_key)
+                    .map(|tile_index| counts[tile_index])
+                    .unwrap_or(0);
                 if same_tile_count >= 2 {
                     claims.push(Value::String("pung".to_string()));
                 }
@@ -3886,7 +4136,13 @@ fn compute_claim_window_without_hu(
                     claims.push(Value::String("chow".to_string()));
                 }
             }
-            if can_declare_hu(room, seat_index, Some(&discarded_tile_key), None) {
+            if can_declare_hu_with_cache(
+                room,
+                &scoring_cache,
+                seat_index,
+                Some(&discarded_tile_key),
+                None,
+            ) {
                 claims.push(Value::String("hu".to_string()));
             }
             Value::Array(claims)
@@ -3894,23 +4150,12 @@ fn compute_claim_window_without_hu(
         .collect()
 }
 
-fn can_chow(discarded_tile_key: &str, counts: &HashMap<String, usize>) -> bool {
-    let Some((suit, rank)) = parse_suit(discarded_tile_key) else {
+fn can_chow(discarded_tile_key: &str, counts: &TileCounts) -> bool {
+    let Some(discard_index) = tile_index(discarded_tile_key) else {
         return false;
     };
-    for (left, right) in [
-        (rank - 2, rank - 1),
-        (rank - 1, rank + 1),
-        (rank + 1, rank + 2),
-    ] {
-        if !(1..=9).contains(&left) || !(1..=9).contains(&right) {
-            continue;
-        }
-        let left_key = format!("{suit}{left}");
-        let right_key = format!("{suit}{right}");
-        if counts.get(&left_key).copied().unwrap_or(0) > 0
-            && counts.get(&right_key).copied().unwrap_or(0) > 0
-        {
+    for (left_index, right_index) in chow_required_tile_pairs(discard_index) {
+        if counts[left_index] > 0 && counts[right_index] > 0 {
             return true;
         }
     }
@@ -3930,18 +4175,6 @@ fn is_last_tile_wall_point_after_discard(room: &Value) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_suit(tile_key: &str) -> Option<(&str, i32)> {
-    let prefix = tile_key.get(0..1)?;
-    if !SUIT_KEYS.contains(&prefix) {
-        return None;
-    }
-    let rank = tile_key.get(1..)?.parse::<i32>().ok()?;
-    if !(1..=9).contains(&rank) {
-        return None;
-    }
-    Some((prefix, rank))
-}
-
 fn is_bot_seat(room: &Value, seat_index: usize) -> bool {
     room.get("seats")
         .and_then(Value::as_array)
@@ -3958,7 +4191,11 @@ fn is_bot_seat(room: &Value, seat_index: usize) -> bool {
         .unwrap_or(false)
 }
 
-fn choose_bot_discard_tile_id(room: &Value, seat_index: usize) -> Option<String> {
+fn choose_bot_discard_tile_id_with_cache(
+    room: &Value,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Option<String> {
     let restricted_discard_tile_key = room
         .get("round_state")
         .and_then(|round| round.get("restricted_discard_tile_key"))
@@ -3967,18 +4204,12 @@ fn choose_bot_discard_tile_id(room: &Value, seat_index: usize) -> Option<String>
         .get("pending_timeout")
         .and_then(|timeout| timeout.get("drawn_tile_id"))
         .and_then(Value::as_str);
-    let concealed_tiles = player_concealed_tiles(room, seat_index);
+    let concealed_tiles = &cache.player(seat_index)?.concealed_tiles;
 
     if let Some(tile_id) = drawn_tile_id {
-        if let Some(tile) = concealed_tiles
-            .iter()
-            .find(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
-        {
-            let tile_key = tile.get("tile_key").and_then(Value::as_str).unwrap_or("");
-            if tile.get("kind").and_then(Value::as_str) != Some("flower")
-                && Some(tile_key) != restricted_discard_tile_key
-            {
-                return Some(tile_id.to_string());
+        if let Some(tile) = concealed_tiles.iter().find(|tile| tile.tile_id == tile_id) {
+            if !tile.is_flower && Some(tile.tile_key.as_str()) != restricted_discard_tile_key {
+                return Some(tile.tile_id.clone());
             }
         }
     }
@@ -3986,18 +4217,15 @@ fn choose_bot_discard_tile_id(room: &Value, seat_index: usize) -> Option<String>
     concealed_tiles
         .iter()
         .rev()
-        .find(|tile| {
-            tile.get("kind").and_then(Value::as_str) != Some("flower")
-                && tile.get("tile_key").and_then(Value::as_str) != restricted_discard_tile_key
-        })
-        .and_then(|tile| {
-            tile.get("tile_id")
-                .and_then(Value::as_str)
-                .map(ToString::to_string)
-        })
+        .find(|tile| !tile.is_flower && Some(tile.tile_key.as_str()) != restricted_discard_tile_key)
+        .map(|tile| tile.tile_id.clone())
 }
 
-fn choose_bot_claim_action(room: &Value, seat_index: usize) -> Option<BotAction> {
+fn choose_bot_claim_action_with_cache(
+    room: &Value,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Option<BotAction> {
     let pending_action = room
         .get("round_state")
         .and_then(|round| round.get("pending_action"))
@@ -4026,7 +4254,7 @@ fn choose_bot_claim_action(room: &Value, seat_index: usize) -> Option<BotAction>
     if offered_claims
         .iter()
         .any(|value| value.as_str() == Some("hu"))
-        && can_declare_hu(room, seat_index, incoming_tile, discarder_seat)
+        && can_declare_hu_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
     {
         return Some(BotAction {
             seat_index,
@@ -4042,7 +4270,9 @@ fn choose_bot_claim_action(room: &Value, seat_index: usize) -> Option<BotAction>
         {
             continue;
         }
-        if let Some(tile_ids) = choose_bot_claim_tile_ids(room, seat_index, claim_type) {
+        if let Some(tile_ids) =
+            choose_bot_claim_tile_ids_with_cache(room, cache, seat_index, claim_type)
+        {
             return Some(BotAction {
                 seat_index,
                 action_type: claim_type.to_string(),
@@ -4058,8 +4288,9 @@ fn choose_bot_claim_action(room: &Value, seat_index: usize) -> Option<BotAction>
     })
 }
 
-fn choose_bot_claim_tile_ids(
+fn choose_bot_claim_tile_ids_with_cache(
     room: &Value,
+    cache: &RoomScoringCache,
     seat_index: usize,
     action_type: &str,
 ) -> Option<Vec<String>> {
@@ -4069,42 +4300,36 @@ fn choose_bot_claim_tile_ids(
         .cloned()
         .unwrap_or(Value::Null);
     let discard_tile_key = last_discard.get("tile_key").and_then(Value::as_str)?;
-    let concealed_tiles = player_concealed_tiles(room, seat_index);
+    let concealed_tiles = &cache.player(seat_index)?.concealed_tiles;
 
     if action_type == "pung" || action_type == "kong" {
         let needed = if action_type == "pung" { 2 } else { 3 };
         let tile_ids = concealed_tiles
             .iter()
-            .filter(|tile| tile.get("tile_key").and_then(Value::as_str) == Some(discard_tile_key))
-            .filter_map(|tile| {
-                tile.get("tile_id")
-                    .and_then(Value::as_str)
-                    .map(ToString::to_string)
-            })
+            .filter(|tile| tile.tile_key == discard_tile_key)
+            .map(|tile| tile.tile_id.clone())
             .take(needed)
             .collect::<Vec<_>>();
         return (tile_ids.len() == needed).then_some(tile_ids);
     }
 
     if action_type == "chow" {
-        let tile_count = concealed_tiles.len();
-        for first in 0..tile_count {
-            for second in (first + 1)..tile_count {
-                let selected = vec![
-                    concealed_tiles[first].clone(),
-                    concealed_tiles[second].clone(),
-                ];
-                if is_valid_chow_sequence(&last_discard, &selected) {
-                    return Some(
-                        selected
-                            .into_iter()
-                            .filter_map(|tile| {
-                                tile.get("tile_id")
-                                    .and_then(Value::as_str)
-                                    .map(ToString::to_string)
-                            })
-                            .collect(),
-                    );
+        let discard_index = tile_index(discard_tile_key)?;
+        for (first_index, second_index) in chow_required_tile_pairs(discard_index) {
+            let first_key = tile_key_for_index(first_index);
+            let second_key = tile_key_for_index(second_index);
+            let mut first_tile_id = None;
+            let mut second_tile_id = None;
+            for tile in concealed_tiles {
+                if first_tile_id.is_none() && tile.tile_key == first_key {
+                    first_tile_id = Some(tile.tile_id.clone());
+                    continue;
+                }
+                if second_tile_id.is_none() && tile.tile_key == second_key {
+                    second_tile_id = Some(tile.tile_id.clone());
+                }
+                if first_tile_id.is_some() && second_tile_id.is_some() {
+                    return Some(vec![first_tile_id?, second_tile_id?]);
                 }
             }
         }

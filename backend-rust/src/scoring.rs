@@ -1,5 +1,5 @@
 use serde_json::{Map, Value, json};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 const SUIT_KEYS: [char; 3] = ['w', 't', 'b'];
 const HONOR_KEYS: [&str; 7] = ["east", "south", "west", "north", "red", "green", "white"];
@@ -23,6 +23,20 @@ const KNITTED_PATTERNS: [[&str; 9]; 6] = [
     ["b1", "b4", "b7", "t2", "t5", "t8", "w3", "w6", "w9"],
 ];
 const MCR_BASE_POINTS: i64 = 8;
+const TILE_KIND_COUNT: usize = 34;
+const HONOR_TILE_START: usize = 27;
+const THIRTEEN_ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
+
+type TileCounts = [u8; TILE_KIND_COUNT];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct CompactMeld([u8; 3]);
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct StandardDecompositionSignature {
+    pair_index: u8,
+    melds: Vec<CompactMeld>,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Decomposition {
@@ -176,14 +190,34 @@ struct FanContext {
     all_tile_keys: Vec<String>,
     wait_types: Vec<String>,
     winning_tile: Option<String>,
+    standard_derived: StandardDerivedData,
+    all_tile_derived: AllTileDerivedData,
 }
 
 impl FanContext {
     fn from_input(input: EvaluationInput) -> Self {
-        let decompositions = if input.decompositions.is_empty() && !input.tile_keys.is_empty() {
-            decompose_winning_hand(&input.tile_keys)
+        let EvaluationInput {
+            win_type,
+            winner_seat,
+            discarder_seat,
+            flower_count,
+            seat_count,
+            features,
+            timing,
+            kong_entries,
+            tile_keys,
+            visible_tile_keys,
+            concealed_tile_keys,
+            meld_tile_key_groups,
+            open_meld_tile_key_groups,
+            incoming_tile,
+            decompositions: input_decompositions,
+        } = input;
+
+        let decompositions = if input_decompositions.is_empty() && !tile_keys.is_empty() {
+            decompose_winning_hand(&tile_keys)
         } else {
-            input.decompositions.clone()
+            input_decompositions
         };
         let standard_decompositions = decompositions
             .iter()
@@ -192,30 +226,39 @@ impl FanContext {
             .collect::<Vec<_>>();
         let wait_types = resolve_wait_types(
             &standard_decompositions,
-            input.incoming_tile.as_deref(),
-            &input.tile_keys,
+            incoming_tile.as_deref(),
+            &tile_keys,
         );
+        let standard_derived = derive_standard_data(
+            &standard_decompositions,
+            &concealed_tile_keys,
+            &kong_entries,
+            winner_seat,
+        );
+        let all_tile_derived = derive_all_tile_data(&tile_keys);
         Self {
-            win_type: input.win_type,
-            winner_seat: input.winner_seat,
-            discarder_seat: input.discarder_seat,
-            flower_count: input.flower_count,
-            seat_count: input.seat_count.max(1),
-            features: input.features,
-            timing: input.timing,
-            kong_entries: input.kong_entries,
-            visible_tile_keys: input.visible_tile_keys,
-            concealed_tile_keys: input.concealed_tile_keys,
-            open_meld_tile_key_groups: if input.open_meld_tile_key_groups.is_empty() {
-                input.meld_tile_key_groups
+            win_type,
+            winner_seat,
+            discarder_seat,
+            flower_count,
+            seat_count: seat_count.max(1),
+            features,
+            timing,
+            kong_entries,
+            visible_tile_keys,
+            concealed_tile_keys,
+            open_meld_tile_key_groups: if open_meld_tile_key_groups.is_empty() {
+                meld_tile_key_groups
             } else {
-                input.open_meld_tile_key_groups
+                open_meld_tile_key_groups
             },
             decompositions,
             standard_decompositions,
-            all_tile_keys: input.tile_keys,
+            all_tile_keys: tile_keys,
             wait_types,
-            winning_tile: input.incoming_tile,
+            winning_tile: incoming_tile,
+            standard_derived,
+            all_tile_derived,
         }
     }
 
@@ -227,11 +270,17 @@ impl FanContext {
         let mut next = self.clone();
         next.decompositions = decompositions;
         next.standard_decompositions = standard_decompositions;
+        next.standard_derived = derive_standard_data(
+            &next.standard_decompositions,
+            &next.concealed_tile_keys,
+            &next.kong_entries,
+            next.winner_seat,
+        );
         next
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct FanRule {
     fan_key: &'static str,
     fan_value: i64,
@@ -241,7 +290,7 @@ struct FanRule {
     forbidden_with: &'static [&'static str],
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct FanCandidate {
     fan_key: &'static str,
     fan_value: i64,
@@ -256,6 +305,47 @@ struct ScenarioResult {
     fan_breakdown: Vec<FanBreakdownEntry>,
     fan_total: i64,
     minimum_qualifying_fan_total: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct FiveTileCompletion {
+    pair_index: u8,
+    meld: CompactMeld,
+    completion_kind: &'static str,
+}
+
+#[derive(Clone, Debug, Default)]
+struct StandardDerivedData {
+    triplet_keys: HashSet<String>,
+    pair_tile: Option<String>,
+    triplet_suits_by_rank: HashMap<i32, HashSet<char>>,
+    triplet_rank_counts_by_suit: HashMap<char, HashMap<i32, usize>>,
+    triplet_rank_sets_by_suit: HashMap<char, HashSet<i32>>,
+    sequence_suits_by_start: HashMap<i32, HashSet<char>>,
+    sequence_start_counts_by_suit: HashMap<char, HashMap<i32, usize>>,
+    concealed_pung_count: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+struct AllTileDerivedData {
+    counts: Option<TileCounts>,
+    suited_suits: HashSet<char>,
+    has_honours: bool,
+    has_wind: bool,
+    has_dragon: bool,
+    all_honours: bool,
+    has_terminals: bool,
+    all_terminal_or_honour: bool,
+    all_terminals: bool,
+    all_even: bool,
+    all_green: bool,
+    upper_four: bool,
+    upper_tiles: bool,
+    lower_four: bool,
+    lower_tiles: bool,
+    middle_tiles: bool,
+    reversible_tiles: bool,
+    tile_hog: bool,
 }
 
 pub fn evaluate_fans(input: EvaluationInput) -> FanResult {
@@ -321,14 +411,18 @@ pub fn extract_hand_features(
     round_wind_key: Option<&str>,
     decompositions: Option<&[Decomposition]>,
 ) -> HandFeatures {
-    let mut effective_concealed = concealed_tile_keys.to_vec();
+    let mut effective_concealed =
+        Vec::with_capacity(concealed_tile_keys.len() + usize::from(incoming_tile.is_some()));
+    effective_concealed.extend(concealed_tile_keys.iter().cloned());
     if let Some(tile) = incoming_tile {
         effective_concealed.push(tile.to_string());
     }
 
-    let mut all_tile_keys = effective_concealed.clone();
+    let meld_tile_count = meld_tile_key_groups.iter().map(Vec::len).sum::<usize>();
+    let mut all_tile_keys = Vec::with_capacity(effective_concealed.len() + meld_tile_count);
+    all_tile_keys.extend(effective_concealed.iter().cloned());
     for meld_group in meld_tile_key_groups {
-        all_tile_keys.extend(meld_group.clone());
+        all_tile_keys.extend(meld_group.iter().cloned());
     }
 
     let triplet_keys =
@@ -379,7 +473,9 @@ pub fn decompose_winning_hand(tile_keys: &[String]) -> Vec<Decomposition> {
     if tile_keys.len() != 14 {
         return vec![];
     }
-    let counts = tile_counts(tile_keys.iter().map(String::as_str));
+    let Some(counts) = tile_counts_array(tile_keys.iter().map(String::as_str)) else {
+        return vec![];
+    };
     let mut decompositions = Vec::new();
     if is_seven_pairs(&counts) {
         decompositions.push(Decomposition {
@@ -389,15 +485,20 @@ pub fn decompose_winning_hand(tile_keys: &[String]) -> Vec<Decomposition> {
         });
     }
     if is_thirteen_orphans(&counts) {
-        let pair_tile = counts
+        let pair_tile = THIRTEEN_ORPHAN_INDICES
             .iter()
-            .find(|(_, count)| **count == 2)
-            .map(|(tile_key, _)| tile_key.clone())
-            .unwrap_or_default();
+            .copied()
+            .find(|index| counts[*index] == 2)
+            .map(tile_key_for_index)
+            .unwrap_or_default()
+            .to_string();
         decompositions.push(Decomposition {
             kind: "thirteen_orphans".to_string(),
             pair: Some(pair_tile),
-            orphans: counts.keys().cloned().collect(),
+            orphans: THIRTEEN_ORPHAN_INDICES
+                .iter()
+                .map(|index| tile_key_for_index(*index).to_string())
+                .collect(),
             ..Default::default()
         });
     }
@@ -430,9 +531,10 @@ pub fn decompose_winning_hand_with_melds(
         return vec![];
     }
 
-    let base = standard_decompositions_from_counts(&tile_counts(
-        concealed_tile_keys.iter().map(String::as_str),
-    ));
+    let Some(counts) = tile_counts_array(concealed_tile_keys.iter().map(String::as_str)) else {
+        return vec![];
+    };
+    let base = standard_decompositions_from_counts(&counts);
     base.into_iter()
         .map(|mut decomposition| {
             let mut melds = normalized.clone();
@@ -443,8 +545,15 @@ pub fn decompose_winning_hand_with_melds(
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn is_winning_hand(tile_keys: &[String]) -> bool {
-    !decompose_winning_hand(tile_keys).is_empty()
+    if tile_keys.len() != 14 {
+        return false;
+    }
+    let Some(counts) = tile_counts_array(tile_keys.iter().map(String::as_str)) else {
+        return false;
+    };
+    is_winning_hand_from_counts(&counts)
 }
 
 fn fan_scenarios(context: &FanContext) -> Vec<FanContext> {
@@ -510,8 +619,9 @@ fn evaluate_scenario(context: &FanContext) -> ScenarioResult {
     }
 }
 fn fan_candidates(context: &FanContext) -> Vec<FanCandidate> {
-    let mut candidates = Vec::new();
-    for (order, rule) in registered_fan_rules().into_iter().enumerate() {
+    let rules = registered_fan_rules();
+    let mut candidates = Vec::with_capacity(rules.len());
+    for (order, rule) in rules.iter().copied().enumerate() {
         let match_count = (rule.matcher)(context);
         let resolved_values = if let Some(resolver) = rule.value_resolver {
             resolver(context, match_count, rule.fan_value)
@@ -582,30 +692,33 @@ fn select_best_candidates(candidates: &[FanCandidate]) -> Vec<FanCandidate> {
             best_selected,
         );
 
-        let candidate = &ordered[index];
+        let candidate = ordered[index];
         if blocked_keys.contains(candidate.fan_key) {
             return;
         }
-        let conflicts = candidate
+        if candidate
             .excludes
             .iter()
             .chain(candidate.forbidden_with.iter())
-            .copied()
-            .collect::<Vec<_>>();
-        if conflicts
-            .iter()
             .any(|conflict| selected_keys.contains(conflict))
         {
             return;
         }
 
-        selected.push(candidate.clone());
+        selected.push(candidate);
         selected_keys.insert(candidate.fan_key);
-        let inserted_blocked = conflicts
+        let mut inserted_blocked =
+            Vec::with_capacity(candidate.excludes.len() + candidate.forbidden_with.len());
+        for conflict in candidate
+            .excludes
             .iter()
-            .filter(|conflict| blocked_keys.insert(**conflict))
+            .chain(candidate.forbidden_with.iter())
             .copied()
-            .collect::<Vec<_>>();
+        {
+            if blocked_keys.insert(conflict) {
+                inserted_blocked.push(conflict);
+            }
+        }
         dfs(
             index + 1,
             score + candidate.fan_value,
@@ -723,6 +836,146 @@ fn fan_delta_by_seat(
     deltas
 }
 
+fn derive_standard_data(
+    standard_decompositions: &[Decomposition],
+    concealed_tile_keys: &[String],
+    kong_entries: &[KongEntry],
+    winner_seat: Option<usize>,
+) -> StandardDerivedData {
+    let concealed_counts = tile_counts_array(concealed_tile_keys.iter().map(String::as_str));
+    let concealed_kongs = kong_entries
+        .iter()
+        .filter(|entry| Some(entry.actor_seat) == winner_seat)
+        .filter(|entry| entry.kong_type == "concealed_kong")
+        .count();
+
+    let mut derived = StandardDerivedData {
+        concealed_pung_count: concealed_kongs,
+        ..Default::default()
+    };
+    let mut best_standard_concealed_pungs = 0usize;
+
+    for decomposition in standard_decompositions {
+        if derived.pair_tile.is_none() {
+            derived.pair_tile = decomposition.pair.clone();
+        }
+
+        let mut decomposition_concealed_pungs = 0usize;
+        for meld in &decomposition.melds {
+            if meld.len() != 3 {
+                continue;
+            }
+
+            if meld.iter().all(|tile_key| tile_key == &meld[0]) {
+                let triplet_tile = &meld[0];
+                derived.triplet_keys.insert(triplet_tile.clone());
+                if let Some((suit, rank)) = parse_suit(triplet_tile) {
+                    derived
+                        .triplet_suits_by_rank
+                        .entry(rank)
+                        .or_default()
+                        .insert(suit);
+                    *derived
+                        .triplet_rank_counts_by_suit
+                        .entry(suit)
+                        .or_default()
+                        .entry(rank)
+                        .or_insert(0) += 1;
+                    derived
+                        .triplet_rank_sets_by_suit
+                        .entry(suit)
+                        .or_default()
+                        .insert(rank);
+                }
+
+                if concealed_counts.as_ref().is_some_and(|counts| {
+                    tile_index(triplet_tile)
+                        .map(|index| counts[index] >= 3)
+                        .unwrap_or(false)
+                }) {
+                    decomposition_concealed_pungs += 1;
+                }
+                continue;
+            }
+
+            if let Some((suit, start)) = sequence_meld_start(meld) {
+                derived
+                    .sequence_suits_by_start
+                    .entry(start)
+                    .or_default()
+                    .insert(suit);
+                *derived
+                    .sequence_start_counts_by_suit
+                    .entry(suit)
+                    .or_default()
+                    .entry(start)
+                    .or_insert(0) += 1;
+            }
+        }
+
+        best_standard_concealed_pungs =
+            best_standard_concealed_pungs.max(decomposition_concealed_pungs);
+    }
+
+    derived.concealed_pung_count += best_standard_concealed_pungs;
+    derived
+}
+
+fn derive_all_tile_data(all_tile_keys: &[String]) -> AllTileDerivedData {
+    let counts = tile_counts_array(all_tile_keys.iter().map(String::as_str));
+    let has_tiles = !all_tile_keys.is_empty();
+    let mut derived = AllTileDerivedData {
+        counts,
+        all_honours: has_tiles,
+        all_terminal_or_honour: has_tiles,
+        all_terminals: has_tiles,
+        all_even: has_tiles,
+        all_green: has_tiles,
+        upper_four: has_tiles,
+        upper_tiles: has_tiles,
+        lower_four: has_tiles,
+        lower_tiles: has_tiles,
+        middle_tiles: has_tiles,
+        reversible_tiles: has_tiles,
+        ..Default::default()
+    };
+
+    for tile_key in all_tile_keys {
+        if let Some((suit, rank)) = parse_suit(tile_key) {
+            derived.suited_suits.insert(suit);
+            derived.all_honours = false;
+            derived.has_terminals |= matches!(rank, 1 | 9);
+            derived.all_terminal_or_honour &= matches!(rank, 1 | 9);
+            derived.all_terminals &= matches!(rank, 1 | 9);
+            derived.all_even &= matches!(rank, 2 | 4 | 6 | 8);
+            derived.upper_four &= rank >= 6;
+            derived.upper_tiles &= matches!(rank, 7..=9);
+            derived.lower_four &= rank <= 4;
+            derived.lower_tiles &= matches!(rank, 1..=3);
+            derived.middle_tiles &= matches!(rank, 4..=6);
+        } else {
+            derived.has_honours = true;
+            derived.has_wind |= WIND_KEYS.contains(&tile_key.as_str());
+            derived.has_dragon |= DRAGON_KEYS.contains(&tile_key.as_str());
+            derived.all_terminals = false;
+            derived.all_even = false;
+            derived.upper_four = false;
+            derived.upper_tiles = false;
+            derived.lower_four = false;
+            derived.lower_tiles = false;
+            derived.middle_tiles = false;
+        }
+        derived.all_green &= ALL_GREEN_KEYS.contains(&tile_key.as_str());
+        derived.reversible_tiles &= REVERSIBLE_TILE_KEYS.contains(&tile_key.as_str());
+    }
+
+    if let Some(counts) = derived.counts.as_ref() {
+        derived.tile_hog = counts.iter().any(|count| *count >= 4);
+    }
+
+    derived
+}
+
 fn should_award_chicken_hand(context: &FanContext, fan_keys: &[String]) -> bool {
     if context.all_tile_keys.len() != 14 {
         return false;
@@ -730,8 +983,8 @@ fn should_award_chicken_hand(context: &FanContext, fan_keys: &[String]) -> bool 
     !fan_keys.iter().any(|fan_key| fan_key != "flower_tiles")
 }
 
-fn registered_fan_rules() -> Vec<FanRule> {
-    vec![
+fn registered_fan_rules() -> &'static [FanRule] {
+    static FAN_RULES: &[FanRule] = &[
         FanRule {
             fan_key: "self_drawn",
             fan_value: 1,
@@ -1420,7 +1673,8 @@ fn registered_fan_rules() -> Vec<FanRule> {
             excludes: &[],
             forbidden_with: &[],
         },
-    ]
+    ];
+    FAN_RULES
 }
 fn match_self_drawn(context: &FanContext) -> usize {
     usize::from(context.win_type == "self_draw")
@@ -1519,7 +1773,6 @@ fn match_little_three_dragons(context: &FanContext) -> usize {
             .count()
             == 2
             && pair_tile
-                .as_deref()
                 .map(|tile| DRAGON_KEYS.contains(&tile))
                 .unwrap_or(false),
     )
@@ -1542,57 +1795,28 @@ fn match_little_four_winds(context: &FanContext) -> usize {
             .count()
             == 3
             && pair_tile
-                .as_deref()
                 .map(|tile| WIND_KEYS.contains(&tile))
                 .unwrap_or(false),
     )
 }
 fn match_all_honours(context: &FanContext) -> usize {
-    usize::from(
-        !context.all_tile_keys.is_empty()
-            && context
-                .all_tile_keys
-                .iter()
-                .all(|tile| HONOR_KEYS.contains(&tile.as_str())),
-    )
+    usize::from(context.all_tile_derived.all_honours)
 }
 fn match_all_terminals_and_honours(context: &FanContext) -> usize {
-    let has_honours = context
-        .all_tile_keys
-        .iter()
-        .any(|tile| HONOR_KEYS.contains(&tile.as_str()));
-    let has_terminals = context.all_tile_keys.iter().any(|tile| is_terminal(tile));
     usize::from(
-        !context.all_tile_keys.is_empty()
-            && has_honours
-            && has_terminals
-            && context
-                .all_tile_keys
-                .iter()
-                .all(|tile| HONOR_KEYS.contains(&tile.as_str()) || is_terminal(tile)),
+        context.all_tile_derived.has_honours
+            && context.all_tile_derived.has_terminals
+            && context.all_tile_derived.all_terminal_or_honour,
     )
 }
 fn match_all_terminals(context: &FanContext) -> usize {
-    usize::from(
-        !context.all_tile_keys.is_empty()
-            && context.all_tile_keys.iter().all(|tile| is_terminal(tile)),
-    )
+    usize::from(context.all_tile_derived.all_terminals)
 }
 fn match_all_even_pungs(context: &FanContext) -> usize {
-    usize::from(
-        context.features.pung_hand
-            && !context.all_tile_keys.is_empty()
-            && context.all_tile_keys.iter().all(|tile| is_even_tile(tile)),
-    )
+    usize::from(context.features.pung_hand && context.all_tile_derived.all_even)
 }
 fn match_all_green(context: &FanContext) -> usize {
-    usize::from(
-        !context.all_tile_keys.is_empty()
-            && context
-                .all_tile_keys
-                .iter()
-                .all(|tile| ALL_GREEN_KEYS.contains(&tile.as_str())),
-    )
+    usize::from(context.all_tile_derived.all_green)
 }
 fn match_all_pungs(context: &FanContext) -> usize {
     usize::from(context.features.pung_hand && !context.features.seven_pairs)
@@ -1782,7 +2006,8 @@ fn features_is_seven_pairs(tile_keys: &[String], meld_tile_key_groups: &[Vec<Str
     if !meld_tile_key_groups.is_empty() || tile_keys.len() != 14 {
         return false;
     }
-    is_seven_pairs(&tile_counts(tile_keys.iter().map(String::as_str)))
+    tile_counts_array(tile_keys.iter().map(String::as_str))
+        .is_some_and(|counts| is_seven_pairs(&counts))
 }
 
 fn features_is_thirteen_orphans(
@@ -1792,7 +2017,8 @@ fn features_is_thirteen_orphans(
     if !meld_tile_key_groups.is_empty() || tile_keys.len() != 14 {
         return false;
     }
-    is_thirteen_orphans(&tile_counts(tile_keys.iter().map(String::as_str)))
+    tile_counts_array(tile_keys.iter().map(String::as_str))
+        .is_some_and(|counts| is_thirteen_orphans(&counts))
 }
 
 fn features_is_pung_hand(tile_keys: &[String], meld_tile_key_groups: &[Vec<String>]) -> bool {
@@ -1802,7 +2028,8 @@ fn features_is_pung_hand(tile_keys: &[String], meld_tile_key_groups: &[Vec<Strin
     {
         return false;
     }
-    can_form_all_pungs(&tile_counts(tile_keys.iter().map(String::as_str)))
+    tile_counts_array(tile_keys.iter().map(String::as_str))
+        .is_some_and(|counts| can_form_all_pungs(&counts))
 }
 
 fn is_duan_yao(tile_keys: &[String]) -> bool {
@@ -1869,75 +2096,21 @@ fn standard_decomposition(
 }
 
 fn decompose_standard_hand(tile_keys: &[String]) -> Option<Decomposition> {
-    let counts = tile_counts(tile_keys.iter().map(String::as_str));
-    counts
-        .keys()
-        .filter(|tile_key| counts.get(*tile_key).copied().unwrap_or(0) >= 2)
-        .find_map(|tile_key| {
-            let mut next_counts = counts.clone();
-            decrement_count(&mut next_counts, tile_key, 2);
-            extract_first_melds(&next_counts).map(|melds| Decomposition {
-                kind: "standard".to_string(),
-                pair: Some(tile_key.clone()),
-                melds,
-                ..Default::default()
-            })
-        })
+    tile_counts_array(tile_keys.iter().map(String::as_str))
+        .and_then(|counts| first_standard_decomposition_from_counts(&counts))
 }
 
-fn extract_first_melds(counts: &BTreeMap<String, usize>) -> Option<Vec<Vec<String>>> {
-    if counts.is_empty() {
-        return Some(vec![]);
-    }
-    let tile_key = counts.keys().next()?.clone();
-    let count = counts.get(&tile_key).copied().unwrap_or(0);
-    if count == 0 {
-        let mut next = counts.clone();
-        next.remove(&tile_key);
-        return extract_first_melds(&next);
-    }
-    if count >= 3 {
-        let mut next = counts.clone();
-        decrement_count(&mut next, &tile_key, 3);
-        if let Some(mut melds) = extract_first_melds(&next) {
-            let mut result = vec![vec![tile_key.clone(), tile_key.clone(), tile_key.clone()]];
-            result.append(&mut melds);
-            return Some(result);
-        }
-    }
-    if let Some((prefix, rank)) = parse_suit(&tile_key) {
-        if rank <= 7 {
-            let second = format!("{prefix}{}", rank + 1);
-            let third = format!("{prefix}{}", rank + 2);
-            if counts.get(&second).copied().unwrap_or(0) > 0
-                && counts.get(&third).copied().unwrap_or(0) > 0
-            {
-                let mut next = counts.clone();
-                decrement_count(&mut next, &tile_key, 1);
-                decrement_count(&mut next, &second, 1);
-                decrement_count(&mut next, &third, 1);
-                if let Some(mut melds) = extract_first_melds(&next) {
-                    let mut result = vec![vec![tile_key, second, third]];
-                    result.append(&mut melds);
-                    return Some(result);
-                }
-            }
-        }
-    }
-    None
-}
-
-fn can_form_all_pungs(counts: &BTreeMap<String, usize>) -> bool {
-    if counts.values().sum::<usize>() % 3 != 2 {
+fn can_form_all_pungs(counts: &TileCounts) -> bool {
+    if total_tile_count(counts) % 3 != 2 {
         return false;
     }
-    counts.iter().any(|(tile_key, count)| {
-        if *count < 2 {
+    counts.iter().enumerate().any(|(tile_index, count)| {
+        if *count < 2_u8 {
             return false;
         }
-        let mut next = counts.clone();
-        decrement_count(&mut next, tile_key, 2);
-        next.values().all(|value| value % 3 == 0)
+        let mut next = *counts;
+        next[tile_index] -= 2;
+        next.iter().all(|value| value % 3 == 0)
     })
 }
 fn is_mixed_one_suit(tile_keys: &[String]) -> bool {
@@ -1963,20 +2136,9 @@ fn is_pure_one_suit(tile_keys: &[String]) -> bool {
 }
 
 fn has_all_types(context: &FanContext) -> bool {
-    let suits = context
-        .all_tile_keys
-        .iter()
-        .filter_map(|tile_key| parse_suit(tile_key).map(|(prefix, _)| prefix))
-        .collect::<HashSet<_>>();
-    let has_wind = context
-        .all_tile_keys
-        .iter()
-        .any(|tile_key| WIND_KEYS.contains(&tile_key.as_str()));
-    let has_dragon = context
-        .all_tile_keys
-        .iter()
-        .any(|tile_key| DRAGON_KEYS.contains(&tile_key.as_str()));
-    suits == HashSet::from(['w', 't', 'b']) && has_wind && has_dragon
+    context.all_tile_derived.suited_suits == HashSet::from(['w', 't', 'b'])
+        && context.all_tile_derived.has_wind
+        && context.all_tile_derived.has_dragon
 }
 
 fn has_all_fives(context: &FanContext) -> bool {
@@ -1997,107 +2159,53 @@ fn has_all_fives(context: &FanContext) -> bool {
 }
 
 fn is_upper_four(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context.all_tile_keys.iter().all(|tile_key| {
-            parse_suit(tile_key)
-                .map(|(_, rank)| rank >= 6)
-                .unwrap_or(false)
-        })
+    context.all_tile_derived.upper_four
 }
 fn is_upper_tiles(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context.all_tile_keys.iter().all(|tile_key| {
-            parse_suit(tile_key)
-                .map(|(_, rank)| matches!(rank, 7..=9))
-                .unwrap_or(false)
-        })
+    context.all_tile_derived.upper_tiles
 }
 fn is_lower_four(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context.all_tile_keys.iter().all(|tile_key| {
-            parse_suit(tile_key)
-                .map(|(_, rank)| rank <= 4)
-                .unwrap_or(false)
-        })
+    context.all_tile_derived.lower_four
 }
 fn is_lower_tiles(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context.all_tile_keys.iter().all(|tile_key| {
-            parse_suit(tile_key)
-                .map(|(_, rank)| matches!(rank, 1..=3))
-                .unwrap_or(false)
-        })
+    context.all_tile_derived.lower_tiles
 }
 fn is_middle_tiles(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context.all_tile_keys.iter().all(|tile_key| {
-            parse_suit(tile_key)
-                .map(|(_, rank)| matches!(rank, 4..=6))
-                .unwrap_or(false)
-        })
+    context.all_tile_derived.middle_tiles
 }
 fn has_tile_hog(context: &FanContext) -> bool {
-    tile_counts(context.all_tile_keys.iter().map(String::as_str))
-        .values()
-        .any(|count| *count >= 4)
+    context.all_tile_derived.tile_hog
 }
 fn has_reversible_tiles(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context
-            .all_tile_keys
-            .iter()
-            .all(|tile_key| REVERSIBLE_TILE_KEYS.contains(&tile_key.as_str()))
+    context.all_tile_derived.reversible_tiles
 }
 
 fn has_pure_straight(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let starts = sequences
-            .iter()
-            .map(|(start, _)| *start)
-            .collect::<HashSet<_>>();
-        starts.contains(&1) && starts.contains(&4) && starts.contains(&7)
-    })
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|starts| starts.contains_key(&1) && starts.contains_key(&4) && starts.contains_key(&7))
 }
 
 fn has_mixed_triple_chow(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, sequences) in sequence_groups_by_suit(context) {
-        for (start, _) in sequences {
-            grouped.entry(start).or_default().insert(suit);
-        }
-    }
-    grouped
+    sequence_suits_by_start(context)
         .values()
         .any(|suits| suits == &HashSet::from(['w', 't', 'b']))
 }
 
 fn has_pure_double_chow(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for (_, sequence) in sequences {
-            *counts.entry(sequence.join(",")).or_insert(0) += 1;
-        }
-        counts.values().any(|count| *count >= 2)
-    })
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|counts| counts.values().any(|count| *count >= 2))
 }
 
 fn has_mixed_double_chow(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, sequences) in sequence_groups_by_suit(context) {
-        for (start, _) in sequences {
-            grouped.entry(start).or_default().insert(suit);
-        }
-    }
-    grouped.values().any(|suits| suits.len() >= 2)
+    sequence_suits_by_start(context)
+        .values()
+        .any(|suits| suits.len() >= 2)
 }
 
 fn has_mixed_straight(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, sequences) in sequence_groups_by_suit(context) {
-        for (start, _) in sequences {
-            grouped.entry(start).or_default().insert(suit);
-        }
-    }
+    let grouped = sequence_suits_by_start(context);
     if !(grouped.contains_key(&1) && grouped.contains_key(&4) && grouped.contains_key(&7)) {
         return false;
     }
@@ -2114,12 +2222,7 @@ fn has_mixed_straight(context: &FanContext) -> bool {
 }
 
 fn has_mixed_shifted_chows(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, sequences) in sequence_groups_by_suit(context) {
-        for (start, _) in sequences {
-            grouped.entry(start).or_default().insert(suit);
-        }
-    }
+    let grouped = sequence_suits_by_start(context);
     for start in 1..=5 {
         if !(grouped.contains_key(&start)
             && grouped.contains_key(&(start + 1))
@@ -2141,118 +2244,81 @@ fn has_mixed_shifted_chows(context: &FanContext) -> bool {
 }
 
 fn has_pure_shifted_chows(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let mut starts: HashMap<i32, usize> = HashMap::new();
-        for (start, _) in sequences {
-            *starts.entry(*start).or_insert(0) += 1;
-        }
-        let unique = starts.keys().copied().collect::<Vec<_>>();
-        for step in [1, 2] {
-            for start in &unique {
-                if (0..3)
-                    .all(|offset| starts.get(&(start + offset * step)).copied().unwrap_or(0) >= 1)
-                {
-                    return true;
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|starts| {
+            let unique = starts.keys().copied().collect::<Vec<_>>();
+            for step in [1, 2] {
+                for start in &unique {
+                    if (0..3).all(|offset| {
+                        starts.get(&(start + offset * step)).copied().unwrap_or(0) >= 1
+                    }) {
+                        return true;
+                    }
                 }
             }
-        }
-        false
-    })
+            false
+        })
 }
 
 fn has_four_pure_shifted_chows(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let mut starts: HashMap<i32, usize> = HashMap::new();
-        for (start, _) in sequences {
-            *starts.entry(*start).or_insert(0) += 1;
-        }
-        let unique = starts.keys().copied().collect::<Vec<_>>();
-        for step in [1, 2] {
-            for start in &unique {
-                if (0..4)
-                    .all(|offset| starts.get(&(start + offset * step)).copied().unwrap_or(0) >= 1)
-                {
-                    return true;
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|starts| {
+            let unique = starts.keys().copied().collect::<Vec<_>>();
+            for step in [1, 2] {
+                for start in &unique {
+                    if (0..4).all(|offset| {
+                        starts.get(&(start + offset * step)).copied().unwrap_or(0) >= 1
+                    }) {
+                        return true;
+                    }
                 }
             }
-        }
-        false
-    })
+            false
+        })
 }
 
 fn has_pure_triple_chow(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for (_, sequence) in sequences {
-            *counts.entry(sequence.join(",")).or_insert(0) += 1;
-        }
-        counts.values().any(|count| *count >= 3)
-    })
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|counts| counts.values().any(|count| *count >= 3))
 }
 
 fn has_quadruple_chow(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for (_, sequence) in sequences {
-            *counts.entry(sequence.join(",")).or_insert(0) += 1;
-        }
-        counts.values().any(|count| *count >= 4)
-    })
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|counts| counts.values().any(|count| *count >= 4))
 }
 
 fn has_short_straight(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let starts = sequences
-            .iter()
-            .map(|(start, _)| *start)
-            .collect::<HashSet<_>>();
-        (starts.contains(&1) && starts.contains(&4)) || (starts.contains(&4) && starts.contains(&7))
-    })
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|starts| {
+            (starts.contains_key(&1) && starts.contains_key(&4))
+                || (starts.contains_key(&4) && starts.contains_key(&7))
+        })
 }
 fn has_two_terminal_chows(context: &FanContext) -> bool {
-    sequence_groups_by_suit(context).values().any(|sequences| {
-        let starts = sequences
-            .iter()
-            .map(|(start, _)| *start)
-            .collect::<HashSet<_>>();
-        starts.contains(&1) && starts.contains(&7)
-    })
+    sequence_start_counts_by_suit(context)
+        .values()
+        .any(|starts| starts.contains_key(&1) && starts.contains_key(&7))
 }
 fn has_three_suited_terminal_chows(context: &FanContext) -> bool {
     let mut terminal_suits = HashSet::new();
-    for (suit, sequences) in sequence_groups_by_suit(context) {
-        let starts = sequences
-            .iter()
-            .map(|(start, _)| *start)
-            .collect::<HashSet<_>>();
-        if starts.contains(&1) && starts.contains(&7) {
+    for (suit, starts) in sequence_start_counts_by_suit(context) {
+        if starts.contains_key(&1) && starts.contains_key(&7) {
             terminal_suits.insert(suit);
         }
     }
     terminal_suits.len() >= 2
 }
 fn has_pure_terminal_chows(context: &FanContext) -> bool {
-    for (suit, sequences) in sequence_groups_by_suit(context) {
-        let starts = sequences
-            .iter()
-            .map(|(start, _)| *start)
-            .collect::<HashSet<_>>();
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for (_, sequence) in sequences {
-            *counts.entry(sequence.join(",")).or_insert(0) += 1;
-        }
-        if starts.contains(&1)
-            && starts.contains(&7)
-            && counts
-                .get(&format!("{suit}1,{suit}2,{suit}3"))
-                .copied()
-                .unwrap_or(0)
-                >= 2
-            && counts
-                .get(&format!("{suit}7,{suit}8,{suit}9"))
-                .copied()
-                .unwrap_or(0)
-                >= 2
+    for starts in sequence_start_counts_by_suit(context).values() {
+        if starts.contains_key(&1)
+            && starts.contains_key(&7)
+            && starts.get(&1).copied().unwrap_or(0) >= 2
+            && starts.get(&7).copied().unwrap_or(0) >= 2
         {
             return true;
         }
@@ -2260,19 +2326,10 @@ fn has_pure_terminal_chows(context: &FanContext) -> bool {
     false
 }
 fn has_one_voided_suit(context: &FanContext) -> bool {
-    let suits = context
-        .all_tile_keys
-        .iter()
-        .filter_map(|tile_key| parse_suit(tile_key).map(|(prefix, _)| prefix))
-        .collect::<HashSet<_>>();
-    suits.len() == 2
+    context.all_tile_derived.suited_suits.len() == 2
 }
 fn has_no_honours(context: &FanContext) -> bool {
-    !context.all_tile_keys.is_empty()
-        && context
-            .all_tile_keys
-            .iter()
-            .all(|tile_key| parse_suit(tile_key).is_some())
+    !context.all_tile_derived.has_honours && !context.all_tile_keys.is_empty()
 }
 fn concealed_kong_count(context: &FanContext) -> usize {
     context
@@ -2367,43 +2424,40 @@ fn is_seven_shifted_pairs_pattern(context: &FanContext) -> bool {
     ranks == (ranks[0]..ranks[0] + 7).collect::<Vec<_>>()
 }
 fn is_nine_gates(context: &FanContext) -> bool {
-    if context.all_tile_keys.len() != 14
-        || !context
-            .all_tile_keys
-            .iter()
-            .all(|tile_key| parse_suit(tile_key).is_some())
-    {
+    if context.all_tile_keys.len() != 14 || context.all_tile_derived.has_honours {
         return false;
     }
-    let suits = context
-        .all_tile_keys
-        .iter()
-        .filter_map(|tile_key| parse_suit(tile_key).map(|(prefix, _)| prefix))
-        .collect::<HashSet<_>>();
-    if suits.len() != 1 {
+    let Some(counts) = context.all_tile_derived.counts else {
+        return false;
+    };
+    if context.all_tile_derived.suited_suits.len() != 1 {
         return false;
     }
-    let suit = *suits.iter().next().unwrap_or(&'w');
-    let counts = tile_counts(context.all_tile_keys.iter().map(String::as_str));
-    let mut remaining = counts.clone();
-    let base = vec![
-        (format!("{suit}1"), 3),
-        (format!("{suit}9"), 3),
-        (format!("{suit}2"), 1),
-        (format!("{suit}3"), 1),
-        (format!("{suit}4"), 1),
-        (format!("{suit}5"), 1),
-        (format!("{suit}6"), 1),
-        (format!("{suit}7"), 1),
-        (format!("{suit}8"), 1),
-    ];
-    for (tile_key, needed) in base {
-        if remaining.get(&tile_key).copied().unwrap_or(0) < needed {
+    let suit_offset = match context.all_tile_derived.suited_suits.iter().next().copied() {
+        Some('w') => 0,
+        Some('t') => 9,
+        Some('b') => 18,
+        _ => return false,
+    };
+    let mut remaining = counts;
+    for (offset, needed) in [
+        (0_usize, 3_u8),
+        (8, 3),
+        (1, 1),
+        (2, 1),
+        (3, 1),
+        (4, 1),
+        (5, 1),
+        (6, 1),
+        (7, 1),
+    ] {
+        let index = suit_offset + offset;
+        if remaining[index] < needed {
             return false;
         }
-        decrement_count(&mut remaining, &tile_key, needed);
+        remaining[index] -= needed;
     }
-    remaining.values().sum::<usize>() == 1
+    total_tile_count(&remaining) == 1
 }
 fn has_decomposition_kind(context: &FanContext, kind: &str) -> bool {
     context
@@ -2411,51 +2465,39 @@ fn has_decomposition_kind(context: &FanContext, kind: &str) -> bool {
         .iter()
         .any(|decomposition| decomposition.kind == kind)
 }
-fn triplet_keys_set(context: &FanContext) -> HashSet<String> {
-    context
-        .standard_decompositions
-        .iter()
-        .flat_map(|decomposition| decomposition.melds.iter())
-        .filter(|meld| meld.len() == 3 && meld.iter().all(|tile_key| tile_key == &meld[0]))
-        .map(|meld| meld[0].clone())
-        .collect()
+fn triplet_keys_set(context: &FanContext) -> &HashSet<String> {
+    &context.standard_derived.triplet_keys
 }
-fn pair_tile(context: &FanContext) -> Option<String> {
-    context
-        .standard_decompositions
-        .iter()
-        .find_map(|decomposition| decomposition.pair.clone())
+fn pair_tile(context: &FanContext) -> Option<&str> {
+    context.standard_derived.pair_tile.as_deref()
 }
-fn suited_triplets(context: &FanContext) -> Vec<(char, i32)> {
-    context
-        .standard_decompositions
-        .iter()
-        .flat_map(|decomposition| decomposition.melds.iter())
-        .filter(|meld| meld.len() == 3 && meld.iter().all(|tile_key| tile_key == &meld[0]))
-        .filter_map(|meld| parse_suit(&meld[0]))
-        .collect()
+fn triplet_suits_by_rank(context: &FanContext) -> &HashMap<i32, HashSet<char>> {
+    &context.standard_derived.triplet_suits_by_rank
+}
+fn triplet_rank_counts_by_suit(context: &FanContext) -> &HashMap<char, HashMap<i32, usize>> {
+    &context.standard_derived.triplet_rank_counts_by_suit
+}
+fn triplet_rank_sets_by_suit(context: &FanContext) -> &HashMap<char, HashSet<i32>> {
+    &context.standard_derived.triplet_rank_sets_by_suit
+}
+fn sequence_suits_by_start(context: &FanContext) -> &HashMap<i32, HashSet<char>> {
+    &context.standard_derived.sequence_suits_by_start
+}
+fn sequence_start_counts_by_suit(context: &FanContext) -> &HashMap<char, HashMap<i32, usize>> {
+    &context.standard_derived.sequence_start_counts_by_suit
 }
 fn has_triple_pung(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, rank) in suited_triplets(context) {
-        grouped.entry(rank).or_default().insert(suit);
-    }
-    grouped
+    triplet_suits_by_rank(context)
         .values()
         .any(|suits| suits == &HashSet::from(['w', 't', 'b']))
 }
 fn has_double_pung(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, rank) in suited_triplets(context) {
-        grouped.entry(rank).or_default().insert(suit);
-    }
-    grouped.values().any(|suits| suits.len() >= 2)
+    triplet_suits_by_rank(context)
+        .values()
+        .any(|suits| suits.len() >= 2)
 }
 fn has_mixed_shifted_pungs(context: &FanContext) -> bool {
-    let mut grouped: HashMap<i32, HashSet<char>> = HashMap::new();
-    for (suit, rank) in suited_triplets(context) {
-        grouped.entry(rank).or_default().insert(suit);
-    }
+    let grouped = triplet_suits_by_rank(context);
     for rank in 1..=7 {
         if !(grouped.contains_key(&rank)
             && grouped.contains_key(&(rank + 1))
@@ -2476,15 +2518,7 @@ fn has_mixed_shifted_pungs(context: &FanContext) -> bool {
     false
 }
 fn has_pure_shifted_pungs(context: &FanContext) -> bool {
-    let mut grouped: HashMap<char, Vec<i32>> = HashMap::new();
-    for (suit, rank) in suited_triplets(context) {
-        grouped.entry(suit).or_default().push(rank);
-    }
-    grouped.values().any(|ranks| {
-        let mut counts: HashMap<i32, usize> = HashMap::new();
-        for rank in ranks {
-            *counts.entry(*rank).or_insert(0) += 1;
-        }
+    triplet_rank_counts_by_suit(context).values().any(|counts| {
         let unique = counts.keys().copied().collect::<Vec<_>>();
         for step in [1, 2] {
             for rank in &unique {
@@ -2499,68 +2533,14 @@ fn has_pure_shifted_pungs(context: &FanContext) -> bool {
     })
 }
 fn has_four_pure_shifted_pungs(context: &FanContext) -> bool {
-    let mut grouped: HashMap<char, HashSet<i32>> = HashMap::new();
-    for (suit, rank) in suited_triplets(context) {
-        grouped.entry(suit).or_default().insert(rank);
-    }
-    grouped.values().any(|ranks| {
+    triplet_rank_sets_by_suit(context).values().any(|ranks| {
         ranks
             .iter()
             .any(|rank| (0..4).all(|offset| ranks.contains(&(rank + offset))))
     })
 }
 fn concealed_pung_count(context: &FanContext) -> usize {
-    let concealed_kongs = context
-        .kong_entries
-        .iter()
-        .filter(|entry| Some(entry.actor_seat) == context.winner_seat)
-        .filter(|entry| entry.kong_type == "concealed_kong")
-        .count();
-    let mut best_standard = 0usize;
-    for decomposition in &context.standard_decompositions {
-        let concealed_triplets = decomposition
-            .melds
-            .iter()
-            .filter(|meld| meld.len() == 3 && meld.iter().all(|tile_key| tile_key == &meld[0]))
-            .filter(|meld| {
-                context
-                    .concealed_tile_keys
-                    .iter()
-                    .filter(|tile_key| *tile_key == &meld[0])
-                    .count()
-                    >= 3
-            })
-            .count();
-        best_standard = best_standard.max(concealed_triplets);
-    }
-    best_standard + concealed_kongs
-}
-fn sequence_groups_by_suit(context: &FanContext) -> HashMap<char, Vec<(i32, Vec<String>)>> {
-    let mut grouped: HashMap<char, Vec<(i32, Vec<String>)>> = HashMap::new();
-    for decomposition in &context.standard_decompositions {
-        for meld in &decomposition.melds {
-            if meld.len() != 3 || !meld.iter().all(|tile_key| parse_suit(tile_key).is_some()) {
-                continue;
-            }
-            let Some((suit, _)) = parse_suit(&meld[0]) else {
-                continue;
-            };
-            let mut ranks = meld
-                .iter()
-                .filter_map(|tile_key| parse_suit(tile_key).map(|(_, rank)| rank))
-                .collect::<Vec<_>>();
-            ranks.sort_unstable();
-            if meld.iter().all(|tile_key| tile_key.starts_with(suit))
-                && ranks == vec![ranks[0], ranks[0] + 1, ranks[0] + 2]
-            {
-                grouped
-                    .entry(suit)
-                    .or_default()
-                    .push((ranks[0], meld.clone()));
-            }
-        }
-    }
-    grouped
+    context.standard_derived.concealed_pung_count
 }
 fn resolve_wait_types(
     standard_decompositions: &[Decomposition],
@@ -2619,143 +2599,129 @@ fn resolve_wait_types(
 }
 
 fn winning_tile_options(all_tile_keys: &[String], incoming_tile: &str) -> Vec<String> {
-    if all_tile_keys.len() != 14
-        || !all_tile_keys
-            .iter()
-            .any(|tile_key| tile_key == incoming_tile)
-    {
+    if all_tile_keys.len() != 14 {
         return vec![];
     }
-    let mut base_tile_keys = all_tile_keys.to_vec();
-    let Some(index) = base_tile_keys
-        .iter()
-        .position(|tile_key| tile_key == incoming_tile)
-    else {
+    let Some(mut counts) = tile_counts_array(all_tile_keys.iter().map(String::as_str)) else {
         return vec![];
     };
-    base_tile_keys.remove(index);
+    let Some(incoming_index) = tile_index(incoming_tile) else {
+        return vec![];
+    };
+    if counts[incoming_index] == 0 {
+        return vec![];
+    }
+    counts[incoming_index] -= 1;
 
     let mut winning_tiles = Vec::new();
-    for tile_key in STANDARD_WIN_TILE_KEYS {
-        if base_tile_keys
-            .iter()
-            .filter(|current| current.as_str() == tile_key)
-            .count()
-            >= 4
-        {
+    for tile_index in 0..TILE_KIND_COUNT {
+        if counts[tile_index] >= 4 {
             continue;
         }
-        let mut candidate = base_tile_keys.clone();
-        candidate.push(tile_key.to_string());
-        if is_winning_hand(&candidate) {
-            winning_tiles.push(tile_key.to_string());
+        counts[tile_index] += 1;
+        if is_winning_hand_from_counts(&counts) {
+            winning_tiles.push(tile_key_for_index(tile_index).to_string());
         }
+        counts[tile_index] -= 1;
     }
     winning_tiles
 }
 
-fn standard_decompositions_from_counts(counts: &BTreeMap<String, usize>) -> Vec<Decomposition> {
+fn standard_decompositions_from_counts(counts: &TileCounts) -> Vec<Decomposition> {
     let mut decompositions = Vec::new();
     let mut seen = HashSet::new();
-    for (tile_key, count) in counts {
-        if *count < 2 {
+    for pair_index in 0..TILE_KIND_COUNT {
+        if counts[pair_index] < 2 {
             continue;
         }
-        let mut next_counts = counts.clone();
-        decrement_count(&mut next_counts, tile_key, 2);
-        for melds in extract_all_melds(&next_counts) {
-            let mut canonical_melds = melds;
-            canonical_melds.sort();
-            let signature = format!(
-                "{tile_key}|{}",
-                canonical_melds
-                    .iter()
-                    .map(|meld| meld.join(","))
-                    .collect::<Vec<_>>()
-                    .join("|")
-            );
-            if seen.insert(signature) {
-                decompositions.push(Decomposition {
-                    kind: "standard".to_string(),
-                    pair: Some(tile_key.clone()),
-                    melds: canonical_melds,
-                    ..Default::default()
-                });
+        let mut next_counts = *counts;
+        next_counts[pair_index] -= 2;
+        let mut compact_results = Vec::new();
+        let mut current = Vec::with_capacity(4);
+        extract_all_melds(&mut next_counts, &mut current, &mut compact_results);
+        for mut melds in compact_results {
+            melds.sort_unstable();
+            let signature = StandardDecompositionSignature {
+                pair_index: pair_index as u8,
+                melds: melds.clone(),
+            };
+            if !seen.insert(signature) {
+                continue;
             }
+            decompositions.push(Decomposition {
+                kind: "standard".to_string(),
+                pair: Some(tile_key_for_index(pair_index).to_string()),
+                melds: compact_melds_to_tile_key_groups(&melds),
+                ..Default::default()
+            });
         }
     }
     decompositions
 }
 
-fn special_knitted_decompositions(counts: &BTreeMap<String, usize>) -> Vec<Decomposition> {
+fn special_knitted_decompositions(counts: &TileCounts) -> Vec<Decomposition> {
     let mut decompositions = Vec::new();
     let mut seen = HashSet::new();
-    let is_all_singletons = counts.values().all(|count| *count == 1);
-    let honor_tiles = counts
-        .keys()
-        .filter(|tile_key| HONOR_KEYS.contains(&tile_key.as_str()))
-        .cloned()
+    let is_all_singletons = counts.iter().all(|count| *count <= 1);
+    let honor_tiles = nonzero_tile_indices(counts)
+        .filter(|index| is_honor_tile(*index))
+        .map(|index| tile_key_for_index(index).to_string())
         .collect::<Vec<_>>();
 
     for pattern in KNITTED_PATTERNS {
-        if pattern
-            .iter()
-            .all(|tile_key| counts.get(*tile_key).copied().unwrap_or(0) >= 1)
-        {
-            let mut remaining = counts.clone();
-            for tile_key in pattern {
-                decrement_count(&mut remaining, tile_key, 1);
+        let pattern_indices = knitted_pattern_indices(&pattern);
+        if pattern_indices.iter().all(|index| counts[*index] > 0) {
+            let mut remaining = *counts;
+            for index in pattern_indices {
+                remaining[index] -= 1;
             }
-            if !remaining.is_empty() {
-                let remaining_honors = remaining
-                    .keys()
-                    .filter(|tile_key| HONOR_KEYS.contains(&tile_key.as_str()))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if remaining
-                    .keys()
-                    .all(|tile_key| HONOR_KEYS.contains(&tile_key.as_str()))
-                    && remaining.len() == 5
-                    && remaining.values().all(|count| *count == 1)
-                {
-                    let signature = format!(
-                        "knitted_straight|{}|{}",
-                        pattern.join(","),
-                        remaining.keys().cloned().collect::<Vec<_>>().join(",")
-                    );
-                    if seen.insert(signature) {
-                        decompositions.push(Decomposition {
-                            kind: "knitted_straight".to_string(),
-                            pattern_tiles: pattern
-                                .iter()
-                                .map(|tile_key| (*tile_key).to_string())
-                                .collect(),
-                            honor_tiles: remaining_honors,
-                            completion_kind: Some("honours".to_string()),
-                            ..Default::default()
-                        });
-                    }
+            let remaining_honors = nonzero_tile_indices(&remaining)
+                .filter(|index| is_honor_tile(*index))
+                .map(|index| tile_key_for_index(index).to_string())
+                .collect::<Vec<_>>();
+            if total_tile_count(&remaining) == 5
+                && nonzero_tile_indices(&remaining).all(is_honor_tile)
+                && remaining_honors.len() == 5
+                && nonzero_tile_indices(&remaining).all(|index| remaining[index] == 1)
+            {
+                let signature = format!(
+                    "knitted_straight|{}|{}",
+                    pattern.join(","),
+                    remaining_honors.join(",")
+                );
+                if seen.insert(signature) {
+                    decompositions.push(Decomposition {
+                        kind: "knitted_straight".to_string(),
+                        pattern_tiles: pattern
+                            .iter()
+                            .map(|tile_key| (*tile_key).to_string())
+                            .collect(),
+                        honor_tiles: remaining_honors,
+                        completion_kind: Some("honours".to_string()),
+                        ..Default::default()
+                    });
                 }
-                if let Some(completion) = five_tile_completion_detail(&remaining) {
-                    let signature = format!(
-                        "knitted_straight|{}|{}|{}",
-                        pattern.join(","),
-                        completion.pair,
-                        completion.meld.join(",")
-                    );
-                    if seen.insert(signature) {
-                        decompositions.push(Decomposition {
-                            kind: "knitted_straight".to_string(),
-                            pattern_tiles: pattern
-                                .iter()
-                                .map(|tile_key| (*tile_key).to_string())
-                                .collect(),
-                            pair: Some(completion.pair),
-                            meld: completion.meld,
-                            completion_kind: Some(completion.completion_kind),
-                            ..Default::default()
-                        });
-                    }
+            }
+            if let Some(completion) = five_tile_completion_detail(&remaining) {
+                let meld_tile_keys = compact_meld_to_tile_keys(completion.meld);
+                let signature = format!(
+                    "knitted_straight|{}|{}|{}",
+                    pattern.join(","),
+                    tile_key_for_index(completion.pair_index as usize),
+                    meld_tile_keys.join(",")
+                );
+                if seen.insert(signature) {
+                    decompositions.push(Decomposition {
+                        kind: "knitted_straight".to_string(),
+                        pattern_tiles: pattern
+                            .iter()
+                            .map(|tile_key| (*tile_key).to_string())
+                            .collect(),
+                        pair: Some(tile_key_for_index(completion.pair_index as usize).to_string()),
+                        meld: meld_tile_keys,
+                        completion_kind: Some(completion.completion_kind.to_string()),
+                        ..Default::default()
+                    });
                 }
             }
         }
@@ -2763,10 +2729,9 @@ fn special_knitted_decompositions(counts: &BTreeMap<String, usize>) -> Vec<Decom
         if !is_all_singletons {
             continue;
         }
-        let suit_tiles = counts
-            .keys()
-            .filter(|tile_key| !HONOR_KEYS.contains(&tile_key.as_str()))
-            .cloned()
+        let suit_tiles = nonzero_tile_indices(counts)
+            .filter(|index| !is_honor_tile(*index))
+            .map(|index| tile_key_for_index(index).to_string())
             .collect::<Vec<_>>();
         if !suit_tiles
             .iter()
@@ -2803,138 +2768,139 @@ fn special_knitted_decompositions(counts: &BTreeMap<String, usize>) -> Vec<Decom
     decompositions
 }
 
-struct FiveTileCompletion {
-    pair: String,
-    meld: Vec<String>,
-    completion_kind: String,
-}
-
-fn five_tile_completion_detail(counts: &BTreeMap<String, usize>) -> Option<FiveTileCompletion> {
-    if counts.values().sum::<usize>() != 5 {
+fn five_tile_completion_detail(counts: &TileCounts) -> Option<FiveTileCompletion> {
+    if total_tile_count(counts) != 5 {
         return None;
     }
-    for (pair_tile, count) in counts {
-        if *count < 2 {
+    for pair_index in 0..TILE_KIND_COUNT {
+        if counts[pair_index] < 2 {
             continue;
         }
-        let mut next_counts = counts.clone();
-        decrement_count(&mut next_counts, pair_tile, 2);
-        if next_counts.len() == 1 {
-            let (meld_tile, meld_count) = next_counts.iter().next()?;
-            if *meld_count == 3 {
-                return Some(FiveTileCompletion {
-                    pair: pair_tile.clone(),
-                    meld: vec![meld_tile.clone(), meld_tile.clone(), meld_tile.clone()],
-                    completion_kind: "pung_and_pair".to_string(),
-                });
-            }
-        }
-        let melds = extract_all_melds(&next_counts);
-        if let Some(meld) = melds.first().and_then(|entry| entry.first()) {
+        let mut next_counts = *counts;
+        next_counts[pair_index] -= 2;
+        if let Some(meld) = single_meld(&next_counts) {
             return Some(FiveTileCompletion {
-                pair: pair_tile.clone(),
-                completion_kind: if meld.iter().collect::<HashSet<_>>().len() == 3 {
-                    "chow_and_pair".to_string()
+                pair_index: pair_index as u8,
+                completion_kind: if is_triplet_meld(meld) {
+                    "pung_and_pair"
                 } else {
-                    "pung_and_pair".to_string()
+                    "chow_and_pair"
                 },
-                meld: meld.clone(),
+                meld,
             });
         }
     }
     None
 }
 
-fn extract_all_melds(counts: &BTreeMap<String, usize>) -> Vec<Vec<Vec<String>>> {
-    if counts.is_empty() {
-        return vec![vec![]];
+fn extract_all_melds(
+    counts: &mut TileCounts,
+    current: &mut Vec<CompactMeld>,
+    results: &mut Vec<Vec<CompactMeld>>,
+) {
+    let Some(tile_index) = first_nonzero_tile_index(counts) else {
+        results.push(current.clone());
+        return;
+    };
+    if counts[tile_index] >= 3 {
+        counts[tile_index] -= 3;
+        current.push(triplet_meld(tile_index));
+        extract_all_melds(counts, current, results);
+        current.pop();
+        counts[tile_index] += 3;
     }
-    let tile_key = counts.keys().next().cloned().unwrap_or_default();
-    let count = counts.get(&tile_key).copied().unwrap_or(0);
-    if count == 0 {
-        let mut next = counts.clone();
-        next.remove(&tile_key);
-        return extract_all_melds(&next);
-    }
-    let mut results = Vec::new();
-    if count >= 3 {
-        let mut next = counts.clone();
-        decrement_count(&mut next, &tile_key, 3);
-        for melds in extract_all_melds(&next) {
-            let mut current = vec![vec![tile_key.clone(), tile_key.clone(), tile_key.clone()]];
-            current.extend(melds);
-            results.push(current);
+    if let Some((second, third)) = sequence_tile_indices(tile_index) {
+        if counts[second] > 0 && counts[third] > 0 {
+            counts[tile_index] -= 1;
+            counts[second] -= 1;
+            counts[third] -= 1;
+            current.push(sequence_meld(tile_index));
+            extract_all_melds(counts, current, results);
+            current.pop();
+            counts[tile_index] += 1;
+            counts[second] += 1;
+            counts[third] += 1;
         }
     }
-    if let Some((prefix, rank)) = parse_suit(&tile_key) {
-        if rank <= 7 {
-            let second = format!("{prefix}{}", rank + 1);
-            let third = format!("{prefix}{}", rank + 2);
-            if counts.get(&second).copied().unwrap_or(0) > 0
-                && counts.get(&third).copied().unwrap_or(0) > 0
-            {
-                let mut next = counts.clone();
-                decrement_count(&mut next, &tile_key, 1);
-                decrement_count(&mut next, &second, 1);
-                decrement_count(&mut next, &third, 1);
-                for melds in extract_all_melds(&next) {
-                    let mut current = vec![vec![tile_key.clone(), second.clone(), third.clone()]];
-                    current.extend(melds);
-                    results.push(current);
-                }
-            }
-        }
-    }
-    results
 }
 
-fn is_seven_pairs(counts: &BTreeMap<String, usize>) -> bool {
-    if counts.values().sum::<usize>() != 14 {
+fn extract_first_melds(counts: &mut TileCounts, melds: &mut Vec<CompactMeld>) -> bool {
+    let Some(tile_index) = first_nonzero_tile_index(counts) else {
+        return true;
+    };
+    if counts[tile_index] >= 3 {
+        counts[tile_index] -= 3;
+        melds.push(triplet_meld(tile_index));
+        if extract_first_melds(counts, melds) {
+            return true;
+        }
+        melds.pop();
+        counts[tile_index] += 3;
+    }
+    if let Some((second, third)) = sequence_tile_indices(tile_index) {
+        if counts[second] > 0 && counts[third] > 0 {
+            counts[tile_index] -= 1;
+            counts[second] -= 1;
+            counts[third] -= 1;
+            melds.push(sequence_meld(tile_index));
+            if extract_first_melds(counts, melds) {
+                return true;
+            }
+            melds.pop();
+            counts[tile_index] += 1;
+            counts[second] += 1;
+            counts[third] += 1;
+        }
+    }
+    false
+}
+
+fn is_seven_pairs(counts: &TileCounts) -> bool {
+    if total_tile_count(counts) != 14 {
         return false;
     }
     let mut pair_count = 0usize;
-    for count in counts.values() {
+    for count in counts {
         if !matches!(*count, 2 | 4) {
             return false;
         }
-        pair_count += count / 2;
+        pair_count += usize::from(*count / 2);
     }
     pair_count == 7
 }
 
-fn seven_pairs_pair_tiles(counts: &BTreeMap<String, usize>) -> Vec<String> {
+fn seven_pairs_pair_tiles(counts: &TileCounts) -> Vec<String> {
     let mut pair_tiles = Vec::new();
-    for (tile_key, count) in counts {
-        for _ in 0..(count / 2) {
-            pair_tiles.push(tile_key.clone());
+    for (tile_index, count) in counts.iter().enumerate() {
+        for _ in 0..usize::from(*count / 2) {
+            pair_tiles.push(tile_key_for_index(tile_index).to_string());
         }
     }
     pair_tiles
 }
 
-fn is_thirteen_orphans(counts: &BTreeMap<String, usize>) -> bool {
-    let required = [
-        "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red", "green",
-        "white",
-    ];
-    if counts
-        .keys()
-        .any(|tile_key| !required.contains(&tile_key.as_str()))
-    {
+fn is_thirteen_orphans(counts: &TileCounts) -> bool {
+    if total_tile_count(counts) != 14 {
         return false;
     }
-    if required
-        .iter()
-        .any(|tile_key| counts.get(*tile_key).copied().unwrap_or(0) == 0)
-    {
-        return false;
+    let mut pair_count = 0usize;
+    for tile_index in 0..TILE_KIND_COUNT {
+        let count = counts[tile_index];
+        if count == 0 {
+            continue;
+        }
+        if !THIRTEEN_ORPHAN_INDICES.contains(&tile_index) {
+            return false;
+        }
     }
-    counts.values().sum::<usize>() == 14
-        && required
-            .iter()
-            .filter(|tile_key| counts.get(**tile_key).copied().unwrap_or(0) == 2)
-            .count()
-            == 1
+    for tile_index in THIRTEEN_ORPHAN_INDICES {
+        match counts[tile_index] {
+            1 => {}
+            2 => pair_count += 1,
+            _ => return false,
+        }
+    }
+    pair_count == 1
 }
 
 fn normalize_meld_tile_key_group(meld_tile_keys: &[String]) -> Option<Vec<String>> {
@@ -2951,22 +2917,224 @@ fn normalize_meld_tile_key_group(meld_tile_keys: &[String]) -> Option<Vec<String
     None
 }
 
-fn tile_counts<'a>(tile_keys: impl Iterator<Item = &'a str>) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::new();
+fn tile_counts_array<'a>(tile_keys: impl Iterator<Item = &'a str>) -> Option<TileCounts> {
+    let mut counts = [0_u8; TILE_KIND_COUNT];
     for tile_key in tile_keys {
-        *counts.entry(tile_key.to_string()).or_insert(0) += 1;
+        let tile_index = tile_index(tile_key)?;
+        counts[tile_index] = counts[tile_index].saturating_add(1);
     }
-    counts
+    Some(counts)
 }
 
-fn decrement_count(counts: &mut BTreeMap<String, usize>, tile_key: &str, amount: usize) {
-    if let Some(count) = counts.get_mut(tile_key) {
-        if *count <= amount {
-            counts.remove(tile_key);
-        } else {
-            *count -= amount;
+fn tile_index(tile_key: &str) -> Option<usize> {
+    match tile_key {
+        "east" => Some(27),
+        "south" => Some(28),
+        "west" => Some(29),
+        "north" => Some(30),
+        "red" => Some(31),
+        "green" => Some(32),
+        "white" => Some(33),
+        _ => {
+            let bytes = tile_key.as_bytes();
+            if bytes.len() != 2 {
+                return None;
+            }
+            let suit_offset = match bytes[0] {
+                b'w' => 0,
+                b't' => 9,
+                b'b' => 18,
+                _ => return None,
+            };
+            let rank = usize::from(bytes[1].checked_sub(b'0')?);
+            if !(1..=9).contains(&rank) {
+                return None;
+            }
+            Some(suit_offset + rank - 1)
         }
     }
+}
+
+fn tile_key_for_index(tile_index: usize) -> &'static str {
+    STANDARD_WIN_TILE_KEYS
+        .get(tile_index)
+        .copied()
+        .unwrap_or_default()
+}
+
+fn total_tile_count(counts: &TileCounts) -> usize {
+    counts.iter().map(|count| usize::from(*count)).sum()
+}
+
+fn first_nonzero_tile_index(counts: &TileCounts) -> Option<usize> {
+    counts.iter().position(|count| *count > 0)
+}
+
+fn nonzero_tile_indices(counts: &TileCounts) -> impl Iterator<Item = usize> + '_ {
+    counts
+        .iter()
+        .enumerate()
+        .filter(|(_, count)| **count > 0)
+        .map(|(index, _)| index)
+}
+
+fn is_honor_tile(tile_index: usize) -> bool {
+    tile_index >= HONOR_TILE_START
+}
+
+fn sequence_tile_indices(tile_index: usize) -> Option<(usize, usize)> {
+    if tile_index >= HONOR_TILE_START || tile_index % 9 >= 7 {
+        return None;
+    }
+    Some((tile_index + 1, tile_index + 2))
+}
+
+fn triplet_meld(tile_index: usize) -> CompactMeld {
+    CompactMeld([tile_index as u8, tile_index as u8, tile_index as u8])
+}
+
+fn sequence_meld(tile_index: usize) -> CompactMeld {
+    CompactMeld([
+        tile_index as u8,
+        (tile_index + 1) as u8,
+        (tile_index + 2) as u8,
+    ])
+}
+
+fn is_triplet_meld(meld: CompactMeld) -> bool {
+    meld.0[0] == meld.0[1]
+}
+
+fn compact_meld_to_tile_keys(meld: CompactMeld) -> Vec<String> {
+    meld.0
+        .iter()
+        .map(|tile_index| tile_key_for_index(usize::from(*tile_index)).to_string())
+        .collect()
+}
+
+fn compact_melds_to_tile_key_groups(melds: &[CompactMeld]) -> Vec<Vec<String>> {
+    melds
+        .iter()
+        .copied()
+        .map(compact_meld_to_tile_keys)
+        .collect()
+}
+
+fn first_standard_decomposition_from_counts(counts: &TileCounts) -> Option<Decomposition> {
+    for pair_index in 0..TILE_KIND_COUNT {
+        if counts[pair_index] < 2 {
+            continue;
+        }
+        let mut next_counts = *counts;
+        next_counts[pair_index] -= 2;
+        let mut melds = Vec::with_capacity(4);
+        if extract_first_melds(&mut next_counts, &mut melds) {
+            return Some(Decomposition {
+                kind: "standard".to_string(),
+                pair: Some(tile_key_for_index(pair_index).to_string()),
+                melds: compact_melds_to_tile_key_groups(&melds),
+                ..Default::default()
+            });
+        }
+    }
+    None
+}
+
+fn has_standard_winning_hand(counts: &TileCounts) -> bool {
+    for pair_index in 0..TILE_KIND_COUNT {
+        if counts[pair_index] < 2 {
+            continue;
+        }
+        let mut next_counts = *counts;
+        next_counts[pair_index] -= 2;
+        let mut melds = Vec::with_capacity(4);
+        if extract_first_melds(&mut next_counts, &mut melds) {
+            return true;
+        }
+    }
+    false
+}
+
+fn has_special_knitted_winning(counts: &TileCounts) -> bool {
+    let is_all_singletons = counts.iter().all(|count| *count <= 1);
+    let honour_count = nonzero_tile_indices(counts)
+        .filter(|index| is_honor_tile(*index))
+        .count();
+    let suited_indices = nonzero_tile_indices(counts)
+        .filter(|index| !is_honor_tile(*index))
+        .collect::<Vec<_>>();
+
+    for pattern in KNITTED_PATTERNS {
+        let pattern_indices = knitted_pattern_indices(&pattern);
+        if pattern_indices.iter().all(|index| counts[*index] > 0) {
+            let mut remaining = *counts;
+            for index in pattern_indices {
+                remaining[index] -= 1;
+            }
+            let remaining_nonzero = nonzero_tile_indices(&remaining).collect::<Vec<_>>();
+            if total_tile_count(&remaining) == 5
+                && remaining_nonzero.len() == 5
+                && remaining_nonzero
+                    .iter()
+                    .all(|index| is_honor_tile(*index) && remaining[*index] == 1)
+            {
+                return true;
+            }
+            if five_tile_completion_detail(&remaining).is_some() {
+                return true;
+            }
+        }
+
+        if !is_all_singletons {
+            continue;
+        }
+        if suited_indices
+            .iter()
+            .all(|index| pattern_indices.contains(index))
+        {
+            if honour_count >= 5 {
+                return true;
+            }
+            if honour_count == 7
+                && (HONOR_TILE_START..TILE_KIND_COUNT).all(|index| counts[index] == 1)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_winning_hand_from_counts(counts: &TileCounts) -> bool {
+    total_tile_count(counts) == 14
+        && (is_seven_pairs(counts)
+            || is_thirteen_orphans(counts)
+            || has_special_knitted_winning(counts)
+            || has_standard_winning_hand(counts))
+}
+
+fn knitted_pattern_indices(pattern: &[&str; 9]) -> [usize; 9] {
+    let mut indices = [0_usize; 9];
+    for (slot, tile_key) in pattern.iter().enumerate() {
+        indices[slot] = tile_index(tile_key).expect("knitted pattern tile keys should be valid");
+    }
+    indices
+}
+
+fn single_meld(counts: &TileCounts) -> Option<CompactMeld> {
+    if total_tile_count(counts) != 3 {
+        return None;
+    }
+    let tile_index = first_nonzero_tile_index(counts)?;
+    if counts[tile_index] == 3 {
+        return Some(triplet_meld(tile_index));
+    }
+    if let Some((second, third)) = sequence_tile_indices(tile_index) {
+        if counts[tile_index] == 1 && counts[second] == 1 && counts[third] == 1 {
+            return Some(sequence_meld(tile_index));
+        }
+    }
+    None
 }
 
 fn score_map_value(values: &[i64]) -> Value {
@@ -2975,6 +3143,28 @@ fn score_map_value(values: &[i64]) -> Value {
         map.insert(seat.to_string(), Value::Number((*value).into()));
     }
     Value::Object(map)
+}
+
+fn sequence_meld_start(meld_tile_keys: &[String]) -> Option<(char, i32)> {
+    if meld_tile_keys.len() != 3 {
+        return None;
+    }
+    let mut parsed = meld_tile_keys
+        .iter()
+        .filter_map(|tile_key| parse_suit(tile_key))
+        .collect::<Vec<_>>();
+    if parsed.len() != 3 {
+        return None;
+    }
+    parsed.sort_by(|left, right| left.1.cmp(&right.1));
+    let suit = parsed[0].0;
+    if parsed.iter().all(|(current_suit, _)| *current_suit == suit)
+        && parsed[0].1 + 1 == parsed[1].1
+        && parsed[1].1 + 1 == parsed[2].1
+    {
+        return Some((suit, parsed[0].1));
+    }
+    None
 }
 
 fn meld_is_sequence(meld_tile_keys: &[String]) -> bool {
@@ -3025,11 +3215,6 @@ fn is_terminal_or_honour(tile_key: &str) -> bool {
 fn is_terminal(tile_key: &str) -> bool {
     parse_suit(tile_key)
         .map(|(_, rank)| matches!(rank, 1 | 9))
-        .unwrap_or(false)
-}
-fn is_even_tile(tile_key: &str) -> bool {
-    parse_suit(tile_key)
-        .map(|(_, rank)| matches!(rank, 2 | 4 | 6 | 8))
         .unwrap_or(false)
 }
 
