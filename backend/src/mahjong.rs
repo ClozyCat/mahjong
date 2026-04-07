@@ -1,3 +1,8 @@
+use crate::bot::{
+    self, BotAction, BotClaimOption, BotContext as EngineBotContext,
+    BotPlayerContext as EngineBotPlayerContext, BotSelfKongCandidate as SelfKongCandidate,
+    BotSelfKongKind as SelfKongKind, BotTileView,
+};
 use crate::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
     KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
@@ -25,26 +30,7 @@ const HONOR_TILE_START: usize = 27;
 
 type TileCounts = [u8; TILE_KIND_COUNT];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SelfKongKind {
-    Concealed,
-    Add,
-}
-
-#[derive(Clone)]
-struct SelfKongCandidate {
-    kind: SelfKongKind,
-    tile_ids: Vec<String>,
-    tile_key: String,
-    meld_index: Option<usize>,
-}
-
-#[derive(Clone)]
-pub struct BotAction {
-    pub seat_index: usize,
-    pub action_type: String,
-    pub tile_ids: Vec<String>,
-}
+type ConcealedTileView = BotTileView;
 
 struct PreparedWinEvaluation {
     concealed_tile_keys: Vec<String>,
@@ -56,18 +42,11 @@ struct PreparedWinEvaluation {
 }
 
 struct RoomScoringPlayer {
-    concealed_tiles: Vec<ConcealedTileView>,
+    concealed_tiles: Vec<BotTileView>,
     concealed_tile_keys: Vec<String>,
     concealed_tile_counts: TileCounts,
     meld_tile_key_groups: Vec<Vec<String>>,
     flower_count: usize,
-}
-
-#[derive(Clone)]
-struct ConcealedTileView {
-    tile_id: String,
-    tile_key: String,
-    is_flower: bool,
 }
 
 struct RoomScoringCache {
@@ -287,22 +266,7 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
                     tile_ids: vec![tile_id],
                 });
             }
-            if let Some(selection) = available_self_kongs_from_cache(&cache, seat_index)
-                .into_iter()
-                .next()
-            {
-                return Some(BotAction {
-                    seat_index,
-                    action_type: "kong".to_string(),
-                    tile_ids: selection.tile_ids,
-                });
-            }
-            let tile_id = choose_bot_discard_tile_id_with_cache(room, &cache, seat_index)?;
-            Some(BotAction {
-                seat_index,
-                action_type: "discard".to_string(),
-                tile_ids: vec![tile_id],
-            })
+            choose_bot_active_turn_action_with_cache(room, &cache, seat_index)
         }
         "claim_window" => {
             let pending_action = room
@@ -4137,34 +4101,168 @@ fn is_bot_seat(room: &Value, seat_index: usize) -> bool {
         .unwrap_or(false)
 }
 
-fn choose_bot_discard_tile_id_with_cache(
+fn build_bot_context_from_cache(
     room: &Value,
     cache: &RoomScoringCache,
     seat_index: usize,
-) -> Option<String> {
-    let restricted_discard_tile_key = room
-        .get("round_state")
-        .and_then(|round| round.get("restricted_discard_tile_key"))
-        .and_then(Value::as_str);
-    let drawn_tile_id = room
-        .get("pending_timeout")
-        .and_then(|timeout| timeout.get("drawn_tile_id"))
-        .and_then(Value::as_str);
-    let concealed_tiles = &cache.player(seat_index)?.concealed_tiles;
+    claim_options: Vec<BotClaimOption>,
+    self_kong_candidates: Vec<SelfKongCandidate>,
+) -> Option<EngineBotContext> {
+    let player = cache.player(seat_index)?;
+    let add_kong_risk_tiles = self_kong_candidates
+        .iter()
+        .filter(|candidate| candidate.kind == SelfKongKind::Add)
+        .filter(|candidate| {
+            !seats_with_hu_candidate_for_tile(room, seat_index, &candidate.tile_key).is_empty()
+        })
+        .map(|candidate| candidate.tile_key.clone())
+        .collect::<HashSet<_>>();
+    Some(EngineBotContext {
+        seat_index,
+        seat_count: cache.seat_count,
+        dealer_seat: cache.dealer_seat,
+        round_wind: cache.round_wind.clone(),
+        visible_tile_keys: cache.visible_tile_keys.clone(),
+        opponent_discards_by_seat: room
+            .get("round_state")
+            .and_then(|round| round.get("players"))
+            .and_then(Value::as_array)
+            .map(|players| {
+                players
+                    .iter()
+                    .map(|player| {
+                        player
+                            .get("discards")
+                            .and_then(Value::as_array)
+                            .map(|tiles| {
+                                tiles
+                                    .iter()
+                                    .filter_map(|tile| {
+                                        tile.get("tile_key")
+                                            .and_then(Value::as_str)
+                                            .map(ToString::to_string)
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        kong_entries: cache.kong_entries.clone(),
+        player: EngineBotPlayerContext {
+            concealed_tiles: player.concealed_tiles.clone(),
+            concealed_tile_counts: player.concealed_tile_counts,
+            meld_tile_key_groups: player.meld_tile_key_groups.clone(),
+            flower_count: player.flower_count,
+        },
+        restricted_discard_tile_key: room
+            .get("round_state")
+            .and_then(|round| round.get("restricted_discard_tile_key"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        drawn_tile_id: room
+            .get("pending_timeout")
+            .and_then(|timeout| timeout.get("drawn_tile_id"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        enforce_minimum_eight_fan: room_enforces_minimum_eight_fan(room),
+        self_kong_candidates,
+        claim_options,
+        last_discard_tile_key: room
+            .get("round_state")
+            .and_then(|round| round.get("last_discard"))
+            .and_then(|discard| discard.get("tile_key"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        add_kong_risk_tiles,
+    })
+}
 
-    if let Some(tile_id) = drawn_tile_id {
-        if let Some(tile) = concealed_tiles.iter().find(|tile| tile.tile_id == tile_id) {
-            if !tile.is_flower && Some(tile.tile_key.as_str()) != restricted_discard_tile_key {
-                return Some(tile.tile_id.clone());
-            }
-        }
+fn choose_bot_active_turn_action_with_cache(
+    room: &Value,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Option<BotAction> {
+    let bot_context = build_bot_context_from_cache(
+        room,
+        cache,
+        seat_index,
+        Vec::new(),
+        available_self_kongs_from_cache(cache, seat_index),
+    )?;
+    bot::choose_active_turn_action(&bot_context)
+}
+
+fn room_enforces_minimum_eight_fan(room: &Value) -> bool {
+    room.get("round_state")
+        .and_then(|round| round.get("enforce_minimum_eight_fan"))
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            room.get("enforce_minimum_eight_fan")
+                .and_then(Value::as_bool)
+        })
+        .unwrap_or(true)
+}
+
+
+fn claim_tile_id_options_with_cache(
+    room: &Value,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+    action_type: &str,
+) -> Vec<Vec<String>> {
+    let last_discard = room
+        .get("round_state")
+        .and_then(|round| round.get("last_discard"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let Some(discard_tile_key) = last_discard.get("tile_key").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let Some(player) = cache.player(seat_index) else {
+        return Vec::new();
+    };
+    let concealed_tiles = &player.concealed_tiles;
+
+    if action_type == "pung" || action_type == "kong" {
+        let needed = if action_type == "pung" { 2 } else { 3 };
+        let tile_ids = concealed_tiles
+            .iter()
+            .filter(|tile| tile.tile_key == discard_tile_key)
+            .map(|tile| tile.tile_id.clone())
+            .take(needed)
+            .collect::<Vec<_>>();
+        return (tile_ids.len() == needed).then_some(tile_ids).into_iter().collect();
     }
 
-    concealed_tiles
-        .iter()
-        .rev()
-        .find(|tile| !tile.is_flower && Some(tile.tile_key.as_str()) != restricted_discard_tile_key)
-        .map(|tile| tile.tile_id.clone())
+    if action_type == "chow" {
+        let Some(discard_index) = tile_index(discard_tile_key) else {
+            return Vec::new();
+        };
+        let mut options = Vec::new();
+        for (first_index, second_index) in chow_required_tile_pairs(discard_index) {
+            let first_key = tile_key_for_index(first_index);
+            let second_key = tile_key_for_index(second_index);
+            let mut first_tile_id = None;
+            let mut second_tile_id = None;
+            for tile in concealed_tiles {
+                if first_tile_id.is_none() && tile.tile_key == first_key {
+                    first_tile_id = Some(tile.tile_id.clone());
+                    continue;
+                }
+                if second_tile_id.is_none() && tile.tile_key == second_key {
+                    second_tile_id = Some(tile.tile_id.clone());
+                }
+            }
+            if let (Some(first), Some(second)) = (first_tile_id, second_tile_id) {
+                options.push(vec![first, second]);
+            }
+        }
+        return options;
+    }
+
+    Vec::new()
 }
 
 fn choose_bot_claim_action_with_cache(
@@ -4182,76 +4280,21 @@ fn choose_bot_claim_action_with_cache(
             tile_ids: vec![],
         });
     }
-
-    for claim_type in ["kong", "pung", "chow"] {
-        if !claim_window_offers_claim(pending_action, seat_index, claim_type) {
-            continue;
-        }
-        if let Some(tile_ids) =
-            choose_bot_claim_tile_ids_with_cache(room, cache, seat_index, claim_type)
-        {
-            return Some(BotAction {
-                seat_index,
-                action_type: claim_type.to_string(),
-                tile_ids,
-            });
-        }
-    }
-
-    Some(BotAction {
-        seat_index,
-        action_type: "pass".to_string(),
-        tile_ids: vec![],
-    })
-}
-
-fn choose_bot_claim_tile_ids_with_cache(
-    room: &Value,
-    cache: &RoomScoringCache,
-    seat_index: usize,
-    action_type: &str,
-) -> Option<Vec<String>> {
-    let last_discard = room
-        .get("round_state")
-        .and_then(|round| round.get("last_discard"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let discard_tile_key = last_discard.get("tile_key").and_then(Value::as_str)?;
-    let concealed_tiles = &cache.player(seat_index)?.concealed_tiles;
-
-    if action_type == "pung" || action_type == "kong" {
-        let needed = if action_type == "pung" { 2 } else { 3 };
-        let tile_ids = concealed_tiles
-            .iter()
-            .filter(|tile| tile.tile_key == discard_tile_key)
-            .map(|tile| tile.tile_id.clone())
-            .take(needed)
-            .collect::<Vec<_>>();
-        return (tile_ids.len() == needed).then_some(tile_ids);
-    }
-
-    if action_type == "chow" {
-        let discard_index = tile_index(discard_tile_key)?;
-        for (first_index, second_index) in chow_required_tile_pairs(discard_index) {
-            let first_key = tile_key_for_index(first_index);
-            let second_key = tile_key_for_index(second_index);
-            let mut first_tile_id = None;
-            let mut second_tile_id = None;
-            for tile in concealed_tiles {
-                if first_tile_id.is_none() && tile.tile_key == first_key {
-                    first_tile_id = Some(tile.tile_id.clone());
-                    continue;
-                }
-                if second_tile_id.is_none() && tile.tile_key == second_key {
-                    second_tile_id = Some(tile.tile_id.clone());
-                }
-                if first_tile_id.is_some() && second_tile_id.is_some() {
-                    return Some(vec![first_tile_id?, second_tile_id?]);
-                }
-            }
-        }
-    }
-    None
+    let claim_options = ["kong", "pung", "chow"]
+        .into_iter()
+        .filter(|claim_type| claim_window_offers_claim(pending_action, seat_index, claim_type))
+        .flat_map(|claim_type| {
+            claim_tile_id_options_with_cache(room, cache, seat_index, claim_type)
+                .into_iter()
+                .map(move |tile_ids| BotClaimOption {
+                    action_type: claim_type.to_string(),
+                    tile_ids,
+                })
+        })
+        .collect::<Vec<_>>();
+    let bot_context =
+        build_bot_context_from_cache(room, cache, seat_index, claim_options, Vec::new())?;
+    bot::choose_claim_action(&bot_context)
 }
 
 fn round_score_state(room: &Value) -> Value {
@@ -4711,6 +4754,21 @@ mod tests {
         let mut room = room_for_local_discard();
         room["seats"][0]["is_bot"] = json!(true);
         room["seats"][0]["seat_type"] = json!("bot");
+        room
+    }
+
+    fn room_for_bot_shape_choice() -> Value {
+        let mut room = room_for_bot_active_turn();
+        room["round_state"]["players"][0]["concealed_tiles"] = json!([
+            suit("w1", "w1#a"), suit("w2", "w2#a"), suit("w3", "w3#a"),
+            suit("t1", "t1#a"), suit("t2", "t2#a"), suit("t3", "t3#a"),
+            suit("b1", "b1#a"), suit("b2", "b2#a"), suit("b3", "b3#a"),
+            suit("w5", "w5#p1"), suit("w5", "w5#p2"), suit("w6", "w6#shape"),
+            wind("east", "east#isolated"),
+            suit("w7", "w7#draw")
+        ]);
+        room["round_state"]["last_action_context"]["tile_id"] = json!("w7#draw");
+        room["pending_timeout"]["drawn_tile_id"] = json!("w7#draw");
         room
     }
 
@@ -5202,6 +5260,16 @@ mod tests {
     }
 
     #[test]
+    fn next_bot_action_keeps_shape_and_discards_isolated_honor() {
+        let room = room_for_bot_shape_choice();
+        let action = next_bot_action(&room).expect("bot action should exist");
+
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "discard");
+        assert_eq!(action.tile_ids, vec!["east#isolated"]);
+    }
+
+    #[test]
     fn local_add_kong_without_robbers_upgrades_existing_meld() {
         let mut room = room_for_local_add_kong_without_robbers();
         let prompt = action_prompt(&room, 0).expect("prompt should exist");
@@ -5258,6 +5326,17 @@ mod tests {
         assert_eq!(action.seat_index, 1);
         assert_eq!(action.action_type, "hu");
         assert!(action.tile_ids.is_empty());
+    }
+
+    #[test]
+    fn next_bot_action_avoids_add_kong_when_robbers_exist() {
+        let mut room = room_for_local_add_kong_with_robber();
+        room["seats"][0]["is_bot"] = json!(true);
+        room["seats"][0]["seat_type"] = json!("bot");
+
+        let action = next_bot_action(&room).expect("bot action should exist");
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "discard");
     }
 
     #[test]

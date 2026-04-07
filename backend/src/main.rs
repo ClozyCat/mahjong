@@ -1,3 +1,4 @@
+mod bot;
 mod mahjong;
 mod scoring;
 
