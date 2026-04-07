@@ -5,7 +5,7 @@ use crate::core::error::EngineError;
 use crate::core::ids::{Seat, TileKey};
 use crate::core::tile::Tile;
 
-use super::{array, bool_or, i64_opt, string_opt, usize_or, SkillLoadout};
+use super::{SkillLoadout, array, bool_or, i64_opt, string_opt, usize_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SeatState {

@@ -331,7 +331,10 @@ fn private_round_state(
         dealer_seat: round.dealer_seat,
         current_actor: round.current_actor,
         wall_tiles_remaining: round.wall.live_tiles_remaining(),
-        last_discard: round.last_discard.as_ref().map(|tile| tile.tile_key.clone()),
+        last_discard: round
+            .last_discard
+            .as_ref()
+            .map(|tile| tile.tile_key.clone()),
         pending_action: build_pending_action_view(state, local_seat, support),
         score_state: score_state_view(state),
         players: private_players,

@@ -121,7 +121,9 @@ impl PendingAction {
                                     .map(|claims| {
                                         claims
                                             .iter()
-                                            .filter_map(|claim| claim.as_str().map(ToString::to_string))
+                                            .filter_map(|claim| {
+                                                claim.as_str().map(ToString::to_string)
+                                            })
                                             .collect::<Vec<_>>()
                                     })
                                     .unwrap_or_default()

@@ -3,11 +3,11 @@ use rand::seq::SliceRandom;
 use serde_json::{Map, Value, json};
 
 use crate::core::engine::reducer::LegacyRoomMutation;
+use crate::core::state::effect::EffectState;
 use crate::core::state::{
     LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout, PlayerRoundState,
     RoomState, RoundScoreTrackers, RoundState, RuleRuntimeState, WallState,
 };
-use crate::core::state::effect::EffectState;
 use crate::core::tile::Tile;
 
 const MAX_SEATS: usize = 4;
@@ -81,7 +81,9 @@ pub fn plan_round_start_payload(
 
     let draw_tile = wall_tiles[head_index].clone();
     head_index += 1;
-    players[current_actor].concealed_tiles.push(draw_tile.clone());
+    players[current_actor]
+        .concealed_tiles
+        .push(draw_tile.clone());
 
     if opening_completed {
         pending_action = None;
@@ -134,14 +136,19 @@ pub fn plan_round_start_payload(
             kind: "opening_flowers".to_string(),
             seat_index: current_actor,
             deadline_at: Some(deadline_iso()),
-            drawn_tile_id: player_first_flower_tile_id_from_player(&round_state.players[current_actor]),
+            drawn_tile_id: player_first_flower_tile_id_from_player(
+                &round_state.players[current_actor],
+            ),
         }
     };
 
     (round_state, pending_timeout)
 }
 
-pub fn compute_pending_timeout_value(state: &RoomState, deadline_at: String) -> Option<PendingTimeout> {
+pub fn compute_pending_timeout_value(
+    state: &RoomState,
+    deadline_at: String,
+) -> Option<PendingTimeout> {
     if state.phase != "playing" {
         return None;
     }
@@ -176,7 +183,10 @@ pub fn compute_pending_timeout_value(state: &RoomState, deadline_at: String) -> 
     }
 }
 
-pub fn plan_advance_opening_flowers(state: &RoomState, seat_index: usize) -> Vec<LegacyRoomMutation> {
+pub fn plan_advance_opening_flowers(
+    state: &RoomState,
+    seat_index: usize,
+) -> Vec<LegacyRoomMutation> {
     let dealer_seat = state
         .round_state
         .as_ref()
@@ -244,10 +254,8 @@ pub fn plan_flower_action(
         .round_state
         .as_ref()
         .ok_or_else(|| "round_not_ready".to_string())?;
-    let opening_flowers_mode = matches!(
-        round.pending_action,
-        Some(PendingAction::OpeningFlowers(_))
-    );
+    let opening_flowers_mode =
+        matches!(round.pending_action, Some(PendingAction::OpeningFlowers(_)));
 
     let flower_tile = round
         .players
@@ -264,8 +272,8 @@ pub fn plan_flower_action(
         return Err("invalid_action".to_string());
     }
 
-    let replacement_tile = replacement_tile_from_tail(state)
-        .ok_or_else(|| "round_not_ready".to_string())?;
+    let replacement_tile =
+        replacement_tile_from_tail(state).ok_or_else(|| "round_not_ready".to_string())?;
 
     let mut mutations = vec![
         LegacyRoomMutation::RemovePlayerConcealedTileById {
@@ -320,14 +328,22 @@ pub fn plan_claim_window_response(
         _ => return Err("invalid_action".to_string()),
     };
 
-    let allowed_claims = claim.claim_window.get(seat_index).cloned().unwrap_or_default();
+    let allowed_claims = claim
+        .claim_window
+        .get(seat_index)
+        .cloned()
+        .unwrap_or_default();
     if allowed_claims.is_empty() {
         return Err("invalid_action".to_string());
     }
     if claim.responded_seats.contains(&seat_index) {
         return Err("invalid_action".to_string());
     }
-    if action_type != "pass" && !allowed_claims.iter().any(|claim_type| claim_type == action_type) {
+    if action_type != "pass"
+        && !allowed_claims
+            .iter()
+            .any(|claim_type| claim_type == action_type)
+    {
         return Err("invalid_action".to_string());
     }
 
@@ -512,7 +528,11 @@ pub fn plan_settlement_to_match(state: &RoomState, settlement: &Value) -> Vec<Le
     let mut cumulative_scores = Map::new();
     for seat_index in 0..MAX_SEATS {
         let seat_key = seat_index.to_string();
-        let current = match_state.cumulative_scores.get(&seat_index).copied().unwrap_or(0);
+        let current = match_state
+            .cumulative_scores
+            .get(&seat_index)
+            .copied()
+            .unwrap_or(0);
         let delta = total_delta
             .get(&seat_key)
             .and_then(Value::as_i64)
@@ -598,7 +618,9 @@ pub fn plan_claim_window_continuation_without_winner(
             LegacyRoomMutation::SetRoundPendingAction {
                 pending_action: Value::Null,
             },
-            LegacyRoomMutation::SetRoundCurrentActor { seat_index: next_actor },
+            LegacyRoomMutation::SetRoundCurrentActor {
+                seat_index: next_actor,
+            },
             LegacyRoomMutation::SetRoundLastActionContext {
                 context: json!({
                     "kind": "draw",
@@ -635,11 +657,7 @@ fn active_turn_drawn_tile_id(state: &RoomState, seat_index: usize) -> Option<Str
                 .any(|tile| tile.tile_id == tile_id)
         })
         .unwrap_or(false);
-    if exists {
-        Some(tile_id)
-    } else {
-        None
-    }
+    if exists { Some(tile_id) } else { None }
 }
 
 fn player_first_flower_tile_id(state: &RoomState, seat_index: usize) -> Option<String> {
@@ -667,7 +685,12 @@ fn player_has_concealed_flower(state: &RoomState, seat_index: usize) -> bool {
         .round_state
         .as_ref()
         .and_then(|round| round.players.get(seat_index))
-        .map(|player| player.concealed_tiles.iter().any(|tile| tile.kind == "flower"))
+        .map(|player| {
+            player
+                .concealed_tiles
+                .iter()
+                .any(|tile| tile.kind == "flower")
+        })
         .unwrap_or(false)
 }
 
@@ -682,7 +705,8 @@ fn seat_can_beat_recorded_claim(
             "seat": seat_index,
             "type": claim,
         });
-        resolve_claims(&[winning_claim.clone(), candidate.clone()], discarder_seat) == Some(candidate)
+        resolve_claims(&[winning_claim.clone(), candidate.clone()], discarder_seat)
+            == Some(candidate)
     })
 }
 
@@ -719,7 +743,10 @@ fn offered_claim_seats(claim_window: &[Vec<String>]) -> Vec<usize> {
 
 fn any_concealed_flower(players: &[PlayerRoundState]) -> bool {
     players.iter().any(|player| {
-        player.concealed_tiles.iter().any(|tile| tile.kind == "flower")
+        player
+            .concealed_tiles
+            .iter()
+            .any(|tile| tile.kind == "flower")
     })
 }
 
@@ -728,8 +755,7 @@ fn tile_value(tile: &Tile) -> Value {
 }
 
 fn deadline_iso() -> String {
-    chrono::Utc::now()
-        .to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
 }
 
 fn full_tile_set() -> Vec<Tile> {
@@ -824,7 +850,9 @@ mod tests {
                 assert_eq!(timeout.kind, "opening_flowers");
                 assert_eq!(
                     timeout.drawn_tile_id,
-                    super::player_first_flower_tile_id_from_player(&round.players[round.current_actor])
+                    super::player_first_flower_tile_id_from_player(
+                        &round.players[round.current_actor]
+                    )
                 );
             }
             None => {
@@ -1025,18 +1053,18 @@ mod tests {
         }))
         .expect("legacy room should parse");
 
-        let plan = plan_claim_window_response(&room, 1, "pung", &["w3#a".to_string(), "w3#b".to_string()])
-            .expect("claim window response should plan");
+        let plan =
+            plan_claim_window_response(&room, 1, "pung", &["w3#a".to_string(), "w3#b".to_string()])
+                .expect("claim window response should plan");
 
         assert!(plan.unresolved_seats.is_empty());
         assert_eq!(plan.mutations.len(), 2);
         match &plan.mutations[0] {
-            crate::core::engine::reducer::LegacyRoomMutation::SetRoundPendingAction { pending_action } => {
+            crate::core::engine::reducer::LegacyRoomMutation::SetRoundPendingAction {
+                pending_action,
+            } => {
                 assert_eq!(pending_action["responded_seats"], json!([1, 2]));
-                assert_eq!(
-                    pending_action["claim_responses"][0]["type"],
-                    json!("pung")
-                );
+                assert_eq!(pending_action["claim_responses"][0]["type"], json!("pung"));
             }
             other => panic!("unexpected first mutation: {other:?}"),
         }

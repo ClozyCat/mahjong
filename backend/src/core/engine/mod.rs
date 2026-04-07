@@ -38,7 +38,10 @@ impl EngineContext {
     }
 
     pub fn current_actor(&self) -> Option<Seat> {
-        self.room.round_state.as_ref().map(|round| round.current_actor)
+        self.room
+            .round_state
+            .as_ref()
+            .map(|round| round.current_actor)
     }
 }
 
@@ -78,7 +81,10 @@ pub fn parse_legacy_player_command(
 }
 
 pub fn extract_events_from_messages(messages: &[Value]) -> Vec<GameEvent> {
-    messages.iter().filter_map(extract_event_from_message).collect()
+    messages
+        .iter()
+        .filter_map(extract_event_from_message)
+        .collect()
 }
 
 fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
@@ -86,7 +92,10 @@ fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
         return None;
     }
     let payload = message.get("payload")?;
-    let event_type = payload.get("event_type").and_then(Value::as_str)?.to_string();
+    let event_type = payload
+        .get("event_type")
+        .and_then(Value::as_str)?
+        .to_string();
     let event = payload.get("event").cloned().unwrap_or(Value::Null);
 
     match event_type.as_str() {
@@ -115,9 +124,7 @@ fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
                 .unwrap_or(0),
             source: "self_draw".to_string(),
         }),
-        "claim_made"
-            if event.get("claim_type").and_then(Value::as_str) == Some("hu") =>
-        {
+        "claim_made" if event.get("claim_type").and_then(Value::as_str) == Some("hu") => {
             Some(GameEvent::HuDeclared {
                 winner: event
                     .get("seat")
@@ -178,8 +185,8 @@ mod tests {
 
     #[test]
     fn rejects_legacy_discard_without_selection() {
-        let command = parse_legacy_player_command(0, "discard", &[])
-            .expect("discard should be recognized");
+        let command =
+            parse_legacy_player_command(0, "discard", &[]).expect("discard should be recognized");
         assert_eq!(command, Err("select_tile_first".to_string()));
     }
 

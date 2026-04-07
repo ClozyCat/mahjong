@@ -5,7 +5,7 @@ use crate::core::error::EngineError;
 use crate::core::ids::TableCode;
 use crate::core::state::pending::ContinueActionState;
 
-use super::{array, bool_or, MatchState, PendingTimeout, RoundState, SeatState};
+use super::{MatchState, PendingTimeout, RoundState, SeatState, array, bool_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct RoomState {
@@ -111,7 +111,11 @@ fn parse_continue_action(value: &Value) -> Option<ContinueActionState> {
         .map(|seats| {
             seats
                 .iter()
-                .filter(|seat| seat.get("connected").and_then(Value::as_bool).unwrap_or(false))
+                .filter(|seat| {
+                    seat.get("connected")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                })
                 .filter(|seat| !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
                 .filter_map(|seat| seat.get("seat_index").and_then(Value::as_u64))
                 .map(|seat| seat as usize)
@@ -328,11 +332,17 @@ mod tests {
         assert_eq!(round.players.len(), 2);
         assert_eq!(round.wall.live_tiles_remaining(), 143);
         assert_eq!(
-            round.last_discard.as_ref().map(|tile| tile.tile_key.as_str()),
+            round
+                .last_discard
+                .as_ref()
+                .map(|tile| tile.tile_key.as_str()),
             Some("east")
         );
         assert_eq!(
-            round.pending_action.as_ref().map(|action| action.action_type()),
+            round
+                .pending_action
+                .as_ref()
+                .map(|action| action.action_type()),
             Some("claim_window")
         );
         assert_eq!(

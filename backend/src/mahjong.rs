@@ -1,185 +1,40 @@
-use crate::bot::{
-    self, BotAction, BotClaimOption, BotContext as EngineBotContext,
-    BotPlayerContext as EngineBotPlayerContext, BotSelfKongCandidate as SelfKongCandidate,
-    BotSelfKongKind as SelfKongKind, BotTileView,
-};
+use crate::bot::{self, BotAction};
 use crate::core::action::{GameCommand, PlayerAction};
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
 use crate::core::engine::{
     EngineContext, EngineOutput, parse_legacy_player_command,
     planner::{
-        compute_pending_timeout_value, plan_advance_opening_flowers, plan_flower_action,
+        compute_pending_timeout_value, plan_advance_opening_flowers,
         plan_claim_window_continuation_without_winner, plan_claim_window_response,
-        plan_discard_action, plan_round_start_payload, plan_settlement_to_match, resolve_claims,
+        plan_discard_action, plan_flower_action, plan_round_start_payload,
+        plan_settlement_to_match, resolve_claims,
     },
 };
-use crate::core::state::{MatchState, RoomState};
+use crate::core::state::{MatchState, PendingAction, RoomState};
 use crate::projection::SeatProjectionSupport;
-use crate::scoring::{
-    Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
-    KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
-    decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
-    evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
+use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
+use crate::room_scoring::RoomScoringCache;
+use crate::rules::standard::{
+    meld::{
+        SelfKongCandidate, SelfKongKind, available_self_kongs, available_self_kongs_from_cache,
+        claim_tile_id_options, claim_window_options_after_discard, is_valid_chow_sequence_by_keys,
+        resolve_self_kong_selection, seats_with_hu_candidate_for_tile,
+    },
+    win::{
+        can_declare_hu as standard_can_declare_hu,
+        can_declare_hu_with_cache as standard_can_declare_hu_with_cache,
+        compute_hu_settlement as standard_compute_hu_settlement,
+    },
 };
 use chrono::{SecondsFormat, Utc};
 use rand::Rng;
 use serde_json::{Map, Value, json};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 const MAX_SEATS: usize = 4;
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 30;
-const STANDARD_TILE_KEYS: [&str; 34] = [
-    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
-    "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
-    "north", "red", "green", "white",
-];
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
-const TILE_KIND_COUNT: usize = 34;
-const HONOR_TILE_START: usize = 27;
-
-type TileCounts = [u8; TILE_KIND_COUNT];
-
-type ConcealedTileView = BotTileView;
-
-struct PreparedWinEvaluation {
-    concealed_tile_keys: Vec<String>,
-    meld_tile_key_groups: Vec<Vec<String>>,
-    open_meld_tile_key_groups: Vec<Vec<String>>,
-    meld_open_flags: Vec<bool>,
-    decompositions: Vec<ScoringDecomposition>,
-    kong_entries: Vec<ScoringKongEntry>,
-}
-
-struct RoomScoringPlayer {
-    concealed_tiles: Vec<BotTileView>,
-    concealed_tile_keys: Vec<String>,
-    concealed_tile_counts: TileCounts,
-    meld_tile_key_groups: Vec<Vec<String>>,
-    flower_count: usize,
-}
-
-struct RoomScoringCache {
-    seat_count: usize,
-    dealer_seat: usize,
-    round_wind: Option<String>,
-    visible_tile_keys: Vec<String>,
-    kong_entries: Vec<ScoringKongEntry>,
-    players: Vec<RoomScoringPlayer>,
-}
-
-impl RoomScoringCache {
-    fn from_room(room: &Value) -> Self {
-        let seat_count = room_seat_count(room);
-        let dealer_seat = dealer_seat(room);
-        let round_wind = room_round_wind(room);
-        let kong_entries = room_kong_entries(room);
-
-        let mut players = Vec::with_capacity(seat_count);
-        let mut visible_tile_keys = Vec::new();
-        if let Some(player_values) = room
-            .get("round_state")
-            .and_then(|round| round.get("players"))
-            .and_then(Value::as_array)
-        {
-            for player in player_values {
-                if let Some(discards) = player.get("discards").and_then(Value::as_array) {
-                    visible_tile_keys.extend(discards.iter().filter_map(|tile| {
-                        tile.get("tile_key")
-                            .and_then(Value::as_str)
-                            .map(ToString::to_string)
-                    }));
-                }
-
-                let mut meld_tile_key_groups = Vec::new();
-                if let Some(melds) = player.get("melds").and_then(Value::as_array) {
-                    meld_tile_key_groups.reserve(melds.len());
-                    for meld in melds {
-                        let meld_tile_keys = meld
-                            .as_array()
-                            .map(|tiles| {
-                                tiles
-                                    .iter()
-                                    .filter_map(|tile| tile.as_str().map(ToString::to_string))
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
-                        extend_visible_meld_tile_keys(&mut visible_tile_keys, &meld_tile_keys);
-                        meld_tile_key_groups.push(meld_tile_keys);
-                    }
-                }
-
-                let concealed_tiles = player
-                    .get("concealed_tiles")
-                    .and_then(Value::as_array)
-                    .map(|tiles| {
-                        tiles
-                            .iter()
-                            .map(|tile| ConcealedTileView {
-                                tile_id: tile
-                                    .get("tile_id")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or_default()
-                                    .to_string(),
-                                tile_key: tile
-                                    .get("tile_key")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or_default()
-                                    .to_string(),
-                                is_flower: tile.get("kind").and_then(Value::as_str)
-                                    == Some("flower"),
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                let concealed_tile_keys = concealed_tiles
-                    .iter()
-                    .map(|tile| tile.tile_key.clone())
-                    .collect::<Vec<_>>();
-                let concealed_tile_counts =
-                    tile_counts34(concealed_tile_keys.iter().map(String::as_str));
-                let flower_count = player
-                    .get("flowers")
-                    .and_then(Value::as_array)
-                    .map(|flowers| flowers.len())
-                    .unwrap_or(0);
-
-                players.push(RoomScoringPlayer {
-                    concealed_tiles,
-                    concealed_tile_keys,
-                    concealed_tile_counts,
-                    meld_tile_key_groups,
-                    flower_count,
-                });
-            }
-        }
-
-        Self {
-            seat_count,
-            dealer_seat,
-            round_wind,
-            visible_tile_keys,
-            kong_entries,
-            players,
-        }
-    }
-
-    fn player(&self, seat_index: usize) -> Option<&RoomScoringPlayer> {
-        self.players.get(seat_index)
-    }
-}
-
-fn extend_visible_meld_tile_keys(target: &mut Vec<String>, meld_tile_keys: &[String]) {
-    if meld_tile_keys.len() == 4
-        && meld_tile_keys
-            .iter()
-            .all(|tile_key| tile_key == &meld_tile_keys[0])
-    {
-        target.extend(meld_tile_keys.iter().take(3).cloned());
-    } else {
-        target.extend(meld_tile_keys.iter().cloned());
-    }
-}
 
 pub fn room_messages(room: &Value, local_seat: usize) -> Vec<Value> {
     let mut messages = vec![room_snapshot(room, local_seat)];
@@ -216,17 +71,25 @@ pub fn room_ready_to_start(room: &Value) -> bool {
 }
 
 pub fn next_bot_action(room: &Value) -> Option<BotAction> {
-    if room.get("phase").and_then(Value::as_str) != Some("playing") {
+    let state = project_room_state(room).ok()?;
+    if state.phase != "playing" {
         return None;
     }
-    let kind = pending_timeout_kind(room)?;
-    match kind {
+    let pending_timeout = state.pending_timeout.as_ref()?;
+    let round = state.round_state.as_ref()?;
+    match pending_timeout.kind.as_str() {
         "opening_flowers" => {
-            let seat_index = current_actor(room)?;
-            if !is_bot_seat(room, seat_index) {
+            let seat_index = round.current_actor;
+            if !state
+                .seats
+                .iter()
+                .find(|seat| seat.seat_index == seat_index)
+                .map(|seat| seat.is_bot)
+                .unwrap_or(false)
+            {
                 return None;
             }
-            let cache = RoomScoringCache::from_room(room);
+            let cache = RoomScoringCache::from_state(&state);
             let tile_ids = player_first_flower_tile_id_from_cache(&cache, seat_index)
                 .map(|value| vec![value])
                 .unwrap_or_default();
@@ -241,12 +104,18 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
             })
         }
         "active_turn" => {
-            let seat_index = current_actor(room)?;
-            if !is_bot_seat(room, seat_index) {
+            let seat_index = round.current_actor;
+            if !state
+                .seats
+                .iter()
+                .find(|seat| seat.seat_index == seat_index)
+                .map(|seat| seat.is_bot)
+                .unwrap_or(false)
+            {
                 return None;
             }
-            let cache = RoomScoringCache::from_room(room);
-            if can_declare_hu_with_cache(room, &cache, seat_index, None, None) {
+            let cache = RoomScoringCache::from_state(&state);
+            if standard_can_declare_hu_with_cache(room, &cache, seat_index, None, None) {
                 return Some(BotAction {
                     seat_index,
                     action_type: "hu".to_string(),
@@ -262,48 +131,44 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
             }
             choose_bot_active_turn_action_with_cache(room, &cache, seat_index)
         }
-        "claim_window" => {
-            let pending_action = room
-                .get("round_state")
-                .and_then(|round| round.get("pending_action"))?;
-            match pending_action.get("type").and_then(Value::as_str) {
-                Some("rob_kong_window") => {
-                    let seat_index = pending_action
-                        .get("offered_hu_seats")
-                        .and_then(Value::as_array)?
+        "claim_window" => match round.pending_action.as_ref()? {
+            PendingAction::RobKongWindow(rob) => {
+                let seat_index = rob.offered_hu_seats.iter().copied().find(|seat| {
+                    state
+                        .seats
                         .iter()
-                        .filter_map(|value| value.as_u64().map(|seat| seat as usize))
-                        .find(|seat| {
-                            is_bot_seat(room, *seat)
-                                && !seat_has_responded_to_pending_action(pending_action, *seat)
-                        })?;
-                    Some(BotAction {
-                        seat_index,
-                        action_type: "hu".to_string(),
-                        tile_ids: vec![],
-                    })
-                }
-                Some("claim_window") => {
-                    let cache = RoomScoringCache::from_room(room);
-                    let seat_index = pending_action
-                        .get("claim_window")
-                        .and_then(Value::as_array)?
-                        .iter()
-                        .enumerate()
-                        .find(|(seat, claims)| {
-                            is_bot_seat(room, *seat)
-                                && claims
-                                    .as_array()
-                                    .map(|items| !items.is_empty())
-                                    .unwrap_or(false)
-                                && !seat_has_responded_to_pending_action(pending_action, *seat)
-                        })
-                        .map(|(seat, _)| seat)?;
-                    choose_bot_claim_action_with_cache(room, &cache, seat_index)
-                }
-                _ => None,
+                        .find(|seat_state| seat_state.seat_index == *seat)
+                        .map(|seat_state| seat_state.is_bot)
+                        .unwrap_or(false)
+                        && !rob.responded_seats.contains(seat)
+                })?;
+                Some(BotAction {
+                    seat_index,
+                    action_type: "hu".to_string(),
+                    tile_ids: vec![],
+                })
             }
-        }
+            PendingAction::ClaimWindow(claim) => {
+                let cache = RoomScoringCache::from_state(&state);
+                let seat_index = claim
+                    .claim_window
+                    .iter()
+                    .enumerate()
+                    .find(|(seat, claims)| {
+                        state
+                            .seats
+                            .iter()
+                            .find(|seat_state| seat_state.seat_index == *seat)
+                            .map(|seat_state| seat_state.is_bot)
+                            .unwrap_or(false)
+                            && !claims.is_empty()
+                            && !claim.responded_seats.contains(seat)
+                    })
+                    .map(|(seat, _)| seat)?;
+                choose_bot_claim_action_with_cache(room, &cache, seat_index)
+            }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -461,13 +326,19 @@ fn try_handle_player_action_command(
     action: PlayerAction,
 ) -> Option<Result<EngineOutput, String>> {
     match action {
-        PlayerAction::Hu => Some(apply_hu_action(room, seat_index).map(EngineOutput::from_emitted_messages)),
+        PlayerAction::Hu => {
+            Some(apply_hu_action(room, seat_index).map(EngineOutput::from_emitted_messages))
+        }
         PlayerAction::Flower { tile_ids } => Some(
-            apply_flower_action(room, seat_index, &tile_ids).map(EngineOutput::from_emitted_messages),
+            apply_flower_action(room, seat_index, &tile_ids)
+                .map(EngineOutput::from_emitted_messages),
         ),
         PlayerAction::Discard { tile_id } => {
             if can_resolve_discard_locally(room, seat_index, &tile_id) {
-                Some(apply_discard_action(room, seat_index, &tile_id).map(EngineOutput::from_emitted_messages))
+                Some(
+                    apply_discard_action(room, seat_index, &tile_id)
+                        .map(EngineOutput::from_emitted_messages),
+                )
             } else {
                 None
             }
@@ -598,15 +469,6 @@ pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
         Some("claim_window") | Some("rob_kong_window") => None,
         _ => None,
     }
-}
-
-fn seat_has_responded_to_pending_action(pending_action: &Value, seat_index: usize) -> bool {
-    json_array_contains_seat(
-        pending_action
-            .get("responded_seats")
-            .and_then(Value::as_array),
-        seat_index,
-    )
 }
 
 fn claim_window_offers_claim(pending_action: &Value, seat_index: usize, claim_type: &str) -> bool {
@@ -779,11 +641,13 @@ fn apply_hu_action(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, St
     let Some(hu_context) = hu_action_hint(room, seat_index) else {
         return Err("invalid_action".to_string());
     };
-    let settlement = compute_hu_settlement(room, seat_index, hu_context)?;
+    let settlement = standard_compute_hu_settlement(room, seat_index, hu_context)?;
     apply_hu_settlement(room, seat_index, hu_context, settlement)
 }
 
-fn compute_hu_settlement(
+/*
+
+fn compute_hu_settlement_unused(
     room: &Value,
     winner_seat: usize,
     hu_context: &str,
@@ -875,8 +739,7 @@ fn can_declare_hu(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    let cache = RoomScoringCache::from_room(room);
-    can_declare_hu_with_cache(room, &cache, seat_index, incoming_tile, discarder_seat)
+    standard_can_declare_hu(room, seat_index, incoming_tile, discarder_seat)
 }
 
 fn can_declare_hu_with_cache(
@@ -886,31 +749,7 @@ fn can_declare_hu_with_cache(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    if room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("type"))
-        .and_then(Value::as_str)
-        == Some("opening_flowers")
-    {
-        return false;
-    }
-
-    if let Ok(fan_result) =
-        fan_result_for_win_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
-    {
-        let enforce_minimum_eight_fan = room
-            .get("round_state")
-            .and_then(|round| round.get("enforce_minimum_eight_fan"))
-            .and_then(Value::as_bool)
-            .or_else(|| {
-                room.get("enforce_minimum_eight_fan")
-                    .and_then(Value::as_bool)
-            })
-            .unwrap_or(true);
-        return !enforce_minimum_eight_fan || fan_result.minimum_qualifying_fan_total >= 8;
-    }
-    false
+    standard_can_declare_hu_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
 }
 
 fn fan_result_for_win(
@@ -1020,29 +859,6 @@ fn prepare_win_evaluation(
     })
 }
 
-fn room_seat_count(room: &Value) -> usize {
-    room.get("round_state")
-        .and_then(|round| round.get("players"))
-        .and_then(Value::as_array)
-        .map(|players| players.len())
-        .unwrap_or(MAX_SEATS)
-}
-
-fn dealer_seat(room: &Value) -> usize {
-    room.get("round_state")
-        .and_then(|round| round.get("dealer_seat"))
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(0)
-}
-
-fn room_round_wind(room: &Value) -> Option<String> {
-    room.get("round_state")
-        .and_then(|round| round.get("round_wind"))
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
-}
-
 fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
     WIND_ORDER[(seat_index + MAX_SEATS - dealer_seat) % MAX_SEATS].to_string()
 }
@@ -1122,45 +938,6 @@ fn meld_is_open_with_entries(
     true
 }
 
-fn room_kong_entries(room: &Value) -> Vec<ScoringKongEntry> {
-    room.get("round_state")
-        .and_then(|round| round.get("score_trackers"))
-        .and_then(|trackers| trackers.get("kong_entries"))
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|entry| ScoringKongEntry {
-                    kong_type: entry
-                        .get("kong_type")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string(),
-                    actor_seat: entry
-                        .get("actor_seat")
-                        .and_then(Value::as_u64)
-                        .map(|value| value as usize)
-                        .unwrap_or(0),
-                    payer_seats: entry
-                        .get("payer_seats")
-                        .and_then(Value::as_array)
-                        .map(|seats| {
-                            seats
-                                .iter()
-                                .filter_map(|value| value.as_u64().map(|seat| seat as usize))
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                    tile_key: entry
-                        .get("tile_key")
-                        .and_then(Value::as_str)
-                        .map(ToString::to_string),
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn timing_features_for_win(room: &Value, self_draw: bool) -> ScoringTimingFeatures {
     let context = room
         .get("round_state")
@@ -1212,6 +989,8 @@ fn player_flower_count(room: &Value, seat_index: usize) -> usize {
         .map(|flowers| flowers.len())
         .unwrap_or(0)
 }
+
+*/
 
 fn room_snapshot(room: &Value, local_seat: usize) -> Value {
     let Ok(state) = project_room_state(room) else {
@@ -1381,7 +1160,8 @@ fn complete_self_kong(
     selection: &SelfKongCandidate,
     replacement_tile: Value,
 ) -> Result<Vec<Value>, String> {
-    let plan = plan_self_kong_completion(room, seat_index, selection, replacement_tile.clone(), false)?;
+    let plan =
+        plan_self_kong_completion(room, seat_index, selection, replacement_tile.clone(), false)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
     sync_pending_timeout(room);
     Ok(plan.events)
@@ -1458,7 +1238,12 @@ fn plan_self_kong_completion(
         .tile_ids
         .iter()
         .cloned()
-        .map(|tile_id| LegacyRoomMutation::RemovePlayerConcealedTileById { seat_index, tile_id })
+        .map(
+            |tile_id| LegacyRoomMutation::RemovePlayerConcealedTileById {
+                seat_index,
+                tile_id,
+            },
+        )
         .collect::<Vec<_>>();
 
     match selection.kind {
@@ -1496,7 +1281,9 @@ fn plan_self_kong_completion(
             SelfKongKind::Add => "add_kong".to_string(),
         },
         actor_seat: seat_index,
-        payer_seats: (0..MAX_SEATS).filter(|other| *other != seat_index).collect(),
+        payer_seats: (0..MAX_SEATS)
+            .filter(|other| *other != seat_index)
+            .collect(),
         tile_key: Value::String(selection.tile_key.clone()),
     });
     mutations.push(LegacyRoomMutation::SetRoundLastActionContext {
@@ -1600,20 +1387,14 @@ fn apply_discard_action(
         .and_then(|context| context.get("was_last_live_tile"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let claim_window = compute_claim_window_without_hu(&simulated, seat_index, &discarded_tile)
-        .into_iter()
-        .map(|claims| {
-            claims
-                .as_array()
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|claim| claim.as_str().map(ToString::to_string))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
-        })
-        .collect::<Vec<_>>();
+    let claim_window = claim_window_options_after_discard(
+        &simulated,
+        seat_index,
+        discarded_tile
+            .get("tile_key")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    );
     let plan = plan_discard_action(
         &state,
         seat_index,
@@ -1777,6 +1558,8 @@ fn validate_claim_selection(
     Ok(())
 }
 
+/*
+
 fn is_valid_chow_sequence_by_keys(discard_tile_key: &str, tiles: &[&str]) -> bool {
     if tiles.len() != 2 {
         return false;
@@ -1804,6 +1587,8 @@ fn is_valid_chow_sequence_by_keys(discard_tile_key: &str, tiles: &[&str]) -> boo
     ranks[0] + 1 == ranks[1] && ranks[1] + 1 == ranks[2]
 }
 
+*/
+
 fn discarder_latest_discard_matches(
     room: &Value,
     discarder_seat: usize,
@@ -1827,7 +1612,7 @@ fn apply_selected_claim(
     tile_ids: &[String],
 ) -> Result<Vec<Value>, String> {
     if action_type == "hu" {
-        let settlement = compute_hu_settlement(room, seat_index, "discard")?;
+        let settlement = standard_compute_hu_settlement(room, seat_index, "discard")?;
         return apply_hu_settlement(room, seat_index, "discard", settlement);
     }
     let plan = plan_selected_claim(room, seat_index, action_type, tile_ids)?;
@@ -1874,13 +1659,17 @@ fn plan_selected_claim(
     let mut mutations = tile_ids
         .iter()
         .cloned()
-        .map(|tile_id| LegacyRoomMutation::RemovePlayerConcealedTileById { seat_index, tile_id })
+        .map(
+            |tile_id| LegacyRoomMutation::RemovePlayerConcealedTileById {
+                seat_index,
+                tile_id,
+            },
+        )
         .collect::<Vec<_>>();
-    mutations.push(LegacyRoomMutation::PopPlayerDiscardLast { seat_index: discarder_seat });
-    mutations.push(LegacyRoomMutation::PushPlayerMeld {
-        seat_index,
-        meld,
+    mutations.push(LegacyRoomMutation::PopPlayerDiscardLast {
+        seat_index: discarder_seat,
     });
+    mutations.push(LegacyRoomMutation::PushPlayerMeld { seat_index, meld });
 
     let mut events = vec![round_event_message(
         "claim_made",
@@ -1988,6 +1777,8 @@ fn can_resolve_claim_window_timeout_locally(room: &Value) -> bool {
     pending_timeout_kind(room) == Some("claim_window") && claim_window_supported_locally(room)
 }
 
+/*
+
 fn available_self_kongs(room: &Value, seat_index: usize) -> Vec<SelfKongCandidate> {
     let cache = RoomScoringCache::from_room(room);
     available_self_kongs_from_cache(&cache, seat_index)
@@ -2065,6 +1856,8 @@ fn resolve_self_kong_selection(
     })
 }
 
+*/
+
 fn replacement_tile_from_tail(room: &Value) -> Option<Value> {
     let wall = room.get("round_state")?.get("wall")?;
     let head_index = wall.get("head_index")?.as_i64()?;
@@ -2078,15 +1871,19 @@ fn replacement_tile_from_tail(room: &Value) -> Option<Value> {
         .cloned()
 }
 
+/*
+
 fn seats_with_hu_candidate_for_tile(room: &Value, actor_seat: usize, tile_key: &str) -> Vec<usize> {
     let cache = RoomScoringCache::from_room(room);
     (0..MAX_SEATS)
         .filter(|seat_index| *seat_index != actor_seat)
         .filter(|seat_index| {
-            can_declare_hu_with_cache(room, &cache, *seat_index, Some(tile_key), None)
+            standard_can_declare_hu_with_cache(room, &cache, *seat_index, Some(tile_key), None)
         })
         .collect()
 }
+
+*/
 
 fn claim_window_supported_locally(room: &Value) -> bool {
     room.get("round_state")
@@ -2390,7 +2187,11 @@ fn apply_settlement_to_match(room: &mut Value) {
         .get("round_state")
         .and_then(|round| round.get("settlement"))
         .cloned()
-        .and_then(|settlement| project_room_state(room).ok().map(|state| plan_settlement_to_match(&state, &settlement)))
+        .and_then(|settlement| {
+            project_room_state(room)
+                .ok()
+                .map(|state| plan_settlement_to_match(&state, &settlement))
+        })
         .unwrap_or_default();
     let _ = apply_legacy_room_mutations(room, &mutations);
 }
@@ -2709,8 +2510,7 @@ fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String
         tile_key,
         meld_index,
     };
-    let plan =
-        plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
+    let plan = plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
     sync_pending_timeout(room);
     Ok(plan.events)
@@ -2853,7 +2653,7 @@ fn player_first_flower_tile_id_from_cache(
         .player(seat_index)?
         .concealed_tiles
         .iter()
-        .find(|tile| tile.is_flower)
+        .find(|tile| tile.kind == "flower")
         .map(|tile| tile.tile_id.clone())
 }
 
@@ -2956,15 +2756,7 @@ fn last_concealed_tile_id_from_cache(
         .map(|tile| tile.tile_id.clone())
 }
 
-fn tile_counts34<'a>(tile_keys: impl Iterator<Item = &'a str>) -> TileCounts {
-    let mut counts = [0_u8; TILE_KIND_COUNT];
-    for tile_key in tile_keys {
-        if let Some(tile_index) = tile_index(tile_key) {
-            counts[tile_index] = counts[tile_index].saturating_add(1);
-        }
-    }
-    counts
-}
+/*
 
 fn tile_index(tile_key: &str) -> Option<usize> {
     match tile_key {
@@ -2993,13 +2785,6 @@ fn tile_index(tile_key: &str) -> Option<usize> {
             Some(suit_offset + rank - 1)
         }
     }
-}
-
-fn tile_key_for_index(tile_index: usize) -> &'static str {
-    STANDARD_TILE_KEYS
-        .get(tile_index)
-        .copied()
-        .unwrap_or_default()
 }
 
 fn suited_tile_components(tile_index: usize) -> Option<(usize, usize)> {
@@ -3064,7 +2849,7 @@ fn compute_claim_window_without_hu(
                     claims.push(Value::String("chow".to_string()));
                 }
             }
-            if can_declare_hu_with_cache(
+            if standard_can_declare_hu_with_cache(
                 room,
                 &scoring_cache,
                 seat_index,
@@ -3103,30 +2888,14 @@ fn is_last_tile_wall_point_after_discard(room: &Value) -> bool {
         .unwrap_or(false)
 }
 
-fn is_bot_seat(room: &Value, seat_index: usize) -> bool {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats.iter().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            })
-        })
-        .and_then(|seat| seat.get("is_bot"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-}
+*/
 
-fn build_bot_context_from_cache(
+fn choose_bot_active_turn_action_with_cache(
     room: &Value,
     cache: &RoomScoringCache,
     seat_index: usize,
-    claim_options: Vec<BotClaimOption>,
-    self_kong_candidates: Vec<SelfKongCandidate>,
-) -> Option<EngineBotContext> {
-    let player = cache.player(seat_index)?;
+) -> Option<BotAction> {
+    let self_kong_candidates = available_self_kongs_from_cache(cache, seat_index);
     let add_kong_risk_tiles = self_kong_candidates
         .iter()
         .filter(|candidate| candidate.kind == SelfKongKind::Add)
@@ -3135,197 +2904,14 @@ fn build_bot_context_from_cache(
         })
         .map(|candidate| candidate.tile_key.clone())
         .collect::<HashSet<_>>();
-    Some(EngineBotContext {
-        seat_index,
-        seat_count: cache.seat_count,
-        dealer_seat: cache.dealer_seat,
-        round_wind: cache.round_wind.clone(),
-        cumulative_scores: (0..cache.seat_count)
-            .map(|seat| {
-                room.get("match_state")
-                    .and_then(|state| state.get("cumulative_scores"))
-                    .and_then(|scores| scores.get(seat.to_string()))
-                    .and_then(Value::as_i64)
-                    .unwrap_or(0)
-            })
-            .collect(),
-        wall_tiles_remaining: wall_live_tiles_remaining(room),
-        visible_tile_keys: cache.visible_tile_keys.clone(),
-        opponent_discards_by_seat: room
-            .get("round_state")
-            .and_then(|round| round.get("players"))
-            .and_then(Value::as_array)
-            .map(|players| {
-                players
-                    .iter()
-                    .map(|player| {
-                        player
-                            .get("discards")
-                            .and_then(Value::as_array)
-                            .map(|tiles| {
-                                tiles
-                                    .iter()
-                                    .filter_map(|tile| {
-                                        tile.get("tile_key")
-                                            .and_then(Value::as_str)
-                                            .map(ToString::to_string)
-                                    })
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default(),
-        opponent_melds_by_seat: room
-            .get("round_state")
-            .and_then(|round| round.get("players"))
-            .and_then(Value::as_array)
-            .map(|players| {
-                players
-                    .iter()
-                    .map(|player| {
-                        player
-                            .get("melds")
-                            .and_then(Value::as_array)
-                            .map(|melds| {
-                                melds
-                                    .iter()
-                                    .map(|meld| {
-                                        meld.as_array()
-                                            .map(|tiles| {
-                                                tiles
-                                                    .iter()
-                                                    .filter_map(|tile| {
-                                                        tile.as_str().map(ToString::to_string)
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                            })
-                                            .unwrap_or_default()
-                                    })
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default(),
-        kong_entries: cache.kong_entries.clone(),
-        player: EngineBotPlayerContext {
-            concealed_tiles: player.concealed_tiles.clone(),
-            concealed_tile_counts: player.concealed_tile_counts,
-            meld_tile_key_groups: player.meld_tile_key_groups.clone(),
-            flower_count: player.flower_count,
-        },
-        restricted_discard_tile_key: room
-            .get("round_state")
-            .and_then(|round| round.get("restricted_discard_tile_key"))
-            .and_then(Value::as_str)
-            .map(ToString::to_string),
-        drawn_tile_id: room
-            .get("pending_timeout")
-            .and_then(|timeout| timeout.get("drawn_tile_id"))
-            .and_then(Value::as_str)
-            .map(ToString::to_string),
-        enforce_minimum_eight_fan: room_enforces_minimum_eight_fan(room),
-        self_kong_candidates,
-        claim_options,
-        last_discard_tile_key: room
-            .get("round_state")
-            .and_then(|round| round.get("last_discard"))
-            .and_then(|discard| discard.get("tile_key"))
-            .and_then(Value::as_str)
-            .map(ToString::to_string),
-        add_kong_risk_tiles,
-    })
-}
-
-fn choose_bot_active_turn_action_with_cache(
-    room: &Value,
-    cache: &RoomScoringCache,
-    seat_index: usize,
-) -> Option<BotAction> {
-    let bot_context = build_bot_context_from_cache(
-        room,
+    let bot_context = build_bot_context_view(
         cache,
         seat_index,
         Vec::new(),
-        available_self_kongs_from_cache(cache, seat_index),
+        self_kong_candidates,
+        add_kong_risk_tiles,
     )?;
     bot::choose_active_turn_action(&bot_context)
-}
-
-fn room_enforces_minimum_eight_fan(room: &Value) -> bool {
-    room.get("round_state")
-        .and_then(|round| round.get("enforce_minimum_eight_fan"))
-        .and_then(Value::as_bool)
-        .or_else(|| {
-            room.get("enforce_minimum_eight_fan")
-                .and_then(Value::as_bool)
-        })
-        .unwrap_or(true)
-}
-
-fn claim_tile_id_options_with_cache(
-    room: &Value,
-    cache: &RoomScoringCache,
-    seat_index: usize,
-    action_type: &str,
-) -> Vec<Vec<String>> {
-    let last_discard = room
-        .get("round_state")
-        .and_then(|round| round.get("last_discard"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let Some(discard_tile_key) = last_discard.get("tile_key").and_then(Value::as_str) else {
-        return Vec::new();
-    };
-    let Some(player) = cache.player(seat_index) else {
-        return Vec::new();
-    };
-    let concealed_tiles = &player.concealed_tiles;
-
-    if action_type == "pung" || action_type == "kong" {
-        let needed = if action_type == "pung" { 2 } else { 3 };
-        let tile_ids = concealed_tiles
-            .iter()
-            .filter(|tile| tile.tile_key == discard_tile_key)
-            .map(|tile| tile.tile_id.clone())
-            .take(needed)
-            .collect::<Vec<_>>();
-        return (tile_ids.len() == needed)
-            .then_some(tile_ids)
-            .into_iter()
-            .collect();
-    }
-
-    if action_type == "chow" {
-        let Some(discard_index) = tile_index(discard_tile_key) else {
-            return Vec::new();
-        };
-        let mut options = Vec::new();
-        for (first_index, second_index) in chow_required_tile_pairs(discard_index) {
-            let first_key = tile_key_for_index(first_index);
-            let second_key = tile_key_for_index(second_index);
-            let mut first_tile_id = None;
-            let mut second_tile_id = None;
-            for tile in concealed_tiles {
-                if first_tile_id.is_none() && tile.tile_key == first_key {
-                    first_tile_id = Some(tile.tile_id.clone());
-                    continue;
-                }
-                if second_tile_id.is_none() && tile.tile_key == second_key {
-                    second_tile_id = Some(tile.tile_id.clone());
-                }
-            }
-            if let (Some(first), Some(second)) = (first_tile_id, second_tile_id) {
-                options.push(vec![first, second]);
-            }
-        }
-        return options;
-    }
-
-    Vec::new()
 }
 
 fn choose_bot_claim_action_with_cache(
@@ -3347,7 +2933,7 @@ fn choose_bot_claim_action_with_cache(
         .into_iter()
         .filter(|claim_type| claim_window_offers_claim(pending_action, seat_index, claim_type))
         .flat_map(|claim_type| {
-            claim_tile_id_options_with_cache(room, cache, seat_index, claim_type)
+            claim_tile_id_options(cache, seat_index, claim_type)
                 .into_iter()
                 .map(move |tile_ids| BotClaimOption {
                     action_type: claim_type.to_string(),
@@ -3356,7 +2942,7 @@ fn choose_bot_claim_action_with_cache(
         })
         .collect::<Vec<_>>();
     let bot_context =
-        build_bot_context_from_cache(room, cache, seat_index, claim_options, Vec::new())?;
+        build_bot_context_view(cache, seat_index, claim_options, Vec::new(), HashSet::new())?;
     bot::choose_claim_action(&bot_context)
 }
 
@@ -3369,8 +2955,10 @@ fn seat_projection_support(room: &Value, local_seat: usize) -> SeatProjectionSup
         .get("round_state")
         .map(|round_state| player_has_concealed_flower(round_state, local_seat))
         .unwrap_or(false);
-    let has_self_kong = room.get("round_state").is_some() && !available_self_kongs(room, local_seat).is_empty();
-    let can_hu = room.get("round_state").is_some() && can_declare_hu(room, local_seat, None, None);
+    let has_self_kong =
+        room.get("round_state").is_some() && !available_self_kongs(room, local_seat).is_empty();
+    let can_hu =
+        room.get("round_state").is_some() && standard_can_declare_hu(room, local_seat, None, None);
     let restricted_discard_tile_ids = restricted_same_turn_discard_tile_ids(room, local_seat)
         .into_iter()
         .filter_map(|value| value.as_str().map(ToString::to_string))

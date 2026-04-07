@@ -2,6 +2,8 @@ mod bot;
 mod core;
 mod mahjong;
 mod projection;
+mod room_scoring;
+mod rules;
 mod scoring;
 
 use std::collections::{HashMap, HashSet};

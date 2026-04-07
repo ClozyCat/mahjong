@@ -2,25 +2,55 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
 pub enum LegacyRoomMutation {
-    RemovePlayerConcealedTileById { seat_index: usize, tile_id: String },
-    PushPlayerDiscard { seat_index: usize, tile: Value },
-    PushPlayerConcealedTile { seat_index: usize, tile: Value },
-    PushPlayerMeld { seat_index: usize, meld: Value },
-    PushPlayerFlower { seat_index: usize, tile: Value },
+    RemovePlayerConcealedTileById {
+        seat_index: usize,
+        tile_id: String,
+    },
+    PushPlayerDiscard {
+        seat_index: usize,
+        tile: Value,
+    },
+    PushPlayerConcealedTile {
+        seat_index: usize,
+        tile: Value,
+    },
+    PushPlayerMeld {
+        seat_index: usize,
+        meld: Value,
+    },
+    PushPlayerFlower {
+        seat_index: usize,
+        tile: Value,
+    },
     AppendTileToPlayerMeld {
         seat_index: usize,
         meld_index: usize,
         tile: Value,
     },
-    PopPlayerDiscardLast { seat_index: usize },
+    PopPlayerDiscardLast {
+        seat_index: usize,
+    },
     AdvanceWallHead,
     RetreatWallTail,
-    SetRoundLastDiscard { tile: Value },
-    SetRoundPendingAction { pending_action: Value },
-    SetRoundRestrictedDiscardTileKey { tile_key: Value },
-    SetRoundLastActionContext { context: Value },
-    SetRoundCurrentActor { seat_index: usize },
-    SetRoundField { key: String, value: Value },
+    SetRoundLastDiscard {
+        tile: Value,
+    },
+    SetRoundPendingAction {
+        pending_action: Value,
+    },
+    SetRoundRestrictedDiscardTileKey {
+        tile_key: Value,
+    },
+    SetRoundLastActionContext {
+        context: Value,
+    },
+    SetRoundCurrentActor {
+        seat_index: usize,
+    },
+    SetRoundField {
+        key: String,
+        value: Value,
+    },
     IncrementRoundVersion,
     AppendRoundKongEntry {
         kong_type: String,
@@ -28,9 +58,18 @@ pub enum LegacyRoomMutation {
         payer_seats: Vec<usize>,
         tile_key: Value,
     },
-    SetRoomField { key: String, value: Value },
-    SetMatchField { key: String, value: Value },
-    PushUniqueSeatToRoomArray { key: String, seat_index: usize },
+    SetRoomField {
+        key: String,
+        value: Value,
+    },
+    SetMatchField {
+        key: String,
+        value: Value,
+    },
+    PushUniqueSeatToRoomArray {
+        key: String,
+        seat_index: usize,
+    },
 }
 
 pub fn apply_legacy_room_mutations(
@@ -43,13 +82,21 @@ pub fn apply_legacy_room_mutations(
     Ok(())
 }
 
-fn apply_legacy_room_mutation(room: &mut Value, mutation: &LegacyRoomMutation) -> Result<(), String> {
+fn apply_legacy_room_mutation(
+    room: &mut Value,
+    mutation: &LegacyRoomMutation,
+) -> Result<(), String> {
     match mutation {
-        LegacyRoomMutation::RemovePlayerConcealedTileById { seat_index, tile_id } => {
+        LegacyRoomMutation::RemovePlayerConcealedTileById {
+            seat_index,
+            tile_id,
+        } => {
             let concealed_tiles = player_zone_mut(room, *seat_index, "concealed_tiles")?;
             let tile_index = concealed_tiles
                 .iter()
-                .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str()))
+                .position(|tile| {
+                    tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
+                })
                 .ok_or_else(|| "invalid_action".to_string())?;
             concealed_tiles.remove(tile_index);
             Ok(())
@@ -130,7 +177,9 @@ fn apply_legacy_room_mutation(room: &mut Value, mutation: &LegacyRoomMutation) -
         LegacyRoomMutation::SetRoundCurrentActor { seat_index } => {
             round_state_insert(room, "current_actor", json!(seat_index))
         }
-        LegacyRoomMutation::SetRoundField { key, value } => round_state_insert(room, key, value.clone()),
+        LegacyRoomMutation::SetRoundField { key, value } => {
+            round_state_insert(room, key, value.clone())
+        }
         LegacyRoomMutation::IncrementRoundVersion => {
             let round_state = room
                 .get_mut("round_state")
@@ -276,8 +325,14 @@ mod tests {
         ];
 
         apply_legacy_room_mutations(&mut room, &mutations).expect("mutations should apply");
-        assert_eq!(room["round_state"]["players"][0]["concealed_tiles"], json!([{"tile_id":"w2#0","tile_key":"w2"}]));
-        assert_eq!(room["round_state"]["players"][0]["discards"], json!([{"tile_id":"w1#0","tile_key":"w1"}]));
+        assert_eq!(
+            room["round_state"]["players"][0]["concealed_tiles"],
+            json!([{"tile_id":"w2#0","tile_key":"w2"}])
+        );
+        assert_eq!(
+            room["round_state"]["players"][0]["discards"],
+            json!([{"tile_id":"w1#0","tile_key":"w1"}])
+        );
         assert_eq!(room["round_state"]["last_discard"]["tile_key"], "w1");
         assert_eq!(room["round_state"]["version"], 2);
     }

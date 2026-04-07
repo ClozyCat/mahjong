@@ -49,8 +49,9 @@ impl MatchState {
                 .get("match_finished")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
-            last_completed_round_id: string_opt(value, "last_completed_round_id")
-                .or_else(|| i64_opt(value, "last_completed_round_id").map(|value| value.to_string())),
+            last_completed_round_id: string_opt(value, "last_completed_round_id").or_else(|| {
+                i64_opt(value, "last_completed_round_id").map(|value| value.to_string())
+            }),
         })
     }
 }

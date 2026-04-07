@@ -41,7 +41,10 @@ pub(crate) fn array<'a>(value: &'a Value, context: &str) -> Result<&'a [Value], 
 }
 
 pub(crate) fn string_opt(value: &Value, key: &str) -> Option<String> {
-    value.get(key).and_then(Value::as_str).map(ToString::to_string)
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
 }
 
 pub(crate) fn bool_or(value: &Value, key: &str, default: bool) -> bool {

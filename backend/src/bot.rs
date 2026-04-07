@@ -1,3 +1,7 @@
+use crate::projection::bot_view::{
+    BotClaimOption, BotContextView as BotContext, BotPlayerView as BotPlayerContext,
+    BotSelfKongKind, BotTileCounts as ProjectionTileCounts, BotTileView,
+};
 use crate::scoring::{
     EvaluationInput as ScoringEvaluationInput, KongEntry as ScoringKongEntry,
     TimingFeatures as ScoringTimingFeatures,
@@ -31,70 +35,13 @@ const MONTE_CARLO_HORIZON_EARLY: usize = 3;
 const MONTE_CARLO_HORIZON_MID: usize = 2;
 const MONTE_CARLO_HORIZON_LATE: usize = 1;
 
-pub type TileCounts = [u8; TILE_KIND_COUNT];
+pub type TileCounts = ProjectionTileCounts;
 
 #[derive(Clone)]
 pub struct BotAction {
     pub seat_index: usize,
     pub action_type: String,
     pub tile_ids: Vec<String>,
-}
-
-#[derive(Clone)]
-pub struct BotTileView {
-    pub tile_id: String,
-    pub tile_key: String,
-    pub is_flower: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BotSelfKongKind {
-    Concealed,
-    Add,
-}
-
-#[derive(Clone)]
-pub struct BotSelfKongCandidate {
-    pub kind: BotSelfKongKind,
-    pub tile_ids: Vec<String>,
-    pub tile_key: String,
-    pub meld_index: Option<usize>,
-}
-
-#[derive(Clone)]
-pub struct BotClaimOption {
-    pub action_type: String,
-    pub tile_ids: Vec<String>,
-}
-
-#[derive(Clone)]
-pub struct BotPlayerContext {
-    pub concealed_tiles: Vec<BotTileView>,
-    pub concealed_tile_counts: TileCounts,
-    pub meld_tile_key_groups: Vec<Vec<String>>,
-    pub flower_count: usize,
-}
-
-#[derive(Clone)]
-pub struct BotContext {
-    pub seat_index: usize,
-    pub seat_count: usize,
-    pub dealer_seat: usize,
-    pub round_wind: Option<String>,
-    pub cumulative_scores: Vec<i64>,
-    pub wall_tiles_remaining: i64,
-    pub visible_tile_keys: Vec<String>,
-    pub opponent_discards_by_seat: Vec<Vec<String>>,
-    pub opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
-    pub kong_entries: Vec<ScoringKongEntry>,
-    pub player: BotPlayerContext,
-    pub restricted_discard_tile_key: Option<String>,
-    pub drawn_tile_id: Option<String>,
-    pub enforce_minimum_eight_fan: bool,
-    pub self_kong_candidates: Vec<BotSelfKongCandidate>,
-    pub claim_options: Vec<BotClaimOption>,
-    pub last_discard_tile_key: Option<String>,
-    pub add_kong_risk_tiles: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -295,7 +242,10 @@ impl SearchEngine {
 
         Self {
             profile,
-            monte_carlo_safety_weight: monte_carlo_safety_weight_from_threats(context, &threat_profiles),
+            monte_carlo_safety_weight: monte_carlo_safety_weight_from_threats(
+                context,
+                &threat_profiles,
+            ),
             threat_profiles,
             base_visible_counts: visible_tile_counts(&context.visible_tile_keys),
             hand_score_cache: HashMap::new(),
@@ -450,8 +400,7 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 let should_skip = match option.action_type.as_str() {
                     "chow" => signals.fan_estimate < 6,
                     "pung" => {
-                        signals.fan_estimate < 4
-                            && !meld_is_value_honor_set(context, &claim_meld)
+                        signals.fan_estimate < 4 && !meld_is_value_honor_set(context, &claim_meld)
                     }
                     _ => false,
                 };
@@ -524,7 +473,8 @@ impl SearchEngine {
             return stage_one.into_iter().next();
         }
 
-        let run_monte_carlo = self.should_run_monte_carlo(context, concealed_counts, meld_tile_key_groups);
+        let run_monte_carlo =
+            self.should_run_monte_carlo(context, concealed_counts, meld_tile_key_groups);
         let mut finalists = stage_one
             .into_iter()
             .take(STAGE_TWO_CANDIDATES)
@@ -663,12 +613,17 @@ impl SearchEngine {
             depth,
         );
         let prefer_drawn_copy = drawn_tile_id == Some(tile.tile_id.as_str());
-        let danger_penalty = self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
-            * self.profile.danger_weight
-            / 100;
+        let danger_penalty =
+            self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
+                * self.profile.danger_weight
+                / 100;
         Some(
             state_score
-                + self.discard_tile_preference_score(concealed_counts, discard_tile_index, prefer_drawn_copy)
+                + self.discard_tile_preference_score(
+                    concealed_counts,
+                    discard_tile_index,
+                    prefer_drawn_copy,
+                )
                 - danger_penalty,
         )
     }
@@ -694,9 +649,10 @@ impl SearchEngine {
 
         let mut next_counts = *concealed_counts;
         next_counts[discard_tile_index] -= 1;
-        let initial_risk = self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
-            * self.monte_carlo_safety_weight
-            / 100;
+        let initial_risk =
+            self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
+                * self.monte_carlo_safety_weight
+                / 100;
         let opening_score = self.base_hand_score(
             context,
             &next_counts,
@@ -762,19 +718,11 @@ impl SearchEngine {
     ) -> Option<i64> {
         let mut counts = *concealed_counts;
         let mut pool = hidden_pool.to_vec();
-        let mut score = self.base_hand_score(
-            context,
-            &counts,
-            meld_tile_key_groups,
-            appended_open_flags,
-        );
+        let mut score =
+            self.base_hand_score(context, &counts, meld_tile_key_groups, appended_open_flags);
 
         for step in 0..horizon {
-            burn_hidden_tiles(
-                &mut pool,
-                context.seat_count.saturating_sub(1),
-                rng,
-            );
+            burn_hidden_tiles(&mut pool, context.seat_count.saturating_sub(1), rng);
             let Some(draw_tile_index) = remove_random_hidden_tile(&mut pool, rng) else {
                 break;
             };
@@ -834,9 +782,11 @@ impl SearchEngine {
                 meld_tile_key_groups,
                 appended_open_flags,
             );
-            let preference_score =
-                self.discard_tile_preference_score(concealed_counts_before_discard, discard_tile_index, false)
-                    / 2;
+            let preference_score = self.discard_tile_preference_score(
+                concealed_counts_before_discard,
+                discard_tile_index,
+                false,
+            ) / 2;
             let safety_penalty = self.discard_danger_penalty(
                 context,
                 concealed_counts_before_discard,
@@ -2175,7 +2125,9 @@ fn strategic_signals(
     let mut open_chow_count = 0_i64;
 
     for (meld_index, meld) in meld_tile_key_groups.iter().enumerate() {
-        let same_tile = meld.first().is_some_and(|first| meld.iter().all(|tile| tile == first));
+        let same_tile = meld
+            .first()
+            .is_some_and(|first| meld.iter().all(|tile| tile == first));
         if meld_open_flags.get(meld_index).copied().unwrap_or(true) && meld.len() == 3 && !same_tile
         {
             open_chow_count += 1;
@@ -2212,7 +2164,8 @@ fn strategic_signals(
         .sum::<i64>();
 
     let concealed_pair_count = concealed_counts.iter().filter(|count| **count >= 2).count() as i64;
-    let concealed_singleton_count = concealed_counts.iter().filter(|count| **count == 1).count() as i64;
+    let concealed_singleton_count =
+        concealed_counts.iter().filter(|count| **count == 1).count() as i64;
     let pair_count = full_counts.iter().filter(|count| **count >= 2).count() as i64;
     let triplet_count = full_counts.iter().filter(|count| **count >= 3).count() as i64;
     let quad_count = full_counts.iter().filter(|count| **count >= 4).count() as i64;
@@ -2235,13 +2188,12 @@ fn strategic_signals(
     } else {
         -260
     };
-    let all_pungs_route = triplet_count * 82
-        + pair_count * 18
-        + value_honor_pair_count * 20
+    let all_pungs_route = triplet_count * 82 + pair_count * 18 + value_honor_pair_count * 20
         - sequence_density * 12
         - open_chow_count * 78;
 
-    let pure_one_suit_fan_estimate = estimate_pure_one_suit_fan(dominant_suit_count, off_suit_count, honor_count);
+    let pure_one_suit_fan_estimate =
+        estimate_pure_one_suit_fan(dominant_suit_count, off_suit_count, honor_count);
     let mixed_one_suit_fan_estimate =
         estimate_mixed_one_suit_fan(dominant_suit_count, off_suit_count, honor_count);
     let seven_pairs_fan_estimate = if open_meld_count == 0 {
@@ -2338,11 +2290,8 @@ fn value_honor_progress(context: &BotContext, counts: &TileCounts) -> (i64, i64,
             continue;
         }
 
-        let per_set_fan = if tile_key == seat_wind {
-            2
-        } else {
-            0
-        } + if Some(tile_key) == round_wind { 2 } else { 0 }
+        let per_set_fan = if tile_key == seat_wind { 2 } else { 0 }
+            + if Some(tile_key) == round_wind { 2 } else { 0 }
             + if tile_index >= 31 { 2 } else { 0 };
 
         if per_set_fan > 0 {
@@ -2362,20 +2311,33 @@ fn value_honor_progress(context: &BotContext, counts: &TileCounts) -> (i64, i64,
     )
 }
 
-fn sequence_density_score(concealed_counts: &TileCounts, meld_tile_key_groups: &[Vec<String>]) -> i64 {
+fn sequence_density_score(
+    concealed_counts: &TileCounts,
+    meld_tile_key_groups: &[Vec<String>],
+) -> i64 {
     let mut density = 0_i64;
 
     for suit_start in [0, 9, 18] {
         for offset in 0..8 {
-            density += i64::from(concealed_counts[suit_start + offset].min(concealed_counts[suit_start + offset + 1]));
+            density += i64::from(
+                concealed_counts[suit_start + offset]
+                    .min(concealed_counts[suit_start + offset + 1]),
+            );
         }
         for offset in 0..7 {
-            density += i64::from(concealed_counts[suit_start + offset].min(concealed_counts[suit_start + offset + 2]));
+            density += i64::from(
+                concealed_counts[suit_start + offset]
+                    .min(concealed_counts[suit_start + offset + 2]),
+            );
         }
     }
 
     for meld in meld_tile_key_groups {
-        if meld.len() == 3 && meld.first().is_some_and(|first| meld.iter().any(|tile| tile != first)) {
+        if meld.len() == 3
+            && meld
+                .first()
+                .is_some_and(|first| meld.iter().any(|tile| tile != first))
+        {
             density += 3;
         }
     }
@@ -2439,7 +2401,8 @@ fn meld_is_terminal_or_honor_set(claim_meld: &[String]) -> bool {
     if !claim_meld.iter().all(|tile| tile == tile_key) {
         return false;
     }
-    tile_index(tile_key).is_some_and(|index| index >= HONOR_TILE_START || matches!(index % 9, 0 | 8))
+    tile_index(tile_key)
+        .is_some_and(|index| index >= HONOR_TILE_START || matches!(index % 9, 0 | 8))
 }
 
 fn meld_has_single_suit(claim_meld: &[String]) -> bool {
@@ -2914,8 +2877,8 @@ mod tests {
         ];
 
         let concealed_tiles = tiles(&[
-            "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "white",
-            "green", "w9",
+            "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "white", "green",
+            "w9",
         ]);
         context.player.concealed_tile_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));

@@ -7,7 +7,7 @@ use crate::core::tile::Tile;
 
 use super::effect::EffectState;
 use super::pending::{LastActionContext, PendingAction};
-use super::{array, bool_or, seat_vec, string_opt, usize_or, PlayerRoundState, WallState};
+use super::{PlayerRoundState, WallState, array, bool_or, seat_vec, string_opt, usize_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct RoundState {
@@ -88,7 +88,9 @@ impl RoundState {
                 .and_then(Value::as_u64)
                 .unwrap_or_default(),
             score_trackers,
-            last_action_context: LastActionContext::from_legacy_value(value.get("last_action_context")),
+            last_action_context: LastActionContext::from_legacy_value(
+                value.get("last_action_context"),
+            ),
             rule_state: RuleRuntimeState {
                 enforce_minimum_eight_fan: bool_or(value, "enforce_minimum_eight_fan", true),
             },

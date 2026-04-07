@@ -1,3 +1,4 @@
+pub mod bot_view;
 pub mod prompt;
 pub mod room_snapshot;
 
