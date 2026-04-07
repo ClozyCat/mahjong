@@ -1763,12 +1763,17 @@ fn apply_discard_action(
             .iter()
             .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
             .ok_or_else(|| "invalid_action".to_string())?;
-        let tile = concealed_tiles.remove(tile_index);
         if let Some(restricted) = restricted_discard_tile_key.as_deref() {
-            if tile.get("tile_key").and_then(Value::as_str) == Some(restricted) {
+            if concealed_tiles
+                .get(tile_index)
+                .and_then(|tile| tile.get("tile_key"))
+                .and_then(Value::as_str)
+                == Some(restricted)
+            {
                 return Err("invalid_action".to_string());
             }
         }
+        let tile = concealed_tiles.remove(tile_index);
         let discards = player
             .get_mut("discards")
             .and_then(Value::as_array_mut)
@@ -5221,6 +5226,96 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["players"][1]["melds"][0],
             json!(["w2", "w3", "w4"])
+        );
+    }
+
+    #[test]
+    fn local_chow_claim_blocks_immediate_same_tile_discard() {
+        let mut room = room_for_local_claim_window();
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w3", "w3#1extra"),
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("t6", "t6#1"),
+            suit("b6", "b6#1")
+        ]);
+
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        let _ = try_handle_action(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled locally")
+        .expect("chow should succeed");
+        let _ = try_handle_action(&mut room, 2, "pass", &[])
+            .expect("pass should be handled locally")
+            .expect("pass should succeed");
+
+        assert_eq!(room["round_state"]["restricted_discard_tile_key"], "w3");
+        assert!(!can_resolve_discard_locally(&room, 1, "w3#1extra"));
+        assert!(try_handle_action(&mut room, 1, "discard", &[String::from("w3#1extra")]).is_none());
+    }
+
+    #[test]
+    fn restricted_discard_rejection_does_not_mutate_hand_state() {
+        let mut room = room_for_local_claim_window();
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w3", "w3#1extra"),
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("t6", "t6#1"),
+            suit("b6", "b6#1")
+        ]);
+
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+        let _ = try_handle_action(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled locally")
+        .expect("chow should succeed");
+        let _ = try_handle_action(&mut room, 2, "pass", &[])
+            .expect("pass should be handled locally")
+            .expect("pass should succeed");
+
+        let concealed_before = room["round_state"]["players"][1]["concealed_tiles"].clone();
+        let discards_before = room["round_state"]["players"][1]["discards"].clone();
+
+        let result = apply_discard_action(&mut room, 1, "w3#1extra");
+
+        assert_eq!(result, Err("invalid_action".to_string()));
+        assert_eq!(
+            room["round_state"]["players"][1]["concealed_tiles"],
+            concealed_before
+        );
+        assert_eq!(
+            room["round_state"]["players"][1]["discards"],
+            discards_before
         );
     }
 
