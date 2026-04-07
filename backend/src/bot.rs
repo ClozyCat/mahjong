@@ -72,8 +72,11 @@ pub struct BotContext {
     pub seat_count: usize,
     pub dealer_seat: usize,
     pub round_wind: Option<String>,
+    pub cumulative_scores: Vec<i64>,
+    pub wall_tiles_remaining: i64,
     pub visible_tile_keys: Vec<String>,
     pub opponent_discards_by_seat: Vec<Vec<String>>,
+    pub opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
     pub kong_entries: Vec<ScoringKongEntry>,
     pub player: BotPlayerContext,
     pub restricted_discard_tile_key: Option<String>,
@@ -90,6 +93,35 @@ struct BotDiscardPlan {
     tile_id: String,
     tile_key: String,
     score: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BotMode {
+    Balanced,
+    LeadingConservative,
+    TrailingAggressive,
+    LateDefense,
+}
+
+#[derive(Clone, Copy)]
+struct ModeProfile {
+    shanten_weight: i64,
+    improving_weight: i64,
+    winning_weight: i64,
+    fan_weight: i64,
+    danger_weight: i64,
+    kong_margin: i64,
+    claim_margin: i64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct OpponentThreat {
+    pressure: i64,
+    tenpai_likelihood: i64,
+    high_tenpai_probability: bool,
+    flush_suit: Option<usize>,
+    honor_focus: bool,
+    dragon_focus: bool,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -144,8 +176,87 @@ struct SearchEngine {
     shanten_cache: HashMap<ShantenKey, i32>,
 }
 
+fn select_bot_mode(context: &BotContext) -> BotMode {
+    let late_round = context.wall_tiles_remaining > 0 && context.wall_tiles_remaining <= 18;
+    if late_round {
+        return BotMode::LateDefense;
+    }
+
+    let my_score = context
+        .cumulative_scores
+        .get(context.seat_index)
+        .copied()
+        .unwrap_or(0);
+    let best_other = context
+        .cumulative_scores
+        .iter()
+        .enumerate()
+        .filter(|(seat, _)| *seat != context.seat_index)
+        .map(|(_, score)| *score)
+        .max()
+        .unwrap_or(my_score);
+    let worst_other = context
+        .cumulative_scores
+        .iter()
+        .enumerate()
+        .filter(|(seat, _)| *seat != context.seat_index)
+        .map(|(_, score)| *score)
+        .min()
+        .unwrap_or(my_score);
+
+    if my_score - best_other >= 24 {
+        return BotMode::LeadingConservative;
+    }
+    if worst_other - my_score >= 16 || best_other - my_score >= 24 {
+        return BotMode::TrailingAggressive;
+    }
+    BotMode::Balanced
+}
+
+fn mode_profile(mode: BotMode) -> ModeProfile {
+    match mode {
+        BotMode::Balanced => ModeProfile {
+            shanten_weight: 1800,
+            improving_weight: 120,
+            winning_weight: 320,
+            fan_weight: 36,
+            danger_weight: 100,
+            kong_margin: KONG_SCORE_MARGIN,
+            claim_margin: CLAIM_SCORE_MARGIN,
+        },
+        BotMode::LeadingConservative => ModeProfile {
+            shanten_weight: 1650,
+            improving_weight: 110,
+            winning_weight: 280,
+            fan_weight: 26,
+            danger_weight: 155,
+            kong_margin: KONG_SCORE_MARGIN + 60,
+            claim_margin: CLAIM_SCORE_MARGIN + 50,
+        },
+        BotMode::TrailingAggressive => ModeProfile {
+            shanten_weight: 1750,
+            improving_weight: 135,
+            winning_weight: 360,
+            fan_weight: 58,
+            danger_weight: 72,
+            kong_margin: (KONG_SCORE_MARGIN - 20).max(20),
+            claim_margin: (CLAIM_SCORE_MARGIN - 25).max(20),
+        },
+        BotMode::LateDefense => ModeProfile {
+            shanten_weight: 1200,
+            improving_weight: 80,
+            winning_weight: 220,
+            fan_weight: 20,
+            danger_weight: 210,
+            kong_margin: KONG_SCORE_MARGIN + 120,
+            claim_margin: CLAIM_SCORE_MARGIN + 100,
+        },
+    }
+}
+
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     let mut engine = SearchEngine::default();
+    let profile = mode_profile(select_bot_mode(context));
     let baseline = engine.best_discard_plan(
         context,
         &context.player.concealed_tiles,
@@ -212,7 +323,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     }
 
     if let Some((action, score)) = best_kong {
-        if score > baseline.score + KONG_SCORE_MARGIN {
+        if score > baseline.score + profile.kong_margin {
             return Some(action);
         }
     }
@@ -226,6 +337,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 
 pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
     let mut engine = SearchEngine::default();
+    let profile = mode_profile(select_bot_mode(context));
     let pass_score = engine.score_13_tile_hand(
         context,
         &context.player.concealed_tile_counts,
@@ -290,7 +402,7 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
     }
 
     if let Some((action, score)) = best_claim {
-        if score > pass_score + CLAIM_SCORE_MARGIN {
+        if score > pass_score + profile.claim_margin {
             return Some(action);
         }
     }
@@ -375,9 +487,9 @@ impl SearchEngine {
             if !visited_tile_keys.insert(tile.tile_key.clone()) {
                 continue;
             }
-            let Some(score) = self.score_discard_candidate(
-                context,
-                concealed_tiles,
+        let Some(score) = self.score_discard_candidate(
+            context,
+            concealed_tiles,
                 meld_tile_key_groups,
                 appended_open_flags,
                 restricted_discard_tile_key,
@@ -435,8 +547,10 @@ impl SearchEngine {
             depth,
         );
         let prefer_drawn_copy = drawn_tile_id == Some(tile.tile_id.as_str());
+        let profile = mode_profile(select_bot_mode(context));
         let danger_penalty =
-            discard_danger_penalty(context, &concealed_counts, &tile.tile_key);
+            discard_danger_penalty(context, &concealed_counts, &tile.tile_key) * profile.danger_weight
+                / 100;
         Some(
             state_score
                 + discard_tile_preference_score(
@@ -502,6 +616,7 @@ impl SearchEngine {
         meld_tile_key_groups: &[Vec<String>],
         appended_open_flags: &[bool],
     ) -> i64 {
+        let profile = mode_profile(select_bot_mode(context));
         let open_meld_count = meld_tile_key_groups.len();
         let shanten = self.bot_min_shanten(concealed_counts, open_meld_count);
         let visible_counts = visible_tile_counts_for_state(context, meld_tile_key_groups);
@@ -540,10 +655,10 @@ impl SearchEngine {
         }
 
         let tenpai_bonus = if shanten == 0 { 600 } else { 0 };
-        -i64::from(shanten) * 1800
-            + improving_outs * 120
-            + winning_outs * 320
-            + fan_potential * 36
+        -i64::from(shanten) * profile.shanten_weight
+            + improving_outs * profile.improving_weight
+            + winning_outs * profile.winning_weight
+            + fan_potential * profile.fan_weight
             + bot_shape_score(concealed_counts)
             + suit_focus_score(concealed_counts, meld_tile_key_groups)
             + honor_value_score(context, concealed_counts)
@@ -974,6 +1089,7 @@ fn discard_danger_penalty(
         return 0;
     };
     let visible_counts = visible_tile_counts_for_state(context, &context.player.meld_tile_key_groups);
+    let known_count = |index: usize| i64::from(visible_counts[index]) + i64::from(concealed_counts[index]);
     let unseen_copies = i64::from((4 - visible_counts[discard_index]).max(0));
     let round_progress = context
         .opponent_discards_by_seat
@@ -983,24 +1099,52 @@ fn discard_danger_penalty(
     let late_factor = 1 + round_progress / 14;
     let mut penalty = unseen_copies * 10 * late_factor;
 
+    let absolute_visible = known_count(discard_index);
+    if absolute_visible >= 4 {
+        return 0;
+    }
+    if absolute_visible == 3 {
+        penalty -= 80;
+    }
+
     for (seat, discards) in context.opponent_discards_by_seat.iter().enumerate() {
         if seat == context.seat_index {
             continue;
         }
+        let threat = opponent_threat_profile(context, seat);
+        penalty += threat.pressure + threat.tenpai_likelihood;
         let same_tile_discards = discards.iter().filter(|key| key.as_str() == tile_key).count() as i64;
         if same_tile_discards > 0 {
-            penalty -= 90 * same_tile_discards;
+            penalty -= 150 * same_tile_discards;
             continue;
         }
 
         let seat_recent = discards.iter().rev().take(6).cloned().collect::<Vec<_>>();
         if discard_index >= HONOR_TILE_START {
             penalty += 36;
+            if threat.honor_focus {
+                penalty += 42;
+            }
+            if threat.dragon_focus && discard_index >= 31 {
+                penalty += 56;
+            }
+            if threat.high_tenpai_probability {
+                penalty += 34;
+            }
         } else {
             let rank = (discard_index % 9) + 1;
+            let suit_index = discard_index / 9;
             if rank == 1 || rank == 9 {
                 penalty += 22;
             }
+            if threat.flush_suit == Some(suit_index) {
+                penalty += 52;
+            }
+            if threat.high_tenpai_probability {
+                penalty += if rank == 1 || rank == 9 { 18 } else { 28 };
+            }
+            penalty -= suji_safety_bonus(tile_key, discards) as i64;
+            penalty -= kabe_safety_bonus(discard_index, &known_count) as i64;
             let suit = tile_key.as_bytes()[0] as char;
             let same_suit_recent = seat_recent
                 .iter()
@@ -1034,6 +1178,59 @@ fn discard_danger_penalty(
     penalty.max(0)
 }
 
+fn suji_safety_bonus(tile_key: &str, discards: &[String]) -> i32 {
+    let Some(tile_index) = tile_index(tile_key) else {
+        return 0;
+    };
+    if tile_index >= HONOR_TILE_START {
+        return 0;
+    }
+    let rank = (tile_index % 9) + 1;
+    let mut bonus = 0;
+    if rank >= 4 {
+        let lower_suji = tile_key_for_index(tile_index - 3);
+        if discards.iter().any(|key| key == lower_suji) {
+            bonus += 34;
+        }
+    }
+    if rank <= 6 {
+        let upper_suji = tile_key_for_index(tile_index + 3);
+        if discards.iter().any(|key| key == upper_suji) {
+            bonus += 34;
+        }
+    }
+    bonus
+}
+
+fn kabe_safety_bonus<F>(tile_index: usize, known_count: &F) -> i32
+where
+    F: Fn(usize) -> i64,
+{
+    if tile_index >= HONOR_TILE_START {
+        return 0;
+    }
+    let rank = tile_index % 9;
+    let mut bonus = 0;
+    let neighbor_indices = [
+        rank.checked_sub(1).map(|_| tile_index - 1),
+        (rank <= 7).then_some(tile_index + 1),
+        rank.checked_sub(2).map(|_| tile_index - 2),
+        (rank <= 6).then_some(tile_index + 2),
+    ];
+    for (pos, maybe_index) in neighbor_indices.into_iter().enumerate() {
+        let Some(index) = maybe_index else {
+            continue;
+        };
+        let known = known_count(index);
+        if known >= 4 {
+            bonus += if pos < 2 { 26 } else { 14 };
+        } else if known == 3 {
+            bonus += if pos < 2 { 10 } else { 6 };
+        }
+    }
+    bonus
+}
+
 fn discard_tile_preference_score(
     context: &BotContext,
     concealed_counts: &TileCounts,
@@ -1062,6 +1259,144 @@ fn discard_tile_preference_score(
         score += 12;
     }
     score
+}
+
+fn opponent_threat_profile(context: &BotContext, seat: usize) -> OpponentThreat {
+    let melds = context
+        .opponent_melds_by_seat
+        .get(seat)
+        .cloned()
+        .unwrap_or_default();
+    let discards = context
+        .opponent_discards_by_seat
+        .get(seat)
+        .cloned()
+        .unwrap_or_default();
+    let meld_count = melds.len() as i64;
+    if meld_count == 0 {
+        return OpponentThreat::default();
+    }
+
+    let tenpai_likelihood = infer_tenpai_likelihood(context, &melds, &discards);
+    let mut threat = OpponentThreat {
+        pressure: meld_count * 26,
+        tenpai_likelihood,
+        high_tenpai_probability: tenpai_likelihood >= 90,
+        ..Default::default()
+    };
+    let mut suit_counts = [0_i64; 3];
+    let mut honor_count = 0_i64;
+    let mut dragon_melds = 0_i64;
+
+    for meld in &melds {
+        let mut meld_has_honor = false;
+        let mut same_tile = true;
+        let first = meld.first().cloned().unwrap_or_default();
+        for tile_key in meld {
+            if tile_key != &first {
+                same_tile = false;
+            }
+            if let Some(index) = tile_index(tile_key) {
+                if index >= HONOR_TILE_START {
+                    meld_has_honor = true;
+                    honor_count += 1;
+                    if index >= 31 {
+                        dragon_melds += i64::from(same_tile);
+                    }
+                } else {
+                    suit_counts[index / 9] += 1;
+                }
+            }
+        }
+        if meld_has_honor {
+            threat.pressure += 18;
+        }
+        if same_tile && meld.len() >= 3 {
+            threat.pressure += 14;
+        }
+    }
+
+    let dominant_suit = suit_counts
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, count)| **count)
+        .map(|(index, count)| (index, *count))
+        .unwrap_or((0, 0));
+    let off_suit_discards = discards
+        .iter()
+        .filter_map(|tile_key| tile_index(tile_key))
+        .filter(|index| *index < HONOR_TILE_START && *index / 9 != dominant_suit.0)
+        .count() as i64;
+    if dominant_suit.1 >= 6 && off_suit_discards >= 4 {
+        threat.flush_suit = Some(dominant_suit.0);
+        threat.pressure += 36;
+    }
+    if honor_count >= 3 {
+        threat.honor_focus = true;
+        threat.pressure += 22;
+    }
+    if dragon_melds > 0 {
+        threat.dragon_focus = true;
+        threat.pressure += dragon_melds * 26;
+    }
+    threat
+}
+
+fn infer_tenpai_likelihood(
+    context: &BotContext,
+    melds: &[Vec<String>],
+    discards: &[String],
+) -> i64 {
+    let meld_count = melds.len() as i64;
+    if meld_count == 0 {
+        return 0;
+    }
+
+    let late_round = context.wall_tiles_remaining > 0 && context.wall_tiles_remaining <= 20;
+    let very_late_round = context.wall_tiles_remaining > 0 && context.wall_tiles_remaining <= 12;
+    let recent_discards = discards.iter().rev().take(6).cloned().collect::<Vec<_>>();
+    let honor_or_terminal_recent = recent_discards
+        .iter()
+        .filter(|tile_key| {
+            tile_index(tile_key).is_some_and(|index| {
+                index >= HONOR_TILE_START || matches!(index % 9, 0 | 8)
+            })
+        })
+        .count() as i64;
+    let duplicate_recent = recent_discards
+        .iter()
+        .fold(HashMap::<&str, i64>::new(), |mut acc, tile_key| {
+            *acc.entry(tile_key.as_str()).or_default() += 1;
+            acc
+        })
+        .values()
+        .filter(|count| **count >= 2)
+        .count() as i64;
+    let suit_span = recent_discards
+        .iter()
+        .filter_map(|tile_key| tile_index(tile_key))
+        .filter(|index| *index < HONOR_TILE_START)
+        .map(|index| index / 9)
+        .collect::<HashSet<_>>()
+        .len() as i64;
+    let stagnation_signal = honor_or_terminal_recent * 8
+        + duplicate_recent * 16
+        + i64::from(suit_span <= 1) * 12;
+
+    let mut likelihood = meld_count * 26 + stagnation_signal;
+    if late_round {
+        likelihood += 20;
+    }
+    if very_late_round {
+        likelihood += 16;
+    }
+    if meld_count >= 3 {
+        likelihood += 18;
+    }
+    if discards.len() >= 9 {
+        likelihood += 10;
+    }
+    likelihood.clamp(0, 140)
 }
 
 fn preferred_discard_tile_id_for_key(
@@ -1489,4 +1824,203 @@ fn tile_key_for_index(tile_index: usize) -> &'static str {
         .get(tile_index)
         .copied()
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_context() -> BotContext {
+        BotContext {
+            seat_index: 0,
+            seat_count: 4,
+            dealer_seat: 0,
+            round_wind: Some("east".to_string()),
+            cumulative_scores: vec![0, 0, 0, 0],
+            wall_tiles_remaining: 40,
+            visible_tile_keys: Vec::new(),
+            opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
+            opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+            kong_entries: Vec::new(),
+            player: BotPlayerContext {
+                concealed_tiles: vec![],
+                concealed_tile_counts: [0; TILE_KIND_COUNT],
+                meld_tile_key_groups: Vec::new(),
+                flower_count: 0,
+            },
+            restricted_discard_tile_key: None,
+            drawn_tile_id: None,
+            enforce_minimum_eight_fan: true,
+            self_kong_candidates: Vec::new(),
+            claim_options: Vec::new(),
+            last_discard_tile_key: None,
+            add_kong_risk_tiles: HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn selects_leading_conservative_mode() {
+        let mut context = base_context();
+        context.cumulative_scores = vec![48, 0, -16, -32];
+        assert_eq!(select_bot_mode(&context), BotMode::LeadingConservative);
+    }
+
+    #[test]
+    fn selects_trailing_aggressive_mode() {
+        let mut context = base_context();
+        context.cumulative_scores = vec![-24, 24, 8, -8];
+        assert_eq!(select_bot_mode(&context), BotMode::TrailingAggressive);
+    }
+
+    #[test]
+    fn selects_late_defense_before_other_modes() {
+        let mut context = base_context();
+        context.cumulative_scores = vec![-40, 20, 10, 10];
+        context.wall_tiles_remaining = 12;
+        assert_eq!(select_bot_mode(&context), BotMode::LateDefense);
+    }
+
+    #[test]
+    fn late_defense_penalizes_danger_more_than_balanced() {
+        let mut context = base_context();
+        context.opponent_discards_by_seat = vec![
+            vec![],
+            vec!["w9".to_string(), "w9".to_string()],
+            vec!["b1".to_string()],
+            vec!["t9".to_string()],
+        ];
+        let mut counts = [0_u8; TILE_KIND_COUNT];
+        counts[tile_index("w5").expect("tile index")] = 1;
+        let balanced_penalty = discard_danger_penalty(&context, &counts, "w5");
+
+        context.wall_tiles_remaining = 10;
+        let late_penalty = discard_danger_penalty(&context, &counts, "w5")
+            * mode_profile(select_bot_mode(&context)).danger_weight
+            / 100;
+
+        assert!(late_penalty > balanced_penalty);
+    }
+
+    #[test]
+    fn exposed_dragon_meld_raises_honor_danger() {
+        let mut context = base_context();
+        context.opponent_melds_by_seat[1] = vec![vec![
+            "red".to_string(),
+            "red".to_string(),
+            "red".to_string(),
+        ]];
+        let counts = [0_u8; TILE_KIND_COUNT];
+        let dragon_penalty = discard_danger_penalty(&context, &counts, "green");
+        let suit_penalty = discard_danger_penalty(&context, &counts, "w5");
+        assert!(dragon_penalty > suit_penalty);
+    }
+
+    #[test]
+    fn flush_like_open_melds_raise_same_suit_danger() {
+        let mut context = base_context();
+        context.opponent_melds_by_seat[2] = vec![
+            vec!["w3".to_string(), "w4".to_string(), "w5".to_string()],
+            vec!["w7".to_string(), "w8".to_string(), "w9".to_string()],
+        ];
+        context.opponent_discards_by_seat[2] = vec![
+            "b1".to_string(),
+            "b4".to_string(),
+            "t2".to_string(),
+            "t8".to_string(),
+            "b9".to_string(),
+        ];
+        let counts = [0_u8; TILE_KIND_COUNT];
+        let same_suit_penalty = discard_danger_penalty(&context, &counts, "w6");
+        let off_suit_penalty = discard_danger_penalty(&context, &counts, "b6");
+        assert!(same_suit_penalty > off_suit_penalty);
+    }
+
+    #[test]
+    fn genbutsu_is_safer_than_non_genbutsu() {
+        let mut context = base_context();
+        context.opponent_discards_by_seat[1] = vec!["w5".to_string()];
+        let counts = [0_u8; TILE_KIND_COUNT];
+        let genbutsu_penalty = discard_danger_penalty(&context, &counts, "w5");
+        let other_penalty = discard_danger_penalty(&context, &counts, "w4");
+        assert!(genbutsu_penalty < other_penalty);
+    }
+
+    #[test]
+    fn suji_discards_reduce_danger_without_riichi_specific_assumptions() {
+        let mut context = base_context();
+        context.opponent_discards_by_seat[1] = vec!["w1".to_string(), "w7".to_string()];
+        let counts = [0_u8; TILE_KIND_COUNT];
+        let suji_penalty = discard_danger_penalty(&context, &counts, "w4");
+        let non_suji_penalty = discard_danger_penalty(&context, &counts, "w5");
+        assert!(suji_penalty < non_suji_penalty);
+    }
+
+    #[test]
+    fn absolute_kabe_and_zetsu_reduce_danger() {
+        let context = base_context();
+        let mut counts = [0_u8; TILE_KIND_COUNT];
+        counts[tile_index("w5").expect("tile index")] = 1;
+        counts[tile_index("w4").expect("tile index")] = 3;
+        let kabe_penalty = discard_danger_penalty(&context, &counts, "w5");
+
+        let mut zetsu_counts = [0_u8; TILE_KIND_COUNT];
+        zetsu_counts[tile_index("w5").expect("tile index")] = 4;
+        let zetsu_penalty = discard_danger_penalty(&context, &zetsu_counts, "w5");
+
+        assert!(zetsu_penalty <= kabe_penalty);
+    }
+
+    #[test]
+    fn multiple_open_melds_and_late_round_mark_high_tenpai_probability() {
+        let mut context = base_context();
+        context.wall_tiles_remaining = 10;
+        context.opponent_melds_by_seat[1] = vec![
+            vec!["w3".to_string(), "w4".to_string(), "w5".to_string()],
+            vec!["t7".to_string(), "t8".to_string(), "t9".to_string()],
+            vec!["red".to_string(), "red".to_string(), "red".to_string()],
+        ];
+        context.opponent_discards_by_seat[1] = vec![
+            "white".to_string(),
+            "north".to_string(),
+            "w1".to_string(),
+            "w1".to_string(),
+            "b9".to_string(),
+            "green".to_string(),
+        ];
+        let threat = opponent_threat_profile(&context, 1);
+        assert!(threat.high_tenpai_probability);
+        assert!(threat.tenpai_likelihood >= 90);
+    }
+
+    #[test]
+    fn explicit_tenpai_inference_raises_overall_discard_danger() {
+        let counts = [0_u8; TILE_KIND_COUNT];
+
+        let mut quiet = base_context();
+        quiet.opponent_melds_by_seat[1] = vec![vec![
+            "w3".to_string(),
+            "w4".to_string(),
+            "w5".to_string(),
+        ]];
+        quiet.opponent_discards_by_seat[1] = vec!["w1".to_string(), "t1".to_string()];
+        let quiet_penalty = discard_danger_penalty(&quiet, &counts, "w6");
+
+        let mut loud = base_context();
+        loud.wall_tiles_remaining = 9;
+        loud.opponent_melds_by_seat[1] = vec![
+            vec!["w3".to_string(), "w4".to_string(), "w5".to_string()],
+            vec!["t7".to_string(), "t8".to_string(), "t9".to_string()],
+        ];
+        loud.opponent_discards_by_seat[1] = vec![
+            "east".to_string(),
+            "east".to_string(),
+            "white".to_string(),
+            "b9".to_string(),
+            "north".to_string(),
+            "north".to_string(),
+        ];
+        let loud_penalty = discard_danger_penalty(&loud, &counts, "w6");
+
+        assert!(loud_penalty > quiet_penalty);
+    }
 }

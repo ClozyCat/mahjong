@@ -4122,6 +4122,16 @@ fn build_bot_context_from_cache(
         seat_count: cache.seat_count,
         dealer_seat: cache.dealer_seat,
         round_wind: cache.round_wind.clone(),
+        cumulative_scores: (0..cache.seat_count)
+            .map(|seat| {
+                room.get("match_state")
+                    .and_then(|state| state.get("cumulative_scores"))
+                    .and_then(|scores| scores.get(seat.to_string()))
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0)
+            })
+            .collect(),
+        wall_tiles_remaining: wall_live_tiles_remaining(room),
         visible_tile_keys: cache.visible_tile_keys.clone(),
         opponent_discards_by_seat: room
             .get("round_state")
@@ -4141,6 +4151,39 @@ fn build_bot_context_from_cache(
                                         tile.get("tile_key")
                                             .and_then(Value::as_str)
                                             .map(ToString::to_string)
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        opponent_melds_by_seat: room
+            .get("round_state")
+            .and_then(|round| round.get("players"))
+            .and_then(Value::as_array)
+            .map(|players| {
+                players
+                    .iter()
+                    .map(|player| {
+                        player
+                            .get("melds")
+                            .and_then(Value::as_array)
+                            .map(|melds| {
+                                melds
+                                    .iter()
+                                    .map(|meld| {
+                                        meld.as_array()
+                                            .map(|tiles| {
+                                                tiles
+                                                    .iter()
+                                                    .filter_map(|tile| {
+                                                        tile.as_str().map(ToString::to_string)
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            })
+                                            .unwrap_or_default()
                                     })
                                     .collect::<Vec<_>>()
                             })
