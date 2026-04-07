@@ -3,6 +3,18 @@ use crate::bot::{
     BotPlayerContext as EngineBotPlayerContext, BotSelfKongCandidate as SelfKongCandidate,
     BotSelfKongKind as SelfKongKind, BotTileView,
 };
+use crate::core::action::{GameCommand, PlayerAction};
+use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::core::engine::{
+    EngineContext, EngineOutput, parse_legacy_player_command,
+    planner::{
+        compute_pending_timeout_value, plan_advance_opening_flowers, plan_flower_action,
+        plan_claim_window_continuation_without_winner, plan_claim_window_response,
+        plan_discard_action, plan_round_start_payload, plan_settlement_to_match, resolve_claims,
+    },
+};
+use crate::core::state::{MatchState, RoomState};
+use crate::projection::SeatProjectionSupport;
 use crate::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
     KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
@@ -11,10 +23,8 @@ use crate::scoring::{
 };
 use chrono::{SecondsFormat, Utc};
 use rand::Rng;
-use rand::SeedableRng;
-use rand::seq::SliceRandom;
 use serde_json::{Map, Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const MAX_SEATS: usize = 4;
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
@@ -180,28 +190,12 @@ pub fn room_messages(room: &Value, local_seat: usize) -> Vec<Value> {
 }
 
 pub fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {
-    let pending = private_pending_action(room, local_seat)?;
-    let options = pending
-        .get("options")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if options.is_empty() {
-        return None;
-    }
-    let seat_index = pending
-        .get("seat_index")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(local_seat);
-    Some(json!({
-        "type": "action_prompt",
-        "payload": {
-            "seat_index": seat_index,
-            "options": options,
-            "deadline_at": pending.get("deadline_at").cloned().unwrap_or(Value::Null),
-        }
-    }))
+    let state = project_room_state(room).ok()?;
+    crate::projection::prompt::action_prompt_message(
+        &state,
+        local_seat,
+        &seat_projection_support(room, local_seat),
+    )
 }
 
 pub fn room_ready_to_start(room: &Value) -> bool {
@@ -365,23 +359,25 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         seed,
     );
 
-    let mut cumulative_scores = Map::new();
+    let mut cumulative_scores = BTreeMap::new();
     for seat in 0..MAX_SEATS {
-        cumulative_scores.insert(seat.to_string(), Value::Number(0.into()));
+        cumulative_scores.insert(seat, 0);
     }
-    if let Some(obj) = room.as_object_mut() {
-        obj.insert(
-            "match_state".to_string(),
-            json!({
-                "prevailing_wind": "east",
-                "hand_number": 1,
-                "dealer_seat": dealer_seat,
-                "cumulative_scores": cumulative_scores,
-                "match_finished": false,
-                "last_completed_round_id": Value::Null,
-            }),
-        );
-    }
+    let match_state = MatchState {
+        prevailing_wind: "east".to_string(),
+        hand_number: 1,
+        dealer_seat,
+        cumulative_scores,
+        match_finished: false,
+        last_completed_round_id: None,
+    };
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoomField {
+            key: "match_state".to_string(),
+            value: serde_json::to_value(&match_state).unwrap_or(Value::Null),
+        }],
+    );
 }
 
 fn start_round(
@@ -392,129 +388,44 @@ fn start_round(
     enforce_minimum_eight_fan: bool,
     seed: u64,
 ) {
-    let mut wall_tiles = full_tile_set();
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    wall_tiles.shuffle(&mut rng);
-
-    let mut head_index = 0usize;
-    let mut players = Vec::with_capacity(MAX_SEATS);
-    for seat in 0..MAX_SEATS {
-        let mut concealed_tiles = Vec::with_capacity(13);
-        for _ in 0..13 {
-            concealed_tiles.push(wall_tiles[head_index].clone());
-            head_index += 1;
-        }
-        players.push(json!({
-            "seat": seat,
-            "concealed_tiles": concealed_tiles,
-            "melds": [],
-            "flowers": [],
-            "discards": [],
-        }));
-    }
-
-    let current_actor = dealer_seat;
-    let mut pending_action = Value::Null;
-    let opening_completed = if any_concealed_flower(&players) {
-        pending_action = json!({
-            "type": "opening_flowers",
-            "dealer_seat": dealer_seat,
-        });
-        false
-    } else {
-        true
-    };
-
-    let draw_tile = wall_tiles[head_index].clone();
-    head_index += 1;
-    if let Some(tiles) = players[current_actor]
-        .as_object_mut()
-        .and_then(|player| player.get_mut("concealed_tiles"))
-        .and_then(Value::as_array_mut)
-    {
-        tiles.push(draw_tile.clone());
-    }
-
-    if opening_completed {
-        pending_action = Value::Null;
-    }
-
-    let round_state = json!({
-        "round_id": round_id,
-        "dealer_seat": dealer_seat,
-        "current_actor": current_actor,
-        "wall": {
-            "tiles": wall_tiles,
-            "head_index": head_index,
-            "tail_index": 143,
-        },
-        "players": players,
-        "last_discard": Value::Null,
-        "pending_action": if pending_action.is_null() { Value::Null } else { pending_action.clone() },
-        "phase": "playing",
-        "settlement": Value::Null,
-        "version": 1,
-        "score_trackers": {
-            "kong_entries": [],
-            "opening_flowers_completed": opening_completed,
-        },
-        "last_action_context": {
-            "kind": "draw",
-            "seat": current_actor,
-            "tile_id": draw_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-            "from_kong_replacement": false,
-            "was_last_live_tile": false,
-            "was_last_discard": false,
-        },
-        "round_wind": round_wind,
-        "enforce_minimum_eight_fan": enforce_minimum_eight_fan,
-        "restricted_discard_tile_key": Value::Null,
-    });
-
-    let pending_timeout = if opening_completed {
-        json!({
-            "kind": "active_turn",
-            "seat_index": current_actor,
-            "deadline_at": deadline_iso(),
-            "drawn_tile_id": draw_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-        })
-    } else {
-        let flower_tile_id = players[current_actor]
-            .get("concealed_tiles")
-            .and_then(Value::as_array)
-            .and_then(|tiles| {
-                tiles
-                    .iter()
-                    .find(|tile| tile.get("kind").and_then(Value::as_str) == Some("flower"))
-            })
-            .and_then(|tile| tile.get("tile_id"))
-            .cloned()
-            .unwrap_or(Value::Null);
-        json!({
-            "kind": "opening_flowers",
-            "seat_index": current_actor,
-            "deadline_at": deadline_iso(),
-            "drawn_tile_id": flower_tile_id,
-        })
-    };
-
-    if let Some(obj) = room.as_object_mut() {
-        obj.insert("phase".to_string(), Value::String("playing".to_string()));
-        obj.insert("round_state".to_string(), round_state);
-        obj.insert("pending_timeout".to_string(), pending_timeout);
-        obj.insert(
-            "start_next_round_confirmed_seats".to_string(),
-            Value::Array(vec![]),
-        );
-        obj.insert(
-            "restart_match_confirmed_seats".to_string(),
-            Value::Array(vec![]),
-        );
-        obj.insert(
-            "continue_action_auto_advance_deadline_at".to_string(),
-            Value::Null,
-        );
-    }
+    let (round_state, pending_timeout) = plan_round_start_payload(
+        dealer_seat,
+        round_wind,
+        round_id,
+        enforce_minimum_eight_fan,
+        seed,
+    );
+    let round_state = serde_json::to_value(&round_state).unwrap_or(Value::Null);
+    let pending_timeout = serde_json::to_value(&pending_timeout).unwrap_or(Value::Null);
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetRoomField {
+                key: "phase".to_string(),
+                value: Value::String("playing".to_string()),
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "round_state".to_string(),
+                value: round_state,
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "pending_timeout".to_string(),
+                value: pending_timeout,
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "start_next_round_confirmed_seats".to_string(),
+                value: Value::Array(vec![]),
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "restart_match_confirmed_seats".to_string(),
+                value: Value::Array(vec![]),
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "continue_action_auto_advance_deadline_at".to_string(),
+                value: Value::Null,
+            },
+        ],
+    );
 }
 
 pub fn try_handle_action(
@@ -523,55 +434,97 @@ pub fn try_handle_action(
     action_type: &str,
     tile_ids: &[String],
 ) -> Option<Result<Vec<Value>, String>> {
-    match action_type {
-        "hu" => Some(apply_hu_action(room, seat_index)),
-        "flower" => Some(apply_flower_action(room, seat_index, tile_ids)),
-        "discard" => {
-            if tile_ids.len() != 1 {
-                Some(Err("select_tile_first".to_string()))
-            } else if can_resolve_discard_locally(room, seat_index, &tile_ids[0]) {
-                Some(apply_discard_action(room, seat_index, &tile_ids[0]))
+    let command = match parse_legacy_player_command(seat_index, action_type, tile_ids)? {
+        Ok(command) => command,
+        Err(reason) => return Some(Err(reason)),
+    };
+    try_handle_command(room, command).map(|result| result.map(|output| output.emitted_messages))
+}
+
+pub fn try_handle_command(
+    room: &mut Value,
+    command: GameCommand,
+) -> Option<Result<EngineOutput, String>> {
+    let context = EngineContext::from_legacy_room(room).ok()?;
+    match command {
+        GameCommand::PlayerAction { actor, action } => {
+            try_handle_player_action_command(room, &context, actor, action)
+        }
+        _ => None,
+    }
+}
+
+fn try_handle_player_action_command(
+    room: &mut Value,
+    _context: &EngineContext,
+    seat_index: usize,
+    action: PlayerAction,
+) -> Option<Result<EngineOutput, String>> {
+    match action {
+        PlayerAction::Hu => Some(apply_hu_action(room, seat_index).map(EngineOutput::from_emitted_messages)),
+        PlayerAction::Flower { tile_ids } => Some(
+            apply_flower_action(room, seat_index, &tile_ids).map(EngineOutput::from_emitted_messages),
+        ),
+        PlayerAction::Discard { tile_id } => {
+            if can_resolve_discard_locally(room, seat_index, &tile_id) {
+                Some(apply_discard_action(room, seat_index, &tile_id).map(EngineOutput::from_emitted_messages))
             } else {
                 None
             }
         }
-        "kong" => {
+        PlayerAction::Kong { tile_ids } => {
             if claim_window_supported_locally(room) {
-                Some(apply_claim_window_action(
-                    room,
-                    seat_index,
-                    action_type,
-                    tile_ids,
-                ))
+                Some(
+                    apply_claim_window_action(room, seat_index, "kong", &tile_ids)
+                        .map(EngineOutput::from_emitted_messages),
+                )
             } else if rob_kong_window_supported_locally(room) {
                 None
             } else if is_self_kong_turn(room, seat_index) {
-                try_handle_self_kong_action(room, seat_index, tile_ids)
-            } else if action_type == "pass" && pending_timeout_kind(room) == Some("opening_flowers")
-            {
-                Some(apply_opening_flowers_pass(room, seat_index))
+                try_handle_self_kong_action(room, seat_index, &tile_ids)
+                    .map(|result| result.map(EngineOutput::from_emitted_messages))
             } else {
                 None
             }
         }
-        "pass" | "chow" | "pung" => {
+        PlayerAction::Pass => {
             if claim_window_supported_locally(room) {
-                Some(apply_claim_window_action(
-                    room,
-                    seat_index,
-                    action_type,
-                    tile_ids,
-                ))
-            } else if action_type == "pass" && rob_kong_window_supported_locally(room) {
-                Some(apply_rob_kong_pass(room, seat_index))
-            } else if action_type == "pass" && pending_timeout_kind(room) == Some("opening_flowers")
-            {
-                Some(apply_opening_flowers_pass(room, seat_index))
+                Some(
+                    apply_claim_window_action(room, seat_index, "pass", &[])
+                        .map(EngineOutput::from_emitted_messages),
+                )
+            } else if rob_kong_window_supported_locally(room) {
+                Some(apply_rob_kong_pass(room, seat_index).map(EngineOutput::from_emitted_messages))
+            } else if pending_timeout_kind(room) == Some("opening_flowers") {
+                Some(
+                    apply_opening_flowers_pass(room, seat_index)
+                        .map(EngineOutput::from_emitted_messages),
+                )
             } else {
                 None
             }
         }
-        _ => None,
+        PlayerAction::Chow { tile_ids } => {
+            if claim_window_supported_locally(room) {
+                Some(
+                    apply_claim_window_action(room, seat_index, "chow", &tile_ids)
+                        .map(EngineOutput::from_emitted_messages),
+                )
+            } else {
+                None
+            }
+        }
+        PlayerAction::Pung { tile_ids } => {
+            if claim_window_supported_locally(room) {
+                Some(
+                    apply_claim_window_action(room, seat_index, "pung", &tile_ids)
+                        .map(EngineOutput::from_emitted_messages),
+                )
+            } else {
+                None
+            }
+        }
+        PlayerAction::ActivateSkill { .. } => Some(Err("unsupported_action".to_string())),
     }
 }
 
@@ -710,16 +663,13 @@ pub fn record_continue_action(
     } else {
         "restart_match_confirmed_seats"
     };
-    if let Some(confirmations) = room.get_mut(field).and_then(Value::as_array_mut) {
-        if !confirmations.iter().any(|value| {
-            value
-                .as_u64()
-                .map(|seat| seat as usize == seat_index)
-                .unwrap_or(false)
-        }) {
-            confirmations.push(Value::Number((seat_index as u64).into()));
-        }
-    }
+    apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::PushUniqueSeatToRoomArray {
+            key: field.to_string(),
+            seat_index,
+        }],
+    )?;
     reconcile_continue_action(room)?;
     Ok(())
 }
@@ -763,27 +713,35 @@ pub fn apply_hu_settlement(
         .and_then(|round| round.get("last_discard"))
         .cloned()
         .unwrap_or(Value::Null);
-
-    if let Some(obj) = room.as_object_mut() {
-        obj.insert("phase".to_string(), Value::String("settlement".to_string()));
-        obj.insert("pending_timeout".to_string(), Value::Null);
+    let mut mutations = vec![
+        LegacyRoomMutation::SetRoomField {
+            key: "phase".to_string(),
+            value: Value::String("settlement".to_string()),
+        },
+        LegacyRoomMutation::SetRoomField {
+            key: "pending_timeout".to_string(),
+            value: Value::Null,
+        },
+        LegacyRoomMutation::SetRoundField {
+            key: "phase".to_string(),
+            value: Value::String("settlement".to_string()),
+        },
+        LegacyRoomMutation::SetRoundPendingAction {
+            pending_action: Value::Null,
+        },
+        LegacyRoomMutation::SetRoundField {
+            key: "settlement".to_string(),
+            value: settlement.clone(),
+        },
+        LegacyRoomMutation::SetRoundCurrentActor {
+            seat_index: winner_seat,
+        },
+        LegacyRoomMutation::IncrementRoundVersion,
+    ];
+    if let Ok(state) = project_room_state(room) {
+        mutations.extend(plan_settlement_to_match(&state, &settlement));
     }
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("phase".to_string(), Value::String("settlement".to_string()));
-        round_state.insert("pending_action".to_string(), Value::Null);
-        round_state.insert("settlement".to_string(), settlement);
-        round_state.insert(
-            "current_actor".to_string(),
-            Value::Number((winner_seat as u64).into()),
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
-    apply_settlement_to_match(room);
+    apply_legacy_room_mutations(room, &mutations)?;
 
     let first_event = if hu_context == "self_draw" {
         round_event_message(
@@ -1256,20 +1214,27 @@ fn player_flower_count(room: &Value, seat_index: usize) -> usize {
 }
 
 fn room_snapshot(room: &Value, local_seat: usize) -> Value {
-    json!({
-        "type": "room_snapshot",
-        "payload": {
-            "table_code": room.get("table_code").cloned().unwrap_or(Value::Null),
-            "phase": room.get("phase").cloned().unwrap_or(Value::String("waiting".to_string())),
-            "mode": room.get("mode").cloned().unwrap_or(Value::String("normal".to_string())),
-            "seats": public_seats(room),
-            "local_seat": local_seat,
-            "reconnect_token": reconnect_token(room, local_seat),
-            "match_state": public_match_state(room),
-            "private_state": private_round_state(room, local_seat),
-            "continue_action": continue_action_snapshot(room),
-        }
-    })
+    let Ok(state) = project_room_state(room) else {
+        return json!({
+            "type": "room_snapshot",
+            "payload": {
+                "table_code": room.get("table_code").cloned().unwrap_or(Value::Null),
+                "phase": room.get("phase").cloned().unwrap_or(Value::String("waiting".to_string())),
+                "mode": room.get("mode").cloned().unwrap_or(Value::String("normal".to_string())),
+                "seats": Value::Array(vec![]),
+                "local_seat": local_seat,
+                "reconnect_token": Value::Null,
+                "match_state": Value::Null,
+                "private_state": Value::Null,
+                "continue_action": Value::Null,
+            }
+        });
+    };
+    crate::projection::room_snapshot::room_snapshot_message(
+        &state,
+        local_seat,
+        &seat_projection_support(room, local_seat),
+    )
 }
 
 fn apply_opening_flowers_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, String> {
@@ -1293,7 +1258,9 @@ fn apply_opening_flowers_pass(room: &mut Value, seat_index: usize) -> Result<Vec
         return Err("invalid_action".to_string());
     }
 
-    advance_opening_flowers_or_finish(room, seat_index);
+    let state = project_room_state(room)?;
+    let mutations = plan_advance_opening_flowers(&state, seat_index);
+    apply_legacy_room_mutations(room, &mutations)?;
     sync_pending_timeout(room);
     Ok(vec![])
 }
@@ -1326,129 +1293,9 @@ fn apply_flower_action(
     }
 
     let tile_id = &tile_ids[0];
-    let (flower_tile, replacement_tile, opening_flowers_mode) = {
-        let round_state = room
-            .get_mut("round_state")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| "round_not_ready".to_string())?;
-        let opening = round_state
-            .get("pending_action")
-            .and_then(|pending| pending.get("type"))
-            .and_then(Value::as_str)
-            == Some("opening_flowers");
-
-        let flower_tile = {
-            let players = round_state
-                .get_mut("players")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let player = players
-                .get_mut(seat_index)
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let concealed_tiles = player
-                .get_mut("concealed_tiles")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let tile_index = concealed_tiles
-                .iter()
-                .position(|tile| {
-                    tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
-                })
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let tile = concealed_tiles.remove(tile_index);
-            if tile.get("kind").and_then(Value::as_str) != Some("flower") {
-                return Err("invalid_action".to_string());
-            }
-            tile
-        };
-
-        {
-            let players = round_state
-                .get_mut("players")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let player = players
-                .get_mut(seat_index)
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let flowers = player
-                .get_mut("flowers")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            flowers.push(flower_tile.clone());
-        }
-
-        let replacement_tile = {
-            let wall = round_state
-                .get_mut("wall")
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let tail_index = wall
-                .get("tail_index")
-                .and_then(Value::as_i64)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let head_index = wall
-                .get("head_index")
-                .and_then(Value::as_i64)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            if head_index > tail_index {
-                return Err("round_not_ready".to_string());
-            }
-            let tiles = wall
-                .get("tiles")
-                .and_then(Value::as_array)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let tile = tiles
-                .get(tail_index as usize)
-                .cloned()
-                .ok_or_else(|| "invalid_action".to_string())?;
-            wall.insert(
-                "tail_index".to_string(),
-                Value::Number((tail_index - 1).into()),
-            );
-            tile
-        };
-
-        {
-            let players = round_state
-                .get_mut("players")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let player = players
-                .get_mut(seat_index)
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let concealed_tiles = player
-                .get_mut("concealed_tiles")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            concealed_tiles.push(replacement_tile.clone());
-        }
-
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-        round_state.insert(
-            "last_action_context".to_string(),
-            json!({
-                "kind": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                "from_kong_replacement": false,
-                "was_last_live_tile": false,
-                "was_last_discard": false,
-            }),
-        );
-        (flower_tile, replacement_tile, opening)
-    };
-
-    if opening_flowers_mode {
-        advance_opening_flowers_or_finish(room, seat_index);
-    }
+    let state = project_room_state(room)?;
+    let plan = plan_flower_action(&state, seat_index, tile_id)?;
+    apply_legacy_room_mutations(room, &plan.mutations)?;
     sync_pending_timeout(room);
 
     Ok(vec![
@@ -1457,7 +1304,7 @@ fn apply_flower_action(
             json!({
                 "type": "flower_exposed",
                 "seat": seat_index,
-                "tile_id": flower_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                "tile_id": plan.flower_tile.tile_id,
             }),
         ),
         round_event_message(
@@ -1465,7 +1312,7 @@ fn apply_flower_action(
             json!({
                 "type": "replacement_draw",
                 "seat": seat_index,
-                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                "tile_id": plan.replacement_tile.tile_id,
             }),
         ),
     ])
@@ -1534,136 +1381,10 @@ fn complete_self_kong(
     selection: &SelfKongCandidate,
     replacement_tile: Value,
 ) -> Result<Vec<Value>, String> {
-    {
-        let round_state = room
-            .get_mut("round_state")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-
-        {
-            let players = round_state
-                .get_mut("players")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let player = players
-                .get_mut(seat_index)
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            {
-                let concealed = player
-                    .get_mut("concealed_tiles")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                for tile_id in &selection.tile_ids {
-                    let Some(index) = concealed.iter().position(|tile| {
-                        tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
-                    }) else {
-                        return Err("invalid_action".to_string());
-                    };
-                    concealed.remove(index);
-                }
-            }
-
-            let melds = player
-                .get_mut("melds")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            match selection.kind {
-                SelfKongKind::Concealed => {
-                    melds.push(Value::Array(vec![
-                        Value::String(selection.tile_key.clone()),
-                        Value::String(selection.tile_key.clone()),
-                        Value::String(selection.tile_key.clone()),
-                        Value::String(selection.tile_key.clone()),
-                    ]));
-                }
-                SelfKongKind::Add => {
-                    let meld_index = selection
-                        .meld_index
-                        .ok_or_else(|| "invalid_action".to_string())?;
-                    let meld = melds
-                        .get_mut(meld_index)
-                        .and_then(Value::as_array_mut)
-                        .ok_or_else(|| "invalid_action".to_string())?;
-                    meld.push(Value::String(selection.tile_key.clone()));
-                }
-            }
-            let concealed = player
-                .get_mut("concealed_tiles")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            concealed.push(replacement_tile.clone());
-        }
-
-        {
-            let wall = round_state
-                .get_mut("wall")
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let tail_index = wall
-                .get("tail_index")
-                .and_then(Value::as_i64)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            wall.insert(
-                "tail_index".to_string(),
-                Value::Number((tail_index - 1).into()),
-            );
-        }
-
-        append_kong_entry(
-            round_state,
-            match selection.kind {
-                SelfKongKind::Concealed => "concealed_kong",
-                SelfKongKind::Add => "add_kong",
-            },
-            seat_index,
-            (0..MAX_SEATS)
-                .filter(|other| *other != seat_index)
-                .collect(),
-            Value::String(selection.tile_key.clone()),
-        );
-        round_state.insert(
-            "last_action_context".to_string(),
-            json!({
-                "kind": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                "from_kong_replacement": true,
-                "was_last_live_tile": false,
-                "was_last_discard": false,
-            }),
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
+    let plan = plan_self_kong_completion(room, seat_index, selection, replacement_tile.clone(), false)?;
+    apply_legacy_room_mutations(room, &plan.mutations)?;
     sync_pending_timeout(room);
-    Ok(vec![
-        round_event_message(
-            "self_kong_declared",
-            json!({
-                "type": "self_kong_declared",
-                "seat": seat_index,
-                "kong_type": match selection.kind {
-                    SelfKongKind::Concealed => "concealed_kong",
-                    SelfKongKind::Add => "add_kong",
-                },
-                "tile_key": selection.tile_key,
-                "tile_ids": selection.tile_ids,
-            }),
-        ),
-        round_event_message(
-            "replacement_draw",
-            json!({
-                "type": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-            }),
-        ),
-    ])
+    Ok(plan.events)
 }
 
 fn start_rob_kong_window(
@@ -1683,27 +1404,26 @@ fn start_rob_kong_window(
     )
     .cloned()
     .ok_or_else(|| "invalid_action".to_string())?;
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("last_discard".to_string(), selected_tile.clone());
-        round_state.insert(
-            "pending_action".to_string(),
-            json!({
-                "type": "rob_kong_window",
-                "actor_seat": seat_index,
-                "tile_id": selected_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                "tile_key": selected_tile.get("tile_key").cloned().unwrap_or(Value::Null),
-                "meld_index": selection.meld_index,
-                "offered_hu_seats": offered_hu_seats,
-                "responded_seats": [],
-            }),
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
+    apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetRoundLastDiscard {
+                tile: selected_tile.clone(),
+            },
+            LegacyRoomMutation::SetRoundPendingAction {
+                pending_action: json!({
+                    "type": "rob_kong_window",
+                    "actor_seat": seat_index,
+                    "tile_id": selected_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                    "tile_key": selected_tile.get("tile_key").cloned().unwrap_or(Value::Null),
+                    "meld_index": selection.meld_index,
+                    "offered_hu_seats": offered_hu_seats,
+                    "responded_seats": [],
+                }),
+            },
+            LegacyRoomMutation::IncrementRoundVersion,
+        ],
+    )?;
     sync_pending_timeout(room);
     Ok(vec![round_event_message(
         "self_kong_declared",
@@ -1715,6 +1435,113 @@ fn start_rob_kong_window(
             "tile_ids": selection.tile_ids,
         }),
     )])
+}
+
+struct SelfKongPlan {
+    mutations: Vec<LegacyRoomMutation>,
+    events: Vec<Value>,
+}
+
+fn plan_self_kong_completion(
+    room: &Value,
+    seat_index: usize,
+    selection: &SelfKongCandidate,
+    replacement_tile: Value,
+    clear_pending_action: bool,
+) -> Result<SelfKongPlan, String> {
+    for tile_id in &selection.tile_ids {
+        player_concealed_tile(room, seat_index, tile_id)
+            .ok_or_else(|| "invalid_action".to_string())?;
+    }
+
+    let mut mutations = selection
+        .tile_ids
+        .iter()
+        .cloned()
+        .map(|tile_id| LegacyRoomMutation::RemovePlayerConcealedTileById { seat_index, tile_id })
+        .collect::<Vec<_>>();
+
+    match selection.kind {
+        SelfKongKind::Concealed => {
+            mutations.push(LegacyRoomMutation::PushPlayerMeld {
+                seat_index,
+                meld: Value::Array(vec![
+                    Value::String(selection.tile_key.clone()),
+                    Value::String(selection.tile_key.clone()),
+                    Value::String(selection.tile_key.clone()),
+                    Value::String(selection.tile_key.clone()),
+                ]),
+            });
+        }
+        SelfKongKind::Add => {
+            let meld_index = selection
+                .meld_index
+                .ok_or_else(|| "invalid_action".to_string())?;
+            mutations.push(LegacyRoomMutation::AppendTileToPlayerMeld {
+                seat_index,
+                meld_index,
+                tile: Value::String(selection.tile_key.clone()),
+            });
+        }
+    }
+
+    mutations.push(LegacyRoomMutation::PushPlayerConcealedTile {
+        seat_index,
+        tile: replacement_tile.clone(),
+    });
+    mutations.push(LegacyRoomMutation::RetreatWallTail);
+    mutations.push(LegacyRoomMutation::AppendRoundKongEntry {
+        kong_type: match selection.kind {
+            SelfKongKind::Concealed => "concealed_kong".to_string(),
+            SelfKongKind::Add => "add_kong".to_string(),
+        },
+        actor_seat: seat_index,
+        payer_seats: (0..MAX_SEATS).filter(|other| *other != seat_index).collect(),
+        tile_key: Value::String(selection.tile_key.clone()),
+    });
+    mutations.push(LegacyRoomMutation::SetRoundLastActionContext {
+        context: json!({
+            "kind": "replacement_draw",
+            "seat": seat_index,
+            "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+            "from_kong_replacement": true,
+            "was_last_live_tile": false,
+            "was_last_discard": false,
+        }),
+    });
+    if clear_pending_action {
+        mutations.push(LegacyRoomMutation::SetRoundPendingAction {
+            pending_action: Value::Null,
+        });
+    }
+    mutations.push(LegacyRoomMutation::IncrementRoundVersion);
+
+    Ok(SelfKongPlan {
+        mutations,
+        events: vec![
+            round_event_message(
+                "self_kong_declared",
+                json!({
+                    "type": "self_kong_declared",
+                    "seat": seat_index,
+                    "kong_type": match selection.kind {
+                        SelfKongKind::Concealed => "concealed_kong",
+                        SelfKongKind::Add => "add_kong",
+                    },
+                    "tile_key": selection.tile_key,
+                    "tile_ids": selection.tile_ids,
+                }),
+            ),
+            round_event_message(
+                "replacement_draw",
+                json!({
+                    "type": "replacement_draw",
+                    "seat": seat_index,
+                    "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                }),
+            ),
+        ],
+    })
 }
 
 fn apply_discard_action(
@@ -1742,45 +1569,30 @@ fn apply_discard_action(
         .and_then(|round| round.get("restricted_discard_tile_key"))
         .and_then(Value::as_str)
         .map(ToString::to_string);
-    let discarded_tile = {
-        let round_state = room
-            .get_mut("round_state")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| "round_not_ready".to_string())?;
-        let players = round_state
-            .get_mut("players")
-            .and_then(Value::as_array_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let player = players
-            .get_mut(seat_index)
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let concealed_tiles = player
-            .get_mut("concealed_tiles")
-            .and_then(Value::as_array_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let tile_index = concealed_tiles
-            .iter()
-            .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
-            .ok_or_else(|| "invalid_action".to_string())?;
-        if let Some(restricted) = restricted_discard_tile_key.as_deref() {
-            if concealed_tiles
-                .get(tile_index)
-                .and_then(|tile| tile.get("tile_key"))
-                .and_then(Value::as_str)
-                == Some(restricted)
-            {
-                return Err("invalid_action".to_string());
-            }
+    let discarded_tile = player_concealed_tile(room, seat_index, tile_id)
+        .cloned()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    if let Some(restricted) = restricted_discard_tile_key.as_deref() {
+        if discarded_tile.get("tile_key").and_then(Value::as_str) == Some(restricted) {
+            return Err("invalid_action".to_string());
         }
-        let tile = concealed_tiles.remove(tile_index);
-        let discards = player
-            .get_mut("discards")
-            .and_then(Value::as_array_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        discards.push(tile.clone());
-        tile
-    };
+    }
+    let state = project_room_state(room)?;
+    let discard_mutations = vec![
+        LegacyRoomMutation::RemovePlayerConcealedTileById {
+            seat_index,
+            tile_id: tile_id.to_string(),
+        },
+        LegacyRoomMutation::PushPlayerDiscard {
+            seat_index,
+            tile: discarded_tile.clone(),
+        },
+        LegacyRoomMutation::SetRoundLastDiscard {
+            tile: discarded_tile.clone(),
+        },
+    ];
+    let mut simulated = room.clone();
+    apply_legacy_room_mutations(&mut simulated, &discard_mutations)?;
 
     let previous_was_last_live_tile = room
         .get("round_state")
@@ -1788,97 +1600,48 @@ fn apply_discard_action(
         .and_then(|context| context.get("was_last_live_tile"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let claim_window = compute_claim_window_without_hu(room, seat_index, &discarded_tile);
-    let has_claim = claim_window.iter().any(|claims| {
-        claims
-            .as_array()
-            .map(|items| !items.is_empty())
-            .unwrap_or(false)
-    });
-    let next_actor = (seat_index + 1) % MAX_SEATS;
-    let drawn_tile = if has_claim {
-        None
-    } else {
-        draw_for_turn(room, next_actor)
-    };
-    let was_last_live_tile = if has_claim {
-        false
-    } else {
-        wall_is_exhausted(room)
-    };
-    if !has_claim && drawn_tile.is_none() {
-        if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-            round_state.insert("last_discard".to_string(), discarded_tile.clone());
-        }
+    let claim_window = compute_claim_window_without_hu(&simulated, seat_index, &discarded_tile)
+        .into_iter()
+        .map(|claims| {
+            claims
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|claim| claim.as_str().map(ToString::to_string))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+    let plan = plan_discard_action(
+        &state,
+        seat_index,
+        tile_id,
+        claim_window,
+        previous_was_last_live_tile,
+    )?;
+    apply_legacy_room_mutations(room, &plan.discard_mutations)?;
+    if plan.needs_exhaustive_draw {
         let mut messages = vec![round_event_message(
             "tile_discarded",
             json!({
                 "type": "tile_discarded",
                 "seat": seat_index,
-                "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                "tile_id": plan.discarded_tile.tile_id,
             }),
         )];
         messages.extend(settle_exhaustive_draw_local(room));
         return Ok(messages);
     }
-
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("last_discard".to_string(), discarded_tile.clone());
-        round_state.insert(
-            "pending_action".to_string(),
-            if has_claim {
-                json!({
-                    "type": "claim_window",
-                    "discarder_seat": seat_index,
-                    "claim_window": claim_window,
-                    "responded_seats": [],
-                })
-            } else {
-                Value::Null
-            },
-        );
-        round_state.insert("restricted_discard_tile_key".to_string(), Value::Null);
-        round_state.insert(
-            "last_action_context".to_string(),
-            if has_claim {
-                json!({
-                    "kind": "discard",
-                    "seat": seat_index,
-                    "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                    "from_kong_replacement": false,
-                    "was_last_live_tile": false,
-                    "was_last_discard": previous_was_last_live_tile,
-                })
-            } else {
-                json!({
-                    "kind": "draw",
-                    "seat": next_actor,
-                    "tile_id": drawn_tile.as_ref().and_then(|tile| tile.get("tile_id")).cloned().unwrap_or(Value::Null),
-                    "from_kong_replacement": false,
-                    "was_last_live_tile": was_last_live_tile,
-                    "was_last_discard": false,
-                })
-            },
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-        round_state.insert(
-            "current_actor".to_string(),
-            Value::Number((if has_claim { seat_index } else { next_actor } as u64).into()),
-        );
-    }
-
+    apply_legacy_room_mutations(room, &plan.followup_mutations)?;
     sync_pending_timeout(room);
     Ok(vec![round_event_message(
         "tile_discarded",
         json!({
             "type": "tile_discarded",
             "seat": seat_index,
-            "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+            "tile_id": plan.discarded_tile.tile_id,
         }),
     )])
 }
@@ -1889,143 +1652,13 @@ fn apply_claim_window_action(
     action_type: &str,
     tile_ids: &[String],
 ) -> Result<Vec<Value>, String> {
-    let pending_action = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(Value::as_object)
-        .cloned()
-        .ok_or_else(|| "invalid_action".to_string())?;
-    if pending_action.get("type").and_then(Value::as_str) != Some("claim_window") {
-        return Err("invalid_action".to_string());
-    }
-
-    let claim_window = pending_action
-        .get("claim_window")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let allowed_claims = claim_window
-        .get(seat_index)
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if allowed_claims.is_empty() {
-        return Err("invalid_action".to_string());
-    }
-    let already_responded = pending_action
-        .get("responded_seats")
-        .and_then(Value::as_array)
-        .map(|values| {
-            values.iter().any(|value| {
-                value
-                    .as_u64()
-                    .map(|seat| seat as usize == seat_index)
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false);
-    if already_responded {
-        return Err("invalid_action".to_string());
-    }
-    if action_type != "pass"
-        && !allowed_claims
-            .iter()
-            .any(|value| value.as_str() == Some(action_type))
-    {
-        return Err("invalid_action".to_string());
-    }
     if matches!(action_type, "chow" | "pung" | "kong") {
         validate_claim_selection(room, seat_index, action_type, tile_ids)?;
     }
-
-    let discarder_seat = pending_action
-        .get("discarder_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .ok_or_else(|| "invalid_action".to_string())?;
-
-    let mut responded_seats = pending_action
-        .get("responded_seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    responded_seats.push(Value::Number((seat_index as u64).into()));
-
-    let mut claim_responses = pending_action
-        .get("claim_responses")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if action_type != "pass" {
-        claim_responses.push(json!({
-            "seat": seat_index,
-            "type": action_type,
-            "tiles": tile_ids,
-        }));
-        if let Some(winning_claim) = resolve_claims_local(&claim_responses, discarder_seat) {
-            for (other_seat, claims) in claim_window.iter().enumerate() {
-                if claims
-                    .as_array()
-                    .map(|items| items.is_empty())
-                    .unwrap_or(true)
-                {
-                    continue;
-                }
-                if responded_seats.iter().any(|value| {
-                    value
-                        .as_u64()
-                        .map(|seat| seat as usize == other_seat)
-                        .unwrap_or(false)
-                }) {
-                    continue;
-                }
-                if !seat_can_beat_recorded_claim(other_seat, claims, &winning_claim, discarder_seat)
-                {
-                    responded_seats.push(Value::Number((other_seat as u64).into()));
-                }
-            }
-        }
-    }
-
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert(
-            "pending_action".to_string(),
-            json!({
-                "type": "claim_window",
-                "discarder_seat": discarder_seat,
-                "claim_window": claim_window,
-                "responded_seats": responded_seats,
-                "claim_responses": claim_responses,
-            }),
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
-
-    let unresolved = offered_claim_seats(room)
-        .into_iter()
-        .filter(|offered_seat| {
-            !room
-                .get("round_state")
-                .and_then(|round| round.get("pending_action"))
-                .and_then(|pending| pending.get("responded_seats"))
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values.iter().any(|value| {
-                        value
-                            .as_u64()
-                            .map(|seat| seat as usize == *offered_seat)
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
-    if !unresolved.is_empty() {
+    let state = project_room_state(room)?;
+    let plan = plan_claim_window_response(&state, seat_index, action_type, tile_ids)?;
+    apply_legacy_room_mutations(room, &plan.mutations)?;
+    if !plan.unresolved_seats.is_empty() {
         sync_pending_timeout(room);
         return Ok(vec![]);
     }
@@ -2057,7 +1690,7 @@ fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String>
         .cloned()
         .unwrap_or_default();
 
-    if let Some(winner) = resolve_claims_local(&claim_responses, discarder_seat) {
+    if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
         let winner_seat = winner
             .get("seat")
             .and_then(Value::as_u64)
@@ -2078,120 +1711,14 @@ fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String>
         return apply_selected_claim(room, winner_seat, claim_type, &tiles);
     }
 
-    let next_actor = (discarder_seat + 1) % MAX_SEATS;
-    let Some(drawn_tile) = draw_for_turn(room, next_actor) else {
+    let state = project_room_state(room)?;
+    let plan = plan_claim_window_continuation_without_winner(&state, discarder_seat)?;
+    if plan.needs_exhaustive_draw {
         return Ok(settle_exhaustive_draw_local(room));
-    };
-    let was_last_live_tile = wall_is_exhausted(room);
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("pending_action".to_string(), Value::Null);
-        round_state.insert(
-            "current_actor".to_string(),
-            Value::Number((next_actor as u64).into()),
-        );
-        round_state.insert(
-            "last_action_context".to_string(),
-            json!({
-                "kind": "draw",
-                "seat": next_actor,
-                "tile_id": drawn_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                "from_kong_replacement": false,
-                "was_last_live_tile": was_last_live_tile,
-                "was_last_discard": false,
-            }),
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
     }
+    apply_legacy_room_mutations(room, &plan.mutations)?;
     sync_pending_timeout(room);
     Ok(vec![])
-}
-
-fn resolve_claims_local(claim_requests: &[Value], discarder_seat: usize) -> Option<Value> {
-    let next_player = (discarder_seat + 1) % MAX_SEATS;
-    let mut candidates = claim_requests
-        .iter()
-        .filter(|request| {
-            let claim_type = request.get("type").and_then(Value::as_str);
-            if !matches!(claim_type, Some("chow" | "pung" | "kong" | "hu")) {
-                return false;
-            }
-            if claim_type == Some("chow")
-                && request
-                    .get("seat")
-                    .and_then(Value::as_u64)
-                    .map(|seat| seat as usize)
-                    != Some(next_player)
-            {
-                return false;
-            }
-            true
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|request| {
-        let claim_priority = match request.get("type").and_then(Value::as_str) {
-            Some("hu") => 3_i32,
-            Some("kong") | Some("pung") => 2,
-            Some("chow") => 1,
-            _ => 0,
-        };
-        let seat = request
-            .get("seat")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(0);
-        let mut distance = (seat + MAX_SEATS - discarder_seat) % MAX_SEATS;
-        if distance == 0 {
-            distance = MAX_SEATS;
-        }
-        (-claim_priority, distance as i32)
-    });
-    candidates.into_iter().next()
-}
-
-fn seat_can_beat_recorded_claim(
-    seat_index: usize,
-    claims: &Value,
-    winning_claim: &Value,
-    discarder_seat: usize,
-) -> bool {
-    claims
-        .as_array()
-        .map(|items| {
-            items.iter().any(|claim| {
-                let candidate = json!({
-                    "seat": seat_index,
-                    "type": claim.as_str().unwrap_or(""),
-                });
-                resolve_claims_local(&[winning_claim.clone(), candidate.clone()], discarder_seat)
-                    == Some(candidate)
-            })
-        })
-        .unwrap_or(false)
-}
-
-fn offered_claim_seats(room: &Value) -> Vec<usize> {
-    room.get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("claim_window"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-        .filter(|(_, claims)| {
-            claims
-                .as_array()
-                .map(|items| !items.is_empty())
-                .unwrap_or(false)
-        })
-        .map(|(seat_index, _)| seat_index)
-        .collect()
 }
 
 fn validate_claim_selection(
@@ -2277,40 +1804,6 @@ fn is_valid_chow_sequence_by_keys(discard_tile_key: &str, tiles: &[&str]) -> boo
     ranks[0] + 1 == ranks[1] && ranks[1] + 1 == ranks[2]
 }
 
-fn remove_tiles_from_player(
-    room: &mut Value,
-    seat_index: usize,
-    tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
-    let round_state = room
-        .get_mut("round_state")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let players = round_state
-        .get_mut("players")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let player = players
-        .get_mut(seat_index)
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let concealed = player
-        .get_mut("concealed_tiles")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let mut claimed = Vec::new();
-    for tile_id in tile_ids {
-        let Some(index) = concealed
-            .iter()
-            .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str()))
-        else {
-            return Err("invalid_action".to_string());
-        };
-        claimed.push(concealed.remove(index));
-    }
-    Ok(claimed)
-}
-
 fn discarder_latest_discard_matches(
     room: &Value,
     discarder_seat: usize,
@@ -2337,6 +1830,23 @@ fn apply_selected_claim(
         let settlement = compute_hu_settlement(room, seat_index, "discard")?;
         return apply_hu_settlement(room, seat_index, "discard", settlement);
     }
+    let plan = plan_selected_claim(room, seat_index, action_type, tile_ids)?;
+    apply_legacy_room_mutations(room, &plan.mutations)?;
+    sync_pending_timeout(room);
+    Ok(plan.events)
+}
+
+struct SelectedClaimPlan {
+    mutations: Vec<LegacyRoomMutation>,
+    events: Vec<Value>,
+}
+
+fn plan_selected_claim(
+    room: &Value,
+    seat_index: usize,
+    action_type: &str,
+    tile_ids: &[String],
+) -> Result<SelectedClaimPlan, String> {
     if action_type != "chow" && action_type != "pung" && action_type != "kong" {
         return Err("invalid_action".to_string());
     }
@@ -2355,174 +1865,23 @@ fn apply_selected_claim(
         .ok_or_else(|| "invalid_action".to_string())?;
     let restricted_tile_key = last_discard.get("tile_key").cloned().unwrap_or(Value::Null);
 
-    let claimed_tiles = remove_tiles_from_player(room, seat_index, tile_ids)?;
     if !discarder_latest_discard_matches(room, discarder_seat, &last_discard) {
         return Err("invalid_action".to_string());
     }
+    let claimed_tiles = selected_player_tiles(room, seat_index, tile_ids)?;
+    let meld = claim_meld_value(action_type, &last_discard, &claimed_tiles);
 
-    let mut replacement_draw_event = None;
-    {
-        let round_state = room
-            .get_mut("round_state")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        {
-            let players = round_state
-                .get_mut("players")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let discarder = players
-                .get_mut(discarder_seat)
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let discards = discarder
-                .get_mut("discards")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            discards.pop();
+    let mut mutations = tile_ids
+        .iter()
+        .cloned()
+        .map(|tile_id| LegacyRoomMutation::RemovePlayerConcealedTileById { seat_index, tile_id })
+        .collect::<Vec<_>>();
+    mutations.push(LegacyRoomMutation::PopPlayerDiscardLast { seat_index: discarder_seat });
+    mutations.push(LegacyRoomMutation::PushPlayerMeld {
+        seat_index,
+        meld,
+    });
 
-            let claimer = players
-                .get_mut(seat_index)
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let melds = claimer
-                .get_mut("melds")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            let meld = if action_type == "chow" {
-                let mut tiles = claimed_tiles
-                    .iter()
-                    .map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null))
-                    .collect::<Vec<_>>();
-                tiles.push(last_discard.get("tile_key").cloned().unwrap_or(Value::Null));
-                tiles.sort_by(|left, right| {
-                    left.as_str()
-                        .unwrap_or("")
-                        .cmp(right.as_str().unwrap_or(""))
-                });
-                Value::Array(tiles)
-            } else if action_type == "kong" {
-                Value::Array(vec![
-                    last_discard.get("tile_key").cloned().unwrap_or(Value::Null),
-                    claimed_tiles[0]
-                        .get("tile_key")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                    claimed_tiles[1]
-                        .get("tile_key")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                    claimed_tiles[2]
-                        .get("tile_key")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                ])
-            } else {
-                Value::Array(vec![
-                    last_discard.get("tile_key").cloned().unwrap_or(Value::Null),
-                    claimed_tiles[0]
-                        .get("tile_key")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                    claimed_tiles[1]
-                        .get("tile_key")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                ])
-            };
-            melds.push(meld);
-        }
-
-        if action_type == "kong" {
-            let replacement_tile = {
-                let wall = round_state
-                    .get_mut("wall")
-                    .and_then(Value::as_object_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                let tail_index = wall
-                    .get("tail_index")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                let head_index = wall
-                    .get("head_index")
-                    .and_then(Value::as_i64)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                if head_index > tail_index {
-                    return Err("invalid_action".to_string());
-                }
-                let replacement_tile = wall
-                    .get("tiles")
-                    .and_then(Value::as_array)
-                    .and_then(|tiles| tiles.get(tail_index as usize))
-                    .cloned()
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                wall.insert(
-                    "tail_index".to_string(),
-                    Value::Number((tail_index - 1).into()),
-                );
-                replacement_tile
-            };
-            {
-                let players = round_state
-                    .get_mut("players")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                let claimer = players
-                    .get_mut(seat_index)
-                    .and_then(Value::as_object_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                let concealed = claimer
-                    .get_mut("concealed_tiles")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?;
-                concealed.push(replacement_tile.clone());
-            }
-            replacement_draw_event = Some(round_event_message(
-                "replacement_draw",
-                json!({
-                    "type": "replacement_draw",
-                    "seat": seat_index,
-                    "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                }),
-            ));
-            append_kong_entry(
-                round_state,
-                "exposed_kong",
-                seat_index,
-                vec![discarder_seat],
-                last_discard.get("tile_key").cloned().unwrap_or(Value::Null),
-            );
-            round_state.insert(
-                "last_action_context".to_string(),
-                json!({
-                    "kind": "replacement_draw",
-                    "seat": seat_index,
-                    "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                    "from_kong_replacement": true,
-                    "was_last_live_tile": false,
-                    "was_last_discard": false,
-                }),
-            );
-        }
-
-        round_state.insert(
-            "current_actor".to_string(),
-            Value::Number((seat_index as u64).into()),
-        );
-        round_state.insert("last_discard".to_string(), Value::Null);
-        round_state.insert("pending_action".to_string(), Value::Null);
-        round_state.insert(
-            "restricted_discard_tile_key".to_string(),
-            restricted_tile_key,
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
-    sync_pending_timeout(room);
     let mut events = vec![round_event_message(
         "claim_made",
         json!({
@@ -2532,37 +1891,97 @@ fn apply_selected_claim(
             "tile_id": last_discard.get("tile_id").cloned().unwrap_or(Value::Null),
         }),
     )];
-    if let Some(event) = replacement_draw_event {
-        events.push(event);
+
+    if action_type == "kong" {
+        let replacement_tile =
+            replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?;
+        mutations.push(LegacyRoomMutation::RetreatWallTail);
+        mutations.push(LegacyRoomMutation::PushPlayerConcealedTile {
+            seat_index,
+            tile: replacement_tile.clone(),
+        });
+        mutations.push(LegacyRoomMutation::AppendRoundKongEntry {
+            kong_type: "exposed_kong".to_string(),
+            actor_seat: seat_index,
+            payer_seats: vec![discarder_seat],
+            tile_key: last_discard.get("tile_key").cloned().unwrap_or(Value::Null),
+        });
+        mutations.push(LegacyRoomMutation::SetRoundLastActionContext {
+            context: json!({
+                "kind": "replacement_draw",
+                "seat": seat_index,
+                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                "from_kong_replacement": true,
+                "was_last_live_tile": false,
+                "was_last_discard": false,
+            }),
+        });
+        events.push(round_event_message(
+            "replacement_draw",
+            json!({
+                "type": "replacement_draw",
+                "seat": seat_index,
+                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+            }),
+        ));
     }
-    Ok(events)
+
+    mutations.push(LegacyRoomMutation::SetRoundCurrentActor { seat_index });
+    mutations.push(LegacyRoomMutation::SetRoundLastDiscard { tile: Value::Null });
+    mutations.push(LegacyRoomMutation::SetRoundPendingAction {
+        pending_action: Value::Null,
+    });
+    mutations.push(LegacyRoomMutation::SetRoundRestrictedDiscardTileKey {
+        tile_key: restricted_tile_key,
+    });
+    mutations.push(LegacyRoomMutation::IncrementRoundVersion);
+
+    Ok(SelectedClaimPlan { mutations, events })
 }
 
-fn append_kong_entry(
-    round_state: &mut Map<String, Value>,
-    kong_type: &str,
-    actor_seat: usize,
-    payer_seats: Vec<usize>,
-    tile_key: Value,
-) {
-    let mut score_trackers = round_state
-        .get("score_trackers")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let mut kong_entries = score_trackers
-        .get("kong_entries")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    kong_entries.push(json!({
-        "kong_type": kong_type,
-        "actor_seat": actor_seat,
-        "payer_seats": payer_seats,
-        "tile_key": tile_key,
-    }));
-    score_trackers.insert("kong_entries".to_string(), Value::Array(kong_entries));
-    round_state.insert("score_trackers".to_string(), Value::Object(score_trackers));
+fn claim_meld_value(action_type: &str, last_discard: &Value, claimed_tiles: &[Value]) -> Value {
+    if action_type == "chow" {
+        let mut tiles = claimed_tiles
+            .iter()
+            .map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null))
+            .collect::<Vec<_>>();
+        tiles.push(last_discard.get("tile_key").cloned().unwrap_or(Value::Null));
+        tiles.sort_by(|left, right| {
+            left.as_str()
+                .unwrap_or("")
+                .cmp(right.as_str().unwrap_or(""))
+        });
+        return Value::Array(tiles);
+    }
+    let mut tiles = vec![last_discard.get("tile_key").cloned().unwrap_or(Value::Null)];
+    tiles.extend(
+        claimed_tiles
+            .iter()
+            .map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null)),
+    );
+    Value::Array(tiles)
+}
+
+fn selected_player_tiles(
+    room: &Value,
+    seat_index: usize,
+    tile_ids: &[String],
+) -> Result<Vec<Value>, String> {
+    let player_tiles = player_concealed_tiles_slice(room, seat_index)
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let mut selected = Vec::with_capacity(tile_ids.len());
+    let mut used_indices = HashSet::with_capacity(tile_ids.len());
+    for tile_id in tile_ids {
+        let Some((index, tile)) = player_tiles.iter().enumerate().find(|(index, tile)| {
+            !used_indices.contains(index)
+                && tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
+        }) else {
+            return Err("invalid_action".to_string());
+        };
+        used_indices.insert(index);
+        selected.push(tile.clone());
+    }
+    Ok(selected)
 }
 
 fn can_resolve_claim_window_timeout_locally(room: &Value) -> bool {
@@ -2701,7 +2120,7 @@ fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let responded = pending_action
+    let mut responded = pending_action
         .get("responded_seats")
         .and_then(Value::as_array)
         .cloned()
@@ -2725,6 +2144,25 @@ fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
         })
         .map(|(seat_index, _)| Value::Number((seat_index as u64).into()))
         .collect();
+    responded.extend(unresolved.iter().cloned());
+    apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetRoundPendingAction {
+                pending_action: json!({
+                    "type": "claim_window",
+                    "discarder_seat": discarder_seat,
+                    "claim_window": claim_window,
+                    "responded_seats": responded,
+                    "claim_responses": pending_action
+                        .get("claim_responses")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Array(vec![])),
+                }),
+            },
+            LegacyRoomMutation::IncrementRoundVersion,
+        ],
+    )?;
 
     let mut messages = vec![round_event_message(
         "claim_auto_passed",
@@ -2781,22 +2219,23 @@ fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Value>
 
     let mut next_responded = responded;
     next_responded.push(Value::Number((seat_index as u64).into()));
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        let pending_action = round_state
-            .get_mut("pending_action")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        pending_action.insert(
-            "responded_seats".to_string(),
-            Value::Array(next_responded.clone()),
-        );
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
+    apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetRoundPendingAction {
+                pending_action: json!({
+                    "type": "rob_kong_window",
+                    "actor_seat": pending.get("actor_seat").cloned().unwrap_or(Value::Null),
+                    "tile_id": pending.get("tile_id").cloned().unwrap_or(Value::Null),
+                    "tile_key": pending.get("tile_key").cloned().unwrap_or(Value::Null),
+                    "meld_index": pending.get("meld_index").cloned().unwrap_or(Value::Null),
+                    "offered_hu_seats": offered,
+                    "responded_seats": next_responded.clone(),
+                }),
+            },
+            LegacyRoomMutation::IncrementRoundVersion,
+        ],
+    )?;
 
     let unresolved = offered
         .iter()
@@ -2847,6 +2286,25 @@ fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> {
         .filter(|seat| !responded.iter().any(|value| value == *seat))
         .cloned()
         .collect();
+    let mut next_responded = responded;
+    next_responded.extend(unresolved.iter().cloned());
+    apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetRoundPendingAction {
+                pending_action: json!({
+                    "type": "rob_kong_window",
+                    "actor_seat": actor_seat,
+                    "tile_id": pending.get("tile_id").cloned().unwrap_or(Value::Null),
+                    "tile_key": pending.get("tile_key").cloned().unwrap_or(Value::Null),
+                    "meld_index": pending.get("meld_index").cloned().unwrap_or(Value::Null),
+                    "offered_hu_seats": offered,
+                    "responded_seats": next_responded,
+                }),
+            },
+            LegacyRoomMutation::IncrementRoundVersion,
+        ],
+    )?;
     let mut messages = vec![round_event_message(
         "rob_kong_auto_passed",
         json!({
@@ -2891,21 +2349,32 @@ fn settle_exhaustive_draw_local(room: &mut Value) -> Vec<Value> {
             .cloned()
             .unwrap_or_else(|| Value::Array(vec![])),
     });
-    if let Some(obj) = room.as_object_mut() {
-        obj.insert("phase".to_string(), Value::String("settlement".to_string()));
-        obj.insert("pending_timeout".to_string(), Value::Null);
+    let mut mutations = vec![
+        LegacyRoomMutation::SetRoomField {
+            key: "phase".to_string(),
+            value: Value::String("settlement".to_string()),
+        },
+        LegacyRoomMutation::SetRoomField {
+            key: "pending_timeout".to_string(),
+            value: Value::Null,
+        },
+        LegacyRoomMutation::SetRoundField {
+            key: "phase".to_string(),
+            value: Value::String("settlement".to_string()),
+        },
+        LegacyRoomMutation::SetRoundPendingAction {
+            pending_action: Value::Null,
+        },
+        LegacyRoomMutation::SetRoundField {
+            key: "settlement".to_string(),
+            value: settlement.clone(),
+        },
+        LegacyRoomMutation::IncrementRoundVersion,
+    ];
+    if let Ok(state) = project_room_state(room) {
+        mutations.extend(plan_settlement_to_match(&state, &settlement));
     }
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("phase".to_string(), Value::String("settlement".to_string()));
-        round_state.insert("pending_action".to_string(), Value::Null);
-        round_state.insert("settlement".to_string(), settlement);
-        let version = round_state
-            .get("version")
-            .and_then(Value::as_i64)
-            .unwrap_or(0)
-            + 1;
-        round_state.insert("version".to_string(), Value::Number(version.into()));
-    }
+    let _ = apply_legacy_room_mutations(room, &mutations);
     apply_settlement_to_match(room);
     vec![round_event_message(
         "round_drawn",
@@ -2917,66 +2386,13 @@ fn settle_exhaustive_draw_local(room: &mut Value) -> Vec<Value> {
 }
 
 fn apply_settlement_to_match(room: &mut Value) {
-    let round_id = room
-        .get("round_state")
-        .and_then(|round| round.get("round_id"))
-        .and_then(Value::as_str)
-        .map(ToString::to_string);
-    let settlement = room
+    let mutations = room
         .get("round_state")
         .and_then(|round| round.get("settlement"))
-        .cloned();
-    let Some(round_id) = round_id else {
-        return;
-    };
-    let Some(settlement) = settlement else {
-        return;
-    };
-    let Some(match_state) = room.get("match_state").and_then(Value::as_object) else {
-        return;
-    };
-    if match_state
-        .get("last_completed_round_id")
-        .and_then(Value::as_str)
-        == Some(round_id.as_str())
-    {
-        return;
-    }
-
-    let total_delta = settlement
-        .get("score_delta")
-        .and_then(|score| score.get("total_delta_by_seat"))
-        .and_then(Value::as_object)
         .cloned()
+        .and_then(|settlement| project_room_state(room).ok().map(|state| plan_settlement_to_match(&state, &settlement)))
         .unwrap_or_default();
-    let mut cumulative_scores = match_state
-        .get("cumulative_scores")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    for seat_index in 0..MAX_SEATS {
-        let seat_key = seat_index.to_string();
-        let current = cumulative_scores
-            .get(&seat_key)
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let delta = total_delta
-            .get(&seat_key)
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        cumulative_scores.insert(seat_key, Value::Number((current + delta).into()));
-    }
-
-    if let Some(match_state_mut) = room.get_mut("match_state").and_then(Value::as_object_mut) {
-        match_state_mut.insert(
-            "cumulative_scores".to_string(),
-            Value::Object(cumulative_scores),
-        );
-        match_state_mut.insert(
-            "last_completed_round_id".to_string(),
-            Value::String(round_id),
-        );
-    }
+    let _ = apply_legacy_room_mutations(room, &mutations);
 }
 
 fn current_continue_action_id(room: &Value) -> Option<&'static str> {
@@ -3053,12 +2469,13 @@ fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
 
 fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     let Some(action_id) = current_continue_action_id(room) else {
-        if let Some(obj) = room.as_object_mut() {
-            obj.insert(
-                "continue_action_auto_advance_deadline_at".to_string(),
-                Value::Null,
-            );
-        }
+        apply_legacy_room_mutations(
+            room,
+            &[LegacyRoomMutation::SetRoomField {
+                key: "continue_action_auto_advance_deadline_at".to_string(),
+                value: Value::Null,
+            }],
+        )?;
         return Ok(());
     };
     let required = continue_required_human_seats(room);
@@ -3076,12 +2493,13 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
         .copied()
         .collect::<Vec<_>>();
     if !online_unconfirmed.is_empty() {
-        if let Some(obj) = room.as_object_mut() {
-            obj.insert(
-                "continue_action_auto_advance_deadline_at".to_string(),
-                Value::Null,
-            );
-        }
+        apply_legacy_room_mutations(
+            room,
+            &[LegacyRoomMutation::SetRoomField {
+                key: "continue_action_auto_advance_deadline_at".to_string(),
+                value: Value::Null,
+            }],
+        )?;
         return Ok(());
     }
 
@@ -3102,34 +2520,38 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
             .get("continue_action_auto_advance_deadline_at")
             .is_some_and(Value::is_null)
     {
-        if let Some(obj) = room.as_object_mut() {
-            obj.insert(
-                "continue_action_auto_advance_deadline_at".to_string(),
-                Value::String(
+        apply_legacy_room_mutations(
+            room,
+            &[LegacyRoomMutation::SetRoomField {
+                key: "continue_action_auto_advance_deadline_at".to_string(),
+                value: Value::String(
                     (Utc::now() + chrono::TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
                         .to_rfc3339_opts(SecondsFormat::Micros, true),
                 ),
-            );
-        }
+            }],
+        )?;
     }
     Ok(())
 }
 
 fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), String> {
-    if let Some(obj) = room.as_object_mut() {
-        obj.insert(
-            "continue_action_auto_advance_deadline_at".to_string(),
-            Value::Null,
-        );
-        obj.insert(
-            "start_next_round_confirmed_seats".to_string(),
-            Value::Array(vec![]),
-        );
-        obj.insert(
-            "restart_match_confirmed_seats".to_string(),
-            Value::Array(vec![]),
-        );
-    }
+    apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetRoomField {
+                key: "continue_action_auto_advance_deadline_at".to_string(),
+                value: Value::Null,
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "start_next_round_confirmed_seats".to_string(),
+                value: Value::Array(vec![]),
+            },
+            LegacyRoomMutation::SetRoomField {
+                key: "restart_match_confirmed_seats".to_string(),
+                value: Value::Array(vec![]),
+            },
+        ],
+    )?;
     match action_id {
         "start_next_round" => complete_start_next_round(room),
         "restart_match" => {
@@ -3182,46 +2604,57 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
         }
     }
 
-    if let Some(match_state_mut) = room.get_mut("match_state").and_then(Value::as_object_mut) {
-        match_state_mut.insert(
-            "prevailing_wind".to_string(),
-            Value::String(next_wind.clone()),
-        );
-        match_state_mut.insert(
-            "hand_number".to_string(),
-            Value::Number(
-                (if match_finished {
-                    hand_number
-                } else {
-                    next_hand_number
-                } as u64)
-                    .into(),
-            ),
-        );
-        match_state_mut.insert(
-            "dealer_seat".to_string(),
-            Value::Number(
-                (if match_finished {
-                    dealer_seat
-                } else {
-                    next_dealer
-                } as u64)
-                    .into(),
-            ),
-        );
-        match_state_mut.insert("match_finished".to_string(), Value::Bool(match_finished));
-    }
+    apply_legacy_room_mutations(
+        room,
+        &[
+            LegacyRoomMutation::SetMatchField {
+                key: "prevailing_wind".to_string(),
+                value: Value::String(next_wind.clone()),
+            },
+            LegacyRoomMutation::SetMatchField {
+                key: "hand_number".to_string(),
+                value: Value::Number(
+                    (if match_finished {
+                        hand_number
+                    } else {
+                        next_hand_number
+                    } as u64)
+                        .into(),
+                ),
+            },
+            LegacyRoomMutation::SetMatchField {
+                key: "dealer_seat".to_string(),
+                value: Value::Number(
+                    (if match_finished {
+                        dealer_seat
+                    } else {
+                        next_dealer
+                    } as u64)
+                        .into(),
+                ),
+            },
+            LegacyRoomMutation::SetMatchField {
+                key: "match_finished".to_string(),
+                value: Value::Bool(match_finished),
+            },
+        ],
+    )?;
 
     if match_finished {
-        if let Some(obj) = room.as_object_mut() {
-            obj.insert("phase".to_string(), Value::String("finished".to_string()));
-            obj.insert("pending_timeout".to_string(), Value::Null);
-        }
+        apply_legacy_room_mutations(
+            room,
+            &[
+                LegacyRoomMutation::SetRoomField {
+                    key: "phase".to_string(),
+                    value: Value::String("finished".to_string()),
+                },
+                LegacyRoomMutation::SetRoomField {
+                    key: "pending_timeout".to_string(),
+                    value: Value::Null,
+                },
+            ],
+        )?;
         return Ok(());
-    }
-
-    if let Some(obj) = room.as_object_mut() {
-        obj.insert("phase".to_string(), Value::String("playing".to_string()));
     }
     let enforce = room
         .get("enforce_minimum_eight_fan")
@@ -3268,9 +2701,6 @@ fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String
         .get("meld_index")
         .and_then(Value::as_u64)
         .map(|value| value as usize);
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("pending_action".to_string(), Value::Null);
-    }
     let replacement_tile =
         replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?;
     let selection = SelfKongCandidate {
@@ -3279,48 +2709,11 @@ fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String
         tile_key,
         meld_index,
     };
-    complete_self_kong(room, actor_seat, &selection, replacement_tile)
-}
-
-fn public_seats(room: &Value) -> Value {
-    Value::Array(
-        room.get("seats")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|seat| {
-                json!({
-                    "seat_index": seat.get("seat_index").cloned().unwrap_or(Value::Null),
-                    "nickname": seat.get("nickname").cloned().unwrap_or(Value::Null),
-                    "connected": seat.get("connected").cloned().unwrap_or(Value::Bool(false)),
-                    "ready": seat.get("ready").cloned().unwrap_or(Value::Bool(false)),
-                    "is_bot": seat.get("is_bot").cloned().unwrap_or(Value::Bool(false)),
-                    "seat_type": seat.get("seat_type").cloned().unwrap_or(Value::String("human".to_string())),
-                })
-            })
-            .collect(),
-    )
-}
-
-fn reconnect_token(room: &Value, local_seat: usize) -> Value {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats.iter().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == local_seat)
-                    .unwrap_or(false)
-            })
-        })
-        .and_then(|seat| seat.get("reconnect_token"))
-        .cloned()
-        .unwrap_or(Value::Null)
-}
-
-fn public_match_state(room: &Value) -> Value {
-    room.get("match_state").cloned().unwrap_or(Value::Null)
+    let plan =
+        plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
+    apply_legacy_room_mutations(room, &plan.mutations)?;
+    sync_pending_timeout(room);
+    Ok(plan.events)
 }
 
 fn match_result_message(room: &Value) -> Option<Value> {
@@ -3345,356 +2738,19 @@ fn match_result_message(room: &Value) -> Option<Value> {
     }))
 }
 
-fn private_round_state(room: &Value, local_seat: usize) -> Value {
-    let Some(round_state) = room.get("round_state") else {
-        return Value::Null;
-    };
-    let Some(players) = round_state.get("players").and_then(Value::as_array) else {
-        return Value::Null;
-    };
-    let seats = room
-        .get("seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let phase = round_state
-        .get("phase")
-        .and_then(Value::as_str)
-        .unwrap_or("playing");
-
-    let private_players = players
-        .iter()
-        .map(|player| {
-            let seat_index = player.get("seat").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let seat_info = seats.iter().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            });
-            json!({
-                "seat_index": seat_index,
-                "nickname": seat_info.and_then(|seat| seat.get("nickname")).cloned().unwrap_or(Value::Null),
-                "connected": seat_info.and_then(|seat| seat.get("connected")).cloned().unwrap_or(Value::Bool(false)),
-                "concealed_count": player.get("concealed_tiles").and_then(Value::as_array).map(|tiles| tiles.len()).unwrap_or(0),
-                "concealed_tiles": if phase == "settlement" || seat_index == local_seat {
-                    Value::Array(player.get("concealed_tiles").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| json!({
-                        "tile_id": tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                        "tile_key": tile.get("tile_key").cloned().unwrap_or(Value::Null),
-                    })).collect())
-                } else {
-                    Value::Null
-                },
-                "melds": Value::Array(player.get("melds").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|meld| {
-                    Value::Array(meld.as_array().cloned().unwrap_or_default().into_iter().map(|tile| {
-                        tile_key_value(&tile)
-                    }).collect())
-                }).collect()),
-                "flowers": Value::Array(player.get("flowers").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| tile_key_value(&tile)).collect()),
-                "discards": Value::Array(player.get("discards").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|tile| tile_key_value(&tile)).collect()),
-            })
-        })
-        .collect::<Vec<_>>();
-
-    json!({
-        "round_id": round_state.get("round_id").cloned().unwrap_or(Value::Null),
-        "round_wind": round_state.get("round_wind").cloned().unwrap_or(Value::String("east".to_string())),
-        "dealer_seat": round_state.get("dealer_seat").cloned().unwrap_or(Value::Null),
-        "current_actor": round_state.get("current_actor").cloned().unwrap_or(Value::Null),
-        "wall_tiles_remaining": round_state.get("wall").and_then(|wall| {
-            let head = wall.get("head_index")?.as_i64()?;
-            let tail = wall.get("tail_index")?.as_i64()?;
-            Some(Value::Number((tail - head + 1).max(0).into()))
-        }).unwrap_or(Value::Null),
-        "last_discard": round_state.get("last_discard").map(tile_key_value).unwrap_or(Value::Null),
-        "pending_action": private_pending_action(room, local_seat),
-        "score_state": round_score_state(room),
-        "players": private_players,
-    })
-}
-
-fn tile_key_value(tile: &Value) -> Value {
-    if let Some(tile_key) = tile.as_str() {
-        Value::String(tile_key.to_string())
-    } else {
-        tile.get("tile_key").cloned().unwrap_or(Value::Null)
-    }
-}
-
-fn private_pending_action(room: &Value, local_seat: usize) -> Option<Value> {
-    let pending_timeout = room.get("pending_timeout")?;
-    let kind = pending_timeout.get("kind")?.as_str()?;
-    let round_state = room.get("round_state")?;
-    let current_actor = round_state
-        .get("current_actor")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(0);
-    let deadline_at = pending_timeout
-        .get("deadline_at")
-        .cloned()
-        .unwrap_or(Value::Null);
-
-    match kind {
-        "opening_flowers" => {
-            if current_actor != local_seat {
-                return None;
-            }
-            let options = if player_has_concealed_flower(round_state, local_seat) {
-                vec![Value::String("flower".to_string())]
-            } else {
-                vec![Value::String("pass".to_string())]
-            };
-            Some(json!({
-                "type": "opening_flowers",
-                "seat_index": local_seat,
-                "deadline_at": deadline_at,
-                "options": options,
-            }))
-        }
-        "active_turn" => {
-            if current_actor != local_seat {
-                return None;
-            }
-            let mut options = vec![Value::String("discard".to_string())];
-            if player_has_concealed_flower(round_state, local_seat) {
-                options.push(Value::String("flower".to_string()));
-            }
-            if !available_self_kongs(room, local_seat).is_empty() {
-                options.push(Value::String("kong".to_string()));
-            }
-            if can_declare_hu(room, local_seat, None, None) {
-                options.push(Value::String("hu".to_string()));
-            }
-            Some(json!({
-                "type": "active_turn",
-                "seat_index": local_seat,
-                "deadline_at": deadline_at,
-                "drawn_tile_id": pending_timeout.get("drawn_tile_id").cloned().unwrap_or(Value::Null),
-                "restricted_discard_tile_ids": restricted_same_turn_discard_tile_ids(room, local_seat),
-                "options": options,
-            }))
-        }
-        "claim_window" => {
-            let pending = round_state
-                .get("pending_action")
-                .cloned()
-                .unwrap_or(Value::Null);
-            let responded = pending
-                .get("responded_seats")
-                .cloned()
-                .unwrap_or_else(|| Value::Array(vec![]));
-            let options = pending
-                .get("claim_window")
-                .and_then(Value::as_array)
-                .and_then(|windows| windows.get(local_seat))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let is_responded = responded
-                .as_array()
-                .map(|values| {
-                    values.iter().any(|value| {
-                        value
-                            .as_u64()
-                            .map(|seat| seat as usize == local_seat)
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false);
-            let mut payload_options = options;
-            if !payload_options.is_empty() && !is_responded {
-                payload_options.push(Value::String("pass".to_string()));
-            }
-            Some(json!({
-                "type": "claim_window",
-                "discarder_seat": pending.get("discarder_seat").cloned().unwrap_or(Value::Null),
-                "deadline_at": deadline_at,
-                "responded_seats": responded,
-                "options": payload_options,
-            }))
-        }
-        "rob_kong_window" => {
-            let pending = round_state
-                .get("pending_action")
-                .cloned()
-                .unwrap_or(Value::Null);
-            let responded = pending
-                .get("responded_seats")
-                .cloned()
-                .unwrap_or_else(|| Value::Array(vec![]));
-            let offered = pending
-                .get("offered_hu_seats")
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values.iter().any(|value| {
-                        value
-                            .as_u64()
-                            .map(|seat| seat as usize == local_seat)
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false);
-            let is_responded = responded
-                .as_array()
-                .map(|values| {
-                    values.iter().any(|value| {
-                        value
-                            .as_u64()
-                            .map(|seat| seat as usize == local_seat)
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false);
-            let options = if offered && !is_responded {
-                vec![
-                    Value::String("hu".to_string()),
-                    Value::String("pass".to_string()),
-                ]
-            } else {
-                vec![]
-            };
-            Some(json!({
-                "type": "rob_kong_window",
-                "actor_seat": pending.get("actor_seat").cloned().unwrap_or(Value::Null),
-                "tile_key": pending.get("tile_key").cloned().unwrap_or(Value::Null),
-                "deadline_at": deadline_at,
-                "responded_seats": responded,
-                "options": options,
-            }))
-        }
-        _ => None,
-    }
-}
-
-fn advance_opening_flowers_or_finish(room: &mut Value, seat_index: usize) {
-    let dealer_seat = room
-        .get("round_state")
-        .and_then(|round| round.get("dealer_seat"))
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(0);
-    let next_seat = (seat_index + 1) % MAX_SEATS;
-    let next_has_flower =
-        player_has_concealed_flower(room.get("round_state").unwrap_or(&Value::Null), next_seat);
-    let seat_has_flower =
-        player_has_concealed_flower(room.get("round_state").unwrap_or(&Value::Null), seat_index);
-
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        if seat_has_flower {
-            round_state.insert(
-                "current_actor".to_string(),
-                Value::Number((seat_index as u64).into()),
-            );
-            round_state.insert(
-                "pending_action".to_string(),
-                json!({
-                    "type": "opening_flowers",
-                    "dealer_seat": dealer_seat,
-                }),
-            );
-            return;
-        }
-        if next_seat == dealer_seat {
-            round_state.insert(
-                "current_actor".to_string(),
-                Value::Number((dealer_seat as u64).into()),
-            );
-            round_state.insert("pending_action".to_string(), Value::Null);
-            let mut trackers = round_state
-                .get("score_trackers")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
-            trackers.insert("opening_flowers_completed".to_string(), Value::Bool(true));
-            round_state.insert("score_trackers".to_string(), Value::Object(trackers));
-            return;
-        }
-        round_state.insert(
-            "current_actor".to_string(),
-            Value::Number((next_seat as u64).into()),
-        );
-        round_state.insert(
-            "pending_action".to_string(),
-            json!({
-                "type": "opening_flowers",
-                "dealer_seat": dealer_seat,
-            }),
-        );
-        let _ = next_has_flower;
-    }
-}
-
 fn sync_pending_timeout(room: &mut Value) {
-    let phase = room
-        .get("phase")
-        .and_then(Value::as_str)
-        .unwrap_or("waiting");
-    if phase != "playing" {
-        set_pending_timeout(room, Value::Null);
-        return;
-    }
-    let pending_type = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("type"))
-        .and_then(Value::as_str);
-    let current_actor = current_actor(room).unwrap_or(0);
-    match pending_type {
-        Some("opening_flowers") => {
-            let drawn_tile_id =
-                player_first_flower_tile_id(room, current_actor).unwrap_or(Value::Null);
-            set_pending_timeout(
-                room,
-                json!({
-                    "kind": "opening_flowers",
-                    "seat_index": current_actor,
-                    "deadline_at": deadline_iso(),
-                    "drawn_tile_id": drawn_tile_id,
-                }),
-            );
-        }
-        Some("claim_window") | Some("rob_kong_window") => {
-            let discarder_seat = room
-                .get("round_state")
-                .and_then(|round| round.get("pending_action"))
-                .and_then(|pending| {
-                    pending
-                        .get("discarder_seat")
-                        .or_else(|| pending.get("actor_seat"))
-                })
-                .cloned()
-                .unwrap_or(Value::Null);
-            set_pending_timeout(
-                room,
-                json!({
-                    "kind": "claim_window",
-                    "seat_index": discarder_seat,
-                    "deadline_at": deadline_iso(),
-                    "drawn_tile_id": Value::Null,
-                }),
-            );
-        }
-        _ => {
-            let drawn_tile_id =
-                active_turn_drawn_tile_id(room, current_actor).unwrap_or(Value::Null);
-            set_pending_timeout(
-                room,
-                json!({
-                    "kind": "active_turn",
-                    "seat_index": current_actor,
-                    "deadline_at": deadline_iso(),
-                    "drawn_tile_id": drawn_tile_id,
-                }),
-            );
-        }
-    }
-}
-
-fn set_pending_timeout(room: &mut Value, pending_timeout: Value) {
-    if let Some(object) = room.as_object_mut() {
-        object.insert("pending_timeout".to_string(), pending_timeout);
-    }
+    let pending_timeout = project_room_state(room)
+        .ok()
+        .and_then(|state| compute_pending_timeout_value(&state, deadline_iso()))
+        .and_then(|timeout| serde_json::to_value(timeout).ok())
+        .unwrap_or(Value::Null);
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoomField {
+            key: "pending_timeout".to_string(),
+            value: pending_timeout,
+        }],
+    );
 }
 
 fn round_event_message(event_type: &str, event: Value) -> Value {
@@ -3718,39 +2774,6 @@ fn pending_timeout_kind(room: &Value) -> Option<&str> {
     room.get("pending_timeout")
         .and_then(|timeout| timeout.get("kind"))
         .and_then(Value::as_str)
-}
-
-fn active_turn_drawn_tile_id(room: &Value, seat_index: usize) -> Option<Value> {
-    let last_action = room
-        .get("round_state")
-        .and_then(|round| round.get("last_action_context"))?;
-    let action_kind = last_action.get("kind").and_then(Value::as_str)?;
-    if action_kind != "draw" && action_kind != "replacement_draw" {
-        return None;
-    }
-    if last_action
-        .get("seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        != Some(seat_index)
-    {
-        return None;
-    }
-    let tile_id = last_action.get("tile_id")?.clone();
-    let exists = room
-        .get("round_state")
-        .and_then(|round| round.get("players"))
-        .and_then(Value::as_array)
-        .and_then(|players| players.get(seat_index))
-        .and_then(|player| player.get("concealed_tiles"))
-        .and_then(Value::as_array)
-        .map(|tiles| {
-            tiles
-                .iter()
-                .any(|tile| tile.get("tile_id") == Some(&tile_id))
-        })
-        .unwrap_or(false);
-    if exists { Some(tile_id) } else { None }
 }
 
 fn restricted_same_turn_discard_tile_ids(room: &Value, seat_index: usize) -> Vec<Value> {
@@ -3822,11 +2845,6 @@ fn zero_score_map(seat_count: usize) -> Value {
     Value::Object(map)
 }
 
-fn player_first_flower_tile_id(room: &Value, seat_index: usize) -> Option<Value> {
-    let cache = RoomScoringCache::from_room(room);
-    player_first_flower_tile_id_from_cache(&cache, seat_index).map(Value::String)
-}
-
 fn player_first_flower_tile_id_from_cache(
     cache: &RoomScoringCache,
     seat_index: usize,
@@ -3891,26 +2909,6 @@ fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -
     discarded_tile.get("tile_id").is_some()
 }
 
-fn draw_for_turn(room: &mut Value, seat_index: usize) -> Option<Value> {
-    let round_state = room.get_mut("round_state")?.as_object_mut()?;
-    let wall = round_state.get_mut("wall")?.as_object_mut()?;
-    let head_index = wall.get("head_index")?.as_i64()? as usize;
-    let tail_index = wall.get("tail_index")?.as_i64()? as usize;
-    if head_index > tail_index {
-        return None;
-    }
-    let tile = wall.get("tiles")?.as_array()?.get(head_index)?.clone();
-    wall.insert(
-        "head_index".to_string(),
-        Value::Number(((head_index + 1) as u64).into()),
-    );
-    let players = round_state.get_mut("players")?.as_array_mut()?;
-    let player = players.get_mut(seat_index)?.as_object_mut()?;
-    let concealed = player.get_mut("concealed_tiles")?.as_array_mut()?;
-    concealed.push(tile.clone());
-    Some(tile)
-}
-
 fn wall_live_tiles_remaining(room: &Value) -> i64 {
     room.get("round_state")
         .and_then(|round| round.get("wall"))
@@ -3920,10 +2918,6 @@ fn wall_live_tiles_remaining(room: &Value) -> i64 {
             Some((tail - head + 1).max(0))
         })
         .unwrap_or(0)
-}
-
-fn wall_is_exhausted(room: &Value) -> bool {
-    wall_live_tiles_remaining(room) == 0
 }
 
 fn player_concealed_tiles_slice(room: &Value, seat_index: usize) -> Option<&[Value]> {
@@ -4366,99 +3360,27 @@ fn choose_bot_claim_action_with_cache(
     bot::choose_claim_action(&bot_context)
 }
 
-fn round_score_state(room: &Value) -> Value {
-    let round_state = room.get("round_state").cloned().unwrap_or(Value::Null);
-    let players = round_state
-        .get("players")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let seat_count = players.len().max(MAX_SEATS);
-    let mut flower_count = Map::new();
-    let mut base_scores = Map::new();
-    let mut projected_scores = Map::new();
-    let mut round_delta = Map::new();
-    let mut kong_delta = Map::new();
-    for seat in 0..seat_count {
-        let flower_total = players
-            .get(seat)
-            .and_then(|player| player.get("flowers"))
-            .and_then(Value::as_array)
-            .map(|flowers| flowers.len() as i64)
-            .unwrap_or(0);
-        flower_count.insert(seat.to_string(), Value::Number(flower_total.into()));
-        let base = room
-            .get("match_state")
-            .and_then(|state| state.get("cumulative_scores"))
-            .and_then(|scores| scores.get(seat.to_string()))
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        base_scores.insert(seat.to_string(), Value::Number(base.into()));
-        projected_scores.insert(seat.to_string(), Value::Number(base.into()));
-        round_delta.insert(seat.to_string(), Value::Number(0.into()));
-        kong_delta.insert(seat.to_string(), Value::Number(0.into()));
-    }
-    json!({
-        "flower_count_by_seat": flower_count,
-        "kong_score_detail": [],
-        "kong_delta_by_seat": kong_delta,
-        "current_round_delta_by_seat": round_delta,
-        "base_cumulative_scores": base_scores,
-        "projected_cumulative_scores": projected_scores,
-    })
+fn project_room_state(room: &Value) -> Result<RoomState, String> {
+    RoomState::from_legacy_value(room).map_err(|error| error.to_string())
 }
 
-fn continue_action_snapshot(room: &Value) -> Value {
-    let action_id = match room.get("phase").and_then(Value::as_str) {
-        Some("settlement") => Some("start_next_round"),
-        Some("finished") => Some("restart_match"),
-        _ => None,
-    };
-    let Some(action_id) = action_id else {
-        return Value::Null;
-    };
-
-    let confirmed_field = if action_id == "start_next_round" {
-        "start_next_round_confirmed_seats"
-    } else {
-        "restart_match_confirmed_seats"
-    };
-    let confirmed = room
-        .get(confirmed_field)
-        .cloned()
-        .unwrap_or_else(|| Value::Array(vec![]));
-    let required = Value::Array(
-        room.get("seats")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|seat| !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-            .filter_map(|seat| seat.get("seat_index").cloned())
-            .collect(),
-    );
-    let online = Value::Array(
-        room.get("seats")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|seat| {
-                seat.get("connected")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                    && !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false)
-            })
-            .filter_map(|seat| seat.get("seat_index").cloned())
-            .collect(),
-    );
-    json!({
-        "action_id": action_id,
-        "confirmed_seats": confirmed,
-        "required_seats": required,
-        "online_seats": online,
-        "auto_advance_deadline_at": room.get("continue_action_auto_advance_deadline_at").cloned().unwrap_or(Value::Null),
-    })
+fn seat_projection_support(room: &Value, local_seat: usize) -> SeatProjectionSupport {
+    let has_concealed_flower = room
+        .get("round_state")
+        .map(|round_state| player_has_concealed_flower(round_state, local_seat))
+        .unwrap_or(false);
+    let has_self_kong = room.get("round_state").is_some() && !available_self_kongs(room, local_seat).is_empty();
+    let can_hu = room.get("round_state").is_some() && can_declare_hu(room, local_seat, None, None);
+    let restricted_discard_tile_ids = restricted_same_turn_discard_tile_ids(room, local_seat)
+        .into_iter()
+        .filter_map(|value| value.as_str().map(ToString::to_string))
+        .collect();
+    SeatProjectionSupport {
+        has_concealed_flower,
+        has_self_kong,
+        can_hu,
+        restricted_discard_tile_ids,
+    }
 }
 
 fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
@@ -4476,90 +3398,16 @@ fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
         .unwrap_or(false)
 }
 
-fn any_concealed_flower(players: &[Value]) -> bool {
-    players.iter().any(|player| {
-        player
-            .get("concealed_tiles")
-            .and_then(Value::as_array)
-            .map(|tiles| {
-                tiles
-                    .iter()
-                    .any(|tile| tile.get("kind").and_then(Value::as_str) == Some("flower"))
-            })
-            .unwrap_or(false)
-    })
-}
-
 fn deadline_iso() -> String {
     (Utc::now() + chrono::TimeDelta::seconds(ACTIVE_TURN_TIMEOUT_SECONDS))
         .to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
-fn full_tile_set() -> Vec<Value> {
-    let mut tiles = Vec::new();
-    for (suit_key, suit_name, prefix) in [
-        ("characters", "Character", "w"),
-        ("bamboos", "Bamboo", "t"),
-        ("dots", "Dot", "b"),
-    ] {
-        for rank in 1..=9 {
-            for copy_index in 0..4 {
-                tiles.push(json!({
-                    "tile_id": format!("{prefix}{rank}#{copy_index}"),
-                    "tile_key": format!("{prefix}{rank}"),
-                    "kind": "suit",
-                    "suit": suit_key,
-                    "rank": rank,
-                    "name": format!("{suit_name} {rank}"),
-                }));
-            }
-        }
-    }
-    for (tile_key, name, kind) in [
-        ("east", "East Wind", "wind"),
-        ("south", "South Wind", "wind"),
-        ("west", "West Wind", "wind"),
-        ("north", "North Wind", "wind"),
-        ("red", "Red Dragon", "dragon"),
-        ("green", "Green Dragon", "dragon"),
-        ("white", "White Dragon", "dragon"),
-    ] {
-        for copy_index in 0..4 {
-            tiles.push(json!({
-                "tile_id": format!("{tile_key}#{copy_index}"),
-                "tile_key": tile_key,
-                "kind": kind,
-                "suit": Value::Null,
-                "rank": Value::Null,
-                "name": name,
-            }));
-        }
-    }
-    for (tile_key, name) in [
-        ("f1", "Spring Flower"),
-        ("f2", "Summer Flower"),
-        ("f3", "Autumn Flower"),
-        ("f4", "Winter Flower"),
-        ("f5", "Plum Flower"),
-        ("f6", "Orchid Flower"),
-        ("f7", "Chrysanthemum Flower"),
-        ("f8", "Bamboo Flower"),
-    ] {
-        tiles.push(json!({
-            "tile_id": format!("{tile_key}#0"),
-            "tile_key": tile_key,
-            "kind": "flower",
-            "suit": Value::Null,
-            "rank": Value::Null,
-            "name": name,
-        }));
-    }
-    tiles
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::action::{GameCommand, PlayerAction};
+    use crate::core::event::GameEvent;
 
     fn tile(tile_key: &str, tile_id: &str, kind: &str) -> Value {
         json!({
@@ -5113,6 +3961,28 @@ mod tests {
                 .map(|tiles| tiles.len()),
             Some(14)
         );
+    }
+
+    #[test]
+    fn try_handle_command_emits_typed_discard_event() {
+        let mut room = room_for_local_discard();
+        let output = try_handle_command(
+            &mut room,
+            GameCommand::PlayerAction {
+                actor: 0,
+                action: PlayerAction::Discard {
+                    tile_id: "east#discard".to_string(),
+                },
+            },
+        )
+        .expect("discard command should be handled locally")
+        .expect("discard command should succeed");
+
+        assert_eq!(output.emitted_messages.len(), 1);
+        assert!(matches!(
+            output.events.first(),
+            Some(GameEvent::TileDiscarded { seat: 0, tile }) if tile.tile_id == "east#discard"
+        ));
     }
 
     #[test]
