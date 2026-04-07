@@ -874,6 +874,27 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('uses settlement snapshot cumulative scores without reapplying the current round delta', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          match_state: {
+            ...base.roomSnapshot!.payload.match_state!,
+            cumulative_scores: { '0': -8, '1': 8, '2': 0, '3': 0 },
+            last_completed_round_id: 'round-123',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.result?.seats.find((seat) => seat.seat === 'left')?.score).toBe(8);
+    expect(viewModel.result?.seats.find((seat) => seat.seat === 'top')?.score).toBe(-8);
+  });
+
   it('marks the next-round action as confirmed for the local player after they click it', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

@@ -581,14 +581,6 @@ function getDisplayedScores(state: SessionState) {
     return liveScores;
   }
 
-  if (snapshot?.phase === 'settlement' && state.latestMatchResult) {
-    const merged: Record<string, number> = { ...matchScores };
-    for (const [seatIndex, delta] of Object.entries(state.latestMatchResult.payload.score_delta.total_delta_by_seat)) {
-      merged[seatIndex] = (merged[seatIndex] ?? 0) + delta;
-    }
-    return merged;
-  }
-
   return matchScores;
 }
 
