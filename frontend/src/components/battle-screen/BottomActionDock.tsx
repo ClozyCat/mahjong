@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatTileName } from '../../lib/tileNames';
 import type {
   BackendActionType,
   BattleActionView,
@@ -142,20 +141,17 @@ export function BottomActionDock({
         aria-expanded={isReadyHandPopoverOpen}
         onClick={() => setIsReadyHandPopoverPinned((currentValue) => !currentValue)}
       >
-        i
+        <span className="action-dock__ready-hand-trigger-face" aria-hidden="true">
+          <span className="action-dock__ready-hand-trigger-mark">听</span>
+        </span>
       </button>
       {isReadyHandPopoverOpen ? (
         <section className="action-dock__ready-hand-popover" aria-label={getReadyHandPopoverLabel(readyHandInsight)}>
-          <div className="action-dock__ready-hand-popover-head">
-            <strong>{getReadyHandPopoverTitle(readyHandInsight)}</strong>
-            <span>{getReadyHandPopoverSummary(readyHandInsight)}</span>
-          </div>
           <div className="action-dock__ready-hand-list" role="list">
             {readyHandInsight.waits.map((wait) => (
               <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
                 <div className="action-dock__ready-hand-tile">
                   <MahjongTile code={wait.code} variant="discard" className="action-dock__ready-hand-preview-tile" />
-                  <span>{formatTileName(wait.code, wait.code)}</span>
                 </div>
                 <strong>{wait.availableCount}</strong>
               </div>
@@ -211,6 +207,7 @@ export function BottomActionDock({
               <div className="action-dock__actions" aria-label="即时操作按钮">
                 {visibleActions.map((action) => {
                   const isPassAction = action.id === 'pass';
+                  const isHuAction = action.id === 'hu';
 
                   return (
                     <button
@@ -218,10 +215,12 @@ export function BottomActionDock({
                       type="button"
                       className={`action-dock__action action-dock__action--response ${
                         isPassAction ? 'action-dock__action--passive' : ''
+                      } ${
+                        isHuAction ? 'action-dock__action--hu-burn' : ''
                       }`.trim()}
                       onClick={() => onAction(action.id)}
                     >
-                      {action.label}
+                      <span className="action-dock__action-label">{action.label}</span>
                     </button>
                   );
                 })}
@@ -340,16 +339,4 @@ function getReadyHandTriggerLabel(readyHandInsight: NonNullable<BottomActionDock
 
 function getReadyHandPopoverLabel(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
   return readyHandInsight.source === 'selected_discard' ? '打出后听牌信息' : '当前听牌信息';
-}
-
-function getReadyHandPopoverTitle(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
-  if (readyHandInsight.source !== 'selected_discard' || !readyHandInsight.discardTileCode) {
-    return '当前听牌';
-  }
-
-  return `打出 ${formatTileName(readyHandInsight.discardTileCode, readyHandInsight.discardTileCode)} 后听牌`;
-}
-
-function getReadyHandPopoverSummary(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
-  return `${readyHandInsight.waits.length} 种可和牌 · 显示玩家视角剩余张数`;
 }

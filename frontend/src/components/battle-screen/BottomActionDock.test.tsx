@@ -106,6 +106,9 @@ describe('BottomActionDock', () => {
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
+    expect(huButton).toHaveClass('action-dock__action--hu-burn');
+    expect(pungButton).not.toHaveClass('action-dock__action--hu-burn');
+    expect(passButton).not.toHaveClass('action-dock__action--hu-burn');
     expect(huButton).not.toHaveClass('action-dock__action--response-glow');
     expect(pungButton).not.toHaveClass('action-dock__action--response-glow');
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');
@@ -146,7 +149,7 @@ describe('BottomActionDock', () => {
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(screen.getByRole('button', { name: '出牌' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '和牌' })).toHaveClass('action-dock__action--hu-burn');
     expect(screen.getByLabelText(/剩余 \d+ 秒/)).toBeInTheDocument();
   });
 
@@ -239,12 +242,6 @@ describe('BottomActionDock', () => {
     await user.hover(trigger);
 
     expect(screen.getByLabelText('当前听牌信息')).toBeInTheDocument();
-    expect(screen.getByText('当前听牌')).toBeInTheDocument();
-    expect(screen.getByText('2 种可和牌 · 显示玩家视角剩余张数')).toBeInTheDocument();
-    expect(screen.getByText('一条')).toBeInTheDocument();
-    expect(screen.getByText('四条')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('keeps pass available during opening flower prompts', () => {
