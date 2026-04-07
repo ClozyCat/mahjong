@@ -42,6 +42,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const activeSeatStatsAnchorRef = useRef<HTMLDivElement | null>(null);
   const openFanGuideTimerRef = useRef<number | null>(null);
   const closeFanGuideTimerRef = useRef<number | null>(null);
+  const openSeatStatsTimerRef = useRef<number | null>(null);
   const closeSeatStatsTimerRef = useRef<number | null>(null);
   const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
@@ -63,7 +64,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     activeFanGuideAnchorRef.current = null;
     setActiveFanGuide(null);
     setFanGuidePopoverPosition(null);
-    clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+    clearSeatStatsTimers(openSeatStatsTimerRef, closeSeatStatsTimerRef);
     activeSeatStatsAnchorRef.current = null;
     setActiveSeatStats(null);
     setSeatStatsPopoverPosition(null);
@@ -237,7 +238,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   useEffect(() => {
     return () => {
       clearFanGuideTimers(openFanGuideTimerRef, closeFanGuideTimerRef);
-      clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+      clearSeatStatsTimers(openSeatStatsTimerRef, closeSeatStatsTimerRef);
     };
   }, []);
 
@@ -306,8 +307,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     }, FAN_GUIDE_POPOVER_CLOSE_DELAY_MS);
   }
 
-  function openSeatStatsPopover(rowKey: string, seat: ResultSeatView, rowElement: HTMLDivElement) {
-    clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+  function showSeatStatsPopover(rowKey: string, seat: ResultSeatView, rowElement: HTMLDivElement) {
     activeSeatStatsAnchorRef.current = rowElement;
 
     if (activeSeatStats?.rowKey === rowKey) {
@@ -318,7 +318,30 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     setActiveSeatStats({ rowKey, seat });
   }
 
+  function scheduleSeatStatsOpen(rowKey: string, seat: ResultSeatView, rowElement: HTMLDivElement) {
+    clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+
+    if (activeSeatStats?.rowKey === rowKey) {
+      activeSeatStatsAnchorRef.current = rowElement;
+      return;
+    }
+
+    if (openSeatStatsTimerRef.current !== null) {
+      window.clearTimeout(openSeatStatsTimerRef.current);
+    }
+
+    openSeatStatsTimerRef.current = window.setTimeout(() => {
+      showSeatStatsPopover(rowKey, seat, rowElement);
+      openSeatStatsTimerRef.current = null;
+    }, SEAT_STATS_POPOVER_DELAY_MS);
+  }
+
   function scheduleSeatStatsClose() {
+    if (openSeatStatsTimerRef.current !== null) {
+      window.clearTimeout(openSeatStatsTimerRef.current);
+      openSeatStatsTimerRef.current = null;
+    }
+
     clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
     closeSeatStatsTimerRef.current = window.setTimeout(() => {
       activeSeatStatsAnchorRef.current = null;
@@ -489,7 +512,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
                         if (!hasSeatStats) {
                           return;
                         }
-                        openSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
+                        scheduleSeatStatsOpen(rowKey, seat, event.currentTarget as HTMLDivElement);
                       }}
                       onMouseLeave={() => {
                         if (!hasSeatStats) {
@@ -501,7 +524,12 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
                         if (!hasSeatStats) {
                           return;
                         }
-                        openSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
+                        if (openSeatStatsTimerRef.current !== null) {
+                          window.clearTimeout(openSeatStatsTimerRef.current);
+                          openSeatStatsTimerRef.current = null;
+                        }
+                        clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+                        showSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
                       }}
                       onBlur={() => {
                         if (!hasSeatStats) {
@@ -553,6 +581,7 @@ const WIN_TYPE_LABELS: Record<string, string> = {
 };
 const FAN_GUIDE_POPOVER_DELAY_MS = 500;
 const FAN_GUIDE_POPOVER_CLOSE_DELAY_MS = 120;
+const SEAT_STATS_POPOVER_DELAY_MS = 500;
 const SEAT_STATS_POPOVER_CLOSE_DELAY_MS = 90;
 const OVERLAY_POPOVER_OFFSET_PX = 14;
 const OVERLAY_POPOVER_MARGIN_PX = 12;
@@ -603,6 +632,18 @@ function clearOverlayPopoverCloseTimer(timerRef: React.MutableRefObject<number |
   }
 }
 
+function clearSeatStatsTimers(
+  openSeatStatsTimerRef: React.MutableRefObject<number | null>,
+  closeSeatStatsTimerRef: React.MutableRefObject<number | null>,
+) {
+  if (openSeatStatsTimerRef.current !== null) {
+    window.clearTimeout(openSeatStatsTimerRef.current);
+    openSeatStatsTimerRef.current = null;
+  }
+
+  clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+}
+
 function SeatStatsTooltip({ seat }: { seat: ResultSeatView }) {
   if (!seat.stats) {
     return null;
@@ -636,9 +677,6 @@ function SeatStatsTooltip({ seat }: { seat: ResultSeatView }) {
         </div>
       </div>
       <ScoreTrendChart history={seat.stats.scoreHistory} seatName={seat.name} />
-      <p className="result-overlay__seat-tooltip-note">
-        折线展示已完成牌局的累计总分走势。
-      </p>
     </article>
   );
 }

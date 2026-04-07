@@ -591,6 +591,18 @@ describe('BattleScreen', () => {
 
     fireEvent.mouseEnter(playerRow!);
 
+    expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+
+    expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
     expect(screen.getByRole('tooltip', { name: 'Player A 战绩统计' })).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
     expect(screen.getByText('2/4')).toBeInTheDocument();
