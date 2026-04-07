@@ -1,7 +1,7 @@
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{OnceLock, RwLock};
 
 const SUIT_KEYS: [char; 3] = ['w', 't', 'b'];
 const HONOR_KEYS: [&str; 7] = ["east", "south", "west", "north", "red", "green", "white"];
@@ -369,20 +369,20 @@ struct HandFeatureCacheKey {
 }
 
 fn cached_clone<K, V, F>(
-    cache: &'static OnceLock<Mutex<HashMap<K, V>>>,
+    cache: &'static OnceLock<RwLock<HashMap<K, V>>>,
     limit: usize,
     key: K,
     compute: F,
 ) -> V
 where
-    K: Eq + Hash,
+    K: Clone + Eq + Hash,
     V: Clone,
     F: FnOnce() -> V,
 {
-    let cache = cache.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = cache.get_or_init(|| RwLock::new(HashMap::new()));
     if let Some(value) = cache
-        .lock()
-        .expect("cache mutex poisoned")
+        .read()
+        .expect("cache rwlock poisoned")
         .get(&key)
         .cloned()
     {
@@ -390,33 +390,128 @@ where
     }
 
     let value = compute();
-    let mut cache_guard = cache.lock().expect("cache mutex poisoned");
+    let mut cache_guard = cache.write().expect("cache rwlock poisoned");
+    if let Some(existing) = cache_guard.get(&key).cloned() {
+        return existing;
+    }
     if cache_guard.len() >= limit && !cache_guard.contains_key(&key) {
-        cache_guard.clear();
+        if let Some(evicted_key) = cache_guard.keys().next().cloned() {
+            cache_guard.remove(&evicted_key);
+        }
     }
     cache_guard.insert(key, value.clone());
     value
 }
 
 fn decomposition_cache()
--> &'static OnceLock<Mutex<HashMap<DecompositionCacheKey, Vec<Decomposition>>>> {
-    static CACHE: OnceLock<Mutex<HashMap<DecompositionCacheKey, Vec<Decomposition>>>> =
+-> &'static OnceLock<RwLock<HashMap<DecompositionCacheKey, Vec<Decomposition>>>> {
+    static CACHE: OnceLock<RwLock<HashMap<DecompositionCacheKey, Vec<Decomposition>>>> =
         OnceLock::new();
     &CACHE
 }
 
-fn hand_feature_cache() -> &'static OnceLock<Mutex<HashMap<HandFeatureCacheKey, HandFeatures>>> {
-    static CACHE: OnceLock<Mutex<HashMap<HandFeatureCacheKey, HandFeatures>>> = OnceLock::new();
+fn hand_feature_cache() -> &'static OnceLock<RwLock<HashMap<HandFeatureCacheKey, HandFeatures>>> {
+    static CACHE: OnceLock<RwLock<HashMap<HandFeatureCacheKey, HandFeatures>>> = OnceLock::new();
     &CACHE
 }
 
-fn fan_result_cache() -> &'static OnceLock<Mutex<HashMap<EvaluationInput, FanResult>>> {
-    static CACHE: OnceLock<Mutex<HashMap<EvaluationInput, FanResult>>> = OnceLock::new();
+fn fan_result_cache() -> &'static OnceLock<RwLock<HashMap<EvaluationInput, FanResult>>> {
+    static CACHE: OnceLock<RwLock<HashMap<EvaluationInput, FanResult>>> = OnceLock::new();
     &CACHE
+}
+
+fn canonicalize_tile_keys(mut tile_keys: Vec<String>) -> Vec<String> {
+    tile_keys.sort_unstable();
+    tile_keys
+}
+
+fn canonicalize_tile_key_groups(mut groups: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    for group in &mut groups {
+        group.sort_unstable();
+    }
+    groups.sort_unstable();
+    groups
+}
+
+fn canonicalize_decomposition(mut decomposition: Decomposition) -> Decomposition {
+    decomposition.melds = canonicalize_tile_key_groups(decomposition.melds);
+    decomposition.pairs = canonicalize_tile_keys(decomposition.pairs);
+    decomposition.pattern_tiles = canonicalize_tile_keys(decomposition.pattern_tiles);
+    decomposition.honor_tiles = canonicalize_tile_keys(decomposition.honor_tiles);
+    decomposition.meld = canonicalize_tile_keys(decomposition.meld);
+    decomposition.orphans = canonicalize_tile_keys(decomposition.orphans);
+    decomposition
+}
+
+fn decomposition_sort_key(decomposition: &Decomposition) -> (
+    &str,
+    Option<&str>,
+    Vec<Vec<&str>>,
+    Vec<&str>,
+    Vec<&str>,
+    Vec<&str>,
+    Vec<&str>,
+    Option<&str>,
+    Vec<&str>,
+) {
+    (
+        decomposition.kind.as_str(),
+        decomposition.pair.as_deref(),
+        decomposition
+            .melds
+            .iter()
+            .map(|meld| meld.iter().map(String::as_str).collect::<Vec<_>>())
+            .collect(),
+        decomposition.pairs.iter().map(String::as_str).collect(),
+        decomposition.pattern_tiles.iter().map(String::as_str).collect(),
+        decomposition.honor_tiles.iter().map(String::as_str).collect(),
+        decomposition.meld.iter().map(String::as_str).collect(),
+        decomposition.completion_kind.as_deref(),
+        decomposition.orphans.iter().map(String::as_str).collect(),
+    )
+}
+
+fn canonicalize_decompositions(mut decompositions: Vec<Decomposition>) -> Vec<Decomposition> {
+    for decomposition in &mut decompositions {
+        *decomposition = canonicalize_decomposition(std::mem::take(decomposition));
+    }
+    decompositions.sort_by(|left, right| decomposition_sort_key(left).cmp(&decomposition_sort_key(right)));
+    decompositions
+}
+
+fn canonicalize_evaluation_input(mut input: EvaluationInput) -> EvaluationInput {
+    input.kong_entries = {
+        let mut kong_entries = input.kong_entries;
+        for entry in &mut kong_entries {
+            entry.payer_seats.sort_unstable();
+        }
+        kong_entries.sort_by(|left, right| {
+            (
+                left.actor_seat,
+                left.payer_seats.as_slice(),
+                left.tile_key.as_deref(),
+                left.kong_type.as_str(),
+            )
+                .cmp(&(
+                    right.actor_seat,
+                    right.payer_seats.as_slice(),
+                    right.tile_key.as_deref(),
+                    right.kong_type.as_str(),
+                ))
+        });
+        kong_entries
+    };
+    input.tile_keys = canonicalize_tile_keys(input.tile_keys);
+    input.visible_tile_keys = canonicalize_tile_keys(input.visible_tile_keys);
+    input.concealed_tile_keys = canonicalize_tile_keys(input.concealed_tile_keys);
+    input.meld_tile_key_groups = canonicalize_tile_key_groups(input.meld_tile_key_groups);
+    input.open_meld_tile_key_groups = canonicalize_tile_key_groups(input.open_meld_tile_key_groups);
+    input.decompositions = canonicalize_decompositions(input.decompositions);
+    input
 }
 
 pub fn evaluate_fans(input: EvaluationInput) -> FanResult {
-    let cache_key = input.clone();
+    let cache_key = canonicalize_evaluation_input(input.clone());
     cached_clone(
         fan_result_cache(),
         FAN_RESULT_CACHE_LIMIT,
@@ -489,13 +584,13 @@ pub fn extract_hand_features(
     decompositions: Option<&[Decomposition]>,
 ) -> HandFeatures {
     let cache_key = HandFeatureCacheKey {
-        concealed_tile_keys: concealed_tile_keys.to_vec(),
-        meld_tile_key_groups: meld_tile_key_groups.to_vec(),
+        concealed_tile_keys: canonicalize_tile_keys(concealed_tile_keys.to_vec()),
+        meld_tile_key_groups: canonicalize_tile_key_groups(meld_tile_key_groups.to_vec()),
         meld_open_flags: meld_open_flags.map(|flags| flags.to_vec()),
         incoming_tile: incoming_tile.map(ToString::to_string),
         seat_wind_key: seat_wind_key.map(ToString::to_string),
         round_wind_key: round_wind_key.map(ToString::to_string),
-        decompositions: decompositions.map(|items| items.to_vec()),
+        decompositions: decompositions.map(|items| canonicalize_decompositions(items.to_vec())),
     };
     cached_clone(
         hand_feature_cache(),
@@ -584,7 +679,7 @@ fn extract_hand_features_uncached(
 
 pub fn decompose_winning_hand(tile_keys: &[String]) -> Vec<Decomposition> {
     let cache_key = DecompositionCacheKey {
-        concealed_tile_keys: tile_keys.to_vec(),
+        concealed_tile_keys: canonicalize_tile_keys(tile_keys.to_vec()),
         meld_tile_key_groups: vec![],
     };
     cached_clone(
@@ -638,8 +733,8 @@ pub fn decompose_winning_hand_with_melds(
     meld_tile_key_groups: &[Vec<String>],
 ) -> Vec<Decomposition> {
     let cache_key = DecompositionCacheKey {
-        concealed_tile_keys: concealed_tile_keys.to_vec(),
-        meld_tile_key_groups: meld_tile_key_groups.to_vec(),
+        concealed_tile_keys: canonicalize_tile_keys(concealed_tile_keys.to_vec()),
+        meld_tile_key_groups: canonicalize_tile_key_groups(meld_tile_key_groups.to_vec()),
     };
     cached_clone(
         decomposition_cache(),
@@ -2729,10 +2824,10 @@ fn resolve_wait_types(
             } else {
                 None
             };
-            if let Some(wait_type) = next
-                && !wait_types.iter().any(|value| value == wait_type)
-            {
-                wait_types.push(wait_type.to_string());
+            if let Some(wait_type) = next {
+                if !wait_types.iter().any(|value| value == wait_type) {
+                    wait_types.push(wait_type.to_string());
+                }
             }
         }
     }
@@ -2954,19 +3049,18 @@ fn extract_all_melds(
         current.pop();
         counts[tile_index] += 3;
     }
-    if let Some((second, third)) = sequence_tile_indices(tile_index)
-        && counts[second] > 0
-        && counts[third] > 0
-    {
-        counts[tile_index] -= 1;
-        counts[second] -= 1;
-        counts[third] -= 1;
-        current.push(sequence_meld(tile_index));
-        extract_all_melds(counts, current, results);
-        current.pop();
-        counts[tile_index] += 1;
-        counts[second] += 1;
-        counts[third] += 1;
+    if let Some((second, third)) = sequence_tile_indices(tile_index) {
+        if counts[second] > 0 && counts[third] > 0 {
+            counts[tile_index] -= 1;
+            counts[second] -= 1;
+            counts[third] -= 1;
+            current.push(sequence_meld(tile_index));
+            extract_all_melds(counts, current, results);
+            current.pop();
+            counts[tile_index] += 1;
+            counts[second] += 1;
+            counts[third] += 1;
+        }
     }
 }
 
@@ -2983,21 +3077,20 @@ fn extract_first_melds(counts: &mut TileCounts, melds: &mut Vec<CompactMeld>) ->
         melds.pop();
         counts[tile_index] += 3;
     }
-    if let Some((second, third)) = sequence_tile_indices(tile_index)
-        && counts[second] > 0
-        && counts[third] > 0
-    {
-        counts[tile_index] -= 1;
-        counts[second] -= 1;
-        counts[third] -= 1;
-        melds.push(sequence_meld(tile_index));
-        if extract_first_melds(counts, melds) {
-            return true;
+    if let Some((second, third)) = sequence_tile_indices(tile_index) {
+        if counts[second] > 0 && counts[third] > 0 {
+            counts[tile_index] -= 1;
+            counts[second] -= 1;
+            counts[third] -= 1;
+            melds.push(sequence_meld(tile_index));
+            if extract_first_melds(counts, melds) {
+                return true;
+            }
+            melds.pop();
+            counts[tile_index] += 1;
+            counts[second] += 1;
+            counts[third] += 1;
         }
-        melds.pop();
-        counts[tile_index] += 1;
-        counts[second] += 1;
-        counts[third] += 1;
     }
     false
 }
@@ -3275,12 +3368,10 @@ fn single_meld(counts: &TileCounts) -> Option<CompactMeld> {
     if counts[tile_index] == 3 {
         return Some(triplet_meld(tile_index));
     }
-    if let Some((second, third)) = sequence_tile_indices(tile_index)
-        && counts[tile_index] == 1
-        && counts[second] == 1
-        && counts[third] == 1
-    {
-        return Some(sequence_meld(tile_index));
+    if let Some((second, third)) = sequence_tile_indices(tile_index) {
+        if counts[tile_index] == 1 && counts[second] == 1 && counts[third] == 1 {
+            return Some(sequence_meld(tile_index));
+        }
     }
     None
 }
@@ -3575,6 +3666,82 @@ mod tests {
         let first_result = evaluate_fans(input.clone());
         let second_result = evaluate_fans(input);
         assert_eq!(first_result, second_result);
+    }
+
+    #[test]
+    fn evaluate_fans_is_stable_for_reordered_equivalent_inputs() {
+        let ordered_tile_keys = vec![
+            "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "red", "red", "red", "green",
+            "green",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let shuffled_tile_keys = vec![
+            "green", "w9", "red", "w3", "w5", "red", "w7", "green", "w2", "w6", "w8", "w1",
+            "red", "w4",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+        let ordered_decompositions = decompose_winning_hand(&ordered_tile_keys);
+        let shuffled_decompositions = decompose_winning_hand(&shuffled_tile_keys);
+        let ordered_features = extract_hand_features(
+            &ordered_tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&ordered_decompositions),
+        );
+        let shuffled_features = extract_hand_features(
+            &shuffled_tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&shuffled_decompositions),
+        );
+
+        let ordered_result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            flower_count: 0,
+            seat_count: 4,
+            features: ordered_features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys: ordered_tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions: ordered_decompositions,
+        });
+        let shuffled_result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            flower_count: 0,
+            seat_count: 4,
+            features: shuffled_features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys: shuffled_tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions: shuffled_decompositions,
+        });
+
+        assert_eq!(ordered_result, shuffled_result);
     }
 
     #[test]

@@ -746,15 +746,15 @@ pub fn record_continue_action(
     } else {
         "restart_match_confirmed_seats"
     };
-    if let Some(confirmations) = room.get_mut(field).and_then(Value::as_array_mut)
-        && !confirmations.iter().any(|value| {
+    if let Some(confirmations) = room.get_mut(field).and_then(Value::as_array_mut) {
+        if !confirmations.iter().any(|value| {
             value
                 .as_u64()
                 .map(|seat| seat as usize == seat_index)
                 .unwrap_or(false)
-        })
-    {
-        confirmations.push(Value::Number((seat_index as u64).into()));
+        }) {
+            confirmations.push(Value::Number((seat_index as u64).into()));
+        }
     }
     reconcile_continue_action(room)?;
     Ok(())
@@ -1035,11 +1035,6 @@ fn fan_result_for_win_with_cache(
 
     let player_tile_keys =
         player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
-    let winner_kong_entries = kong_entries
-        .iter()
-        .filter(|entry| entry.actor_seat == winner_seat)
-        .cloned()
-        .collect::<Vec<_>>();
 
     Ok(scoring_evaluate_fans(ScoringEvaluationInput {
         win_type,
@@ -1052,7 +1047,7 @@ fn fan_result_for_win_with_cache(
         seat_count: cache.seat_count,
         features,
         timing: timing_features_for_win(_room, incoming_tile.is_none()),
-        kong_entries: winner_kong_entries,
+        kong_entries,
         tile_keys: player_tile_keys,
         visible_tile_keys: cache.visible_tile_keys.clone(),
         concealed_tile_keys,
@@ -1805,10 +1800,10 @@ fn apply_discard_action(
             .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
             .ok_or_else(|| "invalid_action".to_string())?;
         let tile = concealed_tiles.remove(tile_index);
-        if let Some(restricted) = restricted_discard_tile_key.as_deref()
-            && tile.get("tile_key").and_then(Value::as_str) == Some(restricted)
-        {
-            return Err("invalid_action".to_string());
+        if let Some(restricted) = restricted_discard_tile_key.as_deref() {
+            if tile.get("tile_key").and_then(Value::as_str) == Some(restricted) {
+                return Err("invalid_action".to_string());
+            }
         }
         let discards = player
             .get_mut("discards")
@@ -2638,17 +2633,17 @@ fn available_self_kongs_from_cache(
     }
 
     for (meld_index, meld) in player.meld_tile_key_groups.iter().enumerate() {
-        if meld.len() == 3
-            && meld.iter().all(|tile_key| tile_key == &meld[0])
-            && let Some(tile_ids) = by_key.get(&meld[0])
-            && let Some(tile_id) = tile_ids.first()
-        {
-            candidates.push(SelfKongCandidate {
-                kind: SelfKongKind::Add,
-                tile_ids: vec![tile_id.clone()],
-                tile_key: meld[0].clone(),
-                meld_index: Some(meld_index),
-            });
+        if meld.len() == 3 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
+            if let Some(tile_ids) = by_key.get(&meld[0]) {
+                if let Some(tile_id) = tile_ids.first() {
+                    candidates.push(SelfKongCandidate {
+                        kind: SelfKongKind::Add,
+                        tile_ids: vec![tile_id.clone()],
+                        tile_key: meld[0].clone(),
+                        meld_index: Some(meld_index),
+                    });
+                }
+            }
         }
     }
     candidates
@@ -3131,21 +3126,22 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
         return Ok(());
     }
 
-    if (room
+    if room
         .get("continue_action_auto_advance_deadline_at")
         .is_none()
         || room
             .get("continue_action_auto_advance_deadline_at")
             .is_some_and(Value::is_null)
-    ) && let Some(obj) = room.as_object_mut()
     {
-        obj.insert(
-            "continue_action_auto_advance_deadline_at".to_string(),
-            Value::String(
-                (Utc::now() + chrono::TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
-                    .to_rfc3339_opts(SecondsFormat::Micros, true),
-            ),
-        );
+        if let Some(obj) = room.as_object_mut() {
+            obj.insert(
+                "continue_action_auto_advance_deadline_at".to_string(),
+                Value::String(
+                    (Utc::now() + chrono::TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
+                        .to_rfc3339_opts(SecondsFormat::Micros, true),
+                ),
+            );
+        }
     }
     Ok(())
 }
@@ -3898,9 +3894,10 @@ fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -
         .get("round_state")
         .and_then(|round| round.get("restricted_discard_tile_key"))
         .and_then(Value::as_str)
-        && discarded_tile.get("tile_key").and_then(Value::as_str) == Some(restricted)
     {
-        return false;
+        if discarded_tile.get("tile_key").and_then(Value::as_str) == Some(restricted) {
+            return false;
+        }
     }
 
     discarded_tile.get("tile_id").is_some()
@@ -4155,12 +4152,12 @@ fn choose_bot_discard_tile_id_with_cache(
         .and_then(Value::as_str);
     let concealed_tiles = &cache.player(seat_index)?.concealed_tiles;
 
-    if let Some(tile_id) = drawn_tile_id
-        && let Some(tile) = concealed_tiles.iter().find(|tile| tile.tile_id == tile_id)
-        && !tile.is_flower
-        && Some(tile.tile_key.as_str()) != restricted_discard_tile_key
-    {
-        return Some(tile.tile_id.clone());
+    if let Some(tile_id) = drawn_tile_id {
+        if let Some(tile) = concealed_tiles.iter().find(|tile| tile.tile_id == tile_id) {
+            if !tile.is_flower && Some(tile.tile_key.as_str()) != restricted_discard_tile_key {
+                return Some(tile.tile_id.clone());
+            }
+        }
     }
 
     concealed_tiles
@@ -5349,6 +5346,48 @@ mod tests {
             "east-1-dealer-0-hu"
         );
         assert_eq!(room["match_state"]["cumulative_scores"]["1"], 24);
+    }
+
+    #[test]
+    fn hu_settlement_preserves_existing_kong_deltas_from_other_players() {
+        let mut room = room_for_local_add_kong_with_robber();
+        room["round_state"]["score_trackers"]["kong_entries"] = json!([
+            {
+                "kong_type": "exposed_kong",
+                "actor_seat": 2,
+                "payer_seats": [0, 1, 3],
+                "tile_key": "w3"
+            }
+        ]);
+
+        let _ = try_handle_action(&mut room, 0, "kong", &[String::from("w3#add")])
+            .expect("add kong should be handled locally")
+            .expect("add kong should open rob kong window");
+        let _ = try_handle_action(&mut room, 1, "hu", &[])
+            .expect("hu should be handled locally")
+            .expect("hu should succeed");
+
+        let settlement = &room["round_state"]["settlement"];
+        assert_eq!(settlement["score_delta"]["kong_delta_by_seat"]["0"], -1);
+        assert_eq!(settlement["score_delta"]["kong_delta_by_seat"]["1"], -1);
+        assert_eq!(settlement["score_delta"]["kong_delta_by_seat"]["2"], 3);
+        assert_eq!(settlement["score_delta"]["kong_delta_by_seat"]["3"], -1);
+        assert_eq!(
+            settlement["score_delta"]["total_delta_by_seat"]["0"].as_i64(),
+            settlement["score_delta"]["fan_delta_by_seat"]["0"].as_i64().map(|value| value - 1)
+        );
+        assert_eq!(
+            settlement["score_delta"]["total_delta_by_seat"]["1"].as_i64(),
+            settlement["score_delta"]["fan_delta_by_seat"]["1"].as_i64().map(|value| value - 1)
+        );
+        assert_eq!(
+            settlement["score_delta"]["total_delta_by_seat"]["2"].as_i64(),
+            settlement["score_delta"]["fan_delta_by_seat"]["2"].as_i64().map(|value| value + 3)
+        );
+        assert_eq!(
+            settlement["score_delta"]["total_delta_by_seat"]["3"].as_i64(),
+            settlement["score_delta"]["fan_delta_by_seat"]["3"].as_i64().map(|value| value - 1)
+        );
     }
 
     #[test]

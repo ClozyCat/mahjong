@@ -181,11 +181,11 @@ struct SqliteColumn {
 
 impl Database {
     fn open(path: &str) -> Result<Self> {
-        if let Some(parent) = Path::new(path).parent()
-            && !parent.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create database directory for {path}"))?;
+        if let Some(parent) = Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create database directory for {path}"))?;
+            }
         }
         let conn = Connection::open(path)
             .with_context(|| format!("failed to open sqlite database at {path}"))?;
@@ -517,12 +517,12 @@ impl Database {
         Ok(())
     }
 
-    fn delete_reconnect_token_with_conn(conn: &Connection, token: &str) -> Result<()> {
-        conn.execute(
+    fn delete_reconnect_token_with_conn(conn: &Connection, token: &str) -> Result<usize> {
+        let rows_affected = conn.execute(
             "DELETE FROM reconnect_tokens WHERE token = ?1",
             params![token],
         )?;
-        Ok(())
+        Ok(rows_affected)
     }
 
     fn delete_tokens_for_seat_with_conn(
@@ -634,7 +634,10 @@ impl Database {
     ) -> Result<()> {
         self.with_transaction("rotate reconnect token", |conn| {
             Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
-            Self::delete_reconnect_token_with_conn(conn, old_token)?;
+            let deleted = Self::delete_reconnect_token_with_conn(conn, old_token)?;
+            if deleted != 1 {
+                return Err(anyhow!("stale reconnect token"));
+            }
             Self::store_reconnect_token_with_conn(
                 conn,
                 new_token,
@@ -1437,26 +1440,33 @@ async fn handle_reconnect(
     else {
         return reject_to(connection, "invalid_reconnect_token");
     };
-    if current_session_id != token_record.player_session_id {
+    if !seat_matches_reconnect_credentials(
+        &runtime.room,
+        token_record.seat_index,
+        token_record.player_session_id,
+        &reconnect_token,
+    ) || current_session_id != token_record.player_session_id
+    {
         return reject_to(connection, "invalid_reconnect_token");
     }
 
     let new_token = generate_reconnect_token();
-    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut)
-        && let Some(seat) = seats.iter_mut().find(|seat| {
+    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
+        if let Some(seat) = seats.iter_mut().find(|seat| {
             seat.get("seat_index")
                 .and_then(Value::as_u64)
                 .map(|value| value as usize == token_record.seat_index)
                 .unwrap_or(false)
-        })
-        && let Some(object) = seat.as_object_mut()
-    {
-        object.insert(
-            "reconnect_token".to_string(),
-            Value::String(new_token.clone()),
-        );
-        object.insert("connected".to_string(), Value::Bool(true));
-        object.insert("disconnect_deadline_at".to_string(), Value::Null);
+        }) {
+            if let Some(object) = seat.as_object_mut() {
+                object.insert(
+                    "reconnect_token".to_string(),
+                    Value::String(new_token.clone()),
+                );
+                object.insert("connected".to_string(), Value::Bool(true));
+                object.insert("disconnect_deadline_at".to_string(), Value::Null);
+            }
+        }
     }
     let _ = rust_reconcile_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
@@ -1482,6 +1492,9 @@ async fn handle_reconnect(
         .await
     {
         restore_room_snapshot(&room_handle, previous_room).await;
+        if error.to_string().contains("stale reconnect token") {
+            return reject_to(connection, "invalid_reconnect_token");
+        }
         return internal_error_to(connection, error);
     }
 
@@ -1532,16 +1545,17 @@ async fn handle_ready(
     if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
-    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut)
-        && let Some(seat) = seats.iter_mut().find(|seat| {
+    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
+        if let Some(seat) = seats.iter_mut().find(|seat| {
             seat.get("seat_index")
                 .and_then(Value::as_u64)
                 .map(|value| value as usize == seat_index)
                 .unwrap_or(false)
-        })
-        && let Some(object) = seat.as_object_mut()
-    {
-        object.insert("ready".to_string(), Value::Bool(ready));
+        }) {
+            if let Some(object) = seat.as_object_mut() {
+                object.insert("ready".to_string(), Value::Bool(ready));
+            }
+        }
     }
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -1731,18 +1745,11 @@ async fn handle_action_request(
     };
 
     let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    let broadcast_handles = connections
-        .iter()
-        .map(|(_, handle)| handle.clone())
-        .collect::<Vec<_>>();
-    drop(runtime);
-    let room_json = match serialize_room(&room) {
+    let room_json = match serialize_room(&runtime.room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    drop(runtime);
     if let Err(error) = state
         .inner
         .db
@@ -1752,6 +1759,15 @@ async fn handle_action_request(
         restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
+    let runtime = room_handle.runtime.lock().await;
+    let connections = snapshot_connections(&runtime);
+    let broadcast_handles = connections
+        .iter()
+        .map(|(_, handle)| handle.clone())
+        .collect::<Vec<_>>();
+    let snapshot_outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
+    drop(runtime);
     let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&rust_handled_messages));
     outbound.extend(snapshot_outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
@@ -2076,18 +2092,11 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         return;
     };
     let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    let broadcast_handles = connections
-        .iter()
-        .map(|(_, handle)| handle.clone())
-        .collect::<Vec<_>>();
-    drop(runtime);
-    let room_json = match serialize_room(&room) {
+    let room_json = match serialize_room(&runtime.room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    drop(runtime);
     if state
         .inner
         .db
@@ -2098,6 +2107,15 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
+    let runtime = room_handle.runtime.lock().await;
+    let connections = snapshot_connections(&runtime);
+    let broadcast_handles = connections
+        .iter()
+        .map(|(_, handle)| handle.clone())
+        .collect::<Vec<_>>();
+    let snapshot_outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
+    drop(runtime);
     let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&rust_messages));
     outbound.extend(snapshot_outbound);
     send_outbound(outbound);
@@ -2130,14 +2148,11 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
         return;
     }
     let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    drop(runtime);
-    let room_json = match serialize_room(&room) {
+    let room_json = match serialize_room(&runtime.room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    drop(runtime);
     if state
         .inner
         .db
@@ -2148,6 +2163,10 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
+    let runtime = room_handle.runtime.lock().await;
+    let connections = snapshot_connections(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
+    drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
@@ -2199,14 +2218,11 @@ async fn process_due_disconnect_timeout(
     }
 
     let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    drop(runtime);
-    let room_json = match serialize_room(&room) {
+    let room_json = match serialize_room(&runtime.room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    drop(runtime);
     if state
         .inner
         .db
@@ -2218,6 +2234,8 @@ async fn process_due_disconnect_timeout(
         return;
     }
     let mut runtime = room_handle.runtime.lock().await;
+    let connections = snapshot_connections(&runtime);
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
     runtime.connections.remove(&seat_index);
     drop(runtime);
     send_outbound(outbound);
@@ -2484,15 +2502,15 @@ fn find_seat_mut(
 }
 
 fn remove_seat_from_room(room: &mut Value, seat_index: usize) {
-    if let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut)
-        && let Some(index) = seats.iter().position(|seat| {
+    if let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut) {
+        if let Some(index) = seats.iter().position(|seat| {
             seat.get("seat_index")
                 .and_then(Value::as_u64)
                 .map(|value| value as usize == seat_index)
                 .unwrap_or(false)
-        })
-    {
-        seats.remove(index);
+        }) {
+            seats.remove(index);
+        }
     }
 }
 
@@ -2523,10 +2541,10 @@ fn set_seat_connected(
 }
 
 fn replace_connection(runtime: &mut RoomRuntime, seat_index: usize, connection: &ConnectionHandle) {
-    if let Some(previous) = runtime.connections.insert(seat_index, connection.clone())
-        && previous.id != connection.id
-    {
-        previous.request_close();
+    if let Some(previous) = runtime.connections.insert(seat_index, connection.clone()) {
+        if previous.id != connection.id {
+            previous.request_close();
+        }
     }
 }
 
@@ -2674,10 +2692,10 @@ fn internal_error_to(connection: &ConnectionHandle, error: anyhow::Error) -> Mes
 fn send_outbound(outbound: Vec<OutboundMessage>) {
     for message in outbound {
         let payload = serialize_payload(&message.payload);
-        if let Err(error) = message.connection.try_send(payload)
-            && matches!(error, mpsc::error::TrySendError::Full(_))
-        {
-            message.connection.request_close();
+        if let Err(error) = message.connection.try_send(payload) {
+            if matches!(error, mpsc::error::TrySendError::Full(_)) {
+                message.connection.request_close();
+            }
         }
     }
 }
@@ -2776,6 +2794,30 @@ fn room_player_session_id(room: &Value, seat_index: usize) -> Option<i64> {
             })
         })
         .and_then(|seat| seat.get("player_session_id").and_then(Value::as_i64))
+}
+
+fn room_reconnect_token(room: &Value, seat_index: usize) -> Option<&str> {
+    room.get("seats")
+        .and_then(Value::as_array)
+        .and_then(|seats| {
+            seats.iter().find(|seat| {
+                seat.get("seat_index")
+                    .and_then(Value::as_u64)
+                    .map(|value| value as usize == seat_index)
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|seat| seat.get("reconnect_token").and_then(Value::as_str))
+}
+
+fn seat_matches_reconnect_credentials(
+    room: &Value,
+    seat_index: usize,
+    player_session_id: i64,
+    reconnect_token: &str,
+) -> bool {
+    room_player_session_id(room, seat_index) == Some(player_session_id)
+        && room_reconnect_token(room, seat_index) == Some(reconnect_token)
 }
 
 fn pending_timeout_deadline(room: &Value) -> Option<DateTime<Utc>> {
@@ -3175,6 +3217,72 @@ mod tests {
         assert_eq!(reconnect.seat_index, 0);
         assert_eq!(reconnect.player_session_id, 42);
         Ok(())
+    }
+
+    #[test]
+    fn rotate_reconnect_token_rejects_stale_old_token() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+
+        let room_json = serde_json::to_string(&initial_room_payload("ROOM42", "normal", true))?;
+        db.save_table_and_store_reconnect_token(
+            "ROOM42",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "token-1",
+            0,
+            42,
+        )?;
+
+        db.rotate_reconnect_token(
+            "ROOM42",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "token-1",
+            "token-2",
+            0,
+            42,
+        )?;
+
+        let error = db
+            .rotate_reconnect_token(
+                "ROOM42",
+                "2026-04-06T00:00:00Z",
+                &room_json,
+                "token-1",
+                "token-3",
+                0,
+                42,
+            )
+            .expect_err("stale token should be rejected");
+        assert!(format!("{error:#}").contains("stale reconnect token"));
+
+        assert!(db.get_reconnect_token("token-1")?.is_none());
+        assert!(db.get_reconnect_token("token-2")?.is_some());
+        assert!(db.get_reconnect_token("token-3")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn seat_matches_reconnect_credentials_requires_current_room_token() {
+        let mut room = initial_room_payload("ROOM42", "normal", true);
+        room["seats"] = json!([{
+            "seat_index": 0,
+            "nickname": "Alice",
+            "reconnect_token": "token-new",
+            "player_session_id": 42,
+            "connected": false,
+            "ready": true,
+            "is_bot": false,
+            "seat_type": "human",
+            "bot_persona": Value::Null,
+            "bot_aggression": Value::Null,
+            "disconnect_deadline_at": Value::Null,
+        }]);
+
+        assert!(seat_matches_reconnect_credentials(&room, 0, 42, "token-new"));
+        assert!(!seat_matches_reconnect_credentials(&room, 0, 42, "token-old"));
+        assert!(!seat_matches_reconnect_credentials(&room, 0, 7, "token-new"));
     }
 
     #[tokio::test(flavor = "current_thread")]
