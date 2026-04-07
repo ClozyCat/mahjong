@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -22,6 +23,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     top: number;
     left: number;
     placement: 'left' | 'right';
+    arrowTop: number;
   } | null>(null);
   const scorePanelRef = useRef<HTMLDivElement | null>(null);
   const fanGuidePopoverRef = useRef<HTMLDivElement | null>(null);
@@ -247,14 +249,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
             className={`result-overlay__fan-tooltip result-overlay__fan-tooltip--${
               fanGuidePopoverPosition?.placement ?? 'right'
             }`.trim()}
-            style={
-              fanGuidePopoverPosition
-                ? {
-                    top: `${fanGuidePopoverPosition.top}px`,
-                    left: `${fanGuidePopoverPosition.left}px`,
-                  }
-                : { visibility: 'hidden' }
-            }
+            style={getFanGuidePopoverStyle(fanGuidePopoverPosition)}
             onMouseEnter={() => {
               if (closeFanGuideTimerRef.current !== null) {
                 window.clearTimeout(closeFanGuideTimerRef.current);
@@ -416,6 +411,8 @@ const FAN_GUIDE_POPOVER_DELAY_MS = 500;
 const FAN_GUIDE_POPOVER_CLOSE_DELAY_MS = 120;
 const FAN_GUIDE_POPOVER_OFFSET_PX = 14;
 const FAN_GUIDE_POPOVER_MARGIN_PX = 12;
+const FAN_GUIDE_POPOVER_ARROW_SIZE_PX = 11;
+const FAN_GUIDE_POPOVER_ARROW_MARGIN_PX = 16;
 
 const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
   bottom: '本家',
@@ -465,6 +462,34 @@ function getFanGuidePopoverPosition(anchorRect: DOMRect, popoverWidth: number, p
     Math.max(FAN_GUIDE_POPOVER_MARGIN_PX, anchorRect.top + anchorRect.height / 2 - popoverHeight / 2),
     window.innerHeight - popoverHeight - FAN_GUIDE_POPOVER_MARGIN_PX,
   );
+  const anchorCenterY = anchorRect.top + anchorRect.height / 2;
+  const arrowTop = Math.min(
+    Math.max(
+      FAN_GUIDE_POPOVER_ARROW_MARGIN_PX,
+      anchorCenterY - top - FAN_GUIDE_POPOVER_ARROW_SIZE_PX / 2,
+    ),
+    popoverHeight - FAN_GUIDE_POPOVER_ARROW_SIZE_PX - FAN_GUIDE_POPOVER_ARROW_MARGIN_PX,
+  );
 
-  return { top, left, placement };
+  return { top, left, placement, arrowTop };
+}
+
+function getFanGuidePopoverStyle(
+  fanGuidePopoverPosition: {
+    top: number;
+    left: number;
+    placement: 'left' | 'right';
+    arrowTop: number;
+  } | null,
+): CSSProperties {
+  if (!fanGuidePopoverPosition) {
+    return { visibility: 'hidden' };
+  }
+
+  return {
+    top: `${fanGuidePopoverPosition.top}px`,
+    left: `${fanGuidePopoverPosition.left}px`,
+    ['--result-overlay-fan-tooltip-arrow-top' as '--result-overlay-fan-tooltip-arrow-top']:
+      `${fanGuidePopoverPosition.arrowTop}px`,
+  } as CSSProperties;
 }

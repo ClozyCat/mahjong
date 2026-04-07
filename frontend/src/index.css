@@ -7507,7 +7507,7 @@ input {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding-right: 0.3rem;
+  padding: 0.14rem 0.3rem 0.18rem 0;
   scrollbar-gutter: stable;
 }
 
@@ -7540,7 +7540,6 @@ input {
 }
 
 .result-overlay__row--interactive:hover {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-2) 34%, var(--theme-border));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 10%, transparent), color-mix(in srgb, var(--theme-paper) 4%, transparent)),
@@ -7570,7 +7569,7 @@ input {
 .result-overlay__fan-tooltip::before {
   content: '';
   position: absolute;
-  top: 1.35rem;
+  top: var(--result-overlay-fan-tooltip-arrow-top, 1.35rem);
   width: 0.7rem;
   height: 0.7rem;
   border-top: 1px solid color-mix(in srgb, var(--accent-2) 20%, var(--theme-border));
