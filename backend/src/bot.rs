@@ -18,7 +18,8 @@ const STANDARD_TILE_KEYS: [&str; 34] = [
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const STAGE_ONE_DEPTH: u8 = 0;
 const STAGE_TWO_DEPTH: u8 = 1;
-const STAGE_TWO_CANDIDATES: usize = 3;
+const STAGE_TWO_CANDIDATES: usize = 2;
+const STAGE_ONE_EARLY_RETURN_MARGIN: i64 = 180;
 const KONG_SCORE_MARGIN: i64 = 80;
 const CLAIM_SCORE_MARGIN: i64 = 100;
 const BASE_DRAW_SCAN_LIMIT: usize = 18;
@@ -181,13 +182,24 @@ struct ShantenKey {
     open_meld_count: u8,
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct DiscardStateKey {
+    counts: TileCounts,
+    tile_index: u8,
+}
+
 struct SearchEngine {
+    profile: ModeProfile,
+    monte_carlo_safety_weight: i64,
+    threat_profiles: Vec<OpponentThreat>,
+    base_visible_counts: [i32; TILE_KIND_COUNT],
     hand_score_cache: HashMap<HandStateKey, i64>,
     expected_draw_cache: HashMap<ExpectedDrawKey, Option<i64>>,
     best_discard_cache: HashMap<BestDiscardKey, Option<i64>>,
     winning_fan_cache: HashMap<WinningKey, Option<i64>>,
     shanten_cache: HashMap<ShantenKey, i32>,
+    discard_danger_cache: HashMap<DiscardStateKey, i64>,
+    discard_preference_cache: HashMap<DiscardStateKey, i64>,
 }
 
 fn select_bot_mode(context: &BotContext) -> BotMode {
@@ -268,12 +280,41 @@ fn mode_profile(mode: BotMode) -> ModeProfile {
     }
 }
 
+impl SearchEngine {
+    fn new(context: &BotContext) -> Self {
+        let profile = mode_profile(select_bot_mode(context));
+        let threat_profiles = (0..context.seat_count)
+            .map(|seat| {
+                if seat == context.seat_index {
+                    OpponentThreat::default()
+                } else {
+                    opponent_threat_profile(context, seat)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            profile,
+            monte_carlo_safety_weight: monte_carlo_safety_weight_from_threats(context, &threat_profiles),
+            threat_profiles,
+            base_visible_counts: visible_tile_counts(&context.visible_tile_keys),
+            hand_score_cache: HashMap::new(),
+            expected_draw_cache: HashMap::new(),
+            best_discard_cache: HashMap::new(),
+            winning_fan_cache: HashMap::new(),
+            shanten_cache: HashMap::new(),
+            discard_danger_cache: HashMap::new(),
+            discard_preference_cache: HashMap::new(),
+        }
+    }
+}
+
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
-    let mut engine = SearchEngine::default();
-    let profile = mode_profile(select_bot_mode(context));
+    let mut engine = SearchEngine::new(context);
     let baseline = engine.best_discard_plan(
         context,
         &context.player.concealed_tiles,
+        &context.player.concealed_tile_counts,
         &context.player.meld_tile_key_groups,
         &[],
         context.restricted_discard_tile_key.as_deref(),
@@ -337,7 +378,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     }
 
     if let Some((action, score)) = best_kong {
-        if score > baseline.score + profile.kong_margin {
+        if score > baseline.score + engine.profile.kong_margin {
             return Some(action);
         }
     }
@@ -350,8 +391,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 }
 
 pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
-    let mut engine = SearchEngine::default();
-    let profile = mode_profile(select_bot_mode(context));
+    let mut engine = SearchEngine::new(context);
     let pass_score = engine.score_13_tile_hand(
         context,
         &context.player.concealed_tile_counts,
@@ -387,16 +427,17 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 STAGE_ONE_DEPTH,
             )? + 140
         } else {
+            let concealed_counts_after =
+                tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
             let plan = engine.best_discard_plan(
                 context,
                 &concealed_after,
+                &concealed_counts_after,
                 &meld_groups_after,
                 &appended_open_flags,
                 Some(discard_tile_key),
                 None,
             )?;
-            let concealed_counts_after =
-                tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
             let meld_open_flags =
                 meld_open_flags_for_state(context, &meld_groups_after, &appended_open_flags);
             let signals = strategic_signals(
@@ -440,7 +481,7 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
     }
 
     if let Some((action, score)) = best_claim {
-        if score > pass_score + profile.claim_margin {
+        if score > pass_score + engine.profile.claim_margin {
             return Some(action);
         }
     }
@@ -457,6 +498,7 @@ impl SearchEngine {
         &mut self,
         context: &BotContext,
         concealed_tiles: &[BotTileView],
+        concealed_counts: &TileCounts,
         meld_tile_key_groups: &[Vec<String>],
         appended_open_flags: &[bool],
         restricted_discard_tile_key: Option<&str>,
@@ -465,6 +507,7 @@ impl SearchEngine {
         let stage_one = self.rank_discard_plans_at_depth(
             context,
             concealed_tiles,
+            concealed_counts,
             meld_tile_key_groups,
             appended_open_flags,
             restricted_discard_tile_key,
@@ -474,6 +517,14 @@ impl SearchEngine {
         if stage_one.is_empty() {
             return None;
         }
+        if stage_one.len() == 1 {
+            return stage_one.into_iter().next();
+        }
+        if stage_one[0].score - stage_one[1].score >= STAGE_ONE_EARLY_RETURN_MARGIN {
+            return stage_one.into_iter().next();
+        }
+
+        let run_monte_carlo = self.should_run_monte_carlo(context, concealed_counts, meld_tile_key_groups);
         let mut finalists = stage_one
             .into_iter()
             .take(STAGE_TWO_CANDIDATES)
@@ -486,7 +537,7 @@ impl SearchEngine {
             {
                 let stage_two_score = self.score_discard_candidate(
                     context,
-                    concealed_tiles,
+                    concealed_counts,
                     meld_tile_key_groups,
                     appended_open_flags,
                     restricted_discard_tile_key,
@@ -494,15 +545,19 @@ impl SearchEngine {
                     &tile,
                     STAGE_TWO_DEPTH,
                 )?;
-                finalist.score = if let Some(monte_carlo_score) = self.monte_carlo_discard_score(
-                    context,
-                    concealed_tiles,
-                    meld_tile_key_groups,
-                    appended_open_flags,
-                    restricted_discard_tile_key,
-                    &tile,
-                ) {
-                    (stage_two_score * 5 + monte_carlo_score * 4) / 9
+                finalist.score = if run_monte_carlo {
+                    if let Some(monte_carlo_score) = self.monte_carlo_discard_score(
+                        context,
+                        concealed_counts,
+                        meld_tile_key_groups,
+                        appended_open_flags,
+                        restricted_discard_tile_key,
+                        &tile,
+                    ) {
+                        (stage_two_score * 5 + monte_carlo_score * 4) / 9
+                    } else {
+                        stage_two_score
+                    }
                 } else {
                     stage_two_score
                 };
@@ -517,10 +572,23 @@ impl SearchEngine {
         finalists.into_iter().next()
     }
 
+    fn should_run_monte_carlo(
+        &mut self,
+        context: &BotContext,
+        concealed_counts: &TileCounts,
+        meld_tile_key_groups: &[Vec<String>],
+    ) -> bool {
+        if context.wall_tiles_remaining <= 24 {
+            return true;
+        }
+        self.bot_min_shanten(concealed_counts, meld_tile_key_groups.len()) <= 2
+    }
+
     fn rank_discard_plans_at_depth(
         &mut self,
         context: &BotContext,
         concealed_tiles: &[BotTileView],
+        concealed_counts: &TileCounts,
         meld_tile_key_groups: &[Vec<String>],
         appended_open_flags: &[bool],
         restricted_discard_tile_key: Option<&str>,
@@ -539,7 +607,7 @@ impl SearchEngine {
             }
             let Some(score) = self.score_discard_candidate(
                 context,
-                concealed_tiles,
+                concealed_counts,
                 meld_tile_key_groups,
                 appended_open_flags,
                 restricted_discard_tile_key,
@@ -573,7 +641,7 @@ impl SearchEngine {
     fn score_discard_candidate(
         &mut self,
         context: &BotContext,
-        concealed_tiles: &[BotTileView],
+        concealed_counts: &TileCounts,
         meld_tile_key_groups: &[Vec<String>],
         appended_open_flags: &[bool],
         restricted_discard_tile_key: Option<&str>,
@@ -581,13 +649,11 @@ impl SearchEngine {
         tile: &BotTileView,
         depth: u8,
     ) -> Option<i64> {
-        let concealed_counts =
-            tile_counts34(concealed_tiles.iter().map(|item| item.tile_key.as_str()));
         let discard_tile_index = tile_index(&tile.tile_key)?;
         if Some(tile.tile_key.as_str()) == restricted_discard_tile_key {
             return None;
         }
-        let mut next_counts = concealed_counts;
+        let mut next_counts = *concealed_counts;
         next_counts[discard_tile_index] -= 1;
         let state_score = self.score_13_tile_hand(
             context,
@@ -597,18 +663,12 @@ impl SearchEngine {
             depth,
         );
         let prefer_drawn_copy = drawn_tile_id == Some(tile.tile_id.as_str());
-        let profile = mode_profile(select_bot_mode(context));
-        let danger_penalty = discard_danger_penalty(context, &concealed_counts, &tile.tile_key)
-            * profile.danger_weight
+        let danger_penalty = self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
+            * self.profile.danger_weight
             / 100;
         Some(
             state_score
-                + discard_tile_preference_score(
-                    context,
-                    &concealed_counts,
-                    &tile.tile_key,
-                    prefer_drawn_copy,
-                )
+                + self.discard_tile_preference_score(concealed_counts, discard_tile_index, prefer_drawn_copy)
                 - danger_penalty,
         )
     }
@@ -616,7 +676,7 @@ impl SearchEngine {
     fn monte_carlo_discard_score(
         &mut self,
         context: &BotContext,
-        concealed_tiles: &[BotTileView],
+        concealed_counts: &TileCounts,
         meld_tile_key_groups: &[Vec<String>],
         appended_open_flags: &[bool],
         restricted_discard_tile_key: Option<&str>,
@@ -625,8 +685,6 @@ impl SearchEngine {
         if context.wall_tiles_remaining <= 0 {
             return None;
         }
-        let concealed_counts =
-            tile_counts34(concealed_tiles.iter().map(|item| item.tile_key.as_str()));
         let discard_tile_index = tile_index(&tile.tile_key)?;
         if concealed_counts[discard_tile_index] == 0
             || Some(tile.tile_key.as_str()) == restricted_discard_tile_key
@@ -634,11 +692,10 @@ impl SearchEngine {
             return None;
         }
 
-        let mut next_counts = concealed_counts;
+        let mut next_counts = *concealed_counts;
         next_counts[discard_tile_index] -= 1;
-        let safety_weight = monte_carlo_safety_weight(context);
-        let initial_risk = discard_danger_penalty(context, &concealed_counts, &tile.tile_key)
-            * safety_weight
+        let initial_risk = self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
+            * self.monte_carlo_safety_weight
             / 100;
         let opening_score = self.base_hand_score(
             context,
@@ -675,7 +732,7 @@ impl SearchEngine {
                 restricted_discard_tile_key,
                 &hidden_pool,
                 horizon,
-                safety_weight,
+                self.monte_carlo_safety_weight,
                 &mut rng,
             ) else {
                 continue;
@@ -771,23 +828,21 @@ impl SearchEngine {
 
             let mut next_counts = *concealed_counts_before_discard;
             next_counts[discard_tile_index] -= 1;
-            let discard_tile_key = tile_key_for_index(discard_tile_index);
             let base_score = self.base_hand_score(
                 context,
                 &next_counts,
                 meld_tile_key_groups,
                 appended_open_flags,
             );
-            let preference_score = discard_tile_preference_score(
+            let preference_score =
+                self.discard_tile_preference_score(concealed_counts_before_discard, discard_tile_index, false)
+                    / 2;
+            let safety_penalty = self.discard_danger_penalty(
                 context,
                 concealed_counts_before_discard,
-                discard_tile_key,
-                false,
-            ) / 2;
-            let safety_penalty =
-                discard_danger_penalty(context, concealed_counts_before_discard, discard_tile_key)
-                    * safety_weight
-                    / 100;
+                discard_tile_index,
+            ) * safety_weight
+                / 100;
             let total_score = base_score + preference_score - safety_penalty;
             let replace = best
                 .as_ref()
@@ -854,7 +909,6 @@ impl SearchEngine {
         meld_tile_key_groups: &[Vec<String>],
         appended_open_flags: &[bool],
     ) -> i64 {
-        let profile = mode_profile(select_bot_mode(context));
         let open_meld_count = meld_tile_key_groups.len();
         let shanten = self.bot_min_shanten(concealed_counts, open_meld_count);
         let visible_counts = visible_tile_counts_for_state(context, meld_tile_key_groups);
@@ -901,10 +955,10 @@ impl SearchEngine {
         }
 
         let tenpai_bonus = if shanten == 0 { 600 } else { 0 };
-        -i64::from(shanten) * profile.shanten_weight
-            + improving_outs * profile.improving_weight
-            + winning_outs * profile.winning_weight
-            + fan_potential * profile.fan_weight
+        -i64::from(shanten) * self.profile.shanten_weight
+            + improving_outs * self.profile.improving_weight
+            + winning_outs * self.profile.winning_weight
+            + fan_potential * self.profile.fan_weight
             + bot_shape_score(concealed_counts)
             + suit_focus_score(concealed_counts, meld_tile_key_groups)
             + honor_value_score(context, concealed_counts)
@@ -1116,6 +1170,151 @@ impl SearchEngine {
         self.shanten_cache.insert(key, shanten);
         shanten
     }
+
+    fn discard_danger_penalty(
+        &mut self,
+        context: &BotContext,
+        concealed_counts: &TileCounts,
+        discard_tile_index: usize,
+    ) -> i64 {
+        let key = DiscardStateKey {
+            counts: *concealed_counts,
+            tile_index: discard_tile_index as u8,
+        };
+        if let Some(score) = self.discard_danger_cache.get(&key).copied() {
+            return score;
+        }
+
+        let known_count = |index: usize| {
+            i64::from(self.base_visible_counts[index]) + i64::from(concealed_counts[index])
+        };
+        let unseen_copies = i64::from((4 - self.base_visible_counts[discard_tile_index]).max(0));
+        let round_progress = context
+            .opponent_discards_by_seat
+            .iter()
+            .map(|items| items.len() as i64)
+            .sum::<i64>();
+        let late_factor = 1 + round_progress / 14;
+        let mut penalty = unseen_copies * 10 * late_factor;
+
+        let absolute_visible = known_count(discard_tile_index);
+        if absolute_visible >= 4 {
+            self.discard_danger_cache.insert(key, 0);
+            return 0;
+        }
+        if absolute_visible == 3 {
+            penalty -= 80;
+        }
+
+        let tile_key = tile_key_for_index(discard_tile_index);
+        for (seat, discards) in context.opponent_discards_by_seat.iter().enumerate() {
+            if seat == context.seat_index {
+                continue;
+            }
+            let threat = self.threat_profiles.get(seat).copied().unwrap_or_default();
+            penalty += threat.pressure + threat.tenpai_likelihood;
+            let same_tile_discards = discards
+                .iter()
+                .filter(|key| key.as_str() == tile_key)
+                .count() as i64;
+            if same_tile_discards > 0 {
+                penalty -= 150 * same_tile_discards;
+                continue;
+            }
+
+            let mut seat_recent = discards.iter().rev().take(6);
+            if discard_tile_index >= HONOR_TILE_START {
+                penalty += 36;
+                if threat.honor_focus {
+                    penalty += 42;
+                }
+                if threat.dragon_focus && discard_tile_index >= 31 {
+                    penalty += 56;
+                }
+                if threat.high_tenpai_probability {
+                    penalty += 34;
+                }
+            } else {
+                let rank = (discard_tile_index % 9) + 1;
+                let suit_index = discard_tile_index / 9;
+                if rank == 1 || rank == 9 {
+                    penalty += 22;
+                }
+                if threat.flush_suit == Some(suit_index) {
+                    penalty += 52;
+                }
+                if threat.high_tenpai_probability {
+                    penalty += if rank == 1 || rank == 9 { 18 } else { 28 };
+                }
+                penalty -= suji_safety_bonus(tile_key, discards) as i64;
+                penalty -= kabe_safety_bonus(discard_tile_index, &known_count) as i64;
+
+                let suit = tile_key.as_bytes()[0];
+                let same_suit_recent = seat_recent
+                    .clone()
+                    .filter(|key| key.as_bytes().first().copied() == Some(suit))
+                    .count() as i64;
+                if same_suit_recent == 0 {
+                    penalty += 28;
+                } else {
+                    penalty -= 8 * same_suit_recent.min(2);
+                }
+
+                let adjacent_recent = seat_recent.any(|key| {
+                    let Some(other_index) = tile_index(key) else {
+                        return false;
+                    };
+                    other_index < HONOR_TILE_START
+                        && other_index / 9 == discard_tile_index / 9
+                        && other_index.abs_diff(discard_tile_index) <= 2
+                });
+                if adjacent_recent {
+                    penalty -= 18;
+                } else {
+                    penalty += 20;
+                }
+            }
+        }
+
+        if concealed_counts[discard_tile_index] >= 2 {
+            penalty -= 18;
+        }
+        let result = penalty.max(0);
+        self.discard_danger_cache.insert(key, result);
+        result
+    }
+
+    fn discard_tile_preference_score(
+        &mut self,
+        concealed_counts: &TileCounts,
+        tile_index: usize,
+        prefer_drawn_copy: bool,
+    ) -> i64 {
+        let key = DiscardStateKey {
+            counts: *concealed_counts,
+            tile_index: tile_index as u8,
+        };
+        let base = if let Some(score) = self.discard_preference_cache.get(&key).copied() {
+            score
+        } else {
+            let visible = i64::from(self.base_visible_counts[tile_index]);
+            let mut score = visible * 24;
+            if tile_index >= HONOR_TILE_START {
+                score += 72;
+            } else {
+                let rank = (tile_index % 9) + 1;
+                if rank == 1 || rank == 9 {
+                    score += 28;
+                }
+                if tile_is_isolated(concealed_counts, tile_index) {
+                    score += 52;
+                }
+            }
+            self.discard_preference_cache.insert(key, score);
+            score
+        };
+        base + i64::from(prefer_drawn_copy) * 12
+    }
 }
 
 fn compact_melds(meld_tile_key_groups: &[Vec<String>], open_flags: &[bool]) -> Vec<CompactBotMeld> {
@@ -1259,16 +1458,21 @@ fn apply_visible_meld_delta(
     }
 }
 
-fn visible_tile_counts_for_state(
-    context: &BotContext,
-    meld_tile_key_groups: &[Vec<String>],
-) -> [i32; TILE_KIND_COUNT] {
+fn visible_tile_counts(tile_keys: &[String]) -> [i32; TILE_KIND_COUNT] {
     let mut counts = [0_i32; TILE_KIND_COUNT];
-    for tile_key in &context.visible_tile_keys {
+    for tile_key in tile_keys {
         if let Some(tile_index) = tile_index(tile_key) {
             counts[tile_index] += 1;
         }
     }
+    counts
+}
+
+fn visible_tile_counts_for_state(
+    context: &BotContext,
+    meld_tile_key_groups: &[Vec<String>],
+) -> [i32; TILE_KIND_COUNT] {
+    let mut counts = visible_tile_counts(&context.visible_tile_keys);
 
     for meld in &context.player.meld_tile_key_groups {
         apply_visible_meld_delta(&mut counts, meld, -1);
@@ -1383,15 +1587,17 @@ fn monte_carlo_horizon(context: &BotContext) -> usize {
     }
 }
 
-fn monte_carlo_safety_weight(context: &BotContext) -> i64 {
+fn monte_carlo_safety_weight_from_threats(
+    context: &BotContext,
+    threat_profiles: &[OpponentThreat],
+) -> i64 {
     let mut total_threat = 0_i64;
     let mut max_threat = 0_i64;
 
-    for seat in 0..context.seat_count {
+    for (seat, threat) in threat_profiles.iter().enumerate() {
         if seat == context.seat_index {
             continue;
         }
-        let threat = opponent_threat_profile(context, seat);
         let seat_threat = threat.pressure + threat.tenpai_likelihood;
         total_threat += seat_threat;
         max_threat = max_threat.max(seat_threat);
@@ -1440,8 +1646,7 @@ fn discard_danger_penalty(
     let Some(discard_index) = tile_index(tile_key) else {
         return 0;
     };
-    let visible_counts =
-        visible_tile_counts_for_state(context, &context.player.meld_tile_key_groups);
+    let visible_counts = visible_tile_counts(&context.visible_tile_keys);
     let known_count =
         |index: usize| i64::from(visible_counts[index]) + i64::from(concealed_counts[index]);
     let unseen_copies = i64::from((4 - visible_counts[discard_index]).max(0));
@@ -1476,7 +1681,7 @@ fn discard_danger_penalty(
             continue;
         }
 
-        let seat_recent = discards.iter().rev().take(6).cloned().collect::<Vec<_>>();
+        let mut seat_recent = discards.iter().rev().take(6);
         if discard_index >= HONOR_TILE_START {
             penalty += 36;
             if threat.honor_focus {
@@ -1504,7 +1709,7 @@ fn discard_danger_penalty(
             penalty -= kabe_safety_bonus(discard_index, &known_count) as i64;
             let suit = tile_key.as_bytes()[0] as char;
             let same_suit_recent = seat_recent
-                .iter()
+                .clone()
                 .filter(|key| key.starts_with(suit))
                 .count() as i64;
             if same_suit_recent == 0 {
@@ -1513,7 +1718,7 @@ fn discard_danger_penalty(
                 penalty -= 8 * same_suit_recent.min(2);
             }
 
-            let adjacent_recent = seat_recent.iter().any(|key| {
+            let adjacent_recent = seat_recent.any(|key| {
                 let Some(other_index) = tile_index(key) else {
                     return false;
                 };
@@ -1588,47 +1793,15 @@ where
     bonus
 }
 
-fn discard_tile_preference_score(
-    context: &BotContext,
-    concealed_counts: &TileCounts,
-    tile_key: &str,
-    prefer_drawn_copy: bool,
-) -> i64 {
-    let Some(tile_index) = tile_index(tile_key) else {
-        return 0;
-    };
-    let visible_counts =
-        visible_tile_counts_for_state(context, &context.player.meld_tile_key_groups);
-    let visible = i64::from(visible_counts[tile_index]);
-    let mut score = visible * 24;
-    if tile_index >= HONOR_TILE_START {
-        score += 72;
-    } else {
-        let rank = (tile_index % 9) + 1;
-        if rank == 1 || rank == 9 {
-            score += 28;
-        }
-        if tile_is_isolated(concealed_counts, tile_index) {
-            score += 52;
-        }
-    }
-    if prefer_drawn_copy {
-        score += 12;
-    }
-    score
-}
-
 fn opponent_threat_profile(context: &BotContext, seat: usize) -> OpponentThreat {
-    let melds = context
-        .opponent_melds_by_seat
-        .get(seat)
-        .cloned()
-        .unwrap_or_default();
+    let Some(melds) = context.opponent_melds_by_seat.get(seat) else {
+        return OpponentThreat::default();
+    };
     let discards = context
         .opponent_discards_by_seat
         .get(seat)
-        .cloned()
-        .unwrap_or_default();
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     let meld_count = melds.len() as i64;
     if meld_count == 0 {
         return OpponentThreat::default();
@@ -1645,7 +1818,7 @@ fn opponent_threat_profile(context: &BotContext, seat: usize) -> OpponentThreat 
     let mut honor_count = 0_i64;
     let mut dragon_melds = 0_i64;
 
-    for meld in &melds {
+    for meld in melds {
         let mut meld_has_honor = false;
         let mut same_tile = true;
         let first = meld.first().cloned().unwrap_or_default();
@@ -1711,7 +1884,7 @@ fn infer_tenpai_likelihood(
 
     let late_round = context.wall_tiles_remaining > 0 && context.wall_tiles_remaining <= 20;
     let very_late_round = context.wall_tiles_remaining > 0 && context.wall_tiles_remaining <= 12;
-    let recent_discards = discards.iter().rev().take(6).cloned().collect::<Vec<_>>();
+    let recent_discards = discards.iter().rev().take(6).collect::<Vec<_>>();
     let honor_or_terminal_recent = recent_discards
         .iter()
         .filter(|tile_key| {
@@ -1719,22 +1892,18 @@ fn infer_tenpai_likelihood(
                 .is_some_and(|index| index >= HONOR_TILE_START || matches!(index % 9, 0 | 8))
         })
         .count() as i64;
-    let duplicate_recent = recent_discards
-        .iter()
-        .fold(HashMap::<&str, i64>::new(), |mut acc, tile_key| {
-            *acc.entry(tile_key.as_str()).or_default() += 1;
-            acc
-        })
-        .values()
-        .filter(|count| **count >= 2)
-        .count() as i64;
-    let suit_span = recent_discards
-        .iter()
-        .filter_map(|tile_key| tile_index(tile_key))
-        .filter(|index| *index < HONOR_TILE_START)
-        .map(|index| index / 9)
-        .collect::<HashSet<_>>()
-        .len() as i64;
+    let mut duplicate_counts = [0_u8; TILE_KIND_COUNT];
+    let mut seen_suits = [false; 3];
+    for tile_key in &recent_discards {
+        if let Some(index) = tile_index(tile_key) {
+            duplicate_counts[index] = duplicate_counts[index].saturating_add(1);
+            if index < HONOR_TILE_START {
+                seen_suits[index / 9] = true;
+            }
+        }
+    }
+    let duplicate_recent = duplicate_counts.iter().filter(|count| **count >= 2).count() as i64;
+    let suit_span = seen_suits.into_iter().filter(|seen| *seen).count() as i64;
     let stagnation_signal =
         honor_or_terminal_recent * 8 + duplicate_recent * 16 + i64::from(suit_span <= 1) * 12;
 
@@ -2763,20 +2932,20 @@ mod tests {
             .cloned()
             .expect("green tile");
 
-        let white_score = SearchEngine::default()
+        let white_score = SearchEngine::new(&context)
             .monte_carlo_discard_score(
                 &context,
-                &context.player.concealed_tiles,
+                &context.player.concealed_tile_counts,
                 &context.player.meld_tile_key_groups,
                 &[],
                 None,
                 &white_tile,
             )
             .expect("white score");
-        let green_score = SearchEngine::default()
+        let green_score = SearchEngine::new(&context)
             .monte_carlo_discard_score(
                 &context,
-                &context.player.concealed_tiles,
+                &context.player.concealed_tile_counts,
                 &context.player.meld_tile_key_groups,
                 &[],
                 None,
