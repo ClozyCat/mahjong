@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 
-use crate::core::state::{PendingAction, RoomState};
+use crate::core::engine::planner::plan_settlement_to_match;
+use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::core::state::PendingAction;
 use crate::room_scoring::RoomScoringCache;
 use crate::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
@@ -8,6 +10,8 @@ use crate::scoring::{
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
 };
+
+use super::runtime::{current_actor, project_room_state, round_event_message};
 
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
@@ -26,7 +30,7 @@ pub fn compute_hu_settlement(
     winner_seat: usize,
     hu_context: &str,
 ) -> Result<Value, String> {
-    let state = RoomState::from_legacy_value(room).map_err(|error| error.to_string())?;
+    let state = project_room_state(room)?;
     if state.phase != "playing" {
         return Err("round_not_ready".to_string());
     }
@@ -100,14 +104,133 @@ pub fn compute_hu_settlement(
     }))
 }
 
-pub fn can_declare_hu(
-    room: &Value,
+pub fn apply_hu_settlement(
+    room: &mut Value,
+    winner_seat: usize,
+    hu_context: &str,
+    settlement: Value,
+) -> Result<Vec<Value>, String> {
+    let round_id = room
+        .get("round_state")
+        .and_then(|round| round.get("round_id"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let winning_tile_id = room
+        .get("round_state")
+        .and_then(|round| round.get("last_action_context"))
+        .and_then(|context| context.get("tile_id"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let discarded_tile = room
+        .get("round_state")
+        .and_then(|round| round.get("last_discard"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let mut mutations = vec![
+        LegacyRoomMutation::SetRoomField {
+            key: "phase".to_string(),
+            value: Value::String("settlement".to_string()),
+        },
+        LegacyRoomMutation::SetRoomField {
+            key: "pending_timeout".to_string(),
+            value: Value::Null,
+        },
+        LegacyRoomMutation::SetRoundField {
+            key: "phase".to_string(),
+            value: Value::String("settlement".to_string()),
+        },
+        LegacyRoomMutation::SetRoundPendingAction {
+            pending_action: Value::Null,
+        },
+        LegacyRoomMutation::SetRoundField {
+            key: "settlement".to_string(),
+            value: settlement.clone(),
+        },
+        LegacyRoomMutation::SetRoundCurrentActor {
+            seat_index: winner_seat,
+        },
+        LegacyRoomMutation::IncrementRoundVersion,
+    ];
+    if let Ok(state) = project_room_state(room) {
+        mutations.extend(plan_settlement_to_match(&state, &settlement));
+    }
+    apply_legacy_room_mutations(room, &mutations)?;
+
+    let first_event = if hu_context == "self_draw" {
+        round_event_message(
+            "self_hu_declared",
+            json!({
+                "type": "self_hu_declared",
+                "seat": winner_seat,
+                "tile_id": winning_tile_id,
+            }),
+        )
+    } else {
+        round_event_message(
+            "claim_made",
+            json!({
+                "type": "claim_made",
+                "seat": winner_seat,
+                "claim_type": "hu",
+                "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+            }),
+        )
+    };
+    Ok(vec![
+        first_event,
+        round_event_message(
+            "settlement_ready",
+            json!({
+                "type": "settlement_ready",
+                "round_id": round_id,
+            }),
+        ),
+    ])
+}
+
+pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
+    if room.get("phase").and_then(Value::as_str) != Some("playing") {
+        return None;
+    }
+    let pending_action = room.get("round_state")?.get("pending_action");
+    if pending_action.is_none() || pending_action.is_some_and(Value::is_null) {
+        return (current_actor(room) == Some(seat_index)).then_some("self_draw");
+    }
+    let pending_action = pending_action?;
+    match pending_action.get("type").and_then(Value::as_str) {
+        Some("claim_window") if claim_window_offers_claim(pending_action, seat_index, "hu") => {
+            Some("discard")
+        }
+        Some("rob_kong_window") if rob_kong_window_offers_seat(pending_action, seat_index) => {
+            Some("discard")
+        }
+        Some("claim_window") | Some("rob_kong_window") => None,
+        _ => None,
+    }
+}
+
+pub fn claim_window_offers_claim(
+    pending_action: &Value,
     seat_index: usize,
-    incoming_tile: Option<&str>,
-    discarder_seat: Option<usize>,
+    claim_type: &str,
 ) -> bool {
-    let cache = RoomScoringCache::from_room(room);
-    can_declare_hu_with_cache(room, &cache, seat_index, incoming_tile, discarder_seat)
+    json_array_contains_str(
+        pending_action
+            .get("claim_window")
+            .and_then(Value::as_array)
+            .and_then(|claim_window| claim_window.get(seat_index))
+            .and_then(Value::as_array),
+        claim_type,
+    )
+}
+
+pub fn rob_kong_window_offers_seat(pending_action: &Value, seat_index: usize) -> bool {
+    json_array_contains_seat(
+        pending_action
+            .get("offered_hu_seats")
+            .and_then(Value::as_array),
+        seat_index,
+    )
 }
 
 pub fn can_declare_hu_with_cache(
@@ -142,6 +265,21 @@ pub fn can_declare_hu_with_cache(
         return !enforce_minimum_eight_fan || fan_result.minimum_qualifying_fan_total >= 8;
     }
     false
+}
+
+fn json_array_contains_seat(values: Option<&Vec<Value>>, seat_index: usize) -> bool {
+    values.is_some_and(|items| {
+        items.iter().any(|value| {
+            value
+                .as_u64()
+                .map(|seat| seat as usize == seat_index)
+                .unwrap_or(false)
+        })
+    })
+}
+
+fn json_array_contains_str(values: Option<&Vec<Value>>, needle: &str) -> bool {
+    values.is_some_and(|items| items.iter().any(|value| value.as_str() == Some(needle)))
 }
 
 fn fan_result_for_win(

@@ -776,3 +776,88 @@ ScoreResult
 6. 再接 `rules/skills/*`
 
 这个顺序能保证每一步都能编译、能测试、能回退，不会出现“大重构做到一半系统不可用”的情况。
+
+## 16. Current Refactor Status (2026-04-08)
+
+### 16.1 Completed Or Largely Completed
+
+- Phase 1 is largely complete. `core/state/*`, `core/action.rs`, `core/event.rs`, and `core/engine/*` are in place, and the project already has a typed state plus command/reducer transition skeleton.
+- Phase 2 is mostly complete. `projection/room_snapshot.rs`, `projection/prompt.rs`, `projection/bot_view.rs`, and `projection/support.rs` now own snapshot/prompt/bot-view/projection-support responsibilities instead of leaving them inside `mahjong.rs`.
+- Standard-rule execution flow has been moved substantially into `rules/standard/*`. `actions.rs`, `flow.rs`, `runtime.rs`, `settlement.rs`, `win.rs`, and `automation.rs` now carry discard/claim/kong flow, round progression, timeout/runtime projection, settlement, win evaluation, bot automation, and due-timeout automation.
+- Bot input boundaries are now meaningfully constrained. Bot decision code consumes `projection::bot_view` outputs instead of ad-hoc room-derived internal structs living in `mahjong.rs`.
+- `mahjong.rs` has already shrunk from a rules megafile into a transitional facade plus a smaller set of entrypoints and test fixtures. Large dead helper blocks and commented legacy code have been physically removed.
+
+### 16.2 Still Transitional / Not Yet Finished
+
+- `scoring.rs` is still a large monolithic module and has not yet been split into `rules/scoring/{model,evaluator,fan_table}`.
+- `bot.rs` is still a large monolithic module and has not yet been split into `bot/context.rs`, `bot/policy.rs`, and `bot/search.rs`.
+- `main.rs` still owns a lot of runtime / websocket / persistence / scheduling behavior and has not yet been moved to `app/*`.
+- The actual skill system is still not connected. `rules/skills/*`, hook registration, effect instances, and score modifiers remain architectural targets rather than implemented modules.
+- `mahjong.rs` still keeps external compatibility entrypoints and some thin wrappers, so it is much smaller but not yet eliminated as a transition facade.
+
+### 16.3 Current Architectural Read
+
+- The backend is no longer in the state where almost all standard-rule logic lives in `mahjong.rs`.
+- The highest remaining leverage is no longer "move one more helper out of `mahjong.rs`", but rather "finish splitting the remaining large modules": `scoring.rs`, `bot.rs`, and `main.rs`.
+- This is the right point to stop optimizing the facade first and instead stabilize the next three true subsystem boundaries before introducing `rules/skills/*`.
+
+## 17. Recommended Next Steps
+
+### 17.1 First Priority: Split `scoring.rs`
+
+Recommended target:
+
+- `rules/scoring/model.rs`
+- `rules/scoring/evaluator.rs`
+- `rules/scoring/fan_table.rs`
+
+Goal:
+
+- make `rules/standard/win.rs` depend on a clearer evaluator boundary rather than a giant `scoring.rs`
+- create a stable place for future `ScoreModifier` / skill-driven scoring adjustments
+
+### 17.2 Second Priority: Split `bot.rs`
+
+Recommended target:
+
+- `bot/context.rs`
+- `bot/policy.rs`
+- `bot/search.rs`
+
+Goal:
+
+- keep `rules/standard/automation.rs` responsible only for orchestration
+- make bot policy/search evolution independent from room/rule plumbing
+
+### 17.3 Third Priority: Split `main.rs` Runtime Responsibilities
+
+Recommended target:
+
+- `app/room_runtime.rs`
+- `app/scheduler.rs`
+- `app/persistence.rs`
+- `app/ws.rs`
+
+Goal:
+
+- move websocket, room lifecycle, timeout scheduling, and persistence out of the app entrypoint
+- reduce `main.rs` back to composition/bootstrap duties
+
+### 17.4 Fourth Priority: Introduce Skills On Stable Boundaries
+
+After scoring / bot / app runtime are split, introduce:
+
+- `rules/skills/registry.rs`
+- `rules/skills/hooks.rs`
+- `rules/skills/effects.rs`
+- `rules/skills/instances.rs`
+
+Suggested first validation skills:
+
+- projection / information-visibility skill
+- draw modification skill
+- settlement / fan / score modifier skill
+
+## 18. Current Conclusion
+
+As of 2026-04-08, this refactor has passed the "preparing to refactor" stage and is now in the "standard-rule execution paths have materially left `mahjong.rs`" stage. The most important next move is not more local facade cleanup, but finishing structural splits for `scoring.rs`, `bot.rs`, and `main.rs` so that `rules/skills/*` can land on stable boundaries.
