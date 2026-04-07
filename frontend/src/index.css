@@ -8080,6 +8080,7 @@ input {
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
     0 20px 34px color-mix(in srgb, var(--theme-shadow) 34%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: result-overlay-fan-tooltip-enter 160ms ease;
 }
 
 .result-overlay__seat-tooltip-head {
