@@ -3471,6 +3471,7 @@ fn private_pending_action(room: &Value, local_seat: usize) -> Option<Value> {
                 "seat_index": local_seat,
                 "deadline_at": deadline_at,
                 "drawn_tile_id": pending_timeout.get("drawn_tile_id").cloned().unwrap_or(Value::Null),
+                "restricted_discard_tile_ids": restricted_same_turn_discard_tile_ids(room, local_seat),
                 "options": options,
             }))
         }
@@ -3750,6 +3751,24 @@ fn active_turn_drawn_tile_id(room: &Value, seat_index: usize) -> Option<Value> {
         })
         .unwrap_or(false);
     if exists { Some(tile_id) } else { None }
+}
+
+fn restricted_same_turn_discard_tile_ids(room: &Value, seat_index: usize) -> Vec<Value> {
+    let Some(restricted_tile_key) = room
+        .get("round_state")
+        .and_then(|round| round.get("restricted_discard_tile_key"))
+        .and_then(Value::as_str)
+    else {
+        return Vec::new();
+    };
+
+    player_concealed_tiles_slice(room, seat_index)
+        .into_iter()
+        .flatten()
+        .filter(|tile| tile.get("tile_key").and_then(Value::as_str) == Some(restricted_tile_key))
+        .filter_map(|tile| tile.get("tile_id").and_then(Value::as_str))
+        .map(|tile_id| Value::String(tile_id.to_string()))
+        .collect()
 }
 
 fn kong_delta_by_seat_from_room(room: &Value) -> Value {
@@ -5206,6 +5225,21 @@ mod tests {
     #[test]
     fn room_snapshot_preserves_chow_meld_tile_codes() {
         let mut room = room_for_local_claim_window();
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w3", "w3#1extra"),
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("t6", "t6#1"),
+            suit("b6", "b6#1")
+        ]);
         let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
             .expect("discard should be handled locally")
             .expect("discard should succeed");
@@ -5226,6 +5260,10 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["players"][1]["melds"][0],
             json!(["w2", "w3", "w4"])
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["restricted_discard_tile_ids"],
+            json!(["w3#1extra"])
         );
     }
 
