@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AmbientOverlay } from './AmbientOverlay';
 
@@ -19,7 +20,11 @@ describe('AmbientOverlay', () => {
     expect(screen.queryByLabelText('日志窗口')).toBeNull();
   });
 
-  it('shows a leave-table button on the waiting-player overlay when leaving is allowed', () => {
+  it('shows bot controls and a leave-table button on the waiting-player overlay when leaving is allowed', async () => {
+    const user = userEvent.setup();
+    const onAddBot = vi.fn();
+    const onRemoveBot = vi.fn();
+
     render(
       <AmbientOverlay
         mode="disconnected_or_waiting"
@@ -29,17 +34,26 @@ describe('AmbientOverlay', () => {
           canStart: false,
           isReady: false,
           occupiedSeats: 2,
-          botCount: 0,
+          botCount: 1,
           canAddBot: true,
-          canRemoveBot: false,
+          canRemoveBot: true,
         }}
         canLeaveTable
+        onAddBot={onAddBot}
+        onRemoveBot={onRemoveBot}
         onLeaveTable={() => undefined}
       />,
     );
 
     expect(screen.getByText('等待牌手')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '蒙版 BOT 数量控制' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '蒙版增加 BOT' }));
+    await user.click(screen.getByRole('button', { name: '蒙版减少 BOT' }));
+
+    expect(onAddBot).toHaveBeenCalledTimes(1);
+    expect(onRemoveBot).toHaveBeenCalledTimes(1);
   });
 
   it('hides the waiting-player veil after all four seats are occupied', () => {

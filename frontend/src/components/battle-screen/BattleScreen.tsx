@@ -305,6 +305,8 @@ export function BattleScreen({
             promptText={viewModel.promptText}
             waitingControls={viewModel.waitingControls}
             canLeaveTable={viewModel.canLeaveTable}
+            onAddBot={onAddBot}
+            onRemoveBot={onRemoveBot}
             onLeaveTable={onLeaveTable}
           />
           {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}

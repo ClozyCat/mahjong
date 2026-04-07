@@ -1793,6 +1793,60 @@ button:active:not(:disabled) {
     0 12px 28px rgba(0, 0, 0, 0.18);
 }
 
+.ambient-overlay__bot-controls {
+  margin-top: 0.85rem;
+  display: inline-grid;
+  grid-template-columns: auto auto auto auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  padding: 0.36rem 0.52rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    rgba(11, 25, 39, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.ambient-overlay__bot-label {
+  padding-inline: 0.22rem 0.08rem;
+  color: rgba(232, 241, 252, 0.82);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.ambient-overlay__bot-button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
+    rgba(15, 37, 56, 0.92);
+  color: #f7fbff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.14);
+}
+
+.ambient-overlay__bot-button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.ambient-overlay__bot-count {
+  min-width: 1.7rem;
+  text-align: center;
+  color: #f8fcff;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 .ambient-overlay__eyebrow {
   color: rgba(139, 233, 255, 0.9);
 }
@@ -3129,13 +3183,13 @@ button:active:not(:disabled) {
 }
 
 .table-stage__bot-controls {
-  margin-top: 0.6rem;
+  margin-top: 0.44rem;
   display: inline-grid;
   grid-template-columns: auto auto auto auto;
   align-items: center;
   justify-content: center;
-  gap: 0.42rem;
-  padding: 0.36rem 0.5rem;
+  gap: 0.34rem;
+  padding: 0.28rem 0.42rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background:
@@ -3147,22 +3201,22 @@ button:active:not(:disabled) {
 }
 
 .table-stage__bot-label {
-  padding-inline: 0.28rem 0.12rem;
+  padding-inline: 0.18rem 0.06rem;
   color: rgba(255, 243, 222, 0.82);
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   letter-spacing: 0.08em;
 }
 
 .table-stage__bot-button {
-  width: 2rem;
-  height: 2rem;
+  width: 1.7rem;
+  height: 1.7rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
     rgba(16, 37, 54, 0.9);
   color: #fff;
-  font-size: 1rem;
+  font-size: 0.9rem;
   line-height: 1;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
@@ -3175,10 +3229,10 @@ button:active:not(:disabled) {
 }
 
 .table-stage__bot-count {
-  min-width: 1.75rem;
+  min-width: 1.45rem;
   text-align: center;
   color: rgba(255, 248, 236, 0.96);
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -6687,6 +6741,31 @@ input {
 .table-stage__bot-count {
   color: var(--theme-paper-strong);
 }
+
+.ambient-overlay__bot-controls {
+  border-color: color-mix(in srgb, var(--accent-2) 20%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 14%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
+    color-mix(in srgb, var(--theme-panel-bg) 94%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
+    0 10px 24px var(--theme-shadow-soft);
+}
+
+.ambient-overlay__bot-button {
+  border-color: color-mix(in srgb, var(--accent-3) 24%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 18%, transparent), color-mix(in srgb, var(--theme-paper) 6%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 90%, black);
+}
+
+.ambient-overlay__bot-label {
+  color: color-mix(in srgb, var(--theme-paper-strong) 76%, var(--accent-2));
+}
+
+.ambient-overlay__bot-count {
+  color: var(--theme-paper-strong);
+}
 .table-stage__scale-controls {
   border-color: color-mix(in srgb, var(--accent-3) 24%, var(--theme-border));
   background:
@@ -7090,6 +7169,7 @@ input {
 }
 
 .ambient-overlay__leave-button,
+.ambient-overlay__bot-button,
 .result-overlay__actions button {
   color: var(--theme-paper-strong);
 }
