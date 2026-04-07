@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
@@ -226,7 +226,7 @@ export function BattleScreen({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!viewModel.result) {
       hasObservedNoResultRef.current = true;
       setIsSettlementPanelReady(true);
