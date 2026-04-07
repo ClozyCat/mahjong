@@ -3076,15 +3076,19 @@ button:active:not(:disabled) {
   pointer-events: none;
 }
 
-.table-stage__room-actions {
+.table-stage__lobby-controls {
   position: absolute;
   top: 50%;
   left: 50%;
   z-index: 5;
+  transform: translate(-50%, calc(-50% + 3.2rem));
+}
+
+.table-stage__room-actions {
   display: grid;
   grid-auto-flow: column;
+  justify-content: center;
   gap: 0.55rem;
-  transform: translate(-50%, calc(-50% + 3.2rem));
 }
 
 .table-stage__room-action {
@@ -3122,6 +3126,61 @@ button:active:not(:disabled) {
 .table-stage__room-action:disabled {
   opacity: 0.46;
   cursor: not-allowed;
+}
+
+.table-stage__bot-controls {
+  margin-top: 0.6rem;
+  display: inline-grid;
+  grid-template-columns: auto auto auto auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  padding: 0.36rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(10, 24, 36, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
+.table-stage__bot-label {
+  padding-inline: 0.28rem 0.12rem;
+  color: rgba(255, 243, 222, 0.82);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.table-stage__bot-button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
+    rgba(16, 37, 54, 0.9);
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.14);
+}
+
+.table-stage__bot-button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.table-stage__bot-count {
+  min-width: 1.75rem;
+  text-align: center;
+  color: rgba(255, 248, 236, 0.96);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .table-stage__scale-controls {
@@ -6576,6 +6635,7 @@ input {
 }
 
 .table-stage__room-action,
+.table-stage__bot-button,
 .battle-drawer__action,
 .battle-drawer__collapse,
 .battle-drawer__restore,
@@ -6603,6 +6663,30 @@ input {
   border-color: color-mix(in srgb, var(--accent-2) 34%, var(--theme-border));
 }
 
+.table-stage__bot-controls {
+  border-color: color-mix(in srgb, var(--accent-2) 20%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 12%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
+    color-mix(in srgb, var(--theme-panel-bg) 94%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
+    0 10px 24px var(--theme-shadow-soft);
+}
+
+.table-stage__bot-button {
+  border-color: color-mix(in srgb, var(--accent-3) 24%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 18%, transparent), color-mix(in srgb, var(--theme-paper) 6%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 90%, black);
+}
+
+.table-stage__bot-label {
+  color: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent-2));
+}
+
+.table-stage__bot-count {
+  color: var(--theme-paper-strong);
+}
 .table-stage__scale-controls {
   border-color: color-mix(in srgb, var(--accent-3) 24%, var(--theme-border));
   background:

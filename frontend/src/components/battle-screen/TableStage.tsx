@@ -38,6 +38,9 @@ interface TableStageProps {
   occupiedSeatCount?: number;
   seatCapacity?: number;
   preMatchActions?: BattleActionView[];
+  botCount?: number;
+  canAddBot?: boolean;
+  canRemoveBot?: boolean;
   tileScale?: number;
   canDecreaseTileScale?: boolean;
   canIncreaseTileScale?: boolean;
@@ -47,6 +50,8 @@ interface TableStageProps {
   onLeaveTable?: () => void;
   onCycleTheme?: () => void;
   onAction?: (actionId: BattleActionView['id']) => void;
+  onAddBot?: () => void;
+  onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
@@ -83,6 +88,9 @@ export function TableStage({
   occupiedSeatCount,
   seatCapacity = 4,
   preMatchActions = [],
+  botCount = 0,
+  canAddBot = false,
+  canRemoveBot = false,
   tileScale = 1,
   canDecreaseTileScale = false,
   canIncreaseTileScale = false,
@@ -92,6 +100,8 @@ export function TableStage({
   onLeaveTable,
   onCycleTheme,
   onAction,
+  onAddBot,
+  onRemoveBot,
   onQuickChat,
   onDecreaseTileScale,
   onIncreaseTileScale,
@@ -124,6 +134,7 @@ export function TableStage({
   const tableSummary = buildTableSummary(roundLabel, phaseLabel);
   const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
   const shouldShowPreMatchActions = preMatchActions.length > 0;
+  const shouldShowBotControls = shouldShowPreMatchActions || botCount > 0 || canAddBot || canRemoveBot;
   const scalePercentLabel = `${Math.round(tileScale * 100)}%`;
   const tableStageStyle = {
     '--table-stage-tile-scale': `${tileScale}`,
@@ -337,19 +348,49 @@ export function TableStage({
               aria-label={`${ACTION_POINTER_COPY[actionIndicatorSeat]}正在行动`}
             />
           ) : null}
-          {shouldShowPreMatchActions ? (
-            <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
-              {preMatchActions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className={`table-stage__room-action table-stage__room-action--${action.emphasis}`}
-                  disabled={!action.enabled}
-                  onClick={() => onAction?.(action.id)}
-                >
-                  {action.label}
-                </button>
-              ))}
+          {shouldShowPreMatchActions || shouldShowBotControls ? (
+            <div className="table-stage__lobby-controls">
+              {shouldShowPreMatchActions ? (
+                <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
+                  {preMatchActions.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className={`table-stage__room-action table-stage__room-action--${action.emphasis}`}
+                      disabled={!action.enabled}
+                      onClick={() => onAction?.(action.id)}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {shouldShowBotControls ? (
+                <div className="table-stage__bot-controls" role="group" aria-label="BOT 数量控制">
+                  <span className="table-stage__bot-label">BOT 数量</span>
+                  <button
+                    type="button"
+                    className="table-stage__bot-button"
+                    aria-label="减少 BOT"
+                    disabled={!canRemoveBot}
+                    onClick={onRemoveBot}
+                  >
+                    -
+                  </button>
+                  <strong className="table-stage__bot-count" aria-label={`当前 BOT 数量 ${botCount}`}>
+                    {botCount}
+                  </strong>
+                  <button
+                    type="button"
+                    className="table-stage__bot-button"
+                    aria-label="增加 BOT"
+                    disabled={!canAddBot}
+                    onClick={onAddBot}
+                  >
+                    +
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {tableSummary ? <div className="table-stage__status-summary">{tableSummary}</div> : null}

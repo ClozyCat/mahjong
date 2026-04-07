@@ -426,6 +426,7 @@ function createWaitingControls(state: SessionState): WaitingControls | null {
   const localSeat = snapshot.local_seat;
   const localSeatState = typeof localSeat === 'number' ? snapshot.seats.find((seat) => seat.seat_index === localSeat) : null;
   const occupiedSeats = snapshot.seats.length;
+  const botCount = snapshot.seats.filter((seat) => seat.is_bot).length;
   const allReady =
     occupiedSeats === 4 &&
     snapshot.seats.every((seat) => seat.ready && (seat.connected || seat.is_bot));
@@ -435,6 +436,9 @@ function createWaitingControls(state: SessionState): WaitingControls | null {
     canStart: allReady,
     isReady: Boolean(localSeatState?.ready),
     occupiedSeats,
+    botCount,
+    canAddBot: Boolean(localSeatState) && occupiedSeats < 4,
+    canRemoveBot: Boolean(localSeatState) && botCount > 0,
   };
 }
 

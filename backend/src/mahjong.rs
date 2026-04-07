@@ -4248,7 +4248,6 @@ fn room_enforces_minimum_eight_fan(room: &Value) -> bool {
         .unwrap_or(true)
 }
 
-
 fn claim_tile_id_options_with_cache(
     room: &Value,
     cache: &RoomScoringCache,
@@ -4276,7 +4275,10 @@ fn claim_tile_id_options_with_cache(
             .map(|tile| tile.tile_id.clone())
             .take(needed)
             .collect::<Vec<_>>();
-        return (tile_ids.len() == needed).then_some(tile_ids).into_iter().collect();
+        return (tile_ids.len() == needed)
+            .then_some(tile_ids)
+            .into_iter()
+            .collect();
     }
 
     if action_type == "chow" {
@@ -4803,10 +4805,18 @@ mod tests {
     fn room_for_bot_shape_choice() -> Value {
         let mut room = room_for_bot_active_turn();
         room["round_state"]["players"][0]["concealed_tiles"] = json!([
-            suit("w1", "w1#a"), suit("w2", "w2#a"), suit("w3", "w3#a"),
-            suit("t1", "t1#a"), suit("t2", "t2#a"), suit("t3", "t3#a"),
-            suit("b1", "b1#a"), suit("b2", "b2#a"), suit("b3", "b3#a"),
-            suit("w5", "w5#p1"), suit("w5", "w5#p2"), suit("w6", "w6#shape"),
+            suit("w1", "w1#a"),
+            suit("w2", "w2#a"),
+            suit("w3", "w3#a"),
+            suit("t1", "t1#a"),
+            suit("t2", "t2#a"),
+            suit("t3", "t3#a"),
+            suit("b1", "b1#a"),
+            suit("b2", "b2#a"),
+            suit("b3", "b3#a"),
+            suit("w5", "w5#p1"),
+            suit("w5", "w5#p2"),
+            suit("w6", "w6#shape"),
             wind("east", "east#isolated"),
             suit("w7", "w7#draw")
         ]);
@@ -5496,19 +5506,27 @@ mod tests {
         assert_eq!(settlement["score_delta"]["kong_delta_by_seat"]["3"], -1);
         assert_eq!(
             settlement["score_delta"]["total_delta_by_seat"]["0"].as_i64(),
-            settlement["score_delta"]["fan_delta_by_seat"]["0"].as_i64().map(|value| value - 1)
+            settlement["score_delta"]["fan_delta_by_seat"]["0"]
+                .as_i64()
+                .map(|value| value - 1)
         );
         assert_eq!(
             settlement["score_delta"]["total_delta_by_seat"]["1"].as_i64(),
-            settlement["score_delta"]["fan_delta_by_seat"]["1"].as_i64().map(|value| value - 1)
+            settlement["score_delta"]["fan_delta_by_seat"]["1"]
+                .as_i64()
+                .map(|value| value - 1)
         );
         assert_eq!(
             settlement["score_delta"]["total_delta_by_seat"]["2"].as_i64(),
-            settlement["score_delta"]["fan_delta_by_seat"]["2"].as_i64().map(|value| value + 3)
+            settlement["score_delta"]["fan_delta_by_seat"]["2"]
+                .as_i64()
+                .map(|value| value + 3)
         );
         assert_eq!(
             settlement["score_delta"]["total_delta_by_seat"]["3"].as_i64(),
-            settlement["score_delta"]["fan_delta_by_seat"]["3"].as_i64().map(|value| value - 1)
+            settlement["score_delta"]["fan_delta_by_seat"]["3"]
+                .as_i64()
+                .map(|value| value - 1)
         );
     }
 

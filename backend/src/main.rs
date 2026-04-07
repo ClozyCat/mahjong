@@ -1204,6 +1204,14 @@ async fn handle_client_message(
             };
             handle_ready(state, table_code, connection, seat_index, envelope).await
         }
+        "adjust_bots" => {
+            let Some(seat_index) =
+                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+            else {
+                return reject_to(connection, "seat_not_owned");
+            };
+            handle_adjust_bots(state, table_code, connection, seat_index, envelope).await
+        }
         "start_match" => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
@@ -1558,6 +1566,71 @@ async fn handle_ready(
             }
         }
     }
+    let created_at = runtime.created_at.clone();
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
+        restore_room_snapshot(&room_handle, previous_room).await;
+        return internal_error_to(connection, error);
+    }
+    let outcome = MessageOutcome {
+        outbound,
+        owned_seat: None,
+        clear_owned_seat: false,
+        close_socket: false,
+    };
+    schedule_room_tasks_detached(state, table_code.to_string());
+    outcome
+}
+
+async fn handle_adjust_bots(
+    state: AppContext,
+    table_code: &str,
+    connection: &ConnectionHandle,
+    seat_index: usize,
+    envelope: &ClientEnvelope,
+) -> MessageOutcome {
+    let delta = envelope
+        .payload
+        .get("delta")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
+        return reject_to(connection, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let previous_room = runtime.room.clone();
+    if !seat_exists(&runtime.room, seat_index) {
+        return reject_to(connection, "seat_not_owned");
+    }
+
+    let update_result = match delta {
+        1 => add_bot_to_waiting_room(&mut runtime.room).map(|_| ()),
+        -1 => remove_bot_from_waiting_room(&mut runtime.room).map(|_| ()),
+        _ => Err("invalid_bot_adjustment"),
+    };
+    if let Err(reason) = update_result {
+        return reject_to(connection, reason);
+    }
+
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
@@ -2515,6 +2588,74 @@ fn remove_seat_from_room(room: &mut Value, seat_index: usize) {
     }
 }
 
+fn seat_exists(room: &Value, seat_index: usize) -> bool {
+    room.get("seats")
+        .and_then(Value::as_array)
+        .is_some_and(|seats| {
+            seats.iter().any(|seat| {
+                seat.get("seat_index")
+                    .and_then(Value::as_u64)
+                    .map(|value| value as usize == seat_index)
+                    .unwrap_or(false)
+            })
+        })
+}
+
+fn first_open_seat_index(room: &Value) -> Option<usize> {
+    let occupied = occupied_seats(room);
+    (0..MAX_SEATS).find(|seat_index| !occupied.contains(seat_index))
+}
+
+fn add_bot_to_waiting_room(room: &mut Value) -> Result<usize, &'static str> {
+    if room_phase(room) != "waiting" || room_has_round_state(room) {
+        return Err("room_already_started");
+    }
+
+    let Some(seat_index) = first_open_seat_index(room) else {
+        return Err("room_full");
+    };
+    let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut) else {
+        return Err("invalid_room_state");
+    };
+
+    seats.push(json!({
+        "seat_index": seat_index,
+        "nickname": format!("Bot {seat_index}"),
+        "reconnect_token": Value::Null,
+        "player_session_id": -((seat_index as i64) + 1),
+        "connected": true,
+        "ready": true,
+        "is_bot": true,
+        "seat_type": "bot",
+        "bot_persona": Value::Null,
+        "bot_aggression": Value::Null,
+        "disconnect_deadline_at": Value::Null,
+    }));
+    seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
+    Ok(seat_index)
+}
+
+fn remove_bot_from_waiting_room(room: &mut Value) -> Result<usize, &'static str> {
+    if room_phase(room) != "waiting" || room_has_round_state(room) {
+        return Err("room_already_started");
+    }
+
+    let seat_index = room
+        .get("seats")
+        .and_then(Value::as_array)
+        .and_then(|seats| {
+            seats
+                .iter()
+                .filter(|seat| seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
+                .filter_map(|seat| seat.get("seat_index").and_then(Value::as_u64))
+                .map(|value| value as usize)
+                .max()
+        })
+        .ok_or("bot_not_found")?;
+    remove_seat_from_room(room, seat_index);
+    Ok(seat_index)
+}
+
 fn convert_seat_to_bot(room: &mut Value, seat_index: usize) {
     if let Some(seat) = find_seat_mut(room, seat_index) {
         seat.insert("connected".to_string(), Value::Bool(true));
@@ -3195,6 +3336,102 @@ mod tests {
     }
 
     #[test]
+    fn add_bot_to_waiting_room_fills_first_empty_seat_and_marks_ready() {
+        let mut room = initial_room_payload("ROOM42", "normal", true);
+        room["seats"] = json!([
+            {
+                "seat_index": 0,
+                "nickname": "Alice",
+                "reconnect_token": "token-1",
+                "player_session_id": 1,
+                "connected": true,
+                "ready": false,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            },
+            {
+                "seat_index": 2,
+                "nickname": "Carol",
+                "reconnect_token": "token-2",
+                "player_session_id": 2,
+                "connected": true,
+                "ready": true,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }
+        ]);
+
+        let inserted_seat = add_bot_to_waiting_room(&mut room).expect("bot seat should be added");
+
+        assert_eq!(inserted_seat, 1);
+        assert_eq!(room["seats"].as_array().map(Vec::len), Some(3));
+        assert_eq!(room["seats"][1]["seat_index"], Value::from(1));
+        assert_eq!(room["seats"][1]["nickname"], Value::from("Bot 1"));
+        assert_eq!(room["seats"][1]["ready"], Value::Bool(true));
+        assert_eq!(room["seats"][1]["connected"], Value::Bool(true));
+        assert_eq!(room["seats"][1]["is_bot"], Value::Bool(true));
+    }
+
+    #[test]
+    fn remove_bot_from_waiting_room_removes_highest_index_bot() {
+        let mut room = initial_room_payload("ROOM42", "normal", true);
+        room["seats"] = json!([
+            {
+                "seat_index": 0,
+                "nickname": "Alice",
+                "reconnect_token": "token-1",
+                "player_session_id": 1,
+                "connected": true,
+                "ready": true,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            },
+            {
+                "seat_index": 1,
+                "nickname": "Bot 1",
+                "reconnect_token": Value::Null,
+                "player_session_id": -2,
+                "connected": true,
+                "ready": true,
+                "is_bot": true,
+                "seat_type": "bot",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            },
+            {
+                "seat_index": 3,
+                "nickname": "Bot 3",
+                "reconnect_token": Value::Null,
+                "player_session_id": -4,
+                "connected": true,
+                "ready": true,
+                "is_bot": true,
+                "seat_type": "bot",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }
+        ]);
+
+        let removed_seat =
+            remove_bot_from_waiting_room(&mut room).expect("bot seat should be removed");
+
+        assert_eq!(removed_seat, 3);
+        assert_eq!(room["seats"].as_array().map(Vec::len), Some(2));
+        assert_eq!(occupied_seats(&room), HashSet::from([0, 1]));
+    }
+
+    #[test]
     fn save_table_and_store_reconnect_token_writes_both_records() -> Result<()> {
         let db = in_memory_database("")?;
         db.initialize()?;
@@ -3281,9 +3518,24 @@ mod tests {
             "disconnect_deadline_at": Value::Null,
         }]);
 
-        assert!(seat_matches_reconnect_credentials(&room, 0, 42, "token-new"));
-        assert!(!seat_matches_reconnect_credentials(&room, 0, 42, "token-old"));
-        assert!(!seat_matches_reconnect_credentials(&room, 0, 7, "token-new"));
+        assert!(seat_matches_reconnect_credentials(
+            &room,
+            0,
+            42,
+            "token-new"
+        ));
+        assert!(!seat_matches_reconnect_credentials(
+            &room,
+            0,
+            42,
+            "token-old"
+        ));
+        assert!(!seat_matches_reconnect_credentials(
+            &room,
+            0,
+            7,
+            "token-new"
+        ));
     }
 
     #[tokio::test(flavor = "current_thread")]

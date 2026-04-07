@@ -61,6 +61,15 @@ export function createReadyMessage(ready: boolean): ClientMessage {
   };
 }
 
+export function createAdjustBotsMessage(delta: 1 | -1): ClientMessage {
+  return {
+    type: 'adjust_bots',
+    payload: {
+      delta,
+    },
+  };
+}
+
 export function createStartMatchMessage(): ClientMessage {
   return {
     type: 'start_match',

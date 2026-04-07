@@ -265,6 +265,9 @@ describe('createMatchViewModel', () => {
     expect(viewModel.canLeaveTable).toBe(true);
     expect(viewModel.waitingControls?.canReady).toBe(true);
     expect(viewModel.waitingControls?.canStart).toBe(false);
+    expect(viewModel.waitingControls?.botCount).toBe(0);
+    expect(viewModel.waitingControls?.canAddBot).toBe(true);
+    expect(viewModel.waitingControls?.canRemoveBot).toBe(false);
   });
 
   it('shows cancel-ready when the local seat is already ready in the waiting room', () => {
@@ -444,6 +447,32 @@ describe('createMatchViewModel', () => {
       statusText: '等待重连中',
     });
     expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(false);
+  });
+
+  it('counts bot seats in the waiting room and enables removing them', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true },
+            { seat_index: 2, nickname: 'Bot 2', connected: true, ready: true, is_bot: true },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls).toMatchObject({
+      occupiedSeats: 3,
+      botCount: 2,
+      canAddBot: true,
+      canRemoveBot: true,
+      canStart: false,
+    });
   });
 
   it('maps a local active turn into selectable discard controls', () => {

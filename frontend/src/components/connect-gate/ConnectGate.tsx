@@ -32,6 +32,17 @@ const CONNECT_GATE_QUOTES = [
   '入席先安神，出手见真章。',
 ];
 
+const TABLE_MODE_COPY: Record<TableMode, { label: string; description: string }> = {
+  normal: {
+    label: '普通模式',
+    description: '手动准备开局',
+  },
+  test: {
+    label: '测试模式',
+    description: '自动补满机器人',
+  },
+};
+
 export function ConnectGate({
   value,
   status,
@@ -81,19 +92,23 @@ export function ConnectGate({
     onChange({ nickname: nextValue });
   }
 
-  function renderModeToggle(mode: TableMode, label: string, description: string) {
-    const active = value.tableMode === mode;
+  function renderTableModeToggle() {
+    const currentMode = TABLE_MODE_COPY[value.tableMode];
+    const nextMode: TableMode = value.tableMode === 'normal' ? 'test' : 'normal';
+    const nextModeLabel = TABLE_MODE_COPY[nextMode].label;
 
     return (
       <button
         type="button"
         className="connect-gate__toggle"
-        onClick={() => onChange({ tableMode: mode })}
+        onClick={() => onChange({ tableMode: nextMode })}
         disabled={disabled}
-        aria-pressed={active}
+        aria-pressed={value.tableMode === 'test'}
+        aria-label={`牌桌模式：${currentMode.label}`}
+        title={`点击切换为${nextModeLabel}`}
       >
-        <span>{label}</span>
-        <strong>{active ? '当前模式' : description}</strong>
+        <span>牌桌模式</span>
+        <strong>{`${currentMode.label} · ${currentMode.description}`}</strong>
       </button>
     );
   }
@@ -187,8 +202,7 @@ export function ConnectGate({
               </label>
 
               <div className="connect-gate__actions connect-gate__actions--toggles">
-                {renderModeToggle('normal', '普通模式', '手动准备开局')}
-                {renderModeToggle('test', '测试模式', '自动补满机器人')}
+                {renderTableModeToggle()}
                 <button
                   type="button"
                   className="connect-gate__toggle"

@@ -258,6 +258,7 @@ export type ClientMessage =
   | { type: 'reconnect'; payload: { reconnect_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
+  | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
   | { type: 'restart_match'; payload: Record<string, never> }
@@ -331,6 +332,9 @@ export interface WaitingControls {
   canStart: boolean;
   isReady: boolean;
   occupiedSeats: number;
+  botCount: number;
+  canAddBot: boolean;
+  canRemoveBot: boolean;
 }
 
 export interface LocalTileView {

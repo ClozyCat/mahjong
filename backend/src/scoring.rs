@@ -443,7 +443,9 @@ fn canonicalize_decomposition(mut decomposition: Decomposition) -> Decomposition
     decomposition
 }
 
-fn decomposition_sort_key(decomposition: &Decomposition) -> (
+fn decomposition_sort_key(
+    decomposition: &Decomposition,
+) -> (
     &str,
     Option<&str>,
     Vec<Vec<&str>>,
@@ -463,8 +465,16 @@ fn decomposition_sort_key(decomposition: &Decomposition) -> (
             .map(|meld| meld.iter().map(String::as_str).collect::<Vec<_>>())
             .collect(),
         decomposition.pairs.iter().map(String::as_str).collect(),
-        decomposition.pattern_tiles.iter().map(String::as_str).collect(),
-        decomposition.honor_tiles.iter().map(String::as_str).collect(),
+        decomposition
+            .pattern_tiles
+            .iter()
+            .map(String::as_str)
+            .collect(),
+        decomposition
+            .honor_tiles
+            .iter()
+            .map(String::as_str)
+            .collect(),
         decomposition.meld.iter().map(String::as_str).collect(),
         decomposition.completion_kind.as_deref(),
         decomposition.orphans.iter().map(String::as_str).collect(),
@@ -475,7 +485,8 @@ fn canonicalize_decompositions(mut decompositions: Vec<Decomposition>) -> Vec<De
     for decomposition in &mut decompositions {
         *decomposition = canonicalize_decomposition(std::mem::take(decomposition));
     }
-    decompositions.sort_by(|left, right| decomposition_sort_key(left).cmp(&decomposition_sort_key(right)));
+    decompositions
+        .sort_by(|left, right| decomposition_sort_key(left).cmp(&decomposition_sort_key(right)));
     decompositions
 }
 
@@ -3678,8 +3689,8 @@ mod tests {
         .map(ToString::to_string)
         .collect::<Vec<_>>();
         let shuffled_tile_keys = vec![
-            "green", "w9", "red", "w3", "w5", "red", "w7", "green", "w2", "w6", "w8", "w1",
-            "red", "w4",
+            "green", "w9", "red", "w3", "w5", "red", "w7", "green", "w2", "w6", "w8", "w1", "red",
+            "w4",
         ]
         .into_iter()
         .map(ToString::to_string)
@@ -3757,7 +3768,11 @@ mod tests {
             vec!["b4", "b5", "b6"],
         ]
         .into_iter()
-        .map(|meld| meld.into_iter().map(ToString::to_string).collect::<Vec<_>>())
+        .map(|meld| {
+            meld.into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
         let tile_keys = concealed_tile_keys
             .iter()

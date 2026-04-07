@@ -20,6 +20,8 @@ interface BattleScreenProps {
   onAction: (actionId: BattleActionId) => void;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
+  onAddBot?: () => void;
+  onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
 }
 
@@ -45,6 +47,8 @@ export function BattleScreen({
   onAction,
   onCopyTableCode,
   onLeaveTable,
+  onAddBot,
+  onRemoveBot,
   onQuickChat,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
@@ -277,6 +281,9 @@ export function BattleScreen({
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
               preMatchActions={viewModel.waitingControls ? preMatchActions : []}
+              botCount={viewModel.waitingControls?.botCount ?? 0}
+              canAddBot={viewModel.waitingControls?.canAddBot ?? false}
+              canRemoveBot={viewModel.waitingControls?.canRemoveBot ?? false}
               tileScale={tableTileScale}
               canDecreaseTileScale={canDecreaseTableTileScale}
               canIncreaseTileScale={canIncreaseTableTileScale}
@@ -286,6 +293,8 @@ export function BattleScreen({
               onLeaveTable={onLeaveTable}
               onCycleTheme={onCycleTheme}
               onAction={handleAction}
+              onAddBot={onAddBot}
+              onRemoveBot={onRemoveBot}
               onQuickChat={onQuickChat}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}

@@ -13,6 +13,7 @@ import {
 import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
 import {
   buildWebSocketUrl,
+  createAdjustBotsMessage,
   createActionRequestMessage,
   createHeartbeatMessage,
   createJoinTableMessage,
@@ -700,6 +701,10 @@ export default function App() {
     sendMessage(serializeClientMessage(createQuickChatMessage(targetSeat, emoji)));
   }
 
+  function handleAdjustBots(delta: 1 | -1) {
+    sendMessage(serializeClientMessage(createAdjustBotsMessage(delta)));
+  }
+
   function handleTileDoubleClick(tileId: string) {
     if (!canQuickDiscard(state, hasLocalTurnKongPrompt)) {
       return;
@@ -777,6 +782,8 @@ export default function App() {
       onAction={handleAction}
       onCopyTableCode={handleCopyTableCode}
       onLeaveTable={handleLeaveTable}
+      onAddBot={() => handleAdjustBots(1)}
+      onRemoveBot={() => handleAdjustBots(-1)}
       onQuickChat={handleQuickChat}
     />
   );

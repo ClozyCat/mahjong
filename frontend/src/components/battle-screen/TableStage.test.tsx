@@ -502,6 +502,9 @@ describe('TableStage', () => {
   });
 
   it('renders the pre-match room actions in the table center and keeps the corner leave button', () => {
+    const onAddBot = vi.fn();
+    const onRemoveBot = vi.fn();
+
     render(
       <TableStage
         discards={{
@@ -516,6 +519,11 @@ describe('TableStage', () => {
         canLeaveTable
         onLeaveTable={() => undefined}
         onAction={() => undefined}
+        botCount={2}
+        canAddBot
+        canRemoveBot
+        onAddBot={onAddBot}
+        onRemoveBot={onRemoveBot}
         preMatchActions={[
           { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
@@ -527,6 +535,16 @@ describe('TableStage', () => {
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '准备' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始对局' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'BOT 数量控制' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '增加 BOT' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '减少 BOT' })).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '增加 BOT' }));
+    fireEvent.click(screen.getByRole('button', { name: '减少 BOT' }));
+
+    expect(onAddBot).toHaveBeenCalledTimes(1);
+    expect(onRemoveBot).toHaveBeenCalledTimes(1);
   });
 
   it('renders a theme switch button beside the leave control and forwards clicks', () => {

@@ -9,9 +9,9 @@ use std::collections::{HashMap, HashSet};
 const TILE_KIND_COUNT: usize = 34;
 const HONOR_TILE_START: usize = 27;
 const STANDARD_TILE_KEYS: [&str; 34] = [
-    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
-    "t7", "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south",
-    "west", "north", "red", "green", "white",
+    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+    "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
+    "north", "red", "green", "white",
 ];
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const STAGE_ONE_DEPTH: u8 = 0;
@@ -381,7 +381,11 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 Some(discard_tile_key),
                 None,
             )?;
-            let action_bonus = if option.action_type == "pung" { 40 } else { -20 };
+            let action_bonus = if option.action_type == "pung" {
+                40
+            } else {
+                -20
+            };
             plan.score + action_bonus
         };
 
@@ -487,9 +491,9 @@ impl SearchEngine {
             if !visited_tile_keys.insert(tile.tile_key.clone()) {
                 continue;
             }
-        let Some(score) = self.score_discard_candidate(
-            context,
-            concealed_tiles,
+            let Some(score) = self.score_discard_candidate(
+                context,
+                concealed_tiles,
                 meld_tile_key_groups,
                 appended_open_flags,
                 restricted_discard_tile_key,
@@ -548,9 +552,9 @@ impl SearchEngine {
         );
         let prefer_drawn_copy = drawn_tile_id == Some(tile.tile_id.as_str());
         let profile = mode_profile(select_bot_mode(context));
-        let danger_penalty =
-            discard_danger_penalty(context, &concealed_counts, &tile.tile_key) * profile.danger_weight
-                / 100;
+        let danger_penalty = discard_danger_penalty(context, &concealed_counts, &tile.tile_key)
+            * profile.danger_weight
+            / 100;
         Some(
             state_score
                 + discard_tile_preference_score(
@@ -845,8 +849,7 @@ impl SearchEngine {
             incoming_tile: Some(incoming_tile.to_string()),
             decompositions,
         });
-        let score = if context.enforce_minimum_eight_fan
-            && result.minimum_qualifying_fan_total < 8
+        let score = if context.enforce_minimum_eight_fan && result.minimum_qualifying_fan_total < 8
         {
             None
         } else {
@@ -956,7 +959,12 @@ fn meld_open_flags_for_state(
     }
     for extra_index in existing_meld_count..meld_tile_key_groups.len() {
         let appended_index = extra_index - existing_meld_count;
-        flags.push(appended_open_flags.get(appended_index).copied().unwrap_or(true));
+        flags.push(
+            appended_open_flags
+                .get(appended_index)
+                .copied()
+                .unwrap_or(true),
+        );
     }
     flags
 }
@@ -1043,7 +1051,8 @@ fn prioritized_draw_candidates(
 ) -> Vec<(usize, i32)> {
     let mut candidates = Vec::new();
     for tile_index in 0..TILE_KIND_COUNT {
-        let remaining = estimated_remaining_tile_count(visible_counts, concealed_counts, tile_index);
+        let remaining =
+            estimated_remaining_tile_count(visible_counts, concealed_counts, tile_index);
         if remaining <= 0 {
             continue;
         }
@@ -1088,8 +1097,10 @@ fn discard_danger_penalty(
     let Some(discard_index) = tile_index(tile_key) else {
         return 0;
     };
-    let visible_counts = visible_tile_counts_for_state(context, &context.player.meld_tile_key_groups);
-    let known_count = |index: usize| i64::from(visible_counts[index]) + i64::from(concealed_counts[index]);
+    let visible_counts =
+        visible_tile_counts_for_state(context, &context.player.meld_tile_key_groups);
+    let known_count =
+        |index: usize| i64::from(visible_counts[index]) + i64::from(concealed_counts[index]);
     let unseen_copies = i64::from((4 - visible_counts[discard_index]).max(0));
     let round_progress = context
         .opponent_discards_by_seat
@@ -1113,7 +1124,10 @@ fn discard_danger_penalty(
         }
         let threat = opponent_threat_profile(context, seat);
         penalty += threat.pressure + threat.tenpai_likelihood;
-        let same_tile_discards = discards.iter().filter(|key| key.as_str() == tile_key).count() as i64;
+        let same_tile_discards = discards
+            .iter()
+            .filter(|key| key.as_str() == tile_key)
+            .count() as i64;
         if same_tile_discards > 0 {
             penalty -= 150 * same_tile_discards;
             continue;
@@ -1358,9 +1372,8 @@ fn infer_tenpai_likelihood(
     let honor_or_terminal_recent = recent_discards
         .iter()
         .filter(|tile_key| {
-            tile_index(tile_key).is_some_and(|index| {
-                index >= HONOR_TILE_START || matches!(index % 9, 0 | 8)
-            })
+            tile_index(tile_key)
+                .is_some_and(|index| index >= HONOR_TILE_START || matches!(index % 9, 0 | 8))
         })
         .count() as i64;
     let duplicate_recent = recent_discards
@@ -1379,9 +1392,8 @@ fn infer_tenpai_likelihood(
         .map(|index| index / 9)
         .collect::<HashSet<_>>()
         .len() as i64;
-    let stagnation_signal = honor_or_terminal_recent * 8
-        + duplicate_recent * 16
-        + i64::from(suit_span <= 1) * 12;
+    let stagnation_signal =
+        honor_or_terminal_recent * 8 + duplicate_recent * 16 + i64::from(suit_span <= 1) * 12;
 
     let mut likelihood = meld_count * 26 + stagnation_signal;
     if late_round {
@@ -1522,15 +1534,7 @@ fn standard_shanten_with_open_melds(counts: &TileCounts, open_meld_count: usize)
 
         if has_pair == 0 && counts[tile_index] >= 2 {
             counts[tile_index] -= 2;
-            dfs(
-                counts,
-                tile_index,
-                melds,
-                taatsu,
-                1,
-                open_meld_count,
-                best,
-            );
+            dfs(counts, tile_index, melds, taatsu, 1, open_meld_count, best);
             counts[tile_index] += 2;
         }
 
@@ -1549,8 +1553,7 @@ fn standard_shanten_with_open_melds(counts: &TileCounts, open_meld_count: usize)
                 counts[tile_index] += 2;
             }
 
-            if tile_index < HONOR_TILE_START && tile_index % 9 <= 7 && counts[tile_index + 1] > 0
-            {
+            if tile_index < HONOR_TILE_START && tile_index % 9 <= 7 && counts[tile_index + 1] > 0 {
                 counts[tile_index] -= 1;
                 counts[tile_index + 1] -= 1;
                 dfs(
@@ -1566,8 +1569,7 @@ fn standard_shanten_with_open_melds(counts: &TileCounts, open_meld_count: usize)
                 counts[tile_index + 1] += 1;
             }
 
-            if tile_index < HONOR_TILE_START && tile_index % 9 <= 6 && counts[tile_index + 2] > 0
-            {
+            if tile_index < HONOR_TILE_START && tile_index % 9 <= 6 && counts[tile_index + 2] > 0 {
                 counts[tile_index] -= 1;
                 counts[tile_index + 2] -= 1;
                 dfs(
@@ -1599,15 +1601,7 @@ fn standard_shanten_with_open_melds(counts: &TileCounts, open_meld_count: usize)
 
     let mut best = 8;
     let mut working = *counts;
-    dfs(
-        &mut working,
-        0,
-        0,
-        0,
-        0,
-        open_meld_count as i32,
-        &mut best,
-    );
+    dfs(&mut working, 0, 0, 0, 0, open_meld_count as i32, &mut best);
     best
 }
 
@@ -1651,7 +1645,8 @@ fn best_shanten_after_draw(
             continue;
         }
         counts_after_draw[discard_tile_index] -= 1;
-        best_shanten = best_shanten.min(engine.bot_min_shanten(&counts_after_draw, open_meld_count));
+        best_shanten =
+            best_shanten.min(engine.bot_min_shanten(&counts_after_draw, open_meld_count));
         counts_after_draw[discard_tile_index] += 1;
     }
     best_shanten
@@ -1662,10 +1657,26 @@ fn tile_is_isolated(counts: &TileCounts, tile_index: usize) -> bool {
         return counts[tile_index] == 1;
     }
     let rank = tile_index % 9;
-    let left_two = if rank >= 2 { Some(tile_index - 2) } else { None };
-    let left_one = if rank >= 1 { Some(tile_index - 1) } else { None };
-    let right_one = if rank <= 7 { Some(tile_index + 1) } else { None };
-    let right_two = if rank <= 6 { Some(tile_index + 2) } else { None };
+    let left_two = if rank >= 2 {
+        Some(tile_index - 2)
+    } else {
+        None
+    };
+    let left_one = if rank >= 1 {
+        Some(tile_index - 1)
+    } else {
+        None
+    };
+    let right_one = if rank <= 7 {
+        Some(tile_index + 1)
+    } else {
+        None
+    };
+    let right_two = if rank <= 6 {
+        Some(tile_index + 2)
+    } else {
+        None
+    };
     [left_two, left_one, right_one, right_two]
         .into_iter()
         .flatten()
@@ -1997,11 +2008,8 @@ mod tests {
         let counts = [0_u8; TILE_KIND_COUNT];
 
         let mut quiet = base_context();
-        quiet.opponent_melds_by_seat[1] = vec![vec![
-            "w3".to_string(),
-            "w4".to_string(),
-            "w5".to_string(),
-        ]];
+        quiet.opponent_melds_by_seat[1] =
+            vec![vec!["w3".to_string(), "w4".to_string(), "w5".to_string()]];
         quiet.opponent_discards_by_seat[1] = vec!["w1".to_string(), "t1".to_string()];
         let quiet_penalty = discard_danger_penalty(&quiet, &counts, "w6");
 

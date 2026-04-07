@@ -29,6 +29,9 @@ describe('AmbientOverlay', () => {
           canStart: false,
           isReady: false,
           occupiedSeats: 2,
+          botCount: 0,
+          canAddBot: true,
+          canRemoveBot: false,
         }}
         canLeaveTable
         onLeaveTable={() => undefined}
@@ -49,6 +52,9 @@ describe('AmbientOverlay', () => {
           canStart: false,
           isReady: false,
           occupiedSeats: 4,
+          botCount: 0,
+          canAddBot: false,
+          canRemoveBot: false,
         }}
       />,
     );
