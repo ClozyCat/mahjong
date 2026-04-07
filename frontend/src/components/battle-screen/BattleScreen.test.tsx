@@ -2186,6 +2186,8 @@ describe('BattleScreen', () => {
     expect(huButton).toHaveClass('action-dock__action--hu-burn');
     expect(pungButton).not.toHaveClass('action-dock__action--hu-burn');
     expect(passButton).not.toHaveClass('action-dock__action--hu-burn');
+    expect(pungButton).toHaveClass('action-dock__action--themed', 'action-dock__action--themed-pung');
+    expect(passButton).toHaveClass('action-dock__action--themed', 'action-dock__action--themed-pass');
     expect(huButton).not.toHaveClass('action-dock__action--response-glow');
     expect(pungButton).not.toHaveClass('action-dock__action--response-glow');
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');

@@ -109,6 +109,8 @@ describe('BottomActionDock', () => {
     expect(huButton).toHaveClass('action-dock__action--hu-burn');
     expect(pungButton).not.toHaveClass('action-dock__action--hu-burn');
     expect(passButton).not.toHaveClass('action-dock__action--hu-burn');
+    expect(pungButton).toHaveClass('action-dock__action--themed', 'action-dock__action--themed-pung');
+    expect(passButton).toHaveClass('action-dock__action--themed', 'action-dock__action--themed-pass');
     expect(huButton).not.toHaveClass('action-dock__action--response-glow');
     expect(pungButton).not.toHaveClass('action-dock__action--response-glow');
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');
@@ -147,10 +149,52 @@ describe('BottomActionDock', () => {
 
     expect(document.body.querySelector('.action-dock--elevated')).not.toBeNull();
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
-    expect(screen.getByRole('button', { name: '出牌' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '出牌' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-discard',
+    );
+    expect(screen.getByRole('button', { name: '杠' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-kong',
+    );
     expect(screen.getByRole('button', { name: '和牌' })).toHaveClass('action-dock__action--hu-burn');
     expect(screen.getByLabelText(/剩余 \d+ 秒/)).toBeInTheDocument();
+  });
+
+  it('renders the flower action with a blossom effect when the button is available', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[
+          { id: 'flower', label: '补花', enabled: true, emphasis: 'high' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ]}
+        isElevated
+        promptCue={{
+          kind: 'turn',
+          tone: 'info',
+          title: '当前可以补花',
+          detail: '你可以 补花 / 过',
+          actionIds: ['flower', 'pass'],
+          highlightedActionIds: ['flower'],
+          sourceSeat: null,
+          isUrgent: false,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '补花' })).toHaveClass('action-dock__action--flower-bloom');
+    expect(screen.getByRole('button', { name: '过' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-pass',
+    );
   });
 
   it('treats the local kong prompt as a response-style action stack', () => {
@@ -183,8 +227,14 @@ describe('BottomActionDock', () => {
     );
 
     expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
-    expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '杠' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-kong',
+    );
+    expect(screen.getByRole('button', { name: '过' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-pass',
+    );
   });
 
   it('hides the dock countdown when only other players are responding', () => {
@@ -360,7 +410,7 @@ describe('BottomActionDock', () => {
       '--action-dock-layout-hand-count': '13',
       '--action-dock-layout-gap-count': '12',
     });
-    expect(screen.getByText('牌桌进入对局后，手牌会显示在这里。')).toBeInTheDocument();
+    expect(screen.getByText('牌桌进入对局后，手牌和操作按钮会显示在这里。')).toBeInTheDocument();
   });
 
   it('renders claim candidate panes above the action buttons and forwards candidate clicks', () => {
@@ -405,6 +455,16 @@ describe('BottomActionDock', () => {
       />,
     );
 
+    expect(screen.getByRole('button', { name: '和牌' })).toHaveClass('action-dock__action--hu-burn');
+    expect(screen.getByRole('button', { name: '碰' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-pung',
+    );
+    expect(screen.getByRole('button', { name: '过' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-pass',
+    );
+
     const candidateButton = screen.getByRole('button', { name: '碰候选组合 1' });
 
     expect(screen.getByLabelText('可选吃碰杠组合')).toBeInTheDocument();
@@ -439,7 +499,11 @@ describe('BottomActionDock', () => {
             isSelected: false,
           },
         ]}
-        actions={actions}
+        actions={[
+          { id: 'hu', label: '和牌', enabled: true, emphasis: 'high' },
+          { id: 'chow', label: '吃', enabled: true, emphasis: 'medium' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ]}
         isElevated
         promptCue={{
           kind: 'claim',
@@ -458,6 +522,15 @@ describe('BottomActionDock', () => {
         onClaimCandidateActivate={onClaimCandidateActivate}
         onAction={vi.fn()}
       />,
+    );
+
+    expect(screen.getByRole('button', { name: '吃' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-chow',
+    );
+    expect(screen.getByRole('button', { name: '过' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-pass',
     );
 
     await user.dblClick(screen.getByRole('button', { name: '吃候选组合 1' }));

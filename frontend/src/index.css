@@ -7029,6 +7029,180 @@ input {
   z-index: 2;
 }
 
+.action-dock__action--themed {
+  --action-button-accent: var(--accent-3);
+  --action-button-accent-soft: color-mix(in srgb, var(--action-button-accent) 36%, transparent);
+  --action-button-ink: color-mix(in srgb, var(--theme-paper-strong) 84%, var(--action-button-accent));
+  border-color: color-mix(in srgb, var(--action-button-accent) 30%, var(--theme-border-strong));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--action-button-accent) 10%, transparent),
+      color-mix(in srgb, var(--theme-paper) 4%, transparent) 44%,
+      color-mix(in srgb, var(--theme-panel-bg-softer) 98%, transparent)
+    ),
+    color-mix(in srgb, var(--panel-strong) 93%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--action-button-accent) 14%, transparent),
+    0 10px 18px color-mix(in srgb, var(--theme-shadow-soft) 82%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--action-button-accent) 8%, transparent),
+    0 0 14px color-mix(in srgb, var(--action-button-accent-soft) 56%, transparent);
+}
+
+.action-dock__action--themed::before,
+.action-dock__action--themed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.action-dock__action--themed::before {
+  z-index: 0;
+  inset: auto -12% -38% -12%;
+  height: 85%;
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--action-button-accent) 18%, transparent), transparent 66%);
+  filter: blur(0.5rem);
+  opacity: 0.62;
+  animation: action-dock-themed-breathe 2200ms ease-in-out infinite;
+}
+
+.action-dock__action--themed::after {
+  z-index: 1;
+  inset: 1px;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      115deg,
+      transparent 12%,
+      color-mix(in srgb, var(--theme-paper) 18%, transparent) 28%,
+      color-mix(in srgb, var(--action-button-accent) 26%, transparent) 42%,
+      transparent 58%
+    );
+  opacity: 0.52;
+  transform: translateX(-135%);
+  animation: action-dock-themed-sheen 3200ms linear infinite;
+}
+
+.action-dock__action--themed .action-dock__action-label {
+  color: var(--action-button-ink);
+  text-shadow:
+    0 0 0.42rem color-mix(in srgb, var(--action-button-accent) 14%, transparent),
+    0 0.04rem 0 color-mix(in srgb, var(--theme-paper) 24%, transparent);
+}
+
+.action-dock__action--themed:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--action-button-accent) 40%, var(--theme-border-strong));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--action-button-accent) 18%, transparent),
+    0 12px 22px color-mix(in srgb, var(--theme-shadow-soft) 86%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--action-button-accent) 12%, transparent),
+    0 0 16px color-mix(in srgb, var(--action-button-accent-soft) 68%, transparent);
+}
+
+.action-dock__action--themed-discard {
+  --action-button-accent: color-mix(in srgb, var(--accent) 74%, var(--accent-3));
+}
+
+.action-dock__action--themed-kong {
+  --action-button-accent: color-mix(in srgb, var(--theme-warning) 78%, var(--accent-2));
+}
+
+.action-dock__action--themed-pung {
+  --action-button-accent: color-mix(in srgb, var(--theme-info) 84%, var(--accent-3));
+}
+
+.action-dock__action--themed-chow {
+  --action-button-accent: color-mix(in srgb, var(--theme-success) 82%, var(--accent));
+}
+
+.action-dock__action--themed-pass {
+  --action-button-accent: color-mix(in srgb, var(--theme-paper-edge) 66%, var(--accent-2));
+  --action-button-accent-soft: color-mix(in srgb, var(--theme-paper) 14%, transparent);
+  --action-button-ink: color-mix(in srgb, var(--theme-paper-strong) 72%, var(--theme-paper-edge));
+}
+
+.action-dock__action--flower-bloom {
+  --flower-bloom-core: color-mix(in srgb, var(--accent) 52%, var(--theme-danger));
+  --flower-bloom-petal: color-mix(in srgb, var(--theme-paper) 66%, var(--accent-2));
+  --flower-bloom-gold: color-mix(in srgb, var(--theme-warning) 78%, var(--accent-2));
+  --flower-bloom-shadow: color-mix(in srgb, var(--theme-danger) 22%, transparent);
+  border-color: color-mix(in srgb, var(--flower-bloom-core) 54%, var(--theme-border-strong));
+  background:
+    radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--flower-bloom-petal) 18%, transparent), transparent 34%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--flower-bloom-petal) 22%, transparent),
+      color-mix(in srgb, var(--flower-bloom-core) 18%, transparent) 44%,
+      color-mix(in srgb, var(--theme-panel-bg-softer) 98%, transparent)
+    ),
+    color-mix(in srgb, var(--panel-strong) 94%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 18%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--flower-bloom-core) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--flower-bloom-core) 18%, transparent),
+    0 12px 24px color-mix(in srgb, var(--theme-shadow-soft) 84%, transparent),
+    0 0 22px color-mix(in srgb, var(--flower-bloom-shadow) 84%, transparent);
+}
+
+.action-dock__action--flower-bloom::before,
+.action-dock__action--flower-bloom::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.action-dock__action--flower-bloom::before {
+  z-index: 0;
+  inset: -52% -16%;
+  background:
+    radial-gradient(ellipse 18% 28% at 50% 14%, color-mix(in srgb, var(--flower-bloom-petal) 94%, transparent), transparent 70%),
+    radial-gradient(ellipse 16% 24% at 21% 38%, color-mix(in srgb, var(--flower-bloom-petal) 90%, transparent), transparent 72%),
+    radial-gradient(ellipse 16% 24% at 79% 38%, color-mix(in srgb, var(--flower-bloom-petal) 90%, transparent), transparent 72%),
+    radial-gradient(ellipse 16% 24% at 33% 82%, color-mix(in srgb, var(--flower-bloom-core) 86%, transparent), transparent 72%),
+    radial-gradient(ellipse 16% 24% at 67% 82%, color-mix(in srgb, var(--flower-bloom-core) 86%, transparent), transparent 72%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--flower-bloom-gold) 72%, transparent), transparent 20%);
+  filter: blur(0.3rem);
+  opacity: 0.92;
+  transform-origin: 50% 50%;
+  animation: action-dock-flower-bloom-petals 1820ms ease-in-out infinite;
+}
+
+.action-dock__action--flower-bloom::after {
+  z-index: 1;
+  inset: -44% -8% 18%;
+  background:
+    radial-gradient(circle at 18% 88%, color-mix(in srgb, var(--flower-bloom-petal) 90%, transparent) 0 6%, transparent 7%),
+    radial-gradient(circle at 34% 68%, color-mix(in srgb, var(--flower-bloom-gold) 82%, transparent) 0 5%, transparent 6%),
+    radial-gradient(circle at 50% 92%, color-mix(in srgb, var(--flower-bloom-petal) 96%, transparent) 0 6%, transparent 7%),
+    radial-gradient(circle at 66% 66%, color-mix(in srgb, var(--flower-bloom-core) 82%, transparent) 0 5%, transparent 6%),
+    radial-gradient(circle at 82% 84%, color-mix(in srgb, var(--flower-bloom-petal) 88%, transparent) 0 6%, transparent 7%);
+  filter: blur(0.08rem);
+  opacity: 0.78;
+  animation: action-dock-flower-bloom-drift 2080ms linear infinite;
+}
+
+.action-dock__action--flower-bloom .action-dock__action-label {
+  color: color-mix(in srgb, var(--theme-paper-strong) 90%, var(--flower-bloom-petal));
+  text-shadow:
+    0 0 0.56rem color-mix(in srgb, var(--flower-bloom-petal) 24%, transparent),
+    0 0.04rem 0 color-mix(in srgb, var(--theme-paper) 34%, transparent);
+}
+
+.action-dock__action--flower-bloom:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--flower-bloom-petal) 58%, var(--theme-border-strong));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 20%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--flower-bloom-core) 28%, transparent),
+    0 16px 30px color-mix(in srgb, var(--theme-shadow-soft) 88%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--flower-bloom-petal) 22%, transparent),
+    0 0 30px color-mix(in srgb, var(--flower-bloom-shadow) 92%, transparent);
+}
+
 .action-dock__action--hu-burn {
   --hu-burn-core: color-mix(in srgb, var(--theme-danger) 70%, var(--accent-2));
   --hu-burn-hot: color-mix(in srgb, var(--theme-warning) 82%, var(--theme-paper));
@@ -7213,6 +7387,72 @@ input {
   100% {
     opacity: 0;
     transform: translate3d(0.1rem, -0.72rem, 0) scale(1.08);
+  }
+}
+
+@keyframes action-dock-themed-breathe {
+  0%,
+  100% {
+    opacity: 0.36;
+    transform: scaleX(0.96) scaleY(0.92);
+  }
+
+  50% {
+    opacity: 0.68;
+    transform: scaleX(1.03) scaleY(1.04);
+  }
+}
+
+@keyframes action-dock-themed-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-135%);
+  }
+
+  12% {
+    opacity: 0.44;
+  }
+
+  52% {
+    opacity: 0.24;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(135%);
+  }
+}
+
+@keyframes action-dock-flower-bloom-petals {
+  0% {
+    opacity: 0.8;
+    transform: rotate(-4deg) scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: rotate(4deg) scale(1.06);
+  }
+
+  100% {
+    opacity: 0.84;
+    transform: rotate(-2deg) scale(0.98);
+  }
+}
+
+@keyframes action-dock-flower-bloom-drift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0.38rem, 0) scale(0.88);
+  }
+
+  18% {
+    opacity: 0.78;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(0.08rem, -0.8rem, 0) scale(1.06);
   }
 }
 

@@ -206,6 +206,7 @@ export function BottomActionDock({
                 {visibleActions.map((action) => {
                   const isPassAction = action.id === 'pass';
                   const isHuAction = action.id === 'hu';
+                  const actionEffectClass = getActionEffectClass(action.id);
 
                   return (
                     <button
@@ -215,6 +216,8 @@ export function BottomActionDock({
                         isPassAction ? 'action-dock__action--passive' : ''
                       } ${
                         isHuAction ? 'action-dock__action--hu-burn' : ''
+                      } ${
+                        actionEffectClass
                       }`.trim()}
                       onClick={() => onAction(action.id)}
                     >
@@ -337,4 +340,17 @@ function getReadyHandTriggerLabel(readyHandInsight: NonNullable<BottomActionDock
 
 function getReadyHandPopoverLabel(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
   return readyHandInsight.source === 'selected_discard' ? '打出后听牌信息' : '当前听牌信息';
+}
+
+function getActionEffectClass(actionId: BattleActionView['id']) {
+  const lookup: Partial<Record<BattleActionView['id'], string>> = {
+    flower: 'action-dock__action--flower-bloom',
+    chow: 'action-dock__action--themed action-dock__action--themed-chow',
+    pung: 'action-dock__action--themed action-dock__action--themed-pung',
+    kong: 'action-dock__action--themed action-dock__action--themed-kong',
+    discard: 'action-dock__action--themed action-dock__action--themed-discard',
+    pass: 'action-dock__action--themed action-dock__action--themed-pass',
+  };
+
+  return lookup[actionId] ?? '';
 }
