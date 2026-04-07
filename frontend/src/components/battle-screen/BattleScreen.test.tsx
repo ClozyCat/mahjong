@@ -537,6 +537,75 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '收起其他玩家分数' })).toBeNull();
   });
 
+  it('shows a player statistics tooltip with score trend and win rate when hovering a score row', () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            {
+              seat: 'bottom',
+              name: 'Player A',
+              score: 25008,
+              delta: 8,
+              stats: {
+                scoreHistory: [0, 12, 6, 18, 8],
+                winCount: 2,
+                completedRoundCount: 4,
+                winRate: 0.5,
+              },
+            },
+            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement;
+    const playerRow = within(scorePanel).getByText('Player A').closest('.result-overlay__seat-row');
+    expect(playerRow).not.toBeNull();
+
+    fireEvent.mouseEnter(playerRow!);
+
+    expect(screen.getByRole('tooltip', { name: 'Player A 战绩统计' })).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('2/4')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Player A 本牌局战绩折线图' })).toBeInTheDocument();
+
+    fireEvent.mouseLeave(playerRow!);
+
+    act(() => {
+      vi.advanceTimersByTime(90);
+    });
+
+    expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
+    vi.useRealTimers();
+  });
+
   it('renders side-by-side fan and score panels without per-section expand buttons', () => {
     renderBattleScreen(
       createBattleViewModel({

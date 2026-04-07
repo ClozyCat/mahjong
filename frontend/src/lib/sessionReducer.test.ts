@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ActionPromptMessage, PlayerPresenceMessage, RoomSnapshotMessage } from '../types/match';
+import type { ActionPromptMessage, MatchResultMessage, PlayerPresenceMessage, RoomSnapshotMessage } from '../types/match';
 import { createInitialSessionState, sessionReducer } from './sessionReducer';
 
 const roomSnapshotMessage: RoomSnapshotMessage = {
@@ -29,6 +29,55 @@ const actionPromptMessage: ActionPromptMessage = {
     seat_index: 0,
     options: ['discard'],
     deadline_at: '2026-03-26T06:01:00Z',
+  },
+};
+
+const playingRoomSnapshotMessage: RoomSnapshotMessage = {
+  type: 'room_snapshot',
+  payload: {
+    table_code: 'AB12CD',
+    phase: 'playing',
+    seats: [
+      { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
+      { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+      { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
+      { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
+    ],
+    local_seat: 0,
+    reconnect_token: 'token-1',
+    match_state: {
+      prevailing_wind: 'east',
+      hand_number: 1,
+      dealer_seat: 0,
+      cumulative_scores: { '0': 0, '1': 0, '2': 0, '3': 0 },
+      match_finished: false,
+      last_completed_round_id: null,
+    },
+  },
+};
+
+const matchResultMessage: MatchResultMessage = {
+  type: 'match_result',
+  payload: {
+    table_code: 'AB12CD',
+    round_id: 'round-1',
+    phase: 'settlement',
+    win_type: 'discard',
+    winner_seat: 1,
+    discarder_seat: 0,
+    display_win_label: null,
+    fan_total: 8,
+    fan_keys: ['ping_hu'],
+    fan_breakdown: [{ fan_key: 'ping_hu', fan_value: 8 }],
+    flower_count: 0,
+    score_delta: {
+      provisional: false,
+      fan_total: 8,
+      fan_delta_by_seat: { '0': -8, '1': 8, '2': 0, '3': 0 },
+      kong_delta_by_seat: { '0': 0, '1': 0, '2': 0, '3': 0 },
+      total_delta_by_seat: { '0': -8, '1': 8, '2': 0, '3': 0 },
+    },
+    kong_score_detail: [],
   },
 };
 
@@ -249,5 +298,34 @@ describe('sessionReducer', () => {
 
     expect(next.selectedTileIds).toEqual([]);
     expect(next.selectionMode).toBeNull();
+  });
+
+  it('accumulates score trends and win counts from match_result messages', () => {
+    const afterSnapshot = sessionReducer(createInitialSessionState(), {
+      type: 'ws_message',
+      message: playingRoomSnapshotMessage,
+    });
+    const afterResult = sessionReducer(afterSnapshot, {
+      type: 'ws_message',
+      message: matchResultMessage,
+    });
+
+    expect(afterResult.matchStatistics).toEqual({
+      completedRoundCount: 1,
+      lastAppliedRoundId: 'round-1',
+      seatStatsBySeat: {
+        '0': { scoreHistory: [0, -8], winCount: 0 },
+        '1': { scoreHistory: [0, 8], winCount: 1 },
+        '2': { scoreHistory: [0, 0], winCount: 0 },
+        '3': { scoreHistory: [0, 0], winCount: 0 },
+      },
+    });
+
+    const deduped = sessionReducer(afterResult, {
+      type: 'ws_message',
+      message: matchResultMessage,
+    });
+
+    expect(deduped.matchStatistics).toEqual(afterResult.matchStatistics);
   });
 });

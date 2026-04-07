@@ -844,6 +844,36 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('maps per-seat match statistics into the settlement score rows', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      matchStatistics: {
+        completedRoundCount: 3,
+        lastAppliedRoundId: 'round-123',
+        seatStatsBySeat: {
+          '0': { scoreHistory: [0, -8, -4, -8], winCount: 0 },
+          '1': { scoreHistory: [0, 8, 10, 8], winCount: 1 },
+          '2': { scoreHistory: [0, 0, -6, 0], winCount: 1 },
+          '3': { scoreHistory: [0, 0, 0, 0], winCount: 0 },
+        },
+      },
+    });
+
+    expect(viewModel.result?.seats.find((seat) => seat.seat === 'left')?.stats).toEqual({
+      scoreHistory: [0, 8, 10, 8],
+      winCount: 1,
+      completedRoundCount: 3,
+      winRate: 1 / 3,
+    });
+    expect(viewModel.result?.seats.find((seat) => seat.seat === 'bottom')?.stats).toEqual({
+      scoreHistory: [0, 0, -6, 0],
+      winCount: 1,
+      completedRoundCount: 3,
+      winRate: 1 / 3,
+    });
+  });
+
   it('marks the next-round action as confirmed for the local player after they click it', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

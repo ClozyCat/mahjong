@@ -1052,6 +1052,28 @@ function compareTileCodes(left: string | null | undefined, right: string | null 
   return leftText.localeCompare(rightText);
 }
 
+function createResultSeatStats(state: SessionState, seatIndex: number, score: number): ResultSeatView['stats'] {
+  const matchStatistics = state.matchStatistics;
+  const seatStats = matchStatistics?.seatStatsBySeat[String(seatIndex)];
+
+  if (seatStats && seatStats.scoreHistory.length > 0) {
+    const completedRoundCount = matchStatistics?.completedRoundCount ?? 0;
+    return {
+      scoreHistory: [...seatStats.scoreHistory],
+      winCount: seatStats.winCount,
+      completedRoundCount,
+      winRate: completedRoundCount > 0 ? seatStats.winCount / completedRoundCount : 0,
+    };
+  }
+
+  return {
+    scoreHistory: [score],
+    winCount: 0,
+    completedRoundCount: 0,
+    winRate: 0,
+  };
+}
+
 function createResultSeats(state: SessionState, scoreDeltaBySeat: Record<string, number> | null): ResultSeatView[] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
@@ -1069,6 +1091,7 @@ function createResultSeats(state: SessionState, scoreDeltaBySeat: Record<string,
         name: seat.nickname,
         score: scores[seatKey] ?? 0,
         delta: scoreDeltaBySeat ? (scoreDeltaBySeat[seatKey] ?? 0) : null,
+        stats: createResultSeatStats(state, seat.seat_index, scores[seatKey] ?? 0),
       };
     })
     .sort((left, right) => right.score - left.score);

@@ -273,6 +273,17 @@ export interface ToastMessage {
   createdAt: string;
 }
 
+export interface MatchSeatStatisticsState {
+  scoreHistory: number[];
+  winCount: number;
+}
+
+export interface MatchStatisticsState {
+  completedRoundCount: number;
+  lastAppliedRoundId: string | null;
+  seatStatsBySeat: Record<string, MatchSeatStatisticsState>;
+}
+
 export interface SessionState {
   apiBaseUrl?: string;
   wsBaseUrl?: string;
@@ -289,6 +300,7 @@ export interface SessionState {
   selectedTileIds: string[];
   selectionMode: 'single' | 'kong' | 'chow' | 'pung' | null;
   toasts: ToastMessage[];
+  matchStatistics?: MatchStatisticsState | null;
 }
 
 export type BattleActionId =
@@ -377,6 +389,12 @@ export interface ResultSeatView {
   name: string;
   score: number;
   delta: number | null;
+  stats?: {
+    scoreHistory: number[];
+    winCount: number;
+    completedRoundCount: number;
+    winRate: number;
+  } | null;
 }
 
 export interface ResultView {

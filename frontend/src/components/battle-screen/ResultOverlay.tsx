@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { BattleActionId, ResultView, ResultSeatView, Seat } from '../../types/match';
@@ -25,11 +25,24 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     placement: 'left' | 'right';
     arrowTop: number;
   } | null>(null);
+  const [activeSeatStats, setActiveSeatStats] = useState<{
+    rowKey: string;
+    seat: ResultSeatView;
+  } | null>(null);
+  const [seatStatsPopoverPosition, setSeatStatsPopoverPosition] = useState<{
+    top: number;
+    left: number;
+    placement: 'left' | 'right';
+    arrowTop: number;
+  } | null>(null);
   const scorePanelRef = useRef<HTMLDivElement | null>(null);
   const fanGuidePopoverRef = useRef<HTMLDivElement | null>(null);
+  const seatStatsPopoverRef = useRef<HTMLDivElement | null>(null);
   const activeFanGuideAnchorRef = useRef<HTMLDivElement | null>(null);
+  const activeSeatStatsAnchorRef = useRef<HTMLDivElement | null>(null);
   const openFanGuideTimerRef = useRef<number | null>(null);
   const closeFanGuideTimerRef = useRef<number | null>(null);
+  const closeSeatStatsTimerRef = useRef<number | null>(null);
   const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const fanMeta = [
@@ -50,6 +63,10 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     activeFanGuideAnchorRef.current = null;
     setActiveFanGuide(null);
     setFanGuidePopoverPosition(null);
+    clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+    activeSeatStatsAnchorRef.current = null;
+    setActiveSeatStats(null);
+    setSeatStatsPopoverPosition(null);
   }, [result]);
 
   useEffect(() => {
@@ -136,7 +153,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
       }
 
       const popoverRect = fanGuidePopoverRef.current?.getBoundingClientRect();
-      const nextPosition = getFanGuidePopoverPosition(anchorRect, popoverRect?.width ?? 336, popoverRect?.height ?? 208);
+      const nextPosition = getOverlayPopoverPosition(anchorRect, popoverRect?.width ?? 336, popoverRect?.height ?? 208);
 
       setFanGuidePopoverPosition((currentPosition) => {
         if (
@@ -168,9 +185,59 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     };
   }, [activeFanGuide]);
 
+  useLayoutEffect(() => {
+    if (!activeSeatStats || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let animationFrameId = 0;
+
+    const updatePosition = () => {
+      const anchorRect = activeSeatStatsAnchorRef.current?.getBoundingClientRect();
+      if (!anchorRect) {
+        activeSeatStatsAnchorRef.current = null;
+        setActiveSeatStats(null);
+        setSeatStatsPopoverPosition(null);
+        return;
+      }
+
+      const popoverRect = seatStatsPopoverRef.current?.getBoundingClientRect();
+      const nextPosition = getOverlayPopoverPosition(anchorRect, popoverRect?.width ?? 364, popoverRect?.height ?? 276);
+
+      setSeatStatsPopoverPosition((currentPosition) => {
+        if (
+          currentPosition &&
+          Math.abs(currentPosition.top - nextPosition.top) < 1 &&
+          Math.abs(currentPosition.left - nextPosition.left) < 1 &&
+          currentPosition.placement === nextPosition.placement
+        ) {
+          return currentPosition;
+        }
+
+        return nextPosition;
+      });
+    };
+
+    const requestPositionUpdate = () => {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(updatePosition);
+    };
+
+    requestPositionUpdate();
+    window.addEventListener('resize', requestPositionUpdate);
+    window.addEventListener('scroll', requestPositionUpdate, true);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', requestPositionUpdate);
+      window.removeEventListener('scroll', requestPositionUpdate, true);
+    };
+  }, [activeSeatStats]);
+
   useEffect(() => {
     return () => {
       clearFanGuideTimers(openFanGuideTimerRef, closeFanGuideTimerRef);
+      clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
     };
   }, []);
 
@@ -215,7 +282,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
 
     openFanGuideTimerRef.current = window.setTimeout(() => {
       activeFanGuideAnchorRef.current = rowElement;
-      setFanGuidePopoverPosition(getFanGuidePopoverPosition(rowElement.getBoundingClientRect(), 336, 208));
+      setFanGuidePopoverPosition(getOverlayPopoverPosition(rowElement.getBoundingClientRect(), 336, 208));
       setActiveFanGuide({ rowKey, entry: nextEntry });
       openFanGuideTimerRef.current = null;
     }, FAN_GUIDE_POPOVER_DELAY_MS);
@@ -239,6 +306,28 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     }, FAN_GUIDE_POPOVER_CLOSE_DELAY_MS);
   }
 
+  function openSeatStatsPopover(rowKey: string, seat: ResultSeatView, rowElement: HTMLDivElement) {
+    clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+    activeSeatStatsAnchorRef.current = rowElement;
+
+    if (activeSeatStats?.rowKey === rowKey) {
+      return;
+    }
+
+    setSeatStatsPopoverPosition(getOverlayPopoverPosition(rowElement.getBoundingClientRect(), 364, 276));
+    setActiveSeatStats({ rowKey, seat });
+  }
+
+  function scheduleSeatStatsClose() {
+    clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+    closeSeatStatsTimerRef.current = window.setTimeout(() => {
+      activeSeatStatsAnchorRef.current = null;
+      setActiveSeatStats(null);
+      setSeatStatsPopoverPosition(null);
+      closeSeatStatsTimerRef.current = null;
+    }, SEAT_STATS_POPOVER_CLOSE_DELAY_MS);
+  }
+
   const fanGuidePopover =
     activeFanGuide && typeof document !== 'undefined'
       ? createPortal(
@@ -249,7 +338,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
             className={`result-overlay__fan-tooltip result-overlay__fan-tooltip--${
               fanGuidePopoverPosition?.placement ?? 'right'
             }`.trim()}
-            style={getFanGuidePopoverStyle(fanGuidePopoverPosition)}
+            style={getOverlayPopoverStyle(fanGuidePopoverPosition, '--result-overlay-fan-tooltip-arrow-top')}
             onMouseEnter={() => {
               if (closeFanGuideTimerRef.current !== null) {
                 window.clearTimeout(closeFanGuideTimerRef.current);
@@ -261,6 +350,30 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
             }}
           >
             <FanGuideCard entry={activeFanGuide.entry} className="result-overlay__fan-tooltip-card" />
+          </div>,
+          document.body,
+        )
+      : null;
+
+  const seatStatsPopover =
+    activeSeatStats?.seat.stats && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={seatStatsPopoverRef}
+            role="tooltip"
+            aria-label={`${activeSeatStats.seat.name} 战绩统计`}
+            className={`result-overlay__seat-tooltip result-overlay__seat-tooltip--${
+              seatStatsPopoverPosition?.placement ?? 'right'
+            }`.trim()}
+            style={getOverlayPopoverStyle(seatStatsPopoverPosition, '--result-overlay-seat-tooltip-arrow-top')}
+            onMouseEnter={() => {
+              clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+            }}
+            onMouseLeave={() => {
+              scheduleSeatStatsClose();
+            }}
+          >
+            <SeatStatsTooltip seat={activeSeatStats.seat} />
           </div>,
           document.body,
         )
@@ -364,9 +477,39 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
                       : seat.delta !== null && seat.delta < 0
                         ? 'result-overlay__seat-row result-overlay__seat-row--negative'
                         : 'result-overlay__seat-row result-overlay__seat-row--neutral';
+                  const rowKey = `${seat.seat}-${seat.name}`;
+                  const hasSeatStats = Boolean(seat.stats && seat.stats.scoreHistory.length > 0);
 
                   return (
-                    <div key={`${seat.seat}-${seat.name}`} className={rowClassName}>
+                    <div
+                      key={rowKey}
+                      className={`${rowClassName}${hasSeatStats ? ' result-overlay__seat-row--interactive' : ''}`}
+                      tabIndex={hasSeatStats ? 0 : undefined}
+                      onMouseEnter={(event) => {
+                        if (!hasSeatStats) {
+                          return;
+                        }
+                        openSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
+                      }}
+                      onMouseLeave={() => {
+                        if (!hasSeatStats) {
+                          return;
+                        }
+                        scheduleSeatStatsClose();
+                      }}
+                      onFocus={(event) => {
+                        if (!hasSeatStats) {
+                          return;
+                        }
+                        openSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
+                      }}
+                      onBlur={() => {
+                        if (!hasSeatStats) {
+                          return;
+                        }
+                        scheduleSeatStatsClose();
+                      }}
+                    >
                       <div className="result-overlay__seat-main">
                         <span className="result-overlay__seat-name">{seat.name}</span>
                         <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
@@ -398,6 +541,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
         </div>
       </section>
       {fanGuidePopover}
+      {seatStatsPopover}
     </>
   );
 }
@@ -409,10 +553,11 @@ const WIN_TYPE_LABELS: Record<string, string> = {
 };
 const FAN_GUIDE_POPOVER_DELAY_MS = 500;
 const FAN_GUIDE_POPOVER_CLOSE_DELAY_MS = 120;
-const FAN_GUIDE_POPOVER_OFFSET_PX = 14;
-const FAN_GUIDE_POPOVER_MARGIN_PX = 12;
-const FAN_GUIDE_POPOVER_ARROW_SIZE_PX = 11;
-const FAN_GUIDE_POPOVER_ARROW_MARGIN_PX = 16;
+const SEAT_STATS_POPOVER_CLOSE_DELAY_MS = 90;
+const OVERLAY_POPOVER_OFFSET_PX = 14;
+const OVERLAY_POPOVER_MARGIN_PX = 12;
+const OVERLAY_POPOVER_ARROW_SIZE_PX = 11;
+const OVERLAY_POPOVER_ARROW_MARGIN_PX = 16;
 
 const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
   bottom: '本家',
@@ -451,45 +596,191 @@ function clearFanGuideTimers(
   }
 }
 
-function getFanGuidePopoverPosition(anchorRect: DOMRect, popoverWidth: number, popoverHeight: number) {
-  const canPlaceRight = anchorRect.right + FAN_GUIDE_POPOVER_OFFSET_PX + popoverWidth <= window.innerWidth - FAN_GUIDE_POPOVER_MARGIN_PX;
+function clearOverlayPopoverCloseTimer(timerRef: React.MutableRefObject<number | null>) {
+  if (timerRef.current !== null) {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }
+}
+
+function SeatStatsTooltip({ seat }: { seat: ResultSeatView }) {
+  if (!seat.stats) {
+    return null;
+  }
+
+  const completedRoundCount = seat.stats.completedRoundCount;
+  const winRateLabel = formatWinRate(seat.stats.winRate);
+  const latestScore = seat.stats.scoreHistory.at(-1) ?? seat.score;
+
+  return (
+    <article className="result-overlay__seat-tooltip-card">
+      <div className="result-overlay__seat-tooltip-head">
+        <span className="result-overlay__seat-tooltip-eyebrow">本牌局统计</span>
+        <strong>{seat.name}</strong>
+        <span className="result-overlay__seat-tooltip-seat">{getRelativeSeatLabel(seat.seat)}</span>
+      </div>
+      <div className="result-overlay__seat-tooltip-metrics">
+        <div className="result-overlay__seat-tooltip-metric">
+          <span>胜率</span>
+          <strong>{winRateLabel}</strong>
+        </div>
+        <div className="result-overlay__seat-tooltip-metric">
+          <span>战绩</span>
+          <strong>
+            {seat.stats.winCount}/{completedRoundCount || 0}
+          </strong>
+        </div>
+        <div className="result-overlay__seat-tooltip-metric">
+          <span>当前总分</span>
+          <strong>{latestScore.toLocaleString()}</strong>
+        </div>
+      </div>
+      <ScoreTrendChart history={seat.stats.scoreHistory} seatName={seat.name} />
+      <p className="result-overlay__seat-tooltip-note">
+        折线展示已完成牌局的累计总分走势。
+      </p>
+    </article>
+  );
+}
+
+function ScoreTrendChart({ history, seatName }: { history: number[]; seatName: string }) {
+  const chartId = useId();
+  const width = 308;
+  const height = 146;
+  const paddingLeft = 16;
+  const paddingRight = 16;
+  const paddingTop = 16;
+  const paddingBottom = 22;
+  const minScore = Math.min(...history);
+  const maxScore = Math.max(...history);
+  const range = maxScore - minScore;
+  const normalizedRange = range === 0 ? Math.max(1, Math.abs(maxScore) || 1) : range;
+  const innerWidth = width - paddingLeft - paddingRight;
+  const innerHeight = height - paddingTop - paddingBottom;
+  const points = history.map((score, index) => {
+    const x = paddingLeft + (history.length === 1 ? innerWidth / 2 : (innerWidth * index) / (history.length - 1));
+    const y =
+      paddingTop +
+      innerHeight -
+      ((score - minScore + (range === 0 ? normalizedRange / 2 : 0)) / (range === 0 ? normalizedRange * 2 : normalizedRange)) *
+        innerHeight;
+
+    return {
+      x,
+      y,
+    };
+  });
+  const polylinePoints = points.map((point) => `${point.x},${point.y}`).join(' ');
+  const areaPath = points.length > 0
+    ? [
+        `M ${points[0].x} ${height - paddingBottom}`,
+        ...points.map((point) => `L ${point.x} ${point.y}`),
+        `L ${points.at(-1)?.x ?? paddingLeft} ${height - paddingBottom}`,
+        'Z',
+      ].join(' ')
+    : '';
+
+  return (
+    <div className="result-overlay__seat-tooltip-chart">
+      <div className="result-overlay__seat-tooltip-chart-meta" aria-hidden="true">
+        <span>{maxScore.toLocaleString()}</span>
+        <span>{minScore.toLocaleString()}</span>
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="result-overlay__seat-tooltip-svg"
+        role="img"
+        aria-label={`${seatName} 本牌局战绩折线图`}
+      >
+        <defs>
+          <linearGradient id={`${chartId}-stroke`} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="color-mix(in srgb, var(--accent) 88%, white)" />
+            <stop offset="100%" stopColor="color-mix(in srgb, var(--accent-2) 86%, white)" />
+          </linearGradient>
+          <linearGradient id={`${chartId}-fill`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="color-mix(in srgb, var(--accent) 24%, transparent)" />
+            <stop offset="100%" stopColor="color-mix(in srgb, var(--accent-2) 2%, transparent)" />
+          </linearGradient>
+        </defs>
+        <line
+          x1={paddingLeft}
+          y1={height - paddingBottom}
+          x2={width - paddingRight}
+          y2={height - paddingBottom}
+          className="result-overlay__seat-tooltip-axis"
+        />
+        {areaPath ? <path d={areaPath} fill={`url(#${chartId}-fill)`} /> : null}
+        <polyline
+          fill="none"
+          stroke={`url(#${chartId}-stroke)`}
+          strokeWidth="3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          points={polylinePoints}
+        />
+        {points.map((point, index) => (
+          <circle
+            key={`${point.x}-${point.y}-${index}`}
+            cx={point.x}
+            cy={point.y}
+            r={index === points.length - 1 ? 4.5 : 3.2}
+            className="result-overlay__seat-tooltip-point"
+          />
+        ))}
+      </svg>
+      <div className="result-overlay__seat-tooltip-axis-labels" aria-hidden="true">
+        <span>开局</span>
+        <span>{history.length > 1 ? `第 ${history.length - 1} 局` : '当前'}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatWinRate(winRate: number) {
+  return `${(Math.round(winRate * 1000) / 10).toFixed(1).replace(/\.0$/, '')}%`;
+}
+
+function getOverlayPopoverPosition(anchorRect: DOMRect, popoverWidth: number, popoverHeight: number) {
+  const canPlaceRight = anchorRect.right + OVERLAY_POPOVER_OFFSET_PX + popoverWidth <= window.innerWidth - OVERLAY_POPOVER_MARGIN_PX;
   const placement: 'left' | 'right' = canPlaceRight ? 'right' : 'left';
   const left =
     placement === 'right'
-      ? anchorRect.right + FAN_GUIDE_POPOVER_OFFSET_PX
-      : Math.max(FAN_GUIDE_POPOVER_MARGIN_PX, anchorRect.left - popoverWidth - FAN_GUIDE_POPOVER_OFFSET_PX);
+      ? anchorRect.right + OVERLAY_POPOVER_OFFSET_PX
+      : Math.max(OVERLAY_POPOVER_MARGIN_PX, anchorRect.left - popoverWidth - OVERLAY_POPOVER_OFFSET_PX);
   const top = Math.min(
-    Math.max(FAN_GUIDE_POPOVER_MARGIN_PX, anchorRect.top + anchorRect.height / 2 - popoverHeight / 2),
-    window.innerHeight - popoverHeight - FAN_GUIDE_POPOVER_MARGIN_PX,
+    Math.max(OVERLAY_POPOVER_MARGIN_PX, anchorRect.top + anchorRect.height / 2 - popoverHeight / 2),
+    window.innerHeight - popoverHeight - OVERLAY_POPOVER_MARGIN_PX,
   );
   const anchorCenterY = anchorRect.top + anchorRect.height / 2;
   const arrowTop = Math.min(
     Math.max(
-      FAN_GUIDE_POPOVER_ARROW_MARGIN_PX,
-      anchorCenterY - top - FAN_GUIDE_POPOVER_ARROW_SIZE_PX / 2,
+      OVERLAY_POPOVER_ARROW_MARGIN_PX,
+      anchorCenterY - top - OVERLAY_POPOVER_ARROW_SIZE_PX / 2,
     ),
-    popoverHeight - FAN_GUIDE_POPOVER_ARROW_SIZE_PX - FAN_GUIDE_POPOVER_ARROW_MARGIN_PX,
+    popoverHeight - OVERLAY_POPOVER_ARROW_SIZE_PX - OVERLAY_POPOVER_ARROW_MARGIN_PX,
   );
 
   return { top, left, placement, arrowTop };
 }
 
-function getFanGuidePopoverStyle(
-  fanGuidePopoverPosition: {
+function getOverlayPopoverStyle(
+  position: {
     top: number;
     left: number;
     placement: 'left' | 'right';
     arrowTop: number;
   } | null,
+  arrowCssVariable:
+    | '--result-overlay-fan-tooltip-arrow-top'
+    | '--result-overlay-seat-tooltip-arrow-top',
 ): CSSProperties {
-  if (!fanGuidePopoverPosition) {
+  if (!position) {
     return { visibility: 'hidden' };
   }
 
   return {
-    top: `${fanGuidePopoverPosition.top}px`,
-    left: `${fanGuidePopoverPosition.left}px`,
-    ['--result-overlay-fan-tooltip-arrow-top' as '--result-overlay-fan-tooltip-arrow-top']:
-      `${fanGuidePopoverPosition.arrowTop}px`,
+    top: `${position.top}px`,
+    left: `${position.left}px`,
+    [arrowCssVariable]: `${position.arrowTop}px`,
   } as CSSProperties;
 }

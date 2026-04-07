@@ -1,5 +1,8 @@
 import type {
   ActionRejectedMessage,
+  MatchStatisticsState,
+  MatchResultMessage,
+  RoomSnapshotMessage,
   SeatSnapshot,
   ServerMessage,
   SessionState,
@@ -88,6 +91,126 @@ function getNextLatestRoundEvent(
   return incoming;
 }
 
+function createMatchStatisticsFromScores(scores: Record<string, number> | null | undefined): MatchStatisticsState | null {
+  if (!scores || Object.keys(scores).length === 0) {
+    return null;
+  }
+
+  return {
+    completedRoundCount: 0,
+    lastAppliedRoundId: null,
+    seatStatsBySeat: Object.fromEntries(
+      Object.entries(scores).map(([seatKey, score]) => [
+        seatKey,
+        {
+          scoreHistory: [score],
+          winCount: 0,
+        },
+      ]),
+    ),
+  };
+}
+
+function haveSeatKeysChanged(
+  current: MatchStatisticsState | null | undefined,
+  scores: Record<string, number> | null | undefined,
+) {
+  if (!current || !scores) {
+    return false;
+  }
+
+  const currentSeatKeys = Object.keys(current.seatStatsBySeat).sort();
+  const nextSeatKeys = Object.keys(scores).sort();
+
+  return currentSeatKeys.join('|') !== nextSeatKeys.join('|');
+}
+
+function shouldResetMatchStatistics(
+  current: MatchStatisticsState | null | undefined,
+  snapshot: RoomSnapshotMessage,
+) {
+  const matchState = snapshot.payload.match_state;
+  const scores = matchState?.cumulative_scores;
+
+  if (!current || !matchState || !scores) {
+    return false;
+  }
+
+  if (haveSeatKeysChanged(current, scores)) {
+    return true;
+  }
+
+  const allScoresAreZero = Object.values(scores).every((score) => score === 0);
+  return current.completedRoundCount > 0 && matchState.last_completed_round_id === null && allScoresAreZero;
+}
+
+function reconcileMatchStatistics(
+  current: MatchStatisticsState | null | undefined,
+  snapshot: RoomSnapshotMessage,
+) {
+  const matchScores = snapshot.payload.match_state?.cumulative_scores;
+
+  if (!matchScores) {
+    return current ?? null;
+  }
+
+  if (!current || shouldResetMatchStatistics(current, snapshot)) {
+    return createMatchStatisticsFromScores(matchScores);
+  }
+
+  return current;
+}
+
+function applyMatchResultToStatistics(
+  current: MatchStatisticsState | null | undefined,
+  roomSnapshot: RoomSnapshotMessage | null,
+  message: MatchResultMessage,
+) {
+  const roundId = message.payload.round_id;
+  if (current?.lastAppliedRoundId === roundId) {
+    return current;
+  }
+
+  const baseScores = roomSnapshot?.payload.match_state?.cumulative_scores ?? {};
+  const initialized =
+    current ??
+    createMatchStatisticsFromScores(baseScores) ?? {
+      completedRoundCount: 0,
+      lastAppliedRoundId: null,
+      seatStatsBySeat: {},
+    };
+  const seatKeys = new Set([
+    ...Object.keys(initialized.seatStatsBySeat),
+    ...Object.keys(baseScores),
+    ...Object.keys(message.payload.score_delta.total_delta_by_seat),
+  ]);
+  const seatStatsBySeat = Object.fromEntries(
+    Array.from(seatKeys).map((seatKey) => {
+      const existingSeatStats = initialized.seatStatsBySeat[seatKey];
+      const baseScore = baseScores[seatKey] ?? existingSeatStats?.scoreHistory.at(-1) ?? 0;
+      const nextScore = baseScore + (message.payload.score_delta.total_delta_by_seat[seatKey] ?? 0);
+      const scoreHistory = existingSeatStats?.scoreHistory.length
+        ? [...existingSeatStats.scoreHistory, nextScore]
+        : [baseScore, nextScore];
+      const previousWinCount = existingSeatStats?.winCount ?? 0;
+
+      return [
+        seatKey,
+        {
+          scoreHistory,
+          winCount: previousWinCount + (message.payload.winner_seat === Number(seatKey) ? 1 : 0),
+        },
+      ];
+    }),
+  );
+
+  return {
+    completedRoundCount: initialized.completedRoundCount + 1,
+    lastAppliedRoundId: roundId,
+    seatStatsBySeat,
+  };
+}
+
 export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
@@ -105,6 +228,7 @@ export function createInitialSessionState(): SessionState {
     selectedTileIds: [],
     selectionMode: null,
     toasts: [],
+    matchStatistics: null,
   };
 }
 
@@ -141,6 +265,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         latestActionPrompt: null,
         selectedTileIds: nextSelectedTileIds,
         selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
+        matchStatistics: reconcileMatchStatistics(state.matchStatistics, message),
       };
     }
     case 'action_prompt':
@@ -152,6 +277,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
       return {
         ...state,
         latestMatchResult: message,
+        matchStatistics: applyMatchResultToStatistics(state.matchStatistics, state.roomSnapshot, message),
       };
     case 'round_event': {
       const text = getRoundEventCopy(
