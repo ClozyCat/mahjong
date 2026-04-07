@@ -2121,60 +2121,23 @@ button:active:not(:disabled) {
 }
 
 .action-dock__ready-hand-trigger {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.36rem;
-  height: 1.82rem;
+  display: inline-grid;
+  place-items: center;
+  width: 1.52rem;
+  height: 1.52rem;
   padding: 0;
-  border: 1px solid rgba(110, 85, 34, 0.32);
-  border-radius: 0.38rem;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(234, 225, 202, 0.98) 68%, rgba(210, 194, 160, 0.98));
-  color: #7f1d1d;
+  border: 0;
+  border-radius: 999px;
+  background: #d4d0c8;
+  color: #111;
+  font-size: 0.78rem;
+  font-weight: 700;
   line-height: 1;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
 }
 
 .action-dock__ready-hand-trigger--open {
   transform: translateY(-1px);
-}
-
-.action-dock__ready-hand-trigger-face {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: calc(100% - 0.22rem);
-  height: calc(100% - 0.22rem);
-  border-radius: 0.28rem;
-  border: 1px solid rgba(138, 111, 51, 0.18);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.22)),
-    linear-gradient(180deg, rgba(252, 249, 241, 0.98), rgba(231, 220, 192, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    inset 0 -1px 0 rgba(130, 100, 36, 0.12);
-}
-
-.action-dock__ready-hand-trigger-face::before {
-  content: '';
-  position: absolute;
-  top: 0.14rem;
-  left: 50%;
-  width: 0.48rem;
-  height: 0.08rem;
-  border-radius: 999px;
-  background: rgba(148, 120, 55, 0.28);
-  transform: translateX(-50%);
-}
-
-.action-dock__ready-hand-trigger-mark {
-  transform: translateY(0.06rem);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 .action-dock__ready-hand-popover {
@@ -6943,41 +6906,22 @@ input {
 .action-dock__ready-hand-trigger {
   border: 1px solid color-mix(in srgb, var(--accent-2) 24%, var(--theme-border));
   background:
-    linear-gradient(180deg, color-mix(in srgb, white 76%, var(--theme-paper) 24%), color-mix(in srgb, #e8dcc1 78%, var(--accent-2) 22%) 72%, color-mix(in srgb, #c4ad7d 80%, var(--accent-2) 20%)),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 12%, transparent), color-mix(in srgb, var(--theme-paper) 6%, transparent)),
     color-mix(in srgb, var(--panel) 96%, black);
-  color: color-mix(in srgb, #8d1f1f 78%, var(--accent-2) 22%);
+  color: color-mix(in srgb, var(--theme-paper-strong) 82%, var(--accent-2));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 58%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
     0 8px 18px color-mix(in srgb, var(--theme-shadow-soft) 82%, transparent),
-    0 0 0 1px color-mix(in srgb, #d0bb8a 26%, transparent);
-}
-
-.action-dock__ready-hand-trigger-face {
-  border-color: color-mix(in srgb, #b69a62 42%, var(--theme-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, white 74%, transparent), color-mix(in srgb, white 16%, transparent)),
-    linear-gradient(180deg, color-mix(in srgb, #faf4e6 92%, var(--theme-paper) 8%), color-mix(in srgb, #e7d8b5 90%, var(--theme-paper) 10%));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 80%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, #b9964e 18%, transparent);
-}
-
-.action-dock__ready-hand-trigger-face::before {
-  background: color-mix(in srgb, #a88b52 54%, transparent);
-}
-
-.action-dock__ready-hand-trigger-mark {
-  color: color-mix(in srgb, #9f2020 80%, var(--accent-2) 20%);
-  text-shadow: 0 1px 0 color-mix(in srgb, white 54%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 8%, transparent);
 }
 
 .action-dock__ready-hand-trigger--open,
 .action-dock__ready-hand-trigger:hover:not(:disabled) {
-  border-color: color-mix(in srgb, #c8aa68 54%, var(--theme-border-strong));
+  border-color: color-mix(in srgb, var(--accent-2) 36%, var(--theme-border-strong));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 68%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
     0 10px 20px color-mix(in srgb, var(--theme-shadow-soft) 88%, transparent),
-    0 0 0 1px color-mix(in srgb, #d2ba82 32%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent);
 }
 
 .action-dock__ready-hand-popover {

@@ -39,7 +39,7 @@ use tower_http::cors::{Any, CorsLayer};
 const MAX_SEATS: usize = 4;
 const DISCONNECT_GRACE_SECONDS: i64 = 120;
 const BOT_ACTION_DELAY_TEST_MS: u64 = 0;
-const BOT_ACTION_DELAY_NORMAL_MS: u64 = 800;
+const BOT_ACTION_DELAY_NORMAL_MS: u64 = 600;
 const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 #[derive(Clone)]

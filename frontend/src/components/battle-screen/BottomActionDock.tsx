@@ -141,9 +141,7 @@ export function BottomActionDock({
         aria-expanded={isReadyHandPopoverOpen}
         onClick={() => setIsReadyHandPopoverPinned((currentValue) => !currentValue)}
       >
-        <span className="action-dock__ready-hand-trigger-face" aria-hidden="true">
-          <span className="action-dock__ready-hand-trigger-mark">听</span>
-        </span>
+        i
       </button>
       {isReadyHandPopoverOpen ? (
         <section className="action-dock__ready-hand-popover" aria-label={getReadyHandPopoverLabel(readyHandInsight)}>
