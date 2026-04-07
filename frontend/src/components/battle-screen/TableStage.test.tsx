@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TableStage } from './TableStage';
@@ -940,6 +941,41 @@ describe('TableStage', () => {
 
     expect(onQuickChat).toHaveBeenCalledWith(2, '🀄');
     expect(screen.queryByRole('menuitem', { name: '向Player Top发送笑表情' })).toBeNull();
+  });
+
+  it('opens a text composer from the plus shortcut and sends up to 50 characters on enter', async () => {
+    const user = userEvent.setup();
+    const onQuickChat = vi.fn();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'top', absoluteSeat: 2, name: 'Player Top', melds: [] },
+          { seat: 'bottom', absoluteSeat: 0, name: 'Player Bottom', melds: [], isLocal: true },
+        ]}
+        onQuickChat={onQuickChat}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '打开Player Top的快捷表情' }));
+    await user.click(screen.getByRole('menuitem', { name: '向Player Top发送自定义文字' }));
+
+    const input = screen.getByRole('textbox', { name: '向Player Top发送快捷文字' });
+    const longText = '测'.repeat(51);
+    await user.type(input, `${longText}{Enter}`);
+
+    expect(input).toHaveValue('测'.repeat(50));
+    expect(onQuickChat).toHaveBeenCalledWith(2, '测'.repeat(50));
+    expect(screen.queryByRole('textbox', { name: '向Player Top发送快捷文字' })).toBeNull();
   });
 
   it('mirrors the left quick-chat layout from the right seat', () => {

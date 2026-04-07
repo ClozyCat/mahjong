@@ -1162,6 +1162,27 @@ describe('App', () => {
     });
   });
 
+  it('sends a quick-chat websocket message after submitting custom text from the player info bar', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: '打开Player B的快捷表情' }));
+    await user.click(screen.getByRole('menuitem', { name: '向Player B发送自定义文字' }));
+    await user.type(screen.getByRole('textbox', { name: '向Player B发送快捷文字' }), '等你放炮{Enter}');
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'quick_chat',
+      payload: { target_seat: 1, emoji: '等你放炮' },
+    });
+  });
+
   it('renders a barrage line when a quick-chat broadcast arrives from the server', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

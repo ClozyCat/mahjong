@@ -16,7 +16,7 @@ export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecti
 
 export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
-export type QuickChatEmoji = '😄' | '😭' | '🀄' | '☠️' | '😡' | '🤮';
+export type QuickChatEmoji = string;
 
 export interface HealthResponse {
   status: string;

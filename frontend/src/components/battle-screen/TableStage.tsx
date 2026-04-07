@@ -609,13 +609,13 @@ const ACTION_CALLOUT_LINGER_MS = SETTLEMENT_CALLOUT_LINGER_MS;
 const QUICK_CHAT_BARRAGE_LINGER_MS = 9000;
 const QUICK_CHAT_ARC_SWEEP_DEGREES = 150;
 const QUICK_CHAT_ITEM_RADIUS_REM = 5.1;
+const QUICK_CHAT_TEXT_LIMIT = 50;
 const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '😄', label: '笑' },
   { emoji: '😭', label: '哭' },
   { emoji: '🀄', label: '红中' },
   { emoji: '☠️', label: '骷髅' },
   { emoji: '😡', label: '生气' },
-  { emoji: '🤮', label: '呕吐' },
 ];
 const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   top: 135,
@@ -726,6 +726,27 @@ function SettlementCenterCallout({ label }: { label: string }) {
 function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
   const menuId = `table-stage-quick-chat-${seat}`;
   const isLocalTarget = Boolean(player.isLocal);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!isComposerOpen) {
+      return;
+    }
+
+    inputRef.current?.focus();
+  }, [isComposerOpen]);
+
+  function submitDraft() {
+    const nextMessage = normalizeQuickChatText(draft);
+    if (!nextMessage) {
+      return;
+    }
+
+    onSelect(nextMessage);
+  }
 
   return (
     <div
@@ -753,6 +774,65 @@ function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
           <span aria-hidden="true">{item.emoji}</span>
         </button>
       ))}
+      <button
+        type="button"
+        className={`table-stage__quick-chat-item ${
+          isComposerOpen ? 'table-stage__quick-chat-item--active' : ''
+        }`.trim()}
+        role="menuitem"
+        aria-label={`${isLocalTarget ? '发送' : `向${player.name}发送`}自定义文字`}
+        title={`${isLocalTarget ? '发送' : `向${player.name}发送`}自定义文字`}
+        style={getQuickChatItemStyle(seat, QUICK_CHAT_ITEMS.length)}
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsComposerOpen((current) => !current);
+          setDraft((current) => (isComposerOpen ? '' : current));
+        }}
+      >
+        <span aria-hidden="true">+</span>
+      </button>
+      {isComposerOpen ? (
+        <form
+          className="table-stage__quick-chat-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            submitDraft();
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            className="table-stage__quick-chat-input"
+            aria-label={`${isLocalTarget ? '输入' : `向${player.name}发送`}快捷文字`}
+            placeholder="输入文字"
+            value={draft}
+            onChange={(event) => setDraft(clampQuickChatText(event.target.value))}
+            onCompositionStart={() => setIsComposing(true)}
+            onCompositionEnd={() => setIsComposing(false)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                setIsComposerOpen(false);
+                setDraft('');
+                return;
+              }
+
+              if (event.key !== 'Enter' || event.nativeEvent.isComposing || isComposing) {
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+              submitDraft();
+            }}
+          />
+          <span className="table-stage__quick-chat-counter" aria-hidden="true">
+            {Array.from(draft).length}/{QUICK_CHAT_TEXT_LIMIT}
+          </span>
+        </form>
+      ) : null}
     </div>
   );
 }
@@ -825,10 +905,11 @@ function getQuickChatAngles(seat: Seat): number[] {
   }
 
   const center = getQuickChatArcCenterDegrees(seat);
-  const step = QUICK_CHAT_ITEMS.length > 1 ? QUICK_CHAT_ARC_SWEEP_DEGREES / (QUICK_CHAT_ITEMS.length - 1) : 0;
+  const itemCount = QUICK_CHAT_ITEMS.length + 1;
+  const step = itemCount > 1 ? QUICK_CHAT_ARC_SWEEP_DEGREES / (itemCount - 1) : 0;
   const start = center - QUICK_CHAT_ARC_SWEEP_DEGREES / 2;
 
-  return QUICK_CHAT_ITEMS.map((_, index) => start + step * index);
+  return Array.from({ length: itemCount }, (_, index) => start + step * index);
 }
 
 function getQuickChatArcCenterDegrees(seat: Seat) {
@@ -845,6 +926,14 @@ function mirrorAngleHorizontally(angle: number) {
 
 function getRandomBarrageTopPercent() {
   return 18 + Math.round(Math.random() * 60);
+}
+
+function clampQuickChatText(value: string) {
+  return Array.from(value).slice(0, QUICK_CHAT_TEXT_LIMIT).join('');
+}
+
+function normalizeQuickChatText(value: string) {
+  return clampQuickChatText(value).trim();
 }
 
 function getSettlementCalloutStyle(): CSSProperties {
