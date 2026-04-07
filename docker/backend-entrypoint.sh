@@ -6,4 +6,4 @@ export MAHJONG_DATABASE_URL
 
 cd /app
 
-exec /usr/local/bin/backend-rust
+exec /usr/local/bin/backend

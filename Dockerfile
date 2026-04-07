@@ -11,9 +11,9 @@ RUN npm run build
 
 FROM rust:1.94-bookworm AS rust-backend-builder
 
-WORKDIR /app/backend-rust
+WORKDIR /app/backend
 
-COPY backend-rust/ ./
+COPY backend/ ./
 RUN cargo build --release
 
 
@@ -21,7 +21,7 @@ FROM debian:bookworm-slim AS backend-runtime
 
 WORKDIR /app
 
-COPY --from=rust-backend-builder /app/backend-rust/target/release/backend-rust /usr/local/bin/backend-rust
+COPY --from=rust-backend-builder /app/backend/target/release/backend /usr/local/bin/backend
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
 RUN apt-get update \
