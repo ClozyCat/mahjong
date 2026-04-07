@@ -554,6 +554,16 @@ impl Database {
             .map_err(Into::into)
     }
 
+    fn list_table_codes(&self) -> Result<Vec<String>> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT table_code FROM tables ORDER BY created_at ASC")?;
+        let codes = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(codes)
+    }
+
     fn save_table(&self, table_code: &str, created_at: &str, room_json: &str) -> Result<()> {
         Self::save_table_with_conn(&self.conn, table_code, created_at, room_json)
     }
@@ -705,6 +715,10 @@ impl DbWorker {
             .await
     }
 
+    async fn list_table_codes(&self) -> Result<Vec<String>> {
+        self.call(|db| db.list_table_codes()).await
+    }
+
     async fn save_table(&self, table_code: &str, created_at: &str, room_json: &str) -> Result<()> {
         let table_code = table_code.to_string();
         let created_at = created_at.to_string();
@@ -837,6 +851,7 @@ async fn main() -> Result<()> {
             rooms: RwLock::new(HashMap::new()),
         }),
     };
+    restore_persisted_rooms(&app_state).await;
 
     let app = Router::new()
         .route("/api/health", get(healthcheck))
@@ -1953,7 +1968,7 @@ async fn handle_leave_table(
     }))];
 
     if phase == "waiting" {
-        if room_seats(&runtime.room).is_empty() {
+        if room_seats(&runtime.room).is_empty() || room_has_only_bots(&runtime.room) {
             room_handle.mark_closed();
             close_runtime(&mut runtime);
             drop(runtime);
@@ -2010,7 +2025,7 @@ async fn handle_leave_table(
             }
         }
     } else {
-        if should_terminate_unattended(&runtime) {
+        if room_has_only_bots(&runtime.room) || should_terminate_unattended(&runtime) {
             room_handle.mark_closed();
             close_runtime(&mut runtime);
             drop(runtime);
@@ -2389,6 +2404,14 @@ async fn schedule_room_tasks(state: AppContext, table_code: String) {
     if room_handle.is_closed() {
         return;
     }
+    if room_seats(&runtime.room).is_empty() || room_has_only_bots(&runtime.room) {
+        room_handle.mark_closed();
+        close_runtime(&mut runtime);
+        drop(runtime);
+        unregister_room_handle(&state, &table_code, &room_handle).await;
+        state.inner.db.delete_table(&table_code).await.ok();
+        return;
+    }
     abort_join_handle(&mut runtime.timeout_task);
     abort_join_handle(&mut runtime.continue_task);
     abort_join_handle(&mut runtime.disconnect_task);
@@ -2515,6 +2538,26 @@ async fn ensure_room_loaded(state: &AppContext, table_code: &str) -> Result<Opti
     }
     rooms.insert(table_code.to_string(), handle.clone());
     Ok(Some(handle))
+}
+
+async fn restore_persisted_rooms(state: &AppContext) {
+    let table_codes = match state.inner.db.list_table_codes().await {
+        Ok(table_codes) => table_codes,
+        Err(error) => {
+            eprintln!("failed to list persisted rooms during startup restore: {error:#}");
+            return;
+        }
+    };
+
+    for table_code in table_codes {
+        match ensure_room_loaded(state, &table_code).await {
+            Ok(Some(_)) => schedule_room_tasks(state.clone(), table_code).await,
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("failed to restore persisted room during startup: {error:#}");
+            }
+        }
+    }
 }
 
 async fn close_room_handle(room_handle: &RoomHandle) {
@@ -3015,6 +3058,14 @@ fn next_disconnect_deadline(room: &Value) -> Option<(usize, DateTime<Utc>)> {
         .min_by_key(|(_, deadline)| *deadline)
 }
 
+fn room_has_only_bots(room: &Value) -> bool {
+    let seats = room_seats(room);
+    !seats.is_empty()
+        && seats
+            .into_iter()
+            .all(|seat| seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
+}
+
 fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
     if !runtime.connections.is_empty() {
         return false;
@@ -3101,6 +3152,22 @@ mod tests {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(schema_sql)?;
         Ok(Database { conn })
+    }
+
+    fn test_app_context(db: DbWorker) -> AppContext {
+        AppContext {
+            settings: Settings {
+                bind_addr: "127.0.0.1:0".to_string(),
+                database_path: ":memory:".to_string(),
+                default_test_mode: false,
+                cors_origins: vec![],
+            },
+            next_connection_id: Arc::new(AtomicU64::new(1)),
+            inner: Arc::new(AppState {
+                db,
+                rooms: RwLock::new(HashMap::new()),
+            }),
+        }
     }
 
     fn test_connection_handle(capacity: usize) -> (ConnectionHandle, mpsc::Receiver<String>) {
@@ -3432,6 +3499,57 @@ mod tests {
     }
 
     #[test]
+    fn room_has_only_bots_requires_non_empty_bot_only_room() {
+        let mut empty_room = initial_room_payload("ROOM42", "normal", true);
+        assert!(!room_has_only_bots(&empty_room));
+
+        empty_room["seats"] = json!([{
+            "seat_index": 0,
+            "nickname": "Bot 1",
+            "reconnect_token": Value::Null,
+            "player_session_id": -1,
+            "connected": true,
+            "ready": true,
+            "is_bot": true,
+            "seat_type": "bot",
+            "bot_persona": Value::Null,
+            "bot_aggression": Value::Null,
+            "disconnect_deadline_at": Value::Null
+        }]);
+        assert!(room_has_only_bots(&empty_room));
+
+        empty_room["seats"] = json!([
+            {
+                "seat_index": 0,
+                "nickname": "Bot 1",
+                "reconnect_token": Value::Null,
+                "player_session_id": -1,
+                "connected": true,
+                "ready": true,
+                "is_bot": true,
+                "seat_type": "bot",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            },
+            {
+                "seat_index": 1,
+                "nickname": "Alice",
+                "reconnect_token": "token-1",
+                "player_session_id": 1,
+                "connected": false,
+                "ready": true,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }
+        ]);
+        assert!(!room_has_only_bots(&empty_room));
+    }
+
+    #[test]
     fn save_table_and_store_reconnect_token_writes_both_records() -> Result<()> {
         let db = in_memory_database("")?;
         db.initialize()?;
@@ -3569,6 +3687,90 @@ mod tests {
         assert_eq!(reconnect.table_code, "ROOM42");
         assert_eq!(reconnect.seat_index, 0);
         assert_eq!(reconnect.player_session_id, 42);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn restore_persisted_rooms_rehydrates_disconnect_tasks() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let state = test_app_context(worker.clone());
+
+        let room_json = serde_json::to_string(&json!({
+            "table_code": "ROOM42",
+            "mode": "normal",
+            "phase": "waiting",
+            "seats": [{
+                "seat_index": 0,
+                "nickname": "Alice",
+                "reconnect_token": "token-1",
+                "player_session_id": 42,
+                "connected": true,
+                "ready": true,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }]
+        }))?;
+        worker
+            .save_table("ROOM42", "2026-04-07T00:00:00Z", &room_json)
+            .await?;
+
+        restore_persisted_rooms(&state).await;
+
+        let room_handle = room_handle(&state, "ROOM42")
+            .await
+            .expect("restored room should be loaded");
+        let runtime = room_handle.runtime.lock().await;
+        assert_eq!(runtime.room["seats"][0]["connected"], Value::Bool(false));
+        assert!(
+            runtime.room["seats"][0]["disconnect_deadline_at"]
+                .as_str()
+                .and_then(parse_datetime)
+                .is_some()
+        );
+        assert!(runtime.disconnect_task.is_some());
+        drop(runtime);
+        close_room_handle(&room_handle).await;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn restore_persisted_rooms_deletes_all_bot_rooms() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let state = test_app_context(worker.clone());
+
+        let room_json = serde_json::to_string(&json!({
+            "table_code": "ROOMBOT",
+            "mode": "normal",
+            "phase": "waiting",
+            "seats": [{
+                "seat_index": 0,
+                "nickname": "Bot 1",
+                "reconnect_token": Value::Null,
+                "player_session_id": -1,
+                "connected": true,
+                "ready": true,
+                "is_bot": true,
+                "seat_type": "bot",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }]
+        }))?;
+        worker
+            .save_table("ROOMBOT", "2026-04-07T00:00:00Z", &room_json)
+            .await?;
+
+        restore_persisted_rooms(&state).await;
+
+        assert!(room_handle(&state, "ROOMBOT").await.is_none());
+        assert!(worker.get_table("ROOMBOT").await?.is_none());
         Ok(())
     }
 }
