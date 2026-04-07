@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -283,6 +283,73 @@ describe('BattleScreen', () => {
     expect(visibleFanList.getByText('七对')).toBeInTheDocument();
     expect(screen.queryByText('当前为临时结算结果')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
+  });
+
+  it('shows the matching fan guide tooltip after hovering a settlement fan row for 0.5s', () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [
+            { fanKey: 'ping_hu', fanValue: 8 },
+            { fanKey: 'self_draw', fanValue: 1 },
+          ],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    const pingHuRow = screen.getByText('平胡').closest('.result-overlay__row');
+    expect(pingHuRow).not.toBeNull();
+
+    fireEvent.mouseEnter(pingHuRow!);
+
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.getByRole('tooltip', { name: '平和番型说明' })).toBeInTheDocument();
+    expect(screen.getByText('和牌由四副顺子和一对将组成，不含任何刻子。')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(pingHuRow!);
+
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
   it('shows 屁和 in the settlement overlay when the backend provides the low-fan label', () => {

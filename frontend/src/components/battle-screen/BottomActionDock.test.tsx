@@ -360,7 +360,7 @@ describe('BottomActionDock', () => {
       '--action-dock-layout-hand-count': '13',
       '--action-dock-layout-gap-count': '12',
     });
-    expect(screen.getByText('牌桌进入对局后，手牌和操作按钮会显示在这里。')).toBeInTheDocument();
+    expect(screen.getByText('牌桌进入对局后，手牌会显示在这里。')).toBeInTheDocument();
   });
 
   it('renders claim candidate panes above the action buttons and forwards candidate clicks', () => {

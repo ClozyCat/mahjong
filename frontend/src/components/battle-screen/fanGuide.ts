@@ -593,6 +593,21 @@ export const FAN_GUIDE_ENTRIES: FanGuideEntry[] = FAN_GUIDE_DEFINITIONS.map((ent
   label: getFanLabel(entry.fanKey),
 }));
 
+const FAN_GUIDE_ENTRY_MAP = new Map(FAN_GUIDE_ENTRIES.map((entry) => [entry.fanKey, entry]));
+
+const FAN_GUIDE_KEY_ALIASES: Record<string, string> = {
+  self_draw: 'self_drawn',
+  zi_mo: 'self_drawn',
+  ping_hu: 'all_chows',
+  men_qian_qing: 'concealed_hand',
+  all_terminals_or_honours: 'all_terminals_and_honours',
+  all_honors: 'all_honours',
+};
+
 export function getFanLabel(fanKey: string) {
   return FAN_LABELS[fanKey] ?? fanKey;
+}
+
+export function getFanGuideEntry(fanKey: string) {
+  return FAN_GUIDE_ENTRY_MAP.get(FAN_GUIDE_KEY_ALIASES[fanKey] ?? fanKey) ?? null;
 }

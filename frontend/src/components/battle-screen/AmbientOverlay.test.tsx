@@ -24,8 +24,7 @@ describe('AmbientOverlay', () => {
     const user = userEvent.setup();
     const onAddBot = vi.fn();
     const onRemoveBot = vi.fn();
-
-    render(
+    const { container } = render(
       <AmbientOverlay
         mode="disconnected_or_waiting"
         promptText={null}
@@ -45,9 +44,14 @@ describe('AmbientOverlay', () => {
       />,
     );
 
+    const waitingActions = container.querySelector('.ambient-overlay__waiting-actions');
+    const leaveButton = screen.getByRole('button', { name: '离开牌桌' });
+    const botControls = screen.getByRole('group', { name: '蒙版 BOT 数量控制' });
+
     expect(screen.getByText('等待牌手')).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: '蒙版 BOT 数量控制' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '离开牌桌' })).toBeInTheDocument();
+    expect(waitingActions).not.toBeNull();
+    expect(waitingActions?.firstElementChild).toBe(leaveButton);
+    expect(waitingActions?.lastElementChild).toBe(botControls);
 
     await user.click(screen.getByRole('button', { name: '蒙版增加 BOT' }));
     await user.click(screen.getByRole('button', { name: '蒙版减少 BOT' }));

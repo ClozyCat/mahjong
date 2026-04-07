@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { BattleActionId, ResultView, ResultSeatView, Seat } from '../../types/match';
-import { getFanLabel } from './fanGuide';
+import { getFanGuideEntry, getFanLabel } from './fanGuide';
+import { FanGuideCard } from './FanGuideCard';
 
 interface ResultOverlayProps {
   result: ResultView;
@@ -12,7 +14,20 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [fanPanelHeight, setFanPanelHeight] = useState<number | null>(null);
   const [continueActionRemainingSeconds, setContinueActionRemainingSeconds] = useState<number | null>(null);
+  const [activeFanGuide, setActiveFanGuide] = useState<{
+    rowKey: string;
+    entry: NonNullable<ReturnType<typeof getFanGuideEntry>>;
+  } | null>(null);
+  const [fanGuidePopoverPosition, setFanGuidePopoverPosition] = useState<{
+    top: number;
+    left: number;
+    placement: 'left' | 'right';
+  } | null>(null);
   const scorePanelRef = useRef<HTMLDivElement | null>(null);
+  const fanGuidePopoverRef = useRef<HTMLDivElement | null>(null);
+  const activeFanGuideAnchorRef = useRef<HTMLDivElement | null>(null);
+  const openFanGuideTimerRef = useRef<number | null>(null);
+  const closeFanGuideTimerRef = useRef<number | null>(null);
   const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
   const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const fanMeta = [
@@ -26,6 +41,13 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
 
   useEffect(() => {
     setIsCollapsed(false);
+  }, [result]);
+
+  useEffect(() => {
+    clearFanGuideTimers(openFanGuideTimerRef, closeFanGuideTimerRef);
+    activeFanGuideAnchorRef.current = null;
+    setActiveFanGuide(null);
+    setFanGuidePopoverPosition(null);
   }, [result]);
 
   useEffect(() => {
@@ -96,6 +118,60 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     };
   }, [hasFanPanel, result.seats, fanMeta]);
 
+  useLayoutEffect(() => {
+    if (!activeFanGuide || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let animationFrameId = 0;
+
+    const updatePosition = () => {
+      const anchorRect = activeFanGuideAnchorRef.current?.getBoundingClientRect();
+      if (!anchorRect) {
+        setActiveFanGuide(null);
+        setFanGuidePopoverPosition(null);
+        return;
+      }
+
+      const popoverRect = fanGuidePopoverRef.current?.getBoundingClientRect();
+      const nextPosition = getFanGuidePopoverPosition(anchorRect, popoverRect?.width ?? 336, popoverRect?.height ?? 208);
+
+      setFanGuidePopoverPosition((currentPosition) => {
+        if (
+          currentPosition &&
+          Math.abs(currentPosition.top - nextPosition.top) < 1 &&
+          Math.abs(currentPosition.left - nextPosition.left) < 1 &&
+          currentPosition.placement === nextPosition.placement
+        ) {
+          return currentPosition;
+        }
+
+        return nextPosition;
+      });
+    };
+
+    const requestPositionUpdate = () => {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(updatePosition);
+    };
+
+    requestPositionUpdate();
+    window.addEventListener('resize', requestPositionUpdate);
+    window.addEventListener('scroll', requestPositionUpdate, true);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', requestPositionUpdate);
+      window.removeEventListener('scroll', requestPositionUpdate, true);
+    };
+  }, [activeFanGuide]);
+
+  useEffect(() => {
+    return () => {
+      clearFanGuideTimers(openFanGuideTimerRef, closeFanGuideTimerRef);
+    };
+  }, []);
+
   if (isCollapsed) {
     return (
       <section className="result-overlay result-overlay--collapsed" aria-label="Match settlement result">
@@ -111,110 +187,223 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     );
   }
 
-  return (
-    <section className="result-overlay" aria-label="Match settlement result">
-      <div className="result-overlay__card">
-        <div className="result-overlay__header">
-          <div className="result-overlay__heading">
-            <span className="result-overlay__eyebrow">结算面板</span>
-            <h2>{result.title}</h2>
-          </div>
-          <button
-            type="button"
-            className="result-overlay__collapse"
-            onClick={() => setIsCollapsed(true)}
-            aria-expanded="true"
-          >
-            收起结算面板
-          </button>
-        </div>
-        <p className="result-overlay__summary">{result.summary}</p>
+  function scheduleFanGuideOpen(
+    rowKey: string,
+    fanKey: string,
+    rowElement: HTMLDivElement,
+  ) {
+    const nextEntry = getFanGuideEntry(fanKey);
+    if (!nextEntry) {
+      return;
+    }
 
-        <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
-          {hasFanPanel ? (
-            <div
-              className="result-overlay__fan-panel"
-              style={fanPanelHeight ? { height: `${fanPanelHeight}px` } : undefined}
-            >
-              <div className="result-overlay__section-head">
-                <span className="result-overlay__section-label">番型明细</span>
-                {result.fanTotal !== null ? <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong> : null}
-              </div>
-              {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
+    if (closeFanGuideTimerRef.current !== null) {
+      window.clearTimeout(closeFanGuideTimerRef.current);
+      closeFanGuideTimerRef.current = null;
+    }
 
-              {result.fanBreakdown.length > 0 ? (
-                <div className="result-overlay__fan-list-viewport">
-                  <div className="result-overlay__fan-list" aria-label="番型明细列表">
-                    {result.fanBreakdown.map((item, index) => (
-                      <div key={`${item.fanKey}-${index}`} className="result-overlay__row">
-                        <span>{getFanLabel(item.fanKey)}</span>
-                        <strong>{item.fanValue}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+    if (activeFanGuide?.rowKey === rowKey) {
+      activeFanGuideAnchorRef.current = rowElement;
+      return;
+    }
 
+    if (openFanGuideTimerRef.current !== null) {
+      window.clearTimeout(openFanGuideTimerRef.current);
+    }
+
+    openFanGuideTimerRef.current = window.setTimeout(() => {
+      activeFanGuideAnchorRef.current = rowElement;
+      setFanGuidePopoverPosition(getFanGuidePopoverPosition(rowElement.getBoundingClientRect(), 336, 208));
+      setActiveFanGuide({ rowKey, entry: nextEntry });
+      openFanGuideTimerRef.current = null;
+    }, FAN_GUIDE_POPOVER_DELAY_MS);
+  }
+
+  function scheduleFanGuideClose() {
+    if (openFanGuideTimerRef.current !== null) {
+      window.clearTimeout(openFanGuideTimerRef.current);
+      openFanGuideTimerRef.current = null;
+    }
+
+    if (closeFanGuideTimerRef.current !== null) {
+      window.clearTimeout(closeFanGuideTimerRef.current);
+    }
+
+    closeFanGuideTimerRef.current = window.setTimeout(() => {
+      activeFanGuideAnchorRef.current = null;
+      setActiveFanGuide(null);
+      setFanGuidePopoverPosition(null);
+      closeFanGuideTimerRef.current = null;
+    }, FAN_GUIDE_POPOVER_CLOSE_DELAY_MS);
+  }
+
+  const fanGuidePopover =
+    activeFanGuide && typeof document !== 'undefined'
+      ? createPortal(
           <div
-            ref={scorePanelRef}
-            className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}
+            ref={fanGuidePopoverRef}
+            role="tooltip"
+            aria-label={`${activeFanGuide.entry.label}番型说明`}
+            className={`result-overlay__fan-tooltip result-overlay__fan-tooltip--${
+              fanGuidePopoverPosition?.placement ?? 'right'
+            }`.trim()}
+            style={
+              fanGuidePopoverPosition
+                ? {
+                    top: `${fanGuidePopoverPosition.top}px`,
+                    left: `${fanGuidePopoverPosition.left}px`,
+                  }
+                : { visibility: 'hidden' }
+            }
+            onMouseEnter={() => {
+              if (closeFanGuideTimerRef.current !== null) {
+                window.clearTimeout(closeFanGuideTimerRef.current);
+                closeFanGuideTimerRef.current = null;
+              }
+            }}
+            onMouseLeave={() => {
+              scheduleFanGuideClose();
+            }}
           >
-            <div className="result-overlay__section-head">
-              <span className="result-overlay__section-label">玩家分数</span>
-              <span className="result-overlay__score-hint">本局结算后总分</span>
+            <FanGuideCard entry={activeFanGuide.entry} className="result-overlay__fan-tooltip-card" />
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <>
+      <section className="result-overlay" aria-label="Match settlement result">
+        <div className="result-overlay__card">
+          <div className="result-overlay__header">
+            <div className="result-overlay__heading">
+              <span className="result-overlay__eyebrow">结算面板</span>
+              <h2>{result.title}</h2>
             </div>
-            <div className="result-overlay__seat-list">
-              {result.seats.map((seat) => {
-                const deltaClassName =
-                  seat.delta === null
-                    ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
-                    : seat.delta > 0
-                      ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
-                      : seat.delta < 0
-                        ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
-                        : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
-
-                const rowClassName =
-                  seat.delta !== null && seat.delta > 0
-                    ? 'result-overlay__seat-row result-overlay__seat-row--positive'
-                    : seat.delta !== null && seat.delta < 0
-                      ? 'result-overlay__seat-row result-overlay__seat-row--negative'
-                      : 'result-overlay__seat-row result-overlay__seat-row--neutral';
-
-                return (
-                  <div key={`${seat.seat}-${seat.name}`} className={rowClassName}>
-                    <div className="result-overlay__seat-main">
-                      <span className="result-overlay__seat-name">{seat.name}</span>
-                      <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
-                    </div>
-                    <strong className="result-overlay__seat-score">{seat.score}</strong>
-                    <span className={deltaClassName}>
-                      {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {result.continueAction ? (
-          <div className="result-overlay__actions">
             <button
               type="button"
-              disabled={!result.continueAction.enabled}
-              onClick={() => onAction(result.continueAction!.id)}
+              className="result-overlay__collapse"
+              onClick={() => setIsCollapsed(true)}
+              aria-expanded="true"
             >
-              {continueActionRemainingSeconds !== null
-                ? `${continueActionRemainingSeconds}s后自动推进`
-                : result.continueAction.label}
+              收起结算面板
             </button>
           </div>
-        ) : null}
-      </div>
-    </section>
+          <p className="result-overlay__summary">{result.summary}</p>
+
+          <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
+            {hasFanPanel ? (
+              <div
+                className="result-overlay__fan-panel"
+                style={fanPanelHeight ? { height: `${fanPanelHeight}px` } : undefined}
+              >
+                <div className="result-overlay__section-head">
+                  <span className="result-overlay__section-label">番型明细</span>
+                  {result.fanTotal !== null ? (
+                    <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong>
+                  ) : null}
+                </div>
+                {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
+
+                {result.fanBreakdown.length > 0 ? (
+                  <div className="result-overlay__fan-list-viewport">
+                    <div className="result-overlay__fan-list" aria-label="番型明细列表">
+                      {result.fanBreakdown.map((item, index) => {
+                        const rowKey = `${item.fanKey}-${index}`;
+                        const hasGuideEntry = Boolean(getFanGuideEntry(item.fanKey));
+
+                        return (
+                          <div
+                            key={rowKey}
+                            className={`result-overlay__row ${
+                              hasGuideEntry ? 'result-overlay__row--interactive' : ''
+                            }`.trim()}
+                            onMouseEnter={(event) =>
+                              scheduleFanGuideOpen(rowKey, item.fanKey, event.currentTarget as HTMLDivElement)
+                            }
+                            onMouseLeave={() => {
+                              if (activeFanGuide?.rowKey === rowKey) {
+                                scheduleFanGuideClose();
+                                return;
+                              }
+
+                              if (openFanGuideTimerRef.current !== null) {
+                                window.clearTimeout(openFanGuideTimerRef.current);
+                                openFanGuideTimerRef.current = null;
+                              }
+                            }}
+                          >
+                            <span>{getFanLabel(item.fanKey)}</span>
+                            <strong>{item.fanValue}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div
+              ref={scorePanelRef}
+              className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}
+            >
+              <div className="result-overlay__section-head">
+                <span className="result-overlay__section-label">玩家分数</span>
+                <span className="result-overlay__score-hint">本局结算后总分</span>
+              </div>
+              <div className="result-overlay__seat-list">
+                {result.seats.map((seat) => {
+                  const deltaClassName =
+                    seat.delta === null
+                      ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
+                      : seat.delta > 0
+                        ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
+                        : seat.delta < 0
+                          ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
+                          : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
+
+                  const rowClassName =
+                    seat.delta !== null && seat.delta > 0
+                      ? 'result-overlay__seat-row result-overlay__seat-row--positive'
+                      : seat.delta !== null && seat.delta < 0
+                        ? 'result-overlay__seat-row result-overlay__seat-row--negative'
+                        : 'result-overlay__seat-row result-overlay__seat-row--neutral';
+
+                  return (
+                    <div key={`${seat.seat}-${seat.name}`} className={rowClassName}>
+                      <div className="result-overlay__seat-main">
+                        <span className="result-overlay__seat-name">{seat.name}</span>
+                        <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+                      </div>
+                      <strong className="result-overlay__seat-score">{seat.score}</strong>
+                      <span className={deltaClassName}>
+                        {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {result.continueAction ? (
+            <div className="result-overlay__actions">
+              <button
+                type="button"
+                disabled={!result.continueAction.enabled}
+                onClick={() => onAction(result.continueAction!.id)}
+              >
+                {continueActionRemainingSeconds !== null
+                  ? `${continueActionRemainingSeconds}s后自动推进`
+                  : result.continueAction.label}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </section>
+      {fanGuidePopover}
+    </>
   );
 }
 
@@ -223,6 +412,10 @@ const WIN_TYPE_LABELS: Record<string, string> = {
   self_draw: '自摸',
   draw: '流局',
 };
+const FAN_GUIDE_POPOVER_DELAY_MS = 500;
+const FAN_GUIDE_POPOVER_CLOSE_DELAY_MS = 120;
+const FAN_GUIDE_POPOVER_OFFSET_PX = 14;
+const FAN_GUIDE_POPOVER_MARGIN_PX = 12;
 
 const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
   bottom: '本家',
@@ -244,4 +437,34 @@ function formatResultActor(seat: Seat, seats: ResultSeatView[]) {
   }
 
   return `${seatView.name}（${relativeSeatLabel}）`;
+}
+
+function clearFanGuideTimers(
+  openFanGuideTimerRef: React.MutableRefObject<number | null>,
+  closeFanGuideTimerRef: React.MutableRefObject<number | null>,
+) {
+  if (openFanGuideTimerRef.current !== null) {
+    window.clearTimeout(openFanGuideTimerRef.current);
+    openFanGuideTimerRef.current = null;
+  }
+
+  if (closeFanGuideTimerRef.current !== null) {
+    window.clearTimeout(closeFanGuideTimerRef.current);
+    closeFanGuideTimerRef.current = null;
+  }
+}
+
+function getFanGuidePopoverPosition(anchorRect: DOMRect, popoverWidth: number, popoverHeight: number) {
+  const canPlaceRight = anchorRect.right + FAN_GUIDE_POPOVER_OFFSET_PX + popoverWidth <= window.innerWidth - FAN_GUIDE_POPOVER_MARGIN_PX;
+  const placement: 'left' | 'right' = canPlaceRight ? 'right' : 'left';
+  const left =
+    placement === 'right'
+      ? anchorRect.right + FAN_GUIDE_POPOVER_OFFSET_PX
+      : Math.max(FAN_GUIDE_POPOVER_MARGIN_PX, anchorRect.left - popoverWidth - FAN_GUIDE_POPOVER_OFFSET_PX);
+  const top = Math.min(
+    Math.max(FAN_GUIDE_POPOVER_MARGIN_PX, anchorRect.top + anchorRect.height / 2 - popoverHeight / 2),
+    window.innerHeight - popoverHeight - FAN_GUIDE_POPOVER_MARGIN_PX,
+  );
+
+  return { top, left, placement };
 }

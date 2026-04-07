@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { FAN_GUIDE_ENTRIES } from './fanGuide';
+import { FanGuideCard } from './FanGuideCard';
 
 interface FanGuideDialogProps {
   isOpen: boolean;
@@ -47,16 +48,7 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
 
         <div className="fan-guide__grid" aria-live="polite">
           {visibleEntries.map((entry) => (
-            <article key={entry.fanKey} className="fan-guide__card">
-              <div className="fan-guide__card-head">
-                <div className="fan-guide__card-title">
-                  <strong>{entry.label}</strong>
-                </div>
-                <span className="fan-guide__fan-pill">{entry.fanValue} 番</span>
-              </div>
-              <p className="fan-guide__card-copy">{entry.intro}</p>
-              <p className="fan-guide__example">{entry.example}</p>
-            </article>
+            <FanGuideCard key={entry.fanKey} entry={entry} />
           ))}
         </div>
 
