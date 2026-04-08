@@ -193,6 +193,7 @@ mod tests {
                 },
                 effect_state: Default::default(),
                 restricted_discard_tile_key: Some("w3".to_string()),
+                skill_trackers: serde_json::Value::Null,
             }),
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),

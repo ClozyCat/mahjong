@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use crate::core::event::GameEvent;
 use crate::core::ids::{Seat, SkillId, TileId};
 use crate::core::state::RoomState;
+use crate::room_scoring::RoomScoringCache;
+use crate::rules::standard::win::can_declare_hu_with_cache;
 
 use self::builtin::{PeekOpponentTileSkill, ScoreBoostSkill};
 
@@ -198,14 +200,18 @@ pub fn apply_skill_events_to_legacy_room(
     events: &[GameEvent],
 ) -> Result<Vec<Value>, String> {
     decrement_skill_charge(room, actor, skill_id)?;
-    apply_events_to_legacy_room(room, events)
+    let result = apply_events_to_legacy_room(room, events);
+    sync_round_skill_trackers(room);
+    result
 }
 
 pub fn apply_passive_skill_events_to_legacy_room(
     room: &mut Value,
     events: &[GameEvent],
 ) -> Result<Vec<Value>, String> {
-    apply_events_to_legacy_room(room, events)
+    let result = apply_events_to_legacy_room(room, events);
+    sync_round_skill_trackers(room);
+    result
 }
 
 pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
@@ -268,6 +274,207 @@ pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
         if let Some(pending) = pending {
             pending.remove(&winner.to_string());
         }
+    }
+}
+
+pub fn sync_round_skill_trackers(room: &mut Value) {
+    let Some(round_state) = room.get("round_state").and_then(Value::as_object) else {
+        return;
+    };
+    let players = round_state
+        .get("players")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let seat_count = players.len();
+    let existing = round_state
+        .get("skill_trackers")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut trackers = serde_json::Map::new();
+    trackers.insert(
+        "claimed_discard_counts_by_seat".to_string(),
+        existing
+            .get("claimed_discard_counts_by_seat")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    );
+    trackers.insert(
+        "pending_honor_rebuy_tile_by_seat".to_string(),
+        existing
+            .get("pending_honor_rebuy_tile_by_seat")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    );
+    trackers.insert(
+        "honor_redraw_success_by_seat".to_string(),
+        existing
+            .get("honor_redraw_success_by_seat")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    );
+
+    let mut discard_counts = serde_json::Map::new();
+    let mut discarded_five_by_seat = serde_json::Map::new();
+    let mut discard_suits_by_seat = serde_json::Map::new();
+    let mut players_with_kong = Vec::new();
+
+    for (seat, player) in players.iter().enumerate() {
+        let discards = player
+            .get("discards")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut suit_set = std::collections::BTreeSet::new();
+        let mut discarded_five = false;
+        for discard in discards {
+            let Some(tile_key) = discard.get("tile_key").and_then(Value::as_str) else {
+                continue;
+            };
+            let current = discard_counts
+                .get(tile_key)
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            discard_counts.insert(tile_key.to_string(), json!(current + 1));
+            if is_suit_five(tile_key) {
+                discarded_five = true;
+            }
+            if let Some(prefix) = suit_prefix(tile_key) {
+                suit_set.insert(prefix.to_string());
+            }
+        }
+        discarded_five_by_seat.insert(seat.to_string(), json!(discarded_five));
+        discard_suits_by_seat.insert(
+            seat.to_string(),
+            Value::Array(suit_set.into_iter().map(Value::String).collect()),
+        );
+        let has_kong = player
+            .get("melds")
+            .and_then(Value::as_array)
+            .is_some_and(|melds| {
+                melds
+                    .iter()
+                    .any(|meld| meld.as_array().is_some_and(|tiles| tiles.len() == 4))
+            });
+        if has_kong {
+            players_with_kong.push(json!(seat));
+        }
+    }
+
+    trackers.insert("discard_counts".to_string(), Value::Object(discard_counts));
+    trackers.insert(
+        "discarded_five_by_seat".to_string(),
+        Value::Object(discarded_five_by_seat),
+    );
+    trackers.insert(
+        "discard_suits_by_seat".to_string(),
+        Value::Object(discard_suits_by_seat),
+    );
+    trackers.insert(
+        "players_with_kong".to_string(),
+        Value::Array(players_with_kong),
+    );
+    trackers.insert(
+        "live_tiles_remaining".to_string(),
+        json!(
+            round_state
+                .get("wall")
+                .and_then(|wall| {
+                    let head = wall.get("head_index")?.as_i64()?;
+                    let tail = wall.get("tail_index")?.as_i64()?;
+                    Some((tail - head + 1).max(0))
+                })
+                .unwrap_or(0)
+        ),
+    );
+    trackers.insert(
+        "tiles_drawn_since_opening".to_string(),
+        json!(
+            round_state
+                .get("wall")
+                .and_then(|wall| wall.get("head_index"))
+                .and_then(Value::as_i64)
+                .map(|head| head.saturating_sub(53))
+                .unwrap_or(0)
+        ),
+    );
+    trackers.insert(
+        "multi_hu_candidates".to_string(),
+        Value::Array(pending_multi_hu_candidates(round_state)),
+    );
+
+    let (tenpai_seats, tenpai_waits_by_seat) = compute_tenpai_trackers(room, seat_count);
+    trackers.insert("tenpai_seats".to_string(), Value::Array(tenpai_seats));
+    trackers.insert(
+        "tenpai_waits_by_seat".to_string(),
+        Value::Object(tenpai_waits_by_seat),
+    );
+
+    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
+        round_state.insert("skill_trackers".to_string(), Value::Object(trackers));
+    }
+}
+
+pub fn note_tracker_discard(room: &mut Value, seat: Seat, tile_key: &str) {
+    let Some(trackers) = ensure_round_skill_trackers(room) else {
+        return;
+    };
+    if let Some(map) = trackers
+        .entry("pending_honor_rebuy_tile_by_seat".to_string())
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+    {
+        if is_honor_tile_key(tile_key) {
+            map.insert(seat.to_string(), json!(tile_key));
+        } else {
+            map.remove(&seat.to_string());
+        }
+    }
+}
+
+pub fn note_tracker_draw(room: &mut Value, seat: Seat, tile_key: &str) {
+    let pending_tile = room
+        .get("round_state")
+        .and_then(|round| round.get("skill_trackers"))
+        .and_then(|trackers| trackers.get("pending_honor_rebuy_tile_by_seat"))
+        .and_then(|map| map.get(seat.to_string()))
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+    let Some(trackers) = ensure_round_skill_trackers(room) else {
+        return;
+    };
+    if let Some(map) = trackers
+        .entry("pending_honor_rebuy_tile_by_seat".to_string())
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+    {
+        map.remove(&seat.to_string());
+    }
+    if pending_tile.as_deref() == Some(tile_key) {
+        if let Some(map) = trackers
+            .entry("honor_redraw_success_by_seat".to_string())
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+        {
+            map.insert(seat.to_string(), Value::Bool(true));
+        }
+    }
+}
+
+pub fn note_tracker_claimed_discard(room: &mut Value, discarder_seat: Seat) {
+    let Some(trackers) = ensure_round_skill_trackers(room) else {
+        return;
+    };
+    if let Some(map) = trackers
+        .entry("claimed_discard_counts_by_seat".to_string())
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+    {
+        let key = discarder_seat.to_string();
+        let current = map.get(&key).and_then(Value::as_i64).unwrap_or(0);
+        map.insert(key, json!(current + 1));
     }
 }
 
@@ -393,6 +600,97 @@ fn ensure_effect_state(room: &mut Value) -> Result<&mut serde_json::Map<String, 
         .entry("rule_overrides".to_string())
         .or_insert_with(|| Value::Array(Vec::new()));
     Ok(effect_state)
+}
+
+fn ensure_round_skill_trackers(room: &mut Value) -> Option<&mut serde_json::Map<String, Value>> {
+    room.get_mut("round_state")
+        .and_then(Value::as_object_mut)
+        .map(|round| {
+            round
+                .entry("skill_trackers".to_string())
+                .or_insert_with(|| json!({}))
+        })
+        .and_then(Value::as_object_mut)
+}
+
+fn pending_multi_hu_candidates(round_state: &serde_json::Map<String, Value>) -> Vec<Value> {
+    let Some(pending) = round_state.get("pending_action").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    match pending.get("type").and_then(Value::as_str) {
+        Some("claim_window") => pending
+            .get("claim_window")
+            .and_then(Value::as_array)
+            .map(|window| {
+                window
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, claims)| {
+                        claims.as_array().is_some_and(|items| {
+                            items.iter().any(|item| item.as_str() == Some("hu"))
+                        })
+                    })
+                    .map(|(seat, _)| json!(seat))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        Some("rob_kong_window") => pending
+            .get("offered_hu_seats")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn compute_tenpai_trackers(
+    room: &Value,
+    seat_count: usize,
+) -> (Vec<Value>, serde_json::Map<String, Value>) {
+    let cache = RoomScoringCache::from_room(room);
+    let mut tenpai_seats = Vec::new();
+    let mut waits_by_seat = serde_json::Map::new();
+    for seat in 0..seat_count {
+        let waits = standard_wait_tile_keys(room, &cache, seat);
+        if !waits.is_empty() {
+            tenpai_seats.push(json!(seat));
+        }
+        waits_by_seat.insert(
+            seat.to_string(),
+            Value::Array(waits.into_iter().map(Value::String).collect()),
+        );
+    }
+    (tenpai_seats, waits_by_seat)
+}
+
+fn standard_wait_tile_keys(room: &Value, cache: &RoomScoringCache, seat: Seat) -> Vec<String> {
+    const TILE_KEYS: [&str; 34] = [
+        "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
+        "t7", "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south",
+        "west", "north", "red", "green", "white",
+    ];
+    TILE_KEYS
+        .iter()
+        .filter(|tile_key| can_declare_hu_with_cache(room, cache, seat, Some(tile_key), None))
+        .map(|tile_key| (*tile_key).to_string())
+        .collect()
+}
+
+fn suit_prefix(tile_key: &str) -> Option<&'static str> {
+    match tile_key.as_bytes().first().copied() {
+        Some(b'w') => Some("w"),
+        Some(b't') => Some("t"),
+        Some(b'b') => Some("b"),
+        _ => None,
+    }
+}
+
+fn is_suit_five(tile_key: &str) -> bool {
+    matches!(tile_key.as_bytes(), [b'w' | b't' | b'b', b'5'])
+}
+
+fn is_honor_tile_key(tile_key: &str) -> bool {
+    suit_prefix(tile_key).is_none()
 }
 
 fn decrement_skill_charge(room: &mut Value, actor: Seat, skill_id: &str) -> Result<(), String> {
@@ -557,6 +855,9 @@ fn apply_replace_tile_event(
         {
             timeout.insert("drawn_tile_id".to_string(), json!(replacement_tile_id));
         }
+    }
+    if let Some(tile_key) = replacement_tile.get("tile_key").and_then(Value::as_str) {
+        note_tracker_draw(room, seat, tile_key);
     }
 
     emitted_messages.push(round_event_message(
@@ -886,6 +1187,7 @@ mod tests {
                 },
                 effect_state: EffectState::default(),
                 restricted_discard_tile_key: None,
+                skill_trackers: Value::Null,
             }),
             pending_timeout: None,
             continue_action: None,

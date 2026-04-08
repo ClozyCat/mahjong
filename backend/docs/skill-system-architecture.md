@@ -787,50 +787,53 @@ ScoreResult
 - The scoring boundary now exists under `rules/scoring/*`. `rules/scoring/model.rs`, `rules/scoring/evaluator.rs`, and `rules/scoring/fan_table.rs` are in place, and `rules/standard/win.rs` plus other scoring consumers now depend on `crate::rules::scoring` instead of a root-level monolith.
 - The bot boundary now exists under `bot/*`. `bot/context.rs`, `bot/policy.rs`, and `bot/search.rs` are in place, while `rules/standard/automation.rs` remains the orchestration layer that calls the bot policy entrypoints.
 - Bot input boundaries are now meaningfully constrained. Bot decision code consumes `projection::bot_view` outputs instead of ad-hoc room-derived internal structs living in `mahjong.rs`.
-- A first-pass skills boundary now exists under `rules/skills/*`. Registry, hook/context, effect/instance helpers, and a typed activation entrypoint are present, so `PlayerAction::ActivateSkill` no longer has to be hardcoded as an unconditional unsupported branch.
-- `mahjong.rs` has already shrunk from a rules megafile into a transitional facade plus a smaller set of entrypoints and test fixtures. Large dead helper blocks and commented legacy code have been physically removed.
+- The app/runtime split is now materially in place under `app/*`. `app/persistence.rs`, `app/room_runtime.rs`, `app/scheduler.rs`, `app/server.rs`, and `app/ws.rs` now hold persistence, room lifecycle, timeout scheduling, HTTP, and WebSocket/session responsibilities; `main.rs` has been reduced to bootstrap plus tests.
+- The skills layer is no longer scaffold-only. `rules/skills/*` now contains a live registry/hook system, all 36 技能 definitions are registered, and standard flow already invokes skill hooks from projection, hu/scoring, draw-settlement, active skill activation, and decline-hu passive paths.
+- Explicit skill runtime trackers now exist on typed state. `RoundState.skill_trackers` and `MatchState.skill_trackers` are synchronized from runtime flow so skills no longer depend on ad-hoc hidden conditions scattered through rule code.
+- `mahjong.rs` has already shrunk from a rules megafile into a transitional facade plus a smaller set of compatibility entrypoints. Large dead helper blocks and commented legacy code have been physically removed.
 
 ### 16.2 Still Transitional / Not Yet Finished
 
-- The scoring split is only partially internalized. Root `scoring.rs` is now a compatibility facade, but most scoring internals still live inside `rules/scoring/evaluator.rs`; `model.rs` and `fan_table.rs` currently provide boundary structure more than deep implementation separation.
-- `main.rs` still owns a lot of runtime / websocket / persistence / scheduling behavior and has not yet been moved to `app/*`.
-- The skills layer is only scaffolded so far. `rules/skills/*` exists, and activation now goes through a registry boundary, but hooks are not yet invoked from standard draw / hu / scoring / projection flow and no builtin skills are registered.
-- `mahjong.rs` still keeps external compatibility entrypoints and some thin wrappers, so it is much smaller but not yet eliminated as a transition facade.
+- The typed state is not yet the single write-time source of truth. Core mutation still largely flows through `LegacyRoomMutation` plus `serde_json::Value`, so `RoomState` is strong on reads/projection/validation but not yet the exclusive runtime write model.
+- The engine split is still only partial. `core/engine/mod.rs`, `planner.rs`, and `reducer.rs` exist, but the cleaner `command` / `flow` / `validation` separation described earlier in this document has not been fully landed.
+- The scoring split is only partially internalized. Root `scoring.rs` is now a compatibility facade, but much of the scoring domain still lives in `rules/scoring/evaluator.rs`; `room_scoring.rs` also remains as transitional glue.
+- `mahjong.rs` still keeps compatibility entrypoints and wrapper logic, so it is much smaller but not yet fully retired as a facade.
+- Projection layering is still not fully finished. The current code has `room_snapshot`, `prompt`, `bot_view`, and `support`, but the document's dedicated `private_view.rs` style separation is not yet present.
+- The `infra/*` layer proposed earlier in this document still does not exist. Serialization/time/random helpers are still spread across the current modules instead of being centralized behind an infra boundary.
 
 ### 16.3 Current Architectural Read
 
 - The backend is no longer in the state where almost all standard-rule logic lives in `mahjong.rs`.
-- The highest remaining leverage is now `main.rs` runtime extraction plus turning the new `rules/skills/*` boundary from scaffold into an actually-invoked hook chain.
-- This is the right point to stop optimizing the facade first and instead stabilize the remaining subsystem boundaries while turning the new `rules/skills/*` scaffold into an actually-invoked extension layer.
+- The biggest remaining architecture debt is no longer "can skills be integrated?", because that milestone has already been crossed. The main debt is now "can the remaining legacy mutation/runtime compatibility layers be pulled behind the new typed boundaries?"
+- The app/runtime boundary is now good enough that further leverage mostly comes from consolidating write-time state transitions, not from additional `main.rs` cleanup.
+- This is the right point to stop treating skills as the main unknown and instead finish the typed reducer / scoring / facade cleanup so the skill-enabled architecture becomes the default architecture rather than a compatibility layer around legacy JSON mutation.
 
 ## 17. Recommended Next Steps
 
-### 17.1 First Priority: Split `main.rs` Runtime Responsibilities
+### 17.1 First Priority: Replace Legacy JSON Mutation As The Primary Write Path
 
 Recommended target:
 
-- `app/room_runtime.rs`
-- `app/scheduler.rs`
-- `app/persistence.rs`
-- `app/ws.rs`
+- move `planner.rs` outputs away from `LegacyRoomMutation`
+- make reducer operate on typed state first, with legacy JSON serialization as an outer compatibility concern
+- progressively eliminate write-side dependence on `serde_json::Value` from standard action / flow code
 
 Goal:
 
-- move websocket, room lifecycle, timeout scheduling, and persistence out of the app entrypoint
-- reduce `main.rs` back to composition/bootstrap duties
+- make `RoomState` / `RoundState` the actual source of truth at runtime
+- remove the largest remaining architectural mismatch between the new typed boundaries and the still-legacy mutation pipeline
 
-### 17.2 Second Priority: Wire `rules/skills/*` Into Standard Flow
+### 17.2 Second Priority: Deepen `core/engine/*` Separation
 
 Recommended target:
 
-- invoke skill hooks from draw / hu / scoring / projection boundaries
-- start consuming `SkillLoadout` / `EffectState` instead of leaving them passive data only
-- register the first builtin validation skill set
+- introduce the missing `command` / `validation` / `flow` style boundaries inside `core/engine/*`
+- continue shrinking the amount of planning, compatibility parsing, and mutation orchestration co-located in the current files
+- make command parsing, validation, planning, reduction, and compatibility adaptation easier to test independently
 
 Goal:
 
-- turn the current activation/registry scaffold into a real skills execution path
-- prove that information, draw, and scoring modifiers can land without reopening the old megafile design
+- stabilize the game core boundary so rules, app runtime, and compatibility layers stop leaning on one another's internal details
 
 ### 17.3 Third Priority: Deepen `rules/scoring/*` Internal Separation
 
@@ -839,27 +842,27 @@ Recommended target:
 - keep `rules/scoring/model.rs` focused on request/result/data types
 - move more rule-table-specific code behind `rules/scoring/fan_table.rs`
 - reserve `rules/scoring/evaluator.rs` for evaluation flow, caching, and orchestration
+- continue shrinking `room_scoring.rs` until it becomes either a thin cache adapter or disappears entirely
 
 Goal:
 
 - make future `ScoreModifier` / skill-driven scoring adjustments land on a stable scoring boundary
 - reduce the amount of scoring-specific domain data and fan-table definition still co-located in a single file
 
-### 17.4 Fourth Priority: Introduce Skills On Stable Boundaries
+### 17.4 Fourth Priority: Finish The Remaining Transitional Facades
 
-After scoring / bot / app runtime are split, introduce:
+Recommended target:
 
-- `rules/skills/registry.rs`
-- `rules/skills/hooks.rs`
-- `rules/skills/effects.rs`
-- `rules/skills/instances.rs`
+- continue shrinking `mahjong.rs`
+- retire compatibility-only helper layers where the new modules already own the real behavior
+- decide whether `projection/private_view.rs` and `infra/*` are worth adding as concrete modules or whether the current split should be documented as the final shape
 
-Suggested first validation skills:
+Goal:
 
-- projection / information-visibility skill
-- draw modification skill
-- settlement / fan / score modifier skill
+- convert the current "mostly migrated but still compatibility-aware" structure into the default steady-state architecture
 
 ## 18. Current Conclusion
 
-As of 2026-04-08, this refactor has passed the "preparing to refactor" stage and is now in the "standard-rule execution paths have materially left `mahjong.rs`, scoring and bot have subsystem boundaries, and skills have an initial registry/hook scaffold" stage. The most important next move is no longer more local facade cleanup, but extracting the remaining `main.rs` runtime responsibilities and then wiring the new `rules/skills/*` boundary into real rule flow so that skill-based国标麻将 can be implemented on stable extension points.
+As of 2026-04-08, this refactor has moved well past the "prepare the boundaries first" stage. Standard-rule execution has materially left `mahjong.rs`, app/runtime responsibilities are now mostly under `app/*`, bot/scoring/projection all have subsystem boundaries, and the skill system is already real enough to support the 36 技能 registry plus runtime trackers and hook-driven projection/scoring/settlement adjustments.
+
+The highest remaining leverage is now consolidation rather than invention: finish replacing legacy JSON mutation as the dominant write path, finish the internal engine/scoring cleanup, and keep shrinking the remaining compatibility facades until the typed architecture is the actual runtime architecture rather than a partially wrapped one.

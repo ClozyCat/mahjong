@@ -122,6 +122,7 @@ pub fn plan_round_start_payload(
         },
         effect_state: EffectState::default(),
         restricted_discard_tile_key: None,
+        skill_trackers: Value::Null,
     };
 
     let pending_timeout = if opening_completed {

@@ -414,15 +414,17 @@ fn adjust_score_delta(result: &mut FanResult, seat: Seat, delta: i64) {
 }
 
 fn live_tiles_remaining(ctx: &RuleContext<'_>) -> usize {
-    ctx.room_state
-        .round_state
-        .as_ref()
-        .and_then(|round| {
-            round
-                .wall
-                .tail_index
-                .checked_sub(round.wall.head_index)
-                .map(|distance| distance + 1)
+    tracker_value(ctx, "live_tiles_remaining")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .or_else(|| {
+            ctx.room_state.round_state.as_ref().and_then(|round| {
+                round
+                    .wall
+                    .tail_index
+                    .checked_sub(round.wall.head_index)
+                    .map(|distance| distance + 1)
+            })
         })
         .unwrap_or(0)
 }
@@ -464,6 +466,47 @@ fn current_round_version(ctx: &RuleContext<'_>) -> u64 {
         .round_state
         .as_ref()
         .map(|round| round.version)
+        .unwrap_or(0)
+}
+
+fn tracker_value<'a>(ctx: &'a RuleContext<'_>, key: &str) -> Option<&'a Value> {
+    ctx.room_state
+        .round_state
+        .as_ref()
+        .and_then(|round| round.skill_trackers.get(key))
+}
+
+fn tracker_bool_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> bool {
+    tracker_value(ctx, key)
+        .and_then(|value| value.get(seat.to_string()))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn tracker_i64_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> i64 {
+    tracker_value(ctx, key)
+        .and_then(|value| value.get(seat.to_string()))
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+}
+
+fn tracker_string_array_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> Vec<String> {
+    tracker_value(ctx, key)
+        .and_then(|value| value.get(seat.to_string()))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn tracker_discard_count(ctx: &RuleContext<'_>, tile_key: &str) -> i64 {
+    tracker_value(ctx, "discard_counts")
+        .and_then(|value| value.get(tile_key))
+        .and_then(Value::as_i64)
         .unwrap_or(0)
 }
 
@@ -850,15 +893,7 @@ fn apply_after_scoring(
             result,
             actor,
             match request.evaluation.incoming_tile.as_deref() {
-                Some(tile)
-                    if request
-                        .evaluation
-                        .visible_tile_keys
-                        .iter()
-                        .any(|entry| entry == tile) =>
-                {
-                    gain
-                }
+                Some(tile) if tracker_discard_count(ctx, tile) > 0 => gain,
                 Some(_) => -loss,
                 None => 0,
             },
@@ -901,14 +936,7 @@ fn apply_after_scoring(
             }
         }
         "pao_zhuan_yin_yu" if is_winner => {
-            let discarded_five = round_player(ctx, actor)
-                .map(|player| {
-                    player
-                        .discards
-                        .iter()
-                        .any(|tile| tile_is_five(&tile.tile_key))
-                })
-                .unwrap_or(false);
+            let discarded_five = tracker_bool_for_seat(ctx, "discarded_five_by_seat", actor);
             let hand_has_five = request
                 .evaluation
                 .tile_keys
@@ -1007,7 +1035,7 @@ fn apply_after_scoring(
         "zhi_sang_ma_huai" if is_winner => adjust_score_delta(
             result,
             actor,
-            if honor_discard_drawback(ctx, actor) {
+            if tracker_bool_for_seat(ctx, "honor_redraw_success_by_seat", actor) {
                 gain
             } else {
                 -loss
@@ -1080,7 +1108,7 @@ fn apply_after_scoring(
         "fan_jian_ji" if is_winner => adjust_score_delta(
             result,
             actor,
-            if discards_were_claimed(ctx, actor) {
+            if tracker_i64_for_seat(ctx, "claimed_discard_counts_by_seat", actor) > 0 {
                 gain
             } else {
                 -loss
@@ -1147,39 +1175,33 @@ fn adjust_draw_delta(settlement: &mut Value, seat: Seat, delta: i64) {
 }
 
 fn opponents_look_ready(ctx: &RuleContext<'_>) -> bool {
-    ctx.room_state
-        .round_state
-        .as_ref()
-        .map(|round| {
-            round
-                .players
-                .iter()
-                .filter(|player| player.seat != ctx.actor)
-                .any(|player| player.concealed_tiles.len() <= 5 || player.melds.len() >= 3)
+    tracker_value(ctx, "tenpai_seats")
+        .and_then(Value::as_array)
+        .is_some_and(|seats| {
+            seats.iter().any(|seat| {
+                seat.as_u64()
+                    .map(|value| value as usize != ctx.actor)
+                    .unwrap_or(false)
+            })
         })
-        .unwrap_or(false)
 }
 
 fn multi_hu_window(ctx: &RuleContext<'_>, actor: Seat) -> bool {
-    matches!(
-        ctx.room_state.round_state.as_ref().and_then(|round| round.pending_action.as_ref()),
-        Some(crate::core::state::PendingAction::ClaimWindow(claim))
-            if claim
-                .claim_window
-                .iter()
-                .enumerate()
-                .filter(|(seat, claims)| *seat != actor && claims.iter().any(|claim_type| claim_type == "hu"))
-                .count()
-                >= 1
-    )
+    tracker_value(ctx, "multi_hu_candidates")
+        .and_then(Value::as_array)
+        .is_some_and(|seats| {
+            seats.iter().any(|seat| {
+                seat.as_u64()
+                    .map(|value| value as usize != actor)
+                    .unwrap_or(false)
+            })
+        })
 }
 
 fn has_any_kong(ctx: &RuleContext<'_>) -> bool {
-    ctx.room_state
-        .round_state
-        .as_ref()
-        .map(|round| !round.score_trackers.kong_entries.is_empty())
-        .unwrap_or(false)
+    tracker_value(ctx, "players_with_kong")
+        .and_then(Value::as_array)
+        .is_some_and(|players| !players.is_empty())
 }
 
 fn winner_has_kong(ctx: &RuleContext<'_>, actor: Seat) -> bool {
@@ -1201,29 +1223,25 @@ fn winner_has_kong(ctx: &RuleContext<'_>, actor: Seat) -> bool {
 }
 
 fn tiles_drawn_since_opening(ctx: &RuleContext<'_>) -> usize {
-    ctx.room_state
-        .round_state
-        .as_ref()
-        .map(|round| round.wall.head_index.saturating_sub(53))
+    tracker_value(ctx, "tiles_drawn_since_opening")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .or_else(|| {
+            ctx.room_state
+                .round_state
+                .as_ref()
+                .map(|round| round.wall.head_index.saturating_sub(53))
+        })
         .unwrap_or(0)
 }
 
 fn discard_suits_are_messy(ctx: &RuleContext<'_>) -> bool {
-    let Some(round) = ctx.room_state.round_state.as_ref() else {
-        return false;
-    };
     let mut suits = std::collections::BTreeSet::new();
-    for player in round
-        .players
-        .iter()
-        .filter(|player| player.seat != ctx.actor)
-    {
-        if let Some(suit) = player
-            .discards
-            .iter()
-            .find_map(|tile| tile.tile_key.as_bytes().first().copied())
-            .filter(|prefix| matches!(prefix, b'w' | b't' | b'b'))
-        {
+    for seat in 0..4 {
+        if seat == ctx.actor {
+            continue;
+        }
+        for suit in tracker_string_array_for_seat(ctx, "discard_suits_by_seat", seat) {
             suits.insert(suit);
         }
     }
@@ -1231,33 +1249,10 @@ fn discard_suits_are_messy(ctx: &RuleContext<'_>) -> bool {
 }
 
 fn discard_suits_are_pure(ctx: &RuleContext<'_>) -> bool {
-    let Some(round) = ctx.room_state.round_state.as_ref() else {
-        return false;
-    };
-    let suits = round
-        .players
-        .iter()
-        .flat_map(|player| player.discards.iter())
-        .filter_map(|tile| tile.tile_key.as_bytes().first().copied())
-        .filter(|prefix| matches!(prefix, b'w' | b't' | b'b'))
+    let suits = (0..4)
+        .flat_map(|seat| tracker_string_array_for_seat(ctx, "discard_suits_by_seat", seat))
         .collect::<std::collections::BTreeSet<_>>();
     suits.len() == 1 && !suits.is_empty()
-}
-
-fn honor_discard_drawback(ctx: &RuleContext<'_>, actor: Seat) -> bool {
-    let Some(player) = round_player(ctx, actor) else {
-        return false;
-    };
-    player
-        .discards
-        .iter()
-        .filter(|tile| is_honour_tile(&tile.tile_key))
-        .any(|tile| {
-            player
-                .concealed_tiles
-                .iter()
-                .any(|concealed| concealed.tile_key == tile.tile_key)
-        })
 }
 
 fn scaled_late_game_bonus(max_bonus: i64, live_tiles: usize) -> i64 {
@@ -1275,23 +1270,6 @@ fn honour_group_count(request: &ScoreHookRequest) -> usize {
         .filter(|meld| meld.len() == 3 && meld.iter().all(|tile| is_honour_tile(tile)))
         .count();
     meld_groups + usize::from(decomposition.pair.as_deref().is_some_and(is_honour_tile))
-}
-
-fn discards_were_claimed(ctx: &RuleContext<'_>, actor: Seat) -> bool {
-    let Some(round) = ctx.room_state.round_state.as_ref() else {
-        return false;
-    };
-    let Some(player) = round.players.iter().find(|player| player.seat == actor) else {
-        return false;
-    };
-    player.discards.iter().any(|discard| {
-        round
-            .players
-            .iter()
-            .filter(|other| other.seat != actor)
-            .flat_map(|other| other.melds.iter())
-            .any(|meld| meld.iter().any(|tile| tile == &discard.tile_key))
-    })
 }
 
 fn cumulative_score(ctx: &RuleContext<'_>, actor: Seat) -> i64 {

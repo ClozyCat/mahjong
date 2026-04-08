@@ -27,6 +27,8 @@ pub struct RoundState {
     pub rule_state: RuleRuntimeState,
     pub effect_state: EffectState,
     pub restricted_discard_tile_key: Option<TileKey>,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub skill_trackers: Value,
 }
 
 impl RoundState {
@@ -96,6 +98,7 @@ impl RoundState {
             },
             effect_state: EffectState::from_legacy_value(value.get("effect_state"))?,
             restricted_discard_tile_key: string_opt(value, "restricted_discard_tile_key"),
+            skill_trackers: value.get("skill_trackers").cloned().unwrap_or(Value::Null),
         })
     }
 }

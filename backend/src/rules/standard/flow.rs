@@ -8,6 +8,7 @@ use crate::core::engine::planner::{
 };
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
 use crate::core::state::{MatchState, SkillLoadout};
+use crate::rules::skills::{note_tracker_draw, sync_round_skill_trackers};
 
 use super::runtime::{
     current_actor, is_last_live_tile_point, project_room_state, round_event_message,
@@ -123,6 +124,7 @@ pub fn apply_opening_flowers_pass(
     let state = project_room_state(room)?;
     let mutations = plan_advance_opening_flowers(&state, seat_index);
     apply_legacy_room_mutations(room, &mutations)?;
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(vec![])
 }
@@ -158,6 +160,8 @@ pub fn apply_flower_action(
     let state = project_room_state(room)?;
     let plan = plan_flower_action(&state, seat_index, tile_id)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
+    note_tracker_draw(room, seat_index, &plan.replacement_tile.tile_key);
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
 
     Ok(vec![
@@ -227,6 +231,7 @@ fn start_round(
             },
         ],
     );
+    sync_round_skill_trackers(room);
 }
 
 fn seed_round_skill_loadouts(room: &Value, round_state: &mut crate::core::state::RoundState) {

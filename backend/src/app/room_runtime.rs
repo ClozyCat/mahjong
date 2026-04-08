@@ -7,12 +7,11 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::AppContext;
-use crate::ConnectionHandle;
 use crate::app::scheduler::schedule_room_tasks;
-use crate::disconnect_deadline_iso;
+use crate::app::{
+    AppContext, ConnectionHandle, disconnect_deadline_iso, room_seats, serialize_room,
+};
 use crate::mahjong::reconcile_continue_action_state as rust_reconcile_continue_action_state;
-use crate::serialize_room;
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
 
@@ -218,7 +217,7 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
 }
 
 pub(crate) fn room_has_only_bots(room: &Value) -> bool {
-    let seats = crate::room_seats(room);
+    let seats = room_seats(room);
     !seats.is_empty()
         && seats
             .into_iter()
@@ -229,7 +228,7 @@ pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
     if !runtime.connections.is_empty() {
         return false;
     }
-    crate::room_seats(&runtime.room).into_iter().all(|seat| {
+    room_seats(&runtime.room).into_iter().all(|seat| {
         seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false)
             || seat
                 .get("reconnect_token")

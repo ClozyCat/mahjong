@@ -6,6 +6,10 @@ use crate::core::engine::planner::{
     resolve_claims,
 };
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::rules::skills::{
+    note_tracker_claimed_discard, note_tracker_discard, note_tracker_draw,
+    sync_round_skill_trackers,
+};
 
 use super::meld::{
     SelfKongCandidate, SelfKongKind, available_self_kongs, claim_window_options_after_discard,
@@ -63,6 +67,7 @@ pub fn apply_claim_window_action(
     let plan = plan_claim_window_response(&state, seat_index, action_type, tile_ids)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
     if !plan.unresolved_seats.is_empty() {
+        sync_round_skill_trackers(room);
         sync_pending_timeout(room);
         return Ok(vec![]);
     }
@@ -141,7 +146,9 @@ pub fn apply_discard_action(
         previous_was_last_live_tile,
     )?;
     apply_legacy_room_mutations(room, &plan.discard_mutations)?;
+    note_tracker_discard(room, seat_index, &plan.discarded_tile.tile_key);
     if plan.needs_exhaustive_draw {
+        sync_round_skill_trackers(room);
         let mut messages = vec![round_event_message(
             "tile_discarded",
             json!({
@@ -154,6 +161,37 @@ pub fn apply_discard_action(
         return Ok(messages);
     }
     apply_legacy_room_mutations(room, &plan.followup_mutations)?;
+    if let Some(next_actor) = room
+        .get("round_state")
+        .and_then(|round| round.get("current_actor"))
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+    {
+        let drawn_tile_key = room
+            .get("round_state")
+            .and_then(|round| round.get("last_action_context"))
+            .and_then(|context| context.get("tile_id"))
+            .and_then(Value::as_str)
+            .and_then(|tile_id| {
+                room.get("round_state")
+                    .and_then(|round| round.get("players"))
+                    .and_then(Value::as_array)
+                    .and_then(|players| players.get(next_actor))
+                    .and_then(|player| player.get("concealed_tiles"))
+                    .and_then(Value::as_array)
+                    .and_then(|tiles| {
+                        tiles.iter().find(|tile| {
+                            tile.get("tile_id").and_then(Value::as_str) == Some(tile_id)
+                        })
+                    })
+                    .and_then(|tile| tile.get("tile_key").and_then(Value::as_str))
+                    .map(ToString::to_string)
+            });
+        if let Some(tile_key) = drawn_tile_key.as_deref() {
+            note_tracker_draw(room, next_actor, tile_key);
+        }
+    }
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(vec![round_event_message(
         "tile_discarded",
@@ -279,6 +317,7 @@ pub fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, Stri
             LegacyRoomMutation::IncrementRoundVersion,
         ],
     )?;
+    sync_round_skill_trackers(room);
 
     let mut messages = vec![round_event_message(
         "claim_auto_passed",
@@ -366,6 +405,7 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Va
         })
         .collect::<Vec<_>>();
     if !unresolved.is_empty() {
+        sync_round_skill_trackers(room);
         sync_pending_timeout(room);
         return Ok(vec![]);
     }
@@ -421,6 +461,7 @@ pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
             LegacyRoomMutation::IncrementRoundVersion,
         ],
     )?;
+    sync_round_skill_trackers(room);
     let mut messages = vec![round_event_message(
         "rob_kong_auto_passed",
         json!({
@@ -470,6 +511,10 @@ fn complete_self_kong(
     let plan =
         plan_self_kong_completion(room, seat_index, selection, replacement_tile.clone(), false)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
+    if let Some(tile_key) = replacement_tile.get("tile_key").and_then(Value::as_str) {
+        note_tracker_draw(room, seat_index, tile_key);
+    }
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(plan.events)
 }
@@ -511,6 +556,7 @@ fn start_rob_kong_window(
             LegacyRoomMutation::IncrementRoundVersion,
         ],
     )?;
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(vec![round_event_message(
         "self_kong_declared",
@@ -683,9 +729,40 @@ fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String>
     let state = project_room_state(room)?;
     let plan = plan_claim_window_continuation_without_winner(&state, discarder_seat)?;
     if plan.needs_exhaustive_draw {
+        sync_round_skill_trackers(room);
         return Ok(settle_exhaustive_draw(room));
     }
     apply_legacy_room_mutations(room, &plan.mutations)?;
+    let drawn_tile_key = room
+        .get("round_state")
+        .and_then(|round| round.get("last_action_context"))
+        .and_then(|context| context.get("tile_id"))
+        .and_then(Value::as_str)
+        .and_then(|tile_id| {
+            let seat = room
+                .get("round_state")
+                .and_then(|round| round.get("current_actor"))
+                .and_then(Value::as_u64)
+                .map(|value| value as usize)?;
+            room.get("round_state")
+                .and_then(|round| round.get("players"))
+                .and_then(Value::as_array)
+                .and_then(|players| players.get(seat))
+                .and_then(|player| player.get("concealed_tiles"))
+                .and_then(Value::as_array)
+                .and_then(|tiles| {
+                    tiles
+                        .iter()
+                        .find(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
+                })
+                .and_then(|tile| tile.get("tile_key").and_then(Value::as_str))
+                .map(ToString::to_string)
+        });
+    if let Some(tile_key) = drawn_tile_key.as_deref() {
+        let seat = room["round_state"]["current_actor"].as_u64().unwrap_or(0) as usize;
+        note_tracker_draw(room, seat, tile_key);
+    }
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(vec![])
 }
@@ -758,11 +835,18 @@ fn apply_selected_claim(
     }
     let plan = plan_selected_claim(room, seat_index, action_type, tile_ids)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
+    note_tracker_claimed_discard(room, plan.discarder_seat);
+    if let Some(tile_key) = plan.drawn_tile_key.as_deref() {
+        note_tracker_draw(room, seat_index, tile_key);
+    }
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(plan.events)
 }
 
 struct SelectedClaimPlan {
+    discarder_seat: usize,
+    drawn_tile_key: Option<String>,
     mutations: Vec<LegacyRoomMutation>,
     events: Vec<Value>,
 }
@@ -866,7 +950,28 @@ fn plan_selected_claim(
     });
     mutations.push(LegacyRoomMutation::IncrementRoundVersion);
 
-    Ok(SelectedClaimPlan { mutations, events })
+    Ok(SelectedClaimPlan {
+        discarder_seat,
+        drawn_tile_key: if action_type == "kong" {
+            room.get("round_state")
+                .and_then(|round| round.get("wall"))
+                .and_then(|wall| wall.get("tail_index"))
+                .and_then(Value::as_u64)
+                .and_then(|tail_index| {
+                    room.get("round_state")
+                        .and_then(|round| round.get("wall"))
+                        .and_then(|wall| wall.get("tiles"))
+                        .and_then(Value::as_array)
+                        .and_then(|tiles| tiles.get(tail_index as usize))
+                        .and_then(|tile| tile.get("tile_key").and_then(Value::as_str))
+                })
+                .map(ToString::to_string)
+        } else {
+            None
+        },
+        mutations,
+        events,
+    })
 }
 
 fn claim_meld_value(action_type: &str, last_discard: &Value, claimed_tiles: &[Value]) -> Value {
@@ -964,8 +1069,16 @@ fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String
         tile_key,
         meld_index,
     };
+    let drawn_tile_key = replacement_tile
+        .get("tile_key")
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
     let plan = plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
+    if let Some(tile_key) = drawn_tile_key.as_deref() {
+        note_tracker_draw(room, actor_seat, tile_key);
+    }
+    sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(plan.events)
 }
