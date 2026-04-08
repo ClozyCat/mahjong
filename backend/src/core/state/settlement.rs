@@ -8,6 +8,7 @@ use crate::core::ids::Seat;
 use super::{KongTrackerEntry, i64_opt, seat_vec, string_opt};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct RoundSettlement {
     pub provisional: bool,
     pub win_type: String,
@@ -115,6 +116,7 @@ impl RoundSettlement {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct SettlementFanBreakdownEntry {
     pub fan_key: String,
     pub fan_value: i64,
@@ -144,6 +146,7 @@ impl SettlementFanBreakdownEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct SettlementScoreDelta {
     pub provisional: bool,
     pub basic_points: i64,
@@ -191,6 +194,7 @@ impl SettlementScoreDelta {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct SettlementKongScoreDetailEntry {
     pub kong_type: String,
     pub actor_seat: Seat,

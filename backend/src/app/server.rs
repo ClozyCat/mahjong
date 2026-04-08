@@ -15,7 +15,7 @@ use super::protocol::{create_table_response, detail_response};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
 use super::ws::websocket_handler;
 use super::{
-    AppContext, CreateTableRequest, Settings, initial_room_payload, is_valid_table_code,
+    AppContext, CreateTableRequest, Settings, initial_room_state, is_valid_table_code,
     normalize_table_code, now_iso, parse_room_json, serialize_room_state,
 };
 use crate::core::state::RoomState;
@@ -190,12 +190,7 @@ async fn create_or_replace_table(
     drop(rooms);
 
     let created_at = now_iso();
-    let room = RoomState::from_room_value(&initial_room_payload(
-        &table_code,
-        mode,
-        enforce_minimum_eight_fan,
-    ))
-    .map_err(|error| CreateTableError::Internal(error.into()))?;
+    let room = initial_room_state(&table_code, mode, enforce_minimum_eight_fan);
     let room_json = serialize_room_state(&room).map_err(CreateTableError::Internal)?;
     state
         .inner

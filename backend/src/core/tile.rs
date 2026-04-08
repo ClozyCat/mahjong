@@ -5,6 +5,7 @@ use crate::core::error::EngineError;
 use crate::core::ids::{TileId, TileKey};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Tile {
     pub tile_id: TileId,
     pub tile_key: TileKey,

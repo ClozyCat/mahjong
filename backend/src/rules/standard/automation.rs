@@ -85,6 +85,7 @@ pub fn try_process_due_timeout_in_room_state(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn next_bot_action(room: &Value) -> Option<BotAction> {
     let state = project_room_state(room).ok()?;
     next_bot_action_for_state(&state)

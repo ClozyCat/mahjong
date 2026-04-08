@@ -17,20 +17,6 @@ use crate::rules::{
 
 use super::{EngineContext, EngineOutput, LocalPlayerActionKind, classify_local_player_action};
 
-#[cfg(test)]
-pub fn try_handle_command(
-    room: &mut serde_json::Value,
-    command: GameCommand,
-) -> Option<Result<EngineOutput, String>> {
-    let mut room_state = RoomState::from_room_value(room)
-        .ok()
-        .map(EngineContext::from_room_state)?
-        .room;
-    let result = try_handle_command_in_room_state(&mut room_state, command).ok()?;
-    *room = room_state.to_room_value().ok()?;
-    result
-}
-
 pub fn try_handle_command_in_room_state(
     room: &mut RoomState,
     command: GameCommand,

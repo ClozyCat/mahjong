@@ -13,8 +13,8 @@ pub use effect::{
 };
 pub use match_state::MatchState;
 pub use pending::{
-    ClaimWindowAction, ContinueActionState, LastActionContext, OpeningFlowersAction, PendingAction,
-    PendingTimeout, RobKongWindowAction,
+    ClaimResponse, ClaimWindowAction, ContinueActionState, LastActionContext,
+    OpeningFlowersAction, PendingAction, PendingTimeout, RobKongWindowAction,
 };
 pub use player::{PlayerRoundState, SeatState};
 pub use room::RoomState;
@@ -28,6 +28,7 @@ pub use skill_trackers::{
 };
 pub use wall::WallState;
 
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::core::error::EngineError;
@@ -89,4 +90,12 @@ pub(crate) fn seat_vec(value: Option<&Value>) -> Vec<Seat> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }

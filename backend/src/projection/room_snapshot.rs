@@ -4,7 +4,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
-use crate::core::state::{MatchState, PendingAction, RoomState};
+use crate::core::state::{
+    MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry,
+};
 use crate::projection::SeatProjectionSupport;
 use crate::rules::skills::{
     EffectInstance, KnowledgeEffect, build_skill_projection, skill_action_options,
@@ -76,7 +78,7 @@ struct PrivateTileView {
 #[derive(Debug, Clone, Serialize)]
 struct ScoreStateView {
     flower_count_by_seat: BTreeMap<Seat, i64>,
-    kong_score_detail: Vec<Value>,
+    kong_score_detail: Vec<SettlementKongScoreDetailEntry>,
     kong_delta_by_seat: BTreeMap<Seat, i64>,
     current_round_delta_by_seat: BTreeMap<Seat, i64>,
     base_cumulative_scores: BTreeMap<Seat, i64>,
@@ -381,6 +383,20 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
     let mut projected_cumulative_scores = BTreeMap::new();
     let mut current_round_delta_by_seat = BTreeMap::new();
     let mut kong_delta_by_seat = BTreeMap::new();
+    let kong_score_detail = state
+        .round_state
+        .as_ref()
+        .and_then(|round| round.settlement.as_ref())
+        .map(|settlement| settlement.kong_score_detail.clone())
+        .unwrap_or_default();
+
+    for entry in &kong_score_detail {
+        for (seat, delta) in &entry.delta_by_seat {
+            *kong_delta_by_seat.entry(*seat).or_default() += *delta;
+            *current_round_delta_by_seat.entry(*seat).or_default() += *delta;
+            *projected_cumulative_scores.entry(*seat).or_default() += *delta;
+        }
+    }
 
     for seat in 0..seat_count {
         let flower_total = state
@@ -395,15 +411,15 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
             .and_then(|match_state| match_state.cumulative_scores.get(&seat).copied())
             .unwrap_or(0);
         flower_count_by_seat.insert(seat, flower_total);
-        base_cumulative_scores.insert(seat, base);
-        projected_cumulative_scores.insert(seat, base);
-        current_round_delta_by_seat.insert(seat, 0);
-        kong_delta_by_seat.insert(seat, 0);
+        base_cumulative_scores.entry(seat).or_insert(base);
+        projected_cumulative_scores.entry(seat).or_insert(base);
+        current_round_delta_by_seat.entry(seat).or_insert(0);
+        kong_delta_by_seat.entry(seat).or_insert(0);
     }
 
     ScoreStateView {
         flower_count_by_seat,
-        kong_score_detail: Vec::new(),
+        kong_score_detail,
         kong_delta_by_seat,
         current_round_delta_by_seat,
         base_cumulative_scores,

@@ -1134,24 +1134,7 @@ fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput
     let claim_responses = claim.claim_responses.clone();
 
     if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
-        let winner_seat = winner
-            .get("seat")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let claim_type = winner
-            .get("type")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let tiles = winner
-            .get("tiles")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|value| value.as_str().map(ToString::to_string))
-            .collect::<Vec<_>>();
-        return apply_selected_claim(room, winner_seat, claim_type, &tiles);
+        return apply_selected_claim(room, winner.seat, &winner.action_type, &winner.tiles);
     }
 
     let state = project_room_state(room)?;
@@ -1228,24 +1211,12 @@ fn resolve_recorded_claims_local_output_in_room_state(
     let claim_responses = claim.claim_responses.clone();
 
     if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
-        let winner_seat = winner
-            .get("seat")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let claim_type = winner
-            .get("type")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        let tiles = winner
-            .get("tiles")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|value| value.as_str().map(ToString::to_string))
-            .collect::<Vec<_>>();
-        return apply_selected_claim_in_room_state(room, winner_seat, claim_type, &tiles);
+        return apply_selected_claim_in_room_state(
+            room,
+            winner.seat,
+            &winner.action_type,
+            &winner.tiles,
+        );
     }
 
     let plan = plan_claim_window_continuation_without_winner(room, discarder_seat)?;

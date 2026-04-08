@@ -8,7 +8,6 @@ use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serde::Deserialize;
-use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 use super::room_runtime::{
@@ -29,7 +28,8 @@ use super::{
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use super::protocol::{
-    action_rejected_message, heartbeat_message, leave_table_accepted_message, quick_chat_message,
+    HeartbeatPayload, action_rejected_message, heartbeat_message, leave_table_accepted_message,
+    quick_chat_message,
 };
 use crate::core::state::SeatState;
 use crate::rules::standard::flow::{
@@ -52,7 +52,7 @@ enum ClientMessage {
     LeaveTable,
     ActionRequest(ActionRequest),
     QuickChat(QuickChatRequest),
-    Heartbeat(Value),
+    Heartbeat(HeartbeatPayload),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -84,16 +84,12 @@ struct ActionRequest {
     #[serde(default)]
     action_type: String,
     #[serde(default)]
-    tile_ids: Vec<Value>,
+    tile_ids: Vec<String>,
 }
 
 impl ActionRequest {
     fn tile_id_strings(&self) -> Vec<String> {
-        self.tile_ids
-            .iter()
-            .filter_map(Value::as_str)
-            .map(ToString::to_string)
-            .collect()
+        self.tile_ids.clone()
     }
 }
 

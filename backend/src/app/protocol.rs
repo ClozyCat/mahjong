@@ -51,6 +51,13 @@ struct DetailPayload {
     detail: String,
 }
 
+#[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub(crate) struct HeartbeatPayload {
+    pub(crate) request_id: Option<String>,
+    pub(crate) sent_at: Option<String>,
+}
+
 pub(crate) fn action_rejected_message(reason: &str) -> Value {
     serde_json::to_value(PayloadEnvelope {
         kind: "action_rejected",
@@ -66,7 +73,7 @@ pub(crate) fn action_rejected_message(reason: &str) -> Value {
     })
 }
 
-pub(crate) fn heartbeat_message(payload: Value) -> Value {
+pub(crate) fn heartbeat_message(payload: HeartbeatPayload) -> Value {
     serde_json::to_value(PayloadEnvelope {
         kind: "heartbeat",
         payload,

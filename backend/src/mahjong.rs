@@ -2,32 +2,28 @@
 
 use crate::bot::BotAction;
 use crate::core::action::GameCommand;
-use crate::core::engine::flow::try_handle_command as execute_engine_command;
 use crate::core::engine::{
     EngineContext, EngineOutput, discard_supported_locally, parse_player_command,
+    try_handle_command_in_room_state,
 };
-use crate::core::engine::reducer::update_room_state;
-use crate::core::state::{RoomState, RoundSettlement, SeatState};
+use crate::core::state::{RoomState, RoundSettlement};
 use crate::projection::support::build_seat_projection_support;
 use crate::rules::standard::{
-    actions::apply_discard_action as standard_apply_discard_action,
+    actions::apply_discard_action_output_in_room_state,
     automation::{
-        next_bot_action as standard_next_bot_action,
-        try_process_due_timeout as standard_try_process_due_timeout,
+        next_bot_action_in_room_state, try_process_due_timeout as standard_try_process_due_timeout,
     },
     flow::{
-        process_due_continue_action as standard_process_due_continue_action,
-        reconcile_continue_action_state as standard_reconcile_continue_action_state,
-        record_continue_action as standard_record_continue_action,
-        start_match as standard_start_match,
+        add_bot_seats_for_test as add_standard_test_bots,
+        process_due_continue_action_in_room_state, reconcile_continue_action_state_in_room_state,
+        record_continue_action_in_room_state, room_ready_to_start as room_ready_to_start_in_room_state,
+        start_match_in_room_state,
     },
     runtime::project_room_state as standard_project_room_state,
-    win::apply_hu_settlement as standard_apply_hu_settlement,
+    win::apply_hu_settlement_output_in_room_state,
 };
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
-
-const MAX_SEATS: usize = 4;
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
 
 #[cfg(test)]
@@ -42,53 +38,25 @@ fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {
 
 pub fn room_ready_to_start(room: &Value) -> bool {
     project_room_state(room)
-        .map(|state| {
-            state.seats.len() == MAX_SEATS
-                && state
-                    .seats
-                    .iter()
-                    .all(|seat| seat.ready && (seat.connected || seat.is_bot))
-        })
+        .map(|state| room_ready_to_start_in_room_state(&state))
         .unwrap_or(false)
 }
 
 pub fn next_bot_action(room: &Value) -> Option<BotAction> {
-    standard_next_bot_action(room)
+    project_room_state(room)
+        .ok()
+        .and_then(|state| next_bot_action_in_room_state(&state).ok().flatten())
 }
 
 pub fn add_bot_seats_for_test(room: &mut Value) {
-    let _ = update_room_state(room, |state| {
-        let occupied = state
-            .seats
-            .iter()
-            .map(|seat| seat.seat_index)
-            .collect::<std::collections::HashSet<_>>();
-        for seat_index in 0..MAX_SEATS {
-            if occupied.contains(&seat_index) {
-                continue;
-            }
-            state.seats.push(SeatState {
-                seat_index,
-                nickname: Some(format!("Bot {seat_index}")),
-                reconnect_token: None,
-                player_session_id: Some(-((seat_index as i64) + 1)),
-                connected: true,
-                ready: true,
-                is_bot: true,
-                seat_type: "bot".to_string(),
-                bot_persona: None,
-                bot_aggression: None,
-                disconnect_deadline_at: None,
-                skill_loadout: Default::default(),
-            });
-        }
-        state.seats.sort_by_key(|seat| seat.seat_index);
+    let _ = with_room_state(room, |state| {
+        add_standard_test_bots(state);
         Ok(())
     });
 }
 
 pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
-    standard_start_match(room, dealer_seat, seed);
+    let _ = with_room_state(room, |state| start_match_in_room_state(state, dealer_seat, seed));
 }
 
 pub fn try_handle_action(
@@ -108,7 +76,13 @@ pub fn try_handle_command(
     room: &mut Value,
     command: GameCommand,
 ) -> Option<Result<EngineOutput, String>> {
-    execute_engine_command(room, command)
+    let mut room_state = RoomState::from_room_value(room)
+        .ok()
+        .map(EngineContext::from_room_state)?
+        .room;
+    let result = try_handle_command_in_room_state(&mut room_state, command).ok()?;
+    *room = room_state.to_room_value().ok()?;
+    result
 }
 
 pub fn try_process_due_timeout(room: &mut Value) -> Option<Vec<Value>> {
@@ -120,15 +94,17 @@ pub fn record_continue_action(
     seat_index: usize,
     action_id: &str,
 ) -> Result<(), String> {
-    standard_record_continue_action(room, seat_index, action_id)
+    with_room_state(room, |state| {
+        record_continue_action_in_room_state(state, seat_index, action_id)
+    })
 }
 
 pub fn process_due_continue_action(room: &mut Value) -> Result<bool, String> {
-    standard_process_due_continue_action(room)
+    with_room_state(room, process_due_continue_action_in_room_state)
 }
 
 pub fn reconcile_continue_action_state(room: &mut Value) -> Result<(), String> {
-    standard_reconcile_continue_action_state(room)
+    with_room_state(room, |state| reconcile_continue_action_state_in_room_state(state))
 }
 
 pub fn apply_hu_settlement(
@@ -137,12 +113,15 @@ pub fn apply_hu_settlement(
     hu_context: &str,
     settlement: Value,
 ) -> Result<Vec<Value>, String> {
-    standard_apply_hu_settlement(
-        room,
-        winner_seat,
-        hu_context,
-        RoundSettlement::from_value(&settlement),
-    )
+    with_room_state(room, |state| {
+        apply_hu_settlement_output_in_room_state(
+            state,
+            winner_seat,
+            hu_context,
+            RoundSettlement::from_value(&settlement),
+        )
+        .map(|output| output.emitted_messages)
+    })
 }
 
 #[cfg(test)]
@@ -156,7 +135,10 @@ fn apply_discard_action(
     seat_index: usize,
     tile_id: &str,
 ) -> Result<Vec<Value>, String> {
-    standard_apply_discard_action(room, seat_index, tile_id)
+    with_room_state(room, |state| {
+        apply_discard_action_output_in_room_state(state, seat_index, tile_id)
+            .map(|output| output.emitted_messages)
+    })
 }
 
 fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -> bool {
@@ -168,6 +150,16 @@ fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -
 
 fn project_room_state(room: &Value) -> Result<RoomState, String> {
     standard_project_room_state(room)
+}
+
+fn with_room_state<T, F>(room: &mut Value, mutate: F) -> Result<T, String>
+where
+    F: FnOnce(&mut RoomState) -> Result<T, String>,
+{
+    let mut room_state = RoomState::from_room_value(room).map_err(|error| error.to_string())?;
+    let result = mutate(&mut room_state)?;
+    *room = room_state.to_room_value().map_err(|error| error.to_string())?;
+    Ok(result)
 }
 
 fn projected_room_message_context(
@@ -698,7 +690,7 @@ mod tests {
                 "round_id": "east-1-dealer-0-hu",
                 "dealer_seat": 0,
                 "current_actor": 0,
-                "wall": {"tiles": [], "head_index": 0, "tail_index": -1},
+                "wall": {"tiles": [], "head_index": 1, "tail_index": 0},
                 "players": [
                     {"seat": 0, "concealed_tiles": [suit("w1", "w1#0")], "melds": [], "flowers": [], "discards": []},
                     {"seat": 1, "concealed_tiles": [suit("w2", "w2#1")], "melds": [], "flowers": [], "discards": []},

@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 
 use crate::core::state::effect::EffectState;
 use crate::core::state::{
-    ClaimWindowAction, LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout,
-    PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers, RoundSettlement,
-    RoundState, RuleRuntimeState, WallState,
+    ClaimResponse, ClaimWindowAction, LastActionContext, OpeningFlowersAction, PendingAction,
+    PendingTimeout, PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers,
+    RoundSettlement, RoundState, RuleRuntimeState, WallState,
 };
 use crate::core::tile::Tile;
 
@@ -354,11 +354,11 @@ pub fn plan_claim_window_response(
 
     let mut claim_responses = claim.claim_responses.clone();
     if action_type != "pass" {
-        claim_responses.push(json!({
-            "seat": seat_index,
-            "type": action_type,
-            "tiles": tile_ids,
-        }));
+        claim_responses.push(ClaimResponse {
+            seat: seat_index,
+            action_type: action_type.to_string(),
+            tiles: tile_ids.to_vec(),
+        });
         if let Some(winning_claim) = resolve_claims(&claim_responses, discarder_seat) {
             for (other_seat, claims) in claim.claim_window.iter().enumerate() {
                 if claims.is_empty() || responded_seats.contains(&other_seat) {
@@ -503,22 +503,19 @@ pub fn plan_settlement_to_match(
     })
 }
 
-pub fn resolve_claims(claim_requests: &[Value], discarder_seat: usize) -> Option<Value> {
+pub fn resolve_claims(
+    claim_requests: &[ClaimResponse],
+    discarder_seat: usize,
+) -> Option<ClaimResponse> {
     let next_player = (discarder_seat + 1) % MAX_SEATS;
     let mut candidates = claim_requests
         .iter()
         .filter(|request| {
-            let claim_type = request.get("type").and_then(Value::as_str);
-            if !matches!(claim_type, Some("chow" | "pung" | "kong" | "hu")) {
+            let claim_type = request.action_type.as_str();
+            if !matches!(claim_type, "chow" | "pung" | "kong" | "hu") {
                 return false;
             }
-            if claim_type == Some("chow")
-                && request
-                    .get("seat")
-                    .and_then(Value::as_u64)
-                    .map(|seat| seat as usize)
-                    != Some(next_player)
-            {
+            if claim_type == "chow" && request.seat != next_player {
                 return false;
             }
             true
@@ -526,18 +523,13 @@ pub fn resolve_claims(claim_requests: &[Value], discarder_seat: usize) -> Option
         .cloned()
         .collect::<Vec<_>>();
     candidates.sort_by_key(|request| {
-        let claim_priority = match request.get("type").and_then(Value::as_str) {
-            Some("hu") => 3_i32,
-            Some("kong") | Some("pung") => 2,
-            Some("chow") => 1,
+        let claim_priority = match request.action_type.as_str() {
+            "hu" => 3_i32,
+            "kong" | "pung" => 2,
+            "chow" => 1,
             _ => 0,
         };
-        let seat = request
-            .get("seat")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(0);
-        let mut distance = (seat + MAX_SEATS - discarder_seat) % MAX_SEATS;
+        let mut distance = (request.seat + MAX_SEATS - discarder_seat) % MAX_SEATS;
         if distance == 0 {
             distance = MAX_SEATS;
         }
@@ -634,14 +626,15 @@ fn player_has_concealed_flower(state: &RoomState, seat_index: usize) -> bool {
 fn seat_can_beat_recorded_claim(
     seat_index: usize,
     claims: &[String],
-    winning_claim: &Value,
+    winning_claim: &ClaimResponse,
     discarder_seat: usize,
 ) -> bool {
     claims.iter().any(|claim| {
-        let candidate = json!({
-            "seat": seat_index,
-            "type": claim,
-        });
+        let candidate = ClaimResponse {
+            seat: seat_index,
+            action_type: claim.clone(),
+            tiles: Vec::new(),
+        };
         resolve_claims(&[winning_claim.clone(), candidate.clone()], discarder_seat)
             == Some(candidate)
     })
@@ -998,7 +991,7 @@ mod tests {
             panic!("expected claim window pending action");
         };
         assert_eq!(pending_action.responded_seats, vec![1, 2]);
-        assert_eq!(pending_action.claim_responses[0]["type"], json!("pung"));
+        assert_eq!(pending_action.claim_responses[0].action_type, "pung");
     }
 
     #[test]

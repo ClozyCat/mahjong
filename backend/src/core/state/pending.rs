@@ -6,6 +6,7 @@ use crate::core::ids::{Seat, TileId, TileKey};
 use super::{seat_vec, string_opt, usize_opt};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct PendingTimeout {
     pub kind: String,
     pub seat_index: Seat,
@@ -33,6 +34,7 @@ impl PendingTimeout {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct ContinueActionState {
     pub action_id: String,
     pub confirmed_seats: Vec<Seat>,
@@ -42,6 +44,7 @@ pub struct ContinueActionState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct LastActionContext {
     pub kind: String,
     pub seat: Seat,
@@ -85,127 +88,47 @@ impl LastActionContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum PendingAction {
     OpeningFlowers(OpeningFlowersAction),
     ClaimWindow(ClaimWindowAction),
     RobKongWindow(RobKongWindowAction),
-    Unknown(UnknownPendingAction),
 }
 
 impl PendingAction {
     pub(crate) fn from_value(value: &Value) -> Option<Self> {
-        let action_type = value.get("type").and_then(Value::as_str)?;
-        Some(match action_type {
-            "opening_flowers" => Self::OpeningFlowers(OpeningFlowersAction {
-                dealer_seat: value
-                    .get("dealer_seat")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as Seat)
-                    .unwrap_or(0),
-            }),
-            "claim_window" => Self::ClaimWindow(ClaimWindowAction {
-                discarder_seat: value
-                    .get("discarder_seat")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as Seat)
-                    .unwrap_or(0),
-                claim_window: value
-                    .get("claim_window")
-                    .and_then(Value::as_array)
-                    .map(|windows| {
-                        windows
-                            .iter()
-                            .map(|window| {
-                                window
-                                    .as_array()
-                                    .map(|claims| {
-                                        claims
-                                            .iter()
-                                            .filter_map(|claim| {
-                                                claim.as_str().map(ToString::to_string)
-                                            })
-                                            .collect::<Vec<_>>()
-                                    })
-                                    .unwrap_or_default()
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default(),
-                responded_seats: seat_vec(value.get("responded_seats")),
-                claim_responses: value
-                    .get("claim_responses")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default(),
-            }),
-            "rob_kong_window" => Self::RobKongWindow(RobKongWindowAction {
-                actor_seat: value
-                    .get("actor_seat")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as Seat)
-                    .unwrap_or(0),
-                tile_id: string_opt(value, "tile_id"),
-                tile_key: string_opt(value, "tile_key"),
-                meld_index: usize_opt(value, "meld_index"),
-                offered_hu_seats: seat_vec(value.get("offered_hu_seats")),
-                responded_seats: seat_vec(value.get("responded_seats")),
-            }),
-            _ => Self::Unknown(UnknownPendingAction {
-                action_type: action_type.to_string(),
-                raw: value.clone(),
-            }),
-        })
+        serde_json::from_value(value.clone()).ok()
     }
     pub fn action_type(&self) -> &str {
         match self {
             Self::OpeningFlowers(_) => "opening_flowers",
             Self::ClaimWindow(_) => "claim_window",
             Self::RobKongWindow(_) => "rob_kong_window",
-            Self::Unknown(action) => &action.action_type,
         }
     }
 
     pub(crate) fn to_value(&self) -> Value {
-        match self {
-            Self::OpeningFlowers(action) => serde_json::json!({
-                "type": "opening_flowers",
-                "dealer_seat": action.dealer_seat,
-            }),
-            Self::ClaimWindow(action) => serde_json::json!({
-                "type": "claim_window",
-                "discarder_seat": action.discarder_seat,
-                "claim_window": action.claim_window,
-                "responded_seats": action.responded_seats,
-                "claim_responses": action.claim_responses,
-            }),
-            Self::RobKongWindow(action) => serde_json::json!({
-                "type": "rob_kong_window",
-                "actor_seat": action.actor_seat,
-                "tile_id": action.tile_id,
-                "tile_key": action.tile_key,
-                "meld_index": action.meld_index,
-                "offered_hu_seats": action.offered_hu_seats,
-                "responded_seats": action.responded_seats,
-            }),
-            Self::Unknown(action) => action.raw.clone(),
-        }
+        serde_json::to_value(self).unwrap_or(Value::Null)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct OpeningFlowersAction {
     pub dealer_seat: Seat,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct ClaimWindowAction {
     pub discarder_seat: Seat,
     pub claim_window: Vec<Vec<String>>,
     pub responded_seats: Vec<Seat>,
-    pub claim_responses: Vec<Value>,
+    pub claim_responses: Vec<ClaimResponse>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct RobKongWindowAction {
     pub actor_seat: Seat,
     pub tile_id: Option<TileId>,
@@ -216,7 +139,10 @@ pub struct RobKongWindowAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct UnknownPendingAction {
+#[serde(default)]
+pub struct ClaimResponse {
+    pub seat: Seat,
+    #[serde(rename = "type")]
     pub action_type: String,
-    pub raw: Value,
+    pub tiles: Vec<TileId>,
 }

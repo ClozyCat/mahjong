@@ -169,6 +169,8 @@ pub fn compute_hu_settlement(
     })
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn apply_hu_settlement(
     room: &mut Value,
     winner_seat: usize,

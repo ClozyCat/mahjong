@@ -8,6 +8,7 @@ use crate::core::state::pending::ContinueActionState;
 use super::{MatchState, PendingTimeout, RoundState, SeatState, array, bool_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct RoomState {
     pub table_code: TableCode,
     pub phase: String,
@@ -23,56 +24,7 @@ pub struct RoomState {
 
 impl RoomState {
     pub fn from_room_value(value: &Value) -> Result<Self, EngineError> {
-        let seats = value
-            .get("seats")
-            .map(|seats| {
-                array(seats, "room.seats").map(|seats| {
-                    seats
-                        .iter()
-                        .map(SeatState::from_value)
-                        .collect::<Vec<_>>()
-                })
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let match_state = value
-            .get("match_state")
-            .filter(|match_state| !match_state.is_null())
-            .map(MatchState::from_value)
-            .transpose()?;
-        let round_state = value
-            .get("round_state")
-            .filter(|round_state| !round_state.is_null())
-            .map(RoundState::from_value)
-            .transpose()?;
-        let pending_timeout = value
-            .get("pending_timeout")
-            .filter(|pending| !pending.is_null())
-            .map(PendingTimeout::from_value);
-        Ok(Self {
-            table_code: value
-                .get("table_code")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            phase: value
-                .get("phase")
-                .and_then(Value::as_str)
-                .unwrap_or("waiting")
-                .to_string(),
-            mode: value
-                .get("mode")
-                .and_then(Value::as_str)
-                .unwrap_or("normal")
-                .to_string(),
-            test_mode: bool_or(value, "test_mode", false),
-            enforce_minimum_eight_fan: bool_or(value, "enforce_minimum_eight_fan", true),
-            seats,
-            match_state,
-            round_state,
-            pending_timeout,
-            continue_action: parse_continue_action(value),
-        })
+        serde_json::from_value(value.clone()).map_err(Into::into)
     }
 
     pub fn from_room_str(raw: &str) -> Result<Self, EngineError> {
@@ -81,26 +33,8 @@ impl RoomState {
     }
 
     pub fn to_room_value(&self) -> Result<Value, serde_json::Error> {
-        let mut value = serde_json::to_value(self)?;
-        if let Some(object) = value.as_object_mut() {
-            object.insert(
-                "round_state".to_string(),
-                match &self.round_state {
-                    Some(round) => round.to_value()?,
-                    None => Value::Null,
-                },
-            );
-        }
-        Ok(value)
+        serde_json::to_value(self)
     }
-}
-
-fn parse_continue_action(value: &Value) -> Option<ContinueActionState> {
-    value
-        .get("continue_action")
-        .filter(|action| !action.is_null())
-        .cloned()
-        .and_then(|action| serde_json::from_value(action).ok())
 }
 
 #[cfg(test)]

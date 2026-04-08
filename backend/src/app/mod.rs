@@ -15,7 +15,7 @@ use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use rand::Rng;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::{Notify, RwLock, mpsc};
 
 use self::persistence::DbWorker;
@@ -167,12 +167,11 @@ pub(crate) fn serialize_room(room: &RoomState) -> Result<String> {
 }
 
 pub(crate) fn parse_room_json(room_json: &str) -> Result<RoomState> {
-    RoomState::from_room_str(room_json).map_err(Into::into)
+    serde_json::from_str(room_json).map_err(Into::into)
 }
 
 pub(crate) fn serialize_room_state(state: &RoomState) -> Result<String> {
-    let room_value = state.to_room_value()?;
-    serde_json::to_string(&room_value).map_err(Into::into)
+    serde_json::to_string(state).map_err(Into::into)
 }
 
 pub(crate) fn serialize_payload(payload: &Value) -> String {
@@ -185,11 +184,11 @@ pub(crate) fn serialize_payload(payload: &Value) -> String {
     })
 }
 
-pub(crate) fn initial_room_payload(
+pub(crate) fn initial_room_state(
     table_code: &str,
     mode: &str,
     enforce_minimum_eight_fan: bool,
-) -> Value {
+) -> RoomState {
     RoomState {
         table_code: table_code.to_string(),
         phase: "waiting".to_string(),
@@ -202,21 +201,6 @@ pub(crate) fn initial_room_payload(
         pending_timeout: None,
         continue_action: None,
     }
-    .to_room_value()
-    .unwrap_or_else(|_| {
-        json!({
-            "table_code": table_code,
-            "phase": "waiting",
-            "mode": mode,
-            "test_mode": mode == "test",
-            "enforce_minimum_eight_fan": enforce_minimum_eight_fan,
-            "continue_action": null,
-            "seats": [],
-            "match_state": null,
-            "round_state": null,
-            "pending_timeout": null,
-        })
-    })
 }
 
 pub(crate) fn normalize_table_code(table_code: &str) -> String {

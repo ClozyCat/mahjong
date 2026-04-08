@@ -31,12 +31,12 @@ mod tests {
         restore_persisted_rooms, room_handle, room_has_only_bots,
     };
     use crate::app::{
-        AppContext, ConnectionHandle, Settings, add_bot_to_waiting_room, initial_room_payload,
+        AppContext, ConnectionHandle, Settings, add_bot_to_waiting_room, initial_room_state,
         maybe_start_test_match, now_iso, occupied_seats, parse_datetime,
         remove_bot_from_waiting_room, room_has_round_state, seat_matches_reconnect_credentials,
         send_outbound,
     };
-    use crate::core::state::RoomState;
+    use crate::core::state::{RoomState, SeatState};
 
     fn room_state(value: Value) -> RoomState {
         RoomState::from_room_value(&value).expect("room state should parse")
@@ -124,8 +124,7 @@ mod tests {
             close_requested: Arc::new(AtomicBool::new(false)),
             close_notify: Arc::new(Notify::new()),
         };
-        let mut runtime =
-            RoomRuntime::new(now_iso(), room_state(initial_room_payload("ROOM42", "normal", true)));
+        let mut runtime = RoomRuntime::new(now_iso(), initial_room_state("ROOM42", "normal", true));
         runtime.connections = HashMap::from([(0, previous.clone())]);
 
         replace_connection(&mut runtime, 0, &replacement);
@@ -305,7 +304,7 @@ mod tests {
 
     #[test]
     fn room_has_only_bots_requires_non_empty_bot_only_room() {
-        let mut empty_room = room_state(initial_room_payload("ROOM42", "normal", true));
+        let mut empty_room = initial_room_state("ROOM42", "normal", true);
         assert!(!room_has_only_bots(&empty_room));
 
         empty_room = room_state(json!({
@@ -430,24 +429,22 @@ mod tests {
         let worker = DbWorker::start(db)?;
         let state = test_app_context(worker.clone());
 
-        let room_json = serde_json::to_string(&json!({
-            "table_code": "ROOM42",
-            "mode": "normal",
-            "phase": "waiting",
-            "seats": [{
-                "seat_index": 0,
-                "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 42,
-                "connected": true,
-                "ready": true,
-                "is_bot": false,
-                "seat_type": "human",
-                "bot_persona": Value::Null,
-                "bot_aggression": Value::Null,
-                "disconnect_deadline_at": Value::Null
-            }]
-        }))?;
+        let mut room = initial_room_state("ROOM42", "normal", true);
+        room.seats.push(SeatState {
+            seat_index: 0,
+            nickname: Some("Alice".to_string()),
+            reconnect_token: Some("token-1".to_string()),
+            player_session_id: Some(42),
+            connected: true,
+            ready: true,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+            skill_loadout: Default::default(),
+        });
+        let room_json = crate::app::serialize_room_state(&room)?;
         worker
             .save_table("ROOM42", "2026-04-07T00:00:00Z", &room_json)
             .await?;
@@ -477,24 +474,22 @@ mod tests {
         let worker = DbWorker::start(db)?;
         let state = test_app_context(worker.clone());
 
-        let room_json = serde_json::to_string(&json!({
-            "table_code": "ROOMBOT",
-            "mode": "normal",
-            "phase": "waiting",
-            "seats": [{
-                "seat_index": 0,
-                "nickname": "Bot 1",
-                "reconnect_token": Value::Null,
-                "player_session_id": -1,
-                "connected": true,
-                "ready": true,
-                "is_bot": true,
-                "seat_type": "bot",
-                "bot_persona": Value::Null,
-                "bot_aggression": Value::Null,
-                "disconnect_deadline_at": Value::Null
-            }]
-        }))?;
+        let mut room = initial_room_state("ROOMBOT", "normal", true);
+        room.seats.push(SeatState {
+            seat_index: 0,
+            nickname: Some("Bot 1".to_string()),
+            reconnect_token: None,
+            player_session_id: Some(-1),
+            connected: true,
+            ready: true,
+            is_bot: true,
+            seat_type: "bot".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+            skill_loadout: Default::default(),
+        });
+        let room_json = crate::app::serialize_room_state(&room)?;
         worker
             .save_table("ROOMBOT", "2026-04-07T00:00:00Z", &room_json)
             .await?;

@@ -781,7 +781,7 @@ mod tests {
         db.initialize()?;
 
         let room_json =
-            serde_json::to_string(&crate::app::initial_room_payload("ROOM42", "normal", true))?;
+            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42", "normal", true))?;
         db.save_table_and_store_reconnect_token(
             "ROOM42",
             "2026-04-06T00:00:00Z",
@@ -808,7 +808,7 @@ mod tests {
         db.initialize()?;
 
         let room_json =
-            serde_json::to_string(&crate::app::initial_room_payload("ROOM42", "normal", true))?;
+            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42", "normal", true))?;
         db.save_table_and_store_reconnect_token(
             "ROOM42",
             "2026-04-06T00:00:00Z",
@@ -854,7 +854,7 @@ mod tests {
         let worker = DbWorker::start(db)?;
 
         let room_json =
-            serde_json::to_string(&crate::app::initial_room_payload("ROOM42", "normal", true))?;
+            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42", "normal", true))?;
         worker
             .save_table_and_store_reconnect_token(
                 "ROOM42",

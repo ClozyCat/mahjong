@@ -145,6 +145,8 @@ pub fn reconcile_continue_action_state_in_room_state(
     reconcile_continue_action_in_room_state(room)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
     let enforce_minimum_eight_fan = room
         .get("enforce_minimum_eight_fan")
@@ -178,6 +180,8 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
     });
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn record_continue_action(
     room: &mut Value,
     seat_index: usize,
@@ -212,6 +216,8 @@ pub fn record_continue_action(
     Ok(())
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn process_due_continue_action(room: &mut Value) -> Result<bool, String> {
     let action_id = current_continue_action_id(room).ok_or_else(|| "invalid_action".to_string())?;
     let deadline = project_room_state(room)?
@@ -224,6 +230,8 @@ pub fn process_due_continue_action(room: &mut Value) -> Result<bool, String> {
     Ok(true)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn reconcile_continue_action_state(room: &mut Value) -> Result<(), String> {
     reconcile_continue_action(room)
 }
@@ -485,6 +493,8 @@ pub fn apply_flower_action_output_in_room_state(
     ))
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn start_round(
     room: &mut Value,
     dealer_seat: usize,
@@ -533,6 +543,8 @@ fn start_round_in_room_state(
     room.continue_action = None;
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn seed_round_skill_loadouts(room: &Value, round_state: &mut crate::core::state::RoundState) {
     for player in &mut round_state.players {
         player.skill_loadout = skill_loadout_for_seat(room, player.seat);
@@ -548,6 +560,8 @@ fn seed_round_skill_loadouts_in_room_state(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
     room.get("seats")
         .and_then(Value::as_array)
@@ -593,6 +607,8 @@ fn skill_loadout_for_seat_in_room_state(room: &RoomState, seat: usize) -> SkillL
         .unwrap_or_default()
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn current_continue_action_id(room: &Value) -> Option<&'static str> {
     match room.get("phase").and_then(Value::as_str) {
         Some("settlement") => Some("start_next_round"),
@@ -609,6 +625,8 @@ fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn continue_required_human_seats(room: &Value) -> Vec<usize> {
     room.get("seats")
         .and_then(Value::as_array)
@@ -624,6 +642,8 @@ fn continue_required_human_seats(room: &Value) -> Vec<usize> {
         .collect()
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn continue_online_human_seats(room: &Value) -> Vec<usize> {
     room.get("seats")
         .and_then(Value::as_array)
@@ -644,6 +664,8 @@ fn continue_online_human_seats(room: &Value) -> Vec<usize> {
         .collect()
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn current_confirmed_continue_seats(room: &Value, action_id: &str) -> Vec<usize> {
     project_room_state(room)
         .ok()
@@ -680,6 +702,8 @@ fn current_confirmed_continue_seats_in_room_state(
         .unwrap_or_default()
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
     room.get("seats")
         .and_then(Value::as_array)
@@ -698,6 +722,8 @@ fn continue_all_occupied_seats_in_room_state(room: &RoomState) -> Vec<usize> {
     room.seats.iter().map(|seat| seat.seat_index).collect()
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     let Some(action_id) = current_continue_action_id(room) else {
         update_room_state(room, |state| {
@@ -824,6 +850,8 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
     Ok(())
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), String> {
     update_room_state(room, |state| {
         state.continue_action = None;
@@ -865,6 +893,8 @@ fn complete_continue_action_in_room_state(
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
     apply_settlement_to_match(room);
     let state = project_room_state(room)?;
