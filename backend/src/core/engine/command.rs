@@ -13,12 +13,16 @@ pub struct EngineOutput {
 }
 
 impl EngineOutput {
-    pub fn from_emitted_messages(emitted_messages: Vec<Value>) -> Self {
-        let events = extract_events_from_messages(&emitted_messages);
+    pub fn new(events: Vec<GameEvent>, emitted_messages: Vec<Value>) -> Self {
         Self {
             events,
             emitted_messages,
         }
+    }
+
+    pub fn from_emitted_messages(emitted_messages: Vec<Value>) -> Self {
+        let events = extract_events_from_messages(&emitted_messages);
+        Self::new(events, emitted_messages)
     }
 }
 
@@ -143,15 +147,37 @@ fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
                 .unwrap_or(0),
             source: "self_draw".to_string(),
         }),
-        "claim_made" if event.get("claim_type").and_then(Value::as_str) == Some("hu") => {
-            Some(GameEvent::HuDeclared {
-                winner: event
-                    .get("seat")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as Seat)
-                    .unwrap_or(0),
-                source: "discard".to_string(),
-            })
+        "claim_made" => {
+            let seat = event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0);
+            let claim_type = event.get("claim_type").and_then(Value::as_str);
+            if claim_type == Some("hu") {
+                Some(GameEvent::HuDeclared {
+                    winner: seat,
+                    source: "discard".to_string(),
+                })
+            } else {
+                Some(GameEvent::MeldClaimed {
+                    seat,
+                    meld: event
+                        .get("meld")
+                        .and_then(Value::as_array)
+                        .map(|meld| {
+                            meld.iter()
+                                .filter_map(|tile| tile.as_str().map(ToString::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    from: event
+                        .get("from")
+                        .and_then(Value::as_u64)
+                        .map(|value| value as Seat)
+                        .unwrap_or(0),
+                })
+            }
         }
         "settlement_ready" | "round_drawn" => event
             .get("settlement")
@@ -285,6 +311,18 @@ mod tests {
             json!({
                 "type": "round_event",
                 "payload": {
+                    "event_type": "claim_made",
+                    "event": {
+                        "seat": 2,
+                        "from": 0,
+                        "claim_type": "pung",
+                        "meld": ["w3", "w3", "w3"]
+                    }
+                }
+            }),
+            json!({
+                "type": "round_event",
+                "payload": {
                     "event_type": "claim_auto_passed",
                     "event": {
                         "seat": 2
@@ -305,6 +343,11 @@ mod tests {
         ));
         assert!(matches!(
             &events[2],
+            GameEvent::MeldClaimed { seat: 2, from: 0, meld }
+                if meld == &vec!["w3".to_string(), "w3".to_string(), "w3".to_string()]
+        ));
+        assert!(matches!(
+            &events[3],
             GameEvent::LegacyRoundEvent { event_type, .. } if event_type == "claim_auto_passed"
         ));
     }

@@ -1,11 +1,13 @@
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
+use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::{
     plan_claim_window_continuation_without_winner, plan_claim_window_response, plan_discard_action,
     resolve_claims,
 };
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::core::event::GameEvent;
 use crate::core::state::{
     ClaimWindowAction, LastActionContext, PendingAction, RobKongWindowAction, RoomState, RoundState,
 };
@@ -27,6 +29,74 @@ use super::settlement::settle_exhaustive_draw;
 use super::win::{apply_hu_settlement, compute_hu_settlement};
 
 const MAX_SEATS: usize = 4;
+
+fn tile_discarded_event(seat_index: usize, tile: &Tile) -> GameEvent {
+    GameEvent::TileDiscarded {
+        seat: seat_index,
+        tile: tile.clone(),
+    }
+}
+
+fn tile_discarded_message(seat_index: usize, tile: &Tile) -> Value {
+    round_event_message(
+        "tile_discarded",
+        json!({
+            "type": "tile_discarded",
+            "seat": seat_index,
+            "tile_id": tile.tile_id,
+            "tile_key": tile.tile_key,
+        }),
+    )
+}
+
+fn replacement_draw_event(seat_index: usize, tile: &Tile) -> GameEvent {
+    GameEvent::TileDrawn {
+        seat: seat_index,
+        tile: tile.clone(),
+        source: "replacement_draw".to_string(),
+    }
+}
+
+fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
+    round_event_message(
+        "replacement_draw",
+        json!({
+            "type": "replacement_draw",
+            "seat": seat_index,
+            "tile_id": tile.tile_id,
+            "tile_key": tile.tile_key,
+        }),
+    )
+}
+
+fn meld_claimed_event(seat_index: usize, meld: &[String], discarder_seat: usize) -> GameEvent {
+    GameEvent::MeldClaimed {
+        seat: seat_index,
+        meld: meld.to_vec(),
+        from: discarder_seat,
+    }
+}
+
+fn claim_made_message(
+    seat_index: usize,
+    discarder_seat: usize,
+    action_type: &str,
+    last_discard_tile: &Tile,
+    meld: &[String],
+) -> Value {
+    round_event_message(
+        "claim_made",
+        json!({
+            "type": "claim_made",
+            "seat": seat_index,
+            "from": discarder_seat,
+            "claim_type": action_type,
+            "tile_id": last_discard_tile.tile_id,
+            "tile_key": last_discard_tile.tile_key,
+            "meld": meld,
+        }),
+    )
+}
 
 pub fn try_handle_self_kong_action(
     room: &mut Value,
@@ -62,7 +132,7 @@ pub fn apply_claim_window_action(
     seat_index: usize,
     action_type: &str,
     tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
+) -> Result<EngineOutput, String> {
     if matches!(action_type, "chow" | "pung" | "kong") {
         validate_claim_selection(room, seat_index, action_type, tile_ids)?;
     }
@@ -72,9 +142,9 @@ pub fn apply_claim_window_action(
     if !plan.unresolved_seats.is_empty() {
         sync_round_skill_trackers(room);
         sync_pending_timeout(room);
-        return Ok(vec![]);
+        return Ok(EngineOutput::default());
     }
-    resolve_recorded_claims_local(room)
+    resolve_recorded_claims_local_output(room)
 }
 
 pub fn apply_discard_action(
@@ -82,6 +152,14 @@ pub fn apply_discard_action(
     seat_index: usize,
     tile_id: &str,
 ) -> Result<Vec<Value>, String> {
+    apply_discard_action_output(room, seat_index, tile_id).map(|output| output.emitted_messages)
+}
+
+pub fn apply_discard_action_output(
+    room: &mut Value,
+    seat_index: usize,
+    tile_id: &str,
+) -> Result<EngineOutput, String> {
     let state = project_room_state(room)?;
     if state.phase != "playing" {
         return Err("round_not_ready".to_string());
@@ -136,22 +214,20 @@ pub fn apply_discard_action(
         claim_window,
         previous_was_last_live_tile,
     )?;
-    apply_legacy_room_mutations(room, &plan.discard_mutations)?;
+    apply_legacy_room_mutations(room, &plan.discard_mutations(seat_index))?;
     note_tracker_discard(room, seat_index, &plan.discarded_tile.tile_key);
-    if plan.needs_exhaustive_draw {
+    if plan.continuation.needs_exhaustive_draw {
         sync_round_skill_trackers(room);
-        let mut messages = vec![round_event_message(
-            "tile_discarded",
-            json!({
-                "type": "tile_discarded",
-                "seat": seat_index,
-                "tile_id": plan.discarded_tile.tile_id,
-            }),
-        )];
-        messages.extend(settle_exhaustive_draw(room));
-        return Ok(messages);
+        let discard_message = tile_discarded_message(seat_index, &plan.discarded_tile);
+        let mut settlement_messages = settle_exhaustive_draw(room);
+        let settlement_output = EngineOutput::from_emitted_messages(settlement_messages.clone());
+        let mut events = vec![tile_discarded_event(seat_index, &plan.discarded_tile)];
+        events.extend(settlement_output.events);
+        let mut emitted_messages = vec![discard_message];
+        emitted_messages.append(&mut settlement_messages);
+        return Ok(EngineOutput::new(events, emitted_messages));
     }
-    apply_legacy_room_mutations(room, &plan.followup_mutations)?;
+    apply_legacy_room_mutations(room, &plan.followup_mutations())?;
     let updated_state = project_room_state(room)?;
     let updated_round = round_state_ref(&updated_state)?;
     let next_actor = updated_round.current_actor;
@@ -176,14 +252,10 @@ pub fn apply_discard_action(
     }
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
-    Ok(vec![round_event_message(
-        "tile_discarded",
-        json!({
-            "type": "tile_discarded",
-            "seat": seat_index,
-            "tile_id": plan.discarded_tile.tile_id,
-        }),
-    )])
+    Ok(EngineOutput::new(
+        vec![tile_discarded_event(seat_index, &plan.discarded_tile)],
+        vec![tile_discarded_message(seat_index, &plan.discarded_tile)],
+    ))
 }
 
 pub fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -> bool {
@@ -298,7 +370,7 @@ pub fn can_resolve_rob_kong_timeout_locally(room: &Value) -> bool {
     pending_timeout_kind(room) == Some("claim_window") && rob_kong_window_supported_locally(room)
 }
 
-pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, String> {
+pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<EngineOutput, String> {
     let state = project_room_state(room)?;
     let round = state
         .round_state
@@ -343,9 +415,10 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Va
     if !unresolved.is_empty() {
         sync_round_skill_trackers(room);
         sync_pending_timeout(room);
-        return Ok(vec![]);
+        return Ok(EngineOutput::default());
     }
-    complete_add_kong_after_passes(room)
+    let messages = complete_add_kong_after_passes(room)?;
+    Ok(EngineOutput::from_emitted_messages(messages))
 }
 
 pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> {
@@ -597,19 +670,16 @@ fn plan_self_kong_completion(
                     "tile_ids": selection.tile_ids,
                 }),
             ),
-            round_event_message(
-                "replacement_draw",
-                json!({
-                    "type": "replacement_draw",
-                    "seat": seat_index,
-                    "tile_id": replacement_tile.tile_id,
-                }),
-            ),
+            replacement_draw_message(seat_index, &replacement_tile),
         ],
     })
 }
 
 fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String> {
+    resolve_recorded_claims_local_output(room).map(|output| output.emitted_messages)
+}
+
+fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput, String> {
     let state = project_room_state(room)?;
     let round = state
         .round_state
@@ -647,7 +717,8 @@ fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String>
     let plan = plan_claim_window_continuation_without_winner(&state, discarder_seat)?;
     if plan.needs_exhaustive_draw {
         sync_round_skill_trackers(room);
-        return Ok(settle_exhaustive_draw(room));
+        let emitted_messages = settle_exhaustive_draw(room);
+        return Ok(EngineOutput::from_emitted_messages(emitted_messages));
     }
     apply_legacy_room_mutations(room, &plan.mutations)?;
     let updated_state = project_room_state(room)?;
@@ -674,7 +745,7 @@ fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String>
     }
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
-    Ok(vec![])
+    Ok(EngineOutput::default())
 }
 
 fn validate_claim_selection(
@@ -735,27 +806,37 @@ fn apply_selected_claim(
     seat_index: usize,
     action_type: &str,
     tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
+) -> Result<EngineOutput, String> {
     if action_type == "hu" {
         let settlement = compute_hu_settlement(room, seat_index, "discard")?;
-        return apply_hu_settlement(room, seat_index, "discard", settlement);
+        let emitted_messages = apply_hu_settlement(room, seat_index, "discard", settlement)?;
+        return Ok(EngineOutput::from_emitted_messages(emitted_messages));
     }
     let plan = plan_selected_claim(room, seat_index, action_type, tile_ids)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
     note_tracker_claimed_discard(room, plan.discarder_seat);
-    if let Some(tile_key) = plan.drawn_tile_key.as_deref() {
-        note_tracker_draw(room, seat_index, tile_key);
+    if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
+        note_tracker_draw(room, seat_index, &replacement_tile.tile_key);
     }
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
-    Ok(plan.events)
+    let mut events = vec![meld_claimed_event(
+        seat_index,
+        &plan.meld,
+        plan.discarder_seat,
+    )];
+    if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
+        events.push(replacement_draw_event(seat_index, replacement_tile));
+    }
+    Ok(EngineOutput::new(events, plan.emitted_messages))
 }
 
 struct SelectedClaimPlan {
     discarder_seat: usize,
-    drawn_tile_key: Option<String>,
+    meld: Vec<String>,
+    replacement_tile: Option<Tile>,
     mutations: Vec<LegacyRoomMutation>,
-    events: Vec<Value>,
+    emitted_messages: Vec<Value>,
 }
 
 fn plan_selected_claim(
@@ -799,24 +880,25 @@ fn plan_selected_claim(
     mutations.push(LegacyRoomMutation::PopPlayerDiscardLast {
         seat_index: discarder_seat,
     });
-    mutations.push(LegacyRoomMutation::PushPlayerMeld { seat_index, meld });
+    mutations.push(LegacyRoomMutation::PushPlayerMeld {
+        seat_index,
+        meld: meld.clone(),
+    });
 
-    let mut events = vec![round_event_message(
-        "claim_made",
-        json!({
-            "type": "claim_made",
-            "seat": seat_index,
-            "claim_type": action_type,
-            "tile_id": last_discard_tile.tile_id,
-        }),
+    let mut emitted_messages = vec![claim_made_message(
+        seat_index,
+        discarder_seat,
+        action_type,
+        &last_discard_tile,
+        &meld,
     )];
 
-    let mut drawn_tile_key = None;
+    let mut replacement_tile_for_output = None;
     if action_type == "kong" {
         let replacement_tile = tile_from_value(
             &replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?,
         )?;
-        drawn_tile_key = Some(replacement_tile.tile_key.clone());
+        replacement_tile_for_output = Some(replacement_tile.clone());
         mutations.push(LegacyRoomMutation::RetreatWallTail);
         mutations.push(LegacyRoomMutation::PushPlayerConcealedTile {
             seat_index,
@@ -838,14 +920,7 @@ fn plan_selected_claim(
                 was_last_discard: false,
             },
         });
-        events.push(round_event_message(
-            "replacement_draw",
-            json!({
-                "type": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": replacement_tile.tile_id,
-            }),
-        ));
+        emitted_messages.push(replacement_draw_message(seat_index, &replacement_tile));
     }
 
     mutations.push(LegacyRoomMutation::SetRoundCurrentActor { seat_index });
@@ -860,9 +935,10 @@ fn plan_selected_claim(
 
     Ok(SelectedClaimPlan {
         discarder_seat,
-        drawn_tile_key,
+        meld,
+        replacement_tile: replacement_tile_for_output,
         mutations,
-        events,
+        emitted_messages,
     })
 }
 

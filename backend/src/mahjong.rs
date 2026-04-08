@@ -845,6 +845,41 @@ mod tests {
     }
 
     #[test]
+    fn try_handle_command_emits_typed_claim_event() {
+        let mut room = room_for_local_claim_window();
+        let _ = try_handle_command(
+            &mut room,
+            GameCommand::PlayerAction {
+                actor: 0,
+                action: PlayerAction::Discard {
+                    tile_id: "w3#discard".to_string(),
+                },
+            },
+        )
+        .expect("discard command should be handled locally")
+        .expect("discard command should succeed");
+
+        let output = try_handle_command(
+            &mut room,
+            GameCommand::PlayerAction {
+                actor: 2,
+                action: PlayerAction::Pung {
+                    tile_ids: vec!["w3#2a".to_string(), "w3#2b".to_string()],
+                },
+            },
+        )
+        .expect("pung command should be handled locally")
+        .expect("pung command should succeed");
+
+        assert_eq!(output.emitted_messages.len(), 1);
+        assert!(matches!(
+            output.events.first(),
+            Some(GameEvent::MeldClaimed { seat: 2, from: 0, meld })
+                if meld == &vec!["w3".to_string(), "w3".to_string(), "w3".to_string()]
+        ));
+    }
+
+    #[test]
     fn action_prompt_exposes_equipped_skill_option() {
         let mut room = room_for_local_discard();
         room["round_state"]["players"][0]["skill_loadout"] = json!({

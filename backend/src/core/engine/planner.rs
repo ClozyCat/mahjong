@@ -28,9 +28,16 @@ pub struct PlannedClaimWindowResponse {
 
 #[derive(Debug, Clone)]
 pub struct PlannedDiscardAction {
-    pub discard_mutations: Vec<LegacyRoomMutation>,
-    pub followup_mutations: Vec<LegacyRoomMutation>,
     pub discarded_tile: Tile,
+    pub continuation: PlannedDiscardContinuation,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlannedDiscardContinuation {
+    pub current_actor: usize,
+    pub pending_action: Option<PendingAction>,
+    pub drawn_tile: Option<Tile>,
+    pub last_action_context: LastActionContext,
     pub needs_exhaustive_draw: bool,
 }
 
@@ -38,6 +45,51 @@ pub struct PlannedDiscardAction {
 pub struct PlannedClaimWindowContinuation {
     pub mutations: Vec<LegacyRoomMutation>,
     pub needs_exhaustive_draw: bool,
+}
+
+impl PlannedDiscardAction {
+    pub fn discard_mutations(&self, seat_index: usize) -> Vec<LegacyRoomMutation> {
+        vec![
+            LegacyRoomMutation::RemovePlayerConcealedTileById {
+                seat_index,
+                tile_id: self.discarded_tile.tile_id.clone(),
+            },
+            LegacyRoomMutation::PushPlayerDiscard {
+                seat_index,
+                tile: self.discarded_tile.clone(),
+            },
+            LegacyRoomMutation::SetRoundLastDiscard {
+                tile: Some(self.discarded_tile.clone()),
+            },
+        ]
+    }
+
+    pub fn followup_mutations(&self) -> Vec<LegacyRoomMutation> {
+        let mut mutations = vec![
+            LegacyRoomMutation::SetRoundPendingAction {
+                pending_action: self.continuation.pending_action.clone(),
+            },
+            LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key: None },
+            LegacyRoomMutation::SetRoundLastActionContext {
+                context: self.continuation.last_action_context.clone(),
+            },
+            LegacyRoomMutation::IncrementRoundVersion,
+            LegacyRoomMutation::SetRoundCurrentActor {
+                seat_index: self.continuation.current_actor,
+            },
+        ];
+        if let Some(tile) = self.continuation.drawn_tile.as_ref() {
+            mutations.insert(0, LegacyRoomMutation::AdvanceWallHead);
+            mutations.insert(
+                1,
+                LegacyRoomMutation::PushPlayerConcealedTile {
+                    seat_index: self.continuation.current_actor,
+                    tile: tile.clone(),
+                },
+            );
+        }
+        mutations
+    }
 }
 
 pub fn plan_round_start_payload(
@@ -417,20 +469,6 @@ pub fn plan_discard_action(
         .cloned()
         .ok_or_else(|| "invalid_action".to_string())?;
 
-    let discard_mutations = vec![
-        LegacyRoomMutation::RemovePlayerConcealedTileById {
-            seat_index,
-            tile_id: tile_id.to_string(),
-        },
-        LegacyRoomMutation::PushPlayerDiscard {
-            seat_index,
-            tile: discarded_tile.clone(),
-        },
-        LegacyRoomMutation::SetRoundLastDiscard {
-            tile: Some(discarded_tile.clone()),
-        },
-    ];
-
     let has_claim = claim_window.iter().any(|claims| !claims.is_empty());
     let next_actor = (seat_index + 1) % MAX_SEATS;
     let drawn_tile = if has_claim {
@@ -444,63 +482,45 @@ pub fn plan_discard_action(
     } else {
         live_tiles_remaining_after_head_draw(state) <= 1
     };
-
-    let mut followup_mutations = vec![
-        LegacyRoomMutation::SetRoundPendingAction {
-            pending_action: if has_claim {
-                Some(PendingAction::ClaimWindow(ClaimWindowAction {
-                    discarder_seat: seat_index,
-                    claim_window,
-                    responded_seats: vec![],
-                    claim_responses: vec![],
-                }))
-            } else {
-                None
-            },
-        },
-        LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key: None },
-        LegacyRoomMutation::SetRoundLastActionContext {
-            context: if has_claim {
-                LastActionContext {
-                    kind: "discard".to_string(),
-                    seat: seat_index,
-                    tile_id: Some(discarded_tile.tile_id.clone()),
-                    from_kong_replacement: false,
-                    was_last_live_tile: false,
-                    was_last_discard: previous_was_last_live_tile,
-                }
-            } else {
-                LastActionContext {
-                    kind: "draw".to_string(),
-                    seat: next_actor,
-                    tile_id: drawn_tile.as_ref().map(|tile| tile.tile_id.clone()),
-                    from_kong_replacement: false,
-                    was_last_live_tile,
-                    was_last_discard: false,
-                }
-            },
-        },
-        LegacyRoomMutation::IncrementRoundVersion,
-        LegacyRoomMutation::SetRoundCurrentActor {
-            seat_index: if has_claim { seat_index } else { next_actor },
-        },
-    ];
-    if let Some(tile) = drawn_tile {
-        followup_mutations.insert(0, LegacyRoomMutation::AdvanceWallHead);
-        followup_mutations.insert(
-            1,
-            LegacyRoomMutation::PushPlayerConcealedTile {
-                seat_index: next_actor,
-                tile,
-            },
-        );
-    }
+    let pending_action = if has_claim {
+        Some(PendingAction::ClaimWindow(ClaimWindowAction {
+            discarder_seat: seat_index,
+            claim_window,
+            responded_seats: vec![],
+            claim_responses: vec![],
+        }))
+    } else {
+        None
+    };
+    let last_action_context = if has_claim {
+        LastActionContext {
+            kind: "discard".to_string(),
+            seat: seat_index,
+            tile_id: Some(discarded_tile.tile_id.clone()),
+            from_kong_replacement: false,
+            was_last_live_tile: false,
+            was_last_discard: previous_was_last_live_tile,
+        }
+    } else {
+        LastActionContext {
+            kind: "draw".to_string(),
+            seat: next_actor,
+            tile_id: drawn_tile.as_ref().map(|tile| tile.tile_id.clone()),
+            from_kong_replacement: false,
+            was_last_live_tile,
+            was_last_discard: false,
+        }
+    };
 
     Ok(PlannedDiscardAction {
-        discard_mutations,
-        followup_mutations,
         discarded_tile,
-        needs_exhaustive_draw,
+        continuation: PlannedDiscardContinuation {
+            current_actor: if has_claim { seat_index } else { next_actor },
+            pending_action,
+            drawn_tile,
+            last_action_context,
+            needs_exhaustive_draw,
+        },
     })
 }
 
@@ -814,7 +834,8 @@ mod tests {
 
     use super::{
         compute_pending_timeout_value, plan_claim_window_continuation_without_winner,
-        plan_claim_window_response, plan_flower_action, plan_round_start_payload,
+        plan_claim_window_response, plan_discard_action, plan_flower_action,
+        plan_round_start_payload,
     };
     use crate::core::state::RoomState;
 
@@ -1145,5 +1166,116 @@ mod tests {
             }
             other => panic!("unexpected mutation: {other:?}"),
         }
+    }
+
+    #[test]
+    fn discard_plan_exposes_typed_continuation_before_mutation_adaptation() {
+        let room = RoomState::from_legacy_value(&json!({
+            "table_code": "ROOM42",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "seats": [],
+            "match_state": null,
+            "round_state": {
+                "round_id": "round-discard",
+                "dealer_seat": 0,
+                "current_actor": 0,
+                "wall": {
+                    "tiles": [{
+                        "tile_id": "w4#draw",
+                        "tile_key": "w4",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 4,
+                        "name": "Character 4"
+                    }],
+                    "head_index": 0,
+                    "tail_index": 0
+                },
+                "players": [{
+                    "seat": 0,
+                    "concealed_tiles": [{
+                        "tile_id": "w3#discard",
+                        "tile_key": "w3",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 3,
+                        "name": "Character 3"
+                    }],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }, {
+                    "seat": 1,
+                    "concealed_tiles": [],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }, {
+                    "seat": 2,
+                    "concealed_tiles": [],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }, {
+                    "seat": 3,
+                    "concealed_tiles": [],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }],
+                "last_discard": null,
+                "pending_action": null,
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {
+                    "kong_entries": [],
+                    "opening_flowers_completed": true
+                },
+                "last_action_context": {
+                    "kind": "draw",
+                    "seat": 0,
+                    "tile_id": "w3#discard",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": null,
+            "start_next_round_confirmed_seats": [],
+            "restart_match_confirmed_seats": [],
+            "continue_action_auto_advance_deadline_at": null
+        }))
+        .expect("legacy room should parse");
+
+        let plan = plan_discard_action(
+            &room,
+            0,
+            "w3#discard",
+            vec![vec![], vec![], vec![], vec![]],
+            false,
+        )
+        .expect("discard action should plan");
+
+        assert_eq!(plan.discarded_tile.tile_id, "w3#discard");
+        assert_eq!(plan.continuation.current_actor, 1);
+        assert!(plan.continuation.pending_action.is_none());
+        assert_eq!(
+            plan.continuation
+                .drawn_tile
+                .as_ref()
+                .map(|tile| tile.tile_id.as_str()),
+            Some("w4#draw")
+        );
+        assert_eq!(plan.continuation.last_action_context.kind, "draw");
+        assert!(!plan.continuation.needs_exhaustive_draw);
+        assert_eq!(plan.discard_mutations(0).len(), 3);
+        assert_eq!(plan.followup_mutations().len(), 7);
     }
 }
