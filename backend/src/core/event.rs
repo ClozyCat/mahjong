@@ -1,9 +1,8 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::core::ids::{Seat, SkillId};
+use crate::core::state::RoundSettlement;
 use crate::core::state::effect::{EffectInstance, KnowledgeEffect, RuleOverride};
 use crate::core::tile::Tile;
 
@@ -34,7 +33,7 @@ pub enum GameEvent {
         source: String,
     },
     SettlementPrepared {
-        settlement: SettlementResult,
+        settlement: RoundSettlement,
     },
     SkillActivated {
         seat: Seat,
@@ -57,11 +56,4 @@ pub enum GameEvent {
         event_type: String,
         event: Value,
     },
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SettlementResult {
-    pub winner: Option<Seat>,
-    pub fan_total: Option<i64>,
-    pub total_delta_by_seat: BTreeMap<Seat, i64>,
 }

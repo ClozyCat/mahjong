@@ -1,6 +1,5 @@
 use super::fan_table::StandardFanTable;
 
-use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::{OnceLock, RwLock};
@@ -148,36 +147,7 @@ pub struct FanResult {
     pub provisional: bool,
 }
 
-impl FanResult {
-    pub fn score_delta_json(&self) -> Value {
-        json!({
-            "provisional": self.score_delta.provisional,
-            "basic_points": self.score_delta.basic_points,
-            "base_points": self.score_delta.base_points,
-            "fan_total": self.score_delta.fan_total,
-            "minimum_qualifying_fan_total": self.score_delta.minimum_qualifying_fan_total,
-            "fan_delta_by_seat": score_map_value(&self.score_delta.fan_delta_by_seat),
-            "kong_delta_by_seat": score_map_value(&self.score_delta.kong_delta_by_seat),
-            "total_delta_by_seat": score_map_value(&self.score_delta.total_delta_by_seat),
-        })
-    }
-
-    pub fn kong_score_detail_json(&self) -> Value {
-        Value::Array(
-            self.kong_score_detail
-                .iter()
-                .map(|entry| {
-                    json!({
-                        "kong_type": entry.kong_type,
-                        "actor_seat": entry.actor_seat,
-                        "payer_seats": entry.payer_seats,
-                        "delta_by_seat": score_map_value(&entry.delta_by_seat),
-                    })
-                })
-                .collect(),
-        )
-    }
-}
+impl FanResult {}
 
 #[derive(Clone, Debug)]
 struct FanContext {
@@ -3431,14 +3401,6 @@ fn single_meld(counts: &TileCounts) -> Option<CompactMeld> {
         }
     }
     None
-}
-
-fn score_map_value(values: &[i64]) -> Value {
-    let mut map = Map::new();
-    for (seat, value) in values.iter().enumerate() {
-        map.insert(seat.to_string(), Value::Number((*value).into()));
-    }
-    Value::Object(map)
 }
 
 fn sequence_meld_start(meld_tile_keys: &[String]) -> Option<(char, i32)> {

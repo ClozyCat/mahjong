@@ -2,7 +2,10 @@ use serde_json::{Value, json};
 
 use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
-use crate::core::state::PendingAction;
+use crate::core::state::{
+    PendingAction, RoundSettlement, SettlementFanBreakdownEntry, SettlementKongScoreDetailEntry,
+    SettlementScoreDelta,
+};
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
@@ -38,7 +41,7 @@ pub fn compute_hu_settlement(
     room: &Value,
     winner_seat: usize,
     hu_context: &str,
-) -> Result<Value, String> {
+) -> Result<RoundSettlement, String> {
     let state = project_room_state(room)?;
     if state.phase != "playing" {
         return Err("round_not_ready".to_string());
@@ -93,33 +96,83 @@ pub fn compute_hu_settlement(
         .unwrap_or(0);
     let enforce_minimum_eight_fan = round.rule_state.enforce_minimum_eight_fan;
 
-    Ok(json!({
-        "provisional": true,
-        "win_type": hu_context,
-        "winner_seat": winner_seat,
-        "discarder_seat": discarder_seat,
-        "display_win_label": if !enforce_minimum_eight_fan && fan_result.fan_total < evaluated.required_minimum_fan_total { Value::String("灞佸拰".to_string()) } else { Value::Null },
-        "fan_total": fan_result.fan_total,
-        "fan_keys": fan_result.fan_keys,
-        "fan_breakdown": Value::Array(
-            fan_result
-                .fan_breakdown
+    Ok(RoundSettlement {
+        provisional: true,
+        win_type: hu_context.to_string(),
+        winner_seat: Some(winner_seat),
+        discarder_seat,
+        display_win_label: if !enforce_minimum_eight_fan
+            && fan_result.fan_total < evaluated.required_minimum_fan_total
+        {
+            Some("灞佸拰".to_string())
+        } else {
+            None
+        },
+        fan_total: fan_result.fan_total,
+        fan_keys: fan_result.fan_keys.clone(),
+        fan_breakdown: fan_result
+            .fan_breakdown
+            .iter()
+            .map(|entry| SettlementFanBreakdownEntry {
+                fan_key: entry.fan_key.clone(),
+                fan_value: entry.fan_value,
+            })
+            .collect(),
+        score_delta: SettlementScoreDelta {
+            provisional: fan_result.score_delta.provisional,
+            basic_points: fan_result.score_delta.basic_points,
+            base_points: fan_result.score_delta.base_points,
+            fan_total: fan_result.score_delta.fan_total,
+            minimum_qualifying_fan_total: fan_result.score_delta.minimum_qualifying_fan_total,
+            fan_delta_by_seat: fan_result
+                .score_delta
+                .fan_delta_by_seat
                 .iter()
-                .map(|entry| json!({ "fan_key": entry.fan_key, "fan_value": entry.fan_value }))
-                .collect()
-        ),
-        "score_delta": fan_result.score_delta_json(),
-        "flower_count": flower_count,
-        "kong_score_detail": fan_result.kong_score_detail_json(),
-    }))
+                .enumerate()
+                .map(|(seat, delta)| (seat, *delta))
+                .collect(),
+            kong_delta_by_seat: fan_result
+                .score_delta
+                .kong_delta_by_seat
+                .iter()
+                .enumerate()
+                .map(|(seat, delta)| (seat, *delta))
+                .collect(),
+            total_delta_by_seat: fan_result
+                .score_delta
+                .total_delta_by_seat
+                .iter()
+                .enumerate()
+                .map(|(seat, delta)| (seat, *delta))
+                .collect(),
+        },
+        flower_count,
+        draw_type: None,
+        kong_score_detail: fan_result
+            .kong_score_detail
+            .iter()
+            .map(|entry| SettlementKongScoreDetailEntry {
+                kong_type: entry.kong_type.clone(),
+                actor_seat: entry.actor_seat,
+                payer_seats: entry.payer_seats.clone(),
+                delta_by_seat: entry
+                    .delta_by_seat
+                    .iter()
+                    .enumerate()
+                    .map(|(seat, delta)| (seat, *delta))
+                    .collect(),
+            })
+            .collect(),
+    })
 }
 
 pub fn apply_hu_settlement(
     room: &mut Value,
     winner_seat: usize,
     hu_context: &str,
-    settlement: Value,
+    settlement: RoundSettlement,
 ) -> Result<Vec<Value>, String> {
+    let settlement_value = settlement.to_legacy_value();
     let round_id = room
         .get("round_state")
         .and_then(|round| round.get("round_id"))
@@ -137,24 +190,20 @@ pub fn apply_hu_settlement(
         .cloned()
         .unwrap_or(Value::Null);
     let mut mutations = vec![
-        LegacyRoomMutation::SetRoomField {
-            key: "phase".to_string(),
-            value: Value::String("settlement".to_string()),
+        LegacyRoomMutation::SetRoomPhase {
+            phase: "settlement".to_string(),
         },
-        LegacyRoomMutation::SetRoomField {
-            key: "pending_timeout".to_string(),
-            value: Value::Null,
+        LegacyRoomMutation::SetRoomPendingTimeout {
+            pending_timeout: None,
         },
-        LegacyRoomMutation::SetRoundField {
-            key: "phase".to_string(),
-            value: Value::String("settlement".to_string()),
+        LegacyRoomMutation::SetRoundPhase {
+            phase: "settlement".to_string(),
         },
         LegacyRoomMutation::SetRoundPendingAction {
-            pending_action: Value::Null,
+            pending_action: None,
         },
-        LegacyRoomMutation::SetRoundField {
-            key: "settlement".to_string(),
-            value: settlement.clone(),
+        LegacyRoomMutation::SetRoundSettlement {
+            settlement: Some(settlement.clone()),
         },
         LegacyRoomMutation::SetRoundCurrentActor {
             seat_index: winner_seat,
@@ -194,30 +243,51 @@ pub fn apply_hu_settlement(
             json!({
                 "type": "settlement_ready",
                 "round_id": round_id,
+                "settlement": settlement_value,
             }),
         ),
     ])
 }
 
 pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
-    if room.get("phase").and_then(Value::as_str) != Some("playing") {
+    let state = project_room_state(room).ok()?;
+    if state.phase != "playing" {
         return None;
     }
-    let pending_action = room.get("round_state")?.get("pending_action");
-    if pending_action.is_none() || pending_action.is_some_and(Value::is_null) {
+    let round = state.round_state.as_ref()?;
+    let Some(pending_action) = round.pending_action.as_ref() else {
         return (current_actor(room) == Some(seat_index)).then_some("self_draw");
-    }
-    let pending_action = pending_action?;
-    match pending_action.get("type").and_then(Value::as_str) {
-        Some("claim_window") if claim_window_offers_claim(pending_action, seat_index, "hu") => {
+    };
+    match pending_action {
+        PendingAction::ClaimWindow(claim)
+            if claim_window_action_offers_claim(claim, seat_index, "hu") =>
+        {
             Some("discard")
         }
-        Some("rob_kong_window") if rob_kong_window_offers_seat(pending_action, seat_index) => {
+        PendingAction::RobKongWindow(rob) if rob_kong_action_offers_seat(rob, seat_index) => {
             Some("discard")
         }
-        Some("claim_window") | Some("rob_kong_window") => None,
+        PendingAction::ClaimWindow(_) | PendingAction::RobKongWindow(_) => None,
         _ => None,
     }
+}
+
+fn claim_window_action_offers_claim(
+    pending_action: &crate::core::state::ClaimWindowAction,
+    seat_index: usize,
+    claim_type: &str,
+) -> bool {
+    pending_action
+        .claim_window
+        .get(seat_index)
+        .is_some_and(|claims| claims.iter().any(|claim| claim == claim_type))
+}
+
+fn rob_kong_action_offers_seat(
+    pending_action: &crate::core::state::RobKongWindowAction,
+    seat_index: usize,
+) -> bool {
+    pending_action.offered_hu_seats.contains(&seat_index)
 }
 
 pub fn claim_window_offers_claim(
@@ -235,15 +305,6 @@ pub fn claim_window_offers_claim(
     )
 }
 
-pub fn rob_kong_window_offers_seat(pending_action: &Value, seat_index: usize) -> bool {
-    json_array_contains_seat(
-        pending_action
-            .get("offered_hu_seats")
-            .and_then(Value::as_array),
-        seat_index,
-    )
-}
-
 pub fn can_declare_hu_with_cache(
     room: &Value,
     cache: &RoomScoringCache,
@@ -251,14 +312,15 @@ pub fn can_declare_hu_with_cache(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    if room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("type"))
-        .and_then(Value::as_str)
-        == Some("opening_flowers")
-    {
-        return false;
+    if let Ok(state) = project_room_state(room) {
+        if state
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .is_some_and(|pending| matches!(pending, PendingAction::OpeningFlowers(_)))
+        {
+            return false;
+        }
     }
 
     if let Ok(evaluated) =
@@ -268,17 +330,6 @@ pub fn can_declare_hu_with_cache(
             >= evaluated.required_minimum_fan_total;
     }
     false
-}
-
-fn json_array_contains_seat(values: Option<&Vec<Value>>, seat_index: usize) -> bool {
-    values.is_some_and(|items| {
-        items.iter().any(|value| {
-            value
-                .as_u64()
-                .map(|seat| seat as usize == seat_index)
-                .unwrap_or(false)
-        })
-    })
 }
 
 fn json_array_contains_str(values: Option<&Vec<Value>>, needle: &str) -> bool {
@@ -492,24 +543,17 @@ fn meld_is_open_with_entries(
 }
 
 fn timing_features_for_win(room: &Value, self_draw: bool) -> ScoringTimingFeatures {
-    let context = room
-        .get("round_state")
-        .and_then(|round| round.get("last_action_context"))
-        .cloned()
-        .unwrap_or(Value::Null);
+    let state = project_room_state(room).ok();
+    let context = state
+        .as_ref()
+        .and_then(|state| state.round_state.as_ref())
+        .map(|round| round.last_action_context.clone())
+        .unwrap_or_default();
     if self_draw {
-        let is_replacement = context
-            .get("from_kong_replacement")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let is_replacement = context.from_kong_replacement;
         return ScoringTimingFeatures {
             gang_shang_hua: is_replacement,
-            hai_di_lao_yue: !is_replacement
-                && context.get("kind").and_then(Value::as_str) == Some("draw")
-                && context
-                    .get("was_last_live_tile")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+            hai_di_lao_yue: !is_replacement && context.kind == "draw" && context.was_last_live_tile,
             he_di_lao_yu: false,
             robbing_the_kong: false,
         };
@@ -518,16 +562,11 @@ fn timing_features_for_win(room: &Value, self_draw: bool) -> ScoringTimingFeatur
     ScoringTimingFeatures {
         gang_shang_hua: false,
         hai_di_lao_yue: false,
-        he_di_lao_yu: context.get("kind").and_then(Value::as_str) == Some("discard")
-            && context
-                .get("was_last_discard")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        robbing_the_kong: room
-            .get("round_state")
-            .and_then(|round| round.get("pending_action"))
-            .and_then(|pending| pending.get("type"))
-            .and_then(Value::as_str)
-            == Some("rob_kong_window"),
+        he_di_lao_yu: context.kind == "discard" && context.was_last_discard,
+        robbing_the_kong: state
+            .as_ref()
+            .and_then(|state| state.round_state.as_ref())
+            .and_then(|round| round.pending_action.as_ref())
+            .is_some_and(|pending| matches!(pending, PendingAction::RobKongWindow(_))),
     }
 }

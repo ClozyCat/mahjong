@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::core::event::GameEvent;
 use crate::core::ids::{Seat, TileId};
-use crate::core::state::{EffectInstance, KnowledgeEffect};
+use crate::core::state::{EffectInstance, KnowledgeEffect, RoundSettlement};
 use crate::core::tile::Tile;
 use crate::rules::scoring::FanResult;
 
@@ -218,7 +218,7 @@ impl RuleHook for StratagemSkill {
     fn after_draw_settlement(
         &self,
         ctx: &RuleContext<'_>,
-        settlement: &mut Value,
+        settlement: &mut RoundSettlement,
     ) -> Result<(), String> {
         apply_after_draw(self.id, ctx, settlement);
         Ok(())
@@ -1138,7 +1138,7 @@ fn apply_after_scoring(
     }
 }
 
-fn apply_after_draw(skill_id: &str, ctx: &RuleContext<'_>, settlement: &mut Value) {
+fn apply_after_draw(skill_id: &str, ctx: &RuleContext<'_>, settlement: &mut RoundSettlement) {
     let actor = ctx.actor;
     let gain = gain_value(skill_id, ctx.skill_instance.level);
     let loss = loss_value(skill_id, ctx.skill_instance.level);
@@ -1154,24 +1154,20 @@ fn apply_after_draw(skill_id: &str, ctx: &RuleContext<'_>, settlement: &mut Valu
     }
 }
 
-fn adjust_draw_delta(settlement: &mut Value, seat: Seat, delta: i64) {
+fn adjust_draw_delta(settlement: &mut RoundSettlement, seat: Seat, delta: i64) {
     if delta == 0 {
         return;
     }
-    let Some(score_delta) = settlement
-        .get_mut("score_delta")
-        .and_then(Value::as_object_mut)
-    else {
-        return;
-    };
-    for key in ["fan_delta_by_seat", "total_delta_by_seat"] {
-        let Some(map) = score_delta.get_mut(key).and_then(Value::as_object_mut) else {
-            continue;
-        };
-        let seat_key = seat.to_string();
-        let current = map.get(&seat_key).and_then(Value::as_i64).unwrap_or(0);
-        map.insert(seat_key, json!(current + delta));
-    }
+    *settlement
+        .score_delta
+        .fan_delta_by_seat
+        .entry(seat)
+        .or_default() += delta;
+    *settlement
+        .score_delta
+        .total_delta_by_seat
+        .entry(seat)
+        .or_default() += delta;
 }
 
 fn opponents_look_ready(ctx: &RuleContext<'_>) -> bool {

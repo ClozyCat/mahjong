@@ -9,10 +9,13 @@ use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
+use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
 use crate::core::event::GameEvent;
 use crate::core::ids::{Seat, SkillId, TileId};
-use crate::core::state::RoomState;
+use crate::core::state::{LastActionContext, PendingTimeout, RoomState, RoundSettlement};
+use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
+use crate::rules::standard::runtime::project_room_state as standard_project_room_state;
 use crate::rules::standard::win::can_declare_hu_with_cache;
 
 use self::builtin::{PeekOpponentTileSkill, ScoreBoostSkill};
@@ -178,14 +181,14 @@ pub fn apply_after_scoring_hooks_with_registry(
 
 pub fn apply_draw_settlement_hooks(
     room_state: &RoomState,
-    settlement: &mut Value,
+    settlement: &mut RoundSettlement,
 ) -> Result<(), String> {
     apply_draw_settlement_hooks_with_registry(room_state, settlement, default_registry())
 }
 
 pub fn apply_draw_settlement_hooks_with_registry(
     room_state: &RoomState,
-    settlement: &mut Value,
+    settlement: &mut RoundSettlement,
     registry: &dyn SkillRegistry,
 ) -> Result<(), String> {
     for_each_equipped_skill(room_state, registry, |ctx, definition| {
@@ -215,12 +218,14 @@ pub fn apply_passive_skill_events_to_legacy_room(
 }
 
 pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
-    let winner_seat = room
-        .get("round_state")
-        .and_then(|round| round.get("settlement"))
-        .and_then(|settlement| settlement.get("winner_seat"))
-        .and_then(Value::as_u64)
-        .map(|value| value as usize);
+    let Some(state) = standard_project_room_state(room).ok() else {
+        return;
+    };
+    let winner_seat = state
+        .round_state
+        .as_ref()
+        .and_then(|round| round.settlement.as_ref())
+        .and_then(|settlement| settlement.winner_seat);
 
     let seat_count = room
         .get("seats")
@@ -228,9 +233,7 @@ pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
         .map(|seats| seats.len())
         .unwrap_or(4);
 
-    let Some(trackers) = ensure_match_skill_trackers(room) else {
-        return;
-    };
+    let mut trackers = match_trackers_map_from_state(&state);
 
     let streaks = trackers
         .entry("lian_huan_ji".to_string())
@@ -275,6 +278,13 @@ pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
             pending.remove(&winner.to_string());
         }
     }
+
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetMatchSkillTrackers {
+            trackers: Value::Object(trackers),
+        }],
+    );
 }
 
 pub fn sync_round_skill_trackers(room: &mut Value) {
@@ -412,9 +422,12 @@ pub fn sync_round_skill_trackers(room: &mut Value) {
         Value::Object(tenpai_waits_by_seat),
     );
 
-    if let Some(round_state) = room.get_mut("round_state").and_then(Value::as_object_mut) {
-        round_state.insert("skill_trackers".to_string(), Value::Object(trackers));
-    }
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoundSkillTrackers {
+            trackers: Value::Object(trackers),
+        }],
+    );
 }
 
 pub fn note_tracker_discard(room: &mut Value, seat: Seat, tile_key: &str) {
@@ -776,89 +789,61 @@ fn apply_replace_tile_event(
         .get("removed_tile_id")
         .and_then(Value::as_str)
         .ok_or_else(|| "invalid_action".to_string())?;
-    let replacement_tile = event
-        .get("replacement_tile")
-        .cloned()
+    let replacement_tile = Tile::from_legacy_value(
+        event
+            .get("replacement_tile")
+            .ok_or_else(|| "invalid_action".to_string())?,
+        "skill_replace_tile.replacement_tile",
+    )
+    .map_err(|_| "invalid_action".to_string())?;
+    let state = standard_project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let replacement_tile_id = replacement_tile
-        .get("tile_id")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    let _ = round
+        .players
+        .get(seat)
+        .and_then(|player| {
+            player
+                .concealed_tiles
+                .iter()
+                .find(|tile| tile.tile_id == removed_tile_id)
+        })
+        .ok_or_else(|| "invalid_action".to_string())?;
 
-    let round_state = room
-        .get_mut("round_state")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let players = round_state
-        .get_mut("players")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let player = players
-        .get_mut(seat)
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let concealed_tiles = player
-        .get_mut("concealed_tiles")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let Some(tile_index) = concealed_tiles
-        .iter()
-        .position(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(removed_tile_id))
-    else {
-        return Err("invalid_action".to_string());
-    };
-    concealed_tiles[tile_index] = replacement_tile.clone();
-
-    let wall = round_state
-        .get_mut("wall")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let head_index = wall
-        .get("head_index")
-        .and_then(Value::as_u64)
-        .unwrap_or_default() as usize;
-    let tail_index = wall
-        .get("tail_index")
-        .and_then(Value::as_u64)
-        .unwrap_or_default() as usize;
-    wall.insert(
-        "head_index".to_string(),
-        json!(head_index.saturating_add(1)),
-    );
-    round_state.insert(
-        "last_action_context".to_string(),
-        json!({
-            "kind": "draw",
-            "seat": seat,
-            "tile_id": replacement_tile_id,
-            "from_kong_replacement": false,
-            "was_last_live_tile": head_index >= tail_index,
-            "was_last_discard": false,
-        }),
-    );
-    if room
-        .get("pending_timeout")
-        .and_then(|timeout| timeout.get("kind"))
-        .and_then(Value::as_str)
-        == Some("active_turn")
-        && room
-            .get("pending_timeout")
-            .and_then(|timeout| timeout.get("seat_index"))
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            == Some(seat)
+    let mut mutations = vec![
+        LegacyRoomMutation::ReplacePlayerConcealedTileById {
+            seat_index: seat,
+            tile_id: removed_tile_id.to_string(),
+            tile: replacement_tile.clone(),
+        },
+        LegacyRoomMutation::AdvanceWallHead,
+        LegacyRoomMutation::SetRoundLastActionContext {
+            context: LastActionContext {
+                kind: "draw".to_string(),
+                seat,
+                tile_id: Some(replacement_tile.tile_id.clone()),
+                from_kong_replacement: false,
+                was_last_live_tile: round.wall.head_index >= round.wall.tail_index,
+                was_last_discard: false,
+            },
+        },
+    ];
+    if let Some(timeout) = state
+        .pending_timeout
+        .as_ref()
+        .filter(|timeout| timeout.kind == "active_turn" && timeout.seat_index == seat)
     {
-        if let Some(timeout) = room
-            .get_mut("pending_timeout")
-            .and_then(Value::as_object_mut)
-        {
-            timeout.insert("drawn_tile_id".to_string(), json!(replacement_tile_id));
-        }
+        mutations.push(LegacyRoomMutation::SetRoomPendingTimeout {
+            pending_timeout: Some(PendingTimeout {
+                drawn_tile_id: Some(replacement_tile.tile_id.clone()),
+                ..timeout.clone()
+            }),
+        });
     }
-    if let Some(tile_key) = replacement_tile.get("tile_key").and_then(Value::as_str) {
-        note_tracker_draw(room, seat, tile_key);
-    }
+    apply_legacy_room_mutations(room, &mutations)?;
+    note_tracker_draw(room, seat, &replacement_tile.tile_key);
 
     emitted_messages.push(round_event_message(
         "skill_tile_replaced",
@@ -866,8 +851,8 @@ fn apply_replace_tile_event(
             "type": "skill_tile_replaced",
             "seat": seat,
             "removed_tile_id": removed_tile_id,
-            "replacement_tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-            "replacement_tile_key": replacement_tile.get("tile_key").cloned().unwrap_or(Value::Null),
+            "replacement_tile_id": replacement_tile.tile_id,
+            "replacement_tile_key": replacement_tile.tile_key,
         }),
     ));
     Ok(())
@@ -893,48 +878,39 @@ fn apply_reclaim_meld_event(
         .and_then(Value::as_array)
         .cloned()
         .ok_or_else(|| "invalid_action".to_string())?;
-
-    let round_state = room
-        .get_mut("round_state")
-        .and_then(Value::as_object_mut)
+    let state = standard_project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let version = round_state
-        .get("version")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let players = round_state
-        .get_mut("players")
-        .and_then(Value::as_array_mut)
+    let player = round
+        .players
+        .get(seat)
         .ok_or_else(|| "invalid_action".to_string())?;
-    let player = players
-        .get_mut(seat)
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let melds = player
-        .get_mut("melds")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    if meld_index >= melds.len() {
+    if meld_index >= player.melds.len() {
         return Err("invalid_action".to_string());
     }
-    melds.remove(meld_index);
-    let concealed_tiles = player
-        .get_mut("concealed_tiles")
-        .and_then(Value::as_array_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
+    let mut mutations = vec![LegacyRoomMutation::RemovePlayerMeldAt {
+        seat_index: seat,
+        meld_index,
+    }];
     for (offset, tile_key) in tile_keys.iter().enumerate() {
         let Some(tile_key) = tile_key.as_str() else {
             continue;
         };
-        concealed_tiles.push(json!({
-            "tile_id": format!("{tile_key}#reclaim:{seat}:{version}:{offset}"),
-            "tile_key": tile_key,
-            "kind": "unknown",
-            "suit": Value::Null,
-            "rank": Value::Null,
-            "name": Value::Null,
-        }));
+        mutations.push(LegacyRoomMutation::PushPlayerConcealedTile {
+            seat_index: seat,
+            tile: Tile {
+                tile_id: format!("{tile_key}#reclaim:{seat}:{}:{offset}", round.version),
+                tile_key: tile_key.to_string(),
+                kind: "unknown".to_string(),
+                suit: None,
+                rank: None,
+                name: None,
+            },
+        });
     }
+    apply_legacy_room_mutations(room, &mutations)?;
     emitted_messages.push(round_event_message(
         "skill_reclaim_meld",
         json!({
@@ -966,19 +942,28 @@ fn apply_force_draw_event(
         .and_then(Value::as_i64)
         .unwrap_or_default();
     let mut messages = crate::rules::standard::settlement::settle_exhaustive_draw(room);
-    if let Some(settlement) = room
-        .get_mut("round_state")
-        .and_then(|round| round.get_mut("settlement"))
-        .and_then(Value::as_object_mut)
+    if let Some(mut settlement) = standard_project_room_state(room)
+        .ok()
+        .and_then(|state| state.round_state)
+        .and_then(|round| round.settlement)
     {
-        settlement.insert("draw_type".to_string(), json!("skill_forced"));
-        if let Some(score_delta) = settlement
-            .get_mut("score_delta")
-            .and_then(Value::as_object_mut)
-        {
-            adjust_score_map_value(score_delta.get_mut("total_delta_by_seat"), seat, -penalty);
-            adjust_score_map_value(score_delta.get_mut("fan_delta_by_seat"), seat, -penalty);
-        }
+        settlement.draw_type = Some("skill_forced".to_string());
+        *settlement
+            .score_delta
+            .total_delta_by_seat
+            .entry(seat)
+            .or_default() -= penalty;
+        *settlement
+            .score_delta
+            .fan_delta_by_seat
+            .entry(seat)
+            .or_default() -= penalty;
+        apply_legacy_room_mutations(
+            room,
+            &[LegacyRoomMutation::SetRoundSettlement {
+                settlement: Some(settlement),
+            }],
+        )?;
     }
     adjust_match_cumulative_score(room, seat, -penalty);
     if next_round_penalty > 0 {
@@ -1024,43 +1009,28 @@ fn apply_score_adjust_event(
     Ok(())
 }
 
-fn adjust_score_map_value(target: Option<&mut Value>, seat: Seat, delta: i64) {
-    let Some(Value::Object(map)) = target else {
-        return;
-    };
-    let key = seat.to_string();
-    let current = map.get(&key).and_then(Value::as_i64).unwrap_or(0);
-    map.insert(key, json!(current + delta));
-}
-
 fn adjust_match_cumulative_score(room: &mut Value, seat: Seat, delta: i64) {
-    let Some(scores) = room
-        .get_mut("match_state")
-        .and_then(|state| state.get_mut("cumulative_scores"))
-        .and_then(Value::as_object_mut)
-    else {
+    let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
-    let key = seat.to_string();
-    let current = scores.get(&key).and_then(Value::as_i64).unwrap_or(0);
-    scores.insert(key, json!(current + delta));
-}
-
-fn ensure_match_skill_trackers(room: &mut Value) -> Option<&mut serde_json::Map<String, Value>> {
-    room.get_mut("match_state")
-        .and_then(Value::as_object_mut)
-        .map(|state| {
-            state
-                .entry("skill_trackers".to_string())
-                .or_insert_with(|| json!({}))
-        })
-        .and_then(Value::as_object_mut)
+    let Some(match_state) = state.match_state.as_ref() else {
+        return;
+    };
+    let mut scores = match_state.cumulative_scores.clone();
+    *scores.entry(seat).or_default() += delta;
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetMatchCumulativeScores {
+            cumulative_scores: scores,
+        }],
+    );
 }
 
 fn set_pending_next_round_win_penalty(room: &mut Value, seat: Seat, penalty: i64) {
-    let Some(trackers) = ensure_match_skill_trackers(room) else {
+    let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
+    let mut trackers = match_trackers_map_from_state(&state);
     let pending = trackers
         .entry("zou_wei_shang_ji".to_string())
         .or_insert_with(|| json!({}))
@@ -1077,6 +1047,20 @@ fn set_pending_next_round_win_penalty(room: &mut Value, seat: Seat, penalty: i64
         return;
     };
     pending.insert(seat.to_string(), json!(penalty));
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetMatchSkillTrackers {
+            trackers: Value::Object(trackers),
+        }],
+    );
+}
+
+fn match_trackers_map_from_state(state: &RoomState) -> serde_json::Map<String, Value> {
+    state
+        .match_state
+        .as_ref()
+        .and_then(|match_state| match_state.skill_trackers.as_object().cloned())
+        .unwrap_or_default()
 }
 
 fn for_each_equipped_skill<F>(

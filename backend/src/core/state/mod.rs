@@ -4,6 +4,7 @@ pub mod pending;
 pub mod player;
 pub mod room;
 pub mod round;
+pub mod settlement;
 pub mod wall;
 
 pub use effect::{
@@ -17,6 +18,10 @@ pub use pending::{
 pub use player::{PlayerRoundState, SeatState};
 pub use room::RoomState;
 pub use round::{KongTrackerEntry, RoundScoreTrackers, RoundState, RuleRuntimeState};
+pub use settlement::{
+    RoundSettlement, SettlementFanBreakdownEntry, SettlementKongScoreDetailEntry,
+    SettlementScoreDelta,
+};
 pub use wall::WallState;
 
 use serde_json::Value;

@@ -1,0 +1,311 @@
+use serde_json::Value;
+
+use crate::core::action::{GameCommand, PlayerAction};
+use crate::core::event::GameEvent;
+use crate::core::ids::Seat;
+use crate::core::state::{RoomState, RoundSettlement};
+use crate::core::tile::Tile;
+
+#[derive(Debug, Clone, Default)]
+pub struct EngineOutput {
+    pub events: Vec<GameEvent>,
+    pub emitted_messages: Vec<Value>,
+}
+
+impl EngineOutput {
+    pub fn from_emitted_messages(emitted_messages: Vec<Value>) -> Self {
+        let events = extract_events_from_messages(&emitted_messages);
+        Self {
+            events,
+            emitted_messages,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EngineContext {
+    pub room: RoomState,
+}
+
+impl EngineContext {
+    pub fn from_legacy_room(room: &Value) -> Result<Self, String> {
+        RoomState::from_legacy_value(room)
+            .map(|room| Self { room })
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn current_actor(&self) -> Option<Seat> {
+        self.room
+            .round_state
+            .as_ref()
+            .map(|round| round.current_actor)
+    }
+}
+
+pub fn parse_legacy_player_command(
+    actor: Seat,
+    action_type: &str,
+    tile_ids: &[String],
+) -> Option<Result<GameCommand, String>> {
+    let action = match action_type {
+        "hu" => Ok(PlayerAction::Hu),
+        "flower" => Ok(PlayerAction::Flower {
+            tile_ids: tile_ids.to_vec(),
+        }),
+        "discard" => {
+            if tile_ids.len() != 1 {
+                Err("select_tile_first".to_string())
+            } else {
+                Ok(PlayerAction::Discard {
+                    tile_id: tile_ids[0].clone(),
+                })
+            }
+        }
+        "chow" => Ok(PlayerAction::Chow {
+            tile_ids: tile_ids.to_vec(),
+        }),
+        "pung" => Ok(PlayerAction::Pung {
+            tile_ids: tile_ids.to_vec(),
+        }),
+        "kong" => Ok(PlayerAction::Kong {
+            tile_ids: tile_ids.to_vec(),
+        }),
+        "pass" => Ok(PlayerAction::Pass),
+        _ if action_type.starts_with("skill:") => {
+            let skill_id = action_type.trim_start_matches("skill:");
+            if skill_id.is_empty() {
+                Err("invalid_action".to_string())
+            } else {
+                let target = tile_ids.iter().find_map(|value| {
+                    value
+                        .strip_prefix("seat:")
+                        .and_then(|seat| seat.parse::<usize>().ok())
+                });
+                let consumed_tile_ids = tile_ids
+                    .iter()
+                    .filter(|value| !value.starts_with("seat:"))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Ok(PlayerAction::ActivateSkill {
+                    skill_id: skill_id.to_string(),
+                    target,
+                    tile_ids: consumed_tile_ids,
+                })
+            }
+        }
+        _ => return None,
+    };
+
+    Some(action.map(|action| GameCommand::PlayerAction { actor, action }))
+}
+
+pub fn extract_events_from_messages(messages: &[Value]) -> Vec<GameEvent> {
+    messages
+        .iter()
+        .filter_map(extract_event_from_message)
+        .collect()
+}
+
+fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
+    if message.get("type").and_then(Value::as_str) != Some("round_event") {
+        return None;
+    }
+    let payload = message.get("payload")?;
+    let event_type = payload
+        .get("event_type")
+        .and_then(Value::as_str)?
+        .to_string();
+    let event = payload.get("event").cloned().unwrap_or(Value::Null);
+
+    match event_type.as_str() {
+        "tile_discarded" => Some(GameEvent::TileDiscarded {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            tile: event_tile(&event),
+        }),
+        "replacement_draw" => Some(GameEvent::TileDrawn {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            tile: event_tile(&event),
+            source: "replacement_draw".to_string(),
+        }),
+        "self_hu_declared" => Some(GameEvent::HuDeclared {
+            winner: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            source: "self_draw".to_string(),
+        }),
+        "claim_made" if event.get("claim_type").and_then(Value::as_str) == Some("hu") => {
+            Some(GameEvent::HuDeclared {
+                winner: event
+                    .get("seat")
+                    .and_then(Value::as_u64)
+                    .map(|value| value as Seat)
+                    .unwrap_or(0),
+                source: "discard".to_string(),
+            })
+        }
+        "settlement_ready" | "round_drawn" => event
+            .get("settlement")
+            .map(RoundSettlement::from_legacy_value)
+            .map(|settlement| GameEvent::SettlementPrepared { settlement })
+            .or_else(|| Some(GameEvent::LegacyRoundEvent { event_type, event })),
+        _ => Some(GameEvent::LegacyRoundEvent { event_type, event }),
+    }
+}
+
+fn event_tile(event: &Value) -> Tile {
+    let tile_id = event
+        .get("tile_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let tile_key = event
+        .get("tile_key")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    Tile {
+        tile_id,
+        tile_key,
+        kind: String::new(),
+        suit: None,
+        rank: None,
+        name: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{extract_events_from_messages, parse_legacy_player_command};
+    use crate::core::action::{GameCommand, PlayerAction};
+    use crate::core::event::GameEvent;
+
+    #[test]
+    fn parses_legacy_discard_command() {
+        let command = parse_legacy_player_command(2, "discard", &[String::from("w1#0")])
+            .expect("discard should be recognized")
+            .expect("discard should parse");
+        assert_eq!(
+            command,
+            GameCommand::PlayerAction {
+                actor: 2,
+                action: PlayerAction::Discard {
+                    tile_id: "w1#0".to_string()
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_discard_without_selection() {
+        let command =
+            parse_legacy_player_command(0, "discard", &[]).expect("discard should be recognized");
+        assert_eq!(command, Err("select_tile_first".to_string()));
+    }
+
+    #[test]
+    fn parses_legacy_skill_command_with_optional_target() {
+        let command = parse_legacy_player_command(
+            1,
+            "skill:peek_opponent_tile",
+            &[String::from("seat:2"), String::from("w1#0")],
+        )
+        .expect("skill should be recognized")
+        .expect("skill should parse");
+
+        assert_eq!(
+            command,
+            GameCommand::PlayerAction {
+                actor: 1,
+                action: PlayerAction::ActivateSkill {
+                    skill_id: "peek_opponent_tile".to_string(),
+                    target: Some(2),
+                    tile_ids: vec!["w1#0".to_string()],
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn extracts_typed_and_legacy_round_events() {
+        let messages = vec![
+            json!({
+                "type": "round_event",
+                "payload": {
+                    "event_type": "tile_discarded",
+                    "event": {
+                        "seat": 1,
+                        "tile_id": "east#0"
+                    }
+                }
+            }),
+            json!({
+                "type": "round_event",
+                "payload": {
+                    "event_type": "settlement_ready",
+                    "event": {
+                        "round_id": "east-1",
+                        "settlement": {
+                            "provisional": true,
+                            "win_type": "discard",
+                            "winner_seat": 1,
+                            "discarder_seat": 0,
+                            "display_win_label": null,
+                            "fan_total": 8,
+                            "fan_keys": ["test_fan"],
+                            "fan_breakdown": [{"fan_key": "test_fan", "fan_value": 8}],
+                            "score_delta": {
+                                "provisional": true,
+                                "basic_points": 8,
+                                "base_points": 8,
+                                "fan_total": 8,
+                                "minimum_qualifying_fan_total": 8,
+                                "fan_delta_by_seat": {"0": -8, "1": 24, "2": -8, "3": -8},
+                                "kong_delta_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+                                "total_delta_by_seat": {"0": -8, "1": 24, "2": -8, "3": -8}
+                            },
+                            "flower_count": 0,
+                            "draw_type": null,
+                            "kong_score_detail": []
+                        }
+                    }
+                }
+            }),
+            json!({
+                "type": "round_event",
+                "payload": {
+                    "event_type": "claim_auto_passed",
+                    "event": {
+                        "seat": 2
+                    }
+                }
+            }),
+        ];
+
+        let events = extract_events_from_messages(&messages);
+        assert!(matches!(
+            &events[0],
+            GameEvent::TileDiscarded { seat: 1, tile } if tile.tile_id == "east#0"
+        ));
+        assert!(matches!(
+            &events[1],
+            GameEvent::SettlementPrepared { settlement }
+                if settlement.winner_seat == Some(1) && settlement.fan_total == 8
+        ));
+        assert!(matches!(
+            &events[2],
+            GameEvent::LegacyRoundEvent { event_type, .. } if event_type == "claim_auto_passed"
+        ));
+    }
+}

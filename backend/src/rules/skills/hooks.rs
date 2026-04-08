@@ -1,8 +1,8 @@
-use serde_json::Value;
-
 use crate::core::action::PlayerAction;
 use crate::core::ids::{Seat, TileId};
-use crate::core::state::{EffectInstance, KnowledgeEffect, RoomState, SkillInstance};
+use crate::core::state::{
+    EffectInstance, KnowledgeEffect, RoomState, RoundSettlement, SkillInstance,
+};
 use crate::rules::scoring::{ScoreRequest, ScoreResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -171,7 +171,7 @@ pub trait RuleHook {
     fn after_draw_settlement(
         &self,
         _ctx: &RuleContext<'_>,
-        _settlement: &mut Value,
+        _settlement: &mut RoundSettlement,
     ) -> Result<(), String> {
         Ok(())
     }

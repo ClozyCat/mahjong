@@ -6,6 +6,10 @@ use crate::core::engine::planner::{
     resolve_claims,
 };
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::core::state::{
+    ClaimWindowAction, LastActionContext, PendingAction, RobKongWindowAction, RoomState, RoundState,
+};
+use crate::core::tile::Tile;
 use crate::rules::skills::{
     note_tracker_claimed_discard, note_tracker_discard, note_tracker_draw,
     sync_round_skill_trackers,
@@ -17,8 +21,7 @@ use super::meld::{
 };
 use super::runtime::{
     current_actor, is_last_live_tile_point, pending_timeout_kind, player_concealed_tile,
-    player_concealed_tiles_slice, project_room_state, replacement_tile_from_tail,
-    round_event_message, sync_pending_timeout,
+    project_room_state, replacement_tile_from_tail, round_event_message, sync_pending_timeout,
 };
 use super::settlement::settle_exhaustive_draw;
 use super::win::{apply_hu_settlement, compute_hu_settlement};
@@ -79,35 +82,34 @@ pub fn apply_discard_action(
     seat_index: usize,
     tile_id: &str,
 ) -> Result<Vec<Value>, String> {
-    if room.get("phase").and_then(Value::as_str) != Some("playing") {
+    let state = project_room_state(room)?;
+    if state.phase != "playing" {
         return Err("round_not_ready".to_string());
     }
-    if current_actor(room) != Some(seat_index) {
+    let round = round_state_ref(&state)?;
+    if round.current_actor != seat_index {
         return Err("not_your_turn".to_string());
     }
-    if room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .filter(|value| !value.is_null())
-        .is_some()
-    {
+    if round.pending_action.is_some() {
         return Err("invalid_action".to_string());
     }
 
-    let restricted_discard_tile_key = room
-        .get("round_state")
-        .and_then(|round| round.get("restricted_discard_tile_key"))
-        .and_then(Value::as_str)
-        .map(ToString::to_string);
-    let discarded_tile = player_concealed_tile(room, seat_index, tile_id)
+    let discarded_tile = round
+        .players
+        .get(seat_index)
+        .and_then(|player| {
+            player
+                .concealed_tiles
+                .iter()
+                .find(|tile| tile.tile_id == tile_id)
+        })
         .cloned()
         .ok_or_else(|| "invalid_action".to_string())?;
-    if let Some(restricted) = restricted_discard_tile_key.as_deref() {
-        if discarded_tile.get("tile_key").and_then(Value::as_str) == Some(restricted) {
+    if let Some(restricted) = round.restricted_discard_tile_key.as_deref() {
+        if discarded_tile.tile_key == restricted {
             return Err("invalid_action".to_string());
         }
     }
-    let state = project_room_state(room)?;
     let discard_mutations = vec![
         LegacyRoomMutation::RemovePlayerConcealedTileById {
             seat_index,
@@ -118,26 +120,15 @@ pub fn apply_discard_action(
             tile: discarded_tile.clone(),
         },
         LegacyRoomMutation::SetRoundLastDiscard {
-            tile: discarded_tile.clone(),
+            tile: Some(discarded_tile.clone()),
         },
     ];
     let mut simulated = room.clone();
     apply_legacy_room_mutations(&mut simulated, &discard_mutations)?;
 
-    let previous_was_last_live_tile = room
-        .get("round_state")
-        .and_then(|round| round.get("last_action_context"))
-        .and_then(|context| context.get("was_last_live_tile"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let claim_window = claim_window_options_after_discard(
-        &simulated,
-        seat_index,
-        discarded_tile
-            .get("tile_key")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    );
+    let previous_was_last_live_tile = round.last_action_context.was_last_live_tile;
+    let claim_window =
+        claim_window_options_after_discard(&simulated, seat_index, &discarded_tile.tile_key);
     let plan = plan_discard_action(
         &state,
         seat_index,
@@ -161,35 +152,27 @@ pub fn apply_discard_action(
         return Ok(messages);
     }
     apply_legacy_room_mutations(room, &plan.followup_mutations)?;
-    if let Some(next_actor) = room
-        .get("round_state")
-        .and_then(|round| round.get("current_actor"))
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-    {
-        let drawn_tile_key = room
-            .get("round_state")
-            .and_then(|round| round.get("last_action_context"))
-            .and_then(|context| context.get("tile_id"))
-            .and_then(Value::as_str)
-            .and_then(|tile_id| {
-                room.get("round_state")
-                    .and_then(|round| round.get("players"))
-                    .and_then(Value::as_array)
-                    .and_then(|players| players.get(next_actor))
-                    .and_then(|player| player.get("concealed_tiles"))
-                    .and_then(Value::as_array)
-                    .and_then(|tiles| {
-                        tiles.iter().find(|tile| {
-                            tile.get("tile_id").and_then(Value::as_str) == Some(tile_id)
-                        })
-                    })
-                    .and_then(|tile| tile.get("tile_key").and_then(Value::as_str))
-                    .map(ToString::to_string)
-            });
-        if let Some(tile_key) = drawn_tile_key.as_deref() {
-            note_tracker_draw(room, next_actor, tile_key);
-        }
+    let updated_state = project_room_state(room)?;
+    let updated_round = round_state_ref(&updated_state)?;
+    let next_actor = updated_round.current_actor;
+    let drawn_tile_key = updated_round
+        .last_action_context
+        .tile_id
+        .as_deref()
+        .and_then(|tile_id| {
+            updated_round
+                .players
+                .get(next_actor)
+                .and_then(|player| {
+                    player
+                        .concealed_tiles
+                        .iter()
+                        .find(|tile| tile.tile_id == tile_id)
+                })
+                .map(|tile| tile.tile_key.clone())
+        });
+    if let Some(tile_key) = drawn_tile_key.as_deref() {
+        note_tracker_draw(room, next_actor, tile_key);
     }
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
@@ -204,54 +187,54 @@ pub fn apply_discard_action(
 }
 
 pub fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -> bool {
-    if room.get("phase").and_then(Value::as_str) != Some("playing") {
-        return false;
-    }
-    if current_actor(room) != Some(seat_index) {
-        return false;
-    }
-    if room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .filter(|value| !value.is_null())
-        .is_some()
-    {
-        return false;
-    }
-    if wall_live_tiles_remaining(room) <= 0 {
-        return false;
-    }
-
-    let Some(discarded_tile) = player_concealed_tile(room, seat_index, tile_id) else {
+    let Ok(state) = project_room_state(room) else {
         return false;
     };
-    if let Some(restricted) = room
-        .get("round_state")
-        .and_then(|round| round.get("restricted_discard_tile_key"))
-        .and_then(Value::as_str)
-    {
-        if discarded_tile.get("tile_key").and_then(Value::as_str) == Some(restricted) {
-            return false;
-        }
+    if state.phase != "playing" {
+        return false;
+    }
+    let Some(round) = state.round_state.as_ref() else {
+        return false;
+    };
+    if round.current_actor != seat_index {
+        return false;
+    }
+    if round.pending_action.is_some() {
+        return false;
+    }
+    if round.wall.live_tiles_remaining() <= 0 {
+        return false;
     }
 
-    discarded_tile.get("tile_id").is_some()
+    let Some(discarded_tile) = round.players.get(seat_index).and_then(|player| {
+        player
+            .concealed_tiles
+            .iter()
+            .find(|tile| tile.tile_id == tile_id)
+    }) else {
+        return false;
+    };
+    if round.restricted_discard_tile_key.as_deref() == Some(discarded_tile.tile_key.as_str()) {
+        return false;
+    }
+
+    !discarded_tile.tile_id.is_empty()
 }
 
 pub fn claim_window_supported_locally(room: &Value) -> bool {
-    room.get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("type"))
-        .and_then(Value::as_str)
-        == Some("claim_window")
+    project_room_state(room)
+        .ok()
+        .and_then(|state| state.round_state)
+        .and_then(|round| round.pending_action)
+        .is_some_and(|pending| matches!(pending, PendingAction::ClaimWindow(_)))
 }
 
 pub fn rob_kong_window_supported_locally(room: &Value) -> bool {
-    room.get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("type"))
-        .and_then(Value::as_str)
-        == Some("rob_kong_window")
+    project_room_state(room)
+        .ok()
+        .and_then(|state| state.round_state)
+        .and_then(|round| round.pending_action)
+        .is_some_and(|pending| matches!(pending, PendingAction::RobKongWindow(_)))
 }
 
 pub fn can_resolve_claim_window_timeout_locally(room: &Value) -> bool {
@@ -259,60 +242,40 @@ pub fn can_resolve_claim_window_timeout_locally(room: &Value) -> bool {
 }
 
 pub fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, String> {
-    let pending_action = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let discarder_seat = pending_action
-        .get("discarder_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
+    let state = project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let claim_window = pending_action
-        .get("claim_window")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let mut responded = pending_action
-        .get("responded_seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let unresolved: Vec<Value> = claim_window
+    let claim = match round.pending_action.as_ref() {
+        Some(PendingAction::ClaimWindow(claim)) => claim,
+        _ => return Err("invalid_action".to_string()),
+    };
+    let discarder_seat = claim.discarder_seat;
+    let mut responded_seats = claim.responded_seats.clone();
+    let unresolved_seats = claim
+        .claim_window
         .iter()
         .enumerate()
-        .filter(|(_, claims)| {
-            claims
-                .as_array()
-                .map(|items| !items.is_empty())
-                .unwrap_or(false)
-        })
-        .filter(|(seat_index, _)| {
-            !responded.iter().any(|value| {
-                value
-                    .as_u64()
-                    .map(|seat| seat as usize == *seat_index)
-                    .unwrap_or(false)
-            })
-        })
-        .map(|(seat_index, _)| Value::Number((seat_index as u64).into()))
+        .filter(|(_, claims)| !claims.is_empty())
+        .filter(|(seat_index, _)| !responded_seats.contains(seat_index))
+        .map(|(seat_index, _)| seat_index)
+        .collect::<Vec<_>>();
+    responded_seats.extend(unresolved_seats.iter().copied());
+    let unresolved: Vec<Value> = unresolved_seats
+        .iter()
+        .map(|seat_index| Value::Number((*seat_index as u64).into()))
         .collect();
-    responded.extend(unresolved.iter().cloned());
     apply_legacy_room_mutations(
         room,
         &[
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: json!({
-                    "type": "claim_window",
-                    "discarder_seat": discarder_seat,
-                    "claim_window": claim_window,
-                    "responded_seats": responded,
-                    "claim_responses": pending_action
-                        .get("claim_responses")
-                        .cloned()
-                        .unwrap_or_else(|| Value::Array(vec![])),
-                }),
+                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat,
+                    claim_window: claim.claim_window.clone(),
+                    responded_seats,
+                    claim_responses: claim.claim_responses.clone(),
+                })),
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ],
@@ -336,73 +299,46 @@ pub fn can_resolve_rob_kong_timeout_locally(room: &Value) -> bool {
 }
 
 pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, String> {
-    let pending = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(Value::as_object)
-        .cloned()
+    let state = project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    if pending.get("type").and_then(Value::as_str) != Some("rob_kong_window") {
+    let rob = match round.pending_action.as_ref() {
+        Some(PendingAction::RobKongWindow(rob)) => rob,
+        _ => return Err("invalid_action".to_string()),
+    };
+    if !rob.offered_hu_seats.contains(&seat_index) {
         return Err("invalid_action".to_string());
     }
-    let offered = pending
-        .get("offered_hu_seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if !offered.iter().any(|value| {
-        value
-            .as_u64()
-            .map(|seat| seat as usize == seat_index)
-            .unwrap_or(false)
-    }) {
-        return Err("invalid_action".to_string());
-    }
-    let responded = pending
-        .get("responded_seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if responded.iter().any(|value| {
-        value
-            .as_u64()
-            .map(|seat| seat as usize == seat_index)
-            .unwrap_or(false)
-    }) {
+    if rob.responded_seats.contains(&seat_index) {
         return Err("invalid_action".to_string());
     }
 
-    let mut next_responded = responded;
-    next_responded.push(Value::Number((seat_index as u64).into()));
+    let mut next_responded = rob.responded_seats.clone();
+    next_responded.push(seat_index);
     apply_legacy_room_mutations(
         room,
         &[
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: json!({
-                    "type": "rob_kong_window",
-                    "actor_seat": pending.get("actor_seat").cloned().unwrap_or(Value::Null),
-                    "tile_id": pending.get("tile_id").cloned().unwrap_or(Value::Null),
-                    "tile_key": pending.get("tile_key").cloned().unwrap_or(Value::Null),
-                    "meld_index": pending.get("meld_index").cloned().unwrap_or(Value::Null),
-                    "offered_hu_seats": offered,
-                    "responded_seats": next_responded.clone(),
-                }),
+                pending_action: Some(PendingAction::RobKongWindow(RobKongWindowAction {
+                    actor_seat: rob.actor_seat,
+                    tile_id: rob.tile_id.clone(),
+                    tile_key: rob.tile_key.clone(),
+                    meld_index: rob.meld_index,
+                    offered_hu_seats: rob.offered_hu_seats.clone(),
+                    responded_seats: next_responded.clone(),
+                })),
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ],
     )?;
 
-    let unresolved = offered
+    let unresolved = rob
+        .offered_hu_seats
         .iter()
-        .filter_map(|value| value.as_u64().map(|seat| seat as usize))
-        .filter(|offered_seat| {
-            !next_responded.iter().any(|value| {
-                value
-                    .as_u64()
-                    .map(|seat| seat as usize == *offered_seat)
-                    .unwrap_or(false)
-            })
-        })
+        .copied()
+        .filter(|offered_seat| !next_responded.contains(offered_seat))
         .collect::<Vec<_>>();
     if !unresolved.is_empty() {
         sync_round_skill_trackers(room);
@@ -413,50 +349,40 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Va
 }
 
 pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> {
-    let pending = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(Value::as_object)
-        .cloned()
+    let state = project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    if pending.get("type").and_then(Value::as_str) != Some("rob_kong_window") {
-        return Err("invalid_action".to_string());
-    }
-    let actor_seat = pending
-        .get("actor_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let offered = pending
-        .get("offered_hu_seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let responded = pending
-        .get("responded_seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let unresolved: Vec<Value> = offered
+    let rob = match round.pending_action.as_ref() {
+        Some(PendingAction::RobKongWindow(rob)) => rob,
+        _ => return Err("invalid_action".to_string()),
+    };
+    let actor_seat = rob.actor_seat;
+    let unresolved_seats: Vec<usize> = rob
+        .offered_hu_seats
         .iter()
-        .filter(|seat| !responded.iter().any(|value| value == *seat))
-        .cloned()
+        .copied()
+        .filter(|seat| !rob.responded_seats.contains(seat))
         .collect();
-    let mut next_responded = responded;
-    next_responded.extend(unresolved.iter().cloned());
+    let unresolved: Vec<Value> = unresolved_seats
+        .iter()
+        .map(|seat| Value::Number((*seat as u64).into()))
+        .collect();
+    let mut next_responded = rob.responded_seats.clone();
+    next_responded.extend(unresolved_seats);
     apply_legacy_room_mutations(
         room,
         &[
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: json!({
-                    "type": "rob_kong_window",
-                    "actor_seat": actor_seat,
-                    "tile_id": pending.get("tile_id").cloned().unwrap_or(Value::Null),
-                    "tile_key": pending.get("tile_key").cloned().unwrap_or(Value::Null),
-                    "meld_index": pending.get("meld_index").cloned().unwrap_or(Value::Null),
-                    "offered_hu_seats": offered,
-                    "responded_seats": next_responded,
-                }),
+                pending_action: Some(PendingAction::RobKongWindow(RobKongWindowAction {
+                    actor_seat,
+                    tile_id: rob.tile_id.clone(),
+                    tile_key: rob.tile_key.clone(),
+                    meld_index: rob.meld_index,
+                    offered_hu_seats: rob.offered_hu_seats.clone(),
+                    responded_seats: next_responded,
+                })),
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ],
@@ -508,12 +434,11 @@ fn complete_self_kong(
     selection: &SelfKongCandidate,
     replacement_tile: Value,
 ) -> Result<Vec<Value>, String> {
+    let replacement_tile = tile_from_value(&replacement_tile)?;
     let plan =
         plan_self_kong_completion(room, seat_index, selection, replacement_tile.clone(), false)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
-    if let Some(tile_key) = replacement_tile.get("tile_key").and_then(Value::as_str) {
-        note_tracker_draw(room, seat_index, tile_key);
-    }
+    note_tracker_draw(room, seat_index, &replacement_tile.tile_key);
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(plan.events)
@@ -536,22 +461,22 @@ fn start_rob_kong_window(
     )
     .cloned()
     .ok_or_else(|| "invalid_action".to_string())?;
+    let selected_tile = tile_from_value(&selected_tile)?;
     apply_legacy_room_mutations(
         room,
         &[
             LegacyRoomMutation::SetRoundLastDiscard {
-                tile: selected_tile.clone(),
+                tile: Some(selected_tile.clone()),
             },
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: json!({
-                    "type": "rob_kong_window",
-                    "actor_seat": seat_index,
-                    "tile_id": selected_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                    "tile_key": selected_tile.get("tile_key").cloned().unwrap_or(Value::Null),
-                    "meld_index": selection.meld_index,
-                    "offered_hu_seats": offered_hu_seats,
-                    "responded_seats": [],
-                }),
+                pending_action: Some(PendingAction::RobKongWindow(RobKongWindowAction {
+                    actor_seat: seat_index,
+                    tile_id: Some(selected_tile.tile_id.clone()),
+                    tile_key: Some(selected_tile.tile_key.clone()),
+                    meld_index: selection.meld_index,
+                    offered_hu_seats,
+                    responded_seats: vec![],
+                })),
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ],
@@ -579,7 +504,7 @@ fn plan_self_kong_completion(
     room: &Value,
     seat_index: usize,
     selection: &SelfKongCandidate,
-    replacement_tile: Value,
+    replacement_tile: Tile,
     clear_pending_action: bool,
 ) -> Result<SelfKongPlan, String> {
     for tile_id in &selection.tile_ids {
@@ -603,12 +528,12 @@ fn plan_self_kong_completion(
         SelfKongKind::Concealed => {
             mutations.push(LegacyRoomMutation::PushPlayerMeld {
                 seat_index,
-                meld: Value::Array(vec![
-                    Value::String(selection.tile_key.clone()),
-                    Value::String(selection.tile_key.clone()),
-                    Value::String(selection.tile_key.clone()),
-                    Value::String(selection.tile_key.clone()),
-                ]),
+                meld: vec![
+                    selection.tile_key.clone(),
+                    selection.tile_key.clone(),
+                    selection.tile_key.clone(),
+                    selection.tile_key.clone(),
+                ],
             });
         }
         SelfKongKind::Add => {
@@ -618,7 +543,7 @@ fn plan_self_kong_completion(
             mutations.push(LegacyRoomMutation::AppendTileToPlayerMeld {
                 seat_index,
                 meld_index,
-                tile: Value::String(selection.tile_key.clone()),
+                tile_key: selection.tile_key.clone(),
             });
         }
     }
@@ -637,21 +562,21 @@ fn plan_self_kong_completion(
         payer_seats: (0..MAX_SEATS)
             .filter(|other| *other != seat_index)
             .collect(),
-        tile_key: Value::String(selection.tile_key.clone()),
+        tile_key: Some(selection.tile_key.clone()),
     });
     mutations.push(LegacyRoomMutation::SetRoundLastActionContext {
-        context: json!({
-            "kind": "replacement_draw",
-            "seat": seat_index,
-            "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-            "from_kong_replacement": true,
-            "was_last_live_tile": false,
-            "was_last_discard": false,
-        }),
+        context: LastActionContext {
+            kind: "replacement_draw".to_string(),
+            seat: seat_index,
+            tile_id: Some(replacement_tile.tile_id.clone()),
+            from_kong_replacement: true,
+            was_last_live_tile: false,
+            was_last_discard: false,
+        },
     });
     if clear_pending_action {
         mutations.push(LegacyRoomMutation::SetRoundPendingAction {
-            pending_action: Value::Null,
+            pending_action: None,
         });
     }
     mutations.push(LegacyRoomMutation::IncrementRoundVersion);
@@ -677,7 +602,7 @@ fn plan_self_kong_completion(
                 json!({
                     "type": "replacement_draw",
                     "seat": seat_index,
-                    "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                    "tile_id": replacement_tile.tile_id,
                 }),
             ),
         ],
@@ -685,25 +610,17 @@ fn plan_self_kong_completion(
 }
 
 fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String> {
-    let pending_action = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(Value::as_object)
-        .cloned()
+    let state = project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    if pending_action.get("type").and_then(Value::as_str) != Some("claim_window") {
-        return Err("invalid_action".to_string());
-    }
-    let discarder_seat = pending_action
-        .get("discarder_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let claim_responses = pending_action
-        .get("claim_responses")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let claim = match round.pending_action.as_ref() {
+        Some(PendingAction::ClaimWindow(claim)) => claim,
+        _ => return Err("invalid_action".to_string()),
+    };
+    let discarder_seat = claim.discarder_seat;
+    let claim_responses = claim.claim_responses.clone();
 
     if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
         let winner_seat = winner
@@ -733,33 +650,26 @@ fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String>
         return Ok(settle_exhaustive_draw(room));
     }
     apply_legacy_room_mutations(room, &plan.mutations)?;
-    let drawn_tile_key = room
-        .get("round_state")
-        .and_then(|round| round.get("last_action_context"))
-        .and_then(|context| context.get("tile_id"))
-        .and_then(Value::as_str)
+    let updated_state = project_room_state(room)?;
+    let updated_round = round_state_ref(&updated_state)?;
+    let seat = updated_round.current_actor;
+    let drawn_tile_key = updated_round
+        .last_action_context
+        .tile_id
+        .as_deref()
         .and_then(|tile_id| {
-            let seat = room
-                .get("round_state")
-                .and_then(|round| round.get("current_actor"))
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)?;
-            room.get("round_state")
-                .and_then(|round| round.get("players"))
-                .and_then(Value::as_array)
-                .and_then(|players| players.get(seat))
-                .and_then(|player| player.get("concealed_tiles"))
-                .and_then(Value::as_array)
-                .and_then(|tiles| {
-                    tiles
+            updated_round
+                .players
+                .get(seat)
+                .and_then(|player| {
+                    player
+                        .concealed_tiles
                         .iter()
-                        .find(|tile| tile.get("tile_id").and_then(Value::as_str) == Some(tile_id))
+                        .find(|tile| tile.tile_id == tile_id)
                 })
-                .and_then(|tile| tile.get("tile_key").and_then(Value::as_str))
-                .map(ToString::to_string)
+                .map(|tile| tile.tile_key.clone())
         });
     if let Some(tile_key) = drawn_tile_key.as_deref() {
-        let seat = room["round_state"]["current_actor"].as_u64().unwrap_or(0) as usize;
         note_tracker_draw(room, seat, tile_key);
     }
     sync_round_skill_trackers(room);
@@ -773,13 +683,12 @@ fn validate_claim_selection(
     action_type: &str,
     tile_ids: &[String],
 ) -> Result<(), String> {
-    let last_discard = room
-        .get("round_state")
-        .and_then(|round| round.get("last_discard"))
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let last_discard_tile_key = last_discard
-        .get("tile_key")
-        .and_then(Value::as_str)
+    let state = project_room_state(room)?;
+    let round = round_state_ref(&state)?;
+    let last_discard_tile_key = round
+        .last_discard
+        .as_ref()
+        .map(|tile| tile.tile_key.as_str())
         .ok_or_else(|| "invalid_action".to_string())?;
     let expected = match action_type {
         "chow" | "pung" => 2,
@@ -789,23 +698,21 @@ fn validate_claim_selection(
     if tile_ids.len() != expected {
         return Err("invalid_action".to_string());
     }
-    let player_tiles = player_concealed_tiles_slice(room, seat_index)
+    let player_tiles = round
+        .players
+        .get(seat_index)
+        .map(|player| player.concealed_tiles.as_slice())
         .ok_or_else(|| "invalid_action".to_string())?;
     let mut claimed_tile_keys = Vec::with_capacity(tile_ids.len());
     let mut used_indices = HashSet::with_capacity(tile_ids.len());
     for tile_id in tile_ids {
         let Some((index, tile)) = player_tiles.iter().enumerate().find(|(index, tile)| {
-            !used_indices.contains(index)
-                && tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
+            !used_indices.contains(index) && tile.tile_id == tile_id.as_str()
         }) else {
             return Err("invalid_action".to_string());
         };
         used_indices.insert(index);
-        claimed_tile_keys.push(
-            tile.get("tile_key")
-                .and_then(Value::as_str)
-                .ok_or_else(|| "invalid_action".to_string())?,
-        );
+        claimed_tile_keys.push(tile.tile_key.as_str());
     }
 
     if (action_type == "pung" || action_type == "kong")
@@ -861,25 +768,23 @@ fn plan_selected_claim(
         return Err("invalid_action".to_string());
     }
     validate_claim_selection(room, seat_index, action_type, tile_ids)?;
-    let discarder_seat = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(|pending| pending.get("discarder_seat"))
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
+    let state = project_room_state(room)?;
+    let round = round_state_ref(&state)?;
+    let discarder_seat = match round.pending_action.as_ref() {
+        Some(PendingAction::ClaimWindow(claim)) => claim.discarder_seat,
+        _ => return Err("invalid_action".to_string()),
+    };
+    let last_discard_tile = round
+        .last_discard
+        .clone()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let last_discard = room
-        .get("round_state")
-        .and_then(|round| round.get("last_discard"))
-        .cloned()
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let restricted_tile_key = last_discard.get("tile_key").cloned().unwrap_or(Value::Null);
+    let restricted_tile_key = Some(last_discard_tile.tile_key.clone());
 
-    if !discarder_latest_discard_matches(room, discarder_seat, &last_discard) {
+    if !discarder_latest_discard_matches(round, discarder_seat, &last_discard_tile) {
         return Err("invalid_action".to_string());
     }
-    let claimed_tiles = selected_player_tiles(room, seat_index, tile_ids)?;
-    let meld = claim_meld_value(action_type, &last_discard, &claimed_tiles);
+    let claimed_tiles = selected_player_tiles(round, seat_index, tile_ids)?;
+    let meld = claim_meld_value(action_type, &last_discard_tile, &claimed_tiles);
 
     let mut mutations = tile_ids
         .iter()
@@ -902,13 +807,16 @@ fn plan_selected_claim(
             "type": "claim_made",
             "seat": seat_index,
             "claim_type": action_type,
-            "tile_id": last_discard.get("tile_id").cloned().unwrap_or(Value::Null),
+            "tile_id": last_discard_tile.tile_id,
         }),
     )];
 
+    let mut drawn_tile_key = None;
     if action_type == "kong" {
-        let replacement_tile =
-            replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?;
+        let replacement_tile = tile_from_value(
+            &replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?,
+        )?;
+        drawn_tile_key = Some(replacement_tile.tile_key.clone());
         mutations.push(LegacyRoomMutation::RetreatWallTail);
         mutations.push(LegacyRoomMutation::PushPlayerConcealedTile {
             seat_index,
@@ -918,32 +826,32 @@ fn plan_selected_claim(
             kong_type: "exposed_kong".to_string(),
             actor_seat: seat_index,
             payer_seats: vec![discarder_seat],
-            tile_key: last_discard.get("tile_key").cloned().unwrap_or(Value::Null),
+            tile_key: Some(last_discard_tile.tile_key.clone()),
         });
         mutations.push(LegacyRoomMutation::SetRoundLastActionContext {
-            context: json!({
-                "kind": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-                "from_kong_replacement": true,
-                "was_last_live_tile": false,
-                "was_last_discard": false,
-            }),
+            context: LastActionContext {
+                kind: "replacement_draw".to_string(),
+                seat: seat_index,
+                tile_id: Some(replacement_tile.tile_id.clone()),
+                from_kong_replacement: true,
+                was_last_live_tile: false,
+                was_last_discard: false,
+            },
         });
         events.push(round_event_message(
             "replacement_draw",
             json!({
                 "type": "replacement_draw",
                 "seat": seat_index,
-                "tile_id": replacement_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                "tile_id": replacement_tile.tile_id,
             }),
         ));
     }
 
     mutations.push(LegacyRoomMutation::SetRoundCurrentActor { seat_index });
-    mutations.push(LegacyRoomMutation::SetRoundLastDiscard { tile: Value::Null });
+    mutations.push(LegacyRoomMutation::SetRoundLastDiscard { tile: None });
     mutations.push(LegacyRoomMutation::SetRoundPendingAction {
-        pending_action: Value::Null,
+        pending_action: None,
     });
     mutations.push(LegacyRoomMutation::SetRoundRestrictedDiscardTileKey {
         tile_key: restricted_tile_key,
@@ -952,64 +860,42 @@ fn plan_selected_claim(
 
     Ok(SelectedClaimPlan {
         discarder_seat,
-        drawn_tile_key: if action_type == "kong" {
-            room.get("round_state")
-                .and_then(|round| round.get("wall"))
-                .and_then(|wall| wall.get("tail_index"))
-                .and_then(Value::as_u64)
-                .and_then(|tail_index| {
-                    room.get("round_state")
-                        .and_then(|round| round.get("wall"))
-                        .and_then(|wall| wall.get("tiles"))
-                        .and_then(Value::as_array)
-                        .and_then(|tiles| tiles.get(tail_index as usize))
-                        .and_then(|tile| tile.get("tile_key").and_then(Value::as_str))
-                })
-                .map(ToString::to_string)
-        } else {
-            None
-        },
+        drawn_tile_key,
         mutations,
         events,
     })
 }
 
-fn claim_meld_value(action_type: &str, last_discard: &Value, claimed_tiles: &[Value]) -> Value {
+fn claim_meld_value(action_type: &str, last_discard: &Tile, claimed_tiles: &[Tile]) -> Vec<String> {
     if action_type == "chow" {
         let mut tiles = claimed_tiles
             .iter()
-            .map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null))
+            .map(|tile| tile.tile_key.clone())
             .collect::<Vec<_>>();
-        tiles.push(last_discard.get("tile_key").cloned().unwrap_or(Value::Null));
-        tiles.sort_by(|left, right| {
-            left.as_str()
-                .unwrap_or("")
-                .cmp(right.as_str().unwrap_or(""))
-        });
-        return Value::Array(tiles);
+        tiles.push(last_discard.tile_key.clone());
+        tiles.sort();
+        return tiles;
     }
-    let mut tiles = vec![last_discard.get("tile_key").cloned().unwrap_or(Value::Null)];
-    tiles.extend(
-        claimed_tiles
-            .iter()
-            .map(|tile| tile.get("tile_key").cloned().unwrap_or(Value::Null)),
-    );
-    Value::Array(tiles)
+    let mut tiles = vec![last_discard.tile_key.clone()];
+    tiles.extend(claimed_tiles.iter().map(|tile| tile.tile_key.clone()));
+    tiles
 }
 
 fn selected_player_tiles(
-    room: &Value,
+    round: &RoundState,
     seat_index: usize,
     tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
-    let player_tiles = player_concealed_tiles_slice(room, seat_index)
+) -> Result<Vec<Tile>, String> {
+    let player_tiles = round
+        .players
+        .get(seat_index)
+        .map(|player| player.concealed_tiles.as_slice())
         .ok_or_else(|| "invalid_action".to_string())?;
     let mut selected = Vec::with_capacity(tile_ids.len());
     let mut used_indices = HashSet::with_capacity(tile_ids.len());
     for tile_id in tile_ids {
         let Some((index, tile)) = player_tiles.iter().enumerate().find(|(index, tile)| {
-            !used_indices.contains(index)
-                && tile.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
+            !used_indices.contains(index) && tile.tile_id == tile_id.as_str()
         }) else {
             return Err("invalid_action".to_string());
         };
@@ -1019,60 +905,60 @@ fn selected_player_tiles(
     Ok(selected)
 }
 
+fn tile_from_value(tile: &Value) -> Result<Tile, String> {
+    Tile::from_legacy_value(tile, "standard_action.tile").map_err(|error| error.to_string())
+}
+
 fn discarder_latest_discard_matches(
-    room: &Value,
+    round: &RoundState,
     discarder_seat: usize,
-    last_discard: &Value,
+    last_discard: &Tile,
 ) -> bool {
-    room.get("round_state")
-        .and_then(|round| round.get("players"))
-        .and_then(Value::as_array)
-        .and_then(|players| players.get(discarder_seat))
-        .and_then(|player| player.get("discards"))
-        .and_then(Value::as_array)
-        .and_then(|discards| discards.last())
-        .map(|tile| tile.get("tile_id") == last_discard.get("tile_id"))
+    round
+        .players
+        .get(discarder_seat)
+        .and_then(|player| player.discards.last())
+        .map(|tile| tile.tile_id == last_discard.tile_id)
         .unwrap_or(false)
 }
 
+fn round_state_ref(state: &RoomState) -> Result<&RoundState, String> {
+    state
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "round_not_ready".to_string())
+}
+
 fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String> {
-    let pending = room
-        .get("round_state")
-        .and_then(|round| round.get("pending_action"))
-        .and_then(Value::as_object)
-        .cloned()
+    let state = project_room_state(room)?;
+    let round = state
+        .round_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let actor_seat = pending
-        .get("actor_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
+    let rob = match round.pending_action.as_ref() {
+        Some(PendingAction::RobKongWindow(rob)) => rob,
+        _ => return Err("invalid_action".to_string()),
+    };
+    let actor_seat = rob.actor_seat;
+    let tile_id = rob
+        .tile_id
+        .clone()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let tile_id = pending
-        .get("tile_id")
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
+    let tile_key = rob
+        .tile_key
+        .clone()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let tile_key = pending
-        .get("tile_key")
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let meld_index = pending
-        .get("meld_index")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize);
-    let replacement_tile =
-        replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?;
+    let meld_index = rob.meld_index;
+    let replacement_tile = tile_from_value(
+        &replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?,
+    )?;
     let selection = SelfKongCandidate {
         kind: SelfKongKind::Add,
         tile_ids: vec![tile_id],
         tile_key,
         meld_index,
     };
-    let drawn_tile_key = replacement_tile
-        .get("tile_key")
-        .and_then(Value::as_str)
-        .map(ToString::to_string);
+    let drawn_tile_key = Some(replacement_tile.tile_key.clone());
     let plan = plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
     apply_legacy_room_mutations(room, &plan.mutations)?;
     if let Some(tile_key) = drawn_tile_key.as_deref() {
@@ -1081,15 +967,4 @@ fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     Ok(plan.events)
-}
-
-fn wall_live_tiles_remaining(room: &Value) -> i64 {
-    room.get("round_state")
-        .and_then(|round| round.get("wall"))
-        .and_then(|wall| {
-            let head = wall.get("head_index")?.as_i64()?;
-            let tail = wall.get("tail_index")?.as_i64()?;
-            Some((tail - head + 1).max(0))
-        })
-        .unwrap_or(0)
 }

@@ -1,43 +1,25 @@
 use crate::bot::BotAction;
-use crate::core::action::{GameCommand, PlayerAction};
-use crate::core::engine::{EngineContext, EngineOutput, parse_legacy_player_command};
-use crate::core::state::RoomState;
+use crate::core::action::GameCommand;
+use crate::core::engine::flow::try_handle_command as execute_engine_command;
+use crate::core::engine::{
+    EngineContext, EngineOutput, discard_supported_locally, parse_legacy_player_command,
+};
+use crate::core::state::{RoomState, RoundSettlement};
 use crate::projection::support::build_seat_projection_support;
-use crate::rules::{
-    skills,
-    standard::{
-        actions::{
-            apply_claim_window_action as standard_apply_claim_window_action,
-            apply_discard_action as standard_apply_discard_action,
-            apply_rob_kong_pass as standard_apply_rob_kong_pass,
-            can_resolve_discard_locally as standard_can_resolve_discard_locally,
-            claim_window_supported_locally as standard_claim_window_supported_locally,
-            rob_kong_window_supported_locally as standard_rob_kong_window_supported_locally,
-            try_handle_self_kong_action as standard_try_handle_self_kong_action,
-        },
-        automation::{
-            next_bot_action as standard_next_bot_action,
-            try_process_due_timeout as standard_try_process_due_timeout,
-        },
-        flow::{
-            apply_flower_action as standard_apply_flower_action,
-            apply_opening_flowers_pass as standard_apply_opening_flowers_pass,
-            process_due_continue_action as standard_process_due_continue_action,
-            reconcile_continue_action_state as standard_reconcile_continue_action_state,
-            record_continue_action as standard_record_continue_action,
-            start_match as standard_start_match,
-        },
-        runtime::{
-            current_actor as standard_current_actor,
-            pending_timeout_kind as standard_pending_timeout_kind,
-            project_room_state as standard_project_room_state,
-        },
-        win::{
-            apply_hu_settlement as standard_apply_hu_settlement,
-            compute_hu_settlement as standard_compute_hu_settlement,
-            hu_action_hint as standard_hu_action_hint,
-        },
+use crate::rules::standard::{
+    actions::apply_discard_action as standard_apply_discard_action,
+    automation::{
+        next_bot_action as standard_next_bot_action,
+        try_process_due_timeout as standard_try_process_due_timeout,
     },
+    flow::{
+        process_due_continue_action as standard_process_due_continue_action,
+        reconcile_continue_action_state as standard_reconcile_continue_action_state,
+        record_continue_action as standard_record_continue_action,
+        start_match as standard_start_match,
+    },
+    runtime::project_room_state as standard_project_room_state,
+    win::apply_hu_settlement as standard_apply_hu_settlement,
 };
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
@@ -141,140 +123,7 @@ pub fn try_handle_command(
     room: &mut Value,
     command: GameCommand,
 ) -> Option<Result<EngineOutput, String>> {
-    let context = EngineContext::from_legacy_room(room).ok()?;
-    match command {
-        GameCommand::PlayerAction { actor, action } => {
-            try_handle_player_action_command(room, &context, actor, action)
-        }
-        _ => None,
-    }
-}
-
-fn try_handle_player_action_command(
-    room: &mut Value,
-    _context: &EngineContext,
-    seat_index: usize,
-    action: PlayerAction,
-) -> Option<Result<EngineOutput, String>> {
-    match action {
-        PlayerAction::Hu => {
-            Some(apply_hu_action(room, seat_index).map(EngineOutput::from_emitted_messages))
-        }
-        PlayerAction::Flower { tile_ids } => Some(
-            apply_flower_action(room, seat_index, &tile_ids)
-                .map(EngineOutput::from_emitted_messages),
-        ),
-        PlayerAction::Discard { tile_id } => {
-            if can_resolve_discard_locally(room, seat_index, &tile_id) {
-                Some(
-                    apply_discard_action(room, seat_index, &tile_id)
-                        .map(EngineOutput::from_emitted_messages),
-                )
-            } else {
-                None
-            }
-        }
-        PlayerAction::Kong { tile_ids } => {
-            if claim_window_supported_locally(room) {
-                Some(
-                    apply_claim_window_action(room, seat_index, "kong", &tile_ids)
-                        .map(EngineOutput::from_emitted_messages),
-                )
-            } else if rob_kong_window_supported_locally(room) {
-                None
-            } else if is_self_kong_turn(room, seat_index) {
-                try_handle_self_kong_action(room, seat_index, &tile_ids)
-                    .map(|result| result.map(EngineOutput::from_emitted_messages))
-            } else {
-                None
-            }
-        }
-        PlayerAction::Pass => {
-            let decline_hu_state = RoomState::from_legacy_value(room).ok();
-            let declined_hu = standard_hu_action_hint(room, seat_index).is_some();
-            if claim_window_supported_locally(room) {
-                Some(
-                    apply_claim_window_action(room, seat_index, "pass", &[]).and_then(
-                        |mut emitted_messages| {
-                            if declined_hu {
-                                if let Some(state) = decline_hu_state.as_ref() {
-                                    let events = skills::decline_hu_events(state, seat_index)?;
-                                    emitted_messages.extend(
-                                        skills::apply_passive_skill_events_to_legacy_room(
-                                            room, &events,
-                                        )?,
-                                    );
-                                }
-                            }
-                            Ok(EngineOutput::from_emitted_messages(emitted_messages))
-                        },
-                    ),
-                )
-            } else if rob_kong_window_supported_locally(room) {
-                Some(
-                    apply_rob_kong_pass(room, seat_index).and_then(|mut emitted_messages| {
-                        if declined_hu {
-                            if let Some(state) = decline_hu_state.as_ref() {
-                                let events = skills::decline_hu_events(state, seat_index)?;
-                                emitted_messages.extend(
-                                    skills::apply_passive_skill_events_to_legacy_room(
-                                        room, &events,
-                                    )?,
-                                );
-                            }
-                        }
-                        Ok(EngineOutput::from_emitted_messages(emitted_messages))
-                    }),
-                )
-            } else if pending_timeout_kind(room) == Some("opening_flowers") {
-                Some(
-                    apply_opening_flowers_pass(room, seat_index)
-                        .map(EngineOutput::from_emitted_messages),
-                )
-            } else {
-                None
-            }
-        }
-        PlayerAction::Chow { tile_ids } => {
-            if claim_window_supported_locally(room) {
-                Some(
-                    apply_claim_window_action(room, seat_index, "chow", &tile_ids)
-                        .map(EngineOutput::from_emitted_messages),
-                )
-            } else {
-                None
-            }
-        }
-        PlayerAction::Pung { tile_ids } => {
-            if claim_window_supported_locally(room) {
-                Some(
-                    apply_claim_window_action(room, seat_index, "pung", &tile_ids)
-                        .map(EngineOutput::from_emitted_messages),
-                )
-            } else {
-                None
-            }
-        }
-        PlayerAction::ActivateSkill {
-            skill_id,
-            target,
-            tile_ids,
-        } => Some(
-            RoomState::from_legacy_value(room)
-                .map_err(|_| "invalid_action".to_string())
-                .and_then(|state| {
-                    let events =
-                        skills::activate_skill(&state, seat_index, &skill_id, target, &tile_ids)?;
-                    let emitted_messages = skills::apply_skill_events_to_legacy_room(
-                        room, seat_index, &skill_id, &events,
-                    )?;
-                    Ok(EngineOutput {
-                        events,
-                        emitted_messages,
-                    })
-                }),
-        ),
-    }
+    execute_engine_command(room, command)
 }
 
 pub fn try_process_due_timeout(room: &mut Value) -> Option<Vec<Value>> {
@@ -303,15 +152,12 @@ pub fn apply_hu_settlement(
     hu_context: &str,
     settlement: Value,
 ) -> Result<Vec<Value>, String> {
-    standard_apply_hu_settlement(room, winner_seat, hu_context, settlement)
-}
-
-fn apply_hu_action(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, String> {
-    let Some(hu_context) = standard_hu_action_hint(room, seat_index) else {
-        return Err("invalid_action".to_string());
-    };
-    let settlement = standard_compute_hu_settlement(room, seat_index, hu_context)?;
-    apply_hu_settlement(room, seat_index, hu_context, settlement)
+    standard_apply_hu_settlement(
+        room,
+        winner_seat,
+        hu_context,
+        RoundSettlement::from_legacy_value(&settlement),
+    )
 }
 
 fn room_snapshot(room: &Value, local_seat: usize) -> Value {
@@ -338,26 +184,6 @@ fn room_snapshot(room: &Value, local_seat: usize) -> Value {
     )
 }
 
-fn apply_opening_flowers_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, String> {
-    standard_apply_opening_flowers_pass(room, seat_index)
-}
-
-fn apply_flower_action(
-    room: &mut Value,
-    seat_index: usize,
-    tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
-    standard_apply_flower_action(room, seat_index, tile_ids)
-}
-
-fn try_handle_self_kong_action(
-    room: &mut Value,
-    seat_index: usize,
-    tile_ids: &[String],
-) -> Option<Result<Vec<Value>, String>> {
-    standard_try_handle_self_kong_action(room, seat_index, tile_ids)
-}
-
 fn apply_discard_action(
     room: &mut Value,
     seat_index: usize,
@@ -366,45 +192,26 @@ fn apply_discard_action(
     standard_apply_discard_action(room, seat_index, tile_id)
 }
 
-fn apply_claim_window_action(
-    room: &mut Value,
-    seat_index: usize,
-    action_type: &str,
-    tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
-    standard_apply_claim_window_action(room, seat_index, action_type, tile_ids)
-}
-
-fn is_self_kong_turn(room: &Value, seat_index: usize) -> bool {
-    pending_timeout_kind(room) == Some("active_turn") && current_actor(room) == Some(seat_index)
-}
-
-fn claim_window_supported_locally(room: &Value) -> bool {
-    standard_claim_window_supported_locally(room)
-}
-
-fn rob_kong_window_supported_locally(room: &Value) -> bool {
-    standard_rob_kong_window_supported_locally(room)
-}
-
-fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Vec<Value>, String> {
-    standard_apply_rob_kong_pass(room, seat_index)
-}
-
 fn match_result_message(room: &Value) -> Option<Value> {
-    let round_state = room.get("round_state")?;
-    if round_state.get("phase").and_then(Value::as_str) != Some("settlement") {
+    let state = project_room_state(room).ok()?;
+    let round_state = state.round_state.as_ref()?;
+    if round_state.phase != "settlement" {
         return None;
     }
-    let settlement = round_state.get("settlement")?.clone();
-    let mut payload = settlement.as_object().cloned().unwrap_or_default();
+    let mut payload = round_state
+        .settlement
+        .as_ref()
+        .map(RoundSettlement::to_legacy_value)?
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
     payload.insert(
         "table_code".to_string(),
         room.get("table_code").cloned().unwrap_or(Value::Null),
     );
     payload.insert(
         "round_id".to_string(),
-        round_state.get("round_id").cloned().unwrap_or(Value::Null),
+        Value::String(round_state.round_id.clone()),
     );
     payload.insert("phase".to_string(), Value::String("settlement".to_string()));
     Some(json!({
@@ -413,16 +220,10 @@ fn match_result_message(room: &Value) -> Option<Value> {
     }))
 }
 
-fn current_actor(room: &Value) -> Option<usize> {
-    standard_current_actor(room)
-}
-
-fn pending_timeout_kind(room: &Value) -> Option<&str> {
-    standard_pending_timeout_kind(room)
-}
-
 fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -> bool {
-    standard_can_resolve_discard_locally(room, seat_index, tile_id)
+    EngineContext::from_legacy_room(room)
+        .map(|context| discard_supported_locally(&context, seat_index, tile_id))
+        .unwrap_or(false)
 }
 
 fn project_room_state(room: &Value) -> Result<RoomState, String> {

@@ -7,6 +7,7 @@ use crate::core::tile::Tile;
 
 use super::effect::EffectState;
 use super::pending::{LastActionContext, PendingAction};
+use super::settlement::RoundSettlement;
 use super::{PlayerRoundState, WallState, array, bool_or, seat_vec, string_opt, usize_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -20,7 +21,7 @@ pub struct RoundState {
     pub players: Vec<PlayerRoundState>,
     pub last_discard: Option<Tile>,
     pub pending_action: Option<PendingAction>,
-    pub settlement: Option<Value>,
+    pub settlement: Option<RoundSettlement>,
     pub version: u64,
     pub score_trackers: RoundScoreTrackers,
     pub last_action_context: LastActionContext,
@@ -84,7 +85,7 @@ impl RoundState {
             settlement: value
                 .get("settlement")
                 .filter(|settlement| !settlement.is_null())
-                .cloned(),
+                .map(RoundSettlement::from_legacy_value),
             version: value
                 .get("version")
                 .and_then(Value::as_u64)
@@ -110,6 +111,13 @@ impl RoundState {
                 self.pending_action
                     .as_ref()
                     .map(PendingAction::to_legacy_value)
+                    .unwrap_or(Value::Null),
+            );
+            object.insert(
+                "settlement".to_string(),
+                self.settlement
+                    .as_ref()
+                    .map(RoundSettlement::to_legacy_value)
                     .unwrap_or(Value::Null),
             );
             object.insert(

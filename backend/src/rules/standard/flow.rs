@@ -49,9 +49,8 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
     };
     let _ = apply_legacy_room_mutations(
         room,
-        &[LegacyRoomMutation::SetRoomField {
-            key: "match_state".to_string(),
-            value: serde_json::to_value(&match_state).unwrap_or(Value::Null),
+        &[LegacyRoomMutation::SetRoomMatchState {
+            match_state: Some(match_state),
         }],
     );
 }
@@ -71,17 +70,11 @@ pub fn record_continue_action(
         });
     }
     let field = if action_id == "start_next_round" {
-        "start_next_round_confirmed_seats"
+        LegacyRoomMutation::AddStartNextRoundConfirmedSeat { seat_index }
     } else {
-        "restart_match_confirmed_seats"
+        LegacyRoomMutation::AddRestartMatchConfirmedSeat { seat_index }
     };
-    apply_legacy_room_mutations(
-        room,
-        &[LegacyRoomMutation::PushUniqueSeatToRoomArray {
-            key: field.to_string(),
-            seat_index,
-        }],
-    )?;
+    apply_legacy_room_mutations(room, &[field])?;
     reconcile_continue_action(room)?;
     Ok(())
 }
@@ -200,35 +193,21 @@ fn start_round(
         seed,
     );
     seed_round_skill_loadouts(room, &mut round_state);
-    let round_state = serde_json::to_value(&round_state).unwrap_or(Value::Null);
-    let pending_timeout = serde_json::to_value(&pending_timeout).unwrap_or(Value::Null);
     let _ = apply_legacy_room_mutations(
         room,
         &[
-            LegacyRoomMutation::SetRoomField {
-                key: "phase".to_string(),
-                value: Value::String("playing".to_string()),
+            LegacyRoomMutation::SetRoomPhase {
+                phase: "playing".to_string(),
             },
-            LegacyRoomMutation::SetRoomField {
-                key: "round_state".to_string(),
-                value: round_state,
+            LegacyRoomMutation::SetRoomRoundState {
+                round_state: Some(round_state),
             },
-            LegacyRoomMutation::SetRoomField {
-                key: "pending_timeout".to_string(),
-                value: pending_timeout,
+            LegacyRoomMutation::SetRoomPendingTimeout {
+                pending_timeout: Some(pending_timeout),
             },
-            LegacyRoomMutation::SetRoomField {
-                key: "start_next_round_confirmed_seats".to_string(),
-                value: Value::Array(vec![]),
-            },
-            LegacyRoomMutation::SetRoomField {
-                key: "restart_match_confirmed_seats".to_string(),
-                value: Value::Array(vec![]),
-            },
-            LegacyRoomMutation::SetRoomField {
-                key: "continue_action_auto_advance_deadline_at".to_string(),
-                value: Value::Null,
-            },
+            LegacyRoomMutation::SetStartNextRoundConfirmedSeats { seats: vec![] },
+            LegacyRoomMutation::SetRestartMatchConfirmedSeats { seats: vec![] },
+            LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None },
         ],
     );
     sync_round_skill_trackers(room);
@@ -345,10 +324,7 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     let Some(action_id) = current_continue_action_id(room) else {
         apply_legacy_room_mutations(
             room,
-            &[LegacyRoomMutation::SetRoomField {
-                key: "continue_action_auto_advance_deadline_at".to_string(),
-                value: Value::Null,
-            }],
+            &[LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None }],
         )?;
         return Ok(());
     };
@@ -369,10 +345,7 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     if !online_unconfirmed.is_empty() {
         apply_legacy_room_mutations(
             room,
-            &[LegacyRoomMutation::SetRoomField {
-                key: "continue_action_auto_advance_deadline_at".to_string(),
-                value: Value::Null,
-            }],
+            &[LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None }],
         )?;
         return Ok(());
     }
@@ -396,9 +369,8 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     {
         apply_legacy_room_mutations(
             room,
-            &[LegacyRoomMutation::SetRoomField {
-                key: "continue_action_auto_advance_deadline_at".to_string(),
-                value: Value::String(
+            &[LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline {
+                deadline_at: Some(
                     (Utc::now() + TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
                         .to_rfc3339_opts(SecondsFormat::Micros, true),
                 ),
@@ -412,18 +384,9 @@ fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), Str
     apply_legacy_room_mutations(
         room,
         &[
-            LegacyRoomMutation::SetRoomField {
-                key: "continue_action_auto_advance_deadline_at".to_string(),
-                value: Value::Null,
-            },
-            LegacyRoomMutation::SetRoomField {
-                key: "start_next_round_confirmed_seats".to_string(),
-                value: Value::Array(vec![]),
-            },
-            LegacyRoomMutation::SetRoomField {
-                key: "restart_match_confirmed_seats".to_string(),
-                value: Value::Array(vec![]),
-            },
+            LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None },
+            LegacyRoomMutation::SetStartNextRoundConfirmedSeats { seats: vec![] },
+            LegacyRoomMutation::SetRestartMatchConfirmedSeats { seats: vec![] },
         ],
     )?;
     match action_id {
@@ -481,36 +444,24 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
     apply_legacy_room_mutations(
         room,
         &[
-            LegacyRoomMutation::SetMatchField {
-                key: "prevailing_wind".to_string(),
-                value: Value::String(next_wind.clone()),
+            LegacyRoomMutation::SetMatchPrevailingWind {
+                prevailing_wind: next_wind.clone(),
             },
-            LegacyRoomMutation::SetMatchField {
-                key: "hand_number".to_string(),
-                value: Value::Number(
-                    (if match_finished {
-                        hand_number
-                    } else {
-                        next_hand_number
-                    } as u64)
-                        .into(),
-                ),
+            LegacyRoomMutation::SetMatchHandNumber {
+                hand_number: if match_finished {
+                    hand_number as u32
+                } else {
+                    next_hand_number as u32
+                },
             },
-            LegacyRoomMutation::SetMatchField {
-                key: "dealer_seat".to_string(),
-                value: Value::Number(
-                    (if match_finished {
-                        dealer_seat
-                    } else {
-                        next_dealer
-                    } as u64)
-                        .into(),
-                ),
+            LegacyRoomMutation::SetMatchDealerSeat {
+                dealer_seat: if match_finished {
+                    dealer_seat
+                } else {
+                    next_dealer
+                },
             },
-            LegacyRoomMutation::SetMatchField {
-                key: "match_finished".to_string(),
-                value: Value::Bool(match_finished),
-            },
+            LegacyRoomMutation::SetMatchFinished { match_finished },
         ],
     )?;
 
@@ -518,13 +469,11 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
         apply_legacy_room_mutations(
             room,
             &[
-                LegacyRoomMutation::SetRoomField {
-                    key: "phase".to_string(),
-                    value: Value::String("finished".to_string()),
+                LegacyRoomMutation::SetRoomPhase {
+                    phase: "finished".to_string(),
                 },
-                LegacyRoomMutation::SetRoomField {
-                    key: "pending_timeout".to_string(),
-                    value: Value::Null,
+                LegacyRoomMutation::SetRoomPendingTimeout {
+                    pending_timeout: None,
                 },
             ],
         )?;

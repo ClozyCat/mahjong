@@ -1,12 +1,13 @@
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::core::engine::reducer::LegacyRoomMutation;
 use crate::core::state::effect::EffectState;
 use crate::core::state::{
-    LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout, PlayerRoundState,
-    RoomState, RoundScoreTrackers, RoundState, RuleRuntimeState, WallState,
+    ClaimWindowAction, LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout,
+    PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers, RoundSettlement,
+    RoundState, RuleRuntimeState, WallState,
 };
 use crate::core::tile::Tile;
 
@@ -200,10 +201,9 @@ pub fn plan_advance_opening_flowers(
         return vec![
             LegacyRoomMutation::SetRoundCurrentActor { seat_index },
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: json!({
-                    "type": "opening_flowers",
-                    "dealer_seat": dealer_seat,
-                }),
+                pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
+                    dealer_seat,
+                })),
             },
         ];
     }
@@ -225,11 +225,12 @@ pub fn plan_advance_opening_flowers(
                 seat_index: dealer_seat,
             },
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: Value::Null,
+                pending_action: None,
             },
-            LegacyRoomMutation::SetRoundField {
-                key: "score_trackers".to_string(),
-                value: Value::Object(trackers),
+            LegacyRoomMutation::SetRoundScoreTrackers {
+                score_trackers: crate::core::state::RoundScoreTrackers::from_legacy_value(Some(
+                    &Value::Object(trackers),
+                )),
             },
         ];
     }
@@ -238,10 +239,9 @@ pub fn plan_advance_opening_flowers(
             seat_index: next_seat,
         },
         LegacyRoomMutation::SetRoundPendingAction {
-            pending_action: json!({
-                "type": "opening_flowers",
-                "dealer_seat": dealer_seat,
-            }),
+            pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
+                dealer_seat,
+            })),
         },
     ]
 }
@@ -283,22 +283,22 @@ pub fn plan_flower_action(
         },
         LegacyRoomMutation::PushPlayerFlower {
             seat_index,
-            tile: tile_value(&flower_tile),
+            tile: flower_tile.clone(),
         },
         LegacyRoomMutation::RetreatWallTail,
         LegacyRoomMutation::PushPlayerConcealedTile {
             seat_index,
-            tile: tile_value(&replacement_tile),
+            tile: replacement_tile.clone(),
         },
         LegacyRoomMutation::SetRoundLastActionContext {
-            context: json!({
-                "kind": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": replacement_tile.tile_id,
-                "from_kong_replacement": false,
-                "was_last_live_tile": false,
-                "was_last_discard": false,
-            }),
+            context: LastActionContext {
+                kind: "replacement_draw".to_string(),
+                seat: seat_index,
+                tile_id: Some(replacement_tile.tile_id.clone()),
+                from_kong_replacement: false,
+                was_last_live_tile: false,
+                was_last_discard: false,
+            },
         },
         LegacyRoomMutation::IncrementRoundVersion,
     ];
@@ -372,13 +372,6 @@ pub fn plan_claim_window_response(
         }
     }
 
-    let updated_pending_action = json!({
-        "type": "claim_window",
-        "discarder_seat": discarder_seat,
-        "claim_window": claim.claim_window,
-        "responded_seats": responded_seats,
-        "claim_responses": claim_responses,
-    });
     let unresolved_seats = offered_claim_seats(&claim.claim_window)
         .into_iter()
         .filter(|offered_seat| !responded_seats.contains(offered_seat))
@@ -387,7 +380,12 @@ pub fn plan_claim_window_response(
     Ok(PlannedClaimWindowResponse {
         mutations: vec![
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: updated_pending_action,
+                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat,
+                    claim_window: claim.claim_window.clone(),
+                    responded_seats,
+                    claim_responses,
+                })),
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ],
@@ -426,10 +424,10 @@ pub fn plan_discard_action(
         },
         LegacyRoomMutation::PushPlayerDiscard {
             seat_index,
-            tile: tile_value(&discarded_tile),
+            tile: discarded_tile.clone(),
         },
         LegacyRoomMutation::SetRoundLastDiscard {
-            tile: tile_value(&discarded_tile),
+            tile: Some(discarded_tile.clone()),
         },
     ];
 
@@ -450,39 +448,36 @@ pub fn plan_discard_action(
     let mut followup_mutations = vec![
         LegacyRoomMutation::SetRoundPendingAction {
             pending_action: if has_claim {
-                json!({
-                    "type": "claim_window",
-                    "discarder_seat": seat_index,
-                    "claim_window": claim_window,
-                    "responded_seats": [],
-                    "claim_responses": [],
-                })
+                Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat: seat_index,
+                    claim_window,
+                    responded_seats: vec![],
+                    claim_responses: vec![],
+                }))
             } else {
-                Value::Null
+                None
             },
         },
-        LegacyRoomMutation::SetRoundRestrictedDiscardTileKey {
-            tile_key: Value::Null,
-        },
+        LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key: None },
         LegacyRoomMutation::SetRoundLastActionContext {
             context: if has_claim {
-                json!({
-                    "kind": "discard",
-                    "seat": seat_index,
-                    "tile_id": discarded_tile.tile_id,
-                    "from_kong_replacement": false,
-                    "was_last_live_tile": false,
-                    "was_last_discard": previous_was_last_live_tile,
-                })
+                LastActionContext {
+                    kind: "discard".to_string(),
+                    seat: seat_index,
+                    tile_id: Some(discarded_tile.tile_id.clone()),
+                    from_kong_replacement: false,
+                    was_last_live_tile: false,
+                    was_last_discard: previous_was_last_live_tile,
+                }
             } else {
-                json!({
-                    "kind": "draw",
-                    "seat": next_actor,
-                    "tile_id": drawn_tile.as_ref().map(|tile| tile.tile_id.clone()),
-                    "from_kong_replacement": false,
-                    "was_last_live_tile": was_last_live_tile,
-                    "was_last_discard": false,
-                })
+                LastActionContext {
+                    kind: "draw".to_string(),
+                    seat: next_actor,
+                    tile_id: drawn_tile.as_ref().map(|tile| tile.tile_id.clone()),
+                    from_kong_replacement: false,
+                    was_last_live_tile,
+                    was_last_discard: false,
+                }
             },
         },
         LegacyRoomMutation::IncrementRoundVersion,
@@ -496,7 +491,7 @@ pub fn plan_discard_action(
             1,
             LegacyRoomMutation::PushPlayerConcealedTile {
                 seat_index: next_actor,
-                tile: tile_value(&tile),
+                tile,
             },
         );
     }
@@ -509,7 +504,10 @@ pub fn plan_discard_action(
     })
 }
 
-pub fn plan_settlement_to_match(state: &RoomState, settlement: &Value) -> Vec<LegacyRoomMutation> {
+pub fn plan_settlement_to_match(
+    state: &RoomState,
+    settlement: &RoundSettlement,
+) -> Vec<LegacyRoomMutation> {
     let Some(round) = state.round_state.as_ref() else {
         return Vec::new();
     };
@@ -520,35 +518,26 @@ pub fn plan_settlement_to_match(state: &RoomState, settlement: &Value) -> Vec<Le
         return Vec::new();
     }
 
-    let total_delta = settlement
-        .get("score_delta")
-        .and_then(|score| score.get("total_delta_by_seat"))
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let mut cumulative_scores = Map::new();
+    let mut cumulative_scores = std::collections::BTreeMap::new();
     for seat_index in 0..MAX_SEATS {
-        let seat_key = seat_index.to_string();
         let current = match_state
             .cumulative_scores
             .get(&seat_index)
             .copied()
             .unwrap_or(0);
-        let delta = total_delta
-            .get(&seat_key)
-            .and_then(Value::as_i64)
+        let delta = settlement
+            .score_delta
+            .total_delta_by_seat
+            .get(&seat_index)
+            .copied()
             .unwrap_or(0);
-        cumulative_scores.insert(seat_key, Value::Number((current + delta).into()));
+        cumulative_scores.insert(seat_index, current + delta);
     }
 
     vec![
-        LegacyRoomMutation::SetMatchField {
-            key: "cumulative_scores".to_string(),
-            value: Value::Object(cumulative_scores),
-        },
-        LegacyRoomMutation::SetMatchField {
-            key: "last_completed_round_id".to_string(),
-            value: Value::String(round.round_id.clone()),
+        LegacyRoomMutation::SetMatchCumulativeScores { cumulative_scores },
+        LegacyRoomMutation::SetMatchLastCompletedRoundId {
+            round_id: Some(round.round_id.clone()),
         },
     ]
 }
@@ -614,23 +603,23 @@ pub fn plan_claim_window_continuation_without_winner(
             LegacyRoomMutation::AdvanceWallHead,
             LegacyRoomMutation::PushPlayerConcealedTile {
                 seat_index: next_actor,
-                tile: tile_value(&drawn_tile),
+                tile: drawn_tile.clone(),
             },
             LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: Value::Null,
+                pending_action: None,
             },
             LegacyRoomMutation::SetRoundCurrentActor {
                 seat_index: next_actor,
             },
             LegacyRoomMutation::SetRoundLastActionContext {
-                context: json!({
-                    "kind": "draw",
-                    "seat": next_actor,
-                    "tile_id": drawn_tile.tile_id,
-                    "from_kong_replacement": false,
-                    "was_last_live_tile": was_last_live_tile,
-                    "was_last_discard": false,
-                }),
+                context: LastActionContext {
+                    kind: "draw".to_string(),
+                    seat: next_actor,
+                    tile_id: Some(drawn_tile.tile_id.clone()),
+                    from_kong_replacement: false,
+                    was_last_live_tile,
+                    was_last_discard: false,
+                },
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ],
@@ -749,10 +738,6 @@ fn any_concealed_flower(players: &[PlayerRoundState]) -> bool {
             .iter()
             .any(|tile| tile.kind == "flower")
     })
-}
-
-fn tile_value(tile: &Tile) -> Value {
-    serde_json::to_value(tile).unwrap_or(Value::Null)
 }
 
 fn deadline_iso() -> String {
@@ -1065,8 +1050,13 @@ mod tests {
             crate::core::engine::reducer::LegacyRoomMutation::SetRoundPendingAction {
                 pending_action,
             } => {
-                assert_eq!(pending_action["responded_seats"], json!([1, 2]));
-                assert_eq!(pending_action["claim_responses"][0]["type"], json!("pung"));
+                let Some(crate::core::state::PendingAction::ClaimWindow(pending_action)) =
+                    pending_action.as_ref()
+                else {
+                    panic!("expected claim window pending action");
+                };
+                assert_eq!(pending_action.responded_seats, vec![1, 2]);
+                assert_eq!(pending_action.claim_responses[0]["type"], json!("pung"));
             }
             other => panic!("unexpected first mutation: {other:?}"),
         }
@@ -1151,7 +1141,7 @@ mod tests {
                 tile,
             } => {
                 assert_eq!(*seat_index, 1);
-                assert_eq!(tile["tile_id"], json!("w1#0"));
+                assert_eq!(tile.tile_id, "w1#0");
             }
             other => panic!("unexpected mutation: {other:?}"),
         }

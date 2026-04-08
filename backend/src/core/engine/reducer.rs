@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use crate::core::state::{
     ContinueActionState, EffectState, LastActionContext, MatchState, PendingAction, PendingTimeout,
-    RoomState, RoundScoreTrackers, RoundState,
+    RoomState, RoundScoreTrackers, RoundSettlement, RoundState,
 };
 use crate::core::tile::Tile;
 
@@ -12,26 +12,35 @@ pub enum LegacyRoomMutation {
         seat_index: usize,
         tile_id: String,
     },
+    ReplacePlayerConcealedTileById {
+        seat_index: usize,
+        tile_id: String,
+        tile: Tile,
+    },
     PushPlayerDiscard {
         seat_index: usize,
-        tile: Value,
+        tile: Tile,
     },
     PushPlayerConcealedTile {
         seat_index: usize,
-        tile: Value,
+        tile: Tile,
     },
     PushPlayerMeld {
         seat_index: usize,
-        meld: Value,
+        meld: Vec<String>,
     },
     PushPlayerFlower {
         seat_index: usize,
-        tile: Value,
+        tile: Tile,
     },
     AppendTileToPlayerMeld {
         seat_index: usize,
         meld_index: usize,
-        tile: Value,
+        tile_key: String,
+    },
+    RemovePlayerMeldAt {
+        seat_index: usize,
+        meld_index: usize,
     },
     PopPlayerDiscardLast {
         seat_index: usize,
@@ -39,42 +48,86 @@ pub enum LegacyRoomMutation {
     AdvanceWallHead,
     RetreatWallTail,
     SetRoundLastDiscard {
-        tile: Value,
+        tile: Option<Tile>,
     },
     SetRoundPendingAction {
-        pending_action: Value,
+        pending_action: Option<PendingAction>,
     },
     SetRoundRestrictedDiscardTileKey {
-        tile_key: Value,
+        tile_key: Option<String>,
     },
     SetRoundLastActionContext {
-        context: Value,
+        context: LastActionContext,
     },
     SetRoundCurrentActor {
         seat_index: usize,
     },
-    SetRoundField {
-        key: String,
-        value: Value,
+    SetRoundScoreTrackers {
+        score_trackers: RoundScoreTrackers,
+    },
+    SetRoundSkillTrackers {
+        trackers: Value,
+    },
+    SetRoomPhase {
+        phase: String,
+    },
+    SetRoomPendingTimeout {
+        pending_timeout: Option<PendingTimeout>,
+    },
+    SetRoomMatchState {
+        match_state: Option<MatchState>,
+    },
+    SetRoomRoundState {
+        round_state: Option<RoundState>,
+    },
+    SetContinueActionAutoAdvanceDeadline {
+        deadline_at: Option<String>,
+    },
+    SetStartNextRoundConfirmedSeats {
+        seats: Vec<usize>,
+    },
+    AddStartNextRoundConfirmedSeat {
+        seat_index: usize,
+    },
+    SetRestartMatchConfirmedSeats {
+        seats: Vec<usize>,
+    },
+    AddRestartMatchConfirmedSeat {
+        seat_index: usize,
+    },
+    SetRoundPhase {
+        phase: String,
+    },
+    SetRoundSettlement {
+        settlement: Option<RoundSettlement>,
+    },
+    SetMatchPrevailingWind {
+        prevailing_wind: String,
+    },
+    SetMatchHandNumber {
+        hand_number: u32,
+    },
+    SetMatchDealerSeat {
+        dealer_seat: usize,
+    },
+    SetMatchFinished {
+        match_finished: bool,
+    },
+    SetMatchCumulativeScores {
+        cumulative_scores: std::collections::BTreeMap<usize, i64>,
+    },
+    SetMatchLastCompletedRoundId {
+        round_id: Option<String>,
+    },
+    SetMatchSkillTrackers {
+        trackers: Value,
     },
     IncrementRoundVersion,
     AppendRoundKongEntry {
         kong_type: String,
         actor_seat: usize,
         payer_seats: Vec<usize>,
-        tile_key: Value,
-    },
-    SetRoomField {
-        key: String,
-        value: Value,
-    },
-    SetMatchField {
-        key: String,
-        value: Value,
-    },
-    PushUniqueSeatToRoomArray {
-        key: String,
-        seat_index: usize,
+        tile_key: Option<String>,
     },
 }
 
@@ -131,33 +184,63 @@ fn apply_legacy_room_mutation_to_value(
             concealed_tiles.remove(tile_index);
             Ok(())
         }
+        LegacyRoomMutation::ReplacePlayerConcealedTileById {
+            seat_index,
+            tile_id,
+            tile,
+        } => {
+            let concealed_tiles = player_zone_mut(room, *seat_index, "concealed_tiles")?;
+            let tile_index = concealed_tiles
+                .iter()
+                .position(|current| {
+                    current.get("tile_id").and_then(Value::as_str) == Some(tile_id.as_str())
+                })
+                .ok_or_else(|| "invalid_action".to_string())?;
+            concealed_tiles[tile_index] = serde_json::to_value(tile).unwrap_or(Value::Null);
+            Ok(())
+        }
         LegacyRoomMutation::PushPlayerDiscard { seat_index, tile } => {
-            player_zone_mut(room, *seat_index, "discards")?.push(tile.clone());
+            player_zone_mut(room, *seat_index, "discards")?
+                .push(serde_json::to_value(tile).unwrap_or(Value::Null));
             Ok(())
         }
         LegacyRoomMutation::PushPlayerConcealedTile { seat_index, tile } => {
-            player_zone_mut(room, *seat_index, "concealed_tiles")?.push(tile.clone());
+            player_zone_mut(room, *seat_index, "concealed_tiles")?
+                .push(serde_json::to_value(tile).unwrap_or(Value::Null));
             Ok(())
         }
         LegacyRoomMutation::PushPlayerMeld { seat_index, meld } => {
-            player_zone_mut(room, *seat_index, "melds")?.push(meld.clone());
+            player_zone_mut(room, *seat_index, "melds")?
+                .push(serde_json::to_value(meld).unwrap_or(Value::Array(vec![])));
             Ok(())
         }
         LegacyRoomMutation::PushPlayerFlower { seat_index, tile } => {
-            player_zone_mut(room, *seat_index, "flowers")?.push(tile.clone());
+            player_zone_mut(room, *seat_index, "flowers")?
+                .push(serde_json::to_value(tile).unwrap_or(Value::Null));
             Ok(())
         }
         LegacyRoomMutation::AppendTileToPlayerMeld {
             seat_index,
             meld_index,
-            tile,
+            tile_key,
         } => {
             let melds = player_zone_mut(room, *seat_index, "melds")?;
             let meld = melds
                 .get_mut(*meld_index)
                 .and_then(Value::as_array_mut)
                 .ok_or_else(|| "invalid_action".to_string())?;
-            meld.push(tile.clone());
+            meld.push(Value::String(tile_key.clone()));
+            Ok(())
+        }
+        LegacyRoomMutation::RemovePlayerMeldAt {
+            seat_index,
+            meld_index,
+        } => {
+            let melds = player_zone_mut(room, *seat_index, "melds")?;
+            if *meld_index >= melds.len() {
+                return Err("invalid_action".to_string());
+            }
+            melds.remove(*meld_index);
             Ok(())
         }
         LegacyRoomMutation::PopPlayerDiscardLast { seat_index } => {
@@ -192,23 +275,164 @@ fn apply_legacy_room_mutation_to_value(
             wall.insert("tail_index".to_string(), json!(tail_index - 1));
             Ok(())
         }
-        LegacyRoomMutation::SetRoundLastDiscard { tile } => {
-            round_state_insert(room, "last_discard", tile.clone())
-        }
-        LegacyRoomMutation::SetRoundPendingAction { pending_action } => {
-            round_state_insert(room, "pending_action", pending_action.clone())
-        }
-        LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key } => {
-            round_state_insert(room, "restricted_discard_tile_key", tile_key.clone())
-        }
-        LegacyRoomMutation::SetRoundLastActionContext { context } => {
-            round_state_insert(room, "last_action_context", context.clone())
-        }
+        LegacyRoomMutation::SetRoundLastDiscard { tile } => round_state_insert(
+            room,
+            "last_discard",
+            tile.as_ref()
+                .map(|tile| serde_json::to_value(tile).unwrap_or(Value::Null))
+                .unwrap_or(Value::Null),
+        ),
+        LegacyRoomMutation::SetRoundPendingAction { pending_action } => round_state_insert(
+            room,
+            "pending_action",
+            pending_action
+                .as_ref()
+                .map(PendingAction::to_legacy_value)
+                .unwrap_or(Value::Null),
+        ),
+        LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key } => round_state_insert(
+            room,
+            "restricted_discard_tile_key",
+            tile_key.clone().map(Value::String).unwrap_or(Value::Null),
+        ),
+        LegacyRoomMutation::SetRoundLastActionContext { context } => round_state_insert(
+            room,
+            "last_action_context",
+            serde_json::to_value(context).unwrap_or(Value::Null),
+        ),
         LegacyRoomMutation::SetRoundCurrentActor { seat_index } => {
             round_state_insert(room, "current_actor", json!(seat_index))
         }
-        LegacyRoomMutation::SetRoundField { key, value } => {
-            round_state_insert(room, key, value.clone())
+        LegacyRoomMutation::SetRoundScoreTrackers { score_trackers } => round_state_insert(
+            room,
+            "score_trackers",
+            serde_json::to_value(score_trackers).unwrap_or(Value::Null),
+        ),
+        LegacyRoomMutation::SetRoundSkillTrackers { trackers } => {
+            round_state_insert(room, "skill_trackers", trackers.clone())
+        }
+        LegacyRoomMutation::SetRoomPhase { phase } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert("phase".to_string(), Value::String(phase.clone()));
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomPendingTimeout { pending_timeout } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert(
+                "pending_timeout".to_string(),
+                pending_timeout
+                    .as_ref()
+                    .map(|timeout| serde_json::to_value(timeout).unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null),
+            );
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomMatchState { match_state } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert(
+                "match_state".to_string(),
+                match_state
+                    .as_ref()
+                    .map(|match_state| serde_json::to_value(match_state).unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null),
+            );
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomRoundState { round_state } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert(
+                "round_state".to_string(),
+                round_state
+                    .as_ref()
+                    .map(|round| round.to_legacy_value().unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null),
+            );
+            Ok(())
+        }
+        LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert(
+                "continue_action_auto_advance_deadline_at".to_string(),
+                deadline_at
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+            Ok(())
+        }
+        LegacyRoomMutation::SetStartNextRoundConfirmedSeats { seats } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert(
+                "start_next_round_confirmed_seats".to_string(),
+                Value::Array(seats.iter().map(|seat| json!(seat)).collect()),
+            );
+            Ok(())
+        }
+        LegacyRoomMutation::AddStartNextRoundConfirmedSeat { seat_index } => {
+            push_unique_seat_array_value(room, "start_next_round_confirmed_seats", *seat_index)
+        }
+        LegacyRoomMutation::SetRestartMatchConfirmedSeats { seats } => {
+            let object = room
+                .as_object_mut()
+                .ok_or_else(|| "invalid_action".to_string())?;
+            object.insert(
+                "restart_match_confirmed_seats".to_string(),
+                Value::Array(seats.iter().map(|seat| json!(seat)).collect()),
+            );
+            Ok(())
+        }
+        LegacyRoomMutation::AddRestartMatchConfirmedSeat { seat_index } => {
+            push_unique_seat_array_value(room, "restart_match_confirmed_seats", *seat_index)
+        }
+        LegacyRoomMutation::SetRoundPhase { phase } => {
+            round_state_insert(room, "phase", json!(phase))
+        }
+        LegacyRoomMutation::SetRoundSettlement { settlement } => round_state_insert(
+            room,
+            "settlement",
+            settlement
+                .as_ref()
+                .map(RoundSettlement::to_legacy_value)
+                .unwrap_or(Value::Null),
+        ),
+        LegacyRoomMutation::SetMatchPrevailingWind { prevailing_wind } => {
+            match_state_insert(room, "prevailing_wind", json!(prevailing_wind))
+        }
+        LegacyRoomMutation::SetMatchHandNumber { hand_number } => {
+            match_state_insert(room, "hand_number", json!(hand_number))
+        }
+        LegacyRoomMutation::SetMatchDealerSeat { dealer_seat } => {
+            match_state_insert(room, "dealer_seat", json!(dealer_seat))
+        }
+        LegacyRoomMutation::SetMatchFinished { match_finished } => {
+            match_state_insert(room, "match_finished", json!(match_finished))
+        }
+        LegacyRoomMutation::SetMatchCumulativeScores { cumulative_scores } => {
+            let object = cumulative_scores
+                .iter()
+                .map(|(seat, score)| (seat.to_string(), json!(score)))
+                .collect();
+            match_state_insert(room, "cumulative_scores", Value::Object(object))
+        }
+        LegacyRoomMutation::SetMatchLastCompletedRoundId { round_id } => match_state_insert(
+            room,
+            "last_completed_round_id",
+            round_id.clone().map(Value::String).unwrap_or(Value::Null),
+        ),
+        LegacyRoomMutation::SetMatchSkillTrackers { trackers } => {
+            match_state_insert(room, "skill_trackers", trackers.clone())
         }
         LegacyRoomMutation::IncrementRoundVersion => {
             let round_state = room
@@ -253,36 +477,6 @@ fn apply_legacy_room_mutation_to_value(
             }));
             Ok(())
         }
-        LegacyRoomMutation::SetRoomField { key, value } => {
-            let object = room
-                .as_object_mut()
-                .ok_or_else(|| "invalid_action".to_string())?;
-            object.insert(key.clone(), value.clone());
-            Ok(())
-        }
-        LegacyRoomMutation::SetMatchField { key, value } => {
-            let match_state = room
-                .get_mut("match_state")
-                .and_then(Value::as_object_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            match_state.insert(key.clone(), value.clone());
-            Ok(())
-        }
-        LegacyRoomMutation::PushUniqueSeatToRoomArray { key, seat_index } => {
-            let array = room
-                .get_mut(key)
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| "invalid_action".to_string())?;
-            if !array.iter().any(|value| {
-                value
-                    .as_u64()
-                    .map(|seat| seat as usize == *seat_index)
-                    .unwrap_or(false)
-            }) {
-                array.push(json!(seat_index));
-            }
-            Ok(())
-        }
     }
 }
 
@@ -304,39 +498,60 @@ fn apply_legacy_room_mutation_to_state(
             player.concealed_tiles.remove(tile_index);
             Ok(())
         }
+        LegacyRoomMutation::ReplacePlayerConcealedTileById {
+            seat_index,
+            tile_id,
+            tile,
+        } => {
+            let player = player_mut(room, *seat_index)?;
+            let tile_index = player
+                .concealed_tiles
+                .iter()
+                .position(|current| current.tile_id == *tile_id)
+                .ok_or_else(|| "invalid_action".to_string())?;
+            player.concealed_tiles[tile_index] = tile.clone();
+            Ok(())
+        }
         LegacyRoomMutation::PushPlayerDiscard { seat_index, tile } => {
-            player_mut(room, *seat_index)?
-                .discards
-                .push(parse_tile(tile)?);
+            player_mut(room, *seat_index)?.discards.push(tile.clone());
             Ok(())
         }
         LegacyRoomMutation::PushPlayerConcealedTile { seat_index, tile } => {
             player_mut(room, *seat_index)?
                 .concealed_tiles
-                .push(parse_tile(tile)?);
+                .push(tile.clone());
             Ok(())
         }
         LegacyRoomMutation::PushPlayerMeld { seat_index, meld } => {
-            player_mut(room, *seat_index)?.melds.push(parse_meld(meld));
+            player_mut(room, *seat_index)?.melds.push(meld.clone());
             Ok(())
         }
         LegacyRoomMutation::PushPlayerFlower { seat_index, tile } => {
-            player_mut(room, *seat_index)?
-                .flowers
-                .push(parse_tile(tile)?);
+            player_mut(room, *seat_index)?.flowers.push(tile.clone());
             Ok(())
         }
         LegacyRoomMutation::AppendTileToPlayerMeld {
             seat_index,
             meld_index,
-            tile,
+            tile_key,
         } => {
             let player = player_mut(room, *seat_index)?;
             let meld = player
                 .melds
                 .get_mut(*meld_index)
                 .ok_or_else(|| "invalid_action".to_string())?;
-            meld.push(parse_tile_key(tile));
+            meld.push(tile_key.clone());
+            Ok(())
+        }
+        LegacyRoomMutation::RemovePlayerMeldAt {
+            seat_index,
+            meld_index,
+        } => {
+            let player = player_mut(room, *seat_index)?;
+            if *meld_index >= player.melds.len() {
+                return Err("invalid_action".to_string());
+            }
+            player.melds.remove(*meld_index);
             Ok(())
         }
         LegacyRoomMutation::PopPlayerDiscardLast { seat_index } => {
@@ -353,32 +568,116 @@ fn apply_legacy_room_mutation_to_state(
             Ok(())
         }
         LegacyRoomMutation::SetRoundLastDiscard { tile } => {
-            round_mut(room)?.last_discard = if tile.is_null() {
-                None
-            } else {
-                Some(parse_tile(tile)?)
-            };
+            round_mut(room)?.last_discard = tile.clone();
             Ok(())
         }
         LegacyRoomMutation::SetRoundPendingAction { pending_action } => {
-            round_mut(room)?.pending_action = parse_pending_action(pending_action);
+            round_mut(room)?.pending_action = pending_action.clone();
             Ok(())
         }
         LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key } => {
-            round_mut(room)?.restricted_discard_tile_key =
-                tile_key.as_str().map(ToString::to_string);
+            round_mut(room)?.restricted_discard_tile_key = tile_key.clone();
             Ok(())
         }
         LegacyRoomMutation::SetRoundLastActionContext { context } => {
-            round_mut(room)?.last_action_context =
-                LastActionContext::from_legacy_value(Some(context));
+            round_mut(room)?.last_action_context = context.clone();
             Ok(())
         }
         LegacyRoomMutation::SetRoundCurrentActor { seat_index } => {
             round_mut(room)?.current_actor = *seat_index;
             Ok(())
         }
-        LegacyRoomMutation::SetRoundField { key, value } => apply_set_round_field(room, key, value),
+        LegacyRoomMutation::SetRoundScoreTrackers { score_trackers } => {
+            round_mut(room)?.score_trackers = score_trackers.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoundSkillTrackers { trackers } => {
+            round_mut(room)?.skill_trackers = trackers.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomPhase { phase } => {
+            room.phase = phase.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomPendingTimeout { pending_timeout } => {
+            room.pending_timeout = pending_timeout.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomMatchState { match_state } => {
+            room.match_state = match_state.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoomRoundState { round_state } => {
+            room.round_state = round_state.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at } => {
+            let action_id = match room.phase.as_str() {
+                "settlement" => "start_next_round",
+                "finished" => "restart_match",
+                _ => return Ok(()),
+            };
+            ensure_continue_action(room, action_id).auto_advance_deadline_at = deadline_at.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetStartNextRoundConfirmedSeats { seats } => {
+            ensure_continue_action(room, "start_next_round").confirmed_seats = seats.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::AddStartNextRoundConfirmedSeat { seat_index } => {
+            let action = ensure_continue_action(room, "start_next_round");
+            if !action.confirmed_seats.contains(seat_index) {
+                action.confirmed_seats.push(*seat_index);
+            }
+            Ok(())
+        }
+        LegacyRoomMutation::SetRestartMatchConfirmedSeats { seats } => {
+            ensure_continue_action(room, "restart_match").confirmed_seats = seats.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::AddRestartMatchConfirmedSeat { seat_index } => {
+            let action = ensure_continue_action(room, "restart_match");
+            if !action.confirmed_seats.contains(seat_index) {
+                action.confirmed_seats.push(*seat_index);
+            }
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoundPhase { phase } => {
+            round_mut(room)?.phase = phase.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetRoundSettlement { settlement } => {
+            round_mut(room)?.settlement = settlement.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchPrevailingWind { prevailing_wind } => {
+            match_mut(room)?.prevailing_wind = prevailing_wind.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchHandNumber { hand_number } => {
+            match_mut(room)?.hand_number = *hand_number;
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchDealerSeat { dealer_seat } => {
+            match_mut(room)?.dealer_seat = *dealer_seat;
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchFinished { match_finished } => {
+            match_mut(room)?.match_finished = *match_finished;
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchCumulativeScores { cumulative_scores } => {
+            match_mut(room)?.cumulative_scores = cumulative_scores.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchLastCompletedRoundId { round_id } => {
+            match_mut(room)?.last_completed_round_id = round_id.clone();
+            Ok(())
+        }
+        LegacyRoomMutation::SetMatchSkillTrackers { trackers } => {
+            match_mut(room)?.skill_trackers = trackers.clone();
+            Ok(())
+        }
         LegacyRoomMutation::IncrementRoundVersion => {
             round_mut(room)?.version += 1;
             Ok(())
@@ -394,156 +693,11 @@ fn apply_legacy_room_mutation_to_state(
                     kong_type: kong_type.clone(),
                     actor_seat: *actor_seat,
                     payer_seats: payer_seats.clone(),
-                    tile_key: tile_key.as_str().map(ToString::to_string),
+                    tile_key: tile_key.clone(),
                 },
             );
             Ok(())
         }
-        LegacyRoomMutation::SetRoomField { key, value } => apply_set_room_field(room, key, value),
-        LegacyRoomMutation::SetMatchField { key, value } => apply_set_match_field(room, key, value),
-        LegacyRoomMutation::PushUniqueSeatToRoomArray { key, seat_index } => {
-            let action = ensure_continue_action_for_field(room, key)?;
-            if !action.confirmed_seats.contains(seat_index) {
-                action.confirmed_seats.push(*seat_index);
-            }
-            Ok(())
-        }
-    }
-}
-
-fn apply_set_round_field(room: &mut RoomState, key: &str, value: &Value) -> Result<(), String> {
-    let round = round_mut(room)?;
-    match key {
-        "score_trackers" => {
-            round.score_trackers = RoundScoreTrackers::from_legacy_value(Some(value));
-            Ok(())
-        }
-        "phase" => {
-            round.phase = value.as_str().unwrap_or_default().to_string();
-            Ok(())
-        }
-        "settlement" => {
-            round.settlement = if value.is_null() {
-                None
-            } else {
-                Some(value.clone())
-            };
-            Ok(())
-        }
-        "skill_trackers" => {
-            round.skill_trackers = value.clone();
-            Ok(())
-        }
-        "effect_state" => {
-            round.effect_state =
-                EffectState::from_legacy_value(Some(value)).map_err(|error| error.to_string())?;
-            Ok(())
-        }
-        _ => Err("invalid_action".to_string()),
-    }
-}
-
-fn apply_set_room_field(room: &mut RoomState, key: &str, value: &Value) -> Result<(), String> {
-    match key {
-        "phase" => {
-            room.phase = value.as_str().unwrap_or_default().to_string();
-            Ok(())
-        }
-        "pending_timeout" => {
-            room.pending_timeout = if value.is_null() {
-                None
-            } else {
-                Some(PendingTimeout::from_legacy_value(value))
-            };
-            Ok(())
-        }
-        "match_state" => {
-            room.match_state = if value.is_null() {
-                None
-            } else {
-                Some(MatchState::from_legacy_value(value).map_err(|error| error.to_string())?)
-            };
-            Ok(())
-        }
-        "round_state" => {
-            room.round_state = if value.is_null() {
-                None
-            } else {
-                Some(RoundState::from_legacy_value(value).map_err(|error| error.to_string())?)
-            };
-            Ok(())
-        }
-        "start_next_round_confirmed_seats" | "restart_match_confirmed_seats" => {
-            ensure_continue_action_for_field(room, key)?.confirmed_seats = value
-                .as_array()
-                .map(|seats| {
-                    seats
-                        .iter()
-                        .filter_map(|seat| seat.as_u64().map(|seat| seat as usize))
-                        .collect()
-                })
-                .unwrap_or_default();
-            Ok(())
-        }
-        "continue_action_auto_advance_deadline_at" => {
-            let action_id = match room.phase.as_str() {
-                "settlement" => "start_next_round",
-                "finished" => "restart_match",
-                _ => return Ok(()),
-            };
-            let action = ensure_continue_action(room, action_id);
-            action.auto_advance_deadline_at = value.as_str().map(ToString::to_string);
-            Ok(())
-        }
-        _ => Err("invalid_action".to_string()),
-    }
-}
-
-fn apply_set_match_field(room: &mut RoomState, key: &str, value: &Value) -> Result<(), String> {
-    let match_state = match_mut(room)?;
-    match key {
-        "prevailing_wind" => {
-            match_state.prevailing_wind = value.as_str().unwrap_or_default().to_string();
-            Ok(())
-        }
-        "hand_number" => {
-            match_state.hand_number = value.as_u64().unwrap_or_default() as u32;
-            Ok(())
-        }
-        "dealer_seat" => {
-            match_state.dealer_seat = value.as_u64().unwrap_or_default() as usize;
-            Ok(())
-        }
-        "match_finished" => {
-            match_state.match_finished = value.as_bool().unwrap_or(false);
-            Ok(())
-        }
-        "cumulative_scores" => {
-            *match_state = MatchState::from_legacy_value(&json!({
-                "prevailing_wind": match_state.prevailing_wind,
-                "hand_number": match_state.hand_number,
-                "dealer_seat": match_state.dealer_seat,
-                "cumulative_scores": value,
-                "match_finished": match_state.match_finished,
-                "last_completed_round_id": match_state.last_completed_round_id,
-                "skill_trackers": match_state.skill_trackers,
-            }))
-            .map_err(|error| error.to_string())?;
-            Ok(())
-        }
-        "last_completed_round_id" => {
-            match_state.last_completed_round_id = if value.is_null() {
-                None
-            } else {
-                value.as_str().map(ToString::to_string)
-            };
-            Ok(())
-        }
-        "skill_trackers" => {
-            match_state.skill_trackers = value.clone();
-            Ok(())
-        }
-        _ => Err("invalid_action".to_string()),
     }
 }
 
@@ -604,18 +758,6 @@ fn parse_pending_action(value: &Value) -> Option<PendingAction> {
     } else {
         PendingAction::from_legacy_value(value)
     }
-}
-
-fn ensure_continue_action_for_field<'a>(
-    room: &'a mut RoomState,
-    key: &str,
-) -> Result<&'a mut ContinueActionState, String> {
-    let action_id = match key {
-        "start_next_round_confirmed_seats" => "start_next_round",
-        "restart_match_confirmed_seats" => "restart_match",
-        _ => return Err("invalid_action".to_string()),
-    };
-    Ok(ensure_continue_action(room, action_id))
 }
 
 fn ensure_continue_action<'a>(
@@ -703,11 +845,41 @@ fn round_state_insert(room: &mut Value, key: &str, value: Value) -> Result<(), S
     Ok(())
 }
 
+fn match_state_insert(room: &mut Value, key: &str, value: Value) -> Result<(), String> {
+    let match_state = room
+        .get_mut("match_state")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "invalid_action".to_string())?;
+    match_state.insert(key.to_string(), value);
+    Ok(())
+}
+
+fn push_unique_seat_array_value(
+    room: &mut Value,
+    key: &str,
+    seat_index: usize,
+) -> Result<(), String> {
+    let array = room
+        .get_mut(key)
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| "invalid_action".to_string())?;
+    if !array.iter().any(|value| {
+        value
+            .as_u64()
+            .map(|seat| seat as usize == seat_index)
+            .unwrap_or(false)
+    }) {
+        array.push(json!(seat_index));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::{LegacyRoomMutation, apply_legacy_room_mutations};
+    use crate::core::tile::Tile;
 
     #[test]
     fn applies_basic_discard_mutations() {
@@ -738,10 +910,24 @@ mod tests {
             },
             LegacyRoomMutation::PushPlayerDiscard {
                 seat_index: 0,
-                tile: json!({"tile_id": "w1#0", "tile_key": "w1"}),
+                tile: Tile {
+                    tile_id: "w1#0".to_string(),
+                    tile_key: "w1".to_string(),
+                    kind: String::new(),
+                    suit: None,
+                    rank: None,
+                    name: None,
+                },
             },
             LegacyRoomMutation::SetRoundLastDiscard {
-                tile: json!({"tile_id": "w1#0", "tile_key": "w1"}),
+                tile: Some(Tile {
+                    tile_id: "w1#0".to_string(),
+                    tile_key: "w1".to_string(),
+                    kind: String::new(),
+                    suit: None,
+                    rank: None,
+                    name: None,
+                }),
             },
             LegacyRoomMutation::IncrementRoundVersion,
         ];
@@ -752,8 +938,12 @@ mod tests {
             json!([{"tile_id":"w2#0","tile_key":"w2"}])
         );
         assert_eq!(
-            room["round_state"]["players"][0]["discards"],
-            json!([{"tile_id":"w1#0","tile_key":"w1"}])
+            room["round_state"]["players"][0]["discards"][0]["tile_id"],
+            "w1#0"
+        );
+        assert_eq!(
+            room["round_state"]["players"][0]["discards"][0]["tile_key"],
+            "w1"
         );
         assert_eq!(room["round_state"]["last_discard"]["tile_key"], "w1");
         assert_eq!(room["round_state"]["version"], 2);
@@ -839,13 +1029,9 @@ mod tests {
         });
 
         let mutations = vec![
-            LegacyRoomMutation::PushUniqueSeatToRoomArray {
-                key: "start_next_round_confirmed_seats".to_string(),
-                seat_index: 0,
-            },
-            LegacyRoomMutation::SetRoomField {
-                key: "continue_action_auto_advance_deadline_at".to_string(),
-                value: json!("2026-04-08T00:00:00Z"),
+            LegacyRoomMutation::AddStartNextRoundConfirmedSeat { seat_index: 0 },
+            LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline {
+                deadline_at: Some("2026-04-08T00:00:00Z".to_string()),
             },
         ];
 

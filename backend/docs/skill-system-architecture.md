@@ -790,15 +790,20 @@ ScoreResult
 - The app/runtime split is now materially in place under `app/*`. `app/persistence.rs`, `app/room_runtime.rs`, `app/scheduler.rs`, `app/server.rs`, and `app/ws.rs` now hold persistence, room lifecycle, timeout scheduling, HTTP, and WebSocket/session responsibilities; `main.rs` has been reduced to bootstrap plus tests.
 - The skills layer is no longer scaffold-only. `rules/skills/*` now contains a live registry/hook system, all 36 技能 definitions are registered, and standard flow already invokes skill hooks from projection, hu/scoring, draw-settlement, active skill activation, and decline-hu passive paths.
 - Explicit skill runtime trackers now exist on typed state. `RoundState.skill_trackers` and `MatchState.skill_trackers` are synchronized from runtime flow so skills no longer depend on ad-hoc hidden conditions scattered through rule code.
+- The settlement model is now materially typed end-to-end inside the backend core. `core/state/settlement.rs` owns typed settlement data, `RoundState.settlement` and `LegacyRoomMutation::SetRoundSettlement` now carry `RoundSettlement`, standard hu/draw settlement builders produce typed settlement directly, and planner/reducer/match-score application consume typed deltas rather than reparsing settlement JSON.
+- Settlement events now align with the typed model. Standard settlement messages (`settlement_ready` / `round_drawn`) carry the settlement payload, and `core/engine/command.rs` can now lift those messages into `GameEvent::SettlementPrepared { settlement: RoundSettlement }` instead of leaving settlement as a legacy-only side channel.
+- Standard action hot paths now lean more directly on typed room reads. The local discard / claim resolution path in `rules/standard/actions.rs` now validates and derives follow-up draw/claim state primarily from projected `RoomState` / `RoundState` instead of repeatedly rereading the same facts from raw room JSON.
+- The reducer mutation language has been extended further to absorb more legacy skill-side patching. Skill event application now uses explicit mutations for concealed-tile replacement, meld removal, and round/match skill-tracker writeback rather than directly editing nested legacy JSON objects for those paths.
 - `mahjong.rs` has already shrunk from a rules megafile into a transitional facade plus a smaller set of compatibility entrypoints. Large dead helper blocks and commented legacy code have been physically removed.
 
 ### 16.2 Still Transitional / Not Yet Finished
 
 - The typed state is not yet the single write-time source of truth. Core mutation still largely flows through `LegacyRoomMutation` plus `serde_json::Value`, so `RoomState` is strong on reads/projection/validation but not yet the exclusive runtime write model.
-- The write path has started moving to typed state, but is not finished. Complete runtime rooms now apply `LegacyRoomMutation` through typed `RoomState` writeback first, yet the mutation language itself is still the old compatibility shape and partial/fallback JSON behavior still exists.
-- The engine split is still only partial. `core/engine/mod.rs`, `planner.rs`, and `reducer.rs` exist, but the cleaner `command` / `flow` / `validation` separation described earlier in this document has not been fully landed.
+- The write path has moved further into typed state, but is not finished. Complete runtime rooms now apply `LegacyRoomMutation` through typed `RoomState` writeback first, the common lifecycle mutations (`phase`, `pending_timeout`, `round_state`, `match_state`, `settlement`, continue-action fields, cumulative-score updates) already have explicit typed variants, and the high-frequency round mutations for tiles / melds / pending action / last-action context / kong tracker entries now also carry typed payloads instead of generic JSON blobs. The older generic string-key field mutations have been removed from the active mutation language, but planner output and reducer orchestration are still expressed as a compatibility mutation layer rather than a fully typed command/result model.
+- The engine split has moved past the original `mod.rs` catch-all layout. `core/engine/command.rs`, `flow.rs`, `validation.rs`, `planner.rs`, and `reducer.rs` now exist, and legacy command parsing plus local command execution dispatch have been extracted out of `core/engine/mod.rs` and `mahjong.rs`. Standard claim-window / rob-kong timeout handling and hu-action hinting have also started consuming typed `PendingAction` instead of reparsing legacy JSON in-place. What is still incomplete is the deeper replacement of compatibility-oriented command execution and planner output with a fully typed engine result model.
+- Settlement is no longer the main typed-state blocker, but some compatibility seams still remain around it. More skill-side flows now route through reducer mutations, but several effect/tracker helpers still manipulate `serde_json::Value` payloads directly, and the outgoing room/projection layer still serializes through compatibility `Value` objects instead of projecting straight from typed view models.
 - The scoring split is only partially internalized. Root `scoring.rs` is now a compatibility facade, but much of the scoring domain still lives in `rules/scoring/evaluator.rs`; `room_scoring.rs` also remains as transitional glue.
-- `mahjong.rs` still keeps compatibility entrypoints and wrapper logic, so it is much smaller but not yet fully retired as a facade.
+- `mahjong.rs` still keeps compatibility entrypoints and wrapper logic, but it no longer owns local command routing. It is much smaller than before, yet not fully retired as a facade.
 - Projection layering is still not fully finished. The current code has `room_snapshot`, `prompt`, `bot_view`, and `support`, but the document's dedicated `private_view.rs` style separation is not yet present.
 - The `infra/*` layer proposed earlier in this document still does not exist. Serialization/time/random helpers are still spread across the current modules instead of being centralized behind an infra boundary.
 
@@ -817,7 +822,7 @@ Recommended target:
 
 - move `planner.rs` outputs away from `LegacyRoomMutation`
 - make reducer operate on typed state first, with legacy JSON serialization as an outer compatibility concern
-- progressively eliminate write-side dependence on `serde_json::Value` from standard action / flow code
+- progressively eliminate the remaining write-side dependence on `serde_json::Value` from standard action / flow / skill-effect code, especially the post-reducer compatibility helpers and compatibility-only pending-action parsing
 
 Goal:
 
@@ -828,8 +833,8 @@ Goal:
 
 Recommended target:
 
-- introduce the missing `command` / `validation` / `flow` style boundaries inside `core/engine/*`
-- continue shrinking the amount of planning, compatibility parsing, and mutation orchestration co-located in the current files
+- build on the now-landed `command` / `validation` / `flow` split inside `core/engine/*`
+- continue shrinking the remaining compatibility-oriented execution code and mutation orchestration that still sits behind `serde_json::Value` entrypoints
 - make command parsing, validation, planning, reduction, and compatibility adaptation easier to test independently
 
 Goal:

@@ -12,15 +12,10 @@ pub fn project_room_state(room: &Value) -> Result<RoomState, String> {
 pub fn sync_pending_timeout(room: &mut Value) {
     let pending_timeout = project_room_state(room)
         .ok()
-        .and_then(|state| compute_pending_timeout_value(&state, deadline_iso()))
-        .and_then(|timeout| serde_json::to_value(timeout).ok())
-        .unwrap_or(Value::Null);
+        .and_then(|state| compute_pending_timeout_value(&state, deadline_iso()));
     let _ = apply_legacy_room_mutations(
         room,
-        &[LegacyRoomMutation::SetRoomField {
-            key: "pending_timeout".to_string(),
-            value: pending_timeout,
-        }],
+        &[LegacyRoomMutation::SetRoomPendingTimeout { pending_timeout }],
     );
 }
 
