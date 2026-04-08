@@ -79,6 +79,80 @@ impl RoomState {
         let value: Value = serde_json::from_str(raw)?;
         Self::from_legacy_value(&value)
     }
+
+    pub fn to_legacy_value(&self) -> Result<Value, serde_json::Error> {
+        let mut value = serde_json::to_value(self)?;
+        let continue_action = legacy_continue_action_fields(self);
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "round_state".to_string(),
+                match &self.round_state {
+                    Some(round) => round.to_legacy_value()?,
+                    None => Value::Null,
+                },
+            );
+            object.remove("continue_action");
+            object.insert(
+                "start_next_round_confirmed_seats".to_string(),
+                continue_action.start_next_round_confirmed_seats,
+            );
+            object.insert(
+                "restart_match_confirmed_seats".to_string(),
+                continue_action.restart_match_confirmed_seats,
+            );
+            object.insert(
+                "continue_action_auto_advance_deadline_at".to_string(),
+                continue_action.auto_advance_deadline_at,
+            );
+        }
+        Ok(value)
+    }
+}
+
+struct LegacyContinueActionFields {
+    start_next_round_confirmed_seats: Value,
+    restart_match_confirmed_seats: Value,
+    auto_advance_deadline_at: Value,
+}
+
+fn legacy_continue_action_fields(state: &RoomState) -> LegacyContinueActionFields {
+    let Some(action) = state.continue_action.as_ref() else {
+        return LegacyContinueActionFields {
+            start_next_round_confirmed_seats: Value::Array(vec![]),
+            restart_match_confirmed_seats: Value::Array(vec![]),
+            auto_advance_deadline_at: Value::Null,
+        };
+    };
+    let seats = action
+        .confirmed_seats
+        .iter()
+        .map(|seat| Value::from(*seat as u64))
+        .collect::<Vec<_>>();
+    match action.action_id.as_str() {
+        "start_next_round" => LegacyContinueActionFields {
+            start_next_round_confirmed_seats: Value::Array(seats),
+            restart_match_confirmed_seats: Value::Array(vec![]),
+            auto_advance_deadline_at: action
+                .auto_advance_deadline_at
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        },
+        "restart_match" => LegacyContinueActionFields {
+            start_next_round_confirmed_seats: Value::Array(vec![]),
+            restart_match_confirmed_seats: Value::Array(seats),
+            auto_advance_deadline_at: action
+                .auto_advance_deadline_at
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        },
+        _ => LegacyContinueActionFields {
+            start_next_round_confirmed_seats: Value::Array(vec![]),
+            restart_match_confirmed_seats: Value::Array(vec![]),
+            auto_advance_deadline_at: Value::Null,
+        },
+    }
 }
 
 fn parse_continue_action(value: &Value) -> Option<ContinueActionState> {

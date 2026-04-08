@@ -101,6 +101,25 @@ impl RoundState {
             skill_trackers: value.get("skill_trackers").cloned().unwrap_or(Value::Null),
         })
     }
+
+    pub(crate) fn to_legacy_value(&self) -> Result<Value, serde_json::Error> {
+        let mut value = serde_json::to_value(self)?;
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "pending_action".to_string(),
+                self.pending_action
+                    .as_ref()
+                    .map(PendingAction::to_legacy_value)
+                    .unwrap_or(Value::Null),
+            );
+            object.insert(
+                "enforce_minimum_eight_fan".to_string(),
+                Value::Bool(self.rule_state.enforce_minimum_eight_fan),
+            );
+            object.remove("rule_state");
+        }
+        Ok(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

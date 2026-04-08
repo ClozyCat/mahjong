@@ -795,6 +795,7 @@ ScoreResult
 ### 16.2 Still Transitional / Not Yet Finished
 
 - The typed state is not yet the single write-time source of truth. Core mutation still largely flows through `LegacyRoomMutation` plus `serde_json::Value`, so `RoomState` is strong on reads/projection/validation but not yet the exclusive runtime write model.
+- The write path has started moving to typed state, but is not finished. Complete runtime rooms now apply `LegacyRoomMutation` through typed `RoomState` writeback first, yet the mutation language itself is still the old compatibility shape and partial/fallback JSON behavior still exists.
 - The engine split is still only partial. `core/engine/mod.rs`, `planner.rs`, and `reducer.rs` exist, but the cleaner `command` / `flow` / `validation` separation described earlier in this document has not been fully landed.
 - The scoring split is only partially internalized. Root `scoring.rs` is now a compatibility facade, but much of the scoring domain still lives in `rules/scoring/evaluator.rs`; `room_scoring.rs` also remains as transitional glue.
 - `mahjong.rs` still keeps compatibility entrypoints and wrapper logic, so it is much smaller but not yet fully retired as a facade.

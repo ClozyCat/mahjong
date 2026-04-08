@@ -165,6 +165,32 @@ impl PendingAction {
             Self::Unknown(action) => &action.action_type,
         }
     }
+
+    pub(crate) fn to_legacy_value(&self) -> Value {
+        match self {
+            Self::OpeningFlowers(action) => serde_json::json!({
+                "type": "opening_flowers",
+                "dealer_seat": action.dealer_seat,
+            }),
+            Self::ClaimWindow(action) => serde_json::json!({
+                "type": "claim_window",
+                "discarder_seat": action.discarder_seat,
+                "claim_window": action.claim_window,
+                "responded_seats": action.responded_seats,
+                "claim_responses": action.claim_responses,
+            }),
+            Self::RobKongWindow(action) => serde_json::json!({
+                "type": "rob_kong_window",
+                "actor_seat": action.actor_seat,
+                "tile_id": action.tile_id,
+                "tile_key": action.tile_key,
+                "meld_index": action.meld_index,
+                "offered_hu_seats": action.offered_hu_seats,
+                "responded_seats": action.responded_seats,
+            }),
+            Self::Unknown(action) => action.raw.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
