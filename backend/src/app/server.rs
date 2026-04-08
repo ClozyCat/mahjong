@@ -11,12 +11,14 @@ use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 
 use super::persistence::{Database, DbWorker};
+use super::protocol::{create_table_response, detail_response};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
 use super::ws::websocket_handler;
 use super::{
     AppContext, CreateTableRequest, Settings, initial_room_payload, is_valid_table_code,
-    normalize_table_code, now_iso, serialize_room,
+    normalize_table_code, now_iso, parse_room_json, serialize_room_state,
 };
+use crate::core::state::RoomState;
 
 #[derive(Debug)]
 enum CreateTableError {
@@ -91,7 +93,7 @@ async fn create_table(
     if resolved_mode != "normal" && resolved_mode != "test" {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({ "detail": "unsupported_mode" })),
+            Json(detail_response("unsupported_mode")),
         )
             .into_response();
     }
@@ -104,7 +106,7 @@ async fn create_table(
         Some(code) if !is_valid_table_code(&code) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({ "detail": "invalid_table_code" })),
+                Json(detail_response("invalid_table_code")),
             )
                 .into_response();
         }
@@ -127,23 +129,22 @@ async fn create_table(
     match result {
         Ok((table_code, created_at, room)) => (
             StatusCode::CREATED,
-            Json(json!({
-                "table_code": table_code,
-                "phase": "waiting",
-                "mode": resolved_mode,
-                "created_at": created_at,
-                "seats": room.get("seats").cloned().unwrap_or_else(|| Value::Array(vec![])),
-            })),
+            Json(create_table_response(
+                &table_code,
+                &resolved_mode,
+                &created_at,
+                room.seats,
+            )),
         )
             .into_response(),
         Err(CreateTableError::Conflict) => (
             StatusCode::CONFLICT,
-            Json(json!({ "detail": "table_code_exists" })),
+            Json(detail_response("table_code_exists")),
         )
             .into_response(),
         Err(CreateTableError::Internal(error)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "detail": error.to_string() })),
+            Json(detail_response(&error.to_string())),
         )
             .into_response(),
     }
@@ -154,7 +155,7 @@ async fn create_or_replace_table(
     requested_code: Option<String>,
     mode: &str,
     enforce_minimum_eight_fan: bool,
-) -> std::result::Result<(String, String, Value), CreateTableError> {
+) -> std::result::Result<(String, String, RoomState), CreateTableError> {
     let mut rooms = state.inner.rooms.write().await;
     let runtime_codes: HashSet<String> = rooms.keys().cloned().collect();
     let table_code = if let Some(code) = requested_code {
@@ -175,13 +176,8 @@ async fn create_or_replace_table(
         .await
         .map_err(CreateTableError::Internal)?;
     if let Some(record) = existing_record {
-        let existing_room: Value = serde_json::from_str(&record.room_json)
-            .map_err(|error| CreateTableError::Internal(error.into()))?;
-        let occupied = existing_room
-            .get("seats")
-            .and_then(Value::as_array)
-            .map(|seats| !seats.is_empty())
-            .unwrap_or(false);
+        let existing_room = parse_room_json(&record.room_json).map_err(CreateTableError::Internal)?;
+        let occupied = !existing_room.seats.is_empty();
         if occupied {
             return Err(CreateTableError::Conflict);
         }
@@ -194,8 +190,13 @@ async fn create_or_replace_table(
     drop(rooms);
 
     let created_at = now_iso();
-    let room = initial_room_payload(&table_code, mode, enforce_minimum_eight_fan);
-    let room_json = serialize_room(&room).map_err(CreateTableError::Internal)?;
+    let room = RoomState::from_room_value(&initial_room_payload(
+        &table_code,
+        mode,
+        enforce_minimum_eight_fan,
+    ))
+    .map_err(|error| CreateTableError::Internal(error.into()))?;
+    let room_json = serialize_room_state(&room).map_err(CreateTableError::Internal)?;
     state
         .inner
         .db
@@ -205,7 +206,8 @@ async fn create_or_replace_table(
 
     let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(
         created_at.clone(),
-        room.clone(),
+        room.to_room_value()
+            .map_err(|error| CreateTableError::Internal(error.into()))?,
     )));
     let replaced_after_insert = {
         let mut rooms = state.inner.rooms.write().await;

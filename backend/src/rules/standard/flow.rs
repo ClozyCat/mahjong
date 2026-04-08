@@ -3,11 +3,14 @@ use rand::Rng;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+use crate::core::engine::EngineOutput;
+use crate::core::event::GameEvent;
 use crate::core::engine::planner::{
     plan_advance_opening_flowers, plan_flower_action, plan_round_start_payload,
 };
-use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
-use crate::core::state::{MatchState, SkillLoadout};
+use crate::core::engine::reducer::update_room_state;
+use crate::core::tile::Tile;
+use crate::core::state::{ContinueActionState, MatchState, SkillLoadout};
 use crate::rules::skills::{note_tracker_draw, sync_round_skill_trackers};
 
 use super::runtime::{
@@ -47,12 +50,10 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         last_completed_round_id: None,
         skill_trackers: Default::default(),
     };
-    let _ = apply_legacy_room_mutations(
-        room,
-        &[LegacyRoomMutation::SetRoomMatchState {
-            match_state: Some(match_state),
-        }],
-    );
+    let _ = update_room_state(room, |state| {
+        state.match_state = Some(match_state);
+        Ok(())
+    });
 }
 
 pub fn record_continue_action(
@@ -69,22 +70,31 @@ pub fn record_continue_action(
             _ => "invalid_action".to_string(),
         });
     }
-    let field = if action_id == "start_next_round" {
-        LegacyRoomMutation::AddStartNextRoundConfirmedSeat { seat_index }
-    } else {
-        LegacyRoomMutation::AddRestartMatchConfirmedSeat { seat_index }
-    };
-    apply_legacy_room_mutations(room, &[field])?;
+    update_room_state(room, |state| {
+        let action = state
+            .continue_action
+            .get_or_insert_with(|| ContinueActionState {
+                action_id: action_id.to_string(),
+                confirmed_seats: Vec::new(),
+                required_seats: Vec::new(),
+                online_seats: Vec::new(),
+                auto_advance_deadline_at: None,
+            });
+        action.action_id = action_id.to_string();
+        if !action.confirmed_seats.contains(&seat_index) {
+            action.confirmed_seats.push(seat_index);
+        }
+        Ok(())
+    })?;
     reconcile_continue_action(room)?;
     Ok(())
 }
 
 pub fn process_due_continue_action(room: &mut Value) -> Result<bool, String> {
     let action_id = current_continue_action_id(room).ok_or_else(|| "invalid_action".to_string())?;
-    let deadline = room
-        .get("continue_action_auto_advance_deadline_at")
-        .and_then(Value::as_str)
-        .map(ToString::to_string);
+    let deadline = project_room_state(room)?
+        .continue_action
+        .and_then(|action| action.auto_advance_deadline_at);
     if deadline.is_none() {
         return Ok(false);
     }
@@ -100,6 +110,13 @@ pub fn apply_opening_flowers_pass(
     room: &mut Value,
     seat_index: usize,
 ) -> Result<Vec<Value>, String> {
+    apply_opening_flowers_pass_output(room, seat_index).map(|output| output.emitted_messages)
+}
+
+pub fn apply_opening_flowers_pass_output(
+    room: &mut Value,
+    seat_index: usize,
+) -> Result<EngineOutput, String> {
     let round_state = room
         .get("round_state")
         .ok_or_else(|| "round_not_ready".to_string())?;
@@ -115,11 +132,22 @@ pub fn apply_opening_flowers_pass(
     }
 
     let state = project_room_state(room)?;
-    let mutations = plan_advance_opening_flowers(&state, seat_index);
-    apply_legacy_room_mutations(room, &mutations)?;
+    let plan = plan_advance_opening_flowers(&state, seat_index);
+    update_room_state(room, |state| {
+        let round = state
+            .round_state
+            .as_mut()
+            .ok_or_else(|| "round_not_ready".to_string())?;
+        round.current_actor = plan.current_actor;
+        round.pending_action = plan.pending_action.clone();
+        if let Some(score_trackers) = plan.score_trackers.as_ref() {
+            round.score_trackers = score_trackers.clone();
+        }
+        Ok(())
+    })?;
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
-    Ok(vec![])
+    Ok(EngineOutput::default())
 }
 
 pub fn apply_flower_action(
@@ -127,6 +155,14 @@ pub fn apply_flower_action(
     seat_index: usize,
     tile_ids: &[String],
 ) -> Result<Vec<Value>, String> {
+    apply_flower_action_output(room, seat_index, tile_ids).map(|output| output.emitted_messages)
+}
+
+pub fn apply_flower_action_output(
+    room: &mut Value,
+    seat_index: usize,
+    tile_ids: &[String],
+) -> Result<EngineOutput, String> {
     if room.get("phase").and_then(Value::as_str) != Some("playing") {
         return Err("round_not_ready".to_string());
     }
@@ -152,29 +188,61 @@ pub fn apply_flower_action(
     let tile_id = &tile_ids[0];
     let state = project_room_state(room)?;
     let plan = plan_flower_action(&state, seat_index, tile_id)?;
-    apply_legacy_room_mutations(room, &plan.mutations)?;
+    update_room_state(room, |state| {
+        let round = state
+            .round_state
+            .as_mut()
+            .ok_or_else(|| "round_not_ready".to_string())?;
+        let player = round
+            .players
+            .get_mut(seat_index)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        let concealed_index = player
+            .concealed_tiles
+            .iter()
+            .position(|tile| tile.tile_id == plan.flower_tile.tile_id)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        player.concealed_tiles.remove(concealed_index);
+        player.flowers.push(plan.flower_tile.clone());
+        player.concealed_tiles.push(plan.replacement_tile.clone());
+        round.wall.tail_index = round.wall.tail_index.saturating_sub(1);
+        round.last_action_context = plan.last_action_context.clone();
+        round.version += 1;
+        if let Some(advance) = plan.opening_flowers_advance.as_ref() {
+            round.current_actor = advance.current_actor;
+            round.pending_action = advance.pending_action.clone();
+            if let Some(score_trackers) = advance.score_trackers.as_ref() {
+                round.score_trackers = score_trackers.clone();
+            }
+        }
+        Ok(())
+    })?;
     note_tracker_draw(room, seat_index, &plan.replacement_tile.tile_key);
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
 
-    Ok(vec![
-        round_event_message(
-            "flower_exposed",
-            json!({
-                "type": "flower_exposed",
-                "seat": seat_index,
-                "tile_id": plan.flower_tile.tile_id,
-            }),
-        ),
-        round_event_message(
-            "replacement_draw",
-            json!({
-                "type": "replacement_draw",
-                "seat": seat_index,
-                "tile_id": plan.replacement_tile.tile_id,
-            }),
-        ),
-    ])
+    let flower_event = json!({
+        "type": "flower_exposed",
+        "seat": seat_index,
+        "tile_id": plan.flower_tile.tile_id,
+    });
+    Ok(EngineOutput::new(
+        vec![
+            GameEvent::FlowerExposed {
+                seat: seat_index,
+                tile_id: plan.flower_tile.tile_id.clone(),
+            },
+            GameEvent::TileDrawn {
+                seat: seat_index,
+                tile: plan.replacement_tile.clone(),
+                source: "replacement_draw".to_string(),
+            },
+        ],
+        vec![
+            round_event_message("flower_exposed", flower_event),
+            replacement_draw_message(seat_index, &plan.replacement_tile),
+        ],
+    ))
 }
 
 fn start_round(
@@ -193,23 +261,13 @@ fn start_round(
         seed,
     );
     seed_round_skill_loadouts(room, &mut round_state);
-    let _ = apply_legacy_room_mutations(
-        room,
-        &[
-            LegacyRoomMutation::SetRoomPhase {
-                phase: "playing".to_string(),
-            },
-            LegacyRoomMutation::SetRoomRoundState {
-                round_state: Some(round_state),
-            },
-            LegacyRoomMutation::SetRoomPendingTimeout {
-                pending_timeout: Some(pending_timeout),
-            },
-            LegacyRoomMutation::SetStartNextRoundConfirmedSeats { seats: vec![] },
-            LegacyRoomMutation::SetRestartMatchConfirmedSeats { seats: vec![] },
-            LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None },
-        ],
-    );
+    let _ = update_room_state(room, |state| {
+        state.phase = "playing".to_string();
+        state.round_state = Some(round_state);
+        state.pending_timeout = Some(pending_timeout);
+        state.continue_action = None;
+        Ok(())
+    });
     sync_round_skill_trackers(room);
 }
 
@@ -232,7 +290,7 @@ fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
             })
         })
         .and_then(|seat_state| {
-            SkillLoadout::from_legacy_value(seat_state.get("skill_loadout")).ok()
+            SkillLoadout::from_value(seat_state.get("skill_loadout")).ok()
         })
         .filter(|loadout| !loadout.equipped.is_empty())
         .or_else(|| {
@@ -241,7 +299,7 @@ fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
                 .and_then(Value::as_array)
                 .and_then(|players| players.get(seat))
                 .and_then(|player| {
-                    SkillLoadout::from_legacy_value(player.get("skill_loadout")).ok()
+                    SkillLoadout::from_value(player.get("skill_loadout")).ok()
                 })
                 .filter(|loadout| !loadout.equipped.is_empty())
         })
@@ -292,18 +350,12 @@ fn continue_online_human_seats(room: &Value) -> Vec<usize> {
 }
 
 fn current_confirmed_continue_seats(room: &Value, action_id: &str) -> Vec<usize> {
-    let field = if action_id == "start_next_round" {
-        "start_next_round_confirmed_seats"
-    } else {
-        "restart_match_confirmed_seats"
-    };
-    room.get(field)
-        .and_then(Value::as_array)
-        .cloned()
+    project_room_state(room)
+        .ok()
+        .and_then(|state| state.continue_action)
+        .filter(|action| action.action_id == action_id)
+        .map(|action| action.confirmed_seats)
         .unwrap_or_default()
-        .into_iter()
-        .filter_map(|seat| seat.as_u64().map(|value| value as usize))
-        .collect()
 }
 
 fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
@@ -322,10 +374,10 @@ fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
 
 fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     let Some(action_id) = current_continue_action_id(room) else {
-        apply_legacy_room_mutations(
-            room,
-            &[LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None }],
-        )?;
+        update_room_state(room, |state| {
+            state.continue_action = None;
+            Ok(())
+        })?;
         return Ok(());
     };
     let required = continue_required_human_seats(room);
@@ -343,10 +395,12 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
         .copied()
         .collect::<Vec<_>>();
     if !online_unconfirmed.is_empty() {
-        apply_legacy_room_mutations(
-            room,
-            &[LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None }],
-        )?;
+        update_room_state(room, |state| {
+            if let Some(action) = state.continue_action.as_mut() {
+                action.auto_advance_deadline_at = None;
+            }
+            Ok(())
+        })?;
         return Ok(());
     }
 
@@ -360,35 +414,36 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
         return Ok(());
     }
 
-    if room
-        .get("continue_action_auto_advance_deadline_at")
-        .is_none()
-        || room
-            .get("continue_action_auto_advance_deadline_at")
-            .is_some_and(Value::is_null)
-    {
-        apply_legacy_room_mutations(
-            room,
-            &[LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline {
-                deadline_at: Some(
-                    (Utc::now() + TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
-                        .to_rfc3339_opts(SecondsFormat::Micros, true),
-                ),
-            }],
-        )?;
+    let has_deadline = project_room_state(room)?
+        .continue_action
+        .and_then(|action| action.auto_advance_deadline_at)
+        .is_some();
+    if !has_deadline {
+        let deadline = (Utc::now() + TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
+            .to_rfc3339_opts(SecondsFormat::Micros, true);
+        update_room_state(room, |state| {
+            let action = state
+                .continue_action
+                .get_or_insert_with(|| ContinueActionState {
+                    action_id: action_id.to_string(),
+                    confirmed_seats: Vec::new(),
+                    required_seats: Vec::new(),
+                    online_seats: Vec::new(),
+                    auto_advance_deadline_at: None,
+                });
+            action.action_id = action_id.to_string();
+            action.auto_advance_deadline_at = Some(deadline);
+            Ok(())
+        })?;
     }
     Ok(())
 }
 
 fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), String> {
-    apply_legacy_room_mutations(
-        room,
-        &[
-            LegacyRoomMutation::SetContinueActionAutoAdvanceDeadline { deadline_at: None },
-            LegacyRoomMutation::SetStartNextRoundConfirmedSeats { seats: vec![] },
-            LegacyRoomMutation::SetRestartMatchConfirmedSeats { seats: vec![] },
-        ],
-    )?;
+    update_room_state(room, |state| {
+        state.continue_action = None;
+        Ok(())
+    })?;
     match action_id {
         "start_next_round" => complete_start_next_round(room),
         "restart_match" => {
@@ -407,23 +462,14 @@ fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), Str
 
 fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
     apply_settlement_to_match(room);
-    let match_state = room
-        .get("match_state")
-        .and_then(Value::as_object)
-        .cloned()
+    let state = project_room_state(room)?;
+    let match_state = state
+        .match_state
+        .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let prevailing_wind = match_state
-        .get("prevailing_wind")
-        .and_then(Value::as_str)
-        .unwrap_or("east");
-    let hand_number = match_state
-        .get("hand_number")
-        .and_then(Value::as_i64)
-        .unwrap_or(1) as usize;
-    let dealer_seat = match_state
-        .get("dealer_seat")
-        .and_then(Value::as_u64)
-        .unwrap_or(0) as usize;
+    let prevailing_wind = match_state.prevailing_wind.as_str();
+    let hand_number = match_state.hand_number as usize;
+    let dealer_seat = match_state.dealer_seat;
     let current_wind_index = WIND_ORDER
         .iter()
         .position(|wind| *wind == prevailing_wind)
@@ -441,42 +487,32 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
         }
     }
 
-    apply_legacy_room_mutations(
-        room,
-        &[
-            LegacyRoomMutation::SetMatchPrevailingWind {
-                prevailing_wind: next_wind.clone(),
-            },
-            LegacyRoomMutation::SetMatchHandNumber {
-                hand_number: if match_finished {
-                    hand_number as u32
-                } else {
-                    next_hand_number as u32
-                },
-            },
-            LegacyRoomMutation::SetMatchDealerSeat {
-                dealer_seat: if match_finished {
-                    dealer_seat
-                } else {
-                    next_dealer
-                },
-            },
-            LegacyRoomMutation::SetMatchFinished { match_finished },
-        ],
-    )?;
+    update_room_state(room, |state| {
+        let match_state = state
+            .match_state
+            .as_mut()
+            .ok_or_else(|| "invalid_action".to_string())?;
+        match_state.prevailing_wind = next_wind.clone();
+        match_state.hand_number = if match_finished {
+            hand_number as u32
+        } else {
+            next_hand_number as u32
+        };
+        match_state.dealer_seat = if match_finished {
+            dealer_seat
+        } else {
+            next_dealer
+        };
+        match_state.match_finished = match_finished;
+        Ok(())
+    })?;
 
     if match_finished {
-        apply_legacy_room_mutations(
-            room,
-            &[
-                LegacyRoomMutation::SetRoomPhase {
-                    phase: "finished".to_string(),
-                },
-                LegacyRoomMutation::SetRoomPendingTimeout {
-                    pending_timeout: None,
-                },
-            ],
-        )?;
+        update_room_state(room, |state| {
+            state.phase = "finished".to_string();
+            state.pending_timeout = None;
+            Ok(())
+        })?;
         return Ok(());
     }
 
@@ -512,4 +548,16 @@ fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
                 .any(|tile| tile.get("kind").and_then(Value::as_str) == Some("flower"))
         })
         .unwrap_or(false)
+}
+
+fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
+    round_event_message(
+        "replacement_draw",
+        json!({
+            "type": "replacement_draw",
+            "seat": seat_index,
+            "tile_id": tile.tile_id,
+            "tile_key": tile.tile_key,
+        }),
+    )
 }

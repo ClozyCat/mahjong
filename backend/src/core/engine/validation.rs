@@ -153,9 +153,12 @@ mod tests {
     use super::{LocalPlayerActionKind, classify_local_player_action, discard_supported_locally};
     use crate::core::action::PlayerAction;
     use crate::core::engine::EngineContext;
+    use crate::core::state::RoomState;
 
     fn context(room: serde_json::Value) -> EngineContext {
-        EngineContext::from_legacy_room(&room).expect("legacy room should parse")
+        EngineContext::from_room_state(
+            RoomState::from_room_value(&room).expect("room should parse"),
+        )
     }
 
     fn tile(tile_id: &str, tile_key: &str, kind: &str) -> serde_json::Value {
@@ -233,9 +236,7 @@ mod tests {
                 "deadline_at": null,
                 "drawn_tile_id": "east#discard"
             },
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         })
     }
 

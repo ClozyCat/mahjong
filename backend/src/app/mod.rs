@@ -1,4 +1,5 @@
 pub(crate) mod persistence;
+pub(crate) mod protocol;
 pub(crate) mod room_runtime;
 pub(crate) mod scheduler;
 pub(crate) mod server;
@@ -18,7 +19,10 @@ use serde_json::{Value, json};
 use tokio::sync::{Notify, RwLock, mpsc};
 
 use self::persistence::DbWorker;
+use self::protocol::player_presence_message;
 use self::room_runtime::RoomHandle;
+use crate::core::engine::reducer::update_room_state;
+use crate::core::state::{RoomState, SeatState};
 use crate::mahjong::{
     action_prompt as build_action_prompt, add_bot_seats_for_test as rust_add_bot_seats_for_test,
     room_messages as build_room_messages, start_match as rust_start_match,
@@ -156,13 +160,26 @@ pub(crate) fn resolve_database_path(database_url: &str) -> String {
 }
 
 pub(crate) fn serialize_room(room: &Value) -> Result<String> {
-    serde_json::to_string(room).map_err(Into::into)
+    let state = RoomState::from_room_value(room)?;
+    serialize_room_state(&state)
+}
+
+pub(crate) fn parse_room_json(room_json: &str) -> Result<RoomState> {
+    RoomState::from_room_str(room_json).map_err(Into::into)
+}
+
+pub(crate) fn serialize_room_state(state: &RoomState) -> Result<String> {
+    let room_value = state.to_room_value()?;
+    serde_json::to_string(&room_value).map_err(Into::into)
 }
 
 pub(crate) fn serialize_payload(payload: &Value) -> String {
     serde_json::to_string(payload).unwrap_or_else(|_| {
-        "{\"type\":\"action_rejected\",\"payload\":{\"reason\":\"serialization_error\"}}"
-            .to_string()
+        serde_json::to_string(&self::protocol::action_rejected_message("serialization_error"))
+            .unwrap_or_else(|_| {
+                "{\"type\":\"action_rejected\",\"payload\":{\"reason\":\"serialization_error\"}}"
+                    .to_string()
+            })
     })
 }
 
@@ -171,19 +188,32 @@ pub(crate) fn initial_room_payload(
     mode: &str,
     enforce_minimum_eight_fan: bool,
 ) -> Value {
-    json!({
-        "table_code": table_code,
-        "phase": "waiting",
-        "mode": mode,
-        "test_mode": mode == "test",
-        "enforce_minimum_eight_fan": enforce_minimum_eight_fan,
-        "start_next_round_confirmed_seats": [],
-        "restart_match_confirmed_seats": [],
-        "continue_action_auto_advance_deadline_at": null,
-        "seats": [],
-        "match_state": null,
-        "round_state": null,
-        "pending_timeout": null,
+    RoomState {
+        table_code: table_code.to_string(),
+        phase: "waiting".to_string(),
+        mode: mode.to_string(),
+        test_mode: mode == "test",
+        enforce_minimum_eight_fan,
+        seats: Vec::new(),
+        match_state: None,
+        round_state: None,
+        pending_timeout: None,
+        continue_action: None,
+    }
+    .to_room_value()
+    .unwrap_or_else(|_| {
+        json!({
+            "table_code": table_code,
+            "phase": "waiting",
+            "mode": mode,
+            "test_mode": mode == "test",
+            "enforce_minimum_eight_fan": enforce_minimum_eight_fan,
+            "continue_action": null,
+            "seats": [],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null,
+        })
     })
 }
 
@@ -199,69 +229,120 @@ pub(crate) fn is_valid_table_code(table_code: &str) -> bool {
             .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
 }
 
+fn parsed_room_state(room: &Value) -> Option<RoomState> {
+    RoomState::from_room_value(room).ok()
+}
+
 pub(crate) fn room_mode(room: &Value) -> String {
-    room.get("mode")
-        .and_then(Value::as_str)
-        .unwrap_or("normal")
-        .to_string()
+    parsed_room_state(room)
+        .map(|state| state.mode)
+        .unwrap_or_else(|| {
+            room.get("mode")
+                .and_then(Value::as_str)
+                .unwrap_or("normal")
+                .to_string()
+        })
 }
 
 pub(crate) fn room_phase(room: &Value) -> String {
-    room.get("phase")
-        .and_then(Value::as_str)
-        .unwrap_or("waiting")
-        .to_string()
+    parsed_room_state(room)
+        .map(|state| state.phase)
+        .unwrap_or_else(|| {
+            room.get("phase")
+                .and_then(Value::as_str)
+                .unwrap_or("waiting")
+                .to_string()
+        })
 }
 
 pub(crate) fn room_has_round_state(room: &Value) -> bool {
-    room.get("round_state")
-        .is_some_and(|state| !state.is_null())
+    parsed_room_state(room)
+        .map(|state| state.round_state.is_some())
+        .unwrap_or_else(|| room.get("round_state").is_some_and(|state| !state.is_null()))
 }
 
 pub(crate) fn room_seats(room: &Value) -> Vec<Value> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
+    parsed_room_state(room)
+        .map(|state| {
+            state
+                .seats
+                .into_iter()
+                .filter_map(|seat| serde_json::to_value(seat).ok())
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            room.get("seats")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
 }
 
 pub(crate) fn occupied_seats(room: &Value) -> HashSet<usize> {
-    room_seats(room)
-        .into_iter()
-        .filter_map(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
+    parsed_room_state(room)
+        .map(|state| state.seats.into_iter().map(|seat| seat.seat_index).collect())
+        .unwrap_or_else(|| {
+            room_seats(room)
+                .into_iter()
+                .filter_map(|seat| {
+                    seat.get("seat_index")
+                        .and_then(Value::as_u64)
+                        .map(|value| value as usize)
+                })
+                .collect()
         })
-        .collect()
 }
 
 pub(crate) fn room_player_session_id(room: &Value, seat_index: usize) -> Option<i64> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats.iter().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            })
+    parsed_room_state(room)
+        .and_then(|state| {
+            state
+                .seats
+                .into_iter()
+                .find(|seat| seat.seat_index == seat_index)
+                .and_then(|seat| seat.player_session_id)
         })
-        .and_then(|seat| seat.get("player_session_id").and_then(Value::as_i64))
+        .or_else(|| {
+            room.get("seats")
+                .and_then(Value::as_array)
+                .and_then(|seats| {
+                    seats.iter().find(|seat| {
+                        seat.get("seat_index")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize == seat_index)
+                            .unwrap_or(false)
+                    })
+                })
+                .and_then(|seat| seat.get("player_session_id").and_then(Value::as_i64))
+        })
 }
 
-pub(crate) fn room_reconnect_token(room: &Value, seat_index: usize) -> Option<&str> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats.iter().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            })
+pub(crate) fn room_reconnect_token(room: &Value, seat_index: usize) -> Option<String> {
+    parsed_room_state(room)
+        .and_then(|state| {
+            state
+                .seats
+                .into_iter()
+                .find(|seat| seat.seat_index == seat_index)
+                .and_then(|seat| seat.reconnect_token)
         })
-        .and_then(|seat| seat.get("reconnect_token").and_then(Value::as_str))
+        .or_else(|| {
+            room.get("seats")
+                .and_then(Value::as_array)
+                .and_then(|seats| {
+                    seats.iter().find(|seat| {
+                        seat.get("seat_index")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize == seat_index)
+                            .unwrap_or(false)
+                    })
+                })
+                .and_then(|seat| {
+                    seat.get("reconnect_token")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string)
+                })
+        })
 }
 
 pub(crate) fn seat_matches_reconnect_credentials(
@@ -271,63 +352,104 @@ pub(crate) fn seat_matches_reconnect_credentials(
     reconnect_token: &str,
 ) -> bool {
     room_player_session_id(room, seat_index) == Some(player_session_id)
-        && room_reconnect_token(room, seat_index) == Some(reconnect_token)
+        && room_reconnect_token(room, seat_index).as_deref() == Some(reconnect_token)
 }
 
 pub(crate) fn pending_timeout_deadline(room: &Value) -> Option<DateTime<Utc>> {
-    room.get("pending_timeout")
-        .and_then(|value| value.get("deadline_at"))
-        .and_then(Value::as_str)
+    parsed_room_state(room)
+        .and_then(|state| state.pending_timeout.and_then(|timeout| timeout.deadline_at))
+        .as_deref()
         .and_then(parse_datetime)
+        .or_else(|| {
+            room.get("pending_timeout")
+                .and_then(|value| value.get("deadline_at"))
+                .and_then(Value::as_str)
+                .and_then(parse_datetime)
+        })
 }
 
 pub(crate) fn continue_action_deadline(room: &Value) -> Option<DateTime<Utc>> {
-    room.get("continue_action_auto_advance_deadline_at")
-        .and_then(Value::as_str)
+    parsed_room_state(room)
+        .and_then(|state| state.continue_action.and_then(|action| action.auto_advance_deadline_at))
+        .as_deref()
         .and_then(parse_datetime)
+        .or_else(|| {
+            room.get("continue_action")
+                .and_then(|value| value.get("auto_advance_deadline_at"))
+                .and_then(Value::as_str)
+                .and_then(parse_datetime)
+        })
 }
 
 pub(crate) fn disconnect_deadline_for_seat(
     room: &Value,
     seat_index: usize,
 ) -> Option<DateTime<Utc>> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats.iter().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            })
+    parsed_room_state(room)
+        .and_then(|state| {
+            state
+                .seats
+                .into_iter()
+                .find(|seat| seat.seat_index == seat_index)
+                .and_then(|seat| seat.disconnect_deadline_at)
         })
-        .and_then(|seat| seat.get("disconnect_deadline_at"))
-        .and_then(Value::as_str)
+        .as_deref()
         .and_then(parse_datetime)
+        .or_else(|| {
+            room.get("seats")
+                .and_then(Value::as_array)
+                .and_then(|seats| {
+                    seats.iter().find(|seat| {
+                        seat.get("seat_index")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize == seat_index)
+                            .unwrap_or(false)
+                    })
+                })
+                .and_then(|seat| seat.get("disconnect_deadline_at"))
+                .and_then(Value::as_str)
+                .and_then(parse_datetime)
+        })
 }
 
 pub(crate) fn next_disconnect_deadline(room: &Value) -> Option<(usize, DateTime<Utc>)> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|seat| {
-            let seat_index = seat.get("seat_index").and_then(Value::as_u64)? as usize;
-            let is_bot = seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false);
-            let connected = seat
-                .get("connected")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            if is_bot || connected {
-                return None;
-            }
-            let deadline = seat
-                .get("disconnect_deadline_at")
-                .and_then(Value::as_str)
-                .and_then(parse_datetime)?;
-            Some((seat_index, deadline))
+    parsed_room_state(room)
+        .map(|state| {
+            state
+                .seats
+                .into_iter()
+                .filter(|seat| !seat.is_bot && !seat.connected)
+                .filter_map(|seat| {
+                    seat.disconnect_deadline_at
+                        .as_deref()
+                        .and_then(parse_datetime)
+                        .map(|deadline| (seat.seat_index, deadline))
+                })
+                .min_by_key(|(_, deadline)| *deadline)
         })
-        .min_by_key(|(_, deadline)| *deadline)
+        .unwrap_or_else(|| {
+            room.get("seats")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|seat| {
+                    let seat_index = seat.get("seat_index").and_then(Value::as_u64)? as usize;
+                    let is_bot = seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false);
+                    let connected = seat
+                        .get("connected")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    if is_bot || connected {
+                        return None;
+                    }
+                    let deadline = seat
+                        .get("disconnect_deadline_at")
+                        .and_then(Value::as_str)
+                        .and_then(parse_datetime)?;
+                    Some((seat_index, deadline))
+                })
+                .min_by_key(|(_, deadline)| *deadline)
+        })
 }
 
 pub(crate) fn parse_datetime(value: &str) -> Option<DateTime<Utc>> {
@@ -375,46 +497,29 @@ pub(crate) fn generate_short_hex(bytes: usize) -> String {
     data.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-pub(crate) fn find_seat_mut(
-    room: &mut Value,
-    seat_index: usize,
-) -> Option<&mut serde_json::Map<String, Value>> {
-    room.get_mut("seats")
-        .and_then(Value::as_array_mut)
-        .and_then(|seats| {
-            seats.iter_mut().find(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            })
-        })
-        .and_then(Value::as_object_mut)
-}
-
 pub(crate) fn remove_seat_from_room(room: &mut Value, seat_index: usize) {
-    if let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut) {
-        if let Some(index) = seats.iter().position(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize == seat_index)
-                .unwrap_or(false)
-        }) {
-            seats.remove(index);
+    let _ = update_room_state(room, |state| {
+        if let Some(index) = state.seats.iter().position(|seat| seat.seat_index == seat_index) {
+            state.seats.remove(index);
         }
-    }
+        Ok(())
+    });
 }
 
 pub(crate) fn seat_exists(room: &Value, seat_index: usize) -> bool {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .is_some_and(|seats| {
-            seats.iter().any(|seat| {
-                seat.get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize == seat_index)
-                    .unwrap_or(false)
-            })
+    parsed_room_state(room)
+        .map(|state| state.seats.iter().any(|seat| seat.seat_index == seat_index))
+        .unwrap_or_else(|| {
+            room.get("seats")
+                .and_then(Value::as_array)
+                .is_some_and(|seats| {
+                    seats.iter().any(|seat| {
+                        seat.get("seat_index")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize == seat_index)
+                            .unwrap_or(false)
+                    })
+                })
         })
 }
 
@@ -431,24 +536,24 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut Value) -> Result<usize, &'stati
     let Some(seat_index) = first_open_seat_index(room) else {
         return Err("room_full");
     };
-    let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut) else {
-        return Err("invalid_room_state");
-    };
-
-    seats.push(json!({
-        "seat_index": seat_index,
-        "nickname": format!("Bot {seat_index}"),
-        "reconnect_token": Value::Null,
-        "player_session_id": -((seat_index as i64) + 1),
-        "connected": true,
-        "ready": true,
-        "is_bot": true,
-        "seat_type": "bot",
-        "bot_persona": Value::Null,
-        "bot_aggression": Value::Null,
-        "disconnect_deadline_at": Value::Null,
-    }));
-    seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
+    update_room_state(room, |state| {
+        state.seats.push(SeatState {
+            seat_index,
+            nickname: Some(format!("Bot {seat_index}")),
+            reconnect_token: None,
+            player_session_id: Some(-((seat_index as i64) + 1)),
+            connected: true,
+            ready: true,
+            is_bot: true,
+            seat_type: "bot".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+        });
+        state.seats.sort_by_key(|seat| seat.seat_index);
+        Ok(())
+    })
+    .map_err(|_| "invalid_room_state")?;
     Ok(seat_index)
 }
 
@@ -457,15 +562,13 @@ pub(crate) fn remove_bot_from_waiting_room(room: &mut Value) -> Result<usize, &'
         return Err("room_already_started");
     }
 
-    let seat_index = room
-        .get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats
+    let seat_index = parsed_room_state(room)
+        .and_then(|state| {
+            state
+                .seats
                 .iter()
-                .filter(|seat| seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-                .filter_map(|seat| seat.get("seat_index").and_then(Value::as_u64))
-                .map(|value| value as usize)
+                .filter(|seat| seat.is_bot)
+                .map(|seat| seat.seat_index)
                 .max()
         })
         .ok_or("bot_not_found")?;
@@ -474,14 +577,17 @@ pub(crate) fn remove_bot_from_waiting_room(room: &mut Value) -> Result<usize, &'
 }
 
 pub(crate) fn convert_seat_to_bot(room: &mut Value, seat_index: usize) {
-    if let Some(seat) = find_seat_mut(room, seat_index) {
-        seat.insert("connected".to_string(), Value::Bool(true));
-        seat.insert("ready".to_string(), Value::Bool(true));
-        seat.insert("is_bot".to_string(), Value::Bool(true));
-        seat.insert("seat_type".to_string(), Value::String("bot".to_string()));
-        seat.insert("reconnect_token".to_string(), Value::Null);
-        seat.insert("disconnect_deadline_at".to_string(), Value::Null);
-    }
+    let _ = update_room_state(room, |state| {
+        if let Some(seat) = state.seats.iter_mut().find(|seat| seat.seat_index == seat_index) {
+            seat.connected = true;
+            seat.ready = true;
+            seat.is_bot = true;
+            seat.seat_type = "bot".to_string();
+            seat.reconnect_token = None;
+            seat.disconnect_deadline_at = None;
+        }
+        Ok(())
+    });
 }
 
 pub(crate) fn set_seat_connected(
@@ -490,13 +596,13 @@ pub(crate) fn set_seat_connected(
     connected: bool,
     deadline_at: Option<String>,
 ) {
-    if let Some(seat) = find_seat_mut(room, seat_index) {
-        seat.insert("connected".to_string(), Value::Bool(connected));
-        seat.insert(
-            "disconnect_deadline_at".to_string(),
-            deadline_at.map(Value::String).unwrap_or(Value::Null),
-        );
-    }
+    let _ = update_room_state(room, |state| {
+        if let Some(seat) = state.seats.iter_mut().find(|seat| seat.seat_index == seat_index) {
+            seat.connected = connected;
+            seat.disconnect_deadline_at = deadline_at;
+        }
+        Ok(())
+    });
 }
 
 pub(crate) fn collect_join_outbound_from_snapshot(
@@ -513,14 +619,7 @@ pub(crate) fn collect_join_outbound_from_snapshot(
         outbound.push(connection.outbound(prompt));
     }
 
-    let presence = json!({
-        "type": "player_presence",
-        "payload": {
-            "table_code": table_code,
-            "seat_index": seat_index,
-            "connected": connected,
-        }
-    });
+    let presence = player_presence_message(table_code, seat_index, connected);
     for (other_seat, handle) in connections {
         if *other_seat == seat_index {
             continue;
@@ -547,14 +646,7 @@ pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let presence = json!({
-        "type": "player_presence",
-        "payload": {
-            "table_code": table_code,
-            "seat_index": seat_index,
-            "connected": connected,
-        }
-    });
+    let presence = player_presence_message(table_code, seat_index, connected);
     for (target_seat, handle) in connections {
         outbound.push(handle.outbound(presence.clone()));
         outbound.extend(build_room_messages_for_seat(room, *target_seat, handle));

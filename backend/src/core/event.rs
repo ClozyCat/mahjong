@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::core::ids::{Seat, SkillId};
 use crate::core::state::RoundSettlement;
@@ -28,6 +27,20 @@ pub enum GameEvent {
         meld: Vec<String>,
         from: Seat,
     },
+    FlowerExposed {
+        seat: Seat,
+        tile_id: String,
+    },
+    SelfKongDeclared {
+        seat: Seat,
+        kong_type: String,
+        tile_key: String,
+        tile_ids: Vec<String>,
+    },
+    ClaimAutoPassed {
+        discarder_seat: Seat,
+        seats: Vec<Seat>,
+    },
     HuDeclared {
         winner: Seat,
         source: String,
@@ -52,8 +65,24 @@ pub enum GameEvent {
     RuleOverrideApplied {
         override_rule: RuleOverride,
     },
-    LegacyRoundEvent {
-        event_type: String,
-        event: Value,
+    SkillTileReplaced {
+        seat: Seat,
+        removed_tile_id: String,
+        replacement_tile: Tile,
+    },
+    SkillReclaimMeld {
+        seat: Seat,
+        meld_index: usize,
+        tile_keys: Vec<String>,
+    },
+    SkillForceDraw {
+        seat: Seat,
+        penalty: i64,
+        next_round_penalty: i64,
+    },
+    SkillScoreAdjusted {
+        seat: Seat,
+        delta: i64,
+        reason: Option<String>,
     },
 }

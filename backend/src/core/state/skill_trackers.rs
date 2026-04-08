@@ -23,7 +23,7 @@ pub struct RoundSkillTrackers {
 }
 
 impl RoundSkillTrackers {
-    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Self {
+    pub(crate) fn from_value(value: Option<&Value>) -> Self {
         match value {
             Some(value) if !value.is_null() => {
                 serde_json::from_value(value.clone()).unwrap_or_default()
@@ -32,14 +32,13 @@ impl RoundSkillTrackers {
         }
     }
 
-    pub(crate) fn to_legacy_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         if self.is_empty() {
             Value::Null
         } else {
             serde_json::to_value(self).unwrap_or(Value::Null)
         }
     }
-
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
     }
@@ -53,7 +52,7 @@ pub struct MatchSkillTrackers {
 }
 
 impl MatchSkillTrackers {
-    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Self {
+    pub(crate) fn from_value(value: Option<&Value>) -> Self {
         match value {
             Some(value) if !value.is_null() => {
                 serde_json::from_value(value.clone()).unwrap_or_default()
@@ -62,14 +61,13 @@ impl MatchSkillTrackers {
         }
     }
 
-    pub(crate) fn to_legacy_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         if self.is_empty() {
             Value::Null
         } else {
             serde_json::to_value(self).unwrap_or(Value::Null)
         }
     }
-
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
     }

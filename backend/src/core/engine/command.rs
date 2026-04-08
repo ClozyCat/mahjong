@@ -19,11 +19,6 @@ impl EngineOutput {
             emitted_messages,
         }
     }
-
-    pub fn from_emitted_messages(emitted_messages: Vec<Value>) -> Self {
-        let events = extract_events_from_messages(&emitted_messages);
-        Self::new(events, emitted_messages)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -32,10 +27,12 @@ pub struct EngineContext {
 }
 
 impl EngineContext {
-    pub fn from_legacy_room(room: &Value) -> Result<Self, String> {
-        RoomState::from_legacy_value(room)
-            .map(|room| Self { room })
-            .map_err(|error| error.to_string())
+    pub fn new(room: RoomState) -> Self {
+        Self { room }
+    }
+
+    pub fn from_room_state(room: RoomState) -> Self {
+        Self::new(room)
     }
 
     pub fn current_actor(&self) -> Option<Seat> {
@@ -46,7 +43,7 @@ impl EngineContext {
     }
 }
 
-pub fn parse_legacy_player_command(
+pub fn parse_player_command(
     actor: Seat,
     action_type: &str,
     tile_ids: &[String],
@@ -103,13 +100,15 @@ pub fn parse_legacy_player_command(
     Some(action.map(|action| GameCommand::PlayerAction { actor, action }))
 }
 
-pub fn extract_events_from_messages(messages: &[Value]) -> Vec<GameEvent> {
+#[cfg(test)]
+fn extract_events_from_messages(messages: &[Value]) -> Vec<GameEvent> {
     messages
         .iter()
         .filter_map(extract_event_from_message)
         .collect()
 }
 
+#[cfg(test)]
 fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
     if message.get("type").and_then(Value::as_str) != Some("round_event") {
         return None;
@@ -179,15 +178,152 @@ fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
                 })
             }
         }
+        "flower_exposed" => Some(GameEvent::FlowerExposed {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            tile_id: event
+                .get("tile_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+        }),
+        "self_kong_declared" => Some(GameEvent::SelfKongDeclared {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            kong_type: event
+                .get("kong_type")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            tile_key: event
+                .get("tile_key")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            tile_ids: event
+                .get("tile_ids")
+                .and_then(Value::as_array)
+                .map(|tile_ids| {
+                    tile_ids
+                        .iter()
+                        .filter_map(|tile_id| tile_id.as_str().map(ToString::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }),
+        "claim_auto_passed" => Some(GameEvent::ClaimAutoPassed {
+            discarder_seat: event
+                .get("discarder_seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            seats: event
+                .get("seats")
+                .and_then(Value::as_array)
+                .map(|seats| {
+                    seats
+                        .iter()
+                        .filter_map(|seat| seat.as_u64().map(|value| value as Seat))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }),
+        "skill_tile_replaced" => Some(GameEvent::SkillTileReplaced {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            removed_tile_id: event
+                .get("removed_tile_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            replacement_tile: Tile {
+                tile_id: event
+                    .get("replacement_tile_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                tile_key: event
+                    .get("replacement_tile_key")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                kind: String::new(),
+                suit: None,
+                rank: None,
+                name: None,
+            },
+        }),
+        "skill_reclaim_meld" => Some(GameEvent::SkillReclaimMeld {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            meld_index: event
+                .get("meld_index")
+                .and_then(Value::as_u64)
+                .map(|value| value as usize)
+                .unwrap_or(0),
+            tile_keys: event
+                .get("tile_keys")
+                .and_then(Value::as_array)
+                .map(|tile_keys| {
+                    tile_keys
+                        .iter()
+                        .filter_map(|tile_key| tile_key.as_str().map(ToString::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }),
+        "skill_force_draw" => Some(GameEvent::SkillForceDraw {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            penalty: event
+                .get("penalty")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            next_round_penalty: event
+                .get("next_round_penalty")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+        }),
+        "skill_score_adjusted" => Some(GameEvent::SkillScoreAdjusted {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            delta: event
+                .get("delta")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            reason: event
+                .get("reason")
+                .and_then(Value::as_str)
+                .map(ToString::to_string),
+        }),
         "settlement_ready" | "round_drawn" => event
             .get("settlement")
-            .map(RoundSettlement::from_legacy_value)
+            .map(RoundSettlement::from_value)
             .map(|settlement| GameEvent::SettlementPrepared { settlement })
-            .or_else(|| Some(GameEvent::LegacyRoundEvent { event_type, event })),
-        _ => Some(GameEvent::LegacyRoundEvent { event_type, event }),
+            .or(None),
+        _ => None,
     }
 }
 
+#[cfg(test)]
 fn event_tile(event: &Value) -> Tile {
     let tile_id = event
         .get("tile_id")
@@ -213,13 +349,13 @@ fn event_tile(event: &Value) -> Tile {
 mod tests {
     use serde_json::json;
 
-    use super::{extract_events_from_messages, parse_legacy_player_command};
+    use super::{extract_events_from_messages, parse_player_command};
     use crate::core::action::{GameCommand, PlayerAction};
     use crate::core::event::GameEvent;
 
     #[test]
     fn parses_legacy_discard_command() {
-        let command = parse_legacy_player_command(2, "discard", &[String::from("w1#0")])
+        let command = parse_player_command(2, "discard", &[String::from("w1#0")])
             .expect("discard should be recognized")
             .expect("discard should parse");
         assert_eq!(
@@ -236,13 +372,13 @@ mod tests {
     #[test]
     fn rejects_legacy_discard_without_selection() {
         let command =
-            parse_legacy_player_command(0, "discard", &[]).expect("discard should be recognized");
+            parse_player_command(0, "discard", &[]).expect("discard should be recognized");
         assert_eq!(command, Err("select_tile_first".to_string()));
     }
 
     #[test]
     fn parses_legacy_skill_command_with_optional_target() {
-        let command = parse_legacy_player_command(
+        let command = parse_player_command(
             1,
             "skill:peek_opponent_tile",
             &[String::from("seat:2"), String::from("w1#0")],
@@ -264,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_typed_and_legacy_round_events() {
+    fn extracts_round_events() {
         let messages = vec![
             json!({
                 "type": "round_event",
@@ -325,7 +461,8 @@ mod tests {
                 "payload": {
                     "event_type": "claim_auto_passed",
                     "event": {
-                        "seat": 2
+                        "discarder_seat": 0,
+                        "seats": [2]
                     }
                 }
             }),
@@ -348,7 +485,7 @@ mod tests {
         ));
         assert!(matches!(
             &events[3],
-            GameEvent::LegacyRoundEvent { event_type, .. } if event_type == "claim_auto_passed"
+            GameEvent::ClaimAutoPassed { discarder_seat: 0, seats } if seats == &vec![2]
         ));
     }
 }

@@ -21,7 +21,7 @@ pub struct MatchState {
 }
 
 impl MatchState {
-    pub(crate) fn from_legacy_value(value: &Value) -> Result<Self, EngineError> {
+    pub(crate) fn from_value(value: &Value) -> Result<Self, EngineError> {
         let scores = value
             .get("cumulative_scores")
             .map(|scores| {
@@ -54,7 +54,7 @@ impl MatchState {
             last_completed_round_id: string_opt(value, "last_completed_round_id").or_else(|| {
                 i64_opt(value, "last_completed_round_id").map(|value| value.to_string())
             }),
-            skill_trackers: MatchSkillTrackers::from_legacy_value(value.get("skill_trackers")),
+            skill_trackers: MatchSkillTrackers::from_value(value.get("skill_trackers")),
         })
     }
 }

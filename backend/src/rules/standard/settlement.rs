@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
+use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::plan_settlement_to_match;
-use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::core::engine::reducer::update_room_state;
+use crate::core::event::GameEvent;
 use crate::core::ids::Seat;
 use crate::core::state::settlement::zero_score_map;
 use crate::core::state::{
@@ -18,6 +20,10 @@ use super::runtime::{project_room_state, round_event_message};
 const MAX_SEATS: usize = 4;
 
 pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
+    settle_exhaustive_draw_output(room).emitted_messages
+}
+
+pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
     let projected_state = project_room_state(room).ok();
     let seat_count = projected_state
         .as_ref()
@@ -64,31 +70,30 @@ pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
     if let Some(state) = projected_state.as_ref() {
         let _ = apply_draw_settlement_hooks(state, &mut settlement);
     }
-    let mut mutations = vec![
-        LegacyRoomMutation::SetRoomPhase {
-            phase: "settlement".to_string(),
-        },
-        LegacyRoomMutation::SetRoomPendingTimeout {
-            pending_timeout: None,
-        },
-        LegacyRoomMutation::SetRoundPhase {
-            phase: "settlement".to_string(),
-        },
-        LegacyRoomMutation::SetRoundPendingAction {
-            pending_action: None,
-        },
-        LegacyRoomMutation::SetRoundSettlement {
-            settlement: Some(settlement.clone()),
-        },
-        LegacyRoomMutation::IncrementRoundVersion,
-    ];
-    if let Ok(state) = project_room_state(room) {
-        mutations.extend(plan_settlement_to_match(&state, &settlement));
-    }
-    let _ = apply_legacy_room_mutations(room, &mutations);
+    let settlement_for_write = settlement.clone();
+    let settlement_match_plan = projected_state
+        .as_ref()
+        .and_then(|state| plan_settlement_to_match(state, &settlement_for_write));
+    let _ = update_room_state(room, |state| {
+        state.phase = "settlement".to_string();
+        state.pending_timeout = None;
+        if let Some(round) = state.round_state.as_mut() {
+            round.phase = "settlement".to_string();
+            round.pending_action = None;
+            round.settlement = Some(settlement_for_write.clone());
+            round.version += 1;
+        }
+        if let Some(plan) = settlement_match_plan.as_ref() {
+            if let Some(match_state) = state.match_state.as_mut() {
+                match_state.cumulative_scores = plan.cumulative_scores.clone();
+                match_state.last_completed_round_id = Some(plan.round_id.clone());
+            }
+        }
+        Ok(())
+    });
     sync_match_skill_trackers_after_settlement(room);
     apply_settlement_to_match(room);
-    vec![round_event_message(
+    let message = round_event_message(
         "round_drawn",
         json!({
             "type": "round_drawn",
@@ -97,24 +102,35 @@ pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
                 .and_then(|round| round.get("round_id"))
                 .cloned()
                 .unwrap_or(Value::Null),
-            "settlement": settlement.to_legacy_value(),
+            "settlement": settlement.to_value(),
         }),
-    )]
+    );
+    EngineOutput::new(
+        vec![GameEvent::SettlementPrepared { settlement }],
+        vec![message],
+    )
 }
 
 pub fn apply_settlement_to_match(room: &mut Value) {
-    let mutations = project_room_state(room)
+    let plan = project_room_state(room)
         .ok()
         .and_then(|state| {
             state.round_state.as_ref().and_then(|round| {
                 round
                     .settlement
                     .as_ref()
-                    .map(|settlement| plan_settlement_to_match(&state, settlement))
+                    .and_then(|settlement| plan_settlement_to_match(&state, settlement))
             })
-        })
-        .unwrap_or_default();
-    let _ = apply_legacy_room_mutations(room, &mutations);
+        });
+    let _ = update_room_state(room, |state| {
+        if let Some(plan) = plan.as_ref() {
+            if let Some(match_state) = state.match_state.as_mut() {
+                match_state.cumulative_scores = plan.cumulative_scores.clone();
+                match_state.last_completed_round_id = Some(plan.round_id.clone());
+            }
+        }
+        Ok(())
+    });
 }
 
 fn kong_score_detail_from_trackers(

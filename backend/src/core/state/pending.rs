@@ -14,7 +14,7 @@ pub struct PendingTimeout {
 }
 
 impl PendingTimeout {
-    pub(crate) fn from_legacy_value(value: &Value) -> Self {
+    pub(crate) fn from_value(value: &Value) -> Self {
         Self {
             kind: value
                 .get("kind")
@@ -52,7 +52,7 @@ pub struct LastActionContext {
 }
 
 impl LastActionContext {
-    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Self {
+    pub(crate) fn from_value(value: Option<&Value>) -> Self {
         let Some(value) = value else {
             return Self::default();
         };
@@ -93,7 +93,7 @@ pub enum PendingAction {
 }
 
 impl PendingAction {
-    pub(crate) fn from_legacy_value(value: &Value) -> Option<Self> {
+    pub(crate) fn from_value(value: &Value) -> Option<Self> {
         let action_type = value.get("type").and_then(Value::as_str)?;
         Some(match action_type {
             "opening_flowers" => Self::OpeningFlowers(OpeningFlowersAction {
@@ -156,7 +156,6 @@ impl PendingAction {
             }),
         })
     }
-
     pub fn action_type(&self) -> &str {
         match self {
             Self::OpeningFlowers(_) => "opening_flowers",
@@ -166,7 +165,7 @@ impl PendingAction {
         }
     }
 
-    pub(crate) fn to_legacy_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         match self {
             Self::OpeningFlowers(action) => serde_json::json!({
                 "type": "opening_flowers",

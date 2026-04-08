@@ -41,11 +41,11 @@ pub struct RoomScoringCache {
 
 impl RoomScoringCache {
     pub fn from_room(room: &Value) -> Self {
-        Self::from_legacy_room(room).unwrap_or_else(|_| Self::from_state(&RoomState::default()))
+        Self::from_room_value(room).unwrap_or_else(|_| Self::from_state(&RoomState::default()))
     }
 
-    pub fn from_legacy_room(room: &Value) -> Result<Self, EngineError> {
-        let state = RoomState::from_legacy_value(room)?;
+    pub fn from_room_value(room: &Value) -> Result<Self, EngineError> {
+        let state = RoomState::from_room_value(room)?;
         Ok(Self::from_state(&state))
     }
 

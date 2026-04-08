@@ -9,8 +9,11 @@ use tokio::task::JoinHandle;
 
 use crate::app::scheduler::schedule_room_tasks;
 use crate::app::{
-    AppContext, ConnectionHandle, disconnect_deadline_iso, room_seats, serialize_room,
+    AppContext, ConnectionHandle, disconnect_deadline_iso, parse_room_json, room_seats,
+    serialize_room_state,
 };
+use crate::core::engine::reducer::update_room_state;
+use crate::core::state::RoomState;
 use crate::mahjong::reconcile_continue_action_state as rust_reconcile_continue_action_state;
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
@@ -112,13 +115,19 @@ pub(crate) async fn ensure_room_loaded(
         return Ok(None);
     };
 
-    let mut room: Value = serde_json::from_str(&record.room_json)?;
+    let room_state = parse_room_json(&record.room_json)?;
+    let mut room = room_state.to_room_value()?;
     mark_restored_room_disconnected(&mut room);
     let _ = rust_reconcile_continue_action_state(&mut room);
+    let normalized_state = RoomState::from_room_value(&room)?;
     state
         .inner
         .db
-        .save_table(table_code, &record.created_at, &serialize_room(&room)?)
+        .save_table(
+            table_code,
+            &record.created_at,
+            &serialize_room_state(&normalized_state)?,
+        )
         .await?;
 
     let handle = Arc::new(RoomHandle::new(RoomRuntime::new(record.created_at, room)));
@@ -178,22 +187,17 @@ pub(crate) async fn unregister_room_handle(
 }
 
 pub(crate) fn mark_restored_room_disconnected(room: &mut Value) {
-    let Some(seats) = room.get_mut("seats").and_then(Value::as_array_mut) else {
-        return;
-    };
-    for seat in seats {
-        let is_bot = seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false);
-        if is_bot {
-            continue;
+    let deadline = disconnect_deadline_iso();
+    let _ = update_room_state(room, |state| {
+        for seat in &mut state.seats {
+            if seat.is_bot {
+                continue;
+            }
+            seat.connected = false;
+            seat.disconnect_deadline_at = Some(deadline.clone());
         }
-        if let Some(object) = seat.as_object_mut() {
-            object.insert("connected".to_string(), Value::Bool(false));
-            object.insert(
-                "disconnect_deadline_at".to_string(),
-                Value::String(disconnect_deadline_iso()),
-            );
-        }
-    }
+        Ok(())
+    });
 }
 
 pub(crate) fn replace_connection(
@@ -217,22 +221,35 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
 }
 
 pub(crate) fn room_has_only_bots(room: &Value) -> bool {
-    let seats = room_seats(room);
-    !seats.is_empty()
-        && seats
-            .into_iter()
-            .all(|seat| seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
+    RoomState::from_room_value(room)
+        .map(|state| !state.seats.is_empty() && state.seats.iter().all(|seat| seat.is_bot))
+        .unwrap_or_else(|_| {
+            let seats = room_seats(room);
+            !seats.is_empty()
+                && seats
+                    .into_iter()
+                    .all(|seat| seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
+        })
 }
 
 pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
     if !runtime.connections.is_empty() {
         return false;
     }
-    room_seats(&runtime.room).into_iter().all(|seat| {
-        seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false)
-            || seat
-                .get("reconnect_token")
-                .map(Value::is_null)
-                .unwrap_or(true)
-    })
+    RoomState::from_room_value(&runtime.room)
+        .map(|state| {
+            state
+                .seats
+                .into_iter()
+                .all(|seat| seat.is_bot || seat.reconnect_token.is_none())
+        })
+        .unwrap_or_else(|_| {
+            room_seats(&runtime.room).into_iter().all(|seat| {
+                seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false)
+                    || seat
+                        .get("reconnect_token")
+                        .map(Value::is_null)
+                        .unwrap_or(true)
+            })
+        })
 }

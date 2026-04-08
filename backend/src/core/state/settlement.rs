@@ -24,7 +24,7 @@ pub struct RoundSettlement {
 }
 
 impl RoundSettlement {
-    pub(crate) fn from_legacy_value(value: &Value) -> Self {
+    pub(crate) fn from_value(value: &Value) -> Self {
         Self {
             provisional: value
                 .get("provisional")
@@ -64,11 +64,11 @@ impl RoundSettlement {
                 .map(|entries| {
                     entries
                         .iter()
-                        .map(SettlementFanBreakdownEntry::from_legacy_value)
+                        .map(SettlementFanBreakdownEntry::from_value)
                         .collect()
                 })
                 .unwrap_or_default(),
-            score_delta: SettlementScoreDelta::from_legacy_value(value.get("score_delta")),
+            score_delta: SettlementScoreDelta::from_value(value.get("score_delta")),
             flower_count: value
                 .get("flower_count")
                 .and_then(Value::as_u64)
@@ -81,14 +81,14 @@ impl RoundSettlement {
                 .map(|entries| {
                     entries
                         .iter()
-                        .map(SettlementKongScoreDetailEntry::from_legacy_value)
+                        .map(SettlementKongScoreDetailEntry::from_value)
                         .collect()
                 })
                 .unwrap_or_default(),
         }
     }
 
-    pub(crate) fn to_legacy_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         serde_json::json!({
             "provisional": self.provisional,
             "win_type": self.win_type,
@@ -100,15 +100,15 @@ impl RoundSettlement {
             "fan_breakdown": self
                 .fan_breakdown
                 .iter()
-                .map(SettlementFanBreakdownEntry::to_legacy_value)
+                .map(SettlementFanBreakdownEntry::to_value)
                 .collect::<Vec<_>>(),
-            "score_delta": self.score_delta.to_legacy_value(),
+            "score_delta": self.score_delta.to_value(),
             "flower_count": self.flower_count,
             "draw_type": self.draw_type,
             "kong_score_detail": self
                 .kong_score_detail
                 .iter()
-                .map(SettlementKongScoreDetailEntry::to_legacy_value)
+                .map(SettlementKongScoreDetailEntry::to_value)
                 .collect::<Vec<_>>(),
         })
     }
@@ -121,7 +121,7 @@ pub struct SettlementFanBreakdownEntry {
 }
 
 impl SettlementFanBreakdownEntry {
-    fn from_legacy_value(value: &Value) -> Self {
+    fn from_value(value: &Value) -> Self {
         Self {
             fan_key: value
                 .get("fan_key")
@@ -135,7 +135,7 @@ impl SettlementFanBreakdownEntry {
         }
     }
 
-    fn to_legacy_value(&self) -> Value {
+    fn to_value(&self) -> Value {
         serde_json::json!({
             "fan_key": self.fan_key,
             "fan_value": self.fan_value,
@@ -156,7 +156,7 @@ pub struct SettlementScoreDelta {
 }
 
 impl SettlementScoreDelta {
-    fn from_legacy_value(value: Option<&Value>) -> Self {
+    fn from_value(value: Option<&Value>) -> Self {
         let Some(value) = value else {
             return Self::default();
         };
@@ -176,7 +176,7 @@ impl SettlementScoreDelta {
         }
     }
 
-    pub fn to_legacy_value(&self) -> Value {
+    pub fn to_value(&self) -> Value {
         serde_json::json!({
             "provisional": self.provisional,
             "basic_points": self.basic_points,
@@ -199,7 +199,7 @@ pub struct SettlementKongScoreDetailEntry {
 }
 
 impl SettlementKongScoreDetailEntry {
-    pub(crate) fn from_legacy_value(value: &Value) -> Self {
+    pub(crate) fn from_value(value: &Value) -> Self {
         Self {
             kong_type: value
                 .get("kong_type")
@@ -238,7 +238,7 @@ impl SettlementKongScoreDetailEntry {
         }
     }
 
-    fn to_legacy_value(&self) -> Value {
+    fn to_value(&self) -> Value {
         serde_json::json!({
             "kong_type": self.kong_type,
             "actor_seat": self.actor_seat,

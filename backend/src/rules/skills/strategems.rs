@@ -669,21 +669,15 @@ fn activate_wu_zhong_sheng_you(
             seat: ctx.actor,
             skill_id: ctx.skill_instance.skill_id.clone(),
         },
-        GameEvent::LegacyRoundEvent {
-            event_type: "skill_replace_tile".to_string(),
-            event: json!({
-                "seat": ctx.actor,
-                "removed_tile_id": removed_tile.tile_id,
-                "replacement_tile": replacement_tile,
-            }),
+        GameEvent::SkillTileReplaced {
+            seat: ctx.actor,
+            removed_tile_id: removed_tile.tile_id.clone(),
+            replacement_tile: replacement_tile.clone(),
         },
-        GameEvent::LegacyRoundEvent {
-            event_type: "skill_score_adjust".to_string(),
-            event: json!({
-                "seat": ctx.actor,
-                "delta": delta,
-                "reason": "wu_zhong_sheng_you",
-            }),
+        GameEvent::SkillScoreAdjusted {
+            seat: ctx.actor,
+            delta,
+            reason: Some("wu_zhong_sheng_you".to_string()),
         },
     ])
 }
@@ -760,21 +754,15 @@ fn activate_tou_liang_huan_zhu(
             seat: ctx.actor,
             skill_id: ctx.skill_instance.skill_id.clone(),
         },
-        GameEvent::LegacyRoundEvent {
-            event_type: "skill_reclaim_meld".to_string(),
-            event: json!({
-                "seat": ctx.actor,
-                "meld_index": meld_index,
-                "tile_keys": tile_keys,
-            }),
+        GameEvent::SkillReclaimMeld {
+            seat: ctx.actor,
+            meld_index,
+            tile_keys: tile_keys.clone(),
         },
-        GameEvent::LegacyRoundEvent {
-            event_type: "skill_score_adjust".to_string(),
-            event: json!({
-                "seat": ctx.actor,
-                "delta": -gain_value("tou_liang_huan_zhu", ctx.skill_instance.level),
-                "reason": "tou_liang_huan_zhu",
-            }),
+        GameEvent::SkillScoreAdjusted {
+            seat: ctx.actor,
+            delta: -gain_value("tou_liang_huan_zhu", ctx.skill_instance.level),
+            reason: Some("tou_liang_huan_zhu".to_string()),
         },
     ])
 }
@@ -786,13 +774,10 @@ fn activate_zou_wei_shang_ji(ctx: &mut SkillContext<'_>) -> Result<Vec<GameEvent
             seat: ctx.actor,
             skill_id: ctx.skill_instance.skill_id.clone(),
         },
-        GameEvent::LegacyRoundEvent {
-            event_type: "skill_force_draw".to_string(),
-            event: json!({
-                "seat": ctx.actor,
-                "penalty": penalty,
-                "next_round_penalty": penalty,
-            }),
+        GameEvent::SkillForceDraw {
+            seat: ctx.actor,
+            penalty,
+            next_round_penalty: penalty,
         },
     ])
 }

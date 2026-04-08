@@ -10,7 +10,7 @@ pub struct SkillLoadout {
 }
 
 impl SkillLoadout {
-    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Result<Self, EngineError> {
+    pub(crate) fn from_value(value: Option<&Value>) -> Result<Self, EngineError> {
         match value {
             Some(value) if !value.is_null() => {
                 serde_json::from_value(value.clone()).map_err(Into::into)
@@ -38,7 +38,7 @@ pub struct EffectState {
 }
 
 impl EffectState {
-    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Result<Self, EngineError> {
+    pub(crate) fn from_value(value: Option<&Value>) -> Result<Self, EngineError> {
         match value {
             Some(value) if !value.is_null() => {
                 serde_json::from_value(value.clone()).map_err(Into::into)

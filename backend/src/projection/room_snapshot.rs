@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
-use crate::core::state::{PendingAction, RoomState};
+use crate::core::state::{MatchState, PendingAction, RoomState};
 use crate::projection::SeatProjectionSupport;
 use crate::rules::skills::{
     EffectInstance, KnowledgeEffect, build_skill_projection, skill_action_options,
@@ -25,7 +25,7 @@ struct PlayerRoomSnapshot {
     seats: Vec<PublicSeatView>,
     local_seat: Seat,
     reconnect_token: Option<String>,
-    match_state: Option<Value>,
+    match_state: Option<MatchState>,
     private_state: Option<PlayerRoundView>,
     continue_action: Option<ContinueActionView>,
 }
@@ -159,10 +159,7 @@ pub fn room_snapshot_message(
         seats: public_seats(state),
         local_seat,
         reconnect_token: reconnect_token(state, local_seat),
-        match_state: state
-            .match_state
-            .as_ref()
-            .map(|match_state| serde_json::to_value(match_state).unwrap_or(Value::Null)),
+        match_state: state.match_state.clone(),
         private_state: private_round_state(state, local_seat, support),
         continue_action: continue_action_snapshot(state),
     };

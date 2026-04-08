@@ -34,14 +34,14 @@ pub struct RoundState {
 }
 
 impl RoundState {
-    pub(crate) fn from_legacy_value(value: &Value) -> Result<Self, EngineError> {
+    pub(crate) fn from_value(value: &Value) -> Result<Self, EngineError> {
         let players = value
             .get("players")
             .map(|players| {
                 array(players, "round_state.players").and_then(|players| {
                     players
                         .iter()
-                        .map(PlayerRoundState::from_legacy_value)
+                        .map(PlayerRoundState::from_value)
                         .collect::<Result<Vec<_>, _>>()
                 })
             })
@@ -50,13 +50,13 @@ impl RoundState {
         let last_discard = value
             .get("last_discard")
             .filter(|discard| !discard.is_null())
-            .map(|discard| Tile::from_legacy_value(discard, "round_state.last_discard"))
+            .map(|discard| Tile::from_value(discard, "round_state.last_discard"))
             .transpose()?;
         let pending_action = value
             .get("pending_action")
             .filter(|pending| !pending.is_null())
-            .and_then(PendingAction::from_legacy_value);
-        let score_trackers = RoundScoreTrackers::from_legacy_value(value.get("score_trackers"));
+            .and_then(PendingAction::from_value);
+        let score_trackers = RoundScoreTrackers::from_value(value.get("score_trackers"));
         Ok(Self {
             round_id: value
                 .get("round_id")
@@ -77,7 +77,7 @@ impl RoundState {
                 .to_string(),
             wall: value
                 .get("wall")
-                .map(WallState::from_legacy_value)
+                .map(WallState::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             players,
@@ -86,39 +86,37 @@ impl RoundState {
             settlement: value
                 .get("settlement")
                 .filter(|settlement| !settlement.is_null())
-                .map(RoundSettlement::from_legacy_value),
+                .map(RoundSettlement::from_value),
             version: value
                 .get("version")
                 .and_then(Value::as_u64)
                 .unwrap_or_default(),
             score_trackers,
-            last_action_context: LastActionContext::from_legacy_value(
-                value.get("last_action_context"),
-            ),
+            last_action_context: LastActionContext::from_value(value.get("last_action_context")),
             rule_state: RuleRuntimeState {
                 enforce_minimum_eight_fan: bool_or(value, "enforce_minimum_eight_fan", true),
             },
-            effect_state: EffectState::from_legacy_value(value.get("effect_state"))?,
+            effect_state: EffectState::from_value(value.get("effect_state"))?,
             restricted_discard_tile_key: string_opt(value, "restricted_discard_tile_key"),
-            skill_trackers: RoundSkillTrackers::from_legacy_value(value.get("skill_trackers")),
+            skill_trackers: RoundSkillTrackers::from_value(value.get("skill_trackers")),
         })
     }
 
-    pub(crate) fn to_legacy_value(&self) -> Result<Value, serde_json::Error> {
+    pub(crate) fn to_value(&self) -> Result<Value, serde_json::Error> {
         let mut value = serde_json::to_value(self)?;
         if let Some(object) = value.as_object_mut() {
             object.insert(
                 "pending_action".to_string(),
                 self.pending_action
                     .as_ref()
-                    .map(PendingAction::to_legacy_value)
+                    .map(PendingAction::to_value)
                     .unwrap_or(Value::Null),
             );
             object.insert(
                 "settlement".to_string(),
                 self.settlement
                     .as_ref()
-                    .map(RoundSettlement::to_legacy_value)
+                    .map(RoundSettlement::to_value)
                     .unwrap_or(Value::Null),
             );
             object.insert(
@@ -127,7 +125,7 @@ impl RoundState {
             );
             object.insert(
                 "skill_trackers".to_string(),
-                self.skill_trackers.to_legacy_value(),
+                self.skill_trackers.to_value(),
             );
             object.remove("rule_state");
         }
@@ -142,7 +140,7 @@ pub struct RoundScoreTrackers {
 }
 
 impl RoundScoreTrackers {
-    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Self {
+    pub(crate) fn from_value(value: Option<&Value>) -> Self {
         let Some(value) = value else {
             return Self::default();
         };
@@ -152,7 +150,7 @@ impl RoundScoreTrackers {
             .map(|entries| {
                 entries
                     .iter()
-                    .map(KongTrackerEntry::from_legacy_value)
+                    .map(KongTrackerEntry::from_value)
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -175,7 +173,7 @@ pub struct KongTrackerEntry {
 }
 
 impl KongTrackerEntry {
-    fn from_legacy_value(value: &Value) -> Self {
+    fn from_value(value: &Value) -> Self {
         Self {
             kong_type: value
                 .get("kong_type")

@@ -2,7 +2,6 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use serde_json::{Value, json};
 
-use crate::core::engine::reducer::LegacyRoomMutation;
 use crate::core::state::effect::EffectState;
 use crate::core::state::{
     ClaimWindowAction, LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout,
@@ -15,14 +14,15 @@ const MAX_SEATS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct PlannedFlowerAction {
-    pub mutations: Vec<LegacyRoomMutation>,
     pub flower_tile: Tile,
     pub replacement_tile: Tile,
+    pub last_action_context: LastActionContext,
+    pub opening_flowers_advance: Option<PlannedOpeningFlowersAdvance>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PlannedClaimWindowResponse {
-    pub mutations: Vec<LegacyRoomMutation>,
+    pub pending_action: PendingAction,
     pub unresolved_seats: Vec<usize>,
 }
 
@@ -43,52 +43,38 @@ pub struct PlannedDiscardContinuation {
 
 #[derive(Debug, Clone)]
 pub struct PlannedClaimWindowContinuation {
-    pub mutations: Vec<LegacyRoomMutation>,
-    pub needs_exhaustive_draw: bool,
+    pub outcome: PlannedClaimWindowOutcome,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlannedOpeningFlowersAdvance {
+    pub current_actor: usize,
+    pub pending_action: Option<PendingAction>,
+    pub score_trackers: Option<RoundScoreTrackers>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlannedSettlementToMatch {
+    pub cumulative_scores: std::collections::BTreeMap<usize, i64>,
+    pub round_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum PlannedClaimWindowOutcome {
+    ExhaustiveDraw,
+    AdvanceTurn {
+        current_actor: usize,
+        drawn_tile: Tile,
+        last_action_context: LastActionContext,
+    },
 }
 
 impl PlannedDiscardAction {
-    pub fn discard_mutations(&self, seat_index: usize) -> Vec<LegacyRoomMutation> {
-        vec![
-            LegacyRoomMutation::RemovePlayerConcealedTileById {
-                seat_index,
-                tile_id: self.discarded_tile.tile_id.clone(),
-            },
-            LegacyRoomMutation::PushPlayerDiscard {
-                seat_index,
-                tile: self.discarded_tile.clone(),
-            },
-            LegacyRoomMutation::SetRoundLastDiscard {
-                tile: Some(self.discarded_tile.clone()),
-            },
-        ]
-    }
+}
 
-    pub fn followup_mutations(&self) -> Vec<LegacyRoomMutation> {
-        let mut mutations = vec![
-            LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: self.continuation.pending_action.clone(),
-            },
-            LegacyRoomMutation::SetRoundRestrictedDiscardTileKey { tile_key: None },
-            LegacyRoomMutation::SetRoundLastActionContext {
-                context: self.continuation.last_action_context.clone(),
-            },
-            LegacyRoomMutation::IncrementRoundVersion,
-            LegacyRoomMutation::SetRoundCurrentActor {
-                seat_index: self.continuation.current_actor,
-            },
-        ];
-        if let Some(tile) = self.continuation.drawn_tile.as_ref() {
-            mutations.insert(0, LegacyRoomMutation::AdvanceWallHead);
-            mutations.insert(
-                1,
-                LegacyRoomMutation::PushPlayerConcealedTile {
-                    seat_index: self.continuation.current_actor,
-                    tile: tile.clone(),
-                },
-            );
-        }
-        mutations
+impl PlannedClaimWindowContinuation {
+    pub fn needs_exhaustive_draw(&self) -> bool {
+        matches!(self.outcome, PlannedClaimWindowOutcome::ExhaustiveDraw)
     }
 }
 
@@ -240,7 +226,7 @@ pub fn compute_pending_timeout_value(
 pub fn plan_advance_opening_flowers(
     state: &RoomState,
     seat_index: usize,
-) -> Vec<LegacyRoomMutation> {
+) -> PlannedOpeningFlowersAdvance {
     let dealer_seat = state
         .round_state
         .as_ref()
@@ -250,52 +236,34 @@ pub fn plan_advance_opening_flowers(
     let seat_has_flower = player_has_concealed_flower(state, seat_index);
 
     if seat_has_flower {
-        return vec![
-            LegacyRoomMutation::SetRoundCurrentActor { seat_index },
-            LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
-                    dealer_seat,
-                })),
-            },
-        ];
-    }
-    if next_seat == dealer_seat {
-        let mut trackers = serde_json::to_value(
-            state
-                .round_state
-                .as_ref()
-                .map(|round| round.score_trackers.clone())
-                .unwrap_or_default(),
-        )
-        .unwrap_or_else(|_| json!({}))
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
-        trackers.insert("opening_flowers_completed".to_string(), Value::Bool(true));
-        return vec![
-            LegacyRoomMutation::SetRoundCurrentActor {
-                seat_index: dealer_seat,
-            },
-            LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: None,
-            },
-            LegacyRoomMutation::SetRoundScoreTrackers {
-                score_trackers: crate::core::state::RoundScoreTrackers::from_legacy_value(Some(
-                    &Value::Object(trackers),
-                )),
-            },
-        ];
-    }
-    vec![
-        LegacyRoomMutation::SetRoundCurrentActor {
-            seat_index: next_seat,
-        },
-        LegacyRoomMutation::SetRoundPendingAction {
+        return PlannedOpeningFlowersAdvance {
+            current_actor: seat_index,
             pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
                 dealer_seat,
             })),
-        },
-    ]
+            score_trackers: None,
+        };
+    }
+    if next_seat == dealer_seat {
+        let mut score_trackers = state
+            .round_state
+            .as_ref()
+            .map(|round| round.score_trackers.clone())
+            .unwrap_or_default();
+        score_trackers.opening_flowers_completed = true;
+        return PlannedOpeningFlowersAdvance {
+            current_actor: dealer_seat,
+            pending_action: None,
+            score_trackers: Some(score_trackers),
+        };
+    }
+    PlannedOpeningFlowersAdvance {
+        current_actor: next_seat,
+        pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
+            dealer_seat,
+        })),
+        score_trackers: None,
+    }
 }
 
 pub fn plan_flower_action(
@@ -328,41 +296,21 @@ pub fn plan_flower_action(
     let replacement_tile =
         replacement_tile_from_tail(state).ok_or_else(|| "round_not_ready".to_string())?;
 
-    let mut mutations = vec![
-        LegacyRoomMutation::RemovePlayerConcealedTileById {
-            seat_index,
-            tile_id: tile_id.to_string(),
-        },
-        LegacyRoomMutation::PushPlayerFlower {
-            seat_index,
-            tile: flower_tile.clone(),
-        },
-        LegacyRoomMutation::RetreatWallTail,
-        LegacyRoomMutation::PushPlayerConcealedTile {
-            seat_index,
-            tile: replacement_tile.clone(),
-        },
-        LegacyRoomMutation::SetRoundLastActionContext {
-            context: LastActionContext {
-                kind: "replacement_draw".to_string(),
-                seat: seat_index,
-                tile_id: Some(replacement_tile.tile_id.clone()),
-                from_kong_replacement: false,
-                was_last_live_tile: false,
-                was_last_discard: false,
-            },
-        },
-        LegacyRoomMutation::IncrementRoundVersion,
-    ];
-
-    if opening_flowers_mode {
-        mutations.extend(plan_advance_opening_flowers(state, seat_index));
-    }
+    let last_action_context = LastActionContext {
+        kind: "replacement_draw".to_string(),
+        seat: seat_index,
+        tile_id: Some(replacement_tile.tile_id.clone()),
+        from_kong_replacement: false,
+        was_last_live_tile: false,
+        was_last_discard: false,
+    };
 
     Ok(PlannedFlowerAction {
-        mutations,
         flower_tile,
         replacement_tile,
+        last_action_context,
+        opening_flowers_advance: opening_flowers_mode
+            .then(|| plan_advance_opening_flowers(state, seat_index)),
     })
 }
 
@@ -430,17 +378,12 @@ pub fn plan_claim_window_response(
         .collect();
 
     Ok(PlannedClaimWindowResponse {
-        mutations: vec![
-            LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
-                    discarder_seat,
-                    claim_window: claim.claim_window.clone(),
-                    responded_seats,
-                    claim_responses,
-                })),
-            },
-            LegacyRoomMutation::IncrementRoundVersion,
-        ],
+        pending_action: PendingAction::ClaimWindow(ClaimWindowAction {
+            discarder_seat,
+            claim_window: claim.claim_window.clone(),
+            responded_seats,
+            claim_responses,
+        }),
         unresolved_seats,
     })
 }
@@ -527,15 +470,15 @@ pub fn plan_discard_action(
 pub fn plan_settlement_to_match(
     state: &RoomState,
     settlement: &RoundSettlement,
-) -> Vec<LegacyRoomMutation> {
+) -> Option<PlannedSettlementToMatch> {
     let Some(round) = state.round_state.as_ref() else {
-        return Vec::new();
+        return None;
     };
     let Some(match_state) = state.match_state.as_ref() else {
-        return Vec::new();
+        return None;
     };
     if match_state.last_completed_round_id.as_deref() == Some(round.round_id.as_str()) {
-        return Vec::new();
+        return None;
     }
 
     let mut cumulative_scores = std::collections::BTreeMap::new();
@@ -554,12 +497,10 @@ pub fn plan_settlement_to_match(
         cumulative_scores.insert(seat_index, current + delta);
     }
 
-    vec![
-        LegacyRoomMutation::SetMatchCumulativeScores { cumulative_scores },
-        LegacyRoomMutation::SetMatchLastCompletedRoundId {
-            round_id: Some(round.round_id.clone()),
-        },
-    ]
+    Some(PlannedSettlementToMatch {
+        cumulative_scores,
+        round_id: round.round_id.clone(),
+    })
 }
 
 pub fn resolve_claims(claim_requests: &[Value], discarder_seat: usize) -> Option<Value> {
@@ -612,38 +553,24 @@ pub fn plan_claim_window_continuation_without_winner(
     let next_actor = (discarder_seat + 1) % MAX_SEATS;
     let Some(drawn_tile) = peek_draw_for_turn(state) else {
         return Ok(PlannedClaimWindowContinuation {
-            mutations: Vec::new(),
-            needs_exhaustive_draw: true,
+            outcome: PlannedClaimWindowOutcome::ExhaustiveDraw,
         });
     };
     let was_last_live_tile = live_tiles_remaining_after_head_draw(state) <= 1;
 
     Ok(PlannedClaimWindowContinuation {
-        mutations: vec![
-            LegacyRoomMutation::AdvanceWallHead,
-            LegacyRoomMutation::PushPlayerConcealedTile {
-                seat_index: next_actor,
-                tile: drawn_tile.clone(),
+        outcome: PlannedClaimWindowOutcome::AdvanceTurn {
+            current_actor: next_actor,
+            drawn_tile: drawn_tile.clone(),
+            last_action_context: LastActionContext {
+                kind: "draw".to_string(),
+                seat: next_actor,
+                tile_id: Some(drawn_tile.tile_id.clone()),
+                from_kong_replacement: false,
+                was_last_live_tile,
+                was_last_discard: false,
             },
-            LegacyRoomMutation::SetRoundPendingAction {
-                pending_action: None,
-            },
-            LegacyRoomMutation::SetRoundCurrentActor {
-                seat_index: next_actor,
-            },
-            LegacyRoomMutation::SetRoundLastActionContext {
-                context: LastActionContext {
-                    kind: "draw".to_string(),
-                    seat: next_actor,
-                    tile_id: Some(drawn_tile.tile_id.clone()),
-                    from_kong_replacement: false,
-                    was_last_live_tile,
-                    was_last_discard: false,
-                },
-            },
-            LegacyRoomMutation::IncrementRoundVersion,
-        ],
-        needs_exhaustive_draw: false,
+        },
     })
 }
 
@@ -909,7 +836,7 @@ mod tests {
 
     #[test]
     fn flower_action_plan_uses_typed_room_state() {
-        let room = RoomState::from_legacy_value(&json!({
+        let room = RoomState::from_room_value(&json!({
             "table_code": "ROOM42",
             "phase": "playing",
             "mode": "normal",
@@ -982,22 +909,25 @@ mod tests {
                 "restricted_discard_tile_key": null
             },
             "pending_timeout": null,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         }))
-        .expect("legacy room should parse");
+        .expect("room should parse");
 
         let plan = plan_flower_action(&room, 0, "f1#hand").expect("flower action should plan");
 
         assert_eq!(plan.flower_tile.tile_id, "f1#hand");
         assert_eq!(plan.replacement_tile.tile_id, "f1#0");
-        assert!(plan.mutations.len() >= 6);
+        assert_eq!(plan.last_action_context.kind, "replacement_draw");
+        let advance = plan
+            .opening_flowers_advance
+            .as_ref()
+            .expect("opening flowers should advance");
+        assert_eq!(advance.current_actor, 0);
     }
 
     #[test]
     fn claim_window_response_plan_uses_typed_pending_action() {
-        let room = RoomState::from_legacy_value(&json!({
+        let room = RoomState::from_room_value(&json!({
             "table_code": "ROOM42",
             "phase": "playing",
             "mode": "normal",
@@ -1055,37 +985,25 @@ mod tests {
                 "restricted_discard_tile_key": null
             },
             "pending_timeout": null,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         }))
-        .expect("legacy room should parse");
+        .expect("room should parse");
 
         let plan =
             plan_claim_window_response(&room, 1, "pung", &["w3#a".to_string(), "w3#b".to_string()])
                 .expect("claim window response should plan");
 
         assert!(plan.unresolved_seats.is_empty());
-        assert_eq!(plan.mutations.len(), 2);
-        match &plan.mutations[0] {
-            crate::core::engine::reducer::LegacyRoomMutation::SetRoundPendingAction {
-                pending_action,
-            } => {
-                let Some(crate::core::state::PendingAction::ClaimWindow(pending_action)) =
-                    pending_action.as_ref()
-                else {
-                    panic!("expected claim window pending action");
-                };
-                assert_eq!(pending_action.responded_seats, vec![1, 2]);
-                assert_eq!(pending_action.claim_responses[0]["type"], json!("pung"));
-            }
-            other => panic!("unexpected first mutation: {other:?}"),
-        }
+        let crate::core::state::PendingAction::ClaimWindow(pending_action) = &plan.pending_action else {
+            panic!("expected claim window pending action");
+        };
+        assert_eq!(pending_action.responded_seats, vec![1, 2]);
+        assert_eq!(pending_action.claim_responses[0]["type"], json!("pung"));
     }
 
     #[test]
     fn claim_window_continuation_without_winner_draws_next_actor() {
-        let room = RoomState::from_legacy_value(&json!({
+        let room = RoomState::from_room_value(&json!({
             "table_code": "ROOM42",
             "phase": "playing",
             "mode": "normal",
@@ -1145,32 +1063,30 @@ mod tests {
                 "restricted_discard_tile_key": null
             },
             "pending_timeout": null,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         }))
-        .expect("legacy room should parse");
+        .expect("room should parse");
 
         let plan = plan_claim_window_continuation_without_winner(&room, 0)
             .expect("continuation should plan");
 
-        assert!(!plan.needs_exhaustive_draw);
-        assert_eq!(plan.mutations.len(), 6);
-        match &plan.mutations[1] {
-            crate::core::engine::reducer::LegacyRoomMutation::PushPlayerConcealedTile {
-                seat_index,
-                tile,
-            } => {
-                assert_eq!(*seat_index, 1);
-                assert_eq!(tile.tile_id, "w1#0");
-            }
-            other => panic!("unexpected mutation: {other:?}"),
-        }
+        assert!(!plan.needs_exhaustive_draw());
+        let super::PlannedClaimWindowOutcome::AdvanceTurn {
+            current_actor,
+            drawn_tile,
+            last_action_context,
+        } = &plan.outcome
+        else {
+            panic!("expected advance turn outcome");
+        };
+        assert_eq!(*current_actor, 1);
+        assert_eq!(drawn_tile.tile_id, "w1#0");
+        assert_eq!(last_action_context.kind, "draw");
     }
 
     #[test]
     fn discard_plan_exposes_typed_continuation_before_mutation_adaptation() {
-        let room = RoomState::from_legacy_value(&json!({
+        let room = RoomState::from_room_value(&json!({
             "table_code": "ROOM42",
             "phase": "playing",
             "mode": "normal",
@@ -1248,11 +1164,9 @@ mod tests {
                 "restricted_discard_tile_key": null
             },
             "pending_timeout": null,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         }))
-        .expect("legacy room should parse");
+        .expect("room should parse");
 
         let plan = plan_discard_action(
             &room,
@@ -1275,7 +1189,5 @@ mod tests {
         );
         assert_eq!(plan.continuation.last_action_context.kind, "draw");
         assert!(!plan.continuation.needs_exhaustive_draw);
-        assert_eq!(plan.discard_mutations(0).len(), 3);
-        assert_eq!(plan.followup_mutations().len(), 7);
     }
 }

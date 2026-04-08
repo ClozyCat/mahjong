@@ -1,7 +1,9 @@
 use serde_json::{Value, json};
 
+use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::plan_settlement_to_match;
-use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::core::engine::reducer::update_room_state;
+use crate::core::event::GameEvent;
 use crate::core::state::{
     PendingAction, RoundSettlement, SettlementFanBreakdownEntry, SettlementKongScoreDetailEntry,
     SettlementScoreDelta,
@@ -172,7 +174,17 @@ pub fn apply_hu_settlement(
     hu_context: &str,
     settlement: RoundSettlement,
 ) -> Result<Vec<Value>, String> {
-    let settlement_value = settlement.to_legacy_value();
+    apply_hu_settlement_output(room, winner_seat, hu_context, settlement)
+        .map(|output| output.emitted_messages)
+}
+
+pub fn apply_hu_settlement_output(
+    room: &mut Value,
+    winner_seat: usize,
+    hu_context: &str,
+    settlement: RoundSettlement,
+) -> Result<EngineOutput, String> {
+    let settlement_value = settlement.to_value();
     let round_id = room
         .get("round_state")
         .and_then(|round| round.get("round_id"))
@@ -189,31 +201,28 @@ pub fn apply_hu_settlement(
         .and_then(|round| round.get("last_discard"))
         .cloned()
         .unwrap_or(Value::Null);
-    let mut mutations = vec![
-        LegacyRoomMutation::SetRoomPhase {
-            phase: "settlement".to_string(),
-        },
-        LegacyRoomMutation::SetRoomPendingTimeout {
-            pending_timeout: None,
-        },
-        LegacyRoomMutation::SetRoundPhase {
-            phase: "settlement".to_string(),
-        },
-        LegacyRoomMutation::SetRoundPendingAction {
-            pending_action: None,
-        },
-        LegacyRoomMutation::SetRoundSettlement {
-            settlement: Some(settlement.clone()),
-        },
-        LegacyRoomMutation::SetRoundCurrentActor {
-            seat_index: winner_seat,
-        },
-        LegacyRoomMutation::IncrementRoundVersion,
-    ];
-    if let Ok(state) = project_room_state(room) {
-        mutations.extend(plan_settlement_to_match(&state, &settlement));
-    }
-    apply_legacy_room_mutations(room, &mutations)?;
+    let settlement_for_write = settlement.clone();
+    let settlement_match_plan = project_room_state(room)
+        .ok()
+        .and_then(|state| plan_settlement_to_match(&state, &settlement_for_write));
+    update_room_state(room, |state| {
+        state.phase = "settlement".to_string();
+        state.pending_timeout = None;
+        if let Some(round) = state.round_state.as_mut() {
+            round.phase = "settlement".to_string();
+            round.pending_action = None;
+            round.settlement = Some(settlement_for_write.clone());
+            round.current_actor = winner_seat;
+            round.version += 1;
+        }
+        if let Some(plan) = settlement_match_plan.as_ref() {
+            if let Some(match_state) = state.match_state.as_mut() {
+                match_state.cumulative_scores = plan.cumulative_scores.clone();
+                match_state.last_completed_round_id = Some(plan.round_id.clone());
+            }
+        }
+        Ok(())
+    })?;
     sync_match_skill_trackers_after_settlement(room);
 
     let first_event = if hu_context == "self_draw" {
@@ -236,17 +245,33 @@ pub fn apply_hu_settlement(
             }),
         )
     };
-    Ok(vec![
-        first_event,
-        round_event_message(
-            "settlement_ready",
-            json!({
-                "type": "settlement_ready",
-                "round_id": round_id,
-                "settlement": settlement_value,
-            }),
-        ),
-    ])
+    let settlement_message = round_event_message(
+        "settlement_ready",
+        json!({
+            "type": "settlement_ready",
+            "round_id": round_id,
+            "settlement": settlement_value,
+        }),
+    );
+    Ok(EngineOutput::new(
+        vec![
+            GameEvent::HuDeclared {
+                winner: winner_seat,
+                source: if hu_context == "self_draw" {
+                    "self_draw".to_string()
+                } else {
+                    "discard".to_string()
+                },
+            },
+            GameEvent::SettlementPrepared {
+                settlement: settlement.clone(),
+            },
+        ],
+        vec![
+            first_event,
+            settlement_message,
+        ],
+    ))
 }
 
 pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {

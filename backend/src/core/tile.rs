@@ -15,7 +15,7 @@ pub struct Tile {
 }
 
 impl Tile {
-    pub fn from_legacy_value(value: &Value, context: &str) -> Result<Self, EngineError> {
+    pub fn from_value(value: &Value, context: &str) -> Result<Self, EngineError> {
         let object = value.as_object().ok_or_else(|| {
             EngineError::legacy_decode(format!("{context} should be a tile object"))
         })?;
@@ -52,7 +52,6 @@ impl Tile {
             name,
         })
     }
-
     pub fn tile_key_only(tile_key: &str) -> Self {
         Self {
             tile_key: tile_key.to_string(),

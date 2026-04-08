@@ -1,4 +1,5 @@
 pub mod bot_view;
+pub mod match_result;
 pub mod prompt;
 pub mod room_snapshot;
 pub mod support;

@@ -14,16 +14,16 @@ pub struct WallState {
 }
 
 impl WallState {
-    pub(crate) fn from_legacy_value(value: &Value) -> Result<Self, EngineError> {
+    pub(crate) fn from_value(value: &Value) -> Result<Self, EngineError> {
         let tiles = value
             .get("tiles")
             .map(|tiles| {
                 array(tiles, "round_state.wall.tiles").and_then(|tiles| {
                     tiles
-                        .iter()
-                        .enumerate()
-                        .map(|(index, tile)| {
-                            Tile::from_legacy_value(
+                    .iter()
+                    .enumerate()
+                    .map(|(index, tile)| {
+                            Tile::from_value(
                                 tile,
                                 &format!("round_state.wall.tiles[{index}]"),
                             )
@@ -39,7 +39,6 @@ impl WallState {
             tail_index: usize_or(value, "tail_index", 0),
         })
     }
-
     pub fn live_tiles_remaining(&self) -> usize {
         self.tail_index
             .checked_sub(self.head_index)

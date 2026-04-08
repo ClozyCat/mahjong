@@ -2,9 +2,10 @@ use crate::bot::BotAction;
 use crate::core::action::GameCommand;
 use crate::core::engine::flow::try_handle_command as execute_engine_command;
 use crate::core::engine::{
-    EngineContext, EngineOutput, discard_supported_locally, parse_legacy_player_command,
+    EngineContext, EngineOutput, discard_supported_locally, parse_player_command,
 };
-use crate::core::state::{RoomState, RoundSettlement};
+use crate::core::engine::reducer::update_room_state;
+use crate::core::state::{RoomState, RoundSettlement, SeatState};
 use crate::projection::support::build_seat_projection_support;
 use crate::rules::standard::{
     actions::apply_discard_action as standard_apply_discard_action,
@@ -28,8 +29,11 @@ const MAX_SEATS: usize = 4;
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
 
 pub fn room_messages(room: &Value, local_seat: usize) -> Vec<Value> {
-    let mut messages = vec![room_snapshot(room, local_seat)];
-    if let Some(result) = match_result_message(room) {
+    let (state, support) = projected_room_message_context(room, local_seat);
+    let mut messages = vec![crate::projection::room_snapshot::room_snapshot_message(
+        &state, local_seat, &support,
+    )];
+    if let Some(result) = crate::projection::match_result::match_result_message(&state) {
         messages.push(result);
     }
     messages
@@ -45,20 +49,15 @@ pub fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {
 }
 
 pub fn room_ready_to_start(room: &Value) -> bool {
-    let seats = room
-        .get("seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    seats.len() == MAX_SEATS
-        && seats.iter().all(|seat| {
-            seat.get("ready").and_then(Value::as_bool).unwrap_or(false)
-                && (seat
-                    .get("connected")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                    || seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
+    project_room_state(room)
+        .map(|state| {
+            state.seats.len() == MAX_SEATS
+                && state
+                    .seats
+                    .iter()
+                    .all(|seat| seat.ready && (seat.connected || seat.is_bot))
         })
+        .unwrap_or(false)
 }
 
 pub fn next_bot_action(room: &Value) -> Option<BotAction> {
@@ -66,40 +65,33 @@ pub fn next_bot_action(room: &Value) -> Option<BotAction> {
 }
 
 pub fn add_bot_seats_for_test(room: &mut Value) {
-    let Some(obj) = room.as_object_mut() else {
-        return;
-    };
-    let seats = obj
-        .get_mut("seats")
-        .and_then(Value::as_array_mut)
-        .expect("room seats should exist");
-    let occupied: std::collections::HashSet<usize> = seats
-        .iter()
-        .filter_map(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
-        })
-        .collect();
-    for seat_index in 0..MAX_SEATS {
-        if occupied.contains(&seat_index) {
-            continue;
+    let _ = update_room_state(room, |state| {
+        let occupied = state
+            .seats
+            .iter()
+            .map(|seat| seat.seat_index)
+            .collect::<std::collections::HashSet<_>>();
+        for seat_index in 0..MAX_SEATS {
+            if occupied.contains(&seat_index) {
+                continue;
+            }
+            state.seats.push(SeatState {
+                seat_index,
+                nickname: Some(format!("Bot {seat_index}")),
+                reconnect_token: None,
+                player_session_id: Some(-((seat_index as i64) + 1)),
+                connected: true,
+                ready: true,
+                is_bot: true,
+                seat_type: "bot".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+            });
         }
-        seats.push(json!({
-            "seat_index": seat_index,
-            "nickname": format!("Bot {seat_index}"),
-            "reconnect_token": Value::Null,
-            "player_session_id": -((seat_index as i64) + 1),
-            "connected": true,
-            "ready": true,
-            "is_bot": true,
-            "seat_type": "bot",
-            "bot_persona": Value::Null,
-            "bot_aggression": Value::Null,
-            "disconnect_deadline_at": Value::Null,
-        }));
-    }
-    seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
+        state.seats.sort_by_key(|seat| seat.seat_index);
+        Ok(())
+    });
 }
 
 pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
@@ -112,7 +104,7 @@ pub fn try_handle_action(
     action_type: &str,
     tile_ids: &[String],
 ) -> Option<Result<Vec<Value>, String>> {
-    let command = match parse_legacy_player_command(seat_index, action_type, tile_ids)? {
+    let command = match parse_player_command(seat_index, action_type, tile_ids)? {
         Ok(command) => command,
         Err(reason) => return Some(Err(reason)),
     };
@@ -156,32 +148,13 @@ pub fn apply_hu_settlement(
         room,
         winner_seat,
         hu_context,
-        RoundSettlement::from_legacy_value(&settlement),
+        RoundSettlement::from_value(&settlement),
     )
 }
 
 fn room_snapshot(room: &Value, local_seat: usize) -> Value {
-    let Ok(state) = project_room_state(room) else {
-        return json!({
-            "type": "room_snapshot",
-            "payload": {
-                "table_code": room.get("table_code").cloned().unwrap_or(Value::Null),
-                "phase": room.get("phase").cloned().unwrap_or(Value::String("waiting".to_string())),
-                "mode": room.get("mode").cloned().unwrap_or(Value::String("normal".to_string())),
-                "seats": Value::Array(vec![]),
-                "local_seat": local_seat,
-                "reconnect_token": Value::Null,
-                "match_state": Value::Null,
-                "private_state": Value::Null,
-                "continue_action": Value::Null,
-            }
-        });
-    };
-    crate::projection::room_snapshot::room_snapshot_message(
-        &state,
-        local_seat,
-        &build_seat_projection_support(room, &state, local_seat),
-    )
+    let (state, support) = projected_room_message_context(room, local_seat);
+    crate::projection::room_snapshot::room_snapshot_message(&state, local_seat, &support)
 }
 
 fn apply_discard_action(
@@ -192,42 +165,49 @@ fn apply_discard_action(
     standard_apply_discard_action(room, seat_index, tile_id)
 }
 
-fn match_result_message(room: &Value) -> Option<Value> {
-    let state = project_room_state(room).ok()?;
-    let round_state = state.round_state.as_ref()?;
-    if round_state.phase != "settlement" {
-        return None;
-    }
-    let mut payload = round_state
-        .settlement
-        .as_ref()
-        .map(RoundSettlement::to_legacy_value)?
-        .as_object()
-        .cloned()
-        .unwrap_or_default();
-    payload.insert(
-        "table_code".to_string(),
-        room.get("table_code").cloned().unwrap_or(Value::Null),
-    );
-    payload.insert(
-        "round_id".to_string(),
-        Value::String(round_state.round_id.clone()),
-    );
-    payload.insert("phase".to_string(), Value::String("settlement".to_string()));
-    Some(json!({
-        "type": "match_result",
-        "payload": Value::Object(payload),
-    }))
-}
-
 fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -> bool {
-    EngineContext::from_legacy_room(room)
+    project_room_state(room)
+        .map(EngineContext::from_room_state)
         .map(|context| discard_supported_locally(&context, seat_index, tile_id))
         .unwrap_or(false)
 }
 
 fn project_room_state(room: &Value) -> Result<RoomState, String> {
     standard_project_room_state(room)
+}
+
+fn projected_room_message_context(
+    room: &Value,
+    local_seat: usize,
+) -> (RoomState, crate::projection::SeatProjectionSupport) {
+    match project_room_state(room) {
+        Ok(state) => {
+            let support = build_seat_projection_support(room, &state, local_seat);
+            (state, support)
+        }
+        Err(_) => (fallback_room_state(room), Default::default()),
+    }
+}
+
+fn fallback_room_state(room: &Value) -> RoomState {
+    RoomState {
+        table_code: room
+            .get("table_code")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        phase: room
+            .get("phase")
+            .and_then(Value::as_str)
+            .unwrap_or("waiting")
+            .to_string(),
+        mode: room
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or("normal")
+            .to_string(),
+        ..Default::default()
+    }
 }
 
 fn deadline_iso() -> String {
@@ -285,9 +265,7 @@ mod tests {
             "mode": "normal",
             "test_mode": false,
             "enforce_minimum_eight_fan": true,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null,
+            "continue_action": null,
             "seats": [
                 {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
                 {"seat_index": 1, "nickname": "P1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
@@ -399,9 +377,7 @@ mod tests {
             "mode": "normal",
             "test_mode": false,
             "enforce_minimum_eight_fan": true,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null,
+            "continue_action": null,
             "seats": [
                 {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
                 {"seat_index": 1, "nickname": "P1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
@@ -583,9 +559,7 @@ mod tests {
             "mode": "normal",
             "test_mode": false,
             "enforce_minimum_eight_fan": true,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null,
+            "continue_action": null,
             "seats": [
                 {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
                 {"seat_index": 1, "nickname": "P1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
@@ -711,9 +685,7 @@ mod tests {
             "mode": "normal",
             "test_mode": false,
             "enforce_minimum_eight_fan": true,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null,
+            "continue_action": null,
             "seats": [
                 {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
                 {"seat_index": 1, "nickname": "P1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
@@ -1650,7 +1622,7 @@ mod tests {
         assert_eq!(room["match_state"]["cumulative_scores"]["0"], 24);
         assert!(room["round_state"]["phase"] == "playing");
         assert_eq!(
-            room["continue_action_auto_advance_deadline_at"],
+            room["continue_action"],
             Value::Null
         );
     }

@@ -23,7 +23,7 @@ pub struct SeatState {
 }
 
 impl SeatState {
-    pub(crate) fn from_legacy_value(value: &Value) -> Self {
+    pub(crate) fn from_value(value: &Value) -> Self {
         Self {
             seat_index: usize_or(value, "seat_index", 0),
             nickname: string_opt(value, "nickname"),
@@ -55,7 +55,7 @@ pub struct PlayerRoundState {
 }
 
 impl PlayerRoundState {
-    pub(crate) fn from_legacy_value(value: &Value) -> Result<Self, EngineError> {
+    pub(crate) fn from_value(value: &Value) -> Result<Self, EngineError> {
         let concealed_tiles = parse_tiles(value.get("concealed_tiles"), "concealed_tiles")?;
         let flowers = parse_tiles(value.get("flowers"), "flowers")?;
         let discards = parse_tiles(value.get("discards"), "discards")?;
@@ -86,7 +86,7 @@ impl PlayerRoundState {
             melds,
             flowers,
             discards,
-            skill_loadout: SkillLoadout::from_legacy_value(value.get("skill_loadout"))?,
+            skill_loadout: SkillLoadout::from_value(value.get("skill_loadout"))?,
         })
     }
 }
@@ -99,7 +99,7 @@ fn parse_tiles(value: Option<&Value>, context: &str) -> Result<Vec<Tile>, Engine
                     .iter()
                     .enumerate()
                     .map(|(index, tile)| {
-                        Tile::from_legacy_value(tile, &format!("{context}[{index}]"))
+                        Tile::from_value(tile, &format!("{context}[{index}]"))
                     })
                     .collect::<Result<Vec<_>, _>>()
             })

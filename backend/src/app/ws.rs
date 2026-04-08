@@ -8,7 +8,7 @@ use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 use super::room_runtime::{
@@ -27,6 +27,11 @@ use super::{
     seat_exists, seat_matches_reconnect_credentials, send_outbound, serialize_room,
     set_seat_connected,
 };
+use super::protocol::{
+    action_rejected_message, heartbeat_message, leave_table_accepted_message, quick_chat_message,
+};
+use crate::core::engine::reducer::update_room_state;
+use crate::core::state::SeatState;
 use crate::mahjong::{
     reconcile_continue_action_state as rust_reconcile_continue_action_state,
     record_continue_action as rust_record_continue_action,
@@ -35,11 +40,78 @@ use crate::mahjong::{
 };
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ClientEnvelope {
-    #[serde(rename = "type")]
-    kind: String,
+#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+enum ClientMessage {
+    JoinTable(JoinTableRequest),
+    Reconnect(ReconnectRequest),
+    Ready(ReadyRequest),
+    AdjustBots(AdjustBotsRequest),
+    StartMatch,
+    StartNextRound,
+    RestartMatch,
+    LeaveTable,
+    ActionRequest(ActionRequest),
+    QuickChat(QuickChatRequest),
+    Heartbeat(Value),
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct JoinTableRequest {
     #[serde(default)]
-    payload: Value,
+    nickname: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ReconnectRequest {
+    #[serde(default)]
+    reconnect_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadyRequest {
+    #[serde(default = "default_true")]
+    ready: bool,
+}
+
+impl Default for ReadyRequest {
+    fn default() -> Self {
+        Self { ready: true }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ActionRequest {
+    #[serde(default)]
+    action_type: String,
+    #[serde(default)]
+    tile_ids: Vec<Value>,
+}
+
+impl ActionRequest {
+    fn tile_id_strings(&self) -> Vec<String> {
+        self.tile_ids
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToString::to_string)
+            .collect()
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct QuickChatRequest {
+    target_seat: Option<usize>,
+    #[serde(default)]
+    emoji: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AdjustBotsRequest {
+    #[serde(default)]
+    delta: i64,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub(crate) struct MessageOutcome {
@@ -118,19 +190,18 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
         let Message::Text(text) = message else {
             continue;
         };
-        let envelope: ClientEnvelope = match serde_json::from_str(text.as_str()) {
+        let message: ClientMessage = match serde_json::from_str(text.as_str()) {
             Ok(value) => value,
             Err(_) => {
-                send_outbound(vec![handle.outbound(json!({
-                    "type": "action_rejected",
-                    "payload": { "reason": "unsupported_message" }
-                }))]);
+                send_outbound(vec![handle.outbound(action_rejected_message(
+                    "unsupported_message",
+                ))]);
                 continue;
             }
         };
 
         let outcome =
-            handle_client_message(state.clone(), &table_code, &handle, owned_seat, &envelope).await;
+            handle_client_message(state.clone(), &table_code, &handle, owned_seat, message).await;
 
         if let Some(new_seat) = outcome.owned_seat {
             owned_seat = Some(new_seat);
@@ -161,38 +232,38 @@ async fn handle_client_message(
     table_code: &str,
     connection: &ConnectionHandle,
     owned_seat: Option<usize>,
-    envelope: &ClientEnvelope,
+    message: ClientMessage,
 ) -> MessageOutcome {
-    match envelope.kind.as_str() {
-        "join_table" => {
+    match message {
+        ClientMessage::JoinTable(request) => {
             if owned_seat.is_some() {
                 return reject_to(connection, "seat_already_owned");
             }
-            handle_join_table(state, table_code, connection, envelope).await
+            handle_join_table(state, table_code, connection, request).await
         }
-        "reconnect" => {
+        ClientMessage::Reconnect(request) => {
             if owned_seat.is_some() {
                 return reject_to(connection, "seat_already_owned");
             }
-            handle_reconnect(state, table_code, connection, envelope).await
+            handle_reconnect(state, table_code, connection, request).await
         }
-        "ready" => {
+        ClientMessage::Ready(request) => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
-            handle_ready(state, table_code, connection, seat_index, envelope).await
+            handle_ready(state, table_code, connection, seat_index, request).await
         }
-        "adjust_bots" => {
+        ClientMessage::AdjustBots(request) => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
-            handle_adjust_bots(state, table_code, connection, seat_index, envelope).await
+            handle_adjust_bots(state, table_code, connection, seat_index, request).await
         }
-        "start_match" => {
+        ClientMessage::StartMatch => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
@@ -200,7 +271,7 @@ async fn handle_client_message(
             };
             handle_start_match(state, table_code, connection, seat_index).await
         }
-        "start_next_round" => {
+        ClientMessage::StartNextRound => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
@@ -215,7 +286,7 @@ async fn handle_client_message(
             )
             .await
         }
-        "restart_match" => {
+        ClientMessage::RestartMatch => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
@@ -223,7 +294,7 @@ async fn handle_client_message(
             };
             handle_continue_action(state, table_code, connection, seat_index, "restart_match").await
         }
-        "leave_table" => {
+        ClientMessage::LeaveTable => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
@@ -231,32 +302,28 @@ async fn handle_client_message(
             };
             handle_leave_table(state, table_code, connection, seat_index).await
         }
-        "action_request" => {
+        ClientMessage::ActionRequest(request) => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
-            handle_action_request(state, table_code, connection, seat_index, envelope).await
+            handle_action_request(state, table_code, connection, seat_index, request).await
         }
-        "quick_chat" => {
+        ClientMessage::QuickChat(request) => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, owned_seat).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
-            handle_quick_chat(state, table_code, connection, seat_index, envelope).await
+            handle_quick_chat(state, table_code, connection, seat_index, request).await
         }
-        "heartbeat" => MessageOutcome {
-            outbound: vec![connection.outbound(json!({
-                "type": "heartbeat",
-                "payload": envelope.payload.clone(),
-            }))],
+        ClientMessage::Heartbeat(payload) => MessageOutcome {
+            outbound: vec![connection.outbound(heartbeat_message(payload))],
             owned_seat: None,
             clear_owned_seat: false,
             close_socket: false,
         },
-        _ => reject_to(connection, "unsupported_message"),
     }
 }
 
@@ -284,14 +351,13 @@ async fn handle_join_table(
     state: AppContext,
     table_code: &str,
     connection: &ConnectionHandle,
-    envelope: &ClientEnvelope,
+    request: JoinTableRequest,
 ) -> MessageOutcome {
-    let nickname = envelope
-        .payload
-        .get("nickname")
-        .and_then(Value::as_str)
-        .unwrap_or("Player")
-        .to_string();
+    let nickname = if request.nickname.trim().is_empty() {
+        "Player".to_string()
+    } else {
+        request.nickname
+    };
 
     let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
@@ -319,26 +385,26 @@ async fn handle_join_table(
 
     let player_session_id = generate_player_session_id();
     let reconnect_token = generate_reconnect_token();
+    if update_room_state(&mut runtime.room, |state| {
+        state.seats.push(SeatState {
+            seat_index,
+            nickname: Some(nickname.clone()),
+            reconnect_token: Some(reconnect_token.clone()),
+            player_session_id: Some(player_session_id),
+            connected: true,
+            ready: false,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+        });
+        state.seats.sort_by_key(|seat| seat.seat_index);
+        Ok(())
+    })
+    .is_err()
     {
-        let seats = runtime
-            .room
-            .get_mut("seats")
-            .and_then(Value::as_array_mut)
-            .expect("room seats should exist");
-        seats.push(json!({
-            "seat_index": seat_index,
-            "nickname": nickname,
-            "reconnect_token": reconnect_token,
-            "player_session_id": player_session_id,
-            "connected": true,
-            "ready": false,
-            "is_bot": false,
-            "seat_type": "human",
-            "bot_persona": Value::Null,
-            "bot_aggression": Value::Null,
-            "disconnect_deadline_at": Value::Null,
-        }));
-        seats.sort_by_key(|seat| seat.get("seat_index").and_then(Value::as_u64).unwrap_or(99));
+        return reject_to(connection, "invalid_room_state");
     }
     maybe_start_test_match(&mut runtime.room);
     let created_at = runtime.created_at.clone();
@@ -389,14 +455,9 @@ async fn handle_reconnect(
     state: AppContext,
     table_code: &str,
     connection: &ConnectionHandle,
-    envelope: &ClientEnvelope,
+    request: ReconnectRequest,
 ) -> MessageOutcome {
-    let reconnect_token = envelope
-        .payload
-        .get("reconnect_token")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+    let reconnect_token = request.reconnect_token;
 
     let token_record = match state.inner.db.get_reconnect_token(&reconnect_token).await {
         Ok(Some(token_record)) => token_record,
@@ -440,22 +501,21 @@ async fn handle_reconnect(
     }
 
     let new_token = generate_reconnect_token();
-    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
-        if let Some(seat) = seats.iter_mut().find(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize == token_record.seat_index)
-                .unwrap_or(false)
-        }) {
-            if let Some(object) = seat.as_object_mut() {
-                object.insert(
-                    "reconnect_token".to_string(),
-                    Value::String(new_token.clone()),
-                );
-                object.insert("connected".to_string(), Value::Bool(true));
-                object.insert("disconnect_deadline_at".to_string(), Value::Null);
-            }
+    if update_room_state(&mut runtime.room, |state| {
+        if let Some(seat) = state
+            .seats
+            .iter_mut()
+            .find(|seat| seat.seat_index == token_record.seat_index)
+        {
+            seat.reconnect_token = Some(new_token.clone());
+            seat.connected = true;
+            seat.disconnect_deadline_at = None;
         }
+        Ok(())
+    })
+    .is_err()
+    {
+        return reject_to(connection, "invalid_room_state");
     }
     let _ = rust_reconcile_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
@@ -512,13 +572,9 @@ async fn handle_ready(
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
-    envelope: &ClientEnvelope,
+    request: ReadyRequest,
 ) -> MessageOutcome {
-    let ready = envelope
-        .payload
-        .get("ready")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
+    let ready = request.ready;
     let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
@@ -534,17 +590,15 @@ async fn handle_ready(
     if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
-    if let Some(seats) = runtime.room.get_mut("seats").and_then(Value::as_array_mut) {
-        if let Some(seat) = seats.iter_mut().find(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize == seat_index)
-                .unwrap_or(false)
-        }) {
-            if let Some(object) = seat.as_object_mut() {
-                object.insert("ready".to_string(), Value::Bool(ready));
-            }
+    if update_room_state(&mut runtime.room, |state| {
+        if let Some(seat) = state.seats.iter_mut().find(|seat| seat.seat_index == seat_index) {
+            seat.ready = ready;
         }
+        Ok(())
+    })
+    .is_err()
+    {
+        return reject_to(connection, "invalid_room_state");
     }
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -579,13 +633,9 @@ async fn handle_adjust_bots(
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
-    envelope: &ClientEnvelope,
+    request: AdjustBotsRequest,
 ) -> MessageOutcome {
-    let delta = envelope
-        .payload
-        .get("delta")
-        .and_then(Value::as_i64)
-        .unwrap_or_default();
+    let delta = request.delta;
     let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "table_not_found");
     };
@@ -641,10 +691,7 @@ async fn handle_adjust_bots(
 
 fn reject_to(connection: &ConnectionHandle, reason: &str) -> MessageOutcome {
     MessageOutcome {
-        outbound: vec![connection.outbound(json!({
-            "type": "action_rejected",
-            "payload": { "reason": reason }
-        }))],
+        outbound: vec![connection.outbound(action_rejected_message(reason))],
         owned_seat: None,
         clear_owned_seat: false,
         close_socket: false,
@@ -771,25 +818,10 @@ async fn handle_action_request(
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
-    envelope: &ClientEnvelope,
+    request: ActionRequest,
 ) -> MessageOutcome {
-    let tile_ids = envelope
-        .payload
-        .get("tile_ids")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let tile_id_strings = tile_ids
-        .iter()
-        .filter_map(Value::as_str)
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    let action_type = envelope
-        .payload
-        .get("action_type")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+    let tile_id_strings = request.tile_id_strings();
+    let action_type = request.action_type;
 
     let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
         return reject_to(connection, "round_not_ready");
@@ -855,20 +887,10 @@ async fn handle_quick_chat(
     table_code: &str,
     connection: &ConnectionHandle,
     seat_index: usize,
-    envelope: &ClientEnvelope,
+    request: QuickChatRequest,
 ) -> MessageOutcome {
-    let target_seat = envelope
-        .payload
-        .get("target_seat")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize);
-    let emoji = envelope
-        .payload
-        .get("emoji")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let target_seat = request.target_seat;
+    let emoji = request.emoji.trim().to_string();
     if emoji.is_empty() {
         return reject_to(connection, "invalid_action");
     }
@@ -890,16 +912,13 @@ async fn handle_quick_chat(
         return reject_to(connection, "invalid_action");
     }
 
-    let payload = json!({
-        "type": "quick_chat",
-        "payload": {
-            "message_id": generate_short_hex(8),
-            "actor_seat": seat_index,
-            "target_seat": target_seat,
-            "emoji": emoji,
-            "sent_at": super::now_iso(),
-        }
-    });
+    let payload = quick_chat_message(
+        generate_short_hex(8),
+        seat_index,
+        target_seat,
+        emoji,
+        super::now_iso(),
+    );
     let connections = snapshot_connections(&runtime);
     drop(runtime);
     let outbound = connections
@@ -941,13 +960,9 @@ async fn handle_leave_table(
         let _ = rust_reconcile_continue_action_state(&mut runtime.room);
     }
 
-    let mut outbound = vec![connection.outbound(json!({
-        "type": "leave_table_accepted",
-        "payload": {
-            "table_code": table_code,
-            "seat_index": seat_index,
-        }
-    }))];
+    let mut outbound = vec![connection.outbound(leave_table_accepted_message(
+        table_code, seat_index,
+    ))];
 
     if phase == "waiting" {
         if room_seats(&runtime.room).is_empty() || room_has_only_bots(&runtime.room) {

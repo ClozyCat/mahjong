@@ -22,14 +22,14 @@ pub struct RoomState {
 }
 
 impl RoomState {
-    pub fn from_legacy_value(value: &Value) -> Result<Self, EngineError> {
+    pub fn from_room_value(value: &Value) -> Result<Self, EngineError> {
         let seats = value
             .get("seats")
             .map(|seats| {
                 array(seats, "room.seats").map(|seats| {
                     seats
                         .iter()
-                        .map(SeatState::from_legacy_value)
+                        .map(SeatState::from_value)
                         .collect::<Vec<_>>()
                 })
             })
@@ -38,17 +38,17 @@ impl RoomState {
         let match_state = value
             .get("match_state")
             .filter(|match_state| !match_state.is_null())
-            .map(MatchState::from_legacy_value)
+            .map(MatchState::from_value)
             .transpose()?;
         let round_state = value
             .get("round_state")
             .filter(|round_state| !round_state.is_null())
-            .map(RoundState::from_legacy_value)
+            .map(RoundState::from_value)
             .transpose()?;
         let pending_timeout = value
             .get("pending_timeout")
             .filter(|pending| !pending.is_null())
-            .map(PendingTimeout::from_legacy_value);
+            .map(PendingTimeout::from_value);
         Ok(Self {
             table_code: value
                 .get("table_code")
@@ -75,87 +75,34 @@ impl RoomState {
         })
     }
 
-    pub fn from_legacy_str(raw: &str) -> Result<Self, EngineError> {
+    pub fn from_room_str(raw: &str) -> Result<Self, EngineError> {
         let value: Value = serde_json::from_str(raw)?;
-        Self::from_legacy_value(&value)
+        Self::from_room_value(&value)
     }
 
-    pub fn to_legacy_value(&self) -> Result<Value, serde_json::Error> {
+    pub fn to_room_value(&self) -> Result<Value, serde_json::Error> {
         let mut value = serde_json::to_value(self)?;
-        let continue_action = legacy_continue_action_fields(self);
         if let Some(object) = value.as_object_mut() {
             object.insert(
                 "round_state".to_string(),
                 match &self.round_state {
-                    Some(round) => round.to_legacy_value()?,
+                    Some(round) => round.to_value()?,
                     None => Value::Null,
                 },
-            );
-            object.remove("continue_action");
-            object.insert(
-                "start_next_round_confirmed_seats".to_string(),
-                continue_action.start_next_round_confirmed_seats,
-            );
-            object.insert(
-                "restart_match_confirmed_seats".to_string(),
-                continue_action.restart_match_confirmed_seats,
-            );
-            object.insert(
-                "continue_action_auto_advance_deadline_at".to_string(),
-                continue_action.auto_advance_deadline_at,
             );
         }
         Ok(value)
     }
 }
 
-struct LegacyContinueActionFields {
-    start_next_round_confirmed_seats: Value,
-    restart_match_confirmed_seats: Value,
-    auto_advance_deadline_at: Value,
-}
-
-fn legacy_continue_action_fields(state: &RoomState) -> LegacyContinueActionFields {
-    let Some(action) = state.continue_action.as_ref() else {
-        return LegacyContinueActionFields {
-            start_next_round_confirmed_seats: Value::Array(vec![]),
-            restart_match_confirmed_seats: Value::Array(vec![]),
-            auto_advance_deadline_at: Value::Null,
-        };
-    };
-    let seats = action
-        .confirmed_seats
-        .iter()
-        .map(|seat| Value::from(*seat as u64))
-        .collect::<Vec<_>>();
-    match action.action_id.as_str() {
-        "start_next_round" => LegacyContinueActionFields {
-            start_next_round_confirmed_seats: Value::Array(seats),
-            restart_match_confirmed_seats: Value::Array(vec![]),
-            auto_advance_deadline_at: action
-                .auto_advance_deadline_at
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-        },
-        "restart_match" => LegacyContinueActionFields {
-            start_next_round_confirmed_seats: Value::Array(vec![]),
-            restart_match_confirmed_seats: Value::Array(seats),
-            auto_advance_deadline_at: action
-                .auto_advance_deadline_at
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-        },
-        _ => LegacyContinueActionFields {
-            start_next_round_confirmed_seats: Value::Array(vec![]),
-            restart_match_confirmed_seats: Value::Array(vec![]),
-            auto_advance_deadline_at: Value::Null,
-        },
-    }
-}
-
 fn parse_continue_action(value: &Value) -> Option<ContinueActionState> {
+    if let Some(action) = value
+        .get("continue_action")
+        .filter(|action| !action.is_null())
+        .cloned()
+    {
+        return serde_json::from_value(action).ok();
+    }
     let action_id = match value.get("phase").and_then(Value::as_str) {
         Some("settlement") => Some("start_next_round"),
         Some("finished") => Some("restart_match"),
@@ -214,6 +161,7 @@ mod tests {
     use serde_json::json;
 
     use super::RoomState;
+    use crate::core::state::{ContinueActionState, SeatState};
 
     #[test]
     fn parses_waiting_room_legacy_shape() {
@@ -244,7 +192,7 @@ mod tests {
             "continue_action_auto_advance_deadline_at": null
         });
 
-        let parsed = RoomState::from_legacy_value(&room).expect("waiting room should parse");
+        let parsed = RoomState::from_room_value(&room).expect("room should parse");
         assert_eq!(parsed.table_code, "ABCD");
         assert_eq!(parsed.phase, "waiting");
         assert_eq!(parsed.seats.len(), 1);
@@ -400,7 +348,7 @@ mod tests {
             "continue_action_auto_advance_deadline_at": null
         });
 
-        let parsed = RoomState::from_legacy_value(&room).expect("playing room should parse");
+        let parsed = RoomState::from_room_value(&room).expect("room should parse");
         assert_eq!(parsed.seats.len(), 2);
         let round = parsed.round_state.expect("round state");
         assert_eq!(round.players.len(), 2);
@@ -472,11 +420,54 @@ mod tests {
             "continue_action_auto_advance_deadline_at": "2026-04-07T10:10:00Z"
         });
 
-        let parsed = RoomState::from_legacy_value(&room).expect("settlement room should parse");
+        let parsed = RoomState::from_room_value(&room).expect("room should parse");
         let continue_action = parsed.continue_action.expect("continue action");
         assert_eq!(continue_action.action_id, "start_next_round");
         assert_eq!(continue_action.confirmed_seats, vec![0]);
         assert_eq!(continue_action.required_seats, vec![0]);
         assert_eq!(continue_action.online_seats, vec![0]);
+    }
+
+    #[test]
+    fn serializes_continue_action_in_typed_shape() {
+        let room = RoomState {
+            table_code: "DONE".to_string(),
+            phase: "settlement".to_string(),
+            mode: "normal".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: vec![SeatState {
+                seat_index: 0,
+                nickname: Some("Alice".to_string()),
+                reconnect_token: Some("token-1".to_string()),
+                player_session_id: Some(1),
+                connected: true,
+                ready: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: Some(ContinueActionState {
+                action_id: "start_next_round".to_string(),
+                confirmed_seats: vec![0],
+                required_seats: vec![0],
+                online_seats: vec![0],
+                auto_advance_deadline_at: Some("2026-04-07T10:10:00Z".to_string()),
+            }),
+        };
+
+        let value = room.to_room_value().expect("room should serialize");
+        assert_eq!(value["continue_action"]["action_id"], "start_next_round");
+        assert_eq!(value["continue_action"]["confirmed_seats"], json!([0]));
+        assert_eq!(
+            value["continue_action"]["auto_advance_deadline_at"],
+            "2026-04-07T10:10:00Z"
+        );
+        assert!(value.get("start_next_round_confirmed_seats").is_none());
     }
 }
