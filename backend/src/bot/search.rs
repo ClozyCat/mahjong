@@ -1,10 +1,6 @@
-use crate::projection::bot_view::{
-    BotClaimOption, BotContextView as BotContext, BotPlayerView as BotPlayerContext,
-    BotSelfKongKind, BotTileCounts as ProjectionTileCounts, BotTileView,
-};
-use crate::scoring::{
-    EvaluationInput as ScoringEvaluationInput, KongEntry as ScoringKongEntry,
-    TimingFeatures as ScoringTimingFeatures,
+use super::context::*;
+use crate::rules::scoring::{
+    EvaluationInput as ScoringEvaluationInput, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
 };
@@ -12,15 +8,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 
-const TILE_KIND_COUNT: usize = 34;
-const HONOR_TILE_START: usize = 27;
-const STANDARD_TILE_KEYS: [&str; 34] = [
-    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
-    "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
-    "north", "red", "green", "white",
-];
-const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
-const STAGE_ONE_DEPTH: u8 = 0;
+pub(crate) const STAGE_ONE_DEPTH: u8 = 0;
 const STAGE_TWO_DEPTH: u8 = 1;
 const STAGE_TWO_CANDIDATES: usize = 2;
 const STAGE_ONE_EARLY_RETURN_MARGIN: i64 = 180;
@@ -35,20 +23,11 @@ const MONTE_CARLO_HORIZON_EARLY: usize = 3;
 const MONTE_CARLO_HORIZON_MID: usize = 2;
 const MONTE_CARLO_HORIZON_LATE: usize = 1;
 
-pub type TileCounts = ProjectionTileCounts;
-
 #[derive(Clone)]
-pub struct BotAction {
-    pub seat_index: usize,
-    pub action_type: String,
-    pub tile_ids: Vec<String>,
-}
-
-#[derive(Clone)]
-struct BotDiscardPlan {
-    tile_id: String,
-    tile_key: String,
-    score: i64,
+pub(crate) struct BotDiscardPlan {
+    pub(crate) tile_id: String,
+    pub(crate) tile_key: String,
+    pub(crate) score: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,9 +60,9 @@ struct OpponentThreat {
 }
 
 #[derive(Clone, Copy, Default)]
-struct StrategicSignals {
-    route_score: i64,
-    fan_estimate: i64,
+pub(crate) struct StrategicSignals {
+    pub(crate) route_score: i64,
+    pub(crate) fan_estimate: i64,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -135,7 +114,7 @@ struct DiscardStateKey {
     tile_index: u8,
 }
 
-struct SearchEngine {
+pub(crate) struct SearchEngine {
     profile: ModeProfile,
     monte_carlo_safety_weight: i64,
     threat_profiles: Vec<OpponentThreat>,
@@ -228,7 +207,7 @@ fn mode_profile(mode: BotMode) -> ModeProfile {
 }
 
 impl SearchEngine {
-    fn new(context: &BotContext) -> Self {
+    pub(crate) fn new(context: &BotContext) -> Self {
         let profile = mode_profile(select_bot_mode(context));
         let threat_profiles = (0..context.seat_count)
             .map(|seat| {
@@ -257,193 +236,18 @@ impl SearchEngine {
             discard_preference_cache: HashMap::new(),
         }
     }
-}
 
-pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
-    let mut engine = SearchEngine::new(context);
-    let baseline = engine.best_discard_plan(
-        context,
-        &context.player.concealed_tiles,
-        &context.player.concealed_tile_counts,
-        &context.player.meld_tile_key_groups,
-        &[],
-        context.restricted_discard_tile_key.as_deref(),
-        context.drawn_tile_id.as_deref(),
-    )?;
-
-    let mut best_kong = None;
-    for candidate in &context.self_kong_candidates {
-        if candidate.kind == BotSelfKongKind::Add
-            && context.add_kong_risk_tiles.contains(&candidate.tile_key)
-        {
-            continue;
-        }
-
-        let concealed_after =
-            simulated_tiles_after_removal(&context.player.concealed_tiles, &candidate.tile_ids);
-        let concealed_counts_after =
-            tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
-        let mut meld_groups_after = context.player.meld_tile_key_groups.clone();
-        let mut appended_open_flags = Vec::new();
-        match candidate.kind {
-            BotSelfKongKind::Concealed => {
-                meld_groups_after.push(vec![candidate.tile_key.clone(); 4]);
-                appended_open_flags.push(false);
-            }
-            BotSelfKongKind::Add => {
-                let meld_index = candidate.meld_index?;
-                if let Some(meld) = meld_groups_after.get_mut(meld_index) {
-                    *meld = vec![candidate.tile_key.clone(); 4];
-                }
-            }
-        }
-
-        let expected_score = engine.expected_score_after_forced_draw(
-            context,
-            &concealed_counts_after,
-            &meld_groups_after,
-            &appended_open_flags,
-            Some(candidate.tile_key.as_str()),
-            STAGE_ONE_DEPTH,
-        )?;
-        let kong_bonus = match candidate.kind {
-            BotSelfKongKind::Concealed => 220,
-            BotSelfKongKind::Add => 120,
-        };
-        let total_score = expected_score + kong_bonus;
-        let replace = best_kong
-            .as_ref()
-            .map(|(_, score): &(BotAction, i64)| total_score > *score)
-            .unwrap_or(true);
-        if replace {
-            best_kong = Some((
-                BotAction {
-                    seat_index: context.seat_index,
-                    action_type: "kong".to_string(),
-                    tile_ids: candidate.tile_ids.clone(),
-                },
-                total_score,
-            ));
-        }
+    pub(crate) fn kong_margin(&self) -> i64 {
+        self.profile.kong_margin
     }
 
-    if let Some((action, score)) = best_kong {
-        if score > baseline.score + engine.profile.kong_margin {
-            return Some(action);
-        }
+    pub(crate) fn claim_margin(&self) -> i64 {
+        self.profile.claim_margin
     }
-
-    Some(BotAction {
-        seat_index: context.seat_index,
-        action_type: "discard".to_string(),
-        tile_ids: vec![baseline.tile_id],
-    })
-}
-
-pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
-    let mut engine = SearchEngine::new(context);
-    let pass_score = engine.score_13_tile_hand(
-        context,
-        &context.player.concealed_tile_counts,
-        &context.player.meld_tile_key_groups,
-        &[],
-        STAGE_ONE_DEPTH,
-    );
-    let discard_tile_key = context.last_discard_tile_key.as_deref()?;
-
-    let mut best_claim = None;
-    for option in &context.claim_options {
-        let concealed_after =
-            simulated_tiles_after_removal(&context.player.concealed_tiles, &option.tile_ids);
-        let mut meld_groups_after = context.player.meld_tile_key_groups.clone();
-        let claim_meld = claim_meld_tile_keys(
-            &option.action_type,
-            discard_tile_key,
-            &option.tile_ids,
-            &context.player.concealed_tiles,
-        );
-        let appended_open_flags = vec![true];
-        meld_groups_after.push(claim_meld.clone());
-
-        let total_score = if option.action_type == "kong" {
-            let concealed_counts_after =
-                tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
-            engine.expected_score_after_forced_draw(
-                context,
-                &concealed_counts_after,
-                &meld_groups_after,
-                &appended_open_flags,
-                Some(discard_tile_key),
-                STAGE_ONE_DEPTH,
-            )? + 140
-        } else {
-            let concealed_counts_after =
-                tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
-            let plan = engine.best_discard_plan(
-                context,
-                &concealed_after,
-                &concealed_counts_after,
-                &meld_groups_after,
-                &appended_open_flags,
-                Some(discard_tile_key),
-                None,
-            )?;
-            let meld_open_flags =
-                meld_open_flags_for_state(context, &meld_groups_after, &appended_open_flags);
-            let signals = strategic_signals(
-                context,
-                &concealed_counts_after,
-                &meld_groups_after,
-                &meld_open_flags,
-            );
-            if context.enforce_minimum_eight_fan {
-                let should_skip = match option.action_type.as_str() {
-                    "chow" => signals.fan_estimate < 6,
-                    "pung" => {
-                        signals.fan_estimate < 4 && !meld_is_value_honor_set(context, &claim_meld)
-                    }
-                    _ => false,
-                };
-                if should_skip {
-                    continue;
-                }
-            }
-            let action_bonus =
-                claim_action_bonus(context, &option.action_type, &claim_meld, signals);
-            plan.score + action_bonus
-        };
-
-        let replace = best_claim
-            .as_ref()
-            .map(|(_, score): &(BotAction, i64)| total_score > *score)
-            .unwrap_or(true);
-        if replace {
-            best_claim = Some((
-                BotAction {
-                    seat_index: context.seat_index,
-                    action_type: option.action_type.clone(),
-                    tile_ids: option.tile_ids.clone(),
-                },
-                total_score,
-            ));
-        }
-    }
-
-    if let Some((action, score)) = best_claim {
-        if score > pass_score + engine.profile.claim_margin {
-            return Some(action);
-        }
-    }
-
-    Some(BotAction {
-        seat_index: context.seat_index,
-        action_type: "pass".to_string(),
-        tile_ids: vec![],
-    })
 }
 
 impl SearchEngine {
-    fn best_discard_plan(
+    pub(crate) fn best_discard_plan(
         &mut self,
         context: &BotContext,
         concealed_tiles: &[BotTileView],
@@ -806,7 +610,7 @@ impl SearchEngine {
         best
     }
 
-    fn score_13_tile_hand(
+    pub(crate) fn score_13_tile_hand(
         &mut self,
         context: &BotContext,
         concealed_counts: &TileCounts,
@@ -916,7 +720,7 @@ impl SearchEngine {
             + tenpai_bonus
     }
 
-    fn expected_score_after_forced_draw(
+    pub(crate) fn expected_score_after_forced_draw(
         &mut self,
         context: &BotContext,
         concealed_counts_before_draw: &TileCounts,
@@ -1285,10 +1089,6 @@ fn compact_melds(meld_tile_key_groups: &[Vec<String>], open_flags: &[bool]) -> V
         .collect()
 }
 
-fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
-    WIND_ORDER[(seat_index + 4 - dealer_seat) % 4].to_string()
-}
-
 fn tile_keys_from_counts(counts: &TileCounts) -> Vec<String> {
     let mut tile_keys = Vec::new();
     for (tile_index, count) in counts.iter().enumerate() {
@@ -1299,39 +1099,7 @@ fn tile_keys_from_counts(counts: &TileCounts) -> Vec<String> {
     tile_keys
 }
 
-fn player_tile_keys_from_parts(
-    concealed_tile_keys: &[String],
-    meld_tile_key_groups: &[Vec<String>],
-    incoming_tile: Option<&str>,
-) -> Vec<String> {
-    let meld_tile_count = meld_tile_key_groups
-        .iter()
-        .map(|meld| {
-            if meld.len() == 4 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
-                3
-            } else {
-                meld.len()
-            }
-        })
-        .sum::<usize>();
-    let mut tile_keys = Vec::with_capacity(
-        concealed_tile_keys.len() + meld_tile_count + usize::from(incoming_tile.is_some()),
-    );
-    tile_keys.extend(concealed_tile_keys.iter().cloned());
-    for meld in meld_tile_key_groups {
-        if meld.len() == 4 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
-            tile_keys.extend(meld.iter().take(3).cloned());
-        } else {
-            tile_keys.extend(meld.iter().cloned());
-        }
-    }
-    if let Some(tile_key) = incoming_tile {
-        tile_keys.push(tile_key.to_string());
-    }
-    tile_keys
-}
-
-fn meld_open_flags_for_state(
+pub(crate) fn meld_open_flags_for_state(
     context: &BotContext,
     meld_tile_key_groups: &[Vec<String>],
     appended_open_flags: &[bool],
@@ -1893,7 +1661,7 @@ fn preferred_discard_tile_id_for_key(
         .map(|tile| tile.tile_id.clone())
 }
 
-fn simulated_tiles_after_removal(
+pub(crate) fn simulated_tiles_after_removal(
     concealed_tiles: &[BotTileView],
     removed_tile_ids: &[String],
 ) -> Vec<BotTileView> {
@@ -1905,7 +1673,7 @@ fn simulated_tiles_after_removal(
         .collect()
 }
 
-fn claim_meld_tile_keys(
+pub(crate) fn claim_meld_tile_keys(
     action_type: &str,
     discard_tile_key: &str,
     tile_ids: &[String],
@@ -2114,7 +1882,7 @@ fn best_shanten_after_draw(
     best_shanten
 }
 
-fn strategic_signals(
+pub(crate) fn strategic_signals(
     context: &BotContext,
     concealed_counts: &TileCounts,
     meld_tile_key_groups: &[Vec<String>],
@@ -2345,7 +2113,7 @@ fn sequence_density_score(
     density
 }
 
-fn claim_action_bonus(
+pub(crate) fn claim_action_bonus(
     context: &BotContext,
     action_type: &str,
     claim_meld: &[String],
@@ -2378,7 +2146,7 @@ fn claim_action_bonus(
     bonus
 }
 
-fn meld_is_value_honor_set(context: &BotContext, claim_meld: &[String]) -> bool {
+pub(crate) fn meld_is_value_honor_set(context: &BotContext, claim_meld: &[String]) -> bool {
     if claim_meld.len() < 3 {
         return false;
     }
@@ -2565,52 +2333,6 @@ fn honor_value_score(context: &BotContext, concealed_counts: &TileCounts) -> i64
     score
 }
 
-fn tile_counts34<'a>(tile_keys: impl Iterator<Item = &'a str>) -> TileCounts {
-    let mut counts = [0_u8; TILE_KIND_COUNT];
-    for tile_key in tile_keys {
-        if let Some(tile_index) = tile_index(tile_key) {
-            counts[tile_index] = counts[tile_index].saturating_add(1);
-        }
-    }
-    counts
-}
-
-fn tile_index(tile_key: &str) -> Option<usize> {
-    match tile_key {
-        "east" => Some(27),
-        "south" => Some(28),
-        "west" => Some(29),
-        "north" => Some(30),
-        "red" => Some(31),
-        "green" => Some(32),
-        "white" => Some(33),
-        _ => {
-            let bytes = tile_key.as_bytes();
-            if bytes.len() != 2 {
-                return None;
-            }
-            let suit_offset = match bytes[0] {
-                b'w' => 0,
-                b't' => 9,
-                b'b' => 18,
-                _ => return None,
-            };
-            let rank = usize::from(bytes[1].checked_sub(b'0')?);
-            if !(1..=9).contains(&rank) {
-                return None;
-            }
-            Some(suit_offset + rank - 1)
-        }
-    }
-}
-
-fn tile_key_for_index(tile_index: usize) -> &'static str {
-    STANDARD_TILE_KEYS
-        .get(tile_index)
-        .copied()
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2640,6 +2362,8 @@ mod tests {
             claim_options: Vec::new(),
             last_discard_tile_key: None,
             add_kong_risk_tiles: HashSet::new(),
+            visible_effect_types: Vec::new(),
+            private_knowledge_tile_keys: Vec::new(),
         }
     }
 
@@ -2835,7 +2559,7 @@ mod tests {
         }];
         context.last_discard_tile_key = Some("w1".to_string());
 
-        let action = choose_claim_action(&context).expect("claim action");
+        let action = crate::bot::choose_claim_action(&context).expect("claim action");
         assert_eq!(action.action_type, "pass");
     }
 
@@ -2857,7 +2581,7 @@ mod tests {
         }];
         context.last_discard_tile_key = Some("red".to_string());
 
-        let action = choose_claim_action(&context).expect("claim action");
+        let action = crate::bot::choose_claim_action(&context).expect("claim action");
         assert_eq!(action.action_type, "pung");
     }
 

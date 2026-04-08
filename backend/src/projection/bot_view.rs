@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 
+use crate::core::state::RoomState;
 use crate::room_scoring::RoomScoringCache;
+use crate::rules::scoring::KongEntry as ScoringKongEntry;
+use crate::rules::skills::build_skill_projection;
 pub use crate::rules::standard::meld::{
     SelfKongCandidate as BotSelfKongCandidate, SelfKongKind as BotSelfKongKind,
     claim_tile_id_options,
 };
-use crate::scoring::KongEntry as ScoringKongEntry;
 
 pub type BotTileCounts = [u8; 34];
 
@@ -50,16 +52,20 @@ pub struct BotContextView {
     pub claim_options: Vec<BotClaimOption>,
     pub last_discard_tile_key: Option<String>,
     pub add_kong_risk_tiles: HashSet<String>,
+    pub visible_effect_types: Vec<String>,
+    pub private_knowledge_tile_keys: Vec<String>,
 }
 
 pub fn build_bot_context_view(
     cache: &RoomScoringCache,
+    state: &RoomState,
     seat_index: usize,
     claim_options: Vec<BotClaimOption>,
     self_kong_candidates: Vec<BotSelfKongCandidate>,
     add_kong_risk_tiles: HashSet<String>,
 ) -> Option<BotContextView> {
     let player = cache.player(seat_index)?;
+    let skill_projection = build_skill_projection(state, seat_index);
     Some(BotContextView {
         seat_index,
         seat_count: cache.seat_count,
@@ -92,6 +98,16 @@ pub fn build_bot_context_view(
         claim_options,
         last_discard_tile_key: cache.last_discard_tile_key.clone(),
         add_kong_risk_tiles,
+        visible_effect_types: skill_projection
+            .visible_effects
+            .iter()
+            .map(|effect| effect.effect_type.clone())
+            .collect(),
+        private_knowledge_tile_keys: skill_projection
+            .private_knowledge
+            .iter()
+            .flat_map(|knowledge| knowledge.tile_keys.clone())
+            .collect(),
     })
 }
 
@@ -121,8 +137,8 @@ mod tests {
         }
     }
 
-    fn sample_cache() -> RoomScoringCache {
-        let state = RoomState {
+    fn sample_state() -> RoomState {
+        RoomState {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
@@ -136,6 +152,7 @@ mod tests {
                 cumulative_scores: BTreeMap::from([(0, 12), (1, -12)]),
                 match_finished: false,
                 last_completed_round_id: None,
+                skill_trackers: serde_json::Value::Null,
             }),
             round_state: Some(RoundState {
                 round_id: "round-1".to_string(),
@@ -184,16 +201,16 @@ mod tests {
                 drawn_tile_id: Some("w4#0".to_string()),
             }),
             continue_action: None,
-        };
-
-        RoomScoringCache::from_state(&state)
+        }
     }
 
     #[test]
     fn builds_bot_context_from_scoring_cache() {
-        let cache = sample_cache();
+        let state = sample_state();
+        let cache = RoomScoringCache::from_state(&state);
         let context = build_bot_context_view(
             &cache,
+            &state,
             0,
             vec![BotClaimOption {
                 action_type: "pung".to_string(),
@@ -221,6 +238,8 @@ mod tests {
         );
         assert_eq!(context.restricted_discard_tile_key.as_deref(), Some("w3"));
         assert_eq!(context.drawn_tile_id.as_deref(), Some("w4#0"));
+        assert!(context.visible_effect_types.is_empty());
+        assert!(context.private_knowledge_tile_keys.is_empty());
         assert_eq!(
             context.add_kong_risk_tiles,
             HashSet::from(["w3".to_string()])
@@ -229,7 +248,8 @@ mod tests {
 
     #[test]
     fn derives_claim_tile_ids_from_cache() {
-        let cache = sample_cache();
+        let state = sample_state();
+        let cache = RoomScoringCache::from_state(&state);
         let chow_options = claim_tile_id_options(&cache, 0, "chow");
 
         assert_eq!(

@@ -16,6 +16,8 @@ pub struct MatchState {
     pub cumulative_scores: BTreeMap<Seat, i64>,
     pub match_finished: bool,
     pub last_completed_round_id: Option<RoundId>,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub skill_trackers: Value,
 }
 
 impl MatchState {
@@ -52,6 +54,7 @@ impl MatchState {
             last_completed_round_id: string_opt(value, "last_completed_round_id").or_else(|| {
                 i64_opt(value, "last_completed_round_id").map(|value| value.to_string())
             }),
+            skill_trackers: value.get("skill_trackers").cloned().unwrap_or(Value::Null),
         })
     }
 }

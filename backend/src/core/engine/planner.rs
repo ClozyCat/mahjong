@@ -884,6 +884,7 @@ mod tests {
                 cumulative_scores: BTreeMap::new(),
                 match_finished: false,
                 last_completed_round_id: None,
+                skill_trackers: serde_json::Value::Null,
             }),
             round_state: Some(round.clone()),
             pending_timeout: None,

@@ -86,7 +86,7 @@ impl PlayerRoundState {
             melds,
             flowers,
             discards,
-            skill_loadout: SkillLoadout::default(),
+            skill_loadout: SkillLoadout::from_legacy_value(value.get("skill_loadout"))?,
         })
     }
 }

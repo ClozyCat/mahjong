@@ -1,11 +1,23 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::core::error::EngineError;
 use crate::core::ids::{EffectId, Seat, SkillId, TileId, TileKey};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SkillLoadout {
     pub equipped: Vec<SkillInstance>,
+}
+
+impl SkillLoadout {
+    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Result<Self, EngineError> {
+        match value {
+            Some(value) if !value.is_null() => {
+                serde_json::from_value(value.clone()).map_err(Into::into)
+            }
+            _ => Ok(Self::default()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +35,17 @@ pub struct EffectState {
     pub ongoing: Vec<EffectInstance>,
     pub hidden_knowledge: Vec<KnowledgeEffect>,
     pub rule_overrides: Vec<RuleOverride>,
+}
+
+impl EffectState {
+    pub(crate) fn from_legacy_value(value: Option<&Value>) -> Result<Self, EngineError> {
+        match value {
+            Some(value) if !value.is_null() => {
+                serde_json::from_value(value.clone()).map_err(Into::into)
+            }
+            _ => Ok(Self::default()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

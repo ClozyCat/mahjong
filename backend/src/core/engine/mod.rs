@@ -74,6 +74,28 @@ pub fn parse_legacy_player_command(
             tile_ids: tile_ids.to_vec(),
         }),
         "pass" => Ok(PlayerAction::Pass),
+        _ if action_type.starts_with("skill:") => {
+            let skill_id = action_type.trim_start_matches("skill:");
+            if skill_id.is_empty() {
+                Err("invalid_action".to_string())
+            } else {
+                let target = tile_ids.iter().find_map(|value| {
+                    value
+                        .strip_prefix("seat:")
+                        .and_then(|seat| seat.parse::<usize>().ok())
+                });
+                let consumed_tile_ids = tile_ids
+                    .iter()
+                    .filter(|value| !value.starts_with("seat:"))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                Ok(PlayerAction::ActivateSkill {
+                    skill_id: skill_id.to_string(),
+                    target,
+                    tile_ids: consumed_tile_ids,
+                })
+            }
+        }
         _ => return None,
     };
 
@@ -188,6 +210,29 @@ mod tests {
         let command =
             parse_legacy_player_command(0, "discard", &[]).expect("discard should be recognized");
         assert_eq!(command, Err("select_tile_first".to_string()));
+    }
+
+    #[test]
+    fn parses_legacy_skill_command_with_optional_target() {
+        let command = parse_legacy_player_command(
+            1,
+            "skill:peek_opponent_tile",
+            &[String::from("seat:2"), String::from("w1#0")],
+        )
+        .expect("skill should be recognized")
+        .expect("skill should parse");
+
+        assert_eq!(
+            command,
+            GameCommand::PlayerAction {
+                actor: 1,
+                action: PlayerAction::ActivateSkill {
+                    skill_id: "peek_opponent_tile".to_string(),
+                    target: Some(2),
+                    tile_ids: vec!["w1#0".to_string()],
+                }
+            }
+        );
     }
 
     #[test]

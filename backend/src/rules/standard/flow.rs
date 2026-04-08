@@ -7,7 +7,7 @@ use crate::core::engine::planner::{
     plan_advance_opening_flowers, plan_flower_action, plan_round_start_payload,
 };
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
-use crate::core::state::MatchState;
+use crate::core::state::{MatchState, SkillLoadout};
 
 use super::runtime::{
     current_actor, is_last_live_tile_point, project_room_state, round_event_message,
@@ -44,6 +44,7 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         cumulative_scores,
         match_finished: false,
         last_completed_round_id: None,
+        skill_trackers: Value::Null,
     };
     let _ = apply_legacy_room_mutations(
         room,
@@ -187,13 +188,14 @@ fn start_round(
     enforce_minimum_eight_fan: bool,
     seed: u64,
 ) {
-    let (round_state, pending_timeout) = plan_round_start_payload(
+    let (mut round_state, pending_timeout) = plan_round_start_payload(
         dealer_seat,
         round_wind,
         round_id,
         enforce_minimum_eight_fan,
         seed,
     );
+    seed_round_skill_loadouts(room, &mut round_state);
     let round_state = serde_json::to_value(&round_state).unwrap_or(Value::Null);
     let pending_timeout = serde_json::to_value(&pending_timeout).unwrap_or(Value::Null);
     let _ = apply_legacy_room_mutations(
@@ -225,6 +227,41 @@ fn start_round(
             },
         ],
     );
+}
+
+fn seed_round_skill_loadouts(room: &Value, round_state: &mut crate::core::state::RoundState) {
+    for player in &mut round_state.players {
+        player.skill_loadout = skill_loadout_for_seat(room, player.seat);
+    }
+}
+
+fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
+    room.get("seats")
+        .and_then(Value::as_array)
+        .and_then(|seats| {
+            seats.iter().find(|entry| {
+                entry
+                    .get("seat_index")
+                    .and_then(Value::as_u64)
+                    .map(|value| value as usize)
+                    == Some(seat)
+            })
+        })
+        .and_then(|seat_state| {
+            SkillLoadout::from_legacy_value(seat_state.get("skill_loadout")).ok()
+        })
+        .filter(|loadout| !loadout.equipped.is_empty())
+        .or_else(|| {
+            room.get("round_state")
+                .and_then(|round| round.get("players"))
+                .and_then(Value::as_array)
+                .and_then(|players| players.get(seat))
+                .and_then(|player| {
+                    SkillLoadout::from_legacy_value(player.get("skill_loadout")).ok()
+                })
+                .filter(|loadout| !loadout.equipped.is_empty())
+        })
+        .unwrap_or_default()
 }
 
 fn current_continue_action_id(room: &Value) -> Option<&'static str> {

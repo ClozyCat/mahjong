@@ -181,6 +181,7 @@ fn choose_bot_active_turn_action_with_cache(
     cache: &RoomScoringCache,
     seat_index: usize,
 ) -> Option<BotAction> {
+    let state = project_room_state(room).ok()?;
     let self_kong_candidates = available_self_kongs_from_cache(cache, seat_index);
     let add_kong_risk_tiles = self_kong_candidates
         .iter()
@@ -192,6 +193,7 @@ fn choose_bot_active_turn_action_with_cache(
         .collect::<HashSet<_>>();
     let bot_context = build_bot_context_view(
         cache,
+        &state,
         seat_index,
         Vec::new(),
         self_kong_candidates,
@@ -205,6 +207,7 @@ fn choose_bot_claim_action_with_cache(
     cache: &RoomScoringCache,
     seat_index: usize,
 ) -> Option<BotAction> {
+    let state = project_room_state(room).ok()?;
     let pending_action = room
         .get("round_state")
         .and_then(|round| round.get("pending_action"))?;
@@ -227,7 +230,13 @@ fn choose_bot_claim_action_with_cache(
                 })
         })
         .collect::<Vec<_>>();
-    let bot_context =
-        build_bot_context_view(cache, seat_index, claim_options, Vec::new(), HashSet::new())?;
+    let bot_context = build_bot_context_view(
+        cache,
+        &state,
+        seat_index,
+        claim_options,
+        Vec::new(),
+        HashSet::new(),
+    )?;
     bot::choose_claim_action(&bot_context)
 }

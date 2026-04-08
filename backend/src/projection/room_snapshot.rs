@@ -6,6 +6,9 @@ use serde_json::{Value, json};
 use crate::core::ids::Seat;
 use crate::core::state::{PendingAction, RoomState};
 use crate::projection::SeatProjectionSupport;
+use crate::rules::skills::{
+    EffectInstance, KnowledgeEffect, build_skill_projection, skill_action_options,
+};
 
 #[derive(Debug, Clone, Serialize)]
 struct RoomSnapshotMessage {
@@ -47,6 +50,8 @@ struct PlayerRoundView {
     last_discard: Option<String>,
     pending_action: Option<PendingActionView>,
     score_state: ScoreStateView,
+    visible_effects: Vec<VisibleEffectView>,
+    private_knowledge: Vec<KnowledgeView>,
     players: Vec<PlayerSeatView>,
 }
 
@@ -76,6 +81,27 @@ struct ScoreStateView {
     current_round_delta_by_seat: BTreeMap<Seat, i64>,
     base_cumulative_scores: BTreeMap<Seat, i64>,
     projected_cumulative_scores: BTreeMap<Seat, i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VisibleEffectView {
+    effect_id: String,
+    effect_type: String,
+    owner: Seat,
+    target_seats: Vec<Seat>,
+    remaining_turns: Option<u8>,
+    stacks: u8,
+    source_skill: Option<String>,
+    payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct KnowledgeView {
+    target_seat: Option<Seat>,
+    tile_ids: Vec<String>,
+    tile_keys: Vec<String>,
+    source_skill: Option<String>,
+    description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -201,6 +227,7 @@ pub fn build_pending_action_view(
             if support.can_hu {
                 options.push("hu".to_string());
             }
+            options.extend(skill_action_options(state, local_seat));
             Some(PendingActionView::ActiveTurn {
                 seat_index: local_seat,
                 deadline_at,
@@ -282,6 +309,7 @@ fn private_round_state(
     support: &SeatProjectionSupport,
 ) -> Option<PlayerRoundView> {
     let round = state.round_state.as_ref()?;
+    let skill_projection = build_skill_projection(state, local_seat);
     let private_players = round
         .players
         .iter()
@@ -337,6 +365,8 @@ fn private_round_state(
             .map(|tile| tile.tile_key.clone()),
         pending_action: build_pending_action_view(state, local_seat, support),
         score_state: score_state_view(state),
+        visible_effects: visible_effects(skill_projection.visible_effects.as_slice()),
+        private_knowledge: private_knowledge(skill_projection.private_knowledge.as_slice()),
         players: private_players,
     })
 }
@@ -395,4 +425,33 @@ fn continue_action_snapshot(state: &RoomState) -> Option<ContinueActionView> {
             online_seats: continue_action.online_seats.clone(),
             auto_advance_deadline_at: continue_action.auto_advance_deadline_at.clone(),
         })
+}
+
+fn visible_effects(effects: &[EffectInstance]) -> Vec<VisibleEffectView> {
+    effects
+        .iter()
+        .map(|effect| VisibleEffectView {
+            effect_id: effect.effect_id.clone(),
+            effect_type: effect.effect_type.clone(),
+            owner: effect.owner,
+            target_seats: effect.target_seats.clone(),
+            remaining_turns: effect.remaining_turns,
+            stacks: effect.stacks,
+            source_skill: effect.source_skill.clone(),
+            payload: effect.payload.clone(),
+        })
+        .collect()
+}
+
+fn private_knowledge(knowledge: &[KnowledgeEffect]) -> Vec<KnowledgeView> {
+    knowledge
+        .iter()
+        .map(|knowledge| KnowledgeView {
+            target_seat: knowledge.target_seat,
+            tile_ids: knowledge.tile_ids.clone(),
+            tile_keys: knowledge.tile_keys.clone(),
+            source_skill: knowledge.source_skill.clone(),
+            description: knowledge.description.clone(),
+        })
+        .collect()
 }

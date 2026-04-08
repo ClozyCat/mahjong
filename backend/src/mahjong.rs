@@ -3,37 +3,40 @@ use crate::core::action::{GameCommand, PlayerAction};
 use crate::core::engine::{EngineContext, EngineOutput, parse_legacy_player_command};
 use crate::core::state::RoomState;
 use crate::projection::support::build_seat_projection_support;
-use crate::rules::standard::{
-    actions::{
-        apply_claim_window_action as standard_apply_claim_window_action,
-        apply_discard_action as standard_apply_discard_action,
-        apply_rob_kong_pass as standard_apply_rob_kong_pass,
-        can_resolve_discard_locally as standard_can_resolve_discard_locally,
-        claim_window_supported_locally as standard_claim_window_supported_locally,
-        rob_kong_window_supported_locally as standard_rob_kong_window_supported_locally,
-        try_handle_self_kong_action as standard_try_handle_self_kong_action,
-    },
-    automation::{
-        next_bot_action as standard_next_bot_action,
-        try_process_due_timeout as standard_try_process_due_timeout,
-    },
-    flow::{
-        apply_flower_action as standard_apply_flower_action,
-        apply_opening_flowers_pass as standard_apply_opening_flowers_pass,
-        process_due_continue_action as standard_process_due_continue_action,
-        reconcile_continue_action_state as standard_reconcile_continue_action_state,
-        record_continue_action as standard_record_continue_action,
-        start_match as standard_start_match,
-    },
-    runtime::{
-        current_actor as standard_current_actor,
-        pending_timeout_kind as standard_pending_timeout_kind,
-        project_room_state as standard_project_room_state,
-    },
-    win::{
-        apply_hu_settlement as standard_apply_hu_settlement,
-        compute_hu_settlement as standard_compute_hu_settlement,
-        hu_action_hint as standard_hu_action_hint,
+use crate::rules::{
+    skills,
+    standard::{
+        actions::{
+            apply_claim_window_action as standard_apply_claim_window_action,
+            apply_discard_action as standard_apply_discard_action,
+            apply_rob_kong_pass as standard_apply_rob_kong_pass,
+            can_resolve_discard_locally as standard_can_resolve_discard_locally,
+            claim_window_supported_locally as standard_claim_window_supported_locally,
+            rob_kong_window_supported_locally as standard_rob_kong_window_supported_locally,
+            try_handle_self_kong_action as standard_try_handle_self_kong_action,
+        },
+        automation::{
+            next_bot_action as standard_next_bot_action,
+            try_process_due_timeout as standard_try_process_due_timeout,
+        },
+        flow::{
+            apply_flower_action as standard_apply_flower_action,
+            apply_opening_flowers_pass as standard_apply_opening_flowers_pass,
+            process_due_continue_action as standard_process_due_continue_action,
+            reconcile_continue_action_state as standard_reconcile_continue_action_state,
+            record_continue_action as standard_record_continue_action,
+            start_match as standard_start_match,
+        },
+        runtime::{
+            current_actor as standard_current_actor,
+            pending_timeout_kind as standard_pending_timeout_kind,
+            project_room_state as standard_project_room_state,
+        },
+        win::{
+            apply_hu_settlement as standard_apply_hu_settlement,
+            compute_hu_settlement as standard_compute_hu_settlement,
+            hu_action_hint as standard_hu_action_hint,
+        },
     },
 };
 use chrono::{SecondsFormat, Utc};
@@ -187,13 +190,42 @@ fn try_handle_player_action_command(
             }
         }
         PlayerAction::Pass => {
+            let decline_hu_state = RoomState::from_legacy_value(room).ok();
+            let declined_hu = standard_hu_action_hint(room, seat_index).is_some();
             if claim_window_supported_locally(room) {
                 Some(
-                    apply_claim_window_action(room, seat_index, "pass", &[])
-                        .map(EngineOutput::from_emitted_messages),
+                    apply_claim_window_action(room, seat_index, "pass", &[]).and_then(
+                        |mut emitted_messages| {
+                            if declined_hu {
+                                if let Some(state) = decline_hu_state.as_ref() {
+                                    let events = skills::decline_hu_events(state, seat_index)?;
+                                    emitted_messages.extend(
+                                        skills::apply_passive_skill_events_to_legacy_room(
+                                            room, &events,
+                                        )?,
+                                    );
+                                }
+                            }
+                            Ok(EngineOutput::from_emitted_messages(emitted_messages))
+                        },
+                    ),
                 )
             } else if rob_kong_window_supported_locally(room) {
-                Some(apply_rob_kong_pass(room, seat_index).map(EngineOutput::from_emitted_messages))
+                Some(
+                    apply_rob_kong_pass(room, seat_index).and_then(|mut emitted_messages| {
+                        if declined_hu {
+                            if let Some(state) = decline_hu_state.as_ref() {
+                                let events = skills::decline_hu_events(state, seat_index)?;
+                                emitted_messages.extend(
+                                    skills::apply_passive_skill_events_to_legacy_room(
+                                        room, &events,
+                                    )?,
+                                );
+                            }
+                        }
+                        Ok(EngineOutput::from_emitted_messages(emitted_messages))
+                    }),
+                )
             } else if pending_timeout_kind(room) == Some("opening_flowers") {
                 Some(
                     apply_opening_flowers_pass(room, seat_index)
@@ -223,7 +255,25 @@ fn try_handle_player_action_command(
                 None
             }
         }
-        PlayerAction::ActivateSkill { .. } => Some(Err("unsupported_action".to_string())),
+        PlayerAction::ActivateSkill {
+            skill_id,
+            target,
+            tile_ids,
+        } => Some(
+            RoomState::from_legacy_value(room)
+                .map_err(|_| "invalid_action".to_string())
+                .and_then(|state| {
+                    let events =
+                        skills::activate_skill(&state, seat_index, &skill_id, target, &tile_ids)?;
+                    let emitted_messages = skills::apply_skill_events_to_legacy_room(
+                        room, seat_index, &skill_id, &events,
+                    )?;
+                    Ok(EngineOutput {
+                        events,
+                        emitted_messages,
+                    })
+                }),
+        ),
     }
 }
 
@@ -421,6 +471,10 @@ mod tests {
 
     fn wind(tile_key: &str, tile_id: &str) -> Value {
         tile(tile_key, tile_id, "wind")
+    }
+
+    fn dragon(tile_key: &str, tile_id: &str) -> Value {
+        tile(tile_key, tile_id, "dragon")
     }
 
     fn room_for_local_discard() -> Value {
@@ -646,6 +700,29 @@ mod tests {
                 "drawn_tile_id": "w3#discard"
             }
         })
+    }
+
+    fn room_for_local_self_hu() -> Value {
+        let mut room = room_for_local_discard();
+        room["round_state"]["players"][0]["concealed_tiles"] = json!([
+            dragon("red", "red#0"),
+            dragon("red", "red#1"),
+            dragon("red", "red#2"),
+            dragon("green", "green#0"),
+            dragon("green", "green#1"),
+            dragon("green", "green#2"),
+            dragon("white", "white#0"),
+            dragon("white", "white#1"),
+            dragon("white", "white#2"),
+            suit("w1", "w1#0"),
+            suit("w1", "w1#1"),
+            suit("w1", "w1#2"),
+            suit("w9", "w9#0"),
+            suit("w9", "w9#1")
+        ]);
+        room["pending_timeout"]["drawn_tile_id"] = json!("w9#1");
+        room["round_state"]["last_action_context"]["tile_id"] = json!("w9#1");
+        room
     }
 
     fn room_for_bot_active_turn() -> Value {
@@ -964,6 +1041,217 @@ mod tests {
             output.events.first(),
             Some(GameEvent::TileDiscarded { seat: 0, tile }) if tile.tile_id == "east#discard"
         ));
+    }
+
+    #[test]
+    fn action_prompt_exposes_equipped_skill_option() {
+        let mut room = room_for_local_discard();
+        room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "score_boost",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {"amount": 2}
+            }]
+        });
+
+        let prompt = action_prompt(&room, 0).expect("prompt should exist");
+        let options = prompt["payload"]["options"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            options
+                .iter()
+                .any(|option| option.as_str() == Some("skill:score_boost"))
+        );
+    }
+
+    #[test]
+    fn local_skill_action_persists_effects_and_consumes_charge() {
+        let mut room = room_for_local_discard();
+        room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "score_boost",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {"amount": 2}
+            }]
+        });
+
+        let result = try_handle_action(&mut room, 0, "skill:score_boost", &[])
+            .expect("skill should be handled locally")
+            .expect("skill should succeed");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["payload"]["event_type"], "skill_activated");
+        assert_eq!(
+            room["round_state"]["players"][0]["skill_loadout"]["equipped"][0]["charges"],
+            0
+        );
+        assert_eq!(
+            room["round_state"]["effect_state"]["rule_overrides"][0]["rule_key"],
+            "bonus_fan"
+        );
+        assert_eq!(
+            room["round_state"]["effect_state"]["ongoing"][0]["effect_type"],
+            "score_boost"
+        );
+    }
+
+    #[test]
+    fn score_boost_skill_increases_settlement_fan_total() {
+        let mut baseline_room = room_for_local_self_hu();
+        let _ = try_handle_action(&mut baseline_room, 0, "hu", &[])
+            .expect("baseline hu should be handled locally")
+            .expect("baseline hu should succeed");
+        let baseline_fan_total = baseline_room["round_state"]["settlement"]["fan_total"]
+            .as_i64()
+            .expect("baseline fan total");
+
+        let mut boosted_room = room_for_local_self_hu();
+        boosted_room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "score_boost",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {"amount": 2}
+            }]
+        });
+
+        let _ = try_handle_action(&mut boosted_room, 0, "skill:score_boost", &[])
+            .expect("skill should be handled locally")
+            .expect("skill should succeed");
+        let _ = try_handle_action(&mut boosted_room, 0, "hu", &[])
+            .expect("boosted hu should be handled locally")
+            .expect("boosted hu should succeed");
+
+        let boosted_fan_total = boosted_room["round_state"]["settlement"]["fan_total"]
+            .as_i64()
+            .expect("boosted fan total");
+        assert_eq!(boosted_fan_total, baseline_fan_total + 2);
+        assert!(
+            boosted_room["round_state"]["settlement"]["fan_keys"]
+                .as_array()
+                .is_some_and(|keys| keys
+                    .iter()
+                    .any(|key| key.as_str() == Some("skill_bonus:score_boost")))
+        );
+    }
+
+    #[test]
+    fn peek_skill_populates_private_knowledge_in_snapshot() {
+        let mut room = room_for_local_discard();
+        room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "peek_opponent_tile",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {}
+            }]
+        });
+
+        let _ = try_handle_action(
+            &mut room,
+            0,
+            "skill:peek_opponent_tile",
+            &[String::from("seat:1")],
+        )
+        .expect("peek skill should be handled locally")
+        .expect("peek skill should succeed");
+
+        let snapshot = room_snapshot(&room, 0);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["visible_effects"][0]["effect_type"],
+            "peek_opponent_tile"
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["private_knowledge"][0]["target_seat"],
+            1
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["private_knowledge"][0]["tile_keys"][0],
+            "w1"
+        );
+    }
+
+    #[test]
+    fn pass_on_hu_window_triggers_decline_hu_skill_effect() {
+        let mut room = room_for_local_add_kong_with_robber();
+        room["round_state"]["players"][1]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "yu_qin_gu_zong",
+                "owner": 1,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {}
+            }]
+        });
+
+        let _ = try_handle_action(&mut room, 0, "kong", &[String::from("w3#add")])
+            .expect("add kong should be handled locally")
+            .expect("add kong should open rob kong window");
+
+        let _ = try_handle_action(&mut room, 1, "pass", &[])
+            .expect("rob kong pass should be handled locally")
+            .expect("pass should succeed");
+
+        assert_eq!(
+            room["round_state"]["effect_state"]["ongoing"][0]["effect_type"],
+            "yu_qin_gu_zong_window"
+        );
+        assert_eq!(
+            room["round_state"]["effect_state"]["ongoing"][0]["owner"],
+            1
+        );
+    }
+
+    #[test]
+    fn zou_wei_shang_ji_forces_draw_and_registers_next_round_penalty() {
+        let mut room = room_for_local_discard();
+        room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "zou_wei_shang_ji",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {}
+            }]
+        });
+
+        let result = try_handle_action(&mut room, 0, "skill:zou_wei_shang_ji", &[])
+            .expect("skill should be handled locally")
+            .expect("skill should succeed");
+
+        assert!(
+            result
+                .iter()
+                .any(|message| message["payload"]["event_type"] == "round_drawn")
+        );
+        assert!(
+            result
+                .iter()
+                .any(|message| message["payload"]["event_type"] == "skill_force_draw")
+        );
+        assert_eq!(room["phase"], "settlement");
+        assert_eq!(
+            room["round_state"]["settlement"]["draw_type"],
+            "skill_forced"
+        );
+        assert_eq!(
+            room["match_state"]["skill_trackers"]["zou_wei_shang_ji"]["pending_win_penalty"]["0"],
+            2
+        );
     }
 
     #[test]
@@ -1528,6 +1816,29 @@ mod tests {
         assert_eq!(
             room["continue_action_auto_advance_deadline_at"],
             Value::Null
+        );
+    }
+
+    #[test]
+    fn local_start_next_round_preserves_skill_loadout_from_previous_round() {
+        let mut room = room_for_local_continue_action();
+        room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "sheng_dong_ji_xi",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "config": {}
+            }]
+        });
+
+        record_continue_action(&mut room, 0, "start_next_round")
+            .expect("continue action should succeed");
+
+        assert_eq!(
+            room["round_state"]["players"][0]["skill_loadout"]["equipped"][0]["skill_id"],
+            "sheng_dong_ji_xi"
         );
     }
 

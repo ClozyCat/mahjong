@@ -94,7 +94,7 @@ impl RoundState {
             rule_state: RuleRuntimeState {
                 enforce_minimum_eight_fan: bool_or(value, "enforce_minimum_eight_fan", true),
             },
-            effect_state: EffectState::default(),
+            effect_state: EffectState::from_legacy_value(value.get("effect_state"))?,
             restricted_discard_tile_key: string_opt(value, "restricted_discard_tile_key"),
         })
     }

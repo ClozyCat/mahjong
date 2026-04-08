@@ -4,11 +4,15 @@ use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
 use crate::core::state::PendingAction;
 use crate::room_scoring::RoomScoringCache;
-use crate::scoring::{
+use crate::rules::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
     KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
+};
+use crate::rules::skills::{
+    ScoreHookRequest, apply_after_scoring_hooks, apply_before_scoring_hooks,
+    sync_match_skill_trackers_after_settlement,
 };
 
 use super::runtime::{current_actor, project_room_state, round_event_message};
@@ -23,6 +27,11 @@ struct PreparedWinEvaluation {
     meld_open_flags: Vec<bool>,
     decompositions: Vec<ScoringDecomposition>,
     kong_entries: Vec<ScoringKongEntry>,
+}
+
+struct EvaluatedWinResult {
+    fan_result: crate::rules::scoring::FanResult,
+    required_minimum_fan_total: i64,
 }
 
 pub fn compute_hu_settlement(
@@ -75,7 +84,8 @@ pub fn compute_hu_settlement(
             .map(|tile| tile.tile_key.as_str())
     };
 
-    let fan_result = fan_result_for_win(room, winner_seat, incoming_tile, discarder_seat)?;
+    let evaluated = fan_result_for_win(room, winner_seat, incoming_tile, discarder_seat)?;
+    let fan_result = &evaluated.fan_result;
     let flower_count = round
         .players
         .get(winner_seat)
@@ -88,7 +98,7 @@ pub fn compute_hu_settlement(
         "win_type": hu_context,
         "winner_seat": winner_seat,
         "discarder_seat": discarder_seat,
-        "display_win_label": if !enforce_minimum_eight_fan && fan_result.fan_total < 8 { Value::String("灞佸拰".to_string()) } else { Value::Null },
+        "display_win_label": if !enforce_minimum_eight_fan && fan_result.fan_total < evaluated.required_minimum_fan_total { Value::String("灞佸拰".to_string()) } else { Value::Null },
         "fan_total": fan_result.fan_total,
         "fan_keys": fan_result.fan_keys,
         "fan_breakdown": Value::Array(
@@ -155,6 +165,7 @@ pub fn apply_hu_settlement(
         mutations.extend(plan_settlement_to_match(&state, &settlement));
     }
     apply_legacy_room_mutations(room, &mutations)?;
+    sync_match_skill_trackers_after_settlement(room);
 
     let first_event = if hu_context == "self_draw" {
         round_event_message(
@@ -250,19 +261,11 @@ pub fn can_declare_hu_with_cache(
         return false;
     }
 
-    if let Ok(fan_result) =
+    if let Ok(evaluated) =
         fan_result_for_win_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
     {
-        let enforce_minimum_eight_fan = room
-            .get("round_state")
-            .and_then(|round| round.get("enforce_minimum_eight_fan"))
-            .and_then(Value::as_bool)
-            .or_else(|| {
-                room.get("enforce_minimum_eight_fan")
-                    .and_then(Value::as_bool)
-            })
-            .unwrap_or(true);
-        return !enforce_minimum_eight_fan || fan_result.minimum_qualifying_fan_total >= 8;
+        return evaluated.fan_result.minimum_qualifying_fan_total
+            >= evaluated.required_minimum_fan_total;
     }
     false
 }
@@ -287,7 +290,7 @@ fn fan_result_for_win(
     winner_seat: usize,
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
-) -> Result<crate::scoring::FanResult, String> {
+) -> Result<EvaluatedWinResult, String> {
     let cache = RoomScoringCache::from_room(room);
     fan_result_for_win_with_cache(room, &cache, winner_seat, incoming_tile, discarder_seat)
 }
@@ -298,7 +301,8 @@ fn fan_result_for_win_with_cache(
     winner_seat: usize,
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
-) -> Result<crate::scoring::FanResult, String> {
+) -> Result<EvaluatedWinResult, String> {
+    let state = project_room_state(room)?;
     let PreparedWinEvaluation {
         concealed_tile_keys,
         meld_tile_key_groups,
@@ -327,26 +331,45 @@ fn fan_result_for_win_with_cache(
     let player_tile_keys =
         player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
 
-    Ok(scoring_evaluate_fans(ScoringEvaluationInput {
-        win_type,
-        winner_seat: Some(winner_seat),
-        discarder_seat,
-        flower_count: cache
-            .player(winner_seat)
-            .map(|player| player.flower_count)
-            .unwrap_or(0),
-        seat_count: cache.seat_count,
-        features,
-        timing: timing_features_for_win(room, incoming_tile.is_none()),
-        kong_entries,
-        tile_keys: player_tile_keys,
-        visible_tile_keys: cache.visible_tile_keys.clone(),
-        concealed_tile_keys,
-        meld_tile_key_groups,
-        open_meld_tile_key_groups,
-        incoming_tile: incoming_tile.map(ToString::to_string),
-        decompositions,
-    }))
+    let enforce_minimum_eight_fan = room
+        .get("round_state")
+        .and_then(|round| round.get("enforce_minimum_eight_fan"))
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            room.get("enforce_minimum_eight_fan")
+                .and_then(Value::as_bool)
+        })
+        .unwrap_or(true);
+    let mut request = ScoreHookRequest {
+        evaluation: ScoringEvaluationInput {
+            win_type: win_type.clone(),
+            winner_seat: Some(winner_seat),
+            discarder_seat,
+            flower_count: cache
+                .player(winner_seat)
+                .map(|player| player.flower_count)
+                .unwrap_or(0),
+            seat_count: cache.seat_count,
+            features,
+            timing: timing_features_for_win(room, incoming_tile.is_none()),
+            kong_entries,
+            tile_keys: player_tile_keys,
+            visible_tile_keys: cache.visible_tile_keys.clone(),
+            concealed_tile_keys,
+            meld_tile_key_groups,
+            open_meld_tile_key_groups,
+            incoming_tile: incoming_tile.map(ToString::to_string),
+            decompositions,
+        },
+        required_minimum_fan_total: if enforce_minimum_eight_fan { 8 } else { 0 },
+    };
+    apply_before_scoring_hooks(&state, &mut request)?;
+    let mut result = scoring_evaluate_fans(request.evaluation.clone());
+    apply_after_scoring_hooks(&state, &request, &mut result)?;
+    Ok(EvaluatedWinResult {
+        fan_result: result,
+        required_minimum_fan_total: request.required_minimum_fan_total,
+    })
 }
 
 fn prepare_win_evaluation(

@@ -3,3 +3,4 @@ output/
 backend/target/
 backend/__pycache__/
 backend/*.log
+.omx/

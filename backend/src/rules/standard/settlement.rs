@@ -2,6 +2,9 @@ use serde_json::{Map, Value, json};
 
 use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
+use crate::rules::skills::{
+    apply_draw_settlement_hooks, sync_match_skill_trackers_after_settlement,
+};
 
 use super::runtime::{project_room_state, round_event_message};
 
@@ -15,7 +18,7 @@ pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
         .map(|players| players.len())
         .unwrap_or(MAX_SEATS);
     let kong_delta = kong_delta_by_seat_from_room(room);
-    let settlement = json!({
+    let mut settlement = json!({
         "provisional": true,
         "win_type": "draw",
         "winner_seat": Value::Null,
@@ -39,6 +42,9 @@ pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
             .cloned()
             .unwrap_or_else(|| Value::Array(vec![])),
     });
+    if let Ok(state) = project_room_state(room) {
+        let _ = apply_draw_settlement_hooks(&state, &mut settlement);
+    }
     let mut mutations = vec![
         LegacyRoomMutation::SetRoomField {
             key: "phase".to_string(),
@@ -65,6 +71,7 @@ pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
         mutations.extend(plan_settlement_to_match(&state, &settlement));
     }
     let _ = apply_legacy_room_mutations(room, &mutations);
+    sync_match_skill_trackers_after_settlement(room);
     apply_settlement_to_match(room);
     vec![round_event_message(
         "round_drawn",
