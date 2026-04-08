@@ -12,6 +12,17 @@ import {
 } from './lib/kongSelection';
 import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
 import {
+  closeSkillActivation,
+  confirmSkillActivation,
+  createInitialSkillRuntimeState,
+  createSkillEnhancedBattleViewModel,
+  declineCurrentSkillOffer,
+  openSkillActivation,
+  selectSkillForCurrentCycle,
+  syncSkillRuntimeWithSession,
+  updateSkillActivationSelection,
+} from './lib/skillSystem';
+import {
   buildWebSocketUrl,
   createAdjustBotsMessage,
   createActionRequestMessage,
@@ -206,9 +217,14 @@ export default function App() {
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
   const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
+  const [skillRuntime, setSkillRuntime] = useState(createInitialSkillRuntimeState);
 
   useEffect(() => {
     sessionRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    setSkillRuntime((currentRuntime) => syncSkillRuntimeWithSession(currentRuntime, state));
   }, [state]);
 
   useEffect(() => {
@@ -592,6 +608,11 @@ export default function App() {
   }
 
   function handleAction(actionId: BattleActionId) {
+    if (actionId === 'activate_skill') {
+      setSkillRuntime((currentRuntime) => openSkillActivation(currentRuntime, state));
+      return;
+    }
+
     if (actionId === 'ready') {
       const localSeat = state.roomSnapshot?.payload.local_seat;
       const localSeatState =
@@ -747,6 +768,26 @@ export default function App() {
   const viewModel = createMatchViewModel(state, {
     showLocalTurnKongPrompt: hasLocalTurnKongPrompt,
   });
+  const skillEnhancedViewModel = createSkillEnhancedBattleViewModel(viewModel, state, skillRuntime);
+
+  useEffect(() => {
+    const skillSelection = skillEnhancedViewModel.skillSelection;
+    if (!skillSelection) {
+      return undefined;
+    }
+
+    const remainingMs = new Date(skillSelection.deadlineAt).getTime() - Date.now();
+    if (remainingMs <= 0) {
+      setSkillRuntime((currentRuntime) => declineCurrentSkillOffer(currentRuntime, state));
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSkillRuntime((currentRuntime) => declineCurrentSkillOffer(currentRuntime, state));
+    }, remainingMs);
+
+    return () => window.clearTimeout(timer);
+  }, [skillEnhancedViewModel.skillSelection?.cycleKey, skillEnhancedViewModel.skillSelection?.deadlineAt, state]);
 
   if (!state.roomSnapshot) {
     return (
@@ -771,7 +812,7 @@ export default function App() {
 
   return (
     <BattleScreen
-      viewModel={viewModel}
+      viewModel={skillEnhancedViewModel}
       themeId={themeId}
       themeLabel={getThemeLabel(themeId)}
       onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
@@ -780,6 +821,31 @@ export default function App() {
       onClaimCandidateSelect={handleClaimCandidateSelect}
       onClaimCandidateActivate={handleClaimCandidateActivate}
       onAction={handleAction}
+      onSkillSelect={(skillId) => setSkillRuntime((currentRuntime) => selectSkillForCurrentCycle(currentRuntime, state, skillId))}
+      onSkillDecline={() => setSkillRuntime((currentRuntime) => declineCurrentSkillOffer(currentRuntime, state))}
+      onCloseSkillActivation={() => setSkillRuntime((currentRuntime) => closeSkillActivation(currentRuntime))}
+      onConfirmSkillActivation={() => setSkillRuntime((currentRuntime) => confirmSkillActivation(currentRuntime, state))}
+      onSkillActivationTargetSelect={(seatIndex) =>
+        setSkillRuntime((currentRuntime) =>
+          updateSkillActivationSelection(currentRuntime, {
+            selectedTargetSeat: seatIndex,
+          }),
+        )
+      }
+      onSkillActivationTileSelect={(tileId) =>
+        setSkillRuntime((currentRuntime) =>
+          updateSkillActivationSelection(currentRuntime, {
+            selectedTileId: tileId,
+          }),
+        )
+      }
+      onSkillActivationMeldSelect={(meldIndex) =>
+        setSkillRuntime((currentRuntime) =>
+          updateSkillActivationSelection(currentRuntime, {
+            selectedMeldIndex: meldIndex,
+          }),
+        )
+      }
       onCopyTableCode={handleCopyTableCode}
       onLeaveTable={handleLeaveTable}
       onAddBot={() => handleAdjustBots(1)}

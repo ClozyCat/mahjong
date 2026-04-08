@@ -17,6 +17,8 @@ export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecti
 export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
 export type QuickChatEmoji = string;
+export type SkillRarity = 'common' | 'rare' | 'epic';
+export type SkillInteractionKind = 'confirm' | 'preview_wall' | 'select_target' | 'select_hand_tile' | 'select_meld';
 
 export interface HealthResponse {
   status: string;
@@ -308,6 +310,7 @@ export type BattleActionId =
   | 'start_match'
   | 'start_next_round'
   | 'restart_match'
+  | 'activate_skill'
   | BackendActionType;
 
 export interface BattleActionView {
@@ -315,6 +318,23 @@ export interface BattleActionView {
   label: string;
   enabled: boolean;
   emphasis: 'high' | 'medium' | 'low';
+}
+
+export interface PlayerSkillView {
+  skillId: string;
+  name: string;
+  rarity: SkillRarity;
+  rarityLabel: string;
+  tone: 'jade' | 'azure' | 'violet';
+  type: 'active' | 'passive';
+  typeLabel: string;
+  summary: string;
+  detail: string;
+  interactionHint?: string | null;
+  tags: string[];
+  cycleLabel: string;
+  remainingRounds: number;
+  remainingActivationsThisRound: number;
 }
 
 export interface PlayerView {
@@ -337,6 +357,7 @@ export interface PlayerView {
   melds: string[][];
   flowers: string[];
   statusText?: string;
+  skill?: PlayerSkillView | null;
 }
 
 export interface WaitingControls {
@@ -458,6 +479,59 @@ export interface QuickChatEventView {
   text: string;
 }
 
+export interface SkillChoiceView extends PlayerSkillView {
+  cycleKey: string;
+}
+
+export interface SkillSelectionView {
+  cycleKey: string;
+  cycleLabel: string;
+  deadlineAt: string;
+  title: string;
+  detail: string;
+  options: SkillChoiceView[];
+}
+
+export interface SkillActivationChoiceView {
+  id: string;
+  label: string;
+  description?: string;
+  selected: boolean;
+}
+
+export interface SkillActivationTileChoiceView {
+  tileId: string;
+  code: string;
+  label: string;
+  selected: boolean;
+}
+
+export interface SkillActivationMeldChoiceView {
+  index: number;
+  label: string;
+  tiles: string[];
+  selected: boolean;
+}
+
+export interface SkillActivationPreviewTileView {
+  key: string;
+  revealedLabel: string;
+  hiddenLabel: string;
+}
+
+export interface SkillActivationView {
+  skill: PlayerSkillView;
+  kind: SkillInteractionKind;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  canConfirm: boolean;
+  targetChoices?: SkillActivationChoiceView[];
+  handChoices?: SkillActivationTileChoiceView[];
+  meldChoices?: SkillActivationMeldChoiceView[];
+  previewTiles?: SkillActivationPreviewTileView[];
+}
+
 export interface BattleViewModel {
   roomMode: TableMode;
   mode: MatchPhase;
@@ -490,5 +564,7 @@ export interface BattleViewModel {
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
+  skillSelection?: SkillSelectionView | null;
+  skillActivation?: SkillActivationView | null;
   toasts: ToastMessage[];
 }

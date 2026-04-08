@@ -70,12 +70,16 @@ export function BottomActionDock({
         return true;
       }
 
+      if (action.id === 'activate_skill') {
+        return true;
+      }
+
       return promptCue.actionIds.includes(action.id as BackendActionType);
     })
     .sort(
       (left, right) =>
-        (ACTION_PRIORITY[left.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER) -
-        (ACTION_PRIORITY[right.id as BackendActionType] ?? Number.MAX_SAFE_INTEGER),
+        (ACTION_PRIORITY[left.id] ?? Number.MAX_SAFE_INTEGER) -
+        (ACTION_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER),
     );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
   const shouldShowCountdown = Boolean(promptCue) && remainingSeconds !== null;
@@ -318,14 +322,15 @@ export function BottomActionDock({
 
 const WAITING_HAND_PLACEHOLDER_COUNT = 13;
 
-const ACTION_PRIORITY: Partial<Record<BackendActionType, number>> = {
+const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {
   hu: 0,
   kong: 1,
   pung: 2,
   chow: 3,
-  flower: 4,
-  discard: 5,
-  pass: 6,
+  activate_skill: 4,
+  flower: 5,
+  discard: 6,
+  pass: 7,
 };
 
 function isResponsePrompt(promptCue: BattlePromptView | null) {
@@ -350,6 +355,7 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     kong: 'action-dock__action--themed action-dock__action--themed-kong',
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
+    activate_skill: 'action-dock__action--skill-bloom',
   };
 
   return lookup[actionId] ?? '';

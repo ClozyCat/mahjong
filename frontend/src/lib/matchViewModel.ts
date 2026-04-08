@@ -57,6 +57,7 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   start_match: '开始对局',
   start_next_round: '下一局',
   restart_match: '再来一局',
+  activate_skill: '发动技能',
   discard: '出牌',
   flower: '补花',
   kong: '杠',

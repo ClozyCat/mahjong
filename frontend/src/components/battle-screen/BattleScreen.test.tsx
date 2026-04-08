@@ -230,6 +230,112 @@ describe('BattleScreen', () => {
     expect(screen.queryByLabelText('牌桌侧边面板')).toBeNull();
   });
 
+  it('renders the skill selection overlay and forwards choice callbacks', async () => {
+    const user = userEvent.setup();
+    const onSkillSelect = vi.fn();
+    const onSkillDecline = vi.fn();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        skillSelection: {
+          cycleKey: 'east-1',
+          cycleLabel: '东1~东2局',
+          deadlineAt: '2099-03-30T12:10:40+08:00',
+          title: '东1~东2局 · 技能签启',
+          detail: '每种技能持续两局；主动技能每局仅可发动一次。',
+          options: [
+            {
+              cycleKey: 'east-1',
+              skillId: '07',
+              name: '无中生有',
+              rarity: 'rare',
+              rarityLabel: '稀有',
+              tone: 'azure',
+              type: 'active',
+              typeLabel: '主动技能',
+              summary: '选择一张手牌发动置换。',
+              detail: '稀有效果：成功+5 / 失败-3',
+              interactionHint: '发动时从当前手牌中点选一张。',
+              tags: ['功能', '手牌'],
+              cycleLabel: '东1~东2局',
+              remainingRounds: 2,
+              remainingActivationsThisRound: 1,
+            },
+            {
+              cycleKey: 'east-1',
+              skillId: '14',
+              name: '借尸还魂',
+              rarity: 'common',
+              rarityLabel: '普通',
+              tone: 'jade',
+              type: 'passive',
+              typeLabel: '被动技能',
+              summary: '胡熟张加分；胡绝对生张扣分。',
+              detail: '普通效果：+2 / -1',
+              interactionHint: null,
+              tags: ['熟张', '读牌'],
+              cycleLabel: '东1~东2局',
+              remainingRounds: 2,
+              remainingActivationsThisRound: 0,
+            },
+          ],
+        },
+      }),
+      {
+        onSkillSelect,
+        onSkillDecline,
+      },
+    );
+
+    expect(screen.getByRole('dialog', { name: '东1~东2局 · 技能签启' })).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: '选择此技能' })[0]);
+    await user.click(screen.getByRole('button', { name: '不需要技能' }));
+
+    expect(onSkillSelect).toHaveBeenCalledWith('07');
+    expect(onSkillDecline).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the local player skill tooltip after hovering the info bar for half a second', async () => {
+    vi.useFakeTimers();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        players: createBattleViewModel().players.map((player) =>
+          player.isLocal
+            ? {
+                ...player,
+                skill: {
+                  skillId: '08',
+                  name: '暗度陈仓',
+                  rarity: 'rare',
+                  rarityLabel: '稀有',
+                  tone: 'azure',
+                  type: 'active',
+                  typeLabel: '主动技能',
+                  summary: '在自己回合指定一名对手，申请侦察其当前手牌情报。',
+                  detail: '稀有效果：侦察 / 扣3',
+                  interactionHint: '发动时从其他三家中选择一名作为侦察目标。',
+                  tags: ['信息', '目标'],
+                  cycleLabel: '东1~东2局',
+                  remainingRounds: 2,
+                  remainingActivationsThisRound: 1,
+                },
+              }
+            : player,
+        ),
+      }),
+    );
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: '打开Player A的快捷表情' }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByText('暗度陈仓')).toBeInTheDocument();
+    expect(screen.getByText('稀有效果：侦察 / 扣3')).toBeInTheDocument();
+  });
+
   it('shows settlement breakdown in resolving state', () => {
     renderBattleScreen(
       createBattleViewModel({

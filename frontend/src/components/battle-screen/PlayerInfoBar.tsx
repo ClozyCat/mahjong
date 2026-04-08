@@ -6,9 +6,10 @@ export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
 interface PlayerInfoBarProps {
   player: TableStagePlayer;
   className?: string;
+  showSkillTooltip?: boolean;
 }
 
-export function PlayerInfoBar({ player, className = '' }: PlayerInfoBarProps) {
+export function PlayerInfoBar({ player, className = '', showSkillTooltip = false }: PlayerInfoBarProps) {
   const windLabel = player.wind ? (WIND_LABELS[player.wind] ?? player.wind) : null;
   const presenceLabel =
     player.seatType === 'bot'
@@ -38,6 +39,24 @@ export function PlayerInfoBar({ player, className = '' }: PlayerInfoBarProps) {
       <strong className="table-stage__player-info-name">{player.name}</strong>
       <span className="table-stage__player-info-meta">{metaText}</span>
       <span className="table-stage__player-info-detail">{detailText}</span>
+      {showSkillTooltip && player.skill ? (
+        <div className={`table-stage__skill-tooltip table-stage__skill-tooltip--${player.skill.tone}`.trim()} role="tooltip">
+          <div className="table-stage__skill-tooltip-header">
+            <span className="table-stage__skill-tooltip-rarity">{player.skill.rarityLabel}</span>
+            <span className="table-stage__skill-tooltip-type">{player.skill.typeLabel}</span>
+          </div>
+          <strong className="table-stage__skill-tooltip-name">{player.skill.name}</strong>
+          <p className="table-stage__skill-tooltip-summary">{player.skill.summary}</p>
+          <p className="table-stage__skill-tooltip-detail">{player.skill.detail}</p>
+          <div className="table-stage__skill-tooltip-meta">
+            <span>剩余 {player.skill.remainingRounds} 局</span>
+            {player.skill.type === 'active' ? <span>本局剩余 {player.skill.remainingActivationsThisRound} 次</span> : null}
+          </div>
+          {player.skill.interactionHint ? (
+            <p className="table-stage__skill-tooltip-hint">{player.skill.interactionHint}</p>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

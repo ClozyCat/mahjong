@@ -6,6 +6,8 @@ import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
+import { SkillActivationDialog } from './SkillActivationDialog';
+import { SkillSelectionOverlay } from './SkillSelectionOverlay';
 import { TableStage } from './TableStage';
 
 interface BattleScreenProps {
@@ -18,6 +20,13 @@ interface BattleScreenProps {
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
   onClaimCandidateActivate: (actionId: ClaimActionId, tileIds: string[]) => void;
   onAction: (actionId: BattleActionId) => void;
+  onSkillSelect?: (skillId: string) => void;
+  onSkillDecline?: () => void;
+  onCloseSkillActivation?: () => void;
+  onConfirmSkillActivation?: () => void;
+  onSkillActivationTargetSelect?: (seatIndex: number) => void;
+  onSkillActivationTileSelect?: (tileId: string) => void;
+  onSkillActivationMeldSelect?: (meldIndex: number) => void;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
   onAddBot?: () => void;
@@ -45,6 +54,13 @@ export function BattleScreen({
   onClaimCandidateSelect,
   onClaimCandidateActivate,
   onAction,
+  onSkillSelect,
+  onSkillDecline,
+  onCloseSkillActivation,
+  onConfirmSkillActivation,
+  onSkillActivationTargetSelect,
+  onSkillActivationTileSelect,
+  onSkillActivationMeldSelect,
   onCopyTableCode,
   onLeaveTable,
   onAddBot,
@@ -310,6 +326,24 @@ export function BattleScreen({
             onLeaveTable={onLeaveTable}
           />
           {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}
+          {viewModel.skillSelection && onSkillSelect && onSkillDecline ? (
+            <SkillSelectionOverlay selection={viewModel.skillSelection} onSelect={onSkillSelect} onDecline={onSkillDecline} />
+          ) : null}
+          {viewModel.skillActivation &&
+          onCloseSkillActivation &&
+          onConfirmSkillActivation &&
+          onSkillActivationTargetSelect &&
+          onSkillActivationTileSelect &&
+          onSkillActivationMeldSelect ? (
+            <SkillActivationDialog
+              activation={viewModel.skillActivation}
+              onClose={onCloseSkillActivation}
+              onConfirm={onConfirmSkillActivation}
+              onTargetSelect={onSkillActivationTargetSelect}
+              onTileSelect={onSkillActivationTileSelect}
+              onMeldSelect={onSkillActivationMeldSelect}
+            />
+          ) : null}
         </div>
       </div>
       <BottomActionDock

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import type { ThemeId } from '../../lib/themes';
+import { PLAYER_SKILL_TOOLTIP_DELAY_MS } from '../../lib/skillSystem';
 import type {
   ActionEffectView,
   BattleActionView,
@@ -112,11 +113,13 @@ export function TableStage({
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const [openQuickChatSeat, setOpenQuickChatSeat] = useState<Seat | null>(null);
+  const [openSkillTooltipSeat, setOpenSkillTooltipSeat] = useState<Seat | null>(null);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const activeActionCalloutTimerRef = useRef<number | null>(null);
   const exitingActionCalloutTimerRef = useRef<number | null>(null);
+  const skillTooltipTimerRef = useRef<number | null>(null);
   const trackedSpotlightKeyRef = useRef<string | null>(null);
   const consumedActionCalloutKeyRef = useRef<string | null>(null);
   const consumedQuickChatKeyRef = useRef<string | null>(quickChatEvent?.key ?? null);
@@ -153,6 +156,9 @@ export function TableStage({
       if (exitingActionCalloutTimerRef.current !== null) {
         window.clearTimeout(exitingActionCalloutTimerRef.current);
       }
+      if (skillTooltipTimerRef.current !== null) {
+        window.clearTimeout(skillTooltipTimerRef.current);
+      }
       barrageRemovalTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       barrageRemovalTimersRef.current.clear();
     };
@@ -180,6 +186,12 @@ export function TableStage({
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [openQuickChatSeat]);
+
+  useEffect(() => {
+    if (openSkillTooltipSeat && !playerBySeat.has(openSkillTooltipSeat)) {
+      setOpenSkillTooltipSeat(null);
+    }
+  }, [openSkillTooltipSeat, playerBySeat]);
 
   useEffect(() => {
     if (!actionEffect) {
@@ -525,8 +537,30 @@ export function TableStage({
                           event.stopPropagation();
                           setOpenQuickChatSeat((currentSeat) => (currentSeat === seat ? null : seat));
                         }}
+                        onMouseEnter={() => {
+                          if (!player.skill) {
+                            return;
+                          }
+
+                          if (skillTooltipTimerRef.current !== null) {
+                            window.clearTimeout(skillTooltipTimerRef.current);
+                          }
+
+                          skillTooltipTimerRef.current = window.setTimeout(() => {
+                            setOpenSkillTooltipSeat(seat);
+                            skillTooltipTimerRef.current = null;
+                          }, PLAYER_SKILL_TOOLTIP_DELAY_MS);
+                        }}
+                        onMouseLeave={() => {
+                          if (skillTooltipTimerRef.current !== null) {
+                            window.clearTimeout(skillTooltipTimerRef.current);
+                            skillTooltipTimerRef.current = null;
+                          }
+
+                          setOpenSkillTooltipSeat((currentSeat) => (currentSeat === seat ? null : currentSeat));
+                        }}
                       >
-                        <PlayerInfoBar player={player} />
+                        <PlayerInfoBar player={player} showSkillTooltip={openSkillTooltipSeat === seat} />
                       </button>
                       {openQuickChatSeat === seat ? (
                         <QuickChatMenu
