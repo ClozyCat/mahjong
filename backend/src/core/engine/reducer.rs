@@ -1,8 +1,9 @@
 use serde_json::{Value, json};
 
 use crate::core::state::{
-    ContinueActionState, EffectState, LastActionContext, MatchState, PendingAction, PendingTimeout,
-    RoomState, RoundScoreTrackers, RoundSettlement, RoundState,
+    ContinueActionState, EffectState, LastActionContext, MatchSkillTrackers, MatchState,
+    PendingAction, PendingTimeout, RoomState, RoundScoreTrackers, RoundSettlement,
+    RoundSkillTrackers, RoundState,
 };
 use crate::core::tile::Tile;
 
@@ -66,7 +67,7 @@ pub enum LegacyRoomMutation {
         score_trackers: RoundScoreTrackers,
     },
     SetRoundSkillTrackers {
-        trackers: Value,
+        trackers: RoundSkillTrackers,
     },
     SetRoomPhase {
         phase: String,
@@ -120,7 +121,7 @@ pub enum LegacyRoomMutation {
         round_id: Option<String>,
     },
     SetMatchSkillTrackers {
-        trackers: Value,
+        trackers: MatchSkillTrackers,
     },
     IncrementRoundVersion,
     AppendRoundKongEntry {
@@ -309,7 +310,7 @@ fn apply_legacy_room_mutation_to_value(
             serde_json::to_value(score_trackers).unwrap_or(Value::Null),
         ),
         LegacyRoomMutation::SetRoundSkillTrackers { trackers } => {
-            round_state_insert(room, "skill_trackers", trackers.clone())
+            round_state_insert(room, "skill_trackers", trackers.to_legacy_value())
         }
         LegacyRoomMutation::SetRoomPhase { phase } => {
             let object = room
@@ -432,7 +433,7 @@ fn apply_legacy_room_mutation_to_value(
             round_id.clone().map(Value::String).unwrap_or(Value::Null),
         ),
         LegacyRoomMutation::SetMatchSkillTrackers { trackers } => {
-            match_state_insert(room, "skill_trackers", trackers.clone())
+            match_state_insert(room, "skill_trackers", trackers.to_legacy_value())
         }
         LegacyRoomMutation::IncrementRoundVersion => {
             let round_state = room

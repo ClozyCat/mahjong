@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 use crate::core::engine::reducer::{LegacyRoomMutation, apply_legacy_room_mutations};
 use crate::core::event::GameEvent;
 use crate::core::ids::{Seat, SkillId, TileId};
-use crate::core::state::{LastActionContext, PendingTimeout, RoomState, RoundSettlement};
+use crate::core::state::{
+    LastActionContext, PendingAction, PendingTimeout, RoomState, RoundSettlement,
+};
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::standard::runtime::project_room_state as standard_project_room_state;
@@ -233,121 +235,68 @@ pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
         .map(|seats| seats.len())
         .unwrap_or(4);
 
-    let mut trackers = match_trackers_map_from_state(&state);
-
-    let streaks = trackers
-        .entry("lian_huan_ji".to_string())
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .and_then(|object| {
-            Some(
-                object
-                    .entry("streaks".to_string())
-                    .or_insert_with(|| json!({})),
-            )
-        })
-        .and_then(Value::as_object_mut);
-    if let Some(streaks) = streaks {
-        match winner_seat {
-            Some(winner) => {
-                for seat in 0..seat_count {
-                    let key = seat.to_string();
-                    let next = if seat == winner {
-                        streaks.get(&key).and_then(Value::as_i64).unwrap_or(0) + 1
-                    } else {
-                        0
-                    };
-                    streaks.insert(key, json!(next));
-                }
-            }
-            None => {
-                for seat in 0..seat_count {
-                    streaks.insert(seat.to_string(), json!(0));
-                }
+    let mut trackers = state
+        .match_state
+        .as_ref()
+        .map(|match_state| match_state.skill_trackers.clone())
+        .unwrap_or_default();
+    if let Some(winner) = winner_seat {
+        trackers
+            .zou_wei_shang_ji
+            .pending_win_penalty
+            .remove(&winner);
+    }
+    match winner_seat {
+        Some(winner) => {
+            for seat in 0..seat_count {
+                let next = if seat == winner {
+                    trackers
+                        .lian_huan_ji
+                        .streaks
+                        .get(&seat)
+                        .copied()
+                        .unwrap_or(0)
+                        + 1
+                } else {
+                    0
+                };
+                trackers.lian_huan_ji.streaks.insert(seat, next);
             }
         }
-    }
-
-    if let Some(winner) = winner_seat {
-        let pending = trackers
-            .get_mut("zou_wei_shang_ji")
-            .and_then(Value::as_object_mut)
-            .and_then(|object| object.get_mut("pending_win_penalty"))
-            .and_then(Value::as_object_mut);
-        if let Some(pending) = pending {
-            pending.remove(&winner.to_string());
+        None => {
+            for seat in 0..seat_count {
+                trackers.lian_huan_ji.streaks.insert(seat, 0);
+            }
         }
     }
 
     let _ = apply_legacy_room_mutations(
         room,
-        &[LegacyRoomMutation::SetMatchSkillTrackers {
-            trackers: Value::Object(trackers),
-        }],
+        &[LegacyRoomMutation::SetMatchSkillTrackers { trackers }],
     );
 }
 
 pub fn sync_round_skill_trackers(room: &mut Value) {
-    let Some(round_state) = room.get("round_state").and_then(Value::as_object) else {
+    let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
-    let players = round_state
-        .get("players")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let seat_count = players.len();
-    let existing = round_state
-        .get("skill_trackers")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
+    let Some(round) = state.round_state.as_ref() else {
+        return;
+    };
+    let seat_count = round.players.len();
+    let mut trackers = round.skill_trackers.clone();
 
-    let mut trackers = serde_json::Map::new();
-    trackers.insert(
-        "claimed_discard_counts_by_seat".to_string(),
-        existing
-            .get("claimed_discard_counts_by_seat")
-            .cloned()
-            .unwrap_or_else(|| json!({})),
-    );
-    trackers.insert(
-        "pending_honor_rebuy_tile_by_seat".to_string(),
-        existing
-            .get("pending_honor_rebuy_tile_by_seat")
-            .cloned()
-            .unwrap_or_else(|| json!({})),
-    );
-    trackers.insert(
-        "honor_redraw_success_by_seat".to_string(),
-        existing
-            .get("honor_redraw_success_by_seat")
-            .cloned()
-            .unwrap_or_else(|| json!({})),
-    );
-
-    let mut discard_counts = serde_json::Map::new();
-    let mut discarded_five_by_seat = serde_json::Map::new();
-    let mut discard_suits_by_seat = serde_json::Map::new();
+    let mut discard_counts = std::collections::BTreeMap::new();
+    let mut discarded_five_by_seat = std::collections::BTreeMap::new();
+    let mut discard_suits_by_seat = std::collections::BTreeMap::new();
     let mut players_with_kong = Vec::new();
 
-    for (seat, player) in players.iter().enumerate() {
-        let discards = player
-            .get("discards")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+    for (seat, player) in round.players.iter().enumerate() {
         let mut suit_set = std::collections::BTreeSet::new();
         let mut discarded_five = false;
-        for discard in discards {
-            let Some(tile_key) = discard.get("tile_key").and_then(Value::as_str) else {
-                continue;
-            };
-            let current = discard_counts
-                .get(tile_key)
-                .and_then(Value::as_i64)
-                .unwrap_or(0);
-            discard_counts.insert(tile_key.to_string(), json!(current + 1));
+        for discard in &player.discards {
+            let tile_key = discard.tile_key.as_str();
+            *discard_counts.entry(tile_key.to_string()).or_default() += 1;
             if is_suit_five(tile_key) {
                 discarded_five = true;
             }
@@ -355,140 +304,99 @@ pub fn sync_round_skill_trackers(room: &mut Value) {
                 suit_set.insert(prefix.to_string());
             }
         }
-        discarded_five_by_seat.insert(seat.to_string(), json!(discarded_five));
-        discard_suits_by_seat.insert(
-            seat.to_string(),
-            Value::Array(suit_set.into_iter().map(Value::String).collect()),
-        );
-        let has_kong = player
-            .get("melds")
-            .and_then(Value::as_array)
-            .is_some_and(|melds| {
-                melds
-                    .iter()
-                    .any(|meld| meld.as_array().is_some_and(|tiles| tiles.len() == 4))
-            });
+        discarded_five_by_seat.insert(seat, discarded_five);
+        discard_suits_by_seat.insert(seat, suit_set.into_iter().collect());
+        let has_kong = player.melds.iter().any(|meld| meld.len() == 4);
         if has_kong {
-            players_with_kong.push(json!(seat));
+            players_with_kong.push(seat);
         }
     }
-
-    trackers.insert("discard_counts".to_string(), Value::Object(discard_counts));
-    trackers.insert(
-        "discarded_five_by_seat".to_string(),
-        Value::Object(discarded_five_by_seat),
-    );
-    trackers.insert(
-        "discard_suits_by_seat".to_string(),
-        Value::Object(discard_suits_by_seat),
-    );
-    trackers.insert(
-        "players_with_kong".to_string(),
-        Value::Array(players_with_kong),
-    );
-    trackers.insert(
-        "live_tiles_remaining".to_string(),
-        json!(
-            round_state
-                .get("wall")
-                .and_then(|wall| {
-                    let head = wall.get("head_index")?.as_i64()?;
-                    let tail = wall.get("tail_index")?.as_i64()?;
-                    Some((tail - head + 1).max(0))
-                })
-                .unwrap_or(0)
-        ),
-    );
-    trackers.insert(
-        "tiles_drawn_since_opening".to_string(),
-        json!(
-            round_state
-                .get("wall")
-                .and_then(|wall| wall.get("head_index"))
-                .and_then(Value::as_i64)
-                .map(|head| head.saturating_sub(53))
-                .unwrap_or(0)
-        ),
-    );
-    trackers.insert(
-        "multi_hu_candidates".to_string(),
-        Value::Array(pending_multi_hu_candidates(round_state)),
-    );
+    trackers.discard_counts = discard_counts;
+    trackers.discarded_five_by_seat = discarded_five_by_seat;
+    trackers.discard_suits_by_seat = discard_suits_by_seat;
+    trackers.players_with_kong = players_with_kong;
+    trackers.live_tiles_remaining = round.wall.live_tiles_remaining() as i64;
+    trackers.tiles_drawn_since_opening = round.wall.head_index.saturating_sub(53) as i64;
+    trackers.multi_hu_candidates = pending_multi_hu_candidates(round);
 
     let (tenpai_seats, tenpai_waits_by_seat) = compute_tenpai_trackers(room, seat_count);
-    trackers.insert("tenpai_seats".to_string(), Value::Array(tenpai_seats));
-    trackers.insert(
-        "tenpai_waits_by_seat".to_string(),
-        Value::Object(tenpai_waits_by_seat),
-    );
+    trackers.tenpai_seats = tenpai_seats;
+    trackers.tenpai_waits_by_seat = tenpai_waits_by_seat;
 
     let _ = apply_legacy_room_mutations(
         room,
-        &[LegacyRoomMutation::SetRoundSkillTrackers {
-            trackers: Value::Object(trackers),
-        }],
+        &[LegacyRoomMutation::SetRoundSkillTrackers { trackers }],
     );
 }
 
 pub fn note_tracker_discard(room: &mut Value, seat: Seat, tile_key: &str) {
-    let Some(trackers) = ensure_round_skill_trackers(room) else {
+    let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
-    if let Some(map) = trackers
-        .entry("pending_honor_rebuy_tile_by_seat".to_string())
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-    {
-        if is_honor_tile_key(tile_key) {
-            map.insert(seat.to_string(), json!(tile_key));
-        } else {
-            map.remove(&seat.to_string());
-        }
+    let mut trackers = state
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.clone())
+        .unwrap_or_default();
+    if is_honor_tile_key(tile_key) {
+        trackers
+            .pending_honor_rebuy_tile_by_seat
+            .insert(seat, tile_key.to_string());
+    } else {
+        trackers.pending_honor_rebuy_tile_by_seat.remove(&seat);
     }
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoundSkillTrackers { trackers }],
+    );
 }
 
 pub fn note_tracker_draw(room: &mut Value, seat: Seat, tile_key: &str) {
-    let pending_tile = room
-        .get("round_state")
-        .and_then(|round| round.get("skill_trackers"))
-        .and_then(|trackers| trackers.get("pending_honor_rebuy_tile_by_seat"))
-        .and_then(|map| map.get(seat.to_string()))
-        .and_then(Value::as_str)
-        .map(ToString::to_string);
-    let Some(trackers) = ensure_round_skill_trackers(room) else {
+    let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
-    if let Some(map) = trackers
-        .entry("pending_honor_rebuy_tile_by_seat".to_string())
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-    {
-        map.remove(&seat.to_string());
-    }
+    let pending_tile = state
+        .round_state
+        .as_ref()
+        .and_then(|round| {
+            round
+                .skill_trackers
+                .pending_honor_rebuy_tile_by_seat
+                .get(&seat)
+        })
+        .map(ToString::to_string);
+    let mut trackers = state
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.clone())
+        .unwrap_or_default();
+    trackers.pending_honor_rebuy_tile_by_seat.remove(&seat);
     if pending_tile.as_deref() == Some(tile_key) {
-        if let Some(map) = trackers
-            .entry("honor_redraw_success_by_seat".to_string())
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-        {
-            map.insert(seat.to_string(), Value::Bool(true));
-        }
+        trackers.honor_redraw_success_by_seat.insert(seat, true);
     }
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoundSkillTrackers { trackers }],
+    );
 }
 
 pub fn note_tracker_claimed_discard(room: &mut Value, discarder_seat: Seat) {
-    let Some(trackers) = ensure_round_skill_trackers(room) else {
+    let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
-    if let Some(map) = trackers
-        .entry("claimed_discard_counts_by_seat".to_string())
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-    {
-        let key = discarder_seat.to_string();
-        let current = map.get(&key).and_then(Value::as_i64).unwrap_or(0);
-        map.insert(key, json!(current + 1));
-    }
+    let mut trackers = state
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.clone())
+        .unwrap_or_default();
+    *trackers
+        .claimed_discard_counts_by_seat
+        .entry(discarder_seat)
+        .or_default() += 1;
+    let _ = apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoundSkillTrackers { trackers }],
+    );
 }
 
 fn apply_events_to_legacy_room(
@@ -509,41 +417,30 @@ fn apply_events_to_legacy_room(
                 ));
             }
             GameEvent::EffectApplied { effect } => {
-                ensure_effect_state(room)?
-                    .get_mut("ongoing")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?
-                    .push(serde_json::to_value(effect).map_err(|_| "invalid_action".to_string())?);
+                update_round_effect_state(room, |effect_state| {
+                    effect_state.ongoing.push(effect.clone());
+                    Ok(())
+                })?;
             }
             GameEvent::EffectExpired { effect_id } => {
-                if let Some(ongoing) = ensure_effect_state(room)?
-                    .get_mut("ongoing")
-                    .and_then(Value::as_array_mut)
-                {
-                    ongoing.retain(|effect| {
-                        effect.get("effect_id").and_then(Value::as_str) != Some(effect_id.as_str())
-                    });
-                }
+                update_round_effect_state(room, |effect_state| {
+                    effect_state
+                        .ongoing
+                        .retain(|effect| effect.effect_id != effect_id.as_str());
+                    Ok(())
+                })?;
             }
             GameEvent::ViewKnowledgeGranted { knowledge, .. } => {
-                ensure_effect_state(room)?
-                    .get_mut("hidden_knowledge")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?
-                    .push(
-                        serde_json::to_value(knowledge)
-                            .map_err(|_| "invalid_action".to_string())?,
-                    );
+                update_round_effect_state(room, |effect_state| {
+                    effect_state.hidden_knowledge.push(knowledge.clone());
+                    Ok(())
+                })?;
             }
             GameEvent::RuleOverrideApplied { override_rule } => {
-                ensure_effect_state(room)?
-                    .get_mut("rule_overrides")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| "invalid_action".to_string())?
-                    .push(
-                        serde_json::to_value(override_rule)
-                            .map_err(|_| "invalid_action".to_string())?,
-                    );
+                update_round_effect_state(room, |effect_state| {
+                    effect_state.rule_overrides.push(override_rule.clone());
+                    Ok(())
+                })?;
             }
             GameEvent::LegacyRoundEvent { event_type, event } => {
                 handle_legacy_skill_event(room, event_type, event, &mut emitted_messages)?;
@@ -588,70 +485,16 @@ fn round_event_message(event_type: &str, event: Value) -> Value {
     })
 }
 
-fn ensure_effect_state(room: &mut Value) -> Result<&mut serde_json::Map<String, Value>, String> {
-    let round_state = room
-        .get_mut("round_state")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let effect_state = round_state.entry("effect_state").or_insert_with(|| {
-        json!({
-            "ongoing": [],
-            "hidden_knowledge": [],
-            "rule_overrides": [],
-        })
-    });
-    let effect_state = effect_state
-        .as_object_mut()
-        .ok_or_else(|| "invalid_action".to_string())?;
-    effect_state
-        .entry("ongoing".to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    effect_state
-        .entry("hidden_knowledge".to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    effect_state
-        .entry("rule_overrides".to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    Ok(effect_state)
-}
-
-fn ensure_round_skill_trackers(room: &mut Value) -> Option<&mut serde_json::Map<String, Value>> {
-    room.get_mut("round_state")
-        .and_then(Value::as_object_mut)
-        .map(|round| {
-            round
-                .entry("skill_trackers".to_string())
-                .or_insert_with(|| json!({}))
-        })
-        .and_then(Value::as_object_mut)
-}
-
-fn pending_multi_hu_candidates(round_state: &serde_json::Map<String, Value>) -> Vec<Value> {
-    let Some(pending) = round_state.get("pending_action").and_then(Value::as_object) else {
-        return Vec::new();
-    };
-    match pending.get("type").and_then(Value::as_str) {
-        Some("claim_window") => pending
-            .get("claim_window")
-            .and_then(Value::as_array)
-            .map(|window| {
-                window
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, claims)| {
-                        claims.as_array().is_some_and(|items| {
-                            items.iter().any(|item| item.as_str() == Some("hu"))
-                        })
-                    })
-                    .map(|(seat, _)| json!(seat))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default(),
-        Some("rob_kong_window") => pending
-            .get("offered_hu_seats")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default(),
+fn pending_multi_hu_candidates(round: &crate::core::state::RoundState) -> Vec<Seat> {
+    match round.pending_action.as_ref() {
+        Some(PendingAction::ClaimWindow(claim)) => claim
+            .claim_window
+            .iter()
+            .enumerate()
+            .filter(|(_, claims)| claims.iter().any(|claim| claim == "hu"))
+            .map(|(seat, _)| seat)
+            .collect(),
+        Some(PendingAction::RobKongWindow(rob)) => rob.offered_hu_seats.clone(),
         _ => Vec::new(),
     }
 }
@@ -659,19 +502,16 @@ fn pending_multi_hu_candidates(round_state: &serde_json::Map<String, Value>) -> 
 fn compute_tenpai_trackers(
     room: &Value,
     seat_count: usize,
-) -> (Vec<Value>, serde_json::Map<String, Value>) {
+) -> (Vec<Seat>, std::collections::BTreeMap<Seat, Vec<String>>) {
     let cache = RoomScoringCache::from_room(room);
     let mut tenpai_seats = Vec::new();
-    let mut waits_by_seat = serde_json::Map::new();
+    let mut waits_by_seat = std::collections::BTreeMap::new();
     for seat in 0..seat_count {
         let waits = standard_wait_tile_keys(room, &cache, seat);
         if !waits.is_empty() {
-            tenpai_seats.push(json!(seat));
+            tenpai_seats.push(seat);
         }
-        waits_by_seat.insert(
-            seat.to_string(),
-            Value::Array(waits.into_iter().map(Value::String).collect()),
-        );
+        waits_by_seat.insert(seat, waits);
     }
     (tenpai_seats, waits_by_seat)
 }
@@ -707,54 +547,36 @@ fn is_honor_tile_key(tile_key: &str) -> bool {
 }
 
 fn decrement_skill_charge(room: &mut Value, actor: Seat, skill_id: &str) -> Result<(), String> {
-    let equipped = room
-        .get_mut("round_state")
-        .and_then(Value::as_object_mut)
-        .and_then(|round| round.get_mut("players"))
-        .and_then(Value::as_array_mut)
-        .and_then(|players| players.get_mut(actor))
-        .and_then(Value::as_object_mut)
-        .map(|player| {
-            player
-                .entry("skill_loadout".to_string())
-                .or_insert_with(|| json!({ "equipped": [] }))
-        })
-        .and_then(Value::as_object_mut)
-        .map(|loadout| {
-            loadout
-                .entry("equipped".to_string())
-                .or_insert_with(|| Value::Array(Vec::new()))
-        })
-        .and_then(Value::as_array_mut)
+    let state = standard_project_room_state(room)?;
+    let mut round = state
+        .round_state
+        .clone()
         .ok_or_else(|| "invalid_action".to_string())?;
-
-    let skill = equipped
-        .iter_mut()
-        .find(|skill| skill.get("skill_id").and_then(Value::as_str) == Some(skill_id))
+    let skill = round
+        .players
+        .get_mut(actor)
+        .and_then(|player| {
+            player
+                .skill_loadout
+                .equipped
+                .iter_mut()
+                .find(|skill| skill.skill_id == skill_id)
+        })
         .ok_or_else(|| "skill_not_equipped".to_string())?;
-    let charges = skill.get("charges").and_then(Value::as_u64).unwrap_or(0);
-    if charges == 0 {
+    if skill.charges == 0 {
         return Err("skill_no_charges".to_string());
     }
-    let object = skill
-        .as_object_mut()
-        .ok_or_else(|| "invalid_action".to_string())?;
-    object.insert("charges".to_string(), json!(charges - 1));
-    Ok(())
+    skill.charges -= 1;
+    apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoomRoundState {
+            round_state: Some(round),
+        }],
+    )
 }
 
 fn increment_round_version(room: &mut Value) -> Result<(), String> {
-    let round_state = room
-        .get_mut("round_state")
-        .and_then(Value::as_object_mut)
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let version = round_state
-        .get("version")
-        .and_then(Value::as_u64)
-        .unwrap_or_default()
-        + 1;
-    round_state.insert("version".to_string(), json!(version));
-    Ok(())
+    apply_legacy_room_mutations(room, &[LegacyRoomMutation::IncrementRoundVersion])
 }
 
 fn handle_legacy_skill_event(
@@ -1030,37 +852,37 @@ fn set_pending_next_round_win_penalty(room: &mut Value, seat: Seat, penalty: i64
     let Some(state) = standard_project_room_state(room).ok() else {
         return;
     };
-    let mut trackers = match_trackers_map_from_state(&state);
-    let pending = trackers
-        .entry("zou_wei_shang_ji".to_string())
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .and_then(|object| {
-            Some(
-                object
-                    .entry("pending_win_penalty".to_string())
-                    .or_insert_with(|| json!({})),
-            )
-        })
-        .and_then(Value::as_object_mut);
-    let Some(pending) = pending else {
-        return;
-    };
-    pending.insert(seat.to_string(), json!(penalty));
+    let mut trackers = state
+        .match_state
+        .as_ref()
+        .map(|match_state| match_state.skill_trackers.clone())
+        .unwrap_or_default();
+    trackers
+        .zou_wei_shang_ji
+        .pending_win_penalty
+        .insert(seat, penalty);
     let _ = apply_legacy_room_mutations(
         room,
-        &[LegacyRoomMutation::SetMatchSkillTrackers {
-            trackers: Value::Object(trackers),
-        }],
+        &[LegacyRoomMutation::SetMatchSkillTrackers { trackers }],
     );
 }
 
-fn match_trackers_map_from_state(state: &RoomState) -> serde_json::Map<String, Value> {
-    state
-        .match_state
-        .as_ref()
-        .and_then(|match_state| match_state.skill_trackers.as_object().cloned())
-        .unwrap_or_default()
+fn update_round_effect_state<F>(room: &mut Value, mut mutate: F) -> Result<(), String>
+where
+    F: FnMut(&mut crate::core::state::EffectState) -> Result<(), String>,
+{
+    let state = standard_project_room_state(room)?;
+    let mut round = state
+        .round_state
+        .clone()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    mutate(&mut round.effect_state)?;
+    apply_legacy_room_mutations(
+        room,
+        &[LegacyRoomMutation::SetRoomRoundState {
+            round_state: Some(round),
+        }],
+    )
 }
 
 fn for_each_equipped_skill<F>(
@@ -1171,7 +993,7 @@ mod tests {
                 },
                 effect_state: EffectState::default(),
                 restricted_discard_tile_key: None,
-                skill_trackers: Value::Null,
+                skill_trackers: Default::default(),
             }),
             pending_timeout: None,
             continue_action: None,

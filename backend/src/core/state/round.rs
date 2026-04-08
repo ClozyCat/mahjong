@@ -8,6 +8,7 @@ use crate::core::tile::Tile;
 use super::effect::EffectState;
 use super::pending::{LastActionContext, PendingAction};
 use super::settlement::RoundSettlement;
+use super::skill_trackers::RoundSkillTrackers;
 use super::{PlayerRoundState, WallState, array, bool_or, seat_vec, string_opt, usize_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -28,8 +29,8 @@ pub struct RoundState {
     pub rule_state: RuleRuntimeState,
     pub effect_state: EffectState,
     pub restricted_discard_tile_key: Option<TileKey>,
-    #[serde(default, skip_serializing_if = "Value::is_null")]
-    pub skill_trackers: Value,
+    #[serde(default)]
+    pub skill_trackers: RoundSkillTrackers,
 }
 
 impl RoundState {
@@ -99,7 +100,7 @@ impl RoundState {
             },
             effect_state: EffectState::from_legacy_value(value.get("effect_state"))?,
             restricted_discard_tile_key: string_opt(value, "restricted_discard_tile_key"),
-            skill_trackers: value.get("skill_trackers").cloned().unwrap_or(Value::Null),
+            skill_trackers: RoundSkillTrackers::from_legacy_value(value.get("skill_trackers")),
         })
     }
 
@@ -123,6 +124,10 @@ impl RoundState {
             object.insert(
                 "enforce_minimum_eight_fan".to_string(),
                 Value::Bool(self.rule_state.enforce_minimum_eight_fan),
+            );
+            object.insert(
+                "skill_trackers".to_string(),
+                self.skill_trackers.to_legacy_value(),
             );
             object.remove("rule_state");
         }

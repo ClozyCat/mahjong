@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::core::error::EngineError;
 use crate::core::ids::{RoundId, Seat};
 
-use super::{i64_opt, object, string_opt, usize_or};
+use super::{MatchSkillTrackers, i64_opt, object, string_opt, usize_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MatchState {
@@ -16,8 +16,8 @@ pub struct MatchState {
     pub cumulative_scores: BTreeMap<Seat, i64>,
     pub match_finished: bool,
     pub last_completed_round_id: Option<RoundId>,
-    #[serde(default, skip_serializing_if = "Value::is_null")]
-    pub skill_trackers: Value,
+    #[serde(default)]
+    pub skill_trackers: MatchSkillTrackers,
 }
 
 impl MatchState {
@@ -54,7 +54,7 @@ impl MatchState {
             last_completed_round_id: string_opt(value, "last_completed_round_id").or_else(|| {
                 i64_opt(value, "last_completed_round_id").map(|value| value.to_string())
             }),
-            skill_trackers: value.get("skill_trackers").cloned().unwrap_or(Value::Null),
+            skill_trackers: MatchSkillTrackers::from_legacy_value(value.get("skill_trackers")),
         })
     }
 }

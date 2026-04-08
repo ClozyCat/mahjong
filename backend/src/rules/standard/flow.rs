@@ -45,7 +45,7 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         cumulative_scores,
         match_finished: false,
         last_completed_round_id: None,
-        skill_trackers: Value::Null,
+        skill_trackers: Default::default(),
     };
     let _ = apply_legacy_room_mutations(
         room,

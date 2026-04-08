@@ -152,7 +152,7 @@ mod tests {
                 cumulative_scores: BTreeMap::from([(0, 12), (1, -12)]),
                 match_finished: false,
                 last_completed_round_id: None,
-                skill_trackers: serde_json::Value::Null,
+                skill_trackers: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "round-1".to_string(),
@@ -193,7 +193,7 @@ mod tests {
                 },
                 effect_state: Default::default(),
                 restricted_discard_tile_key: Some("w3".to_string()),
-                skill_trackers: serde_json::Value::Null,
+                skill_trackers: Default::default(),
             }),
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),

@@ -414,17 +414,16 @@ fn adjust_score_delta(result: &mut FanResult, seat: Seat, delta: i64) {
 }
 
 fn live_tiles_remaining(ctx: &RuleContext<'_>) -> usize {
-    tracker_value(ctx, "live_tiles_remaining")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
+    ctx.room_state
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.live_tiles_remaining.max(0) as usize)
+        .filter(|value| *value > 0)
         .or_else(|| {
-            ctx.room_state.round_state.as_ref().and_then(|round| {
-                round
-                    .wall
-                    .tail_index
-                    .checked_sub(round.wall.head_index)
-                    .map(|distance| distance + 1)
-            })
+            ctx.room_state
+                .round_state
+                .as_ref()
+                .map(|round| round.wall.live_tiles_remaining())
         })
         .unwrap_or(0)
 }
@@ -469,44 +468,63 @@ fn current_round_version(ctx: &RuleContext<'_>) -> u64 {
         .unwrap_or(0)
 }
 
-fn tracker_value<'a>(ctx: &'a RuleContext<'_>, key: &str) -> Option<&'a Value> {
-    ctx.room_state
-        .round_state
-        .as_ref()
-        .and_then(|round| round.skill_trackers.get(key))
-}
-
 fn tracker_bool_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> bool {
-    tracker_value(ctx, key)
-        .and_then(|value| value.get(seat.to_string()))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+    let Some(round) = ctx.room_state.round_state.as_ref() else {
+        return false;
+    };
+    match key {
+        "discarded_five_by_seat" => round
+            .skill_trackers
+            .discarded_five_by_seat
+            .get(&seat)
+            .copied()
+            .unwrap_or(false),
+        "honor_redraw_success_by_seat" => round
+            .skill_trackers
+            .honor_redraw_success_by_seat
+            .get(&seat)
+            .copied()
+            .unwrap_or(false),
+        _ => false,
+    }
 }
 
 fn tracker_i64_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> i64 {
-    tracker_value(ctx, key)
-        .and_then(|value| value.get(seat.to_string()))
-        .and_then(Value::as_i64)
-        .unwrap_or(0)
+    let Some(round) = ctx.room_state.round_state.as_ref() else {
+        return 0;
+    };
+    match key {
+        "claimed_discard_counts_by_seat" => round
+            .skill_trackers
+            .claimed_discard_counts_by_seat
+            .get(&seat)
+            .copied()
+            .unwrap_or(0),
+        _ => 0,
+    }
 }
 
 fn tracker_string_array_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> Vec<String> {
-    tracker_value(ctx, key)
-        .and_then(|value| value.get(seat.to_string()))
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(ToString::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+    let Some(round) = ctx.room_state.round_state.as_ref() else {
+        return Vec::new();
+    };
+    match key {
+        "discard_suits_by_seat" => round
+            .skill_trackers
+            .discard_suits_by_seat
+            .get(&seat)
+            .cloned()
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
 }
 
 fn tracker_discard_count(ctx: &RuleContext<'_>, tile_key: &str) -> i64 {
-    tracker_value(ctx, "discard_counts")
-        .and_then(|value| value.get(tile_key))
-        .and_then(Value::as_i64)
+    ctx.room_state
+        .round_state
+        .as_ref()
+        .and_then(|round| round.skill_trackers.discard_counts.get(tile_key))
+        .copied()
         .unwrap_or(0)
 }
 
@@ -1171,33 +1189,30 @@ fn adjust_draw_delta(settlement: &mut RoundSettlement, seat: Seat, delta: i64) {
 }
 
 fn opponents_look_ready(ctx: &RuleContext<'_>) -> bool {
-    tracker_value(ctx, "tenpai_seats")
-        .and_then(Value::as_array)
-        .is_some_and(|seats| {
-            seats.iter().any(|seat| {
-                seat.as_u64()
-                    .map(|value| value as usize != ctx.actor)
-                    .unwrap_or(false)
-            })
-        })
+    ctx.room_state.round_state.as_ref().is_some_and(|round| {
+        round
+            .skill_trackers
+            .tenpai_seats
+            .iter()
+            .any(|seat| *seat != ctx.actor)
+    })
 }
 
 fn multi_hu_window(ctx: &RuleContext<'_>, actor: Seat) -> bool {
-    tracker_value(ctx, "multi_hu_candidates")
-        .and_then(Value::as_array)
-        .is_some_and(|seats| {
-            seats.iter().any(|seat| {
-                seat.as_u64()
-                    .map(|value| value as usize != actor)
-                    .unwrap_or(false)
-            })
-        })
+    ctx.room_state.round_state.as_ref().is_some_and(|round| {
+        round
+            .skill_trackers
+            .multi_hu_candidates
+            .iter()
+            .any(|seat| *seat != actor)
+    })
 }
 
 fn has_any_kong(ctx: &RuleContext<'_>) -> bool {
-    tracker_value(ctx, "players_with_kong")
-        .and_then(Value::as_array)
-        .is_some_and(|players| !players.is_empty())
+    ctx.room_state
+        .round_state
+        .as_ref()
+        .is_some_and(|round| !round.skill_trackers.players_with_kong.is_empty())
 }
 
 fn winner_has_kong(ctx: &RuleContext<'_>, actor: Seat) -> bool {
@@ -1219,9 +1234,11 @@ fn winner_has_kong(ctx: &RuleContext<'_>, actor: Seat) -> bool {
 }
 
 fn tiles_drawn_since_opening(ctx: &RuleContext<'_>) -> usize {
-    tracker_value(ctx, "tiles_drawn_since_opening")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
+    ctx.room_state
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.tiles_drawn_since_opening.max(0) as usize)
+        .filter(|value| *value > 0)
         .or_else(|| {
             ctx.room_state
                 .round_state
@@ -1280,10 +1297,8 @@ fn lian_huan_streak(ctx: &RuleContext<'_>, actor: Seat) -> i64 {
     ctx.room_state
         .match_state
         .as_ref()
-        .and_then(|state| state.skill_trackers.get("lian_huan_ji"))
-        .and_then(|value| value.get("streaks"))
-        .and_then(|value| value.get(actor.to_string()))
-        .and_then(Value::as_i64)
+        .and_then(|state| state.skill_trackers.lian_huan_ji.streaks.get(&actor))
+        .copied()
         .unwrap_or(0)
 }
 
@@ -1291,9 +1306,13 @@ fn pending_next_round_penalty(ctx: &RuleContext<'_>, actor: Seat) -> i64 {
     ctx.room_state
         .match_state
         .as_ref()
-        .and_then(|state| state.skill_trackers.get("zou_wei_shang_ji"))
-        .and_then(|value| value.get("pending_win_penalty"))
-        .and_then(|value| value.get(actor.to_string()))
-        .and_then(Value::as_i64)
+        .and_then(|state| {
+            state
+                .skill_trackers
+                .zou_wei_shang_ji
+                .pending_win_penalty
+                .get(&actor)
+        })
+        .copied()
         .unwrap_or(0)
 }

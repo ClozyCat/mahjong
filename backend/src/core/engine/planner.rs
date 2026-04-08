@@ -123,7 +123,7 @@ pub fn plan_round_start_payload(
         },
         effect_state: EffectState::default(),
         restricted_discard_tile_key: None,
-        skill_trackers: Value::Null,
+        skill_trackers: Default::default(),
     };
 
     let pending_timeout = if opening_completed {
@@ -870,7 +870,7 @@ mod tests {
                 cumulative_scores: BTreeMap::new(),
                 match_finished: false,
                 last_completed_round_id: None,
-                skill_trackers: serde_json::Value::Null,
+                skill_trackers: Default::default(),
             }),
             round_state: Some(round.clone()),
             pending_timeout: None,
