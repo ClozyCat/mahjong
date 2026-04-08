@@ -14,7 +14,7 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use rand::Rng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Notify, RwLock, mpsc};
 
@@ -93,10 +93,10 @@ pub(crate) struct ConnectionHandle {
 }
 
 impl ConnectionHandle {
-    pub(crate) fn outbound(&self, payload: Value) -> OutboundMessage {
+    pub(crate) fn outbound<T: Serialize>(&self, payload: T) -> OutboundMessage {
         OutboundMessage {
             connection: self.clone(),
-            payload,
+            payload: serialize_payload(&payload),
         }
     }
 
@@ -119,7 +119,7 @@ impl ConnectionHandle {
 
 pub(crate) struct OutboundMessage {
     pub(crate) connection: ConnectionHandle,
-    pub(crate) payload: Value,
+    pub(crate) payload: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,7 +174,7 @@ pub(crate) fn serialize_room_state(state: &RoomState) -> Result<String> {
     serde_json::to_string(state).map_err(Into::into)
 }
 
-pub(crate) fn serialize_payload(payload: &Value) -> String {
+pub(crate) fn serialize_payload<T: Serialize>(payload: &T) -> String {
     serde_json::to_string(payload).unwrap_or_else(|_| {
         serde_json::to_string(&self::protocol::action_rejected_message("serialization_error"))
             .unwrap_or_else(|_| {
@@ -533,8 +533,7 @@ pub(crate) fn broadcast_to_handles(
 
 pub(crate) fn send_outbound(outbound: Vec<OutboundMessage>) {
     for message in outbound {
-        let payload = serialize_payload(&message.payload);
-        if let Err(error) = message.connection.try_send(payload) {
+        if let Err(error) = message.connection.try_send(message.payload) {
             if matches!(error, mpsc::error::TrySendError::Full(_)) {
                 message.connection.request_close();
             }

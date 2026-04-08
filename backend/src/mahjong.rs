@@ -7,7 +7,7 @@ use crate::core::engine::{
     try_handle_command_in_room_state,
 };
 use crate::core::state::{RoomState, RoundSettlement};
-use crate::projection::support::build_seat_projection_support;
+use crate::projection::support::build_seat_projection_support_for_state;
 use crate::rules::standard::{
     actions::apply_discard_action_output_in_room_state,
     automation::{
@@ -32,7 +32,7 @@ fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {
     crate::projection::prompt::action_prompt_message(
         &state,
         local_seat,
-        &build_seat_projection_support(room, &state, local_seat),
+        &build_seat_projection_support_for_state(&state, local_seat),
     )
 }
 
@@ -168,7 +168,7 @@ fn projected_room_message_context(
 ) -> (RoomState, crate::projection::SeatProjectionSupport) {
     match project_room_state(room) {
         Ok(state) => {
-            let support = build_seat_projection_support(room, &state, local_seat);
+            let support = build_seat_projection_support_for_state(&state, local_seat);
             (state, support)
         }
         Err(_) => (fallback_room_state(room), Default::default()),
