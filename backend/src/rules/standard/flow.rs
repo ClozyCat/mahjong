@@ -10,18 +10,140 @@ use crate::core::engine::planner::{
 };
 use crate::core::engine::reducer::update_room_state;
 use crate::core::tile::Tile;
-use crate::core::state::{ContinueActionState, MatchState, SkillLoadout};
-use crate::rules::skills::{note_tracker_draw, sync_round_skill_trackers};
+use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState, SkillLoadout};
+use crate::rules::skills::{
+    note_tracker_draw, note_tracker_draw_in_room_state, sync_round_skill_trackers,
+    sync_round_skill_trackers_in_room_state,
+};
 
 use super::runtime::{
-    current_actor, is_last_live_tile_point, project_room_state, round_event_message,
-    sync_pending_timeout,
+    current_actor, current_actor_in_room_state, is_last_live_tile_point,
+    is_last_live_tile_point_in_room_state, project_room_state, round_event_message,
+    sync_pending_timeout, sync_pending_timeout_in_room_state,
 };
-use super::settlement::apply_settlement_to_match;
+use super::settlement::{apply_settlement_to_match, apply_settlement_to_match_in_room_state};
 
 const MAX_SEATS: usize = 4;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 30;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
+
+pub fn room_ready_to_start(room: &RoomState) -> bool {
+    room.seats.len() == MAX_SEATS
+        && room
+            .seats
+            .iter()
+            .all(|seat| seat.ready && (seat.connected || seat.is_bot))
+}
+
+pub fn add_bot_seats_for_test(room: &mut RoomState) {
+    let occupied = room
+        .seats
+        .iter()
+        .map(|seat| seat.seat_index)
+        .collect::<std::collections::HashSet<_>>();
+    for seat_index in 0..MAX_SEATS {
+        if occupied.contains(&seat_index) {
+            continue;
+        }
+        room.seats.push(SeatState {
+            seat_index,
+            nickname: Some(format!("Bot {seat_index}")),
+            reconnect_token: None,
+            player_session_id: Some(-((seat_index as i64) + 1)),
+            connected: true,
+            ready: true,
+            is_bot: true,
+            seat_type: "bot".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+            skill_loadout: Default::default(),
+        });
+    }
+    room.seats.sort_by_key(|seat| seat.seat_index);
+}
+
+pub fn start_match_in_room_state(
+    room: &mut RoomState,
+    dealer_seat: usize,
+    seed: u64,
+) -> Result<(), String> {
+    let enforce_minimum_eight_fan = room.enforce_minimum_eight_fan;
+    start_round_in_room_state(
+        room,
+        dealer_seat,
+        "east",
+        format!("east-1-dealer-{dealer_seat}-{seed}"),
+        enforce_minimum_eight_fan,
+        seed,
+    );
+
+    let mut cumulative_scores = BTreeMap::new();
+    for seat in 0..MAX_SEATS {
+        cumulative_scores.insert(seat, 0);
+    }
+    room.match_state = Some(MatchState {
+        prevailing_wind: "east".to_string(),
+        hand_number: 1,
+        dealer_seat,
+        cumulative_scores,
+        match_finished: false,
+        last_completed_round_id: None,
+        skill_trackers: Default::default(),
+    });
+    Ok(())
+}
+
+pub fn record_continue_action_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+    action_id: &str,
+) -> Result<(), String> {
+    let current_action =
+        current_continue_action_id_in_room_state(room).ok_or_else(|| "invalid_action".to_string())?;
+    if current_action != action_id {
+        return Err(match action_id {
+            "start_next_round" => "round_not_ready".to_string(),
+            "restart_match" => "match_not_finished".to_string(),
+            _ => "invalid_action".to_string(),
+        });
+    }
+    let action = room
+        .continue_action
+        .get_or_insert_with(|| ContinueActionState {
+            action_id: action_id.to_string(),
+            confirmed_seats: Vec::new(),
+            required_seats: Vec::new(),
+            online_seats: Vec::new(),
+            auto_advance_deadline_at: None,
+        });
+    action.action_id = action_id.to_string();
+    if !action.confirmed_seats.contains(&seat_index) {
+        action.confirmed_seats.push(seat_index);
+    }
+    reconcile_continue_action_in_room_state(room)?;
+    Ok(())
+}
+
+pub fn process_due_continue_action_in_room_state(room: &mut RoomState) -> Result<bool, String> {
+    let action_id =
+        current_continue_action_id_in_room_state(room).ok_or_else(|| "invalid_action".to_string())?;
+    let deadline = room
+        .continue_action
+        .as_ref()
+        .and_then(|action| action.auto_advance_deadline_at.clone());
+    if deadline.is_none() {
+        return Ok(false);
+    }
+    complete_continue_action_in_room_state(room, action_id)?;
+    Ok(true)
+}
+
+pub fn reconcile_continue_action_state_in_room_state(
+    room: &mut RoomState,
+) -> Result<(), String> {
+    reconcile_continue_action_in_room_state(room)
+}
 
 pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
     let enforce_minimum_eight_fan = room
@@ -150,6 +272,39 @@ pub fn apply_opening_flowers_pass_output(
     Ok(EngineOutput::default())
 }
 
+pub fn apply_opening_flowers_pass_output_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+) -> Result<EngineOutput, String> {
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "round_not_ready".to_string())?;
+    if !matches!(round.pending_action, Some(crate::core::state::PendingAction::OpeningFlowers(_))) {
+        return Err("invalid_action".to_string());
+    }
+    if current_actor_in_room_state(room) != Some(seat_index) {
+        return Err("not_your_turn".to_string());
+    }
+    if player_has_concealed_flower_in_room_state(round, seat_index) {
+        return Err("invalid_action".to_string());
+    }
+
+    let plan = plan_advance_opening_flowers(room, seat_index);
+    let round = room
+        .round_state
+        .as_mut()
+        .ok_or_else(|| "round_not_ready".to_string())?;
+    round.current_actor = plan.current_actor;
+    round.pending_action = plan.pending_action;
+    if let Some(score_trackers) = plan.score_trackers {
+        round.score_trackers = score_trackers;
+    }
+    sync_round_skill_trackers_in_room_state(room);
+    sync_pending_timeout_in_room_state(room);
+    Ok(EngineOutput::default())
+}
+
 pub fn apply_flower_action(
     room: &mut Value,
     seat_index: usize,
@@ -245,6 +400,91 @@ pub fn apply_flower_action_output(
     ))
 }
 
+pub fn apply_flower_action_output_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+    tile_ids: &[String],
+) -> Result<EngineOutput, String> {
+    if room.phase != "playing" {
+        return Err("round_not_ready".to_string());
+    }
+    if current_actor_in_room_state(room) != Some(seat_index) {
+        return Err("not_your_turn".to_string());
+    }
+    if tile_ids.len() != 1 {
+        return Err("invalid_action".to_string());
+    }
+    if is_last_live_tile_point_in_room_state(room) {
+        return Err("invalid_action".to_string());
+    }
+
+    let pending_type = room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.pending_action.as_ref())
+        .map(|pending| pending.action_type());
+    if pending_type.is_some() && pending_type != Some("opening_flowers") {
+        return Err("invalid_action".to_string());
+    }
+
+    let tile_id = &tile_ids[0];
+    let plan = plan_flower_action(room, seat_index, tile_id)?;
+    {
+        let round = room
+            .round_state
+            .as_mut()
+            .ok_or_else(|| "round_not_ready".to_string())?;
+        let player = round
+            .players
+            .get_mut(seat_index)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        let concealed_index = player
+            .concealed_tiles
+            .iter()
+            .position(|tile| tile.tile_id == plan.flower_tile.tile_id)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        player.concealed_tiles.remove(concealed_index);
+        player.flowers.push(plan.flower_tile.clone());
+        player.concealed_tiles.push(plan.replacement_tile.clone());
+        round.wall.tail_index = round.wall.tail_index.saturating_sub(1);
+        round.last_action_context = plan.last_action_context.clone();
+        round.version += 1;
+        if let Some(advance) = plan.opening_flowers_advance.as_ref() {
+            round.current_actor = advance.current_actor;
+            round.pending_action = advance.pending_action.clone();
+            if let Some(score_trackers) = advance.score_trackers.as_ref() {
+                round.score_trackers = score_trackers.clone();
+            }
+        }
+    }
+    note_tracker_draw_in_room_state(room, seat_index, &plan.replacement_tile.tile_key);
+    sync_round_skill_trackers_in_room_state(room);
+    sync_pending_timeout_in_room_state(room);
+
+    let flower_event = json!({
+        "type": "flower_exposed",
+        "seat": seat_index,
+        "tile_id": plan.flower_tile.tile_id,
+    });
+    Ok(EngineOutput::new(
+        vec![
+            GameEvent::FlowerExposed {
+                seat: seat_index,
+                tile_id: plan.flower_tile.tile_id.clone(),
+            },
+            GameEvent::TileDrawn {
+                seat: seat_index,
+                tile: plan.replacement_tile.clone(),
+                source: "replacement_draw".to_string(),
+            },
+        ],
+        vec![
+            round_event_message("flower_exposed", flower_event),
+            replacement_draw_message(seat_index, &plan.replacement_tile),
+        ],
+    ))
+}
+
 fn start_round(
     room: &mut Value,
     dealer_seat: usize,
@@ -271,9 +511,40 @@ fn start_round(
     sync_round_skill_trackers(room);
 }
 
+fn start_round_in_room_state(
+    room: &mut RoomState,
+    dealer_seat: usize,
+    round_wind: &str,
+    round_id: String,
+    enforce_minimum_eight_fan: bool,
+    seed: u64,
+) {
+    let (mut round_state, pending_timeout) = plan_round_start_payload(
+        dealer_seat,
+        round_wind,
+        round_id,
+        enforce_minimum_eight_fan,
+        seed,
+    );
+    seed_round_skill_loadouts_in_room_state(room, &mut round_state);
+    room.phase = "playing".to_string();
+    room.round_state = Some(round_state);
+    room.pending_timeout = Some(pending_timeout);
+    room.continue_action = None;
+}
+
 fn seed_round_skill_loadouts(room: &Value, round_state: &mut crate::core::state::RoundState) {
     for player in &mut round_state.players {
         player.skill_loadout = skill_loadout_for_seat(room, player.seat);
+    }
+}
+
+fn seed_round_skill_loadouts_in_room_state(
+    room: &RoomState,
+    round_state: &mut crate::core::state::RoundState,
+) {
+    for player in &mut round_state.players {
+        player.skill_loadout = skill_loadout_for_seat_in_room_state(room, player.seat);
     }
 }
 
@@ -306,10 +577,34 @@ fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
         .unwrap_or_default()
 }
 
+fn skill_loadout_for_seat_in_room_state(room: &RoomState, seat: usize) -> SkillLoadout {
+    room.seats
+        .iter()
+        .find(|seat_state| seat_state.seat_index == seat)
+        .map(|seat_state| seat_state.skill_loadout.clone())
+        .filter(|loadout| !loadout.equipped.is_empty())
+        .or_else(|| {
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.players.get(seat))
+                .map(|player| player.skill_loadout.clone())
+                .filter(|loadout| !loadout.equipped.is_empty())
+        })
+        .unwrap_or_default()
+}
+
 fn current_continue_action_id(room: &Value) -> Option<&'static str> {
     match room.get("phase").and_then(Value::as_str) {
         Some("settlement") => Some("start_next_round"),
         Some("finished") => Some("restart_match"),
+        _ => None,
+    }
+}
+
+fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static str> {
+    match room.phase.as_str() {
+        "settlement" => Some("start_next_round"),
+        "finished" => Some("restart_match"),
         _ => None,
     }
 }
@@ -358,6 +653,33 @@ fn current_confirmed_continue_seats(room: &Value, action_id: &str) -> Vec<usize>
         .unwrap_or_default()
 }
 
+fn continue_required_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
+    room.seats
+        .iter()
+        .filter(|seat| !seat.is_bot)
+        .map(|seat| seat.seat_index)
+        .collect()
+}
+
+fn continue_online_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
+    room.seats
+        .iter()
+        .filter(|seat| seat.connected && !seat.is_bot)
+        .map(|seat| seat.seat_index)
+        .collect()
+}
+
+fn current_confirmed_continue_seats_in_room_state(
+    room: &RoomState,
+    action_id: &str,
+) -> Vec<usize> {
+    room.continue_action
+        .as_ref()
+        .filter(|action| action.action_id == action_id)
+        .map(|action| action.confirmed_seats.clone())
+        .unwrap_or_default()
+}
+
 fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
     room.get("seats")
         .and_then(Value::as_array)
@@ -370,6 +692,10 @@ fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
                 .map(|value| value as usize)
         })
         .collect()
+}
+
+fn continue_all_occupied_seats_in_room_state(room: &RoomState) -> Vec<usize> {
+    room.seats.iter().map(|seat| seat.seat_index).collect()
 }
 
 fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
@@ -439,6 +765,65 @@ fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
+fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    let Some(action_id) = current_continue_action_id_in_room_state(room) else {
+        room.continue_action = None;
+        return Ok(());
+    };
+    let required = continue_required_human_seats_in_room_state(room);
+    let confirmed = current_confirmed_continue_seats_in_room_state(room, action_id);
+    let online = continue_online_human_seats_in_room_state(room);
+
+    if required.iter().all(|seat| confirmed.contains(seat)) {
+        complete_continue_action_in_room_state(room, action_id)?;
+        return Ok(());
+    }
+
+    let online_unconfirmed = online
+        .iter()
+        .filter(|seat| !confirmed.contains(seat))
+        .copied()
+        .collect::<Vec<_>>();
+    if !online_unconfirmed.is_empty() {
+        if let Some(action) = room.continue_action.as_mut() {
+            action.auto_advance_deadline_at = None;
+        }
+        return Ok(());
+    }
+
+    let offline_unconfirmed = required
+        .iter()
+        .filter(|seat| !online.contains(seat) && !confirmed.contains(seat))
+        .copied()
+        .collect::<Vec<_>>();
+    if offline_unconfirmed.is_empty() {
+        complete_continue_action_in_room_state(room, action_id)?;
+        return Ok(());
+    }
+
+    let has_deadline = room
+        .continue_action
+        .as_ref()
+        .and_then(|action| action.auto_advance_deadline_at.as_ref())
+        .is_some();
+    if !has_deadline {
+        let deadline = (Utc::now() + TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
+            .to_rfc3339_opts(SecondsFormat::Micros, true);
+        let action = room
+            .continue_action
+            .get_or_insert_with(|| ContinueActionState {
+                action_id: action_id.to_string(),
+                confirmed_seats: Vec::new(),
+                required_seats: Vec::new(),
+                online_seats: Vec::new(),
+                auto_advance_deadline_at: None,
+            });
+        action.action_id = action_id.to_string();
+        action.auto_advance_deadline_at = Some(deadline);
+    }
+    Ok(())
+}
+
 fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), String> {
     update_room_state(room, |state| {
         state.continue_action = None;
@@ -455,6 +840,26 @@ fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), Str
             let dealer_index = rng.random_range(0..occupied.len());
             start_match(room, occupied[dealer_index], rand::random::<u64>());
             Ok(())
+        }
+        _ => Err("invalid_action".to_string()),
+    }
+}
+
+fn complete_continue_action_in_room_state(
+    room: &mut RoomState,
+    action_id: &str,
+) -> Result<(), String> {
+    room.continue_action = None;
+    match action_id {
+        "start_next_round" => complete_start_next_round_in_room_state(room),
+        "restart_match" => {
+            let occupied = continue_all_occupied_seats_in_room_state(room);
+            if occupied.is_empty() {
+                return Err("invalid_action".to_string());
+            }
+            let mut rng = rand::rng();
+            let dealer_index = rng.random_range(0..occupied.len());
+            start_match_in_room_state(room, occupied[dealer_index], rand::random::<u64>())
         }
         _ => Err("invalid_action".to_string()),
     }
@@ -535,6 +940,72 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
+fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    apply_settlement_to_match_in_room_state(room);
+    let match_state = room
+        .match_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let prevailing_wind = match_state.prevailing_wind.as_str();
+    let hand_number = match_state.hand_number as usize;
+    let dealer_seat = match_state.dealer_seat;
+    let current_wind_index = WIND_ORDER
+        .iter()
+        .position(|wind| *wind == prevailing_wind)
+        .unwrap_or(0);
+    let next_dealer = (dealer_seat + 1) % MAX_SEATS;
+    let mut next_hand_number = hand_number + 1;
+    let mut next_wind = prevailing_wind.to_string();
+    let mut match_finished = false;
+    if next_hand_number > MAX_SEATS {
+        next_hand_number = 1;
+        if current_wind_index == WIND_ORDER.len() - 1 {
+            match_finished = true;
+        } else {
+            next_wind = WIND_ORDER[current_wind_index + 1].to_string();
+        }
+    }
+
+    {
+        let match_state = room
+            .match_state
+            .as_mut()
+            .ok_or_else(|| "invalid_action".to_string())?;
+        match_state.prevailing_wind = next_wind.clone();
+        match_state.hand_number = if match_finished {
+            hand_number as u32
+        } else {
+            next_hand_number as u32
+        };
+        match_state.dealer_seat = if match_finished {
+            dealer_seat
+        } else {
+            next_dealer
+        };
+        match_state.match_finished = match_finished;
+    }
+
+    if match_finished {
+        room.phase = "finished".to_string();
+        room.pending_timeout = None;
+        return Ok(());
+    }
+
+    let round_id = format!(
+        "{next_wind}-{next_hand_number}-dealer-{next_dealer}-{}",
+        rand::random::<u64>()
+    );
+    start_round_in_room_state(
+        room,
+        next_dealer,
+        &next_wind,
+        round_id,
+        room.enforce_minimum_eight_fan,
+        rand::random::<u64>(),
+    );
+    Ok(())
+}
+
 fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
     round_state
         .get("players")
@@ -547,6 +1018,17 @@ fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
                 .iter()
                 .any(|tile| tile.get("kind").and_then(Value::as_str) == Some("flower"))
         })
+        .unwrap_or(false)
+}
+
+fn player_has_concealed_flower_in_room_state(
+    round_state: &crate::core::state::RoundState,
+    seat_index: usize,
+) -> bool {
+    round_state
+        .players
+        .get(seat_index)
+        .map(|player| player.concealed_tiles.iter().any(|tile| tile.kind == "flower"))
         .unwrap_or(false)
 }
 

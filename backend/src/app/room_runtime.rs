@@ -3,18 +3,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
-use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::app::scheduler::schedule_room_tasks;
 use crate::app::{
-    AppContext, ConnectionHandle, disconnect_deadline_iso, parse_room_json, room_seats,
-    serialize_room_state,
+    AppContext, ConnectionHandle, disconnect_deadline_iso, parse_room_json, serialize_room_state,
 };
-use crate::core::engine::reducer::update_room_state;
 use crate::core::state::RoomState;
-use crate::mahjong::reconcile_continue_action_state as rust_reconcile_continue_action_state;
+use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state;
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
 
@@ -28,7 +25,7 @@ pub(crate) type RoomRef = Arc<RoomHandle>;
 
 pub(crate) struct RoomRuntime {
     pub(crate) created_at: String,
-    pub(crate) room: Value,
+    pub(crate) room: RoomState,
     pub(crate) connections: HashMap<usize, ConnectionHandle>,
     pub(crate) timeout_nonce: u64,
     pub(crate) continue_nonce: u64,
@@ -41,7 +38,7 @@ pub(crate) struct RoomRuntime {
 }
 
 impl RoomRuntime {
-    pub(crate) fn new(created_at: String, room: Value) -> Self {
+    pub(crate) fn new(created_at: String, room: RoomState) -> Self {
         Self {
             created_at,
             room,
@@ -115,18 +112,16 @@ pub(crate) async fn ensure_room_loaded(
         return Ok(None);
     };
 
-    let room_state = parse_room_json(&record.room_json)?;
-    let mut room = room_state.to_room_value()?;
+    let mut room = parse_room_json(&record.room_json)?;
     mark_restored_room_disconnected(&mut room);
-    let _ = rust_reconcile_continue_action_state(&mut room);
-    let normalized_state = RoomState::from_room_value(&room)?;
+    let _ = reconcile_standard_continue_action_state(&mut room);
     state
         .inner
         .db
         .save_table(
             table_code,
             &record.created_at,
-            &serialize_room_state(&normalized_state)?,
+            &serialize_room_state(&room)?,
         )
         .await?;
 
@@ -167,7 +162,7 @@ pub(crate) async fn close_room_handle(room_handle: &RoomHandle) {
     close_runtime(&mut runtime);
 }
 
-pub(crate) async fn restore_room_snapshot(room_handle: &RoomHandle, room: Value) {
+pub(crate) async fn restore_room_snapshot(room_handle: &RoomHandle, room: RoomState) {
     let mut runtime = room_handle.runtime.lock().await;
     runtime.room = room;
 }
@@ -186,18 +181,15 @@ pub(crate) async fn unregister_room_handle(
     }
 }
 
-pub(crate) fn mark_restored_room_disconnected(room: &mut Value) {
+pub(crate) fn mark_restored_room_disconnected(room: &mut RoomState) {
     let deadline = disconnect_deadline_iso();
-    let _ = update_room_state(room, |state| {
-        for seat in &mut state.seats {
-            if seat.is_bot {
-                continue;
-            }
-            seat.connected = false;
-            seat.disconnect_deadline_at = Some(deadline.clone());
+    for seat in &mut room.seats {
+        if seat.is_bot {
+            continue;
         }
-        Ok(())
-    });
+        seat.connected = false;
+        seat.disconnect_deadline_at = Some(deadline.clone());
+    }
 }
 
 pub(crate) fn replace_connection(
@@ -220,36 +212,17 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
         .collect()
 }
 
-pub(crate) fn room_has_only_bots(room: &Value) -> bool {
-    RoomState::from_room_value(room)
-        .map(|state| !state.seats.is_empty() && state.seats.iter().all(|seat| seat.is_bot))
-        .unwrap_or_else(|_| {
-            let seats = room_seats(room);
-            !seats.is_empty()
-                && seats
-                    .into_iter()
-                    .all(|seat| seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-        })
+pub(crate) fn room_has_only_bots(room: &RoomState) -> bool {
+    !room.seats.is_empty() && room.seats.iter().all(|seat| seat.is_bot)
 }
 
 pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
     if !runtime.connections.is_empty() {
         return false;
     }
-    RoomState::from_room_value(&runtime.room)
-        .map(|state| {
-            state
-                .seats
-                .into_iter()
-                .all(|seat| seat.is_bot || seat.reconnect_token.is_none())
-        })
-        .unwrap_or_else(|_| {
-            room_seats(&runtime.room).into_iter().all(|seat| {
-                seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false)
-                    || seat
-                        .get("reconnect_token")
-                        .map(Value::is_null)
-                        .unwrap_or(true)
-            })
-        })
+    runtime
+        .room
+        .seats
+        .iter()
+        .all(|seat| seat.is_bot || seat.reconnect_token.is_none())
 }

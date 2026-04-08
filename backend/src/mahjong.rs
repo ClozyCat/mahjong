@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::bot::BotAction;
 use crate::core::action::GameCommand;
 use crate::core::engine::flow::try_handle_command as execute_engine_command;
@@ -28,18 +30,8 @@ use serde_json::{Value, json};
 const MAX_SEATS: usize = 4;
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
 
-pub fn room_messages(room: &Value, local_seat: usize) -> Vec<Value> {
-    let (state, support) = projected_room_message_context(room, local_seat);
-    let mut messages = vec![crate::projection::room_snapshot::room_snapshot_message(
-        &state, local_seat, &support,
-    )];
-    if let Some(result) = crate::projection::match_result::match_result_message(&state) {
-        messages.push(result);
-    }
-    messages
-}
-
-pub fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {
+#[cfg(test)]
+fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {
     let state = project_room_state(room).ok()?;
     crate::projection::prompt::action_prompt_message(
         &state,
@@ -87,6 +79,7 @@ pub fn add_bot_seats_for_test(room: &mut Value) {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                skill_loadout: Default::default(),
             });
         }
         state.seats.sort_by_key(|seat| seat.seat_index);
@@ -152,6 +145,7 @@ pub fn apply_hu_settlement(
     )
 }
 
+#[cfg(test)]
 fn room_snapshot(room: &Value, local_seat: usize) -> Value {
     let (state, support) = projected_room_message_context(room, local_seat);
     crate::projection::room_snapshot::room_snapshot_message(&state, local_seat, &support)

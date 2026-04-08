@@ -1,6 +1,7 @@
 mod app;
 mod bot;
 mod core;
+#[cfg(test)]
 mod mahjong;
 mod projection;
 mod room_scoring;
@@ -35,6 +36,11 @@ mod tests {
         remove_bot_from_waiting_room, room_has_round_state, seat_matches_reconnect_credentials,
         send_outbound,
     };
+    use crate::core::state::RoomState;
+
+    fn room_state(value: Value) -> RoomState {
+        RoomState::from_room_value(&value).expect("room state should parse")
+    }
 
     fn test_app_context(db: DbWorker) -> AppContext {
         AppContext::new(
@@ -63,8 +69,14 @@ mod tests {
 
     #[test]
     fn maybe_start_test_match_starts_when_round_state_is_null() {
-        let mut room = initial_room_payload("ROOM42", "test", true);
-        room["seats"] = json!([{
+        let mut room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "test",
+            "test_mode": true,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [{
             "seat_index": 0,
             "nickname": "Solo",
             "reconnect_token": "token-1",
@@ -76,15 +88,19 @@ mod tests {
             "bot_persona": Value::Null,
             "bot_aggression": Value::Null,
             "disconnect_deadline_at": Value::Null,
-        }]);
+        }],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
 
         maybe_start_test_match(&mut room);
 
-        assert_eq!(room["phase"], "playing");
-        assert_eq!(room["mode"], "test");
-        assert_eq!(room["seats"].as_array().map(Vec::len), Some(4));
+        assert_eq!(room.phase, "playing");
+        assert_eq!(room.mode, "test");
+        assert_eq!(room.seats.len(), 4);
         assert!(room_has_round_state(&room));
-        assert_eq!(room["match_state"]["dealer_seat"], 0);
+        assert_eq!(room.match_state.as_ref().map(|state| state.dealer_seat), Some(0));
     }
 
     #[test]
@@ -109,7 +125,7 @@ mod tests {
             close_notify: Arc::new(Notify::new()),
         };
         let mut runtime =
-            RoomRuntime::new(now_iso(), initial_room_payload("ROOM42", "normal", true));
+            RoomRuntime::new(now_iso(), room_state(initial_room_payload("ROOM42", "normal", true)));
         runtime.connections = HashMap::from([(0, previous.clone())]);
 
         replace_connection(&mut runtime, 0, &replacement);
@@ -120,8 +136,14 @@ mod tests {
 
     #[test]
     fn restored_human_seats_receive_disconnect_deadline() {
-        let mut room = initial_room_payload("ROOM42", "normal", true);
-        room["seats"] = json!([
+        let mut room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
             {
                 "seat_index": 0,
                 "nickname": "Alice",
@@ -148,22 +170,33 @@ mod tests {
                 "bot_aggression": Value::Null,
                 "disconnect_deadline_at": Value::Null
             }
-        ]);
+        ],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
 
         mark_restored_room_disconnected(&mut room);
 
-        let human_deadline = room["seats"][0]["disconnect_deadline_at"]
-            .as_str()
+        let human_deadline = room.seats[0]
+            .disconnect_deadline_at
+            .as_deref()
             .and_then(parse_datetime);
         assert!(human_deadline.is_some());
-        assert_eq!(room["seats"][0]["connected"], Value::Bool(false));
-        assert!(room["seats"][1]["disconnect_deadline_at"].is_null());
+        assert!(!room.seats[0].connected);
+        assert!(room.seats[1].disconnect_deadline_at.is_none());
     }
 
     #[test]
     fn add_bot_to_waiting_room_fills_first_empty_seat_and_marks_ready() {
-        let mut room = initial_room_payload("ROOM42", "normal", true);
-        room["seats"] = json!([
+        let mut room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
             {
                 "seat_index": 0,
                 "nickname": "Alice",
@@ -190,23 +223,33 @@ mod tests {
                 "bot_aggression": Value::Null,
                 "disconnect_deadline_at": Value::Null
             }
-        ]);
+        ],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
 
         let inserted_seat = add_bot_to_waiting_room(&mut room).expect("bot seat should be added");
 
         assert_eq!(inserted_seat, 1);
-        assert_eq!(room["seats"].as_array().map(Vec::len), Some(3));
-        assert_eq!(room["seats"][1]["seat_index"], Value::from(1));
-        assert_eq!(room["seats"][1]["nickname"], Value::from("Bot 1"));
-        assert_eq!(room["seats"][1]["ready"], Value::Bool(true));
-        assert_eq!(room["seats"][1]["connected"], Value::Bool(true));
-        assert_eq!(room["seats"][1]["is_bot"], Value::Bool(true));
+        assert_eq!(room.seats.len(), 3);
+        assert_eq!(room.seats[1].seat_index, 1);
+        assert_eq!(room.seats[1].nickname.as_deref(), Some("Bot 1"));
+        assert!(room.seats[1].ready);
+        assert!(room.seats[1].connected);
+        assert!(room.seats[1].is_bot);
     }
 
     #[test]
     fn remove_bot_from_waiting_room_removes_highest_index_bot() {
-        let mut room = initial_room_payload("ROOM42", "normal", true);
-        room["seats"] = json!([
+        let mut room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
             {
                 "seat_index": 0,
                 "nickname": "Alice",
@@ -246,22 +289,33 @@ mod tests {
                 "bot_aggression": Value::Null,
                 "disconnect_deadline_at": Value::Null
             }
-        ]);
+        ],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
 
         let removed_seat =
             remove_bot_from_waiting_room(&mut room).expect("bot seat should be removed");
 
         assert_eq!(removed_seat, 3);
-        assert_eq!(room["seats"].as_array().map(Vec::len), Some(2));
+        assert_eq!(room.seats.len(), 2);
         assert_eq!(occupied_seats(&room), HashSet::from([0, 1]));
     }
 
     #[test]
     fn room_has_only_bots_requires_non_empty_bot_only_room() {
-        let mut empty_room = initial_room_payload("ROOM42", "normal", true);
+        let mut empty_room = room_state(initial_room_payload("ROOM42", "normal", true));
         assert!(!room_has_only_bots(&empty_room));
 
-        empty_room["seats"] = json!([{
+        empty_room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [{
             "seat_index": 0,
             "nickname": "Bot 1",
             "reconnect_token": Value::Null,
@@ -273,10 +327,21 @@ mod tests {
             "bot_persona": Value::Null,
             "bot_aggression": Value::Null,
             "disconnect_deadline_at": Value::Null
-        }]);
+        }],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
         assert!(room_has_only_bots(&empty_room));
 
-        empty_room["seats"] = json!([
+        empty_room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
             {
                 "seat_index": 0,
                 "nickname": "Bot 1",
@@ -303,14 +368,24 @@ mod tests {
                 "bot_aggression": Value::Null,
                 "disconnect_deadline_at": Value::Null
             }
-        ]);
+        ],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
         assert!(!room_has_only_bots(&empty_room));
     }
 
     #[test]
     fn seat_matches_reconnect_credentials_requires_current_room_token() {
-        let mut room = initial_room_payload("ROOM42", "normal", true);
-        room["seats"] = json!([{
+        let room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [{
             "seat_index": 0,
             "nickname": "Alice",
             "reconnect_token": "token-new",
@@ -322,7 +397,11 @@ mod tests {
             "bot_persona": Value::Null,
             "bot_aggression": Value::Null,
             "disconnect_deadline_at": Value::Null,
-        }]);
+        }],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
 
         assert!(seat_matches_reconnect_credentials(
             &room,
@@ -379,13 +458,12 @@ mod tests {
             .await
             .expect("restored room should be loaded");
         let runtime = room_handle.runtime.lock().await;
-        assert_eq!(runtime.room["seats"][0]["connected"], Value::Bool(false));
-        assert!(
-            runtime.room["seats"][0]["disconnect_deadline_at"]
-                .as_str()
-                .and_then(parse_datetime)
-                .is_some()
-        );
+        assert!(!runtime.room.seats[0].connected);
+        assert!(runtime.room.seats[0]
+            .disconnect_deadline_at
+            .as_deref()
+            .and_then(parse_datetime)
+            .is_some());
         assert!(runtime.disconnect_task.is_some());
         drop(runtime);
         close_room_handle(&room_handle).await;

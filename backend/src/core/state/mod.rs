@@ -39,14 +39,14 @@ pub(crate) fn object<'a>(
 ) -> Result<&'a serde_json::Map<String, Value>, EngineError> {
     value
         .as_object()
-        .ok_or_else(|| EngineError::legacy_decode(format!("{context} should be an object")))
+        .ok_or_else(|| EngineError::decode(format!("{context} should be an object")))
 }
 
 pub(crate) fn array<'a>(value: &'a Value, context: &str) -> Result<&'a [Value], EngineError> {
     value
         .as_array()
         .map(Vec::as_slice)
-        .ok_or_else(|| EngineError::legacy_decode(format!("{context} should be an array")))
+        .ok_or_else(|| EngineError::decode(format!("{context} should be an array")))
 }
 
 pub(crate) fn string_opt(value: &Value, key: &str) -> Option<String> {

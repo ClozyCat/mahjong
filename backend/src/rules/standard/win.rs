@@ -5,8 +5,8 @@ use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::engine::reducer::update_room_state;
 use crate::core::event::GameEvent;
 use crate::core::state::{
-    PendingAction, RoundSettlement, SettlementFanBreakdownEntry, SettlementKongScoreDetailEntry,
-    SettlementScoreDelta,
+    PendingAction, RoomState, RoundSettlement, SettlementFanBreakdownEntry,
+    SettlementKongScoreDetailEntry, SettlementScoreDelta,
 };
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::{
@@ -18,6 +18,7 @@ use crate::rules::scoring::{
 use crate::rules::skills::{
     ScoreHookRequest, apply_after_scoring_hooks, apply_before_scoring_hooks,
     sync_match_skill_trackers_after_settlement,
+    sync_match_skill_trackers_after_settlement_in_room_state,
 };
 
 use super::runtime::{current_actor, project_room_state, round_event_message};
@@ -274,6 +275,255 @@ pub fn apply_hu_settlement_output(
     ))
 }
 
+pub fn hu_action_hint_in_room_state(room: &RoomState, seat_index: usize) -> Option<&'static str> {
+    if room.phase != "playing" {
+        return None;
+    }
+    let round = room.round_state.as_ref()?;
+    let Some(pending_action) = round.pending_action.as_ref() else {
+        return (round.current_actor == seat_index).then_some("self_draw");
+    };
+    match pending_action {
+        PendingAction::ClaimWindow(claim)
+            if claim_window_action_offers_claim(claim, seat_index, "hu") =>
+        {
+            Some("discard")
+        }
+        PendingAction::RobKongWindow(rob) if rob_kong_action_offers_seat(rob, seat_index) => {
+            Some("discard")
+        }
+        PendingAction::ClaimWindow(_) | PendingAction::RobKongWindow(_) => None,
+        _ => None,
+    }
+}
+
+pub fn apply_hu_action_output_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+) -> Result<EngineOutput, String> {
+    let Some(hu_context) = hu_action_hint_in_room_state(room, seat_index) else {
+        return Err("invalid_action".to_string());
+    };
+    let settlement = compute_hu_settlement_for_state(room, seat_index, hu_context)?;
+    apply_hu_settlement_output_in_room_state(room, seat_index, hu_context, settlement)
+}
+
+pub(crate) fn compute_hu_settlement_for_state(
+    state: &RoomState,
+    winner_seat: usize,
+    hu_context: &str,
+) -> Result<RoundSettlement, String> {
+    if state.phase != "playing" {
+        return Err("round_not_ready".to_string());
+    }
+    let round = state
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "round_not_ready".to_string())?;
+
+    let discarder_seat = if hu_context == "self_draw" {
+        if round.current_actor != winner_seat {
+            return Err("invalid_action".to_string());
+        }
+        None
+    } else {
+        match round.pending_action.as_ref() {
+            Some(PendingAction::ClaimWindow(claim)) => {
+                if !claim
+                    .claim_window
+                    .get(winner_seat)
+                    .is_some_and(|claims| claims.iter().any(|claim_type| claim_type == "hu"))
+                {
+                    return Err("invalid_action".to_string());
+                }
+                Some(claim.discarder_seat)
+            }
+            Some(PendingAction::RobKongWindow(rob)) => {
+                if !rob.offered_hu_seats.contains(&winner_seat) {
+                    return Err("invalid_action".to_string());
+                }
+                Some(rob.actor_seat)
+            }
+            _ => return Err("invalid_action".to_string()),
+        }
+    };
+
+    let incoming_tile = if hu_context == "self_draw" {
+        None
+    } else {
+        round.last_discard.as_ref().map(|tile| tile.tile_key.as_str())
+    };
+
+    let cache = RoomScoringCache::from_state(state);
+    let evaluated = fan_result_for_win_with_state(
+        state,
+        &cache,
+        winner_seat,
+        incoming_tile,
+        discarder_seat,
+    )?;
+    let fan_result = &evaluated.fan_result;
+    let flower_count = round
+        .players
+        .get(winner_seat)
+        .map(|player| player.flowers.len())
+        .unwrap_or(0);
+    let enforce_minimum_eight_fan = round.rule_state.enforce_minimum_eight_fan;
+
+    Ok(RoundSettlement {
+        provisional: true,
+        win_type: hu_context.to_string(),
+        winner_seat: Some(winner_seat),
+        discarder_seat,
+        display_win_label: if !enforce_minimum_eight_fan
+            && fan_result.fan_total < evaluated.required_minimum_fan_total
+        {
+            Some("鐏炰礁鎷?".to_string())
+        } else {
+            None
+        },
+        fan_total: fan_result.fan_total,
+        fan_keys: fan_result.fan_keys.clone(),
+        fan_breakdown: fan_result
+            .fan_breakdown
+            .iter()
+            .map(|entry| SettlementFanBreakdownEntry {
+                fan_key: entry.fan_key.clone(),
+                fan_value: entry.fan_value,
+            })
+            .collect(),
+        score_delta: SettlementScoreDelta {
+            provisional: fan_result.score_delta.provisional,
+            basic_points: fan_result.score_delta.basic_points,
+            base_points: fan_result.score_delta.base_points,
+            fan_total: fan_result.score_delta.fan_total,
+            minimum_qualifying_fan_total: fan_result.score_delta.minimum_qualifying_fan_total,
+            fan_delta_by_seat: fan_result
+                .score_delta
+                .fan_delta_by_seat
+                .iter()
+                .enumerate()
+                .map(|(seat, delta)| (seat, *delta))
+                .collect(),
+            kong_delta_by_seat: fan_result
+                .score_delta
+                .kong_delta_by_seat
+                .iter()
+                .enumerate()
+                .map(|(seat, delta)| (seat, *delta))
+                .collect(),
+            total_delta_by_seat: fan_result
+                .score_delta
+                .total_delta_by_seat
+                .iter()
+                .enumerate()
+                .map(|(seat, delta)| (seat, *delta))
+                .collect(),
+        },
+        flower_count,
+        draw_type: None,
+        kong_score_detail: fan_result
+            .kong_score_detail
+            .iter()
+            .map(|entry| SettlementKongScoreDetailEntry {
+                kong_type: entry.kong_type.clone(),
+                actor_seat: entry.actor_seat,
+                payer_seats: entry.payer_seats.clone(),
+                delta_by_seat: entry
+                    .delta_by_seat
+                    .iter()
+                    .enumerate()
+                    .map(|(seat, delta)| (seat, *delta))
+                    .collect(),
+            })
+            .collect(),
+    })
+}
+
+pub fn apply_hu_settlement_output_in_room_state(
+    room: &mut RoomState,
+    winner_seat: usize,
+    hu_context: &str,
+    settlement: RoundSettlement,
+) -> Result<EngineOutput, String> {
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "round_not_ready".to_string())?;
+    let round_id = round.round_id.clone();
+    let winning_tile_id = round.last_action_context.tile_id.clone();
+    let discarded_tile = round.last_discard.clone();
+
+    let settlement_for_write = settlement.clone();
+    let settlement_match_plan = plan_settlement_to_match(room, &settlement_for_write);
+    room.phase = "settlement".to_string();
+    room.pending_timeout = None;
+    if let Some(round) = room.round_state.as_mut() {
+        round.phase = "settlement".to_string();
+        round.pending_action = None;
+        round.settlement = Some(settlement_for_write.clone());
+        round.current_actor = winner_seat;
+        round.version += 1;
+    }
+    if let Some(plan) = settlement_match_plan {
+        if let Some(match_state) = room.match_state.as_mut() {
+            match_state.cumulative_scores = plan.cumulative_scores;
+            match_state.last_completed_round_id = Some(plan.round_id);
+        }
+    }
+
+    sync_match_skill_trackers_after_settlement_in_room_state(room);
+
+    let first_event = if hu_context == "self_draw" {
+        round_event_message(
+            "self_hu_declared",
+            json!({
+                "type": "self_hu_declared",
+                "seat": winner_seat,
+                "tile_id": winning_tile_id,
+            }),
+        )
+    } else {
+        round_event_message(
+            "claim_made",
+            json!({
+                "type": "claim_made",
+                "seat": winner_seat,
+                "claim_type": "hu",
+                "tile_id": discarded_tile
+                    .as_ref()
+                    .map(|tile| Value::String(tile.tile_id.clone()))
+                    .unwrap_or(Value::Null),
+            }),
+        )
+    };
+    let settlement_message = round_event_message(
+        "settlement_ready",
+        json!({
+            "type": "settlement_ready",
+            "round_id": round_id,
+            "settlement": settlement.to_value(),
+        }),
+    );
+    Ok(EngineOutput::new(
+        vec![
+            GameEvent::HuDeclared {
+                winner: winner_seat,
+                source: if hu_context == "self_draw" {
+                    "self_draw".to_string()
+                } else {
+                    "discard".to_string()
+                },
+            },
+            GameEvent::SettlementPrepared {
+                settlement: settlement.clone(),
+            },
+        ],
+        vec![first_event, settlement_message],
+    ))
+}
+
+#[allow(dead_code)]
 pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
     let state = project_room_state(room).ok()?;
     if state.phase != "playing" {
@@ -315,6 +565,8 @@ fn rob_kong_action_offers_seat(
     pending_action.offered_hu_seats.contains(&seat_index)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub fn claim_window_offers_claim(
     pending_action: &Value,
     seat_index: usize,
@@ -337,26 +589,38 @@ pub fn can_declare_hu_with_cache(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    if let Ok(state) = project_room_state(room) {
-        if state
-            .round_state
-            .as_ref()
-            .and_then(|round| round.pending_action.as_ref())
-            .is_some_and(|pending| matches!(pending, PendingAction::OpeningFlowers(_)))
-        {
-            return false;
-        }
-    }
-
-    if let Ok(evaluated) =
-        fan_result_for_win_with_cache(room, cache, seat_index, incoming_tile, discarder_seat)
-    {
-        return evaluated.fan_result.minimum_qualifying_fan_total
-            >= evaluated.required_minimum_fan_total;
-    }
-    false
+    let Ok(state) = project_room_state(room) else {
+        return false;
+    };
+    can_declare_hu_with_cache_for_state(&state, cache, seat_index, incoming_tile, discarder_seat)
 }
 
+pub fn can_declare_hu_with_cache_for_state(
+    state: &RoomState,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+    incoming_tile: Option<&str>,
+    discarder_seat: Option<usize>,
+) -> bool {
+    if state
+        .round_state
+        .as_ref()
+        .and_then(|round| round.pending_action.as_ref())
+        .is_some_and(|pending| matches!(pending, PendingAction::OpeningFlowers(_)))
+    {
+        return false;
+    }
+
+    fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat)
+        .map(|evaluated| {
+            evaluated.fan_result.minimum_qualifying_fan_total
+                >= evaluated.required_minimum_fan_total
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
 fn json_array_contains_str(values: Option<&Vec<Value>>, needle: &str) -> bool {
     values.is_some_and(|items| items.iter().any(|value| value.as_str() == Some(needle)))
 }
@@ -379,6 +643,16 @@ fn fan_result_for_win_with_cache(
     discarder_seat: Option<usize>,
 ) -> Result<EvaluatedWinResult, String> {
     let state = project_room_state(room)?;
+    fan_result_for_win_with_state(&state, cache, winner_seat, incoming_tile, discarder_seat)
+}
+
+fn fan_result_for_win_with_state(
+    state: &RoomState,
+    cache: &RoomScoringCache,
+    winner_seat: usize,
+    incoming_tile: Option<&str>,
+    discarder_seat: Option<usize>,
+) -> Result<EvaluatedWinResult, String> {
     let PreparedWinEvaluation {
         concealed_tile_keys,
         meld_tile_key_groups,
@@ -407,15 +681,11 @@ fn fan_result_for_win_with_cache(
     let player_tile_keys =
         player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
 
-    let enforce_minimum_eight_fan = room
-        .get("round_state")
-        .and_then(|round| round.get("enforce_minimum_eight_fan"))
-        .and_then(Value::as_bool)
-        .or_else(|| {
-            room.get("enforce_minimum_eight_fan")
-                .and_then(Value::as_bool)
-        })
-        .unwrap_or(true);
+    let enforce_minimum_eight_fan = state
+        .round_state
+        .as_ref()
+        .map(|round| round.rule_state.enforce_minimum_eight_fan)
+        .unwrap_or(state.enforce_minimum_eight_fan);
     let mut request = ScoreHookRequest {
         evaluation: ScoringEvaluationInput {
             win_type: win_type.clone(),
@@ -427,7 +697,7 @@ fn fan_result_for_win_with_cache(
                 .unwrap_or(0),
             seat_count: cache.seat_count,
             features,
-            timing: timing_features_for_win(room, incoming_tile.is_none()),
+            timing: timing_features_for_win_state(state, incoming_tile.is_none()),
             kong_entries,
             tile_keys: player_tile_keys,
             visible_tile_keys: cache.visible_tile_keys.clone(),
@@ -567,11 +837,10 @@ fn meld_is_open_with_entries(
     true
 }
 
-fn timing_features_for_win(room: &Value, self_draw: bool) -> ScoringTimingFeatures {
-    let state = project_room_state(room).ok();
+fn timing_features_for_win_state(state: &RoomState, self_draw: bool) -> ScoringTimingFeatures {
     let context = state
+        .round_state
         .as_ref()
-        .and_then(|state| state.round_state.as_ref())
         .map(|round| round.last_action_context.clone())
         .unwrap_or_default();
     if self_draw {
@@ -589,8 +858,8 @@ fn timing_features_for_win(room: &Value, self_draw: bool) -> ScoringTimingFeatur
         hai_di_lao_yue: false,
         he_di_lao_yu: context.kind == "discard" && context.was_last_discard,
         robbing_the_kong: state
+            .round_state
             .as_ref()
-            .and_then(|state| state.round_state.as_ref())
             .and_then(|round| round.pending_action.as_ref())
             .is_some_and(|pending| matches!(pending, PendingAction::RobKongWindow(_))),
     }

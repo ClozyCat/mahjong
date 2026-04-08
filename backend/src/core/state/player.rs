@@ -20,6 +20,8 @@ pub struct SeatState {
     pub bot_persona: Option<String>,
     pub bot_aggression: Option<i64>,
     pub disconnect_deadline_at: Option<String>,
+    #[serde(default)]
+    pub skill_loadout: SkillLoadout,
 }
 
 impl SeatState {
@@ -40,6 +42,7 @@ impl SeatState {
             bot_persona: string_opt(value, "bot_persona"),
             bot_aggression: i64_opt(value, "bot_aggression"),
             disconnect_deadline_at: string_opt(value, "disconnect_deadline_at"),
+            skill_loadout: SkillLoadout::from_value(value.get("skill_loadout")).unwrap_or_default(),
         }
     }
 }

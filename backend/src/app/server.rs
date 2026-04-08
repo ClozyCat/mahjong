@@ -206,8 +206,7 @@ async fn create_or_replace_table(
 
     let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(
         created_at.clone(),
-        room.to_room_value()
-            .map_err(|error| CreateTableError::Internal(error.into()))?,
+        room.clone(),
     )));
     let replaced_after_insert = {
         let mut rooms = state.inner.rooms.write().await;

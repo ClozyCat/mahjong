@@ -1,9 +1,10 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use crate::core::state::RoomState;
 use crate::room_scoring::{RoomScoringCache, TileCounts};
 
-use super::win::can_declare_hu_with_cache;
+use super::win::{can_declare_hu_with_cache, can_declare_hu_with_cache_for_state};
 
 const MAX_SEATS: usize = 4;
 const HONOR_TILE_START: usize = 27;
@@ -28,6 +29,7 @@ pub struct SelfKongCandidate {
     pub meld_index: Option<usize>,
 }
 
+#[allow(dead_code)]
 pub fn available_self_kongs(room: &Value, seat_index: usize) -> Vec<SelfKongCandidate> {
     let cache = RoomScoringCache::from_room(room);
     available_self_kongs_from_cache(&cache, seat_index)
@@ -116,6 +118,20 @@ pub fn seats_with_hu_candidate_for_tile(
         .collect()
 }
 
+pub fn seats_with_hu_candidate_for_tile_in_room_state(
+    room: &RoomState,
+    actor_seat: usize,
+    tile_key: &str,
+) -> Vec<usize> {
+    let cache = RoomScoringCache::from_state(room);
+    (0..MAX_SEATS)
+        .filter(|seat_index| *seat_index != actor_seat)
+        .filter(|seat_index| {
+            can_declare_hu_with_cache_for_state(room, &cache, *seat_index, Some(tile_key), None)
+        })
+        .collect()
+}
+
 pub fn claim_window_options_after_discard(
     room: &Value,
     discarder_seat: usize,
@@ -151,6 +167,54 @@ pub fn claim_window_options_after_discard(
                 }
             }
             if can_declare_hu_with_cache(
+                room,
+                &scoring_cache,
+                seat_index,
+                Some(discarded_tile_key),
+                None,
+            ) {
+                claims.push("hu".to_string());
+            }
+            claims
+        })
+        .collect()
+}
+
+pub fn claim_window_options_after_discard_in_room_state(
+    room: &RoomState,
+    discarder_seat: usize,
+    discarded_tile_key: &str,
+) -> Vec<Vec<String>> {
+    let ltw_after_discard = is_last_tile_wall_point_after_discard_in_room_state(room);
+    let next_player = (discarder_seat + 1) % MAX_SEATS;
+    let scoring_cache = RoomScoringCache::from_state(room);
+
+    (0..MAX_SEATS)
+        .map(|seat_index| {
+            if seat_index == discarder_seat {
+                return Vec::new();
+            }
+
+            let counts = scoring_cache
+                .player(seat_index)
+                .map(|player| player.concealed_tile_counts)
+                .unwrap_or([0; TILE_KIND_COUNT]);
+            let mut claims = Vec::new();
+            if !ltw_after_discard {
+                let same_tile_count = tile_index(discarded_tile_key)
+                    .map(|tile_index| counts[tile_index])
+                    .unwrap_or(0);
+                if same_tile_count >= 2 {
+                    claims.push("pung".to_string());
+                }
+                if same_tile_count >= 3 {
+                    claims.push("kong".to_string());
+                }
+                if seat_index == next_player && can_chow(discarded_tile_key, &counts) {
+                    claims.push("chow".to_string());
+                }
+            }
+            if can_declare_hu_with_cache_for_state(
                 room,
                 &scoring_cache,
                 seat_index,
@@ -331,6 +395,16 @@ fn is_last_tile_wall_point_after_discard(room: &Value) -> bool {
                     .get("was_last_discard")
                     .and_then(Value::as_bool)
                     .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+fn is_last_tile_wall_point_after_discard_in_room_state(room: &RoomState) -> bool {
+    room.round_state
+        .as_ref()
+        .map(|round| {
+            let context = &round.last_action_context;
+            context.kind == "discard" && context.was_last_discard
         })
         .unwrap_or(false)
 }

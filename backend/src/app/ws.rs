@@ -27,16 +27,16 @@ use super::{
     seat_exists, seat_matches_reconnect_credentials, send_outbound, serialize_room,
     set_seat_connected,
 };
+use crate::core::engine::try_handle_player_action_in_room_state;
 use super::protocol::{
     action_rejected_message, heartbeat_message, leave_table_accepted_message, quick_chat_message,
 };
-use crate::core::engine::reducer::update_room_state;
 use crate::core::state::SeatState;
-use crate::mahjong::{
-    reconcile_continue_action_state as rust_reconcile_continue_action_state,
-    record_continue_action as rust_record_continue_action,
-    room_ready_to_start as rust_room_ready_to_start, start_match as rust_start_match,
-    try_handle_action as try_rust_action,
+use crate::rules::standard::flow::{
+    reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
+    record_continue_action_in_room_state as record_standard_continue_action,
+    room_ready_to_start as room_ready_to_start_in_state,
+    start_match_in_room_state as start_standard_match,
 };
 
 #[derive(Debug, Deserialize)]
@@ -385,27 +385,21 @@ async fn handle_join_table(
 
     let player_session_id = generate_player_session_id();
     let reconnect_token = generate_reconnect_token();
-    if update_room_state(&mut runtime.room, |state| {
-        state.seats.push(SeatState {
-            seat_index,
-            nickname: Some(nickname.clone()),
-            reconnect_token: Some(reconnect_token.clone()),
-            player_session_id: Some(player_session_id),
-            connected: true,
-            ready: false,
-            is_bot: false,
-            seat_type: "human".to_string(),
-            bot_persona: None,
-            bot_aggression: None,
-            disconnect_deadline_at: None,
-        });
-        state.seats.sort_by_key(|seat| seat.seat_index);
-        Ok(())
-    })
-    .is_err()
-    {
-        return reject_to(connection, "invalid_room_state");
-    }
+    runtime.room.seats.push(SeatState {
+        seat_index,
+        nickname: Some(nickname.clone()),
+        reconnect_token: Some(reconnect_token.clone()),
+        player_session_id: Some(player_session_id),
+        connected: true,
+        ready: false,
+        is_bot: false,
+        seat_type: "human".to_string(),
+        bot_persona: None,
+        bot_aggression: None,
+        disconnect_deadline_at: None,
+        skill_loadout: Default::default(),
+    });
+    runtime.room.seats.sort_by_key(|seat| seat.seat_index);
     maybe_start_test_match(&mut runtime.room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -501,23 +495,17 @@ async fn handle_reconnect(
     }
 
     let new_token = generate_reconnect_token();
-    if update_room_state(&mut runtime.room, |state| {
-        if let Some(seat) = state
-            .seats
-            .iter_mut()
-            .find(|seat| seat.seat_index == token_record.seat_index)
-        {
+    if let Some(seat) = runtime
+        .room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == token_record.seat_index)
+    {
             seat.reconnect_token = Some(new_token.clone());
             seat.connected = true;
             seat.disconnect_deadline_at = None;
-        }
-        Ok(())
-    })
-    .is_err()
-    {
-        return reject_to(connection, "invalid_room_state");
     }
-    let _ = rust_reconcile_continue_action_state(&mut runtime.room);
+    let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
@@ -590,15 +578,13 @@ async fn handle_ready(
     if room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
-    if update_room_state(&mut runtime.room, |state| {
-        if let Some(seat) = state.seats.iter_mut().find(|seat| seat.seat_index == seat_index) {
-            seat.ready = ready;
-        }
-        Ok(())
-    })
-    .is_err()
+    if let Some(seat) = runtime
+        .room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == seat_index)
     {
-        return reject_to(connection, "invalid_room_state");
+            seat.ready = ready;
     }
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -721,7 +707,7 @@ async fn handle_start_match(
     }
     let previous_room = runtime.room.clone();
     let already_started = room_has_round_state(&runtime.room);
-    let ready_to_start = rust_room_ready_to_start(&runtime.room);
+    let ready_to_start = room_ready_to_start_in_state(&runtime.room);
     let occupied = occupied_seats(&runtime.room);
     if already_started {
         return reject_to(connection, "room_already_started");
@@ -734,7 +720,10 @@ async fn handle_start_match(
         let mut rng = rand::rng();
         occupied[rng.random_range(0..occupied.len())]
     };
-    rust_start_match(&mut runtime.room, dealer_seat, rand::random::<u64>());
+    if let Err(error) = start_standard_match(&mut runtime.room, dealer_seat, rand::random::<u64>())
+    {
+        return internal_error_to(connection, Error::msg(error));
+    }
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
@@ -782,7 +771,8 @@ async fn handle_continue_action(
         return reject_to(connection, "table_not_found");
     }
     let previous_room = runtime.room.clone();
-    if let Err(reason) = rust_record_continue_action(&mut runtime.room, seat_index, action_id) {
+    let continue_result = record_standard_continue_action(&mut runtime.room, seat_index, action_id);
+    if let Err(reason) = continue_result {
         return reject_to(connection, &reason);
     }
     let created_at = runtime.created_at.clone();
@@ -835,13 +825,17 @@ async fn handle_action_request(
         return reject_to(connection, "table_not_found");
     }
     let previous_room = runtime.room.clone();
-    let rust_handled_messages = match try_rust_action(
+    let action_result = match try_handle_player_action_in_room_state(
         &mut runtime.room,
         seat_index,
         &action_type,
         &tile_id_strings,
     ) {
-        Some(Ok(messages)) => messages,
+        Ok(result) => result,
+        Err(error) => return internal_error_to(connection, Error::msg(error)),
+    };
+    let rust_handled_messages = match action_result {
+        Some(Ok(output)) => output.emitted_messages,
         Some(Err(reason)) => return reject_to(connection, &reason),
         None => return reject_to(connection, "invalid_action"),
     };
@@ -957,7 +951,7 @@ async fn handle_leave_table(
         remove_seat_from_room(&mut runtime.room, seat_index);
     } else {
         convert_seat_to_bot(&mut runtime.room, seat_index);
-        let _ = rust_reconcile_continue_action_state(&mut runtime.room);
+        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     }
 
     let mut outbound = vec![connection.outbound(leave_table_accepted_message(
@@ -1105,7 +1099,7 @@ async fn handle_disconnect(
         false,
         Some(super::disconnect_deadline_iso()),
     );
-    let _ = rust_reconcile_continue_action_state(&mut runtime.room);
+        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);

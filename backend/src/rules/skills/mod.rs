@@ -18,7 +18,7 @@ use crate::core::state::{
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::standard::runtime::project_room_state as standard_project_room_state;
-use crate::rules::standard::win::can_declare_hu_with_cache;
+use crate::rules::standard::win::{can_declare_hu_with_cache, can_declare_hu_with_cache_for_state};
 
 use self::builtin::{PeekOpponentTileSkill, ScoreBoostSkill};
 
@@ -74,6 +74,28 @@ where
             .ok_or_else(|| "invalid_action".to_string())?;
         mutate(match_state)
     })
+}
+
+fn update_skill_round_state_in_room_state<F>(room: &mut RoomState, mut mutate: F) -> Result<(), String>
+where
+    F: FnMut(&mut crate::core::state::RoundState) -> Result<(), String>,
+{
+    let round = room
+        .round_state
+        .as_mut()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    mutate(round)
+}
+
+fn update_skill_match_state_in_room_state<F>(room: &mut RoomState, mut mutate: F) -> Result<(), String>
+where
+    F: FnMut(&mut crate::core::state::MatchState) -> Result<(), String>,
+{
+    let match_state = room
+        .match_state
+        .as_mut()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    mutate(match_state)
 }
 
 pub fn activate_skill(
@@ -224,6 +246,7 @@ pub fn apply_draw_settlement_hooks_with_registry(
     })
 }
 
+#[allow(dead_code)]
 pub fn apply_skill_events_to_room(
     room: &mut Value,
     actor: Seat,
@@ -236,6 +259,7 @@ pub fn apply_skill_events_to_room(
     result
 }
 
+#[allow(dead_code)]
 pub fn apply_passive_skill_events_to_room(
     room: &mut Value,
     events: &[GameEvent],
@@ -243,6 +267,27 @@ pub fn apply_passive_skill_events_to_room(
     let result = apply_events_to_room(room, events);
     sync_round_skill_trackers(room);
     result
+}
+
+pub fn apply_skill_events_to_room_in_room_state(
+    room: &mut RoomState,
+    actor: Seat,
+    skill_id: &str,
+    events: &[GameEvent],
+) -> Result<Vec<Value>, String> {
+    decrement_skill_charge_in_room_state(room, actor, skill_id)?;
+    let emitted = apply_events_to_room_in_room_state(room, events)?;
+    sync_round_skill_trackers_in_room_state(room);
+    Ok(emitted)
+}
+
+pub fn apply_passive_skill_events_to_room_in_room_state(
+    room: &mut RoomState,
+    events: &[GameEvent],
+) -> Result<Vec<Value>, String> {
+    let emitted = apply_events_to_room_in_room_state(room, events)?;
+    sync_round_skill_trackers_in_room_state(room);
+    Ok(emitted)
 }
 
 pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
@@ -302,6 +347,55 @@ pub fn sync_match_skill_trackers_after_settlement(room: &mut Value) {
     });
 }
 
+pub fn sync_match_skill_trackers_after_settlement_in_room_state(room: &mut RoomState) {
+    let winner_seat = room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.settlement.as_ref())
+        .and_then(|settlement| settlement.winner_seat);
+
+    let seat_count = room.seats.len().max(4);
+    let mut trackers = room
+        .match_state
+        .as_ref()
+        .map(|match_state| match_state.skill_trackers.clone())
+        .unwrap_or_default();
+    if let Some(winner) = winner_seat {
+        trackers
+            .zou_wei_shang_ji
+            .pending_win_penalty
+            .remove(&winner);
+    }
+    match winner_seat {
+        Some(winner) => {
+            for seat in 0..seat_count {
+                let next = if seat == winner {
+                    trackers
+                        .lian_huan_ji
+                        .streaks
+                        .get(&seat)
+                        .copied()
+                        .unwrap_or(0)
+                        + 1
+                } else {
+                    0
+                };
+                trackers.lian_huan_ji.streaks.insert(seat, next);
+            }
+        }
+        None => {
+            for seat in 0..seat_count {
+                trackers.lian_huan_ji.streaks.insert(seat, 0);
+            }
+        }
+    }
+
+    let _ = update_skill_match_state_in_room_state(room, |match_state| {
+        match_state.skill_trackers = trackers.clone();
+        Ok(())
+    });
+}
+
 pub fn sync_round_skill_trackers(room: &mut Value) {
     let Some(state) = standard_project_room_state(room).ok() else {
         return;
@@ -355,6 +449,56 @@ pub fn sync_round_skill_trackers(room: &mut Value) {
     });
 }
 
+pub fn sync_round_skill_trackers_in_room_state(room: &mut RoomState) {
+    let Some(round) = room.round_state.as_ref() else {
+        return;
+    };
+    let seat_count = round.players.len();
+    let mut trackers = round.skill_trackers.clone();
+
+    let mut discard_counts = std::collections::BTreeMap::new();
+    let mut discarded_five_by_seat = std::collections::BTreeMap::new();
+    let mut discard_suits_by_seat = std::collections::BTreeMap::new();
+    let mut players_with_kong = Vec::new();
+
+    for (seat, player) in round.players.iter().enumerate() {
+        let mut suit_set = std::collections::BTreeSet::new();
+        let mut discarded_five = false;
+        for discard in &player.discards {
+            let tile_key = discard.tile_key.as_str();
+            *discard_counts.entry(tile_key.to_string()).or_default() += 1;
+            if is_suit_five(tile_key) {
+                discarded_five = true;
+            }
+            if let Some(prefix) = suit_prefix(tile_key) {
+                suit_set.insert(prefix.to_string());
+            }
+        }
+        discarded_five_by_seat.insert(seat, discarded_five);
+        discard_suits_by_seat.insert(seat, suit_set.into_iter().collect());
+        let has_kong = player.melds.iter().any(|meld| meld.len() == 4);
+        if has_kong {
+            players_with_kong.push(seat);
+        }
+    }
+    trackers.discard_counts = discard_counts;
+    trackers.discarded_five_by_seat = discarded_five_by_seat;
+    trackers.discard_suits_by_seat = discard_suits_by_seat;
+    trackers.players_with_kong = players_with_kong;
+    trackers.live_tiles_remaining = round.wall.live_tiles_remaining() as i64;
+    trackers.tiles_drawn_since_opening = round.wall.head_index.saturating_sub(53) as i64;
+    trackers.multi_hu_candidates = pending_multi_hu_candidates(round);
+
+    let (tenpai_seats, tenpai_waits_by_seat) = compute_tenpai_trackers_in_room_state(room, seat_count);
+    trackers.tenpai_seats = tenpai_seats;
+    trackers.tenpai_waits_by_seat = tenpai_waits_by_seat;
+
+    let _ = update_skill_round_state_in_room_state(room, |round| {
+        round.skill_trackers = trackers.clone();
+        Ok(())
+    });
+}
+
 pub fn note_tracker_discard(room: &mut Value, seat: Seat, tile_key: &str) {
     let Some(state) = standard_project_room_state(room).ok() else {
         return;
@@ -372,6 +516,25 @@ pub fn note_tracker_discard(room: &mut Value, seat: Seat, tile_key: &str) {
         trackers.pending_honor_rebuy_tile_by_seat.remove(&seat);
     }
     let _ = update_skill_round_state(room, |round| {
+        round.skill_trackers = trackers.clone();
+        Ok(())
+    });
+}
+
+pub fn note_tracker_discard_in_room_state(room: &mut RoomState, seat: Seat, tile_key: &str) {
+    let mut trackers = room
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.clone())
+        .unwrap_or_default();
+    if is_honor_tile_key(tile_key) {
+        trackers
+            .pending_honor_rebuy_tile_by_seat
+            .insert(seat, tile_key.to_string());
+    } else {
+        trackers.pending_honor_rebuy_tile_by_seat.remove(&seat);
+    }
+    let _ = update_skill_round_state_in_room_state(room, |round| {
         round.skill_trackers = trackers.clone();
         Ok(())
     });
@@ -406,6 +569,32 @@ pub fn note_tracker_draw(room: &mut Value, seat: Seat, tile_key: &str) {
     });
 }
 
+pub fn note_tracker_draw_in_room_state(room: &mut RoomState, seat: Seat, tile_key: &str) {
+    let pending_tile = room
+        .round_state
+        .as_ref()
+        .and_then(|round| {
+            round
+                .skill_trackers
+                .pending_honor_rebuy_tile_by_seat
+                .get(&seat)
+        })
+        .map(ToString::to_string);
+    let mut trackers = room
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.clone())
+        .unwrap_or_default();
+    trackers.pending_honor_rebuy_tile_by_seat.remove(&seat);
+    if pending_tile.as_deref() == Some(tile_key) {
+        trackers.honor_redraw_success_by_seat.insert(seat, true);
+    }
+    let _ = update_skill_round_state_in_room_state(room, |round| {
+        round.skill_trackers = trackers.clone();
+        Ok(())
+    });
+}
+
 pub fn note_tracker_claimed_discard(room: &mut Value, discarder_seat: Seat) {
     let Some(state) = standard_project_room_state(room).ok() else {
         return;
@@ -420,6 +609,22 @@ pub fn note_tracker_claimed_discard(room: &mut Value, discarder_seat: Seat) {
         .entry(discarder_seat)
         .or_default() += 1;
     let _ = update_skill_round_state(room, |round| {
+        round.skill_trackers = trackers.clone();
+        Ok(())
+    });
+}
+
+pub fn note_tracker_claimed_discard_in_room_state(room: &mut RoomState, discarder_seat: Seat) {
+    let mut trackers = room
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.clone())
+        .unwrap_or_default();
+    *trackers
+        .claimed_discard_counts_by_seat
+        .entry(discarder_seat)
+        .or_default() += 1;
+    let _ = update_skill_round_state_in_room_state(room, |round| {
         round.skill_trackers = trackers.clone();
         Ok(())
     });
@@ -513,6 +718,100 @@ fn apply_events_to_room(
     Ok(emitted_messages)
 }
 
+fn apply_events_to_room_in_room_state(
+    room: &mut RoomState,
+    events: &[GameEvent],
+) -> Result<Vec<Value>, String> {
+    let mut emitted_messages = Vec::new();
+    for event in events {
+        match event {
+            GameEvent::SkillActivated { seat, skill_id } => {
+                emitted_messages.push(round_event_message(
+                    "skill_activated",
+                    json!({
+                        "type": "skill_activated",
+                        "seat": seat,
+                        "skill_id": skill_id,
+                    }),
+                ));
+            }
+            GameEvent::EffectApplied { effect } => {
+                update_round_effect_state_in_room_state(room, |effect_state| {
+                    effect_state.ongoing.push(effect.clone());
+                    Ok(())
+                })?;
+            }
+            GameEvent::EffectExpired { effect_id } => {
+                update_round_effect_state_in_room_state(room, |effect_state| {
+                    effect_state
+                        .ongoing
+                        .retain(|effect| effect.effect_id != effect_id.as_str());
+                    Ok(())
+                })?;
+            }
+            GameEvent::ViewKnowledgeGranted { knowledge, .. } => {
+                update_round_effect_state_in_room_state(room, |effect_state| {
+                    effect_state.hidden_knowledge.push(knowledge.clone());
+                    Ok(())
+                })?;
+            }
+            GameEvent::RuleOverrideApplied { override_rule } => {
+                update_round_effect_state_in_room_state(room, |effect_state| {
+                    effect_state.rule_overrides.push(override_rule.clone());
+                    Ok(())
+                })?;
+            }
+            GameEvent::SkillTileReplaced {
+                seat,
+                removed_tile_id,
+                replacement_tile,
+            } => apply_replace_tile_event_in_room_state(
+                room,
+                *seat,
+                removed_tile_id,
+                replacement_tile,
+                &mut emitted_messages,
+            )?,
+            GameEvent::SkillReclaimMeld {
+                seat,
+                meld_index,
+                tile_keys,
+            } => apply_reclaim_meld_event_in_room_state(
+                room,
+                *seat,
+                *meld_index,
+                tile_keys,
+                &mut emitted_messages,
+            )?,
+            GameEvent::SkillForceDraw {
+                seat,
+                penalty,
+                next_round_penalty,
+            } => apply_force_draw_event_in_room_state(
+                room,
+                *seat,
+                *penalty,
+                *next_round_penalty,
+                &mut emitted_messages,
+            )?,
+            GameEvent::SkillScoreAdjusted {
+                seat,
+                delta,
+                reason,
+            } => apply_score_adjust_event_in_room_state(
+                room,
+                *seat,
+                *delta,
+                reason.as_deref(),
+                &mut emitted_messages,
+            )?,
+            _ => {}
+        }
+    }
+    increment_round_version_in_room_state(room)?;
+    Ok(emitted_messages)
+}
+
 pub fn decline_hu_events(room_state: &RoomState, actor: Seat) -> Result<Vec<GameEvent>, String> {
     decline_hu_events_with_registry(room_state, actor, default_registry())
 }
@@ -577,6 +876,23 @@ fn compute_tenpai_trackers(
     (tenpai_seats, waits_by_seat)
 }
 
+fn compute_tenpai_trackers_in_room_state(
+    room: &RoomState,
+    seat_count: usize,
+) -> (Vec<Seat>, std::collections::BTreeMap<Seat, Vec<String>>) {
+    let cache = RoomScoringCache::from_state(room);
+    let mut tenpai_seats = Vec::new();
+    let mut waits_by_seat = std::collections::BTreeMap::new();
+    for seat in 0..seat_count {
+        let waits = standard_wait_tile_keys_in_room_state(room, &cache, seat);
+        if !waits.is_empty() {
+            tenpai_seats.push(seat);
+        }
+        waits_by_seat.insert(seat, waits);
+    }
+    (tenpai_seats, waits_by_seat)
+}
+
 fn standard_wait_tile_keys(room: &Value, cache: &RoomScoringCache, seat: Seat) -> Vec<String> {
     const TILE_KEYS: [&str; 34] = [
         "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
@@ -586,6 +902,25 @@ fn standard_wait_tile_keys(room: &Value, cache: &RoomScoringCache, seat: Seat) -
     TILE_KEYS
         .iter()
         .filter(|tile_key| can_declare_hu_with_cache(room, cache, seat, Some(tile_key), None))
+        .map(|tile_key| (*tile_key).to_string())
+        .collect()
+}
+
+fn standard_wait_tile_keys_in_room_state(
+    room: &RoomState,
+    cache: &RoomScoringCache,
+    seat: Seat,
+) -> Vec<String> {
+    const TILE_KEYS: [&str; 34] = [
+        "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
+        "t7", "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south",
+        "west", "north", "red", "green", "white",
+    ];
+    TILE_KEYS
+        .iter()
+        .filter(|tile_key| {
+            can_declare_hu_with_cache_for_state(room, cache, seat, Some(tile_key), None)
+        })
         .map(|tile_key| (*tile_key).to_string())
         .collect()
 }
@@ -628,8 +963,40 @@ fn decrement_skill_charge(room: &mut Value, actor: Seat, skill_id: &str) -> Resu
     })
 }
 
+fn decrement_skill_charge_in_room_state(
+    room: &mut RoomState,
+    actor: Seat,
+    skill_id: &str,
+) -> Result<(), String> {
+    update_skill_round_state_in_room_state(room, |round| {
+        let skill = round
+            .players
+            .get_mut(actor)
+            .and_then(|player| {
+                player
+                    .skill_loadout
+                    .equipped
+                    .iter_mut()
+                    .find(|skill| skill.skill_id == skill_id)
+            })
+            .ok_or_else(|| "skill_not_equipped".to_string())?;
+        if skill.charges == 0 {
+            return Err("skill_no_charges".to_string());
+        }
+        skill.charges -= 1;
+        Ok(())
+    })
+}
+
 fn increment_round_version(room: &mut Value) -> Result<(), String> {
     update_skill_round_state(room, |round| {
+        round.version += 1;
+        Ok(())
+    })
+}
+
+fn increment_round_version_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    update_skill_round_state_in_room_state(room, |round| {
         round.version += 1;
         Ok(())
     })
@@ -769,6 +1136,131 @@ fn apply_reclaim_meld_event(
     Ok(())
 }
 
+fn apply_reclaim_meld_event_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+    meld_index: usize,
+    tile_keys: &[String],
+    emitted_messages: &mut Vec<Value>,
+) -> Result<(), String> {
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let player = round
+        .players
+        .get(seat)
+        .ok_or_else(|| "invalid_action".to_string())?;
+    if meld_index >= player.melds.len() {
+        return Err("invalid_action".to_string());
+    }
+    let reclaimed_tiles = tile_keys
+        .iter()
+        .enumerate()
+        .map(|(offset, tile_key)| Tile {
+            tile_id: format!("{tile_key}#reclaim:{seat}:{}:{offset}", round.version),
+            tile_key: tile_key.to_string(),
+            kind: "unknown".to_string(),
+            suit: None,
+            rank: None,
+            name: None,
+        })
+        .collect::<Vec<_>>();
+    update_skill_round_state_in_room_state(room, |round| {
+        let player = round
+            .players
+            .get_mut(seat)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        if meld_index >= player.melds.len() {
+            return Err("invalid_action".to_string());
+        }
+        player.melds.remove(meld_index);
+        player.concealed_tiles.extend(reclaimed_tiles.clone());
+        Ok(())
+    })?;
+    emitted_messages.push(round_event_message(
+        "skill_reclaim_meld",
+        json!({
+            "type": "skill_reclaim_meld",
+            "seat": seat,
+            "meld_index": meld_index,
+            "tile_keys": tile_keys,
+        }),
+    ));
+    Ok(())
+}
+
+fn apply_replace_tile_event_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+    removed_tile_id: &str,
+    replacement_tile: &Tile,
+    emitted_messages: &mut Vec<Value>,
+) -> Result<(), String> {
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let _ = round
+        .players
+        .get(seat)
+        .and_then(|player| {
+            player
+                .concealed_tiles
+                .iter()
+                .find(|tile| tile.tile_id == removed_tile_id)
+        })
+        .ok_or_else(|| "invalid_action".to_string())?;
+
+    let was_last_live_tile = round.wall.head_index >= round.wall.tail_index;
+    let pending_timeout = room
+        .pending_timeout
+        .as_ref()
+        .filter(|timeout| timeout.kind == "active_turn" && timeout.seat_index == seat)
+        .map(|timeout| PendingTimeout {
+            drawn_tile_id: Some(replacement_tile.tile_id.clone()),
+            ..timeout.clone()
+        });
+    update_skill_round_state_in_room_state(room, |round| {
+        let player = round
+            .players
+            .get_mut(seat)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        let tile_index = player
+            .concealed_tiles
+            .iter()
+            .position(|tile| tile.tile_id == removed_tile_id)
+            .ok_or_else(|| "invalid_action".to_string())?;
+        player.concealed_tiles[tile_index] = replacement_tile.clone();
+        round.wall.head_index += 1;
+        round.last_action_context = LastActionContext {
+            kind: "draw".to_string(),
+            seat,
+            tile_id: Some(replacement_tile.tile_id.clone()),
+            from_kong_replacement: false,
+            was_last_live_tile,
+            was_last_discard: false,
+        };
+        Ok(())
+    })?;
+    if let Some(timeout) = pending_timeout {
+        room.pending_timeout = Some(timeout);
+    }
+    note_tracker_draw_in_room_state(room, seat, &replacement_tile.tile_key);
+
+    emitted_messages.push(round_event_message(
+        "skill_tile_replaced",
+        json!({
+            "type": "skill_tile_replaced",
+            "seat": seat,
+            "removed_tile_id": removed_tile_id,
+            "replacement_tile_id": replacement_tile.tile_id,
+            "replacement_tile_key": replacement_tile.tile_key,
+        }),
+    ));
+    Ok(())
+}
+
 fn apply_force_draw_event(
     room: &mut Value,
     seat: Seat,
@@ -815,6 +1307,55 @@ fn apply_force_draw_event(
     Ok(())
 }
 
+fn apply_force_draw_event_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+    penalty: i64,
+    next_round_penalty: i64,
+    emitted_messages: &mut Vec<Value>,
+) -> Result<(), String> {
+    let mut messages =
+        crate::rules::standard::settlement::settle_exhaustive_draw_output_in_room_state(room)
+            .emitted_messages;
+    if let Some(settlement) = room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.settlement.clone())
+    {
+        let mut settlement = settlement;
+        settlement.draw_type = Some("skill_forced".to_string());
+        *settlement
+            .score_delta
+            .total_delta_by_seat
+            .entry(seat)
+            .or_default() -= penalty;
+        *settlement
+            .score_delta
+            .fan_delta_by_seat
+            .entry(seat)
+            .or_default() -= penalty;
+        update_skill_round_state_in_room_state(room, |round| {
+            round.settlement = Some(settlement.clone());
+            Ok(())
+        })?;
+    }
+    adjust_match_cumulative_score_in_room_state(room, seat, -penalty);
+    if next_round_penalty > 0 {
+        set_pending_next_round_win_penalty_in_room_state(room, seat, next_round_penalty);
+    }
+    messages.push(round_event_message(
+        "skill_force_draw",
+        json!({
+            "type": "skill_force_draw",
+            "seat": seat,
+            "penalty": penalty,
+            "next_round_penalty": next_round_penalty,
+        }),
+    ));
+    emitted_messages.extend(messages);
+    Ok(())
+}
+
 fn apply_score_adjust_event(
     room: &mut Value,
     seat: Seat,
@@ -823,6 +1364,26 @@ fn apply_score_adjust_event(
     emitted_messages: &mut Vec<Value>,
 ) -> Result<(), String> {
     adjust_match_cumulative_score(room, seat, delta);
+    emitted_messages.push(round_event_message(
+        "skill_score_adjusted",
+        json!({
+            "type": "skill_score_adjusted",
+            "seat": seat,
+            "delta": delta,
+            "reason": reason.map(ToString::to_string),
+        }),
+    ));
+    Ok(())
+}
+
+fn apply_score_adjust_event_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+    delta: i64,
+    reason: Option<&str>,
+    emitted_messages: &mut Vec<Value>,
+) -> Result<(), String> {
+    adjust_match_cumulative_score_in_room_state(room, seat, delta);
     emitted_messages.push(round_event_message(
         "skill_score_adjusted",
         json!({
@@ -850,6 +1411,18 @@ fn adjust_match_cumulative_score(room: &mut Value, seat: Seat, delta: i64) {
     });
 }
 
+fn adjust_match_cumulative_score_in_room_state(room: &mut RoomState, seat: Seat, delta: i64) {
+    let Some(match_state) = room.match_state.as_ref() else {
+        return;
+    };
+    let mut scores = match_state.cumulative_scores.clone();
+    *scores.entry(seat).or_default() += delta;
+    let _ = update_skill_match_state_in_room_state(room, |match_state| {
+        match_state.cumulative_scores = scores.clone();
+        Ok(())
+    });
+}
+
 fn set_pending_next_round_win_penalty(room: &mut Value, seat: Seat, penalty: i64) {
     let Some(state) = standard_project_room_state(room).ok() else {
         return;
@@ -869,11 +1442,41 @@ fn set_pending_next_round_win_penalty(room: &mut Value, seat: Seat, penalty: i64
     });
 }
 
+fn set_pending_next_round_win_penalty_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+    penalty: i64,
+) {
+    let mut trackers = room
+        .match_state
+        .as_ref()
+        .map(|match_state| match_state.skill_trackers.clone())
+        .unwrap_or_default();
+    trackers
+        .zou_wei_shang_ji
+        .pending_win_penalty
+        .insert(seat, penalty);
+    let _ = update_skill_match_state_in_room_state(room, |match_state| {
+        match_state.skill_trackers = trackers.clone();
+        Ok(())
+    });
+}
+
 fn update_round_effect_state<F>(room: &mut Value, mut mutate: F) -> Result<(), String>
 where
     F: FnMut(&mut crate::core::state::EffectState) -> Result<(), String>,
 {
     update_skill_round_state(room, |round| mutate(&mut round.effect_state))
+}
+
+fn update_round_effect_state_in_room_state<F>(
+    room: &mut RoomState,
+    mut mutate: F,
+) -> Result<(), String>
+where
+    F: FnMut(&mut crate::core::state::EffectState) -> Result<(), String>,
+{
+    update_skill_round_state_in_room_state(room, |round| mutate(&mut round.effect_state))
 }
 
 fn for_each_equipped_skill<F>(

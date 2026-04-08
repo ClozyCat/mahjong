@@ -9,10 +9,12 @@ use crate::core::event::GameEvent;
 use crate::core::ids::Seat;
 use crate::core::state::settlement::zero_score_map;
 use crate::core::state::{
-    KongTrackerEntry, RoundSettlement, SettlementKongScoreDetailEntry, SettlementScoreDelta,
+    KongTrackerEntry, RoomState, RoundSettlement, SettlementKongScoreDetailEntry,
+    SettlementScoreDelta,
 };
 use crate::rules::skills::{
     apply_draw_settlement_hooks, sync_match_skill_trackers_after_settlement,
+    sync_match_skill_trackers_after_settlement_in_room_state,
 };
 
 use super::runtime::{project_room_state, round_event_message};
@@ -111,6 +113,78 @@ pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
     )
 }
 
+pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> EngineOutput {
+    let seat_count = room
+        .round_state
+        .as_ref()
+        .map(|round| round.players.len())
+        .unwrap_or(MAX_SEATS);
+    let kong_score_detail = room
+        .round_state
+        .as_ref()
+        .map(|round| kong_score_detail_from_trackers(&round.score_trackers.kong_entries, seat_count))
+        .unwrap_or_default();
+    let kong_delta = total_kong_delta_by_seat(&kong_score_detail, seat_count);
+    let mut settlement = RoundSettlement {
+        provisional: true,
+        win_type: "draw".to_string(),
+        winner_seat: None,
+        discarder_seat: None,
+        display_win_label: None,
+        fan_total: 0,
+        fan_keys: vec![],
+        fan_breakdown: vec![],
+        score_delta: SettlementScoreDelta {
+            provisional: true,
+            basic_points: 0,
+            base_points: 0,
+            fan_total: 0,
+            minimum_qualifying_fan_total: 0,
+            fan_delta_by_seat: zero_score_map(seat_count),
+            kong_delta_by_seat: kong_delta.clone(),
+            total_delta_by_seat: kong_delta,
+        },
+        flower_count: 0,
+        draw_type: Some("exhaustive".to_string()),
+        kong_score_detail,
+    };
+    let _ = apply_draw_settlement_hooks(room, &mut settlement);
+    let settlement_for_write = settlement.clone();
+    let settlement_match_plan = plan_settlement_to_match(room, &settlement_for_write);
+    room.phase = "settlement".to_string();
+    room.pending_timeout = None;
+    if let Some(round) = room.round_state.as_mut() {
+        round.phase = "settlement".to_string();
+        round.pending_action = None;
+        round.settlement = Some(settlement_for_write);
+        round.version += 1;
+    }
+    if let Some(plan) = settlement_match_plan {
+        if let Some(match_state) = room.match_state.as_mut() {
+            match_state.cumulative_scores = plan.cumulative_scores;
+            match_state.last_completed_round_id = Some(plan.round_id);
+        }
+    }
+    sync_match_skill_trackers_after_settlement_in_room_state(room);
+    apply_settlement_to_match_in_room_state(room);
+    let message = round_event_message(
+        "round_drawn",
+        json!({
+            "type": "round_drawn",
+            "round_id": room
+                .round_state
+                .as_ref()
+                .map(|round| Value::String(round.round_id.clone()))
+                .unwrap_or(Value::Null),
+            "settlement": settlement.to_value(),
+        }),
+    );
+    EngineOutput::new(
+        vec![GameEvent::SettlementPrepared { settlement }],
+        vec![message],
+    )
+}
+
 pub fn apply_settlement_to_match(room: &mut Value) {
     let plan = project_room_state(room)
         .ok()
@@ -131,6 +205,21 @@ pub fn apply_settlement_to_match(room: &mut Value) {
         }
         Ok(())
     });
+}
+
+pub fn apply_settlement_to_match_in_room_state(room: &mut RoomState) {
+    let plan = room.round_state.as_ref().and_then(|round| {
+        round
+            .settlement
+            .as_ref()
+            .and_then(|settlement| plan_settlement_to_match(room, settlement))
+    });
+    if let Some(plan) = plan {
+        if let Some(match_state) = room.match_state.as_mut() {
+            match_state.cumulative_scores = plan.cumulative_scores;
+            match_state.last_completed_round_id = Some(plan.round_id);
+        }
+    }
 }
 
 fn kong_score_detail_from_trackers(

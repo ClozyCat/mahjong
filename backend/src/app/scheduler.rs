@@ -13,12 +13,14 @@ use crate::app::{
     pending_timeout_deadline, remove_seat_from_room, room_has_round_state, room_mode, room_seats,
     send_outbound, serialize_room, sleep_until,
 };
-use crate::{
-    mahjong::next_bot_action as rust_next_bot_action,
-    mahjong::process_due_continue_action as rust_process_due_continue_action,
-    mahjong::reconcile_continue_action_state as rust_reconcile_continue_action_state,
-    mahjong::try_handle_action as try_rust_action,
-    mahjong::try_process_due_timeout as try_rust_process_due_timeout,
+use crate::core::engine::try_handle_player_action_in_room_state;
+use crate::rules::standard::automation::{
+    next_bot_action_in_room_state as standard_next_bot_action,
+    try_process_due_timeout_in_room_state as standard_try_process_due_timeout,
+};
+use crate::rules::standard::flow::{
+    process_due_continue_action_in_room_state as standard_process_due_continue_action,
+    reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
 };
 
 async fn process_due_pending_timeout(state: AppContext, table_code: String, expected_nonce: u64) {
@@ -43,7 +45,10 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     if deadline > Utc::now() {
         return;
     }
-    let rust_messages = try_rust_process_due_timeout(&mut runtime.room);
+    let rust_messages = match standard_try_process_due_timeout(&mut runtime.room) {
+        Ok(messages) => messages,
+        Err(_) => return,
+    };
     let Some(rust_messages) = rust_messages else {
         return;
     };
@@ -100,7 +105,11 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     if deadline > Utc::now() {
         return;
     }
-    if rust_process_due_continue_action(&mut runtime.room).ok() != Some(true) {
+    let processed = match standard_process_due_continue_action(&mut runtime.room) {
+        Ok(result) => result,
+        Err(_) => return,
+    };
+    if !processed {
         return;
     }
     let created_at = runtime.created_at.clone();
@@ -157,7 +166,7 @@ async fn process_due_disconnect_timeout(
 
     if room_has_round_state(&runtime.room) {
         convert_seat_to_bot(&mut runtime.room, seat_index);
-        let _ = rust_reconcile_continue_action_state(&mut runtime.room);
+        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     } else {
         remove_seat_from_room(&mut runtime.room, seat_index);
     }
@@ -215,18 +224,25 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         return;
     }
 
-    let action = rust_next_bot_action(&runtime.room);
+    let action = match standard_next_bot_action(&runtime.room) {
+        Ok(action) => action,
+        Err(_) => return,
+    };
     let Some(action) = action else {
         return;
     };
 
-    let messages = match try_rust_action(
+    let action_result = match try_handle_player_action_in_room_state(
         &mut runtime.room,
         action.seat_index,
         &action.action_type,
         &action.tile_ids,
     ) {
-        Some(Ok(messages)) => messages,
+        Ok(result) => result,
+        Err(_) => return,
+    };
+    let messages = match action_result {
+        Some(Ok(output)) => output.emitted_messages,
         Some(Err(_)) | None => return,
     };
 
@@ -318,7 +334,8 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         }));
     }
 
-    if rust_next_bot_action(&runtime.room).is_some() {
+    if standard_next_bot_action(&runtime.room).ok().flatten().is_some()
+    {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.bot_nonce;

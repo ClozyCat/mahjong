@@ -16,17 +16,17 @@ pub struct Tile {
 
 impl Tile {
     pub fn from_value(value: &Value, context: &str) -> Result<Self, EngineError> {
-        let object = value.as_object().ok_or_else(|| {
-            EngineError::legacy_decode(format!("{context} should be a tile object"))
-        })?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| EngineError::decode(format!("{context} should be a tile object")))?;
         let tile_id = object
             .get("tile_id")
             .and_then(Value::as_str)
-            .ok_or_else(|| EngineError::legacy_decode(format!("{context}.tile_id missing")))?;
+            .ok_or_else(|| EngineError::decode(format!("{context}.tile_id missing")))?;
         let tile_key = object
             .get("tile_key")
             .and_then(Value::as_str)
-            .ok_or_else(|| EngineError::legacy_decode(format!("{context}.tile_key missing")))?;
+            .ok_or_else(|| EngineError::decode(format!("{context}.tile_key missing")))?;
         let kind = object
             .get("kind")
             .and_then(Value::as_str)

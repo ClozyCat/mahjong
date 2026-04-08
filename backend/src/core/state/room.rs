@@ -96,64 +96,11 @@ impl RoomState {
 }
 
 fn parse_continue_action(value: &Value) -> Option<ContinueActionState> {
-    if let Some(action) = value
+    value
         .get("continue_action")
         .filter(|action| !action.is_null())
         .cloned()
-    {
-        return serde_json::from_value(action).ok();
-    }
-    let action_id = match value.get("phase").and_then(Value::as_str) {
-        Some("settlement") => Some("start_next_round"),
-        Some("finished") => Some("restart_match"),
-        _ => None,
-    }?;
-    let confirmed_field = if action_id == "start_next_round" {
-        "start_next_round_confirmed_seats"
-    } else {
-        "restart_match_confirmed_seats"
-    };
-    let confirmed_seats = super::seat_vec(value.get(confirmed_field));
-    let required_seats = value
-        .get("seats")
-        .and_then(Value::as_array)
-        .map(|seats| {
-            seats
-                .iter()
-                .filter(|seat| !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-                .filter_map(|seat| seat.get("seat_index").and_then(Value::as_u64))
-                .map(|seat| seat as usize)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let online_seats = value
-        .get("seats")
-        .and_then(Value::as_array)
-        .map(|seats| {
-            seats
-                .iter()
-                .filter(|seat| {
-                    seat.get("connected")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false)
-                })
-                .filter(|seat| !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-                .filter_map(|seat| seat.get("seat_index").and_then(Value::as_u64))
-                .map(|seat| seat as usize)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let auto_advance_deadline_at = value
-        .get("continue_action_auto_advance_deadline_at")
-        .and_then(Value::as_str)
-        .map(ToString::to_string);
-    Some(ContinueActionState {
-        action_id: action_id.to_string(),
-        confirmed_seats,
-        required_seats,
-        online_seats,
-        auto_advance_deadline_at,
-    })
+        .and_then(|action| serde_json::from_value(action).ok())
 }
 
 #[cfg(test)]
@@ -164,7 +111,7 @@ mod tests {
     use crate::core::state::{ContinueActionState, SeatState};
 
     #[test]
-    fn parses_waiting_room_legacy_shape() {
+    fn parses_waiting_room_shape() {
         let room = json!({
             "table_code": "ABCD",
             "phase": "waiting",
@@ -187,9 +134,7 @@ mod tests {
             "match_state": null,
             "round_state": null,
             "pending_timeout": null,
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         });
 
         let parsed = RoomState::from_room_value(&room).expect("room should parse");
@@ -201,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_playing_room_legacy_shape() {
+    fn parses_playing_room_shape() {
         let room = json!({
             "table_code": "WXYZ",
             "phase": "playing",
@@ -343,9 +288,7 @@ mod tests {
                 "deadline_at": "2026-04-07T10:00:00Z",
                 "drawn_tile_id": null
             },
-            "start_next_round_confirmed_seats": [],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": null
+            "continue_action": null
         });
 
         let parsed = RoomState::from_room_value(&room).expect("room should parse");
@@ -377,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_settlement_continue_action_from_legacy_shape() {
+    fn parses_settlement_continue_action_shape() {
         let room = json!({
             "table_code": "DONE",
             "phase": "settlement",
@@ -415,9 +358,13 @@ mod tests {
             "match_state": null,
             "round_state": null,
             "pending_timeout": null,
-            "start_next_round_confirmed_seats": [0],
-            "restart_match_confirmed_seats": [],
-            "continue_action_auto_advance_deadline_at": "2026-04-07T10:10:00Z"
+            "continue_action": {
+                "action_id": "start_next_round",
+                "confirmed_seats": [0],
+                "required_seats": [0],
+                "online_seats": [0],
+                "auto_advance_deadline_at": "2026-04-07T10:10:00Z"
+            }
         });
 
         let parsed = RoomState::from_room_value(&room).expect("room should parse");
@@ -448,6 +395,7 @@ mod tests {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                skill_loadout: Default::default(),
             }],
             match_state: None,
             round_state: None,

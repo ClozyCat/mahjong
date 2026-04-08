@@ -90,42 +90,16 @@ impl Database {
             return Ok(());
         }
 
-        let room_source = if columns.iter().any(|column| column.name == "room_json") {
-            Some("room_json")
-        } else if columns.iter().any(|column| column.name == "state_json") {
-            Some("state_json")
-        } else {
-            None
-        };
+        eprintln!("detected incompatible sqlite schema for `tables`; rebuilding it");
 
-        eprintln!("detected legacy sqlite schema for `tables`; rebuilding it");
-        if room_source.is_none() {
-            eprintln!(
-                "legacy `tables` rows do not contain a room snapshot column; starting with an empty table store"
-            );
-        }
-
-        self.with_schema_rebuild("migrate `tables` schema", |db| {
+        self.with_schema_rebuild("rebuild `tables` schema", |db| {
             db.conn.execute_batch(
                 "
-                DROP TABLE IF EXISTS tables_legacy;
-                ALTER TABLE tables RENAME TO tables_legacy;
+                DROP TABLE IF EXISTS tables_old;
+                ALTER TABLE tables RENAME TO tables_old;
                 ",
             )?;
             db.create_tables_table()?;
-            if let Some(room_source) = room_source {
-                let copy_sql = format!(
-                    "
-                    INSERT INTO tables (table_code, created_at, room_json)
-                    SELECT table_code, created_at, {room_source}
-                    FROM tables_legacy
-                    WHERE table_code IS NOT NULL
-                      AND created_at IS NOT NULL
-                      AND {room_source} IS NOT NULL
-                    "
-                );
-                db.conn.execute_batch(&copy_sql)?;
-            }
             db.conn.execute_batch(
                 "
                 DROP TABLE IF EXISTS player_sessions;
@@ -135,7 +109,7 @@ impl Database {
                 DROP TABLE IF EXISTS settlements;
                 DROP TABLE IF EXISTS round_events;
                 DROP TABLE IF EXISTS alembic_version;
-                DROP TABLE tables_legacy;
+                DROP TABLE tables_old;
                 ",
             )?;
             Ok(())
@@ -153,39 +127,18 @@ impl Database {
             return Ok(());
         }
 
-        let can_copy_rows = columns.iter().any(|column| column.name == "token")
-            && columns.iter().any(|column| column.name == "table_code")
-            && columns.iter().any(|column| column.name == "seat_index")
-            && columns
-                .iter()
-                .any(|column| column.name == "player_session_id");
+        eprintln!("detected incompatible sqlite schema for `reconnect_tokens`; rebuilding it");
 
-        eprintln!("detected legacy sqlite schema for `reconnect_tokens`; rebuilding it");
-        if !can_copy_rows {
-            eprintln!("legacy reconnect tokens cannot be migrated and will be reset");
-        }
-
-        self.with_schema_rebuild("migrate `reconnect_tokens` schema", |db| {
+        self.with_schema_rebuild("rebuild `reconnect_tokens` schema", |db| {
             db.conn.execute_batch(
                 "
-                DROP TABLE IF EXISTS reconnect_tokens_legacy;
-                ALTER TABLE reconnect_tokens RENAME TO reconnect_tokens_legacy;
+                DROP TABLE IF EXISTS reconnect_tokens_old;
+                ALTER TABLE reconnect_tokens RENAME TO reconnect_tokens_old;
                 ",
             )?;
             db.create_reconnect_tokens_table()?;
-            if can_copy_rows {
-                db.conn.execute_batch(
-                    "
-                    INSERT INTO reconnect_tokens (token, table_code, seat_index, player_session_id)
-                    SELECT token, table_code, seat_index, player_session_id
-                    FROM reconnect_tokens_legacy
-                    WHERE token IS NOT NULL
-                      AND table_code IS NOT NULL
-                    ",
-                )?;
-            }
             db.conn
-                .execute_batch("DROP TABLE reconnect_tokens_legacy;")?;
+                .execute_batch("DROP TABLE reconnect_tokens_old;")?;
             Ok(())
         })
     }
@@ -715,7 +668,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn initialize_migrates_legacy_tables_with_state_json() -> Result<()> {
+    fn initialize_resets_incompatible_tables_schema() -> Result<()> {
         let db = in_memory_database(
             "
             CREATE TABLE tables (
@@ -731,9 +684,7 @@ mod tests {
 
         db.initialize()?;
 
-        let record = db.get_table("ROOM42")?.expect("room should be migrated");
-        assert_eq!(record.created_at, "2026-04-06T00:00:00Z");
-        assert_eq!(record.room_json, "{\"table_code\":\"ROOM42\",\"seats\":[]}");
+        assert!(db.get_table("ROOM42")?.is_none());
         Ok(())
     }
 

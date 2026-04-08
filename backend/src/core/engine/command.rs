@@ -354,7 +354,7 @@ mod tests {
     use crate::core::event::GameEvent;
 
     #[test]
-    fn parses_legacy_discard_command() {
+    fn parses_discard_command() {
         let command = parse_player_command(2, "discard", &[String::from("w1#0")])
             .expect("discard should be recognized")
             .expect("discard should parse");
@@ -370,14 +370,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_legacy_discard_without_selection() {
+    fn rejects_discard_without_selection() {
         let command =
             parse_player_command(0, "discard", &[]).expect("discard should be recognized");
         assert_eq!(command, Err("select_tile_first".to_string()));
     }
 
     #[test]
-    fn parses_legacy_skill_command_with_optional_target() {
+    fn parses_skill_command_with_optional_target() {
         let command = parse_player_command(
             1,
             "skill:peek_opponent_tile",

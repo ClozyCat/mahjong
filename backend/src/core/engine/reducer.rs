@@ -81,7 +81,7 @@ mod tests {
     use crate::core::state::ContinueActionState;
 
     #[test]
-    fn applies_basic_discard_update_and_preserves_legacy_shape() {
+    fn applies_basic_discard_update_and_preserves_room_shape() {
         let mut room = json!({
             "table_code": "ROOM42",
             "phase": "playing",
