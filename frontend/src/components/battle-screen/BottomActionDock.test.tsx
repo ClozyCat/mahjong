@@ -197,6 +197,42 @@ describe('BottomActionDock', () => {
     );
   });
 
+  it('renders the active skill action with the calligraphy treatment', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[
+          { id: 'activate_skill', label: '发动技能', enabled: true, emphasis: 'medium' },
+          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
+        ]}
+        isElevated
+        promptCue={{
+          kind: 'turn',
+          tone: 'info',
+          title: '当前可以发动技能',
+          detail: '你可以 发动技能 / 过',
+          actionIds: ['pass'],
+          highlightedActionIds: [],
+          sourceSeat: null,
+          isUrgent: false,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: '发动技能' });
+
+    expect(button).toHaveClass('action-dock__action--skill-bloom');
+    expect(button.querySelector('.action-dock__action-label--skill-script')).not.toBeNull();
+    expect(button.querySelector('.action-dock__action-seal')).not.toBeNull();
+  });
+
   it('treats the local kong prompt as a response-style action stack', () => {
     render(
       <BottomActionDock

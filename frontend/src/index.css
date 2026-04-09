@@ -8180,6 +8180,8 @@ input {
 .action-dock__action--skill-bloom {
   --skill-bloom-core: color-mix(in srgb, var(--accent-2) 70%, var(--theme-warning));
   --skill-bloom-glow: color-mix(in srgb, var(--theme-info) 50%, var(--accent-2));
+  position: relative;
+  overflow: hidden;
   border-color: color-mix(in srgb, var(--skill-bloom-core) 46%, var(--theme-border-strong));
   background:
     linear-gradient(
@@ -8196,11 +8198,50 @@ input {
     0 0 18px color-mix(in srgb, var(--skill-bloom-glow) 40%, transparent);
 }
 
+.action-dock__action--skill-bloom::before {
+  content: '';
+  position: absolute;
+  inset: 0.18rem;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--skill-bloom-core) 12%, transparent);
+  pointer-events: none;
+}
+
 .action-dock__action--skill-bloom .action-dock__action-label {
   color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--skill-bloom-core));
   text-shadow:
     0 0 0.5rem color-mix(in srgb, var(--skill-bloom-glow) 22%, transparent),
     0 0.04rem 0 color-mix(in srgb, var(--theme-paper) 26%, transparent);
+}
+
+.action-dock__action-label--skill-script {
+  font-family: 'STKaiti', 'KaiTi', 'KaiTi_GB2312', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: 1.08em;
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 0 0.12em color-mix(in srgb, var(--theme-paper) 44%, transparent),
+    0 0 0.48em color-mix(in srgb, var(--skill-bloom-glow) 28%, transparent),
+    0 0.08em 0.2em color-mix(in srgb, var(--theme-shadow-soft) 60%, transparent);
+}
+
+.action-dock__action-seal {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.42rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 0.36rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  background: color-mix(in srgb, #791819 82%, transparent);
+  color: color-mix(in srgb, var(--theme-paper-strong) 82%, var(--theme-warning));
+  font-family: 'STKaiti', 'KaiTi', 'KaiTi_GB2312', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: 0.72rem;
+  line-height: 1;
+  box-shadow: 0 0 0.65rem color-mix(in srgb, #791819 36%, transparent);
+  pointer-events: none;
 }
 
 .table-stage__skill-tooltip {
@@ -8291,8 +8332,11 @@ input {
 .skill-activation-dialog__backdrop {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--theme-shadow-soft) 78%, transparent);
-  backdrop-filter: blur(10px);
+  background:
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 28%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--theme-shadow-soft) 86%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, #1f140d 70%, transparent), color-mix(in srgb, #090706 92%, transparent));
+  backdrop-filter: blur(12px);
 }
 
 .skill-selection-overlay__panel,
@@ -8310,7 +8354,95 @@ input {
 }
 
 .skill-selection-overlay__panel {
-  padding: 1.5rem;
+  width: min(72rem, calc(100vw - 3rem));
+  padding: 1.75rem 1.75rem 1.5rem;
+  overflow: hidden;
+  border-radius: 2rem;
+  border-color: color-mix(in srgb, var(--theme-warning) 18%, var(--theme-border-strong));
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--theme-paper) 7%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, #3e2414 22%, transparent), color-mix(in srgb, var(--panel-strong) 97%, black) 32%),
+    color-mix(in srgb, #120d0a 92%, var(--panel));
+}
+
+.skill-selection-overlay__panel::before,
+.skill-selection-overlay__panel::after {
+  content: '';
+  position: absolute;
+  inset: 1rem;
+  border-radius: 1.55rem;
+  pointer-events: none;
+}
+
+.skill-selection-overlay__panel::before {
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-paper) 6%, transparent);
+}
+
+.skill-selection-overlay__panel::after {
+  inset: auto 12%;
+  top: 6.35rem;
+  bottom: 1.2rem;
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-paper) 8%, transparent), transparent),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--theme-warning) 8%, transparent), transparent 62%);
+  opacity: 0.82;
+}
+
+.skill-selection-overlay__lantern {
+  position: absolute;
+  top: 1.8rem;
+  width: 4.8rem;
+  height: 7.8rem;
+  border-radius: 999px 999px 1.25rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 34%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 18%, transparent), transparent 20%),
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--theme-warning) 48%, transparent), transparent 58%),
+    linear-gradient(180deg, color-mix(in srgb, #7a1d12 86%, var(--accent)), color-mix(in srgb, #4e110c 94%, black));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--theme-paper) 7%, transparent),
+    0 1.2rem 2rem color-mix(in srgb, #0f0604 72%, transparent),
+    0 0 1.8rem color-mix(in srgb, var(--theme-warning) 26%, transparent);
+  pointer-events: none;
+}
+
+.skill-selection-overlay__lantern::before,
+.skill-selection-overlay__lantern::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.skill-selection-overlay__lantern::before {
+  top: -2.2rem;
+  width: 0.12rem;
+  height: 2.2rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--theme-warning) 52%, transparent), transparent);
+}
+
+.skill-selection-overlay__lantern::after {
+  bottom: -1.35rem;
+  width: 2.4rem;
+  height: 1.5rem;
+  border-radius: 0 0 999px 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-warning) 26%, transparent), transparent 24%),
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--theme-paper) 16%, transparent) 0 0.22rem,
+      transparent 0.22rem 0.44rem
+    );
+  opacity: 0.82;
+}
+
+.skill-selection-overlay__lantern--left {
+  left: max(2rem, calc(50vw - 31rem));
+}
+
+.skill-selection-overlay__lantern--right {
+  right: max(2rem, calc(50vw - 31rem));
 }
 
 .skill-selection-overlay__header,
@@ -8318,6 +8450,17 @@ input {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.skill-selection-overlay__header {
+  position: relative;
+  z-index: 1;
+  align-items: flex-start;
+}
+
+.skill-selection-overlay__title-block {
+  display: grid;
+  gap: 0.5rem;
 }
 
 .skill-selection-overlay__eyebrow,
@@ -8336,75 +8479,224 @@ input {
   color: var(--theme-paper-strong);
 }
 
+.skill-selection-overlay__header h2 {
+  margin-top: 0;
+  font-family: 'STKaiti', 'KaiTi', 'KaiTi_GB2312', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: clamp(2rem, 3vw, 2.65rem);
+  letter-spacing: 0.1em;
+}
+
 .skill-selection-overlay__header p,
 .skill-activation-dialog__header p {
   margin: 0.55rem 0 0;
   color: color-mix(in srgb, var(--theme-paper-strong) 82%, var(--muted));
 }
 
+.skill-selection-overlay__header p {
+  max-width: 38rem;
+  margin-top: 0;
+  color: color-mix(in srgb, var(--theme-paper-strong) 80%, #d0b593);
+}
+
+.skill-selection-overlay__header-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+  color: color-mix(in srgb, var(--theme-warning) 74%, var(--theme-paper));
+  font-size: 0.84rem;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+}
+
+.skill-selection-overlay__header-line {
+  width: 4.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-warning) 38%, transparent), transparent);
+}
+
 .skill-selection-overlay__countdown {
-  min-width: 6rem;
-  padding: 0.8rem 0.9rem;
-  border-radius: 1rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, var(--theme-border));
-  background: color-mix(in srgb, var(--theme-paper) 5%, transparent);
+  position: relative;
+  min-width: 8rem;
+  padding: 0.95rem 1rem 1.1rem;
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 20%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 14%, transparent), color-mix(in srgb, #27140b 88%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 96%, black);
   text-align: center;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
+    0 1rem 2rem color-mix(in srgb, #140b08 72%, transparent);
+}
+
+.skill-selection-overlay__countdown::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -0.8rem;
+  width: 2.8rem;
+  height: 0.9rem;
+  transform: translateX(-50%);
+  border-radius: 0 0 999px 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-warning) 24%, transparent), transparent 24%),
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--theme-paper) 14%, transparent) 0 0.24rem,
+      transparent 0.24rem 0.48rem
+    );
 }
 
 .skill-selection-overlay__countdown span {
   display: block;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--theme-paper) 74%, #d8b888);
   font-size: 0.74rem;
+  letter-spacing: 0.18em;
 }
 
 .skill-selection-overlay__countdown strong {
   display: block;
-  margin-top: 0.25rem;
-  font-size: 1.4rem;
-  color: var(--theme-paper-strong);
+  margin-top: 0.35rem;
+  font-size: 1.8rem;
+  color: color-mix(in srgb, var(--theme-paper-strong) 86%, var(--theme-warning));
 }
 
 .skill-selection-overlay__countdown--critical strong {
-  color: color-mix(in srgb, var(--theme-danger) 78%, var(--theme-paper));
+  color: color-mix(in srgb, var(--theme-danger) 74%, var(--theme-warning));
+}
+
+.skill-selection-overlay__tableau {
+  position: relative;
+  z-index: 0;
+  width: min(100%, 56rem);
+  height: 4.2rem;
+  margin: 0.85rem auto 0;
+}
+
+.skill-selection-overlay__tableau-ring,
+.skill-selection-overlay__tableau-axis {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.skill-selection-overlay__tableau-ring {
+  top: 0;
+  width: 9.5rem;
+  height: 4.2rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theme-warning) 18%, transparent);
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--theme-warning) 12%, transparent), transparent 68%),
+    color-mix(in srgb, var(--theme-paper) 4%, transparent);
+}
+
+.skill-selection-overlay__tableau-axis {
+  top: 2.05rem;
+  width: min(100%, 52rem);
+  height: 1px;
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-warning) 22%, transparent) 12%, color-mix(in srgb, var(--theme-warning) 12%, transparent) 50%, transparent);
 }
 
 .skill-selection-overlay__options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 1.25rem;
+  gap: 1.4rem;
+  margin-top: -0.5rem;
+  position: relative;
+  z-index: 1;
 }
 
 .skill-card {
-  padding: 1.15rem;
-  border-radius: 1.3rem;
-  border: 1px solid color-mix(in srgb, var(--theme-border-strong) 84%, transparent);
+  --skill-card-accent: color-mix(in srgb, var(--theme-paper) 36%, transparent);
+  position: relative;
+  padding: 1.35rem 1.35rem 1.2rem;
+  border-radius: 1.8rem;
+  border: 1px solid color-mix(in srgb, var(--skill-card-accent) 40%, var(--theme-border-strong));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 10%, transparent), color-mix(in srgb, var(--panel-strong) 96%, black)),
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 18%, transparent), transparent 16%),
+    linear-gradient(180deg, color-mix(in srgb, var(--skill-card-accent) 14%, transparent), color-mix(in srgb, #120d0a 92%, black) 18%, color-mix(in srgb, var(--panel-strong) 94%, black)),
     color-mix(in srgb, var(--panel) 96%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
+    0 1.25rem 2.4rem color-mix(in srgb, #110906 70%, transparent);
+}
+
+.skill-card::before,
+.skill-card::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.skill-card::before {
+  inset: 0.72rem;
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--skill-card-accent) 14%, transparent);
+}
+
+.skill-card::after {
+  top: 1.05rem;
+  right: 1rem;
+  width: 3.7rem;
+  height: 3.7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--skill-card-accent) 16%, transparent), transparent 72%);
+  opacity: 0.9;
 }
 
 .skill-card--jade {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-success) 12%, transparent), 0 16px 30px color-mix(in srgb, var(--theme-success) 16%, transparent);
+  --skill-card-accent: color-mix(in srgb, #4f8f5a 78%, var(--theme-success));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--theme-success) 10%, transparent),
+    0 1.45rem 2.6rem color-mix(in srgb, #18351f 44%, transparent);
 }
 
 .skill-card--azure {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-info) 12%, transparent), 0 16px 30px color-mix(in srgb, var(--theme-info) 16%, transparent);
+  --skill-card-accent: color-mix(in srgb, #4678af 82%, var(--theme-info));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--theme-info) 10%, transparent),
+    0 1.45rem 2.6rem color-mix(in srgb, #15253c 48%, transparent);
 }
 
 .skill-card--violet {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-2) 14%, transparent), 0 16px 30px color-mix(in srgb, var(--accent-2) 18%, transparent);
+  --skill-card-accent: color-mix(in srgb, #8b58aa 82%, var(--accent-2));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent),
+    0 1.45rem 2.6rem color-mix(in srgb, #2b1637 52%, transparent);
+}
+
+.skill-card--left {
+  transform: rotate(-1.25deg);
+}
+
+.skill-card--right {
+  transform: rotate(1.25deg);
 }
 
 .skill-card__header,
-.skill-card__meta,
-.skill-card__tags,
 .skill-selection-overlay__footer,
 .skill-activation-dialog__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.skill-card__header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.skill-card__badges,
+.skill-card__meta,
+.skill-card__tags {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   flex-wrap: wrap;
 }
 
@@ -8423,29 +8715,68 @@ input {
   border: 1px solid color-mix(in srgb, var(--theme-border-strong) 82%, transparent);
 }
 
+.skill-card__seat {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--skill-card-accent) 24%, transparent);
+  background: color-mix(in srgb, var(--skill-card-accent) 8%, transparent);
+  color: color-mix(in srgb, var(--theme-paper-strong) 78%, var(--skill-card-accent));
+  font-size: 0.76rem;
+  letter-spacing: 0.18em;
+}
+
 .skill-card__rarity,
 .skill-card__type,
 .skill-card__tag {
   display: inline-flex;
-  padding: 0.18rem 0.55rem;
-  background: color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  color: var(--muted);
+  padding: 0.18rem 0.58rem;
+  background: color-mix(in srgb, var(--theme-paper) 7%, transparent);
+  color: color-mix(in srgb, var(--theme-paper-strong) 72%, var(--muted));
   font-size: 0.72rem;
+}
+
+.skill-card__title-block {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1rem;
 }
 
 .skill-card__name {
   display: block;
-  margin-top: 0.8rem;
   color: var(--theme-paper-strong);
-  font-size: 1.18rem;
+  font-family: 'STKaiti', 'KaiTi', 'KaiTi_GB2312', 'Noto Serif SC', 'Songti SC', serif;
+  font-size: clamp(1.4rem, 1.5vw, 1.7rem);
+  letter-spacing: 0.08em;
+}
+
+.skill-card__cycle {
+  color: color-mix(in srgb, var(--theme-paper) 70%, var(--skill-card-accent));
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
 }
 
 .skill-card__summary,
 .skill-card__detail,
 .skill-card__hint {
   margin: 0.6rem 0 0;
-  color: color-mix(in srgb, var(--theme-paper-strong) 86%, var(--muted));
+  color: color-mix(in srgb, var(--theme-paper-strong) 84%, #d1b692);
   line-height: 1.55;
+}
+
+.skill-card__summary {
+  font-size: 1rem;
+}
+
+.skill-card__meta {
+  margin-top: 0.85rem;
+}
+
+.skill-card__hint {
+  padding-left: 0.85rem;
+  border-left: 2px solid color-mix(in srgb, var(--skill-card-accent) 28%, transparent);
+  color: color-mix(in srgb, var(--theme-paper) 76%, var(--skill-card-accent));
 }
 
 .skill-card__select,
@@ -8472,9 +8803,47 @@ input {
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 18%, transparent), color-mix(in srgb, var(--accent) 12%, transparent));
 }
 
+.skill-card__select {
+  position: relative;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.85rem 1.1rem;
+  border-color: color-mix(in srgb, var(--skill-card-accent) 38%, var(--theme-border-strong));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--skill-card-accent) 20%, transparent), color-mix(in srgb, #2a1810 96%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 94%, black);
+  color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--skill-card-accent));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
+    0 0.8rem 1.4rem color-mix(in srgb, var(--skill-card-accent) 16%, transparent);
+}
+
+.skill-card__select:hover {
+  transform: translateY(-1px);
+}
+
 .skill-selection-overlay__footer {
+  position: relative;
+  z-index: 1;
   justify-content: center;
-  margin-top: 1.25rem;
+  gap: 0.9rem;
+  margin-top: 1.35rem;
+}
+
+.skill-selection-overlay__footer-line {
+  width: clamp(4rem, 12vw, 8rem);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-warning) 24%, transparent), transparent);
+}
+
+.skill-selection-overlay__decline {
+  min-width: 11rem;
+  padding-inline: 1.4rem;
+  border-color: color-mix(in srgb, var(--theme-warning) 18%, var(--theme-border-strong));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 14%, transparent), color-mix(in srgb, #24140d 92%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 95%, black);
+  color: color-mix(in srgb, var(--theme-paper-strong) 84%, #d9b26c);
 }
 
 .skill-activation-dialog__panel {
@@ -8575,9 +8944,59 @@ input {
 }
 
 @media (max-width: 1024px) {
+  .skill-selection-overlay__lantern {
+    display: none;
+  }
+
+  .skill-selection-overlay__panel {
+    width: min(100vw - 1.6rem, 42rem);
+    padding: 1.3rem 1rem 1.15rem;
+  }
+
+  .skill-selection-overlay__header {
+    flex-direction: column;
+  }
+
+  .skill-selection-overlay__countdown {
+    align-self: center;
+  }
+
   .skill-selection-overlay__options,
   .skill-activation-dialog__choice-grid,
   .skill-activation-dialog__preview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .skill-card--left,
+  .skill-card--right {
+    transform: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .skill-selection-overlay__header h2 {
+    font-size: 1.72rem;
+    letter-spacing: 0.06em;
+  }
+
+  .skill-selection-overlay__header-note {
+    letter-spacing: 0.2em;
+  }
+
+  .skill-selection-overlay__tableau {
+    height: 2.8rem;
+  }
+
+  .skill-selection-overlay__tableau-ring {
+    width: 6.8rem;
+    height: 2.8rem;
+  }
+
+  .skill-selection-overlay__tableau-axis {
+    top: 1.35rem;
+  }
+
+  .skill-selection-overlay__footer-line {
+    display: none;
   }
 }

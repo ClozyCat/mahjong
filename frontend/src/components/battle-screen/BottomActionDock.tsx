@@ -210,6 +210,7 @@ export function BottomActionDock({
                 {visibleActions.map((action) => {
                   const isPassAction = action.id === 'pass';
                   const isHuAction = action.id === 'hu';
+                  const isSkillAction = action.id === 'activate_skill';
                   const actionEffectClass = getActionEffectClass(action.id);
 
                   return (
@@ -225,7 +226,14 @@ export function BottomActionDock({
                       }`.trim()}
                       onClick={() => onAction(action.id)}
                     >
-                      <span className="action-dock__action-label">{action.label}</span>
+                      <span
+                        className={`action-dock__action-label ${
+                          isSkillAction ? 'action-dock__action-label--skill-script' : ''
+                        }`.trim()}
+                      >
+                        {action.label}
+                      </span>
+                      {isSkillAction ? <span className="action-dock__action-seal" aria-hidden="true">术</span> : null}
                     </button>
                   );
                 })}
