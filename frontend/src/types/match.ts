@@ -518,7 +518,7 @@ export interface ActionEffectView {
   label: string;
   emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
   seat: Seat | null;
-  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | null;
+  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'skill' | null;
 }
 
 export interface BattlePromptView {

@@ -210,7 +210,6 @@ export function BottomActionDock({
                 {visibleActions.map((action) => {
                   const isPassAction = action.id === 'pass';
                   const isHuAction = action.id === 'hu';
-                  const isSkillAction = action.id === 'activate_skill';
                   const actionEffectClass = getActionEffectClass(action.id);
 
                   return (
@@ -226,14 +225,7 @@ export function BottomActionDock({
                       }`.trim()}
                       onClick={() => onAction(action.id)}
                     >
-                      <span
-                        className={`action-dock__action-label ${
-                          isSkillAction ? 'action-dock__action-label--skill-script' : ''
-                        }`.trim()}
-                      >
-                        {action.label}
-                      </span>
-                      {isSkillAction ? <span className="action-dock__action-seal" aria-hidden="true">术</span> : null}
+                      <span className="action-dock__action-label">{action.label}</span>
                     </button>
                   );
                 })}
@@ -363,7 +355,7 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     kong: 'action-dock__action--themed action-dock__action--themed-kong',
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
-    activate_skill: 'action-dock__action--skill-bloom',
+    activate_skill: 'action-dock__action--skill-lightning',
   };
 
   return lookup[actionId] ?? '';

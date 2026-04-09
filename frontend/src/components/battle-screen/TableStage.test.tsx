@@ -793,6 +793,34 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__action-callout--pung')).not.toBeNull();
   });
 
+  it('shows the calligraphy skill glyph when an active skill is activated', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'skill-1',
+          label: '发动技能',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'skill',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('技')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout--skill')).not.toBeNull();
+  });
+
   it.each([
     {
       name: '荣和',

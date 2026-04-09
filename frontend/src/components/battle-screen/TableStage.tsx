@@ -641,6 +641,7 @@ const ACTION_CALLOUT_COPY = {
   pung: '碰',
   kong: '杠',
   hu: '和',
+  skill: '技',
 } as const;
 
 const ACTION_CALLOUT_LINGER_MS = SETTLEMENT_CALLOUT_LINGER_MS;

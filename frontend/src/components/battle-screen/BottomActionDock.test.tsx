@@ -197,7 +197,7 @@ describe('BottomActionDock', () => {
     );
   });
 
-  it('renders the active skill action with the calligraphy treatment', () => {
+  it('renders the active skill action with the lightning treatment', () => {
     render(
       <BottomActionDock
         hand={localHand}
@@ -228,9 +228,9 @@ describe('BottomActionDock', () => {
 
     const button = screen.getByRole('button', { name: '发动技能' });
 
-    expect(button).toHaveClass('action-dock__action--skill-bloom');
-    expect(button.querySelector('.action-dock__action-label--skill-script')).not.toBeNull();
-    expect(button.querySelector('.action-dock__action-seal')).not.toBeNull();
+    expect(button).toHaveClass('action-dock__action--skill-lightning');
+    expect(button.querySelector('.action-dock__action-label--skill-script')).toBeNull();
+    expect(button.querySelector('.action-dock__action-seal')).toBeNull();
   });
 
   it('treats the local kong prompt as a response-style action stack', () => {

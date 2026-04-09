@@ -1558,6 +1558,16 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
     };
   }
 
+  if (event.event_type === 'skill_activated') {
+    return {
+      key,
+      label: '发动技能',
+      emphasis: 'claim',
+      seat: effectSeat,
+      calloutTone: 'skill',
+    };
+  }
+
   if (event.event_type === 'self_kong_declared') {
     const kongType = String(event.event?.kong_type ?? '');
     return {

@@ -1050,6 +1050,30 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('maps skill activation round events into a skill action spectacle descriptor', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'skill_activated',
+          event: {
+            seat: 1,
+            skill_id: 'jin_chan_tuo_qiao',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '发动技能',
+      emphasis: 'claim',
+      seat: 'left',
+      calloutTone: 'skill',
+    });
+  });
+
   it('maps relative seats so the local seat is always bottom', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 
