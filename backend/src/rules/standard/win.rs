@@ -2,7 +2,6 @@ use serde_json::{Value, json};
 
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::plan_settlement_to_match;
-use crate::core::engine::reducer::update_room_state;
 use crate::core::event::GameEvent;
 use crate::core::state::{
     PendingAction, RoomState, RoundSettlement, SettlementFanBreakdownEntry,
@@ -20,7 +19,12 @@ use crate::rules::skills::{
     sync_match_skill_trackers_after_settlement_in_room_state,
 };
 
-use super::runtime::{current_actor, project_room_state, round_event_message};
+use super::runtime::round_event_message;
+
+#[cfg(test)]
+use super::runtime::{current_actor, project_room_state};
+#[cfg(test)]
+use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
@@ -39,6 +43,7 @@ struct EvaluatedWinResult {
     required_minimum_fan_total: i64,
 }
 
+#[cfg(test)]
 pub fn compute_hu_settlement(
     room: &Value,
     winner_seat: usize,
@@ -180,6 +185,7 @@ pub fn apply_hu_settlement(
         .map(|output| output.emitted_messages)
 }
 
+#[cfg(test)]
 pub fn apply_hu_settlement_output(
     room: &mut Value,
     winner_seat: usize,
@@ -521,6 +527,7 @@ pub fn apply_hu_settlement_output_in_room_state(
     ))
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
     let state = project_room_state(room).ok()?;
@@ -580,6 +587,7 @@ pub fn claim_window_offers_claim(
     )
 }
 
+#[cfg(test)]
 pub fn can_declare_hu_with_cache(
     room: &Value,
     cache: &RoomScoringCache,
@@ -623,6 +631,7 @@ fn json_array_contains_str(values: Option<&Vec<Value>>, needle: &str) -> bool {
     values.is_some_and(|items| items.iter().any(|value| value.as_str() == Some(needle)))
 }
 
+#[cfg(test)]
 fn fan_result_for_win(
     room: &Value,
     winner_seat: usize,
@@ -633,6 +642,7 @@ fn fan_result_for_win(
     fan_result_for_win_with_cache(room, &cache, winner_seat, incoming_tile, discarder_seat)
 }
 
+#[cfg(test)]
 fn fan_result_for_win_with_cache(
     room: &Value,
     cache: &RoomScoringCache,

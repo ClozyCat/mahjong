@@ -4,7 +4,6 @@ use serde_json::{Value, json};
 
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::plan_settlement_to_match;
-use crate::core::engine::reducer::update_room_state;
 use crate::core::event::GameEvent;
 use crate::core::ids::Seat;
 use crate::core::state::settlement::zero_score_map;
@@ -16,14 +15,16 @@ use crate::rules::skills::{
     apply_draw_settlement_hooks, sync_match_skill_trackers_after_settlement_in_room_state,
 };
 
-use super::runtime::{project_room_state, round_event_message};
+use super::runtime::round_event_message;
+
+#[cfg(test)]
+use super::runtime::project_room_state;
+#[cfg(test)]
+use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
 
-pub fn settle_exhaustive_draw(room: &mut Value) -> Vec<Value> {
-    settle_exhaustive_draw_output(room).emitted_messages
-}
-
+#[cfg(test)]
 pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
     let projected_state = project_room_state(room).ok();
     let seat_count = projected_state
@@ -188,6 +189,7 @@ pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> Engi
     )
 }
 
+#[cfg(test)]
 pub fn apply_settlement_to_match(room: &mut Value) {
     let plan = project_room_state(room).ok().and_then(|state| {
         state.round_state.as_ref().and_then(|round| {

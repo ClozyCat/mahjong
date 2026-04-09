@@ -7,7 +7,6 @@ use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::{
     plan_advance_opening_flowers, plan_flower_action, plan_round_start_payload,
 };
-use crate::core::engine::reducer::update_room_state;
 use crate::core::event::GameEvent;
 use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState, SkillLoadout};
 use crate::core::tile::Tile;
@@ -18,19 +17,23 @@ use crate::rules::skills::{
 };
 
 use super::runtime::{
-    current_actor, current_actor_in_room_state, is_last_live_tile_point,
-    is_last_live_tile_point_in_room_state, project_room_state, round_event_message,
+    current_actor_in_room_state, is_last_live_tile_point_in_room_state, round_event_message,
     sync_pending_timeout_in_room_state,
 };
 use super::settlement::apply_settlement_to_match_in_room_state;
 
 #[cfg(test)]
+use super::runtime::{current_actor, is_last_live_tile_point, project_room_state};
+#[cfg(test)]
 use super::settlement::apply_settlement_to_match;
+#[cfg(test)]
+use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 30;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 
+#[cfg(test)]
 fn apply_room_state_side_effect<F>(room: &mut Value, effect: F)
 where
     F: FnOnce(&mut RoomState),
@@ -41,16 +44,19 @@ where
     });
 }
 
+#[cfg(test)]
 fn note_tracker_draw_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
     apply_room_state_side_effect(room, |state| {
         note_tracker_draw_in_room_state(state, seat_index, tile_key);
     });
 }
 
+#[cfg(test)]
 fn sync_round_skill_trackers_for_value_room(room: &mut Value) {
     apply_room_state_side_effect(room, sync_round_skill_trackers_in_room_state);
 }
 
+#[cfg(test)]
 fn sync_round_skill_trackers_and_timeout_for_value_room(room: &mut Value) {
     apply_room_state_side_effect(room, |state| {
         sync_round_skill_trackers_in_room_state(state);
@@ -270,6 +276,7 @@ pub fn reconcile_continue_action_state(room: &mut Value) -> Result<(), String> {
     reconcile_continue_action(room)
 }
 
+#[cfg(test)]
 pub fn apply_opening_flowers_pass(
     room: &mut Value,
     seat_index: usize,
@@ -277,6 +284,7 @@ pub fn apply_opening_flowers_pass(
     apply_opening_flowers_pass_output(room, seat_index).map(|output| output.emitted_messages)
 }
 
+#[cfg(test)]
 pub fn apply_opening_flowers_pass_output(
     room: &mut Value,
     seat_index: usize,
@@ -349,6 +357,7 @@ pub fn apply_opening_flowers_pass_output_in_room_state(
     Ok(EngineOutput::default())
 }
 
+#[cfg(test)]
 pub fn apply_flower_action(
     room: &mut Value,
     seat_index: usize,
@@ -357,6 +366,7 @@ pub fn apply_flower_action(
     apply_flower_action_output(room, seat_index, tile_ids).map(|output| output.emitted_messages)
 }
 
+#[cfg(test)]
 pub fn apply_flower_action_output(
     room: &mut Value,
     seat_index: usize,
@@ -1066,6 +1076,7 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
     Ok(())
 }
 
+#[cfg(test)]
 fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
     round_state
         .get("players")

@@ -1,10 +1,14 @@
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 use crate::core::state::RoomState;
 use crate::room_scoring::{RoomScoringCache, TileCounts};
 
-use super::win::{can_declare_hu_with_cache, can_declare_hu_with_cache_for_state};
+use super::win::can_declare_hu_with_cache_for_state;
+
+#[cfg(test)]
+use super::win::can_declare_hu_with_cache;
+#[cfg(test)]
+use serde_json::Value;
 
 const MAX_SEATS: usize = 4;
 const HONOR_TILE_START: usize = 27;
@@ -29,6 +33,7 @@ pub struct SelfKongCandidate {
     pub meld_index: Option<usize>,
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn available_self_kongs(room: &Value, seat_index: usize) -> Vec<SelfKongCandidate> {
     let cache = RoomScoringCache::from_room(room);
@@ -104,6 +109,7 @@ pub fn resolve_self_kong_selection(
     })
 }
 
+#[cfg(test)]
 pub fn seats_with_hu_candidate_for_tile(
     room: &Value,
     actor_seat: usize,
@@ -132,6 +138,7 @@ pub fn seats_with_hu_candidate_for_tile_in_room_state(
         .collect()
 }
 
+#[cfg(test)]
 pub fn claim_window_options_after_discard(
     room: &Value,
     discarder_seat: usize,
@@ -386,6 +393,7 @@ fn chow_required_tile_pairs(tile_index: usize) -> Vec<(usize, usize)> {
     pairs
 }
 
+#[cfg(test)]
 fn is_last_tile_wall_point_after_discard(room: &Value) -> bool {
     room.get("round_state")
         .and_then(|round| round.get("last_action_context"))

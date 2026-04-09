@@ -6,11 +6,9 @@ use crate::core::engine::planner::{
     plan_claim_window_continuation_without_winner, plan_claim_window_response, plan_discard_action,
     resolve_claims,
 };
-use crate::core::engine::reducer::update_room_state;
 use crate::core::event::GameEvent;
 use crate::core::state::{
-    ClaimWindowAction, KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction,
-    RoomState, RoundState,
+    KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction, RoomState, RoundState,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -20,27 +18,39 @@ use crate::rules::skills::{
 };
 
 use super::meld::{
-    SelfKongCandidate, SelfKongKind, available_self_kongs, available_self_kongs_from_cache,
-    claim_window_options_after_discard, claim_window_options_after_discard_in_room_state,
-    is_valid_chow_sequence_by_keys, resolve_self_kong_selection, seats_with_hu_candidate_for_tile,
-    seats_with_hu_candidate_for_tile_in_room_state,
+    SelfKongCandidate, SelfKongKind, available_self_kongs_from_cache,
+    claim_window_options_after_discard_in_room_state, is_valid_chow_sequence_by_keys,
+    resolve_self_kong_selection, seats_with_hu_candidate_for_tile_in_room_state,
 };
 use super::runtime::{
-    current_actor, current_actor_in_room_state, is_last_live_tile_point,
-    is_last_live_tile_point_in_room_state, pending_timeout_kind, player_concealed_tile,
-    project_room_state, replacement_tile_from_tail, replacement_tile_from_tail_in_room_state,
-    round_event_message, sync_pending_timeout_in_room_state,
+    current_actor_in_room_state, is_last_live_tile_point_in_room_state,
+    replacement_tile_from_tail_in_room_state, round_event_message,
+    sync_pending_timeout_in_room_state,
 };
-use super::settlement::{
-    settle_exhaustive_draw_output, settle_exhaustive_draw_output_in_room_state,
+use super::settlement::settle_exhaustive_draw_output_in_room_state;
+use super::win::{apply_hu_settlement_output_in_room_state, compute_hu_settlement_for_state};
+
+#[cfg(test)]
+use super::meld::{
+    available_self_kongs, claim_window_options_after_discard, seats_with_hu_candidate_for_tile,
 };
-use super::win::{
-    apply_hu_settlement_output, apply_hu_settlement_output_in_room_state, compute_hu_settlement,
-    compute_hu_settlement_for_state,
+#[cfg(test)]
+use super::runtime::{
+    current_actor, is_last_live_tile_point, pending_timeout_kind, player_concealed_tile,
+    project_room_state, replacement_tile_from_tail,
 };
+#[cfg(test)]
+use super::settlement::settle_exhaustive_draw_output;
+#[cfg(test)]
+use super::win::{apply_hu_settlement_output, compute_hu_settlement};
+#[cfg(test)]
+use crate::core::engine::reducer::update_room_state;
+#[cfg(test)]
+use crate::core::state::ClaimWindowAction;
 
 const MAX_SEATS: usize = 4;
 
+#[cfg(test)]
 fn apply_room_state_side_effect<F>(room: &mut Value, effect: F)
 where
     F: FnOnce(&mut RoomState),
@@ -51,28 +61,33 @@ where
     });
 }
 
+#[cfg(test)]
 fn note_tracker_discard_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
     apply_room_state_side_effect(room, |state| {
         note_tracker_discard_in_room_state(state, seat_index, tile_key);
     });
 }
 
+#[cfg(test)]
 fn note_tracker_draw_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
     apply_room_state_side_effect(room, |state| {
         note_tracker_draw_in_room_state(state, seat_index, tile_key);
     });
 }
 
+#[cfg(test)]
 fn note_tracker_claimed_discard_for_value_room(room: &mut Value, seat_index: usize) {
     apply_room_state_side_effect(room, |state| {
         note_tracker_claimed_discard_in_room_state(state, seat_index);
     });
 }
 
+#[cfg(test)]
 fn sync_round_skill_trackers_for_value_room(room: &mut Value) {
     apply_room_state_side_effect(room, sync_round_skill_trackers_in_room_state);
 }
 
+#[cfg(test)]
 fn sync_round_skill_trackers_and_timeout_for_value_room(room: &mut Value) {
     apply_room_state_side_effect(room, |state| {
         sync_round_skill_trackers_in_room_state(state);
@@ -237,6 +252,7 @@ fn push_kong_entry(round: &mut RoundState, entry: &KongTrackerEntry) {
     round.score_trackers.kong_entries.push(entry.clone());
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn try_handle_self_kong_action_output(
     room: &mut Value,
@@ -298,6 +314,7 @@ pub fn try_handle_self_kong_action_output_in_room_state(
     )))
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn apply_claim_window_action(
     room: &mut Value,
@@ -352,6 +369,7 @@ pub fn apply_claim_window_action_in_room_state(
     resolve_recorded_claims_local_output_in_room_state(room)
 }
 
+#[cfg(test)]
 pub fn apply_discard_action(
     room: &mut Value,
     seat_index: usize,
@@ -360,6 +378,7 @@ pub fn apply_discard_action(
     apply_discard_action_output(room, seat_index, tile_id).map(|output| output.emitted_messages)
 }
 
+#[cfg(test)]
 pub fn apply_discard_action_output(
     room: &mut Value,
     seat_index: usize,
@@ -572,6 +591,7 @@ pub fn apply_discard_action_output_in_room_state(
     ))
 }
 
+#[cfg(test)]
 pub fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &str) -> bool {
     let Ok(state) = project_room_state(room) else {
         return false;
@@ -604,6 +624,7 @@ pub fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &st
     !discarded_tile.tile_id.is_empty()
 }
 
+#[cfg(test)]
 pub fn claim_window_supported_locally(room: &Value) -> bool {
     project_room_state(room)
         .ok()
@@ -612,6 +633,7 @@ pub fn claim_window_supported_locally(room: &Value) -> bool {
         .is_some_and(|pending| matches!(pending, PendingAction::ClaimWindow(_)))
 }
 
+#[cfg(test)]
 pub fn rob_kong_window_supported_locally(room: &Value) -> bool {
     project_room_state(room)
         .ok()
@@ -620,10 +642,12 @@ pub fn rob_kong_window_supported_locally(room: &Value) -> bool {
         .is_some_and(|pending| matches!(pending, PendingAction::RobKongWindow(_)))
 }
 
+#[cfg(test)]
 pub fn can_resolve_claim_window_timeout_locally(room: &Value) -> bool {
     pending_timeout_kind(room) == Some("claim_window") && claim_window_supported_locally(room)
 }
 
+#[cfg(test)]
 pub fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, String> {
     let state = project_room_state(room)?;
     let round = state
@@ -677,10 +701,12 @@ pub fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, Stri
     Ok(messages)
 }
 
+#[cfg(test)]
 pub fn can_resolve_rob_kong_timeout_locally(room: &Value) -> bool {
     pending_timeout_kind(room) == Some("claim_window") && rob_kong_window_supported_locally(room)
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<EngineOutput, String> {
     let state = project_room_state(room)?;
@@ -731,6 +757,7 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Engine
     complete_add_kong_after_passes_output(room)
 }
 
+#[cfg(test)]
 pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> {
     let state = project_room_state(room)?;
     let round = state
@@ -783,6 +810,7 @@ pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
     Ok(messages)
 }
 
+#[cfg(test)]
 #[allow(dead_code)]
 fn apply_self_kong_action_output(
     room: &mut Value,
@@ -813,6 +841,7 @@ fn apply_self_kong_action_output(
 }
 
 #[allow(dead_code)]
+#[cfg(test)]
 fn complete_self_kong_output(
     room: &mut Value,
     seat_index: usize,
@@ -896,6 +925,7 @@ fn complete_self_kong_output_in_room_state(
 }
 
 #[allow(dead_code)]
+#[cfg(test)]
 fn start_rob_kong_window_output(
     room: &mut Value,
     seat_index: usize,
@@ -1012,6 +1042,7 @@ enum SelfKongMeldUpdate {
     Append { meld_index: usize, tile_key: String },
 }
 
+#[cfg(test)]
 fn plan_self_kong_completion(
     room: &Value,
     seat_index: usize,
@@ -1198,10 +1229,12 @@ fn apply_self_kong_plan_to_round(
     Ok(())
 }
 
+#[cfg(test)]
 fn resolve_recorded_claims_local(room: &mut Value) -> Result<Vec<Value>, String> {
     resolve_recorded_claims_local_output(room).map(|output| output.emitted_messages)
 }
 
+#[cfg(test)]
 fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput, String> {
     let state = project_room_state(room)?;
     let round = state
@@ -1356,6 +1389,7 @@ fn resolve_recorded_claims_local_output_in_room_state(
     Ok(EngineOutput::default())
 }
 
+#[cfg(test)]
 fn validate_claim_selection(
     room: &Value,
     seat_index: usize,
@@ -1461,6 +1495,7 @@ fn validate_claim_selection_in_room_state(
     Ok(())
 }
 
+#[cfg(test)]
 fn apply_selected_claim(
     room: &mut Value,
     seat_index: usize,
@@ -1535,6 +1570,7 @@ struct SelectedClaimPlan {
     emitted_messages: Vec<Value>,
 }
 
+#[cfg(test)]
 fn plan_selected_claim(
     room: &Value,
     seat_index: usize,
@@ -1751,6 +1787,7 @@ fn selected_player_tiles(
     Ok(selected)
 }
 
+#[cfg(test)]
 fn tile_from_value(tile: &Value) -> Result<Tile, String> {
     Tile::from_value(tile, "standard_action.tile").map_err(|error| error.to_string())
 }
@@ -1775,10 +1812,12 @@ fn round_state_ref(state: &RoomState) -> Result<&RoundState, String> {
         .ok_or_else(|| "round_not_ready".to_string())
 }
 
+#[cfg(test)]
 fn complete_add_kong_after_passes(room: &mut Value) -> Result<Vec<Value>, String> {
     complete_add_kong_after_passes_output(room).map(|output| output.emitted_messages)
 }
 
+#[cfg(test)]
 fn complete_add_kong_after_passes_output(room: &mut Value) -> Result<EngineOutput, String> {
     let state = project_room_state(room)?;
     let round = state

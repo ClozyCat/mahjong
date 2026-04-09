@@ -7,6 +7,7 @@ use crate::core::tile::Tile;
 
 const PENDING_TIMEOUT_SECONDS: i64 = 30;
 
+#[cfg(test)]
 pub fn project_room_state(room: &Value) -> Result<RoomState, String> {
     RoomState::from_room_value(room).map_err(|error| error.to_string())
 }
@@ -25,6 +26,7 @@ pub fn round_event_message(event_type: &str, event: Value) -> Value {
     })
 }
 
+#[cfg(test)]
 pub fn current_actor(room: &Value) -> Option<usize> {
     room.get("round_state")
         .and_then(|round| round.get("current_actor"))
@@ -36,12 +38,14 @@ pub fn current_actor_in_room_state(room: &RoomState) -> Option<usize> {
     room.round_state.as_ref().map(|round| round.current_actor)
 }
 
+#[cfg(test)]
 pub fn pending_timeout_kind(room: &Value) -> Option<&str> {
     room.get("pending_timeout")
         .and_then(|timeout| timeout.get("kind"))
         .and_then(Value::as_str)
 }
 
+#[cfg(test)]
 pub fn replacement_tile_from_tail(room: &Value) -> Option<Value> {
     let wall = room.get("round_state")?.get("wall")?;
     let head_index = wall.get("head_index")?.as_i64()?;
@@ -65,6 +69,7 @@ pub fn replacement_tile_from_tail_in_room_state(room: &RoomState) -> Option<Tile
     round.wall.tiles.get(tail_index).cloned()
 }
 
+#[cfg(test)]
 pub fn is_last_live_tile_point(room: &Value) -> bool {
     room.get("round_state")
         .and_then(|round| round.get("last_action_context"))
@@ -92,6 +97,7 @@ pub fn is_last_live_tile_point_in_room_state(room: &RoomState) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(test)]
 pub fn player_concealed_tiles_slice(room: &Value, seat_index: usize) -> Option<&[Value]> {
     room.get("round_state")
         .and_then(|round| round.get("players"))
@@ -102,6 +108,7 @@ pub fn player_concealed_tiles_slice(room: &Value, seat_index: usize) -> Option<&
         .map(Vec::as_slice)
 }
 
+#[cfg(test)]
 pub fn player_concealed_tile<'a>(
     room: &'a Value,
     seat_index: usize,

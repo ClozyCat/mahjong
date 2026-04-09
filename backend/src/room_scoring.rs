@@ -1,9 +1,11 @@
-use serde_json::Value;
-
-use crate::core::error::EngineError;
 use crate::core::state::{EffectInstance, KnowledgeEffect, RoomState};
 use crate::core::tile::Tile;
 use crate::rules::scoring::KongEntry as ScoringKongEntry;
+
+#[cfg(test)]
+use crate::core::error::EngineError;
+#[cfg(test)]
+use serde_json::Value;
 
 const MAX_SEATS: usize = 4;
 const TILE_KIND_COUNT: usize = 34;
@@ -40,10 +42,12 @@ pub struct RoomScoringCache {
 }
 
 impl RoomScoringCache {
+    #[cfg(test)]
     pub fn from_room(room: &Value) -> Self {
         Self::from_room_value(room).unwrap_or_else(|_| Self::from_state(&RoomState::default()))
     }
 
+    #[cfg(test)]
     pub fn from_room_value(room: &Value) -> Result<Self, EngineError> {
         let state = RoomState::from_room_value(room)?;
         Ok(Self::from_state(&state))
