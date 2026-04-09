@@ -1372,6 +1372,14 @@ fn apply_score_adjust_event_in_room_state(
     emitted_messages: &mut Vec<Value>,
 ) -> Result<(), String> {
     adjust_match_cumulative_score_in_room_state(room, seat, delta);
+    update_skill_round_state_in_room_state(room, |round| {
+        *round
+            .skill_trackers
+            .score_adjustments_by_seat
+            .entry(seat)
+            .or_default() += delta;
+        Ok(())
+    })?;
     emitted_messages.push(round_event_message(
         "skill_score_adjusted",
         json!({

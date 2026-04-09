@@ -46,41 +46,43 @@ export function SkillSelectionOverlay({ selection, onSelect, onDecline }: SkillS
             {selection.detail ? <p>{selection.detail}</p> : null}
           </div>
         </div>
-        <div className="skill-selection-overlay__options" aria-label="可选技能列表">
-          {selection.options.map((skill, index) => (
-            <article
-              key={`${selection.cycleKey}-${skill.skillId}-${skill.rarity}`}
-              className={`skill-card skill-card--${skill.tone}`.trim()}
-            >
-              <div className="skill-card__header">
-                <span className="skill-card__seat">{SKILL_POSITION_LABELS[index] ?? `第${index + 1}签`}</span>
-                <div className="skill-card__badges">
-                  <span className={`skill-card__rarity skill-card__rarity--${skill.tone}`}>{skill.rarityLabel}</span>
-                  <span className="skill-card__type">{skill.typeLabel}</span>
+        <div className="skill-selection-overlay__body">
+          <div className="skill-selection-overlay__options" aria-label="可选技能列表">
+            {selection.options.map((skill, index) => (
+              <article
+                key={`${selection.cycleKey}-${skill.skillId}-${skill.rarity}`}
+                className={`skill-card skill-card--${skill.tone}`.trim()}
+              >
+                <div className="skill-card__header">
+                  <span className="skill-card__seat">{SKILL_POSITION_LABELS[index] ?? `第${index + 1}签`}</span>
+                  <div className="skill-card__badges">
+                    <span className={`skill-card__rarity skill-card__rarity--${skill.tone}`}>{skill.rarityLabel}</span>
+                    <span className="skill-card__type">{skill.typeLabel}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="skill-card__title-block">
-                <strong className="skill-card__name">{skill.name}</strong>
-                <span className="skill-card__cycle">持续 {skill.remainingRounds} 局</span>
-              </div>
-              <p className="skill-card__summary">{skill.summary}</p>
-              <p className="skill-card__detail">{skill.detail}</p>
-              <div className="skill-card__meta">
-                {skill.type === 'active' ? <span>本局可发动 {skill.remainingActivationsThisRound} 次</span> : <span>整局自动生效</span>}
-              </div>
-              {skill.interactionHint ? <p className="skill-card__hint">{skill.interactionHint}</p> : null}
-              <div className="skill-card__tags">
-                {skill.tags.map((tag) => (
-                  <span key={`${skill.skillId}-${tag}`} className="skill-card__tag">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <button type="button" className="skill-card__select" onClick={() => onSelect(skill.skillId)}>
-                选择此技能
-              </button>
-            </article>
-          ))}
+                <div className="skill-card__title-block">
+                  <strong className="skill-card__name">{skill.name}</strong>
+                  <span className="skill-card__cycle">持续 {skill.remainingRounds} 局</span>
+                </div>
+                <p className="skill-card__summary">{skill.summary}</p>
+                <p className="skill-card__detail">{skill.detail}</p>
+                <div className="skill-card__meta">
+                  {skill.type === 'active' ? <span>本局可发动 {skill.remainingActivationsThisRound} 次</span> : <span>整局自动生效</span>}
+                </div>
+                {skill.interactionHint ? <p className="skill-card__hint">{skill.interactionHint}</p> : null}
+                <div className="skill-card__tags">
+                  {skill.tags.map((tag) => (
+                    <span key={`${skill.skillId}-${tag}`} className="skill-card__tag">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                <button type="button" className="skill-card__select" onClick={() => onSelect(skill.skillId)}>
+                  选择此技能
+                </button>
+              </article>
+            ))}
+          </div>
         </div>
         <div className="skill-selection-overlay__footer">
           <span className="skill-selection-overlay__footer-line" aria-hidden="true" />

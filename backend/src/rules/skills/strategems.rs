@@ -893,10 +893,10 @@ fn apply_after_scoring(
             adjust_score_delta(
                 result,
                 actor,
-                if discarded_five {
-                    gain
-                } else if hand_has_five {
+                if hand_has_five {
                     -loss
+                } else if discarded_five {
+                    gain
                 } else {
                     0
                 },
@@ -978,7 +978,11 @@ fn apply_after_scoring(
                 -loss
             },
         ),
-        "jia_chi_bu_dian" if is_winner => adjust_score_delta(result, actor, -loss),
+        "jia_chi_bu_dian" if is_winner => adjust_score_delta(
+            result,
+            actor,
+            if result.fan_total >= 16 { -loss } else { 0 },
+        ),
         "shang_wu_chou_ti" if is_winner => adjust_score_delta(
             result,
             actor,
@@ -1216,4 +1220,200 @@ fn lian_huan_streak(ctx: &RuleContext<'_>, actor: Seat) -> i64 {
         .and_then(|state| state.skill_trackers.lian_huan_ji.streaks.get(&actor))
         .copied()
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::json;
+
+    use super::{apply_after_scoring, gain_value, loss_value};
+    use crate::core::state::{
+        MatchState, PlayerRoundState, RoomState, RoundState, RuleRuntimeState, SeatState,
+        SkillInstance, SkillLoadout,
+    };
+    use crate::rules::scoring::{
+        EvaluationInput, FanResult, HandFeatures, ScoreDelta, TimingFeatures,
+    };
+    use crate::rules::skills::{RuleContext, ScoreHookRequest};
+
+    #[test]
+    fn jia_chi_bu_dian_only_penalizes_big_hands() {
+        let room = room_with_skill("jia_chi_bu_dian");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let request = score_hook_request(vec!["w1", "w2", "w3"]);
+        let mut regular_hand = fan_result_with_total(12);
+        apply_after_scoring("jia_chi_bu_dian", &ctx, &request, &mut regular_hand);
+        assert_eq!(regular_hand.score_delta.total_delta_by_seat[0], 24);
+
+        let mut big_hand = fan_result_with_total(16);
+        apply_after_scoring("jia_chi_bu_dian", &ctx, &request, &mut big_hand);
+        assert_eq!(
+            big_hand.score_delta.total_delta_by_seat[0],
+            24 - loss_value("jia_chi_bu_dian", skill.level)
+        );
+    }
+
+    #[test]
+    fn pao_zhuan_yin_yu_penalizes_hands_that_still_keep_a_five() {
+        let mut room = room_with_skill("pao_zhuan_yin_yu");
+        room.round_state
+            .as_mut()
+            .unwrap()
+            .skill_trackers
+            .discarded_five_by_seat
+            .insert(0, true);
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let mut keeps_a_five = fan_result_with_total(8);
+        apply_after_scoring(
+            "pao_zhuan_yin_yu",
+            &ctx,
+            &score_hook_request(vec!["w5", "w1", "w2"]),
+            &mut keeps_a_five,
+        );
+        assert_eq!(
+            keeps_a_five.score_delta.total_delta_by_seat[0],
+            24 - loss_value("pao_zhuan_yin_yu", skill.level)
+        );
+
+        let mut cashed_out = fan_result_with_total(8);
+        apply_after_scoring(
+            "pao_zhuan_yin_yu",
+            &ctx,
+            &score_hook_request(vec!["w1", "w2", "w3"]),
+            &mut cashed_out,
+        );
+        assert_eq!(
+            cashed_out.score_delta.total_delta_by_seat[0],
+            24 + gain_value("pao_zhuan_yin_yu", skill.level)
+        );
+    }
+
+    fn room_with_skill(skill_id: &str) -> RoomState {
+        RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "skill".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: (0..4)
+                .map(|seat_index| SeatState {
+                    seat_index,
+                    connected: true,
+                    ready: true,
+                    seat_type: "human".to_string(),
+                    ..Default::default()
+                })
+                .collect(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                skill_trackers: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: vec![
+                    PlayerRoundState {
+                        seat: 0,
+                        skill_loadout: SkillLoadout {
+                            equipped: vec![SkillInstance {
+                                skill_id: skill_id.to_string(),
+                                owner: 0,
+                                level: 1,
+                                rarity: "common".to_string(),
+                                remaining_rounds: 2,
+                                cooldown: 0,
+                                charges: 1,
+                                charges_per_round: 1,
+                                config: json!({}),
+                            }],
+                        },
+                        ..Default::default()
+                    },
+                    PlayerRoundState {
+                        seat: 1,
+                        ..Default::default()
+                    },
+                    PlayerRoundState {
+                        seat: 2,
+                        ..Default::default()
+                    },
+                    PlayerRoundState {
+                        seat: 3,
+                        ..Default::default()
+                    },
+                ],
+                rule_state: RuleRuntimeState {
+                    enforce_minimum_eight_fan: true,
+                },
+                ..Default::default()
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        }
+    }
+
+    fn score_hook_request(tile_keys: Vec<&str>) -> ScoreHookRequest {
+        ScoreHookRequest {
+            evaluation: EvaluationInput {
+                win_type: "discard".to_string(),
+                winner_seat: Some(0),
+                discarder_seat: Some(1),
+                flower_count: 0,
+                seat_count: 4,
+                features: HandFeatures::default(),
+                timing: TimingFeatures::default(),
+                kong_entries: Vec::new(),
+                tile_keys: tile_keys.into_iter().map(ToString::to_string).collect(),
+                visible_tile_keys: Vec::new(),
+                concealed_tile_keys: Vec::new(),
+                meld_tile_key_groups: Vec::new(),
+                open_meld_tile_key_groups: Vec::new(),
+                incoming_tile: Some("w3".to_string()),
+                decompositions: Vec::new(),
+            },
+            required_minimum_fan_total: 8,
+        }
+    }
+
+    fn fan_result_with_total(fan_total: i64) -> FanResult {
+        FanResult {
+            fan_total,
+            minimum_qualifying_fan_total: 8,
+            fan_keys: Vec::new(),
+            fan_breakdown: Vec::new(),
+            score_delta: ScoreDelta {
+                provisional: true,
+                basic_points: fan_total,
+                base_points: 8,
+                fan_total,
+                minimum_qualifying_fan_total: 8,
+                fan_delta_by_seat: vec![24, -8, -8, -8],
+                kong_delta_by_seat: vec![0, 0, 0, 0],
+                total_delta_by_seat: vec![24, -8, -8, -8],
+            },
+            kong_score_detail: Vec::new(),
+            provisional: true,
+        }
+    }
 }

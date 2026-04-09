@@ -11,6 +11,7 @@ pub struct RoundSkillTrackers {
     pub claimed_discard_counts_by_seat: BTreeMap<Seat, i64>,
     pub pending_honor_rebuy_tile_by_seat: BTreeMap<Seat, String>,
     pub honor_redraw_success_by_seat: BTreeMap<Seat, bool>,
+    pub score_adjustments_by_seat: BTreeMap<Seat, i64>,
     pub discard_counts: BTreeMap<String, i64>,
     pub discarded_five_by_seat: BTreeMap<Seat, bool>,
     pub discard_suits_by_seat: BTreeMap<Seat, Vec<String>>,

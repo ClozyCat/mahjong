@@ -1127,6 +1127,39 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('uses projected score state and current round deltas from the room snapshot', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          match_state: {
+            ...base.roomSnapshot!.payload.match_state!,
+            cumulative_scores: { '0': 0, '1': 0, '2': -3, '3': 0 },
+          },
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            score_state: {
+              flower_count_by_seat: { '0': 0, '1': 0, '2': 0, '3': 0 },
+              kong_score_detail: [],
+              kong_delta_by_seat: { '0': 0, '1': 0, '2': 0, '3': 0 },
+              current_round_delta_by_seat: { '0': 0, '1': 0, '2': -3, '3': 0 },
+              base_cumulative_scores: { '0': 0, '1': 0, '2': 0, '3': 0 },
+              projected_cumulative_scores: { '0': 0, '1': 0, '2': -3, '3': 0 },
+            },
+          },
+        },
+      },
+    });
+
+    expect(viewModel.players.find((item) => item.isLocal)).toMatchObject({
+      score: -3,
+      liveDelta: -3,
+    });
+  });
+
   it('keeps the freshly drawn tile at the end of the local hand until the turn advances', () => {
     const viewModel = createMatchViewModel(
       createPlayingSessionState({

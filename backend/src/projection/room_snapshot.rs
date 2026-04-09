@@ -402,18 +402,24 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
     let mut projected_cumulative_scores = BTreeMap::new();
     let mut current_round_delta_by_seat = BTreeMap::new();
     let mut kong_delta_by_seat = BTreeMap::new();
-    let kong_score_detail = state
+    let settlement = state
         .round_state
         .as_ref()
         .and_then(|round| round.settlement.as_ref())
-        .map(|settlement| settlement.kong_score_detail.clone())
+        .cloned();
+    let kong_score_detail = settlement
+        .as_ref()
+        .map(|value| value.kong_score_detail.clone())
+        .unwrap_or_default();
+    let score_adjustments_by_seat = state
+        .round_state
+        .as_ref()
+        .map(|round| round.skill_trackers.score_adjustments_by_seat.clone())
         .unwrap_or_default();
 
     for entry in &kong_score_detail {
         for (seat, delta) in &entry.delta_by_seat {
             *kong_delta_by_seat.entry(*seat).or_default() += *delta;
-            *current_round_delta_by_seat.entry(*seat).or_default() += *delta;
-            *projected_cumulative_scores.entry(*seat).or_default() += *delta;
         }
     }
 
@@ -429,10 +435,26 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
             .as_ref()
             .and_then(|match_state| match_state.cumulative_scores.get(&seat).copied())
             .unwrap_or(0);
+        let score_adjustment = score_adjustments_by_seat.get(&seat).copied().unwrap_or(0);
+        let settlement_total = settlement
+            .as_ref()
+            .and_then(|value| value.score_delta.total_delta_by_seat.get(&seat))
+            .copied()
+            .unwrap_or(0);
+        let current_delta = if settlement.is_some() {
+            settlement_total
+        } else {
+            kong_delta_by_seat.get(&seat).copied().unwrap_or(0) + score_adjustment
+        };
+        let base_score = if settlement.is_some() {
+            base - settlement_total
+        } else {
+            base - score_adjustment
+        };
         flower_count_by_seat.insert(seat, flower_total);
-        base_cumulative_scores.entry(seat).or_insert(base);
-        projected_cumulative_scores.entry(seat).or_insert(base);
-        current_round_delta_by_seat.entry(seat).or_insert(0);
+        base_cumulative_scores.insert(seat, base_score);
+        projected_cumulative_scores.insert(seat, base_score + current_delta);
+        current_round_delta_by_seat.insert(seat, current_delta);
         kong_delta_by_seat.entry(seat).or_insert(0);
     }
 
@@ -486,4 +508,150 @@ fn private_knowledge(knowledge: &[KnowledgeEffect]) -> Vec<KnowledgeView> {
             description: knowledge.description.clone(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::room_snapshot_message;
+    use crate::core::state::{
+        MatchState, PlayerRoundState, RoomState, RoundScoreTrackers, RoundSettlement,
+        RoundSkillTrackers, RoundState, SeatState, SettlementKongScoreDetailEntry,
+        SettlementScoreDelta,
+    };
+    use crate::projection::SeatProjectionSupport;
+
+    #[test]
+    fn score_state_projection_includes_immediate_skill_adjustments() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "skill".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: seats(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: BTreeMap::from([(0, -3), (1, 0), (2, 0), (3, 0)]),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                skill_trackers: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: players(),
+                score_trackers: RoundScoreTrackers::default(),
+                skill_trackers: RoundSkillTrackers {
+                    score_adjustments_by_seat: BTreeMap::from([(0, -3)]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+        let score_state = &snapshot["payload"]["private_state"]["score_state"];
+        assert_eq!(score_state["base_cumulative_scores"]["0"], 0);
+        assert_eq!(score_state["current_round_delta_by_seat"]["0"], -3);
+        assert_eq!(score_state["projected_cumulative_scores"]["0"], -3);
+    }
+
+    #[test]
+    fn score_state_projection_uses_total_settlement_delta_without_double_counting_kongs() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "settlement".to_string(),
+            mode: "skill".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: seats(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: BTreeMap::from([(0, -9), (1, 9), (2, 0), (3, 0)]),
+                match_finished: false,
+                last_completed_round_id: Some("round-1".to_string()),
+                statistics: Default::default(),
+                skill_trackers: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "settlement".to_string(),
+                players: players(),
+                settlement: Some(RoundSettlement {
+                    provisional: true,
+                    win_type: "discard".to_string(),
+                    winner_seat: Some(1),
+                    discarder_seat: Some(0),
+                    display_win_label: None,
+                    fan_total: 8,
+                    fan_keys: Vec::new(),
+                    fan_breakdown: Vec::new(),
+                    score_delta: SettlementScoreDelta {
+                        provisional: true,
+                        basic_points: 8,
+                        base_points: 8,
+                        fan_total: 8,
+                        minimum_qualifying_fan_total: 8,
+                        fan_delta_by_seat: BTreeMap::from([(0, -8), (1, 8), (2, 0), (3, 0)]),
+                        kong_delta_by_seat: BTreeMap::from([(0, -1), (1, 1), (2, 0), (3, 0)]),
+                        total_delta_by_seat: BTreeMap::from([(0, -9), (1, 9), (2, 0), (3, 0)]),
+                    },
+                    flower_count: 0,
+                    draw_type: None,
+                    kong_score_detail: vec![SettlementKongScoreDetailEntry {
+                        kong_type: "concealed_kong".to_string(),
+                        actor_seat: 1,
+                        payer_seats: vec![0],
+                        delta_by_seat: BTreeMap::from([(0, -1), (1, 1), (2, 0), (3, 0)]),
+                    }],
+                }),
+                ..Default::default()
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+        let score_state = &snapshot["payload"]["private_state"]["score_state"];
+        assert_eq!(score_state["base_cumulative_scores"]["0"], 0);
+        assert_eq!(score_state["current_round_delta_by_seat"]["0"], -9);
+        assert_eq!(score_state["projected_cumulative_scores"]["0"], -9);
+        assert_eq!(score_state["projected_cumulative_scores"]["1"], 9);
+    }
+
+    fn seats() -> Vec<SeatState> {
+        (0..4)
+            .map(|seat_index| SeatState {
+                seat_index,
+                connected: true,
+                ready: true,
+                seat_type: "human".to_string(),
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    fn players() -> Vec<PlayerRoundState> {
+        (0..4)
+            .map(|seat| PlayerRoundState {
+                seat,
+                ..Default::default()
+            })
+            .collect()
+    }
 }
