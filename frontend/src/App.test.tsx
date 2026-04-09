@@ -306,6 +306,30 @@ describe('App', () => {
     expect(screen.queryByLabelText('Mahjong table')).toBeNull();
   });
 
+  it('returns to the lobby with guidance when leaving after the connection has already dropped', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await act(async () => {
+      socket.close();
+    });
+
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+    expect(
+      screen.getByText('当前连接已断开，已返回大厅。若仍需进入该牌桌，可使用牌桌编号重新加入。'),
+    ).toBeInTheDocument();
+  });
+
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

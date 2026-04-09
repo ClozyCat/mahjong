@@ -963,6 +963,21 @@ describe('createMatchViewModel', () => {
     vi.useRealTimers();
   });
 
+  it('disables the next-round action while the client is reconnecting', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      connectionStatus: 'reconnecting',
+    });
+
+    expect(viewModel.mode).toBe('disconnected_or_waiting');
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'start_next_round',
+      label: '重连中...',
+      enabled: false,
+    });
+  });
+
   it('uses 屁和 copy for low-fan wins when eight-fan restriction is disabled', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

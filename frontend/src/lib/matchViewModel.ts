@@ -1186,6 +1186,7 @@ function createResult(state: SessionState): BattleViewModel['result'] {
     return null;
   }
 
+  const isConnectionInteractive = state.connectionStatus === 'connected';
   const localSeat = getLocalSeat(state);
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
@@ -1220,15 +1221,20 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       seats: createResultSeats(state, result.score_delta.total_delta_by_seat),
       continueAction: {
         id: 'start_next_round',
-        label: nextRoundConfirmation?.countdownDeadlineAt
-          ? formatContinueActionCountdownLabel(nextRoundConfirmation.countdownDeadlineAt)
-          : nextRoundConfirmation?.isLocalConfirmed
-            ? formatContinueActionConfirmedLabel(
-                nextRoundConfirmation.confirmedCount,
-                nextRoundConfirmation.requiredCount,
-              )
-            : ACTION_LABELS.start_next_round,
-        enabled: typeof snapshot.local_seat === 'number' && !nextRoundConfirmation?.isLocalConfirmed,
+        label: !isConnectionInteractive
+          ? '重连中...'
+          : nextRoundConfirmation?.countdownDeadlineAt
+            ? formatContinueActionCountdownLabel(nextRoundConfirmation.countdownDeadlineAt)
+            : nextRoundConfirmation?.isLocalConfirmed
+              ? formatContinueActionConfirmedLabel(
+                  nextRoundConfirmation.confirmedCount,
+                  nextRoundConfirmation.requiredCount,
+                )
+              : ACTION_LABELS.start_next_round,
+        enabled:
+          isConnectionInteractive &&
+          typeof snapshot.local_seat === 'number' &&
+          !nextRoundConfirmation?.isLocalConfirmed,
         countdownDeadlineAt: nextRoundConfirmation?.countdownDeadlineAt ?? undefined,
         confirmation: nextRoundConfirmation ?? undefined,
       },
@@ -1251,15 +1257,18 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       seats: createResultSeats(state, null),
       continueAction: {
         id: 'restart_match',
-        label: restartMatchConfirmation?.countdownDeadlineAt
-          ? formatContinueActionCountdownLabel(restartMatchConfirmation.countdownDeadlineAt)
-          : restartMatchConfirmation?.isLocalConfirmed
-            ? formatContinueActionConfirmedLabel(
-                restartMatchConfirmation.confirmedCount,
-                restartMatchConfirmation.requiredCount,
-              )
-            : ACTION_LABELS.restart_match,
+        label: !isConnectionInteractive
+          ? '重连中...'
+          : restartMatchConfirmation?.countdownDeadlineAt
+            ? formatContinueActionCountdownLabel(restartMatchConfirmation.countdownDeadlineAt)
+            : restartMatchConfirmation?.isLocalConfirmed
+              ? formatContinueActionConfirmedLabel(
+                  restartMatchConfirmation.confirmedCount,
+                  restartMatchConfirmation.requiredCount,
+                )
+              : ACTION_LABELS.restart_match,
         enabled:
+          isConnectionInteractive &&
           snapshot.match_state?.match_finished === true &&
           typeof snapshot.local_seat === 'number' &&
           !restartMatchConfirmation?.isLocalConfirmed,

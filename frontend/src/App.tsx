@@ -258,7 +258,7 @@ export default function App() {
     clearStoredSession();
   }, [connectValue.nickname, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
-  const handleLeaveToLobby = useEffectEvent((tableCode?: string) => {
+  const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
     clearStoredSession();
     dispatch({
@@ -266,7 +266,7 @@ export default function App() {
       tableCode: tableCode ?? sessionRef.current.tableCode,
     });
     closeSocket(socketRef, heartbeatTimerRef);
-    setStatusMessage(null);
+    setStatusMessage(nextStatusMessage);
   });
 
   const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
@@ -757,7 +757,10 @@ export default function App() {
     }
 
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      setStatusMessage('当前连接不可用，暂时无法离开牌桌。');
+      handleLeaveToLobby(
+        state.roomSnapshot?.payload.table_code ?? state.tableCode,
+        '当前连接已断开，已返回大厅。若仍需进入该牌桌，可使用牌桌编号重新加入。',
+      );
       return;
     }
 
