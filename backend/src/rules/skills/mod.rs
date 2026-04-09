@@ -466,7 +466,7 @@ pub fn skill_draft_view(room_state: &RoomState, seat: Seat) -> Option<SkillDraft
         cycle_label: draft.cycle_label.clone(),
         deadline_at: draft.deadline_at.clone(),
         title: format!("{} · 技能签启", draft.cycle_label),
-        detail: "每种技能持续两局；主动技能每局可按技能品质发动对应次数，未使用次数不会累加。"
+        detail: "每种技能持续两局，主动技能未使用次数不会累加。"
             .to_string(),
         options: offer
             .options
