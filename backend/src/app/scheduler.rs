@@ -334,7 +334,10 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         }));
     }
 
-    if standard_next_bot_action(&runtime.room).ok().flatten().is_some()
+    if standard_next_bot_action(&runtime.room)
+        .ok()
+        .flatten()
+        .is_some()
     {
         let state_clone = state.clone();
         let table_clone = table_code.clone();

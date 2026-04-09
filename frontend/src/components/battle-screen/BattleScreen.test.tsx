@@ -242,7 +242,7 @@ describe('BattleScreen', () => {
           cycleLabel: '东1~东2局',
           deadlineAt: '2099-03-30T12:10:40+08:00',
           title: '东1~东2局 · 技能签启',
-          detail: '每种技能持续两局；主动技能每局仅可发动一次。',
+          detail: '每种技能持续两局；主动技能每局可按技能品质发动对应次数。',
           options: [
             {
               cycleKey: 'east-1',
@@ -314,7 +314,7 @@ describe('BattleScreen', () => {
                   type: 'active',
                   typeLabel: '主动技能',
                   summary: '在自己回合指定一名对手，申请侦察其当前手牌情报。',
-                  detail: '稀有效果：侦察 / 扣3',
+                  detail: '稀有效果：看2张 / 立即扣3',
                   interactionHint: '发动时从其他三家中选择一名作为侦察目标。',
                   tags: ['信息', '目标'],
                   cycleLabel: '东1~东2局',
@@ -333,7 +333,7 @@ describe('BattleScreen', () => {
     });
 
     expect(screen.getByText('暗度陈仓')).toBeInTheDocument();
-    expect(screen.getByText('稀有效果：侦察 / 扣3')).toBeInTheDocument();
+    expect(screen.getByText('稀有效果：看2张 / 立即扣3')).toBeInTheDocument();
   });
 
   it('shows settlement breakdown in resolving state', () => {

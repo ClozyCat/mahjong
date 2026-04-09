@@ -122,7 +122,9 @@ pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> Engi
     let kong_score_detail = room
         .round_state
         .as_ref()
-        .map(|round| kong_score_detail_from_trackers(&round.score_trackers.kong_entries, seat_count))
+        .map(|round| {
+            kong_score_detail_from_trackers(&round.score_trackers.kong_entries, seat_count)
+        })
         .unwrap_or_default();
     let kong_delta = total_kong_delta_by_seat(&kong_score_detail, seat_count);
     let mut settlement = RoundSettlement {
@@ -186,16 +188,14 @@ pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> Engi
 }
 
 pub fn apply_settlement_to_match(room: &mut Value) {
-    let plan = project_room_state(room)
-        .ok()
-        .and_then(|state| {
-            state.round_state.as_ref().and_then(|round| {
-                round
-                    .settlement
-                    .as_ref()
-                    .and_then(|settlement| plan_settlement_to_match(&state, settlement))
-            })
-        });
+    let plan = project_room_state(room).ok().and_then(|state| {
+        state.round_state.as_ref().and_then(|round| {
+            round
+                .settlement
+                .as_ref()
+                .and_then(|settlement| plan_settlement_to_match(&state, settlement))
+        })
+    });
     let _ = update_room_state(room, |state| {
         if let Some(plan) = plan.as_ref() {
             if let Some(match_state) = state.match_state.as_mut() {

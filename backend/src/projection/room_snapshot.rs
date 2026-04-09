@@ -4,14 +4,12 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
-use crate::core::state::{
-    MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry,
-};
+use crate::core::state::{MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry};
 use crate::projection::SeatProjectionSupport;
 use crate::rules::skills::{
-    EffectInstance, EquippedSkillView, KnowledgeEffect, build_skill_projection,
-    equipped_skill_views, public_skill_view, skill_action_options, skill_draft_view,
-    SkillDraftSelectionView,
+    EffectInstance, EquippedSkillView, KnowledgeEffect, SkillDraftSelectionView,
+    build_skill_projection, equipped_skill_views, public_skill_view, skill_action_options,
+    skill_draft_view,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -286,11 +284,13 @@ pub fn build_pending_action_view(
                 options,
             })
         }
-        "skill_draft" => skill_draft_view(state, local_seat).map(|selection| PendingActionView::SkillDraft {
-            seat_index: local_seat,
-            deadline_at: Some(selection.deadline_at),
-            options: vec!["select_skill".to_string(), "decline_skill".to_string()],
-        }),
+        "skill_draft" => {
+            skill_draft_view(state, local_seat).map(|selection| PendingActionView::SkillDraft {
+                seat_index: local_seat,
+                deadline_at: Some(selection.deadline_at),
+                options: vec!["select_skill".to_string(), "decline_skill".to_string()],
+            })
+        }
         _ => None,
     }
 }

@@ -270,10 +270,7 @@ pub fn apply_hu_settlement_output(
                 settlement: settlement.clone(),
             },
         ],
-        vec![
-            first_event,
-            settlement_message,
-        ],
+        vec![first_event, settlement_message],
     ))
 }
 
@@ -353,17 +350,15 @@ pub(crate) fn compute_hu_settlement_for_state(
     let incoming_tile = if hu_context == "self_draw" {
         None
     } else {
-        round.last_discard.as_ref().map(|tile| tile.tile_key.as_str())
+        round
+            .last_discard
+            .as_ref()
+            .map(|tile| tile.tile_key.as_str())
     };
 
     let cache = RoomScoringCache::from_state(state);
-    let evaluated = fan_result_for_win_with_state(
-        state,
-        &cache,
-        winner_seat,
-        incoming_tile,
-        discarder_seat,
-    )?;
+    let evaluated =
+        fan_result_for_win_with_state(state, &cache, winner_seat, incoming_tile, discarder_seat)?;
     let fan_result = &evaluated.fan_result;
     let flower_count = round
         .players

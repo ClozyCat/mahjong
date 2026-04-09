@@ -41,7 +41,9 @@ pub struct SkillTierData {
     pub detail: String,
     pub gain: Option<i64>,
     pub loss: Option<i64>,
+    pub score_penalty: Option<i64>,
     pub preview_count: Option<usize>,
+    pub active_uses_per_round: Option<u8>,
     pub minimum_fan_penalty: Option<i64>,
     pub minimum_fan_override: Option<i64>,
 }
@@ -158,13 +160,22 @@ pub fn catalog() -> &'static SkillCatalog {
 }
 
 pub fn entry(skill_id: &str) -> Option<&'static SkillCatalogEntry> {
-    catalog().skills.iter().find(|entry| entry.skill_id == skill_id)
+    catalog()
+        .skills
+        .iter()
+        .find(|entry| entry.skill_id == skill_id)
 }
 
 pub fn stratagem_skill_ids() -> &'static [SkillId] {
     static IDS: OnceLock<Vec<SkillId>> = OnceLock::new();
-    IDS.get_or_init(|| catalog().skills.iter().map(|entry| entry.skill_id.clone()).collect())
-        .as_slice()
+    IDS.get_or_init(|| {
+        catalog()
+            .skills
+            .iter()
+            .map(|entry| entry.skill_id.clone())
+            .collect()
+    })
+    .as_slice()
 }
 
 pub fn rarity_for_level(level: u8) -> SkillRarity {
@@ -198,6 +209,7 @@ pub fn value_i64_for_skill(skill_id: &str, level: u8, key: &str) -> i64 {
     match key {
         "gain" => tier.gain.unwrap_or(0),
         "loss" => tier.loss.unwrap_or(0),
+        "score_penalty" => tier.score_penalty.unwrap_or(0),
         "minimum_fan_penalty" => tier.minimum_fan_penalty.unwrap_or(0),
         "minimum_fan_override" => tier.minimum_fan_override.unwrap_or(0),
         _ => 0,
@@ -211,6 +223,20 @@ pub fn value_usize_for_skill(skill_id: &str, level: u8, key: &str) -> usize {
     match key {
         "preview_count" => tier.preview_count.unwrap_or(0),
         _ => 0,
+    }
+}
+
+pub fn active_uses_per_round_for_skill(skill_id: &str, level: u8) -> u8 {
+    let Some(entry) = entry(skill_id) else {
+        return 0;
+    };
+    match entry.skill_type {
+        SkillKind::Active => entry
+            .tier_for_level(level)
+            .active_uses_per_round
+            .unwrap_or(catalog().selection.active_uses_per_round)
+            .max(1),
+        SkillKind::Passive => 0,
     }
 }
 

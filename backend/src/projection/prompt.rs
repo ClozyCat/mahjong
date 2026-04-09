@@ -66,9 +66,7 @@ impl PendingActionView {
         match self {
             Self::OpeningFlowers { seat_index, .. }
             | Self::ActiveTurn { seat_index, .. }
-            | Self::SkillDraft { seat_index, .. } => {
-                Some(*seat_index)
-            }
+            | Self::SkillDraft { seat_index, .. } => Some(*seat_index),
             Self::ClaimWindow { .. } | Self::RobKongWindow { .. } => None,
         }
     }

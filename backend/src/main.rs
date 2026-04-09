@@ -100,7 +100,10 @@ mod tests {
         assert_eq!(room.mode, "test");
         assert_eq!(room.seats.len(), 4);
         assert!(room_has_round_state(&room));
-        assert_eq!(room.match_state.as_ref().map(|state| state.dealer_seat), Some(0));
+        assert_eq!(
+            room.match_state.as_ref().map(|state| state.dealer_seat),
+            Some(0)
+        );
     }
 
     #[test]
@@ -456,11 +459,13 @@ mod tests {
             .expect("restored room should be loaded");
         let runtime = room_handle.runtime.lock().await;
         assert!(!runtime.room.seats[0].connected);
-        assert!(runtime.room.seats[0]
-            .disconnect_deadline_at
-            .as_deref()
-            .and_then(parse_datetime)
-            .is_some());
+        assert!(
+            runtime.room.seats[0]
+                .disconnect_deadline_at
+                .as_deref()
+                .and_then(parse_datetime)
+                .is_some()
+        );
         assert!(runtime.disconnect_task.is_some());
         drop(runtime);
         close_room_handle(&room_handle).await;

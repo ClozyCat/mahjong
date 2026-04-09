@@ -1,19 +1,21 @@
 use std::collections::BTreeMap;
 
 use chrono::{SecondsFormat, TimeDelta, Utc};
-use rand::prelude::IndexedRandom;
 use rand::Rng;
+use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 use serde_json::json;
 
 use crate::core::ids::{Seat, SkillId};
 use crate::core::state::{
-    RoomState, SkillDraftChoice, SkillDraftOffer, SkillDraftState, SkillDraftStatus,
-    SkillInstance, SkillLoadout, SkillRarity,
+    RoomState, SkillDraftChoice, SkillDraftOffer, SkillDraftState, SkillDraftStatus, SkillInstance,
+    SkillLoadout, SkillRarity,
 };
 use crate::rules::standard::runtime::sync_pending_timeout_in_room_state;
 
-use super::catalog::{SkillKind, catalog, entry, rarity_weights, stratagem_skill_ids};
+use super::catalog::{
+    SkillKind, active_uses_per_round_for_skill, catalog, entry, rarity_weights, stratagem_skill_ids,
+};
 
 pub fn clear_skill_loadouts_for_new_match_in_room_state(room: &mut RoomState) {
     for seat in &mut room.seats {
@@ -97,7 +99,9 @@ pub fn begin_round_skill_draft_in_room_state(room: &mut RoomState) -> Result<(),
         .and_then(|round| round.skill_draft.as_ref())
         .is_some_and(SkillDraftState::is_active)
     {
-        room.round_state.as_mut().and_then(|round| round.skill_draft.take());
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.skill_draft.take());
     }
 
     Ok(())
@@ -110,7 +114,13 @@ pub fn select_skill_offer_in_room_state(
 ) -> Result<(), String> {
     let (choice, cycle_key) = pending_offer_choice(room, seat, skill_id)?;
     let skill_instance = build_skill_instance(seat, &choice, &cycle_key)?;
-    apply_skill_selection(room, seat, Some(skill_instance), Some(choice.skill_id), Some(choice.rarity));
+    apply_skill_selection(
+        room,
+        seat,
+        Some(skill_instance),
+        Some(choice.skill_id),
+        Some(choice.rarity),
+    );
     Ok(())
 }
 
@@ -120,7 +130,9 @@ pub fn decline_skill_offer_in_room_state(room: &mut RoomState, seat: Seat) -> Re
     Ok(())
 }
 
-pub fn resolve_due_skill_draft_in_room_state(room: &mut RoomState) -> Result<Vec<serde_json::Value>, String> {
+pub fn resolve_due_skill_draft_in_room_state(
+    room: &mut RoomState,
+) -> Result<Vec<serde_json::Value>, String> {
     let pending_seats = room
         .round_state
         .as_ref()
@@ -129,7 +141,9 @@ pub fn resolve_due_skill_draft_in_room_state(room: &mut RoomState) -> Result<Vec
             draft
                 .offers_by_seat
                 .iter()
-                .filter_map(|(seat, offer)| (offer.status == SkillDraftStatus::Pending).then_some(*seat))
+                .filter_map(|(seat, offer)| {
+                    (offer.status == SkillDraftStatus::Pending).then_some(*seat)
+                })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -165,8 +179,14 @@ fn pending_offer_choice(
     seat: Seat,
     skill_id: &str,
 ) -> Result<(SkillDraftChoice, String), String> {
-    let round = room.round_state.as_ref().ok_or_else(|| "invalid_action".to_string())?;
-    let draft = round.skill_draft.as_ref().ok_or_else(|| "invalid_action".to_string())?;
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let draft = round
+        .skill_draft
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
     let offer = draft
         .offers_by_seat
         .get(&seat)
@@ -184,8 +204,14 @@ fn pending_offer_choice(
 }
 
 fn ensure_pending_offer(room: &RoomState, seat: Seat) -> Result<(), String> {
-    let round = room.round_state.as_ref().ok_or_else(|| "invalid_action".to_string())?;
-    let draft = round.skill_draft.as_ref().ok_or_else(|| "invalid_action".to_string())?;
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let draft = round
+        .skill_draft
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
     let offer = draft
         .offers_by_seat
         .get(&seat)
@@ -206,7 +232,7 @@ fn build_skill_instance(
         .ok_or_else(|| "invalid_action".to_string())?;
     let remaining_rounds = catalog().selection.duration_rounds;
     let remaining_activations = if kind == SkillKind::Active {
-        catalog().selection.active_uses_per_round
+        active_uses_per_round_for_skill(&choice.skill_id, choice.rarity.level())
     } else {
         0
     };
@@ -246,7 +272,11 @@ fn apply_skill_selection(
         equipped: selected_skill.into_iter().collect(),
     };
 
-    if let Some(seat_state) = room.seats.iter_mut().find(|seat_state| seat_state.seat_index == seat) {
+    if let Some(seat_state) = room
+        .seats
+        .iter_mut()
+        .find(|seat_state| seat_state.seat_index == seat)
+    {
         seat_state.skill_loadout = next_loadout.clone();
     }
     if let Some(player) = room
@@ -303,7 +333,13 @@ fn auto_select_offer_for_bot(
     };
 
     let skill_instance = build_skill_instance(seat, &choice, cycle_key)?;
-    apply_skill_selection(room, seat, Some(skill_instance), Some(choice.skill_id), Some(choice.rarity));
+    apply_skill_selection(
+        room,
+        seat,
+        Some(skill_instance),
+        Some(choice.skill_id),
+        Some(choice.rarity),
+    );
     Ok(())
 }
 
@@ -316,14 +352,26 @@ fn should_offer_skills(room: &RoomState) -> bool {
 }
 
 fn current_cycle_key(room: &RoomState) -> Result<String, String> {
-    let round = room.round_state.as_ref().ok_or_else(|| "invalid_action".to_string())?;
-    let match_state = room.match_state.as_ref().ok_or_else(|| "invalid_action".to_string())?;
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let match_state = room
+        .match_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
     Ok(format!("{}-{}", round.round_wind, match_state.hand_number))
 }
 
 fn current_cycle_label(room: &RoomState) -> Result<String, String> {
-    let round = room.round_state.as_ref().ok_or_else(|| "invalid_action".to_string())?;
-    let match_state = room.match_state.as_ref().ok_or_else(|| "invalid_action".to_string())?;
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let match_state = room
+        .match_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
     let wind = match round.round_wind.as_str() {
         "east" => "东",
         "south" => "南",
@@ -383,7 +431,9 @@ fn advance_loadout(loadout: &mut SkillLoadout) {
 
         skill.remaining_rounds = remaining_rounds;
         let remaining_activations = match entry(&skill.skill_id).map(|entry| entry.skill_type) {
-            Some(SkillKind::Active) => skill.charges_per_round.max(catalog().selection.active_uses_per_round),
+            Some(SkillKind::Active) => {
+                active_uses_per_round_for_skill(&skill.skill_id, skill.level)
+            }
             _ => 0,
         };
         skill.charges = remaining_activations;
@@ -394,4 +444,51 @@ fn advance_loadout(loadout: &mut SkillLoadout) {
         next_equipped.push(skill);
     }
     loadout.equipped = next_equipped;
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use crate::core::state::{SkillDraftChoice, SkillInstance, SkillLoadout, SkillRarity};
+
+    use super::{advance_loadout, build_skill_instance};
+
+    #[test]
+    fn build_skill_instance_uses_tier_activation_limit() {
+        let choice = SkillDraftChoice {
+            skill_id: "jin_chan_tuo_qiao".to_string(),
+            rarity: SkillRarity::Epic,
+        };
+
+        let skill =
+            build_skill_instance(0, &choice, "east-1").expect("skill instance should build");
+
+        assert_eq!(skill.charges, 2);
+        assert_eq!(skill.charges_per_round, 2);
+    }
+
+    #[test]
+    fn advance_loadout_resets_active_charges_from_catalog() {
+        let mut loadout = SkillLoadout {
+            equipped: vec![SkillInstance {
+                skill_id: "tou_liang_huan_zhu".to_string(),
+                owner: 0,
+                level: 3,
+                rarity: "epic".to_string(),
+                remaining_rounds: 2,
+                cooldown: 0,
+                charges: 0,
+                charges_per_round: 0,
+                config: json!({ "remaining_rounds": 2 }),
+            }],
+        };
+
+        advance_loadout(&mut loadout);
+
+        assert_eq!(loadout.equipped.len(), 1);
+        assert_eq!(loadout.equipped[0].remaining_rounds, 1);
+        assert_eq!(loadout.equipped[0].charges, 2);
+        assert_eq!(loadout.equipped[0].charges_per_round, 2);
+    }
 }

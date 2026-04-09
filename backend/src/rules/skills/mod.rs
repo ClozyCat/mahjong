@@ -16,8 +16,8 @@ use crate::core::engine::reducer::update_room_state;
 use crate::core::event::GameEvent;
 use crate::core::ids::{Seat, SkillId, TileId};
 use crate::core::state::{
-    LastActionContext, PendingAction, PendingTimeout, RoomState, RoundSettlement,
-    SkillDraftStatus, SkillRarity as DraftSkillRarity,
+    LastActionContext, PendingAction, PendingTimeout, RoomState, RoundSettlement, SkillDraftStatus,
+    SkillRarity as DraftSkillRarity,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -26,11 +26,11 @@ use crate::rules::standard::win::{can_declare_hu_with_cache, can_declare_hu_with
 
 use self::builtin::{PeekOpponentTileSkill, ScoreBoostSkill};
 use self::catalog::{
-    catalog as loaded_skill_catalog,
-    detail_for_skill, entry as catalog_entry, interaction_hint_for_skill,
+    SkillInteractionKind as CatalogInteractionKind, SkillKind, SkillRarity as CatalogSkillRarity,
+    active_uses_per_round_for_skill, catalog as loaded_skill_catalog, detail_for_skill,
+    entry as catalog_entry, interaction_hint_for_skill,
     interaction_kind_for_skill as catalog_interaction_kind_for_skill, kind_for_skill,
-    rarity_for_level, SkillInteractionKind as CatalogInteractionKind, SkillKind,
-    SkillRarity as CatalogSkillRarity,
+    rarity_for_level,
 };
 
 #[allow(unused_imports)]
@@ -125,7 +125,10 @@ pub fn public_skill_view_with_registry(
         .map(|skill_instance| equipped_skill_view(room_state, seat, skill_instance, registry))
 }
 
-pub fn current_skill_selection_view(room_state: &RoomState, seat: Seat) -> Option<SkillSelectionView> {
+pub fn current_skill_selection_view(
+    room_state: &RoomState,
+    seat: Seat,
+) -> Option<SkillSelectionView> {
     current_skill_selection_view_with_registry(room_state, seat, default_registry())
 }
 
@@ -152,7 +155,8 @@ pub fn current_skill_selection_view_with_registry(
         cycle_label: draft.cycle_label.clone(),
         deadline_at: draft.deadline_at.clone(),
         title: format!("{} · 技能签启", draft.cycle_label),
-        detail: "每种技能至多持续两局；主动技能每局仅可发动一次，未用次数不会累加。".to_string(),
+        detail: "每种技能至多持续两局；主动技能每局可按技能品质发动对应次数，未用次数不会累加。"
+            .to_string(),
         options,
     })
 }
@@ -181,7 +185,11 @@ fn equipped_skill_view(
     let catalog_entry = catalog_entry(&skill_instance.skill_id);
     let name = catalog_entry
         .map(|entry| entry.name.clone())
-        .or_else(|| registry.get(&skill_instance.skill_id).map(|definition| definition.name().to_string()))
+        .or_else(|| {
+            registry
+                .get(&skill_instance.skill_id)
+                .map(|definition| definition.name().to_string())
+        })
         .unwrap_or_else(|| "Unknown Skill".to_string());
     let rarity = rarity_for_level(skill_instance.level);
     let skill_kind = kind_for_skill(&skill_instance.skill_id).unwrap_or_else(|| {
@@ -209,7 +217,8 @@ fn equipped_skill_view(
             SkillKind::Active => "主动技能".to_string(),
             SkillKind::Passive => "被动技能".to_string(),
         },
-        interaction_kind: interaction_kind_for_skill(&skill_instance.skill_id).map(ToString::to_string),
+        interaction_kind: interaction_kind_for_skill(&skill_instance.skill_id)
+            .map(ToString::to_string),
         summary: catalog_entry
             .map(|entry| entry.summary.clone())
             .unwrap_or_else(|| name.clone()),
@@ -246,14 +255,8 @@ fn offer_choice_view(
         rarity: rarity.key().to_string(),
         remaining_rounds: 2,
         cooldown: 0,
-        charges: match kind_for_skill(&choice.skill_id).unwrap_or(SkillKind::Passive) {
-            SkillKind::Active => 1,
-            SkillKind::Passive => 0,
-        },
-        charges_per_round: match kind_for_skill(&choice.skill_id).unwrap_or(SkillKind::Passive) {
-            SkillKind::Active => 1,
-            SkillKind::Passive => 0,
-        },
+        charges: active_uses_per_round_for_skill(&choice.skill_id, level),
+        charges_per_round: active_uses_per_round_for_skill(&choice.skill_id, level),
         config: json!({
             "remaining_rounds": 2,
             "cycle_label": cycle_label,
@@ -444,7 +447,8 @@ pub fn skill_draft_view(room_state: &RoomState, seat: Seat) -> Option<SkillDraft
         cycle_label: draft.cycle_label.clone(),
         deadline_at: draft.deadline_at.clone(),
         title: format!("{} · 技能签启", draft.cycle_label),
-        detail: "每种技能持续两局；主动技能每局仅可发动一次，未使用次数不会累加。".to_string(),
+        detail: "每种技能持续两局；主动技能每局可按技能品质发动对应次数，未使用次数不会累加。"
+            .to_string(),
         options: offer
             .options
             .iter()
@@ -479,11 +483,18 @@ pub fn skill_draft_view(room_state: &RoomState, seat: Seat) -> Option<SkillDraft
                         CatalogInteractionKind::SelectMeld => "select_meld".to_string(),
                     }),
                     summary: entry.summary.clone(),
-                    detail: format!("{}效果：{}", choice.rarity.label(), entry.tier(rarity).detail),
+                    detail: format!(
+                        "{}效果：{}",
+                        choice.rarity.label(),
+                        entry.tier(rarity).detail
+                    ),
                     interaction_hint: entry.interaction_hint.clone(),
                     tags: entry.tags.clone(),
                     remaining_rounds: loaded_skill_catalog().selection.duration_rounds,
-                    remaining_activations_this_round: entry.skill_type.activation_limit_per_round(),
+                    remaining_activations_this_round: active_uses_per_round_for_skill(
+                        &choice.skill_id,
+                        choice.rarity.level(),
+                    ),
                 })
             })
             .collect(),
@@ -501,17 +512,24 @@ fn restore_round_start_after_skill_draft_in_room_state(room: &mut RoomState) -> 
     let dealer_first_flower_id = round
         .players
         .get(dealer_seat)
-        .and_then(|player| player.concealed_tiles.iter().find(|tile| tile.kind == "flower"))
+        .and_then(|player| {
+            player
+                .concealed_tiles
+                .iter()
+                .find(|tile| tile.kind == "flower")
+        })
         .map(|tile| tile.tile_id.clone());
-    let has_any_flower = round
-        .players
-        .iter()
-        .any(|player| player.concealed_tiles.iter().any(|tile| tile.kind == "flower"));
+    let has_any_flower = round.players.iter().any(|player| {
+        player
+            .concealed_tiles
+            .iter()
+            .any(|tile| tile.kind == "flower")
+    });
     round.pending_action = if has_any_flower {
         round.score_trackers.opening_flowers_completed = false;
-        Some(PendingAction::OpeningFlowers(crate::core::state::OpeningFlowersAction {
-            dealer_seat,
-        }))
+        Some(PendingAction::OpeningFlowers(
+            crate::core::state::OpeningFlowersAction { dealer_seat },
+        ))
     } else {
         round.score_trackers.opening_flowers_completed = true;
         None
@@ -570,7 +588,10 @@ where
     })
 }
 
-fn update_skill_round_state_in_room_state<F>(room: &mut RoomState, mut mutate: F) -> Result<(), String>
+fn update_skill_round_state_in_room_state<F>(
+    room: &mut RoomState,
+    mut mutate: F,
+) -> Result<(), String>
 where
     F: FnMut(&mut crate::core::state::RoundState) -> Result<(), String>,
 {
@@ -581,7 +602,10 @@ where
     mutate(round)
 }
 
-fn update_skill_match_state_in_room_state<F>(room: &mut RoomState, mut mutate: F) -> Result<(), String>
+fn update_skill_match_state_in_room_state<F>(
+    room: &mut RoomState,
+    mut mutate: F,
+) -> Result<(), String>
 where
     F: FnMut(&mut crate::core::state::MatchState) -> Result<(), String>,
 {
@@ -983,7 +1007,8 @@ pub fn sync_round_skill_trackers_in_room_state(room: &mut RoomState) {
     trackers.tiles_drawn_since_opening = round.wall.head_index.saturating_sub(53) as i64;
     trackers.multi_hu_candidates = pending_multi_hu_candidates(round);
 
-    let (tenpai_seats, tenpai_waits_by_seat) = compute_tenpai_trackers_in_room_state(room, seat_count);
+    let (tenpai_seats, tenpai_waits_by_seat) =
+        compute_tenpai_trackers_in_room_state(room, seat_count);
     trackers.tenpai_seats = tenpai_seats;
     trackers.tenpai_waits_by_seat = tenpai_waits_by_seat;
 
@@ -1124,10 +1149,7 @@ pub fn note_tracker_claimed_discard_in_room_state(room: &mut RoomState, discarde
     });
 }
 
-fn apply_events_to_room(
-    room: &mut Value,
-    events: &[GameEvent],
-) -> Result<Vec<Value>, String> {
+fn apply_events_to_room(room: &mut Value, events: &[GameEvent]) -> Result<Vec<Value>, String> {
     let mut emitted_messages = Vec::new();
     for event in events {
         match event {
@@ -1204,7 +1226,13 @@ fn apply_events_to_room(
                 seat,
                 delta,
                 reason,
-            } => apply_score_adjust_event(room, *seat, *delta, reason.as_deref(), &mut emitted_messages)?,
+            } => apply_score_adjust_event(
+                room,
+                *seat,
+                *delta,
+                reason.as_deref(),
+                &mut emitted_messages,
+            )?,
             _ => {}
         }
     }

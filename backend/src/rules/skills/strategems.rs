@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rand::seq::SliceRandom;
 use serde_json::{Value, json};
 
 use crate::core::event::GameEvent;
@@ -8,11 +9,11 @@ use crate::core::state::{EffectInstance, KnowledgeEffect, RoundSettlement};
 use crate::core::tile::Tile;
 use crate::rules::scoring::FanResult;
 
+use super::catalog::{value_i64_for_skill, value_usize_for_skill};
 use super::{
     RuleContext, RuleHook, ScoreHookRequest, SkillActivation, SkillContext, SkillDefinition,
     SkillProjection,
 };
-use super::catalog::{value_i64_for_skill, value_usize_for_skill};
 
 const STRATAGEMS: [(&str, &str); 36] = [
     ("man_tian_guo_hai", "Mantian Guohai"),
@@ -68,7 +69,7 @@ struct StratagemSkill {
 impl RuleHook for StratagemSkill {
     fn activation(&self) -> SkillActivation {
         match self.id {
-            "sheng_dong_ji_xi" | "wu_zhong_sheng_you" | "an_du_chen_cang"
+            "sheng_dong_ji_xi" | "wu_zhong_sheng_you" | "an_du_chen_cang" | "jin_chan_tuo_qiao"
             | "tou_liang_huan_zhu" | "zou_wei_shang_ji" => SkillActivation::ActiveTurn,
             _ => SkillActivation::Passive,
         }
@@ -82,6 +83,13 @@ impl RuleHook for StratagemSkill {
     ) -> Result<(), String> {
         match self.id {
             "sheng_dong_ji_xi" | "zou_wei_shang_ji" => Ok(()),
+            "jin_chan_tuo_qiao" => {
+                if active_effects(ctx, "jin_chan_tuo_qiao_guard").is_empty() {
+                    Ok(())
+                } else {
+                    Err("invalid_action".to_string())
+                }
+            }
             "wu_zhong_sheng_you" => {
                 if tile_ids.len() != 1 {
                     return Err("invalid_action".to_string());
@@ -131,11 +139,6 @@ impl RuleHook for StratagemSkill {
                 ctx,
                 "yu_qin_gu_zong_window",
                 6,
-            )]),
-            "jin_chan_tuo_qiao" => Ok(vec![decline_hu_window_effect(
-                ctx,
-                "jin_chan_tuo_qiao_escape",
-                12,
             )]),
             _ => Ok(Vec::new()),
         }
@@ -197,7 +200,7 @@ impl RuleHook for StratagemSkill {
             "jin_chan_tuo_qiao" => extend_projection_from_effects(
                 ctx,
                 local_seat,
-                "jin_chan_tuo_qiao_escape",
+                "jin_chan_tuo_qiao_guard",
                 projection,
                 false,
             ),
@@ -245,6 +248,7 @@ impl SkillDefinition for StratagemSkill {
             "sheng_dong_ji_xi" => activate_sheng_dong_ji_xi(ctx),
             "wu_zhong_sheng_you" => activate_wu_zhong_sheng_you(ctx, tile_ids),
             "an_du_chen_cang" => activate_an_du_chen_cang(ctx, target),
+            "jin_chan_tuo_qiao" => activate_jin_chan_tuo_qiao(ctx),
             "tou_liang_huan_zhu" => activate_tou_liang_huan_zhu(ctx, tile_ids),
             "zou_wei_shang_ji" => activate_zou_wei_shang_ji(ctx),
             _ => Ok(vec![GameEvent::SkillActivated {
@@ -263,12 +267,20 @@ fn loss_value(skill_id: &str, level: u8) -> i64 {
     value_i64_for_skill(skill_id, level, "loss")
 }
 
+fn score_penalty_value(skill_id: &str, level: u8) -> i64 {
+    value_i64_for_skill(skill_id, level, "score_penalty")
+}
+
 fn minimum_fan_override(level: u8) -> i64 {
     value_i64_for_skill("jia_chi_bu_dian", level, "minimum_fan_override")
 }
 
 fn preview_count(level: u8) -> usize {
     value_usize_for_skill("sheng_dong_ji_xi", level, "preview_count")
+}
+
+fn an_du_preview_count(level: u8) -> usize {
+    value_usize_for_skill("an_du_chen_cang", level, "preview_count")
 }
 
 fn preview_minimum_penalty(level: u8) -> i64 {
@@ -445,21 +457,6 @@ fn tracker_i64_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> i64 {
     }
 }
 
-fn tracker_string_array_for_seat(ctx: &RuleContext<'_>, key: &str, seat: Seat) -> Vec<String> {
-    let Some(round) = ctx.room_state.round_state.as_ref() else {
-        return Vec::new();
-    };
-    match key {
-        "discard_suits_by_seat" => round
-            .skill_trackers
-            .discard_suits_by_seat
-            .get(&seat)
-            .cloned()
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    }
-}
-
 fn tracker_discard_count(ctx: &RuleContext<'_>, tile_key: &str) -> i64 {
     ctx.room_state
         .round_state
@@ -587,12 +584,6 @@ fn activate_wu_zhong_sheng_you(
         .first()
         .cloned()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let player = round_player(ctx, ctx.actor).ok_or_else(|| "invalid_action".to_string())?;
-    let removed_tile = player
-        .concealed_tiles
-        .iter()
-        .find(|tile| tile.tile_id == removed_tile_id)
-        .ok_or_else(|| "invalid_action".to_string())?;
     let replacement_tile = ctx
         .room_state
         .round_state
@@ -600,11 +591,6 @@ fn activate_wu_zhong_sheng_you(
         .and_then(|round| round.wall.tiles.get(round.wall.head_index))
         .cloned()
         .ok_or_else(|| "round_not_ready".to_string())?;
-    let delta = if replacement_improves_hand(player, removed_tile, &replacement_tile) {
-        gain_value("wu_zhong_sheng_you", ctx.skill_instance.level)
-    } else {
-        -loss_value("wu_zhong_sheng_you", ctx.skill_instance.level)
-    };
     Ok(vec![
         GameEvent::SkillActivated {
             seat: ctx.actor,
@@ -612,12 +598,12 @@ fn activate_wu_zhong_sheng_you(
         },
         GameEvent::SkillTileReplaced {
             seat: ctx.actor,
-            removed_tile_id: removed_tile.tile_id.clone(),
+            removed_tile_id: removed_tile_id,
             replacement_tile: replacement_tile.clone(),
         },
         GameEvent::SkillScoreAdjusted {
             seat: ctx.actor,
-            delta,
+            delta: -score_penalty_value("wu_zhong_sheng_you", ctx.skill_instance.level),
             reason: Some("wu_zhong_sheng_you".to_string()),
         },
     ])
@@ -630,6 +616,10 @@ fn activate_an_du_chen_cang(
     let target = target.ok_or_else(|| "skill_requires_target".to_string())?;
     let target_player =
         round_player(ctx, target).ok_or_else(|| "invalid_skill_target".to_string())?;
+    let mut preview_tiles = target_player.concealed_tiles.clone();
+    let mut rng = rand::rng();
+    preview_tiles.shuffle(&mut rng);
+    preview_tiles.truncate(an_du_preview_count(ctx.skill_instance.level));
     let effect_id = format!(
         "an_du_chen_cang:{}:{}:{}",
         ctx.actor,
@@ -653,28 +643,67 @@ fn activate_an_du_chen_cang(
                 consumed: false,
                 payload: json!({
                     "target_seat": target,
-                    "score_penalty": loss_value("an_du_chen_cang", ctx.skill_instance.level),
+                    "preview_count": preview_tiles.len(),
+                    "score_penalty": score_penalty_value("an_du_chen_cang", ctx.skill_instance.level),
                 }),
             },
+        },
+        GameEvent::SkillScoreAdjusted {
+            seat: ctx.actor,
+            delta: -score_penalty_value("an_du_chen_cang", ctx.skill_instance.level),
+            reason: Some("an_du_chen_cang".to_string()),
         },
         GameEvent::ViewKnowledgeGranted {
             seat: ctx.actor,
             knowledge: KnowledgeEffect {
                 viewer: ctx.actor,
                 target_seat: Some(target),
-                tile_ids: target_player
-                    .concealed_tiles
+                tile_ids: preview_tiles
                     .iter()
                     .map(|tile| tile.tile_id.clone())
                     .collect(),
-                tile_keys: target_player
-                    .concealed_tiles
+                tile_keys: preview_tiles
                     .iter()
                     .map(|tile| tile.tile_key.clone())
                     .collect(),
                 source_skill: Some(ctx.skill_instance.skill_id.clone()),
-                description: Some("full_hand_preview".to_string()),
+                description: Some("partial_hand_preview".to_string()),
             },
+        },
+    ])
+}
+
+fn activate_jin_chan_tuo_qiao(ctx: &mut SkillContext<'_>) -> Result<Vec<GameEvent>, String> {
+    let effect_id = format!(
+        "jin_chan_tuo_qiao:{}:{}",
+        ctx.actor,
+        current_round_version(ctx)
+    );
+    Ok(vec![
+        GameEvent::SkillActivated {
+            seat: ctx.actor,
+            skill_id: ctx.skill_instance.skill_id.clone(),
+        },
+        GameEvent::EffectApplied {
+            effect: EffectInstance {
+                effect_id,
+                effect_type: "jin_chan_tuo_qiao_guard".to_string(),
+                owner: ctx.actor,
+                target_seats: vec![ctx.actor],
+                source_skill: Some(ctx.skill_instance.skill_id.clone()),
+                remaining_turns: Some(1),
+                stacks: 1,
+                consumed: false,
+                payload: json!({
+                    "blocks_next_discard_response": true,
+                    "score_penalty": score_penalty_value("jin_chan_tuo_qiao", ctx.skill_instance.level),
+                }),
+            },
+        },
+        GameEvent::SkillScoreAdjusted {
+            seat: ctx.actor,
+            delta: -score_penalty_value("jin_chan_tuo_qiao", ctx.skill_instance.level),
+            reason: Some("jin_chan_tuo_qiao".to_string()),
         },
     ])
 }
@@ -702,14 +731,14 @@ fn activate_tou_liang_huan_zhu(
         },
         GameEvent::SkillScoreAdjusted {
             seat: ctx.actor,
-            delta: -gain_value("tou_liang_huan_zhu", ctx.skill_instance.level),
+            delta: -score_penalty_value("tou_liang_huan_zhu", ctx.skill_instance.level),
             reason: Some("tou_liang_huan_zhu".to_string()),
         },
     ])
 }
 
 fn activate_zou_wei_shang_ji(ctx: &mut SkillContext<'_>) -> Result<Vec<GameEvent>, String> {
-    let penalty = loss_value("zou_wei_shang_ji", ctx.skill_instance.level);
+    let penalty = score_penalty_value("zou_wei_shang_ji", ctx.skill_instance.level);
     Ok(vec![
         GameEvent::SkillActivated {
             seat: ctx.actor,
@@ -718,37 +747,9 @@ fn activate_zou_wei_shang_ji(ctx: &mut SkillContext<'_>) -> Result<Vec<GameEvent
         GameEvent::SkillForceDraw {
             seat: ctx.actor,
             penalty,
-            next_round_penalty: penalty,
+            next_round_penalty: 0,
         },
     ])
-}
-
-fn replacement_improves_hand(
-    player: &crate::core::state::PlayerRoundState,
-    removed_tile: &Tile,
-    replacement_tile: &Tile,
-) -> bool {
-    tile_connection_score(&player.concealed_tiles, replacement_tile)
-        >= tile_connection_score(&player.concealed_tiles, removed_tile)
-}
-
-fn tile_connection_score(tiles: &[Tile], candidate: &Tile) -> usize {
-    tiles
-        .iter()
-        .filter(|tile| tile.tile_id != candidate.tile_id)
-        .map(|tile| {
-            let same_key = usize::from(tile.tile_key == candidate.tile_key);
-            let adjacent = match (tile.tile_key.as_bytes(), candidate.tile_key.as_bytes()) {
-                ([ls, lr], [rs, rr])
-                    if ls == rs && *lr >= b'1' && *lr <= b'9' && *rr >= b'1' && *rr <= b'9' =>
-                {
-                    usize::from((i16::from(*lr) - i16::from(*rr)).abs() <= 2)
-                }
-                _ => 0,
-            };
-            same_key * 2 + adjacent
-        })
-        .sum()
 }
 
 fn apply_after_scoring(
@@ -801,9 +802,8 @@ fn apply_after_scoring(
                 -loss
             },
         ),
-        "an_du_chen_cang" if is_winner => {
-            let uses = active_effects(ctx, "an_du_chen_cang_view").len() as i64;
-            adjust_score_delta(result, actor, -(loss * uses));
+        "ge_an_guan_huo" if request.evaluation.winner_seat.is_some() => {
+            adjust_score_delta(result, actor, -loss)
         }
         "xiao_li_cang_dao" if is_winner => adjust_score_delta(
             result,
@@ -818,8 +818,12 @@ fn apply_after_scoring(
                 0
             },
         ),
-        "li_dai_tao_jiang" if seat_delta(result, actor) < 0 => {
-            adjust_score_delta(result, actor, gain.min(-seat_delta(result, actor)));
+        "li_dai_tao_jiang" => {
+            if is_winner {
+                adjust_score_delta(result, actor, -loss);
+            } else if seat_delta(result, actor) < 0 {
+                adjust_score_delta(result, actor, gain.min(-seat_delta(result, actor)));
+            }
         }
         "shun_shou_qian_yang" if is_winner => adjust_score_delta(
             result,
@@ -903,7 +907,7 @@ fn apply_after_scoring(
             actor,
             if result.fan_total >= 12 {
                 gain
-            } else if (8..=9).contains(&result.fan_total) {
+            } else if result.fan_total < 8 {
                 -loss
             } else {
                 0
@@ -923,23 +927,12 @@ fn apply_after_scoring(
         "hun_shui_mo_yu" if is_winner => adjust_score_delta(
             result,
             actor,
-            if discard_suits_are_messy(ctx) {
+            if winner_has_full_tile_diversity(request) {
                 gain
-            } else if discard_suits_are_pure(ctx) {
-                -loss
             } else {
-                0
+                -loss
             },
         ),
-        "jin_chan_tuo_qiao" => {
-            if is_winner {
-                adjust_score_delta(result, actor, -loss);
-            } else if seat_delta(result, actor) < 0
-                && !active_effects(ctx, "jin_chan_tuo_qiao_escape").is_empty()
-            {
-                adjust_score_delta(result, actor, gain.min(-seat_delta(result, actor)));
-            }
-        }
         "guan_men_zhuo_zei" if is_winner => adjust_score_delta(
             result,
             actor,
@@ -985,12 +978,7 @@ fn apply_after_scoring(
                 -loss
             },
         ),
-        "jia_chi_bu_dian" if is_winner => {
-            adjust_score_delta(result, actor, -loss);
-            if result.fan_total >= 16 {
-                adjust_score_delta(result, actor, -loss);
-            }
-        }
+        "jia_chi_bu_dian" if is_winner => adjust_score_delta(result, actor, -loss),
         "shang_wu_chou_ti" if is_winner => adjust_score_delta(
             result,
             actor,
@@ -1009,24 +997,28 @@ fn apply_after_scoring(
                 -loss
             },
         ),
-        "fan_ke_wei_zhu" if is_winner => {
+        "fan_ke_wei_zhu" => {
             let dealer = ctx
                 .room_state
                 .round_state
                 .as_ref()
                 .map(|round| round.dealer_seat)
                 .unwrap_or(0);
-            adjust_score_delta(
-                result,
-                actor,
-                if actor != dealer && request.evaluation.discarder_seat == Some(dealer) {
-                    gain
-                } else if actor == dealer {
-                    -loss
-                } else {
-                    0
-                },
-            );
+            if is_winner {
+                adjust_score_delta(
+                    result,
+                    actor,
+                    if actor != dealer && request.evaluation.discarder_seat == Some(dealer) {
+                        gain
+                    } else if actor == dealer && request.evaluation.discarder_seat.is_none() {
+                        gain
+                    } else {
+                        0
+                    },
+                );
+            } else if request.evaluation.winner_seat.is_some() {
+                adjust_score_delta(result, actor, -loss);
+            }
         }
         "mei_ren_ji" if is_winner => {
             let groups = honour_group_count(request);
@@ -1074,9 +1066,6 @@ fn apply_after_scoring(
             } else if !is_winner && streak > 0 {
                 adjust_score_delta(result, actor, -loss);
             }
-        }
-        "zou_wei_shang_ji" if is_winner => {
-            adjust_score_delta(result, actor, -pending_next_round_penalty(ctx, actor));
         }
         _ => {}
     }
@@ -1174,26 +1163,6 @@ fn tiles_drawn_since_opening(ctx: &RuleContext<'_>) -> usize {
         .unwrap_or(0)
 }
 
-fn discard_suits_are_messy(ctx: &RuleContext<'_>) -> bool {
-    let mut suits = std::collections::BTreeSet::new();
-    for seat in 0..4 {
-        if seat == ctx.actor {
-            continue;
-        }
-        for suit in tracker_string_array_for_seat(ctx, "discard_suits_by_seat", seat) {
-            suits.insert(suit);
-        }
-    }
-    suits.len() >= 3
-}
-
-fn discard_suits_are_pure(ctx: &RuleContext<'_>) -> bool {
-    let suits = (0..4)
-        .flat_map(|seat| tracker_string_array_for_seat(ctx, "discard_suits_by_seat", seat))
-        .collect::<std::collections::BTreeSet<_>>();
-    suits.len() == 1 && !suits.is_empty()
-}
-
 fn scaled_late_game_bonus(max_bonus: i64, live_tiles: usize) -> i64 {
     let scarcity = (80usize.saturating_sub(live_tiles)) as i64;
     ((max_bonus * scarcity) / 80).max(1)
@@ -1211,6 +1180,27 @@ fn honour_group_count(request: &ScoreHookRequest) -> usize {
     meld_groups + usize::from(decomposition.pair.as_deref().is_some_and(is_honour_tile))
 }
 
+fn winner_has_full_tile_diversity(request: &ScoreHookRequest) -> bool {
+    request
+        .evaluation
+        .tile_keys
+        .iter()
+        .filter_map(|tile| tile_family(tile))
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == 4
+}
+
+fn tile_family(tile_key: &str) -> Option<&'static str> {
+    match tile_key.as_bytes() {
+        [b'w', ..] => Some("wan"),
+        [b't', ..] => Some("tong"),
+        [b'b', ..] => Some("tiao"),
+        [_, ..] => Some("honor"),
+        [] => None,
+    }
+}
+
 fn cumulative_score(ctx: &RuleContext<'_>, actor: Seat) -> i64 {
     ctx.room_state
         .match_state
@@ -1224,21 +1214,6 @@ fn lian_huan_streak(ctx: &RuleContext<'_>, actor: Seat) -> i64 {
         .match_state
         .as_ref()
         .and_then(|state| state.skill_trackers.lian_huan_ji.streaks.get(&actor))
-        .copied()
-        .unwrap_or(0)
-}
-
-fn pending_next_round_penalty(ctx: &RuleContext<'_>, actor: Seat) -> i64 {
-    ctx.room_state
-        .match_state
-        .as_ref()
-        .and_then(|state| {
-            state
-                .skill_trackers
-                .zou_wei_shang_ji
-                .pending_win_penalty
-                .get(&actor)
-        })
         .copied()
         .unwrap_or(0)
 }

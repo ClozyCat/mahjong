@@ -17,12 +17,12 @@ use super::actions::{
 };
 #[cfg(test)]
 use super::flow::{apply_flower_action, apply_opening_flowers_pass};
+#[cfg(test)]
+use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
     SelfKongKind, available_self_kongs_from_cache, claim_tile_id_options,
     seats_with_hu_candidate_for_tile_in_room_state,
 };
-#[cfg(test)]
-use super::meld::seats_with_hu_candidate_for_tile;
 #[cfg(test)]
 use super::runtime::project_room_state;
 use super::win::can_declare_hu_with_cache_for_state;
@@ -54,30 +54,29 @@ pub fn try_process_due_timeout_in_room_state(
                 .clone()
                 .or_else(|| last_concealed_tile_id_from_cache(&cache, seat_index))
                 .ok_or_else(|| "invalid_action".to_string())?;
-            extract_emitted_messages(
-                try_handle_player_action_in_room_state(
-                    room,
-                    seat_index,
-                    "discard",
-                    std::slice::from_ref(&tile_id),
-                )?,
-            )
+            extract_emitted_messages(try_handle_player_action_in_room_state(
+                room,
+                seat_index,
+                "discard",
+                std::slice::from_ref(&tile_id),
+            )?)
         }
         "opening_flowers" => {
             let seat_index = round.current_actor;
             if let Some(tile_id) = pending_timeout.drawn_tile_id {
-                extract_emitted_messages(
-                    try_handle_player_action_in_room_state(
-                        room,
-                        seat_index,
-                        "flower",
-                        std::slice::from_ref(&tile_id),
-                    )?,
-                )
+                extract_emitted_messages(try_handle_player_action_in_room_state(
+                    room,
+                    seat_index,
+                    "flower",
+                    std::slice::from_ref(&tile_id),
+                )?)
             } else {
-                extract_emitted_messages(
-                    try_handle_player_action_in_room_state(room, seat_index, "pass", &[])?,
-                )
+                extract_emitted_messages(try_handle_player_action_in_room_state(
+                    room,
+                    seat_index,
+                    "pass",
+                    &[],
+                )?)
             }
         }
         "claim_window" => resolve_claim_timeout_in_room_state(room),
@@ -407,9 +406,12 @@ fn resolve_claim_timeout_in_room_state(room: &mut RoomState) -> Result<Option<Ve
             break;
         };
 
-        let output = extract_emitted_messages(
-            try_handle_player_action_in_room_state(room, seat_index, "pass", &[])?,
-        )?;
+        let output = extract_emitted_messages(try_handle_player_action_in_room_state(
+            room,
+            seat_index,
+            "pass",
+            &[],
+        )?)?;
         let Some(messages) = output else {
             return Ok(None);
         };

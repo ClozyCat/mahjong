@@ -15,10 +15,9 @@ use crate::core::state::{
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::skills::{
-    note_tracker_claimed_discard, note_tracker_claimed_discard_in_room_state,
-    note_tracker_discard, note_tracker_discard_in_room_state, note_tracker_draw,
-    note_tracker_draw_in_room_state, sync_round_skill_trackers,
-    sync_round_skill_trackers_in_room_state,
+    note_tracker_claimed_discard, note_tracker_claimed_discard_in_room_state, note_tracker_discard,
+    note_tracker_discard_in_room_state, note_tracker_draw, note_tracker_draw_in_room_state,
+    sync_round_skill_trackers, sync_round_skill_trackers_in_room_state,
 };
 
 use super::meld::{
@@ -33,7 +32,9 @@ use super::runtime::{
     project_room_state, replacement_tile_from_tail, replacement_tile_from_tail_in_room_state,
     round_event_message, sync_pending_timeout, sync_pending_timeout_in_room_state,
 };
-use super::settlement::{settle_exhaustive_draw_output, settle_exhaustive_draw_output_in_room_state};
+use super::settlement::{
+    settle_exhaustive_draw_output, settle_exhaustive_draw_output_in_room_state,
+};
 use super::win::{
     apply_hu_settlement_output, apply_hu_settlement_output_in_room_state, compute_hu_settlement,
     compute_hu_settlement_for_state,
@@ -124,6 +125,26 @@ fn round_player_mut(
         .players
         .get_mut(seat_index)
         .ok_or_else(|| "invalid_action".to_string())
+}
+
+fn has_discard_response_lock(round: &RoundState, seat_index: usize) -> bool {
+    round.effect_state.ongoing.iter().any(|effect| {
+        effect.owner == seat_index
+            && effect.effect_type == "jin_chan_tuo_qiao_guard"
+            && effect.source_skill.as_deref() == Some("jin_chan_tuo_qiao")
+    })
+}
+
+fn consume_discard_response_lock(round: &mut RoundState, seat_index: usize) {
+    round.effect_state.ongoing.retain(|effect| {
+        !(effect.owner == seat_index
+            && effect.effect_type == "jin_chan_tuo_qiao_guard"
+            && effect.source_skill.as_deref() == Some("jin_chan_tuo_qiao"))
+    });
+}
+
+fn empty_claim_window() -> Vec<Vec<String>> {
+    vec![Vec::new(); MAX_SEATS]
 }
 
 fn remove_player_concealed_tile(
@@ -235,9 +256,7 @@ pub fn try_handle_self_kong_action_output_in_room_state(
         }
     }
     Ok(Some(complete_self_kong_output_in_room_state(
-        room,
-        seat_index,
-        &selection,
+        room, seat_index, &selection,
     )))
 }
 
@@ -344,8 +363,12 @@ pub fn apply_discard_action_output(
     })?;
 
     let previous_was_last_live_tile = round.last_action_context.was_last_live_tile;
-    let claim_window =
-        claim_window_options_after_discard(&simulated, seat_index, &discarded_tile.tile_key);
+    let discard_response_locked = has_discard_response_lock(round, seat_index);
+    let claim_window = if discard_response_locked {
+        empty_claim_window()
+    } else {
+        claim_window_options_after_discard(&simulated, seat_index, &discarded_tile.tile_key)
+    };
     let plan = plan_discard_action(
         &state,
         seat_index,
@@ -355,7 +378,11 @@ pub fn apply_discard_action_output(
     )?;
     update_room_state(room, |state| {
         let round = round_state_mut(state)?;
-        apply_discard_to_round(round, seat_index, &plan.discarded_tile)
+        apply_discard_to_round(round, seat_index, &plan.discarded_tile)?;
+        if discard_response_locked {
+            consume_discard_response_lock(round, seat_index);
+        }
+        Ok(())
     })?;
     note_tracker_discard(room, seat_index, &plan.discarded_tile.tile_key);
     if plan.continuation.needs_exhaustive_draw {
@@ -441,12 +468,29 @@ pub fn apply_discard_action_output_in_room_state(
     }
 
     let previous_was_last_live_tile = round.last_action_context.was_last_live_tile;
-    let claim_window =
-        claim_window_options_after_discard_in_room_state(&simulated, seat_index, &discarded_tile.tile_key);
-    let plan = plan_discard_action(room, seat_index, tile_id, claim_window, previous_was_last_live_tile)?;
+    let discard_response_locked = has_discard_response_lock(round, seat_index);
+    let claim_window = if discard_response_locked {
+        empty_claim_window()
+    } else {
+        claim_window_options_after_discard_in_room_state(
+            &simulated,
+            seat_index,
+            &discarded_tile.tile_key,
+        )
+    };
+    let plan = plan_discard_action(
+        room,
+        seat_index,
+        tile_id,
+        claim_window,
+        previous_was_last_live_tile,
+    )?;
     {
         let round = round_state_mut(room)?;
         apply_discard_to_round(round, seat_index, &plan.discarded_tile)?;
+        if discard_response_locked {
+            consume_discard_response_lock(round, seat_index);
+        }
     }
     note_tracker_discard_in_room_state(room, seat_index, &plan.discarded_tile.tile_key);
     if plan.continuation.needs_exhaustive_draw {
@@ -856,7 +900,12 @@ fn start_rob_kong_window_output(
     sync_round_skill_trackers(room);
     sync_pending_timeout(room);
     let kong_type = "add_kong";
-    let event = self_kong_declared_payload(seat_index, kong_type, &selection.tile_key, &selection.tile_ids);
+    let event = self_kong_declared_payload(
+        seat_index,
+        kong_type,
+        &selection.tile_key,
+        &selection.tile_ids,
+    );
     Ok(EngineOutput::new(
         vec![GameEvent::SelfKongDeclared {
             seat: seat_index,
@@ -880,8 +929,7 @@ fn start_rob_kong_window_output_in_room_state(
         .and_then(|round| round.players.get(seat_index))
         .and_then(|player| {
             player.concealed_tiles.iter().find(|tile| {
-                Some(tile.tile_id.as_str())
-                    == selection.tile_ids.first().map(String::as_str)
+                Some(tile.tile_id.as_str()) == selection.tile_ids.first().map(String::as_str)
             })
         })
         .cloned()
@@ -902,8 +950,12 @@ fn start_rob_kong_window_output_in_room_state(
     sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     let kong_type = "add_kong";
-    let event =
-        self_kong_declared_payload(seat_index, kong_type, &selection.tile_key, &selection.tile_ids);
+    let event = self_kong_declared_payload(
+        seat_index,
+        kong_type,
+        &selection.tile_key,
+        &selection.tile_ids,
+    );
     Ok(EngineOutput::new(
         vec![GameEvent::SelfKongDeclared {
             seat: seat_index,
@@ -1742,7 +1794,12 @@ fn complete_add_kong_after_passes_output(room: &mut Value) -> Result<EngineOutpu
     sync_pending_timeout(room);
     Ok(EngineOutput::new(
         vec![
-            self_kong_declared_event(actor_seat, "add_kong", &selection.tile_key, &selection.tile_ids),
+            self_kong_declared_event(
+                actor_seat,
+                "add_kong",
+                &selection.tile_key,
+                &selection.tile_ids,
+            ),
             replacement_draw_event(actor_seat, &output_replacement_tile),
         ],
         plan.emitted_messages,

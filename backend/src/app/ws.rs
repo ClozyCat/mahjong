@@ -10,6 +10,10 @@ use rand::Rng;
 use serde::Deserialize;
 use tokio::sync::{Notify, mpsc};
 
+use super::protocol::{
+    HeartbeatPayload, action_rejected_message, heartbeat_message, leave_table_accepted_message,
+    quick_chat_message,
+};
 use super::room_runtime::{
     close_runtime, ensure_room_loaded, replace_connection, restore_room_snapshot, room_handle,
     room_has_only_bots, should_terminate_unattended, snapshot_connections, unregister_room_handle,
@@ -27,10 +31,6 @@ use super::{
     set_seat_connected,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
-use super::protocol::{
-    HeartbeatPayload, action_rejected_message, heartbeat_message, leave_table_accepted_message,
-    quick_chat_message,
-};
 use crate::core::state::SeatState;
 use crate::rules::standard::flow::{
     reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
@@ -189,9 +189,9 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
         let message: ClientMessage = match serde_json::from_str(text.as_str()) {
             Ok(value) => value,
             Err(_) => {
-                send_outbound(vec![handle.outbound(action_rejected_message(
-                    "unsupported_message",
-                ))]);
+                send_outbound(vec![
+                    handle.outbound(action_rejected_message("unsupported_message")),
+                ]);
                 continue;
             }
         };
@@ -497,9 +497,9 @@ async fn handle_reconnect(
         .iter_mut()
         .find(|seat| seat.seat_index == token_record.seat_index)
     {
-            seat.reconnect_token = Some(new_token.clone());
-            seat.connected = true;
-            seat.disconnect_deadline_at = None;
+        seat.reconnect_token = Some(new_token.clone());
+        seat.connected = true;
+        seat.disconnect_deadline_at = None;
     }
     let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
@@ -580,7 +580,7 @@ async fn handle_ready(
         .iter_mut()
         .find(|seat| seat.seat_index == seat_index)
     {
-            seat.ready = ready;
+        seat.ready = ready;
     }
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -950,9 +950,8 @@ async fn handle_leave_table(
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     }
 
-    let mut outbound = vec![connection.outbound(leave_table_accepted_message(
-        table_code, seat_index,
-    ))];
+    let mut outbound =
+        vec![connection.outbound(leave_table_accepted_message(table_code, seat_index))];
 
     if phase == "waiting" {
         if room_seats(&runtime.room).is_empty() || room_has_only_bots(&runtime.room) {
@@ -1095,7 +1094,7 @@ async fn handle_disconnect(
         false,
         Some(super::disconnect_deadline_iso()),
     );
-        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
+    let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);

@@ -4,17 +4,17 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use crate::core::engine::EngineOutput;
-use crate::core::event::GameEvent;
 use crate::core::engine::planner::{
     plan_advance_opening_flowers, plan_flower_action, plan_round_start_payload,
 };
 use crate::core::engine::reducer::update_room_state;
-use crate::core::tile::Tile;
+use crate::core::event::GameEvent;
 use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState, SkillLoadout};
+use crate::core::tile::Tile;
 use crate::rules::skills::{
     advance_skill_loadouts_for_next_round_in_room_state, begin_round_skill_draft_in_room_state,
-    clear_skill_loadouts_for_new_match_in_room_state,
-    note_tracker_draw, note_tracker_draw_in_room_state, sync_round_skill_trackers,
+    clear_skill_loadouts_for_new_match_in_room_state, note_tracker_draw,
+    note_tracker_draw_in_room_state, sync_round_skill_trackers,
     sync_round_skill_trackers_in_room_state,
 };
 
@@ -101,8 +101,8 @@ pub fn record_continue_action_in_room_state(
     seat_index: usize,
     action_id: &str,
 ) -> Result<(), String> {
-    let current_action =
-        current_continue_action_id_in_room_state(room).ok_or_else(|| "invalid_action".to_string())?;
+    let current_action = current_continue_action_id_in_room_state(room)
+        .ok_or_else(|| "invalid_action".to_string())?;
     if current_action != action_id {
         return Err(match action_id {
             "start_next_round" => "round_not_ready".to_string(),
@@ -128,8 +128,8 @@ pub fn record_continue_action_in_room_state(
 }
 
 pub fn process_due_continue_action_in_room_state(room: &mut RoomState) -> Result<bool, String> {
-    let action_id =
-        current_continue_action_id_in_room_state(room).ok_or_else(|| "invalid_action".to_string())?;
+    let action_id = current_continue_action_id_in_room_state(room)
+        .ok_or_else(|| "invalid_action".to_string())?;
     let deadline = room
         .continue_action
         .as_ref()
@@ -141,9 +141,7 @@ pub fn process_due_continue_action_in_room_state(room: &mut RoomState) -> Result
     Ok(true)
 }
 
-pub fn reconcile_continue_action_state_in_room_state(
-    room: &mut RoomState,
-) -> Result<(), String> {
+pub fn reconcile_continue_action_state_in_room_state(room: &mut RoomState) -> Result<(), String> {
     reconcile_continue_action_in_room_state(room)
 }
 
@@ -290,7 +288,10 @@ pub fn apply_opening_flowers_pass_output_in_room_state(
         .round_state
         .as_ref()
         .ok_or_else(|| "round_not_ready".to_string())?;
-    if !matches!(round.pending_action, Some(crate::core::state::PendingAction::OpeningFlowers(_))) {
+    if !matches!(
+        round.pending_action,
+        Some(crate::core::state::PendingAction::OpeningFlowers(_))
+    ) {
         return Err("invalid_action".to_string());
     }
     if current_actor_in_room_state(room) != Some(seat_index) {
@@ -577,18 +578,14 @@ fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
                     == Some(seat)
             })
         })
-        .and_then(|seat_state| {
-            SkillLoadout::from_value(seat_state.get("skill_loadout")).ok()
-        })
+        .and_then(|seat_state| SkillLoadout::from_value(seat_state.get("skill_loadout")).ok())
         .filter(|loadout| !loadout.equipped.is_empty())
         .or_else(|| {
             room.get("round_state")
                 .and_then(|round| round.get("players"))
                 .and_then(Value::as_array)
                 .and_then(|players| players.get(seat))
-                .and_then(|player| {
-                    SkillLoadout::from_value(player.get("skill_loadout")).ok()
-                })
+                .and_then(|player| SkillLoadout::from_value(player.get("skill_loadout")).ok())
                 .filter(|loadout| !loadout.equipped.is_empty())
         })
         .unwrap_or_default()
@@ -694,10 +691,7 @@ fn continue_online_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
         .collect()
 }
 
-fn current_confirmed_continue_seats_in_room_state(
-    room: &RoomState,
-    action_id: &str,
-) -> Vec<usize> {
+fn current_confirmed_continue_seats_in_room_state(room: &RoomState, action_id: &str) -> Vec<usize> {
     room.continue_action
         .as_ref()
         .filter(|action| action.action_id == action_id)
@@ -1062,7 +1056,12 @@ fn player_has_concealed_flower_in_room_state(
     round_state
         .players
         .get(seat_index)
-        .map(|player| player.concealed_tiles.iter().any(|tile| tile.kind == "flower"))
+        .map(|player| {
+            player
+                .concealed_tiles
+                .iter()
+                .any(|tile| tile.kind == "flower")
+        })
         .unwrap_or(false)
 }
 

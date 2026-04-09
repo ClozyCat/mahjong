@@ -16,8 +16,8 @@ use crate::rules::standard::{
     flow::{
         add_bot_seats_for_test as add_standard_test_bots,
         process_due_continue_action_in_room_state, reconcile_continue_action_state_in_room_state,
-        record_continue_action_in_room_state, room_ready_to_start as room_ready_to_start_in_room_state,
-        start_match_in_room_state,
+        record_continue_action_in_room_state,
+        room_ready_to_start as room_ready_to_start_in_room_state, start_match_in_room_state,
     },
     runtime::project_room_state as standard_project_room_state,
     win::apply_hu_settlement_output_in_room_state,
@@ -56,7 +56,9 @@ pub fn add_bot_seats_for_test(room: &mut Value) {
 }
 
 pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
-    let _ = with_room_state(room, |state| start_match_in_room_state(state, dealer_seat, seed));
+    let _ = with_room_state(room, |state| {
+        start_match_in_room_state(state, dealer_seat, seed)
+    });
 }
 
 pub fn try_handle_action(
@@ -104,7 +106,9 @@ pub fn process_due_continue_action(room: &mut Value) -> Result<bool, String> {
 }
 
 pub fn reconcile_continue_action_state(room: &mut Value) -> Result<(), String> {
-    with_room_state(room, |state| reconcile_continue_action_state_in_room_state(state))
+    with_room_state(room, |state| {
+        reconcile_continue_action_state_in_room_state(state)
+    })
 }
 
 pub fn apply_hu_settlement(
@@ -158,7 +162,9 @@ where
 {
     let mut room_state = RoomState::from_room_value(room).map_err(|error| error.to_string())?;
     let result = mutate(&mut room_state)?;
-    *room = room_state.to_room_value().map_err(|error| error.to_string())?;
+    *room = room_state
+        .to_room_value()
+        .map_err(|error| error.to_string())?;
     Ok(result)
 }
 
@@ -1010,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn zou_wei_shang_ji_forces_draw_and_registers_next_round_penalty() {
+    fn zou_wei_shang_ji_forces_draw_without_next_round_penalty() {
         let mut room = room_for_local_discard();
         room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
@@ -1042,9 +1048,47 @@ mod tests {
             room["round_state"]["settlement"]["draw_type"],
             "skill_forced"
         );
-        assert_eq!(
-            room["match_state"]["skill_trackers"]["zou_wei_shang_ji"]["pending_win_penalty"]["0"],
-            2
+        assert!(
+            room["match_state"]["skill_trackers"]["zou_wei_shang_ji"]["pending_win_penalty"]
+                .as_object()
+                .map(|penalties| penalties.is_empty())
+                .unwrap_or(true)
+        );
+    }
+
+    #[test]
+    fn jin_chan_tuo_qiao_blocks_claim_window_for_next_discard() {
+        let mut room = room_for_local_claim_window();
+        room["round_state"]["players"][0]["skill_loadout"] = json!({
+            "equipped": [{
+                "skill_id": "jin_chan_tuo_qiao",
+                "owner": 0,
+                "level": 1,
+                "cooldown": 0,
+                "charges": 1,
+                "charges_per_round": 1,
+                "config": {}
+            }]
+        });
+
+        let _ = try_handle_action(&mut room, 0, "skill:jin_chan_tuo_qiao", &[])
+            .expect("skill should be handled locally")
+            .expect("skill should succeed");
+
+        let result = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(room["round_state"]["current_actor"], 1);
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert!(room["round_state"]["pending_action"].is_null());
+        assert!(
+            room["round_state"]["effect_state"]["ongoing"]
+                .as_array()
+                .map(|effects| effects.is_empty())
+                .unwrap_or(true)
         );
     }
 
@@ -1607,10 +1651,7 @@ mod tests {
         assert_eq!(room["match_state"]["dealer_seat"], 1);
         assert_eq!(room["match_state"]["cumulative_scores"]["0"], 24);
         assert!(room["round_state"]["phase"] == "playing");
-        assert_eq!(
-            room["continue_action"],
-            Value::Null
-        );
+        assert_eq!(room["continue_action"], Value::Null);
     }
 
     #[test]

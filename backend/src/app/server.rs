@@ -176,7 +176,8 @@ async fn create_or_replace_table(
         .await
         .map_err(CreateTableError::Internal)?;
     if let Some(record) = existing_record {
-        let existing_room = parse_room_json(&record.room_json).map_err(CreateTableError::Internal)?;
+        let existing_room =
+            parse_room_json(&record.room_json).map_err(CreateTableError::Internal)?;
         let occupied = !existing_room.seats.is_empty();
         if occupied {
             return Err(CreateTableError::Conflict);

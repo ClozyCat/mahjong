@@ -411,9 +411,10 @@ mod tests {
 
     #[test]
     fn parses_select_skill_command() {
-        let command = parse_player_command(0, "select_skill", &[String::from("wu_zhong_sheng_you")])
-            .expect("select skill should be recognized")
-            .expect("select skill should parse");
+        let command =
+            parse_player_command(0, "select_skill", &[String::from("wu_zhong_sheng_you")])
+                .expect("select skill should be recognized")
+                .expect("select skill should parse");
 
         assert_eq!(
             command,

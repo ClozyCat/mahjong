@@ -137,8 +137,7 @@ impl Database {
                 ",
             )?;
             db.create_reconnect_tokens_table()?;
-            db.conn
-                .execute_batch("DROP TABLE reconnect_tokens_old;")?;
+            db.conn.execute_batch("DROP TABLE reconnect_tokens_old;")?;
             Ok(())
         })
     }
@@ -780,8 +779,9 @@ mod tests {
         let db = in_memory_database("")?;
         db.initialize()?;
 
-        let room_json =
-            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42", "normal", true))?;
+        let room_json = crate::app::serialize_room_state(&crate::app::initial_room_state(
+            "ROOM42", "normal", true,
+        ))?;
         db.save_table_and_store_reconnect_token(
             "ROOM42",
             "2026-04-06T00:00:00Z",
@@ -807,8 +807,9 @@ mod tests {
         let db = in_memory_database("")?;
         db.initialize()?;
 
-        let room_json =
-            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42", "normal", true))?;
+        let room_json = crate::app::serialize_room_state(&crate::app::initial_room_state(
+            "ROOM42", "normal", true,
+        ))?;
         db.save_table_and_store_reconnect_token(
             "ROOM42",
             "2026-04-06T00:00:00Z",
@@ -853,8 +854,9 @@ mod tests {
         db.initialize()?;
         let worker = DbWorker::start(db)?;
 
-        let room_json =
-            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42", "normal", true))?;
+        let room_json = crate::app::serialize_room_state(&crate::app::initial_room_state(
+            "ROOM42", "normal", true,
+        ))?;
         worker
             .save_table_and_store_reconnect_token(
                 "ROOM42",

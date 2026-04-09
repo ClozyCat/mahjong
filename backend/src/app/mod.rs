@@ -176,11 +176,13 @@ pub(crate) fn serialize_room_state(state: &RoomState) -> Result<String> {
 
 pub(crate) fn serialize_payload<T: Serialize>(payload: &T) -> String {
     serde_json::to_string(payload).unwrap_or_else(|_| {
-        serde_json::to_string(&self::protocol::action_rejected_message("serialization_error"))
-            .unwrap_or_else(|_| {
-                "{\"type\":\"action_rejected\",\"payload\":{\"reason\":\"serialization_error\"}}"
-                    .to_string()
-            })
+        serde_json::to_string(&self::protocol::action_rejected_message(
+            "serialization_error",
+        ))
+        .unwrap_or_else(|_| {
+            "{\"type\":\"action_rejected\",\"payload\":{\"reason\":\"serialization_error\"}}"
+                .to_string()
+        })
     })
 }
 
@@ -346,7 +348,11 @@ pub(crate) fn generate_short_hex(bytes: usize) -> String {
 }
 
 pub(crate) fn remove_seat_from_room(room: &mut RoomState, seat_index: usize) {
-    if let Some(index) = room.seats.iter().position(|seat| seat.seat_index == seat_index) {
+    if let Some(index) = room
+        .seats
+        .iter()
+        .position(|seat| seat.seat_index == seat_index)
+    {
         room.seats.remove(index);
     }
 }
@@ -381,8 +387,7 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
         bot_aggression: None,
         disconnect_deadline_at: None,
         skill_loadout: Default::default(),
-    })
-    ;
+    });
     room.seats.sort_by_key(|seat| seat.seat_index);
     Ok(seat_index)
 }
@@ -404,7 +409,11 @@ pub(crate) fn remove_bot_from_waiting_room(room: &mut RoomState) -> Result<usize
 }
 
 pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
-    if let Some(seat) = room.seats.iter_mut().find(|seat| seat.seat_index == seat_index) {
+    if let Some(seat) = room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == seat_index)
+    {
         seat.connected = true;
         seat.ready = true;
         seat.is_bot = true;
@@ -420,7 +429,11 @@ pub(crate) fn set_seat_connected(
     connected: bool,
     deadline_at: Option<String>,
 ) {
-    if let Some(seat) = room.seats.iter_mut().find(|seat| seat.seat_index == seat_index) {
+    if let Some(seat) = room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == seat_index)
+    {
         seat.connected = connected;
         seat.disconnect_deadline_at = deadline_at;
     }

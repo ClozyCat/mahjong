@@ -69,8 +69,7 @@ pub enum PlannedClaimWindowOutcome {
     },
 }
 
-impl PlannedDiscardAction {
-}
+impl PlannedDiscardAction {}
 
 impl PlannedClaimWindowContinuation {
     pub fn needs_exhaustive_draw(&self) -> bool {
@@ -1003,7 +1002,8 @@ mod tests {
                 .expect("claim window response should plan");
 
         assert!(plan.unresolved_seats.is_empty());
-        let crate::core::state::PendingAction::ClaimWindow(pending_action) = &plan.pending_action else {
+        let crate::core::state::PendingAction::ClaimWindow(pending_action) = &plan.pending_action
+        else {
             panic!("expected claim window pending action");
         };
         assert_eq!(pending_action.responded_seats, vec![1, 2]);
