@@ -334,6 +334,7 @@ describe('BattleScreen', () => {
 
     expect(screen.getByText('暗度陈仓')).toBeInTheDocument();
     expect(screen.getByText('稀有效果：看2张 / 立即扣3')).toBeInTheDocument();
+    expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-bottom');
   });
 
   it('shows settlement breakdown in resolving state', () => {

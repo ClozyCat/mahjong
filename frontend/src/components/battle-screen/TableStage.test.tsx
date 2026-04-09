@@ -344,6 +344,85 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__spotlight--left')).not.toBeNull();
   });
 
+  it('anchors left and right seat skill tooltips inward so the content stays visible', () => {
+    vi.useFakeTimers();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          {
+            seat: 'left',
+            name: 'Player Left',
+            melds: [],
+            skill: {
+              skillId: 'left-skill',
+              name: '声东击西',
+              rarity: 'rare',
+              rarityLabel: '稀有',
+              tone: 'azure',
+              type: 'active',
+              typeLabel: '主动技能',
+              summary: '获得额外尾牌预览。',
+              detail: '稀有效果：可额外查看 2 张。',
+              interactionHint: '发动后会显示尾牌预览。',
+              tags: ['信息'],
+              cycleLabel: '东1~东2局',
+              remainingRounds: 2,
+              remainingActivationsThisRound: 1,
+            },
+          },
+          {
+            seat: 'right',
+            name: 'Player Right',
+            melds: [],
+            skill: {
+              skillId: 'right-skill',
+              name: '借刀杀人',
+              rarity: 'common',
+              rarityLabel: '普通',
+              tone: 'jade',
+              type: 'passive',
+              typeLabel: '被动技能',
+              summary: '特定条件下追加收益。',
+              detail: '普通效果：达成条件时额外加分。',
+              interactionHint: null,
+              tags: ['收益'],
+              cycleLabel: '东1~东2局',
+              remainingRounds: 2,
+              remainingActivationsThisRound: 0,
+            },
+          },
+          { seat: 'bottom', name: 'Player Bottom', melds: [] },
+        ]}
+      />,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-left');
+
+    fireEvent.mouseLeave(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
+    fireEvent.mouseEnter(screen.getByRole('button', { name: '打开Player Right的快捷表情' }));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-right');
+    vi.useRealTimers();
+  });
+
   it('uses a unified theme-driven player info style without visually marking the dealer', () => {
     render(
       <TableStage

@@ -7,9 +7,15 @@ interface PlayerInfoBarProps {
   player: TableStagePlayer;
   className?: string;
   showSkillTooltip?: boolean;
+  tooltipPlacement?: 'top' | 'right' | 'bottom' | 'left';
 }
 
-export function PlayerInfoBar({ player, className = '', showSkillTooltip = false }: PlayerInfoBarProps) {
+export function PlayerInfoBar({
+  player,
+  className = '',
+  showSkillTooltip = false,
+  tooltipPlacement = 'bottom',
+}: PlayerInfoBarProps) {
   const windLabel = player.wind ? (WIND_LABELS[player.wind] ?? player.wind) : null;
   const presenceLabel =
     player.seatType === 'bot'
@@ -40,7 +46,10 @@ export function PlayerInfoBar({ player, className = '', showSkillTooltip = false
       <span className="table-stage__player-info-meta">{metaText}</span>
       <span className="table-stage__player-info-detail">{detailText}</span>
       {showSkillTooltip && player.skill ? (
-        <div className={`table-stage__skill-tooltip table-stage__skill-tooltip--${player.skill.tone}`.trim()} role="tooltip">
+        <div
+          className={`table-stage__skill-tooltip table-stage__skill-tooltip--${player.skill.tone} table-stage__skill-tooltip--seat-${tooltipPlacement}`.trim()}
+          role="tooltip"
+        >
           <div className="table-stage__skill-tooltip-header">
             <span className="table-stage__skill-tooltip-rarity">{player.skill.rarityLabel}</span>
             <span className="table-stage__skill-tooltip-type">{player.skill.typeLabel}</span>

@@ -12,6 +12,7 @@ const SKILL_POSITION_LABELS = ['左签', '右签'];
 
 export function SkillSelectionOverlay({ selection, onSelect, onDecline }: SkillSelectionOverlayProps) {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const displayTitle = getSelectionDisplayTitle(selection.title, selection.cycleLabel);
 
   useEffect(() => {
     const update = () => {
@@ -27,40 +28,29 @@ export function SkillSelectionOverlay({ selection, onSelect, onDecline }: SkillS
   return (
     <div className="skill-selection-overlay" role="dialog" aria-modal="true" aria-label={selection.title}>
       <div className="skill-selection-overlay__backdrop" />
-      <div className="skill-selection-overlay__lantern skill-selection-overlay__lantern--left" aria-hidden="true" />
-      <div className="skill-selection-overlay__lantern skill-selection-overlay__lantern--right" aria-hidden="true" />
       <section className="skill-selection-overlay__panel">
         <div className="skill-selection-overlay__header">
-          <div className="skill-selection-overlay__title-block">
+          <div className="skill-selection-overlay__header-bar">
             <span className="skill-selection-overlay__eyebrow">{selection.cycleLabel}</span>
-            <h2>{selection.title}</h2>
-            <p>{selection.detail}</p>
-            <div className="skill-selection-overlay__header-note" aria-hidden="true">
-              <span className="skill-selection-overlay__header-line" />
-              <span className="skill-selection-overlay__header-copy">起手定策</span>
-              <span className="skill-selection-overlay__header-line" />
+            <div
+              className={`skill-selection-overlay__countdown ${
+                remainingSeconds !== null && remainingSeconds <= 5 ? 'skill-selection-overlay__countdown--critical' : ''
+              }`.trim()}
+            >
+              <span>剩余</span>
+              <strong>{remainingSeconds ?? '--'}s</strong>
             </div>
           </div>
-          <div
-            className={`skill-selection-overlay__countdown ${
-              remainingSeconds !== null && remainingSeconds <= 5 ? 'skill-selection-overlay__countdown--critical' : ''
-            }`.trim()}
-          >
-            <span>拈签倒计时</span>
-            <strong>{remainingSeconds ?? '--'}s</strong>
+          <div className="skill-selection-overlay__title-block">
+            <h2>{displayTitle}</h2>
+            {selection.detail ? <p>{selection.detail}</p> : null}
           </div>
-        </div>
-        <div className="skill-selection-overlay__tableau" aria-hidden="true">
-          <span className="skill-selection-overlay__tableau-ring" />
-          <span className="skill-selection-overlay__tableau-axis" />
         </div>
         <div className="skill-selection-overlay__options" aria-label="可选技能列表">
           {selection.options.map((skill, index) => (
             <article
               key={`${selection.cycleKey}-${skill.skillId}-${skill.rarity}`}
-              className={`skill-card skill-card--${skill.tone} ${
-                index % 2 === 0 ? 'skill-card--left' : 'skill-card--right'
-              }`.trim()}
+              className={`skill-card skill-card--${skill.tone}`.trim()}
             >
               <div className="skill-card__header">
                 <span className="skill-card__seat">{SKILL_POSITION_LABELS[index] ?? `第${index + 1}签`}</span>
@@ -71,13 +61,12 @@ export function SkillSelectionOverlay({ selection, onSelect, onDecline }: SkillS
               </div>
               <div className="skill-card__title-block">
                 <strong className="skill-card__name">{skill.name}</strong>
-                <span className="skill-card__cycle">{skill.cycleLabel}</span>
+                <span className="skill-card__cycle">持续 {skill.remainingRounds} 局</span>
               </div>
               <p className="skill-card__summary">{skill.summary}</p>
               <p className="skill-card__detail">{skill.detail}</p>
               <div className="skill-card__meta">
-                <span>持续 {skill.remainingRounds} 局</span>
-                {skill.type === 'active' ? <span>本局可发动 {skill.remainingActivationsThisRound} 次</span> : null}
+                {skill.type === 'active' ? <span>本局可发动 {skill.remainingActivationsThisRound} 次</span> : <span>整局自动生效</span>}
               </div>
               {skill.interactionHint ? <p className="skill-card__hint">{skill.interactionHint}</p> : null}
               <div className="skill-card__tags">
@@ -103,4 +92,25 @@ export function SkillSelectionOverlay({ selection, onSelect, onDecline }: SkillS
       </section>
     </div>
   );
+}
+
+function getSelectionDisplayTitle(title: string, cycleLabel: string) {
+  const prefixes = [
+    `${cycleLabel} · `,
+    `${cycleLabel}·`,
+    `${cycleLabel} | `,
+    `${cycleLabel}|`,
+    `${cycleLabel} ｜ `,
+    `${cycleLabel}｜`,
+    `${cycleLabel} - `,
+    `${cycleLabel}-`,
+  ];
+
+  for (const prefix of prefixes) {
+    if (title.startsWith(prefix)) {
+      return title.slice(prefix.length).trim();
+    }
+  }
+
+  return title;
 }

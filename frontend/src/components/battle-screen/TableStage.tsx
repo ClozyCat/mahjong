@@ -560,7 +560,11 @@ export function TableStage({
                           setOpenSkillTooltipSeat((currentSeat) => (currentSeat === seat ? null : currentSeat));
                         }}
                       >
-                        <PlayerInfoBar player={player} showSkillTooltip={openSkillTooltipSeat === seat} />
+                        <PlayerInfoBar
+                          player={player}
+                          showSkillTooltip={openSkillTooltipSeat === seat}
+                          tooltipPlacement={seat}
+                        />
                       </button>
                       {openQuickChatSeat === seat ? (
                         <QuickChatMenu
