@@ -296,6 +296,55 @@ describe('BattleScreen', () => {
     expect(onSkillDecline).toHaveBeenCalledTimes(1);
   });
 
+  it('shows only tile faces in hand-tile skill activation choices', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        skillActivation: {
+          skill: {
+            skillId: '07',
+            name: '无中生有',
+            rarity: 'rare',
+            rarityLabel: '稀有',
+            tone: 'azure',
+            type: 'active',
+            typeLabel: '主动技能',
+            summary: '选择一张手牌发动置换。',
+            detail: '稀有效果：成功+5 / 失败-3',
+            interactionKind: 'select_hand_tile',
+            interactionHint: '发动时从当前手牌中点选一张。',
+            tags: ['功能', '手牌'],
+            cycleLabel: '东1~东2局',
+            remainingRounds: 2,
+            remainingActivationsThisRound: 1,
+          },
+          kind: 'select_hand_tile',
+          title: '无中生有 · 发动技能',
+          description: '发动时从当前手牌中点选一张。',
+          confirmLabel: '发动技能',
+          canConfirm: false,
+          handChoices: [
+            { tileId: 'w1#1', code: 'w1', selected: false },
+            { tileId: 'w2#2', code: 'w2', selected: true },
+          ],
+        },
+      }),
+      {
+        onCloseSkillActivation: vi.fn(),
+        onConfirmSkillActivation: vi.fn(),
+        onSkillActivationTargetSelect: vi.fn(),
+        onSkillActivationTileSelect: vi.fn(),
+        onSkillActivationMeldSelect: vi.fn(),
+      },
+    );
+
+    expect(screen.getByRole('dialog', { name: '无中生有 · 发动技能' })).toBeInTheDocument();
+    expect(screen.queryByText('w1#1')).toBeNull();
+    expect(screen.queryByText('w2#2')).toBeNull();
+    expect(screen.queryByText('w1')).toBeNull();
+    expect(screen.queryByText('w2')).toBeNull();
+    expect(document.querySelectorAll('.skill-activation-dialog__tile-choice .mahjong-tile')).toHaveLength(2);
+  });
+
   it('shows the local player skill tooltip after hovering the info bar for half a second', async () => {
     vi.useFakeTimers();
 

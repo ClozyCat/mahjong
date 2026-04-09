@@ -587,7 +587,6 @@ export interface SkillActivationChoiceView {
 export interface SkillActivationTileChoiceView {
   tileId: string;
   code: string;
-  label: string;
   selected: boolean;
 }
 

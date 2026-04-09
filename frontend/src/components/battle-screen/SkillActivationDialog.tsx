@@ -66,7 +66,6 @@ export function SkillActivationDialog({
                   onClick={() => onTileSelect(choice.tileId)}
                 >
                   <MahjongTile code={choice.code} variant="hand" className="skill-activation-dialog__tile" />
-                  <span>{choice.label}</span>
                 </button>
               ))}
             </div>

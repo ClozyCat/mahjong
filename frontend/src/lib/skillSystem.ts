@@ -239,7 +239,6 @@ function buildHandChoices(viewModel: BattleViewModel, activation: SkillActivatio
   return viewModel.localHand.map((tile) => ({
     tileId: tile.tileId,
     code: tile.code,
-    label: tile.code,
     selected: tile.tileId === activation.selectedTileId,
   }));
 }
