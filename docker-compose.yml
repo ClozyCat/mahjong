@@ -10,7 +10,7 @@ services:
     volumes:
       - mahjong-data:/data
     expose:
-      - 127.0.0.1:8899:8899
+      - 127.0.0.1:8899:8000
     healthcheck:
       test:
         ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null"]
