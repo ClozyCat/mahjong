@@ -43,6 +43,7 @@ pub(crate) struct Settings {
     pub(crate) database_path: String,
     pub(crate) default_test_mode: bool,
     pub(crate) cors_origins: Vec<String>,
+    pub(crate) frontend_dir: Option<String>,
 }
 
 impl Settings {
@@ -55,6 +56,7 @@ impl Settings {
             ),
             default_test_mode: parse_bool_env("MAHJONG_TEST_MODE"),
             cors_origins: dev_cors_origins(),
+            frontend_dir: optional_env_value("MAHJONG_FRONTEND_DIR"),
         })
     }
 }
@@ -135,6 +137,13 @@ pub(crate) fn parse_bool_env(key: &str) -> bool {
         env::var(key).ok().as_deref(),
         Some("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
     )
+}
+
+pub(crate) fn optional_env_value(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 pub(crate) fn dev_cors_origins() -> Vec<String> {
@@ -561,4 +570,45 @@ pub(crate) fn maybe_start_test_match(room: &mut RoomState) {
 
     add_standard_test_bots(room);
     let _ = start_standard_match(room, 0, rand::random::<u64>());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{optional_env_value, resolve_database_path};
+
+    #[test]
+    fn optional_env_value_trims_whitespace_and_drops_empty_values() {
+        unsafe {
+            std::env::set_var("MAHJONG_OPTIONAL_ENV_VALUE_TEST", "  C:/mahjong/web  ");
+        }
+        assert_eq!(
+            optional_env_value("MAHJONG_OPTIONAL_ENV_VALUE_TEST").as_deref(),
+            Some("C:/mahjong/web")
+        );
+
+        unsafe {
+            std::env::set_var("MAHJONG_OPTIONAL_ENV_VALUE_TEST", "   ");
+        }
+        assert_eq!(optional_env_value("MAHJONG_OPTIONAL_ENV_VALUE_TEST"), None);
+
+        unsafe {
+            std::env::remove_var("MAHJONG_OPTIONAL_ENV_VALUE_TEST");
+        }
+    }
+
+    #[test]
+    fn resolve_database_path_accepts_prefixed_or_plain_sqlite_paths() {
+        assert_eq!(
+            resolve_database_path("sqlite+pysqlite:////data/mahjong.db"),
+            "/data/mahjong.db"
+        );
+        assert_eq!(
+            resolve_database_path("sqlite:///C:/mahjong/data/mahjong.db"),
+            "C:/mahjong/data/mahjong.db"
+        );
+        assert_eq!(
+            resolve_database_path("C:/mahjong/data/mahjong.db"),
+            "C:/mahjong/data/mahjong.db"
+        );
+    }
 }

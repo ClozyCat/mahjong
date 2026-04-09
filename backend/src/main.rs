@@ -50,6 +50,7 @@ mod tests {
                 database_path: ":memory:".to_string(),
                 default_test_mode: false,
                 cors_origins: vec![],
+                frontend_dir: None,
             },
             db,
         )

@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -9,6 +10,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 
 use super::persistence::{Database, DbWorker};
 use super::protocol::{create_table_response, detail_response};
@@ -38,12 +40,34 @@ pub(crate) async fn run() -> Result<()> {
         .route("/ws/{table_code}", get(websocket_handler))
         .with_state(app_state)
         .layer(build_cors_layer(&settings.cors_origins));
+    let app = attach_frontend(app, settings.frontend_dir.as_deref());
 
     let listener = tokio::net::TcpListener::bind(&settings.bind_addr)
         .await
         .with_context(|| format!("failed to bind to {}", settings.bind_addr))?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn attach_frontend(app: Router, frontend_dir: Option<&str>) -> Router {
+    let Some(frontend_dir) = frontend_dir else {
+        return app;
+    };
+
+    let frontend_dir = PathBuf::from(frontend_dir);
+    if !frontend_dir.join("index.html").is_file() {
+        eprintln!(
+            "frontend directory {:?} does not contain index.html; skipping static file hosting",
+            frontend_dir
+        );
+        return app;
+    }
+
+    app.fallback_service(
+        ServeDir::new(&frontend_dir)
+            .append_index_html_on_directories(true)
+            .not_found_service(ServeFile::new(frontend_dir.join("index.html"))),
+    )
 }
 
 fn build_cors_layer(origins: &[String]) -> CorsLayer {

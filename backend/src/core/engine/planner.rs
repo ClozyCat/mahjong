@@ -439,7 +439,7 @@ pub fn plan_discard_action(
     let was_last_live_tile = if has_claim {
         false
     } else {
-        live_tiles_remaining_after_head_draw(state) <= 1
+        live_tiles_remaining_after_head_draw(state) == 0
     };
     let pending_action = if has_claim {
         Some(PendingAction::ClaimWindow(ClaimWindowAction {
@@ -564,7 +564,7 @@ pub fn plan_claim_window_continuation_without_winner(
             outcome: PlannedClaimWindowOutcome::ExhaustiveDraw,
         });
     };
-    let was_last_live_tile = live_tiles_remaining_after_head_draw(state) <= 1;
+    let was_last_live_tile = live_tiles_remaining_after_head_draw(state) == 0;
 
     Ok(PlannedClaimWindowContinuation {
         outcome: PlannedClaimWindowOutcome::AdvanceTurn {
@@ -1114,6 +1114,92 @@ mod tests {
     }
 
     #[test]
+    fn claim_window_continuation_marks_last_live_tile_only_for_final_draw() {
+        let room = RoomState::from_room_value(&json!({
+            "table_code": "ROOM42",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "seats": [],
+            "match_state": null,
+            "round_state": {
+                "round_id": "round-5b",
+                "dealer_seat": 0,
+                "current_actor": 0,
+                "wall": {
+                    "tiles": [{
+                        "tile_id": "w1#0",
+                        "tile_key": "w1",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 1,
+                        "name": "Character 1"
+                    }, {
+                        "tile_id": "w2#0",
+                        "tile_key": "w2",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 2,
+                        "name": "Character 2"
+                    }],
+                    "head_index": 0,
+                    "tail_index": 1
+                },
+                "players": [],
+                "last_discard": {
+                    "tile_id": "w3#discard",
+                    "tile_key": "w3",
+                    "kind": "suit",
+                    "suit": "characters",
+                    "rank": 3,
+                    "name": "Character 3"
+                },
+                "pending_action": {
+                    "type": "claim_window",
+                    "discarder_seat": 0,
+                    "claim_window": [[], [], [], []],
+                    "responded_seats": [1, 2, 3],
+                    "claim_responses": []
+                },
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {
+                    "kong_entries": [],
+                    "opening_flowers_completed": true
+                },
+                "last_action_context": {
+                    "kind": "discard",
+                    "seat": 0,
+                    "tile_id": "w3#discard",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": null,
+            "continue_action": null
+        }))
+        .expect("room should parse");
+
+        let plan = plan_claim_window_continuation_without_winner(&room, 0)
+            .expect("continuation should plan");
+
+        let super::PlannedClaimWindowOutcome::AdvanceTurn {
+            last_action_context,
+            ..
+        } = &plan.outcome
+        else {
+            panic!("expected advance turn outcome");
+        };
+        assert!(!last_action_context.was_last_live_tile);
+    }
+
+    #[test]
     fn discard_plan_exposes_typed_continuation_before_mutation_adaptation() {
         let room = RoomState::from_room_value(&json!({
             "table_code": "ROOM42",
@@ -1218,5 +1304,108 @@ mod tests {
         );
         assert_eq!(plan.continuation.last_action_context.kind, "draw");
         assert!(!plan.continuation.needs_exhaustive_draw);
+    }
+
+    #[test]
+    fn discard_plan_does_not_mark_second_to_last_draw_as_last_live_tile() {
+        let room = RoomState::from_room_value(&json!({
+            "table_code": "ROOM42",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "seats": [],
+            "match_state": null,
+            "round_state": {
+                "round_id": "round-discard-boundary",
+                "dealer_seat": 0,
+                "current_actor": 0,
+                "wall": {
+                    "tiles": [{
+                        "tile_id": "w4#draw",
+                        "tile_key": "w4",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 4,
+                        "name": "Character 4"
+                    }, {
+                        "tile_id": "w5#later",
+                        "tile_key": "w5",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 5,
+                        "name": "Character 5"
+                    }],
+                    "head_index": 0,
+                    "tail_index": 1
+                },
+                "players": [{
+                    "seat": 0,
+                    "concealed_tiles": [{
+                        "tile_id": "w3#discard",
+                        "tile_key": "w3",
+                        "kind": "suit",
+                        "suit": "characters",
+                        "rank": 3,
+                        "name": "Character 3"
+                    }],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }, {
+                    "seat": 1,
+                    "concealed_tiles": [],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }, {
+                    "seat": 2,
+                    "concealed_tiles": [],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }, {
+                    "seat": 3,
+                    "concealed_tiles": [],
+                    "melds": [],
+                    "flowers": [],
+                    "discards": []
+                }],
+                "last_discard": null,
+                "pending_action": null,
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {
+                    "kong_entries": [],
+                    "opening_flowers_completed": true
+                },
+                "last_action_context": {
+                    "kind": "draw",
+                    "seat": 0,
+                    "tile_id": "w3#discard",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": null,
+            "continue_action": null
+        }))
+        .expect("room should parse");
+
+        let plan = plan_discard_action(
+            &room,
+            0,
+            "w3#discard",
+            vec![vec![], vec![], vec![], vec![]],
+            false,
+        )
+        .expect("discard action should plan");
+
+        assert!(!plan.continuation.last_action_context.was_last_live_tile);
     }
 }
