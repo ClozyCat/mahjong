@@ -13,21 +13,50 @@ use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState, 
 use crate::core::tile::Tile;
 use crate::rules::skills::{
     advance_skill_loadouts_for_next_round_in_room_state, begin_round_skill_draft_in_room_state,
-    clear_skill_loadouts_for_new_match_in_room_state, note_tracker_draw,
-    note_tracker_draw_in_room_state, sync_round_skill_trackers,
+    clear_skill_loadouts_for_new_match_in_room_state, note_tracker_draw_in_room_state,
     sync_round_skill_trackers_in_room_state,
 };
 
 use super::runtime::{
     current_actor, current_actor_in_room_state, is_last_live_tile_point,
     is_last_live_tile_point_in_room_state, project_room_state, round_event_message,
-    sync_pending_timeout, sync_pending_timeout_in_room_state,
+    sync_pending_timeout_in_room_state,
 };
-use super::settlement::{apply_settlement_to_match, apply_settlement_to_match_in_room_state};
+use super::settlement::apply_settlement_to_match_in_room_state;
+
+#[cfg(test)]
+use super::settlement::apply_settlement_to_match;
 
 const MAX_SEATS: usize = 4;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 30;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
+
+fn apply_room_state_side_effect<F>(room: &mut Value, effect: F)
+where
+    F: FnOnce(&mut RoomState),
+{
+    let _ = update_room_state(room, |state| {
+        effect(state);
+        Ok(())
+    });
+}
+
+fn note_tracker_draw_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
+    apply_room_state_side_effect(room, |state| {
+        note_tracker_draw_in_room_state(state, seat_index, tile_key);
+    });
+}
+
+fn sync_round_skill_trackers_for_value_room(room: &mut Value) {
+    apply_room_state_side_effect(room, sync_round_skill_trackers_in_room_state);
+}
+
+fn sync_round_skill_trackers_and_timeout_for_value_room(room: &mut Value) {
+    apply_room_state_side_effect(room, |state| {
+        sync_round_skill_trackers_in_room_state(state);
+        sync_pending_timeout_in_room_state(state);
+    });
+}
 
 pub fn room_ready_to_start(room: &RoomState) -> bool {
     room.seats.len() == MAX_SEATS
@@ -280,8 +309,7 @@ pub fn apply_opening_flowers_pass_output(
         }
         Ok(())
     })?;
-    sync_round_skill_trackers(room);
-    sync_pending_timeout(room);
+    sync_round_skill_trackers_and_timeout_for_value_room(room);
     Ok(EngineOutput::default())
 }
 
@@ -388,9 +416,8 @@ pub fn apply_flower_action_output(
         }
         Ok(())
     })?;
-    note_tracker_draw(room, seat_index, &plan.replacement_tile.tile_key);
-    sync_round_skill_trackers(room);
-    sync_pending_timeout(room);
+    note_tracker_draw_for_value_room(room, seat_index, &plan.replacement_tile.tile_key);
+    sync_round_skill_trackers_and_timeout_for_value_room(room);
 
     let flower_event = json!({
         "type": "flower_exposed",
@@ -526,7 +553,7 @@ fn start_round(
         state.continue_action = None;
         Ok(())
     });
-    sync_round_skill_trackers(room);
+    sync_round_skill_trackers_for_value_room(room);
 }
 
 fn start_round_in_room_state(
@@ -1080,4 +1107,201 @@ fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
             "tile_key": tile.tile_key,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::state::{
+        LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout, PlayerRoundState,
+        RoundScoreTrackers, RoundSkillTrackers, RoundState, RuleRuntimeState, SeatState, WallState,
+    };
+
+    fn suit(tile_key: &str, tile_id: &str) -> Tile {
+        Tile {
+            tile_id: tile_id.to_string(),
+            tile_key: tile_key.to_string(),
+            kind: "suit".to_string(),
+            suit: Some(
+                if tile_key.starts_with('w') {
+                    "characters"
+                } else if tile_key.starts_with('t') {
+                    "bamboos"
+                } else {
+                    "dots"
+                }
+                .to_string(),
+            ),
+            rank: tile_key[1..].parse().ok(),
+            name: Some(tile_key.to_string()),
+        }
+    }
+
+    fn wind(tile_key: &str, tile_id: &str) -> Tile {
+        Tile {
+            tile_id: tile_id.to_string(),
+            tile_key: tile_key.to_string(),
+            kind: "wind".to_string(),
+            suit: None,
+            rank: None,
+            name: Some(tile_key.to_string()),
+        }
+    }
+
+    fn flower(tile_key: &str, tile_id: &str) -> Tile {
+        Tile {
+            tile_id: tile_id.to_string(),
+            tile_key: tile_key.to_string(),
+            kind: "flower".to_string(),
+            suit: None,
+            rank: None,
+            name: Some(tile_key.to_string()),
+        }
+    }
+
+    fn seat_state(seat_index: usize) -> SeatState {
+        SeatState {
+            seat_index,
+            nickname: Some(format!("P{seat_index}")),
+            reconnect_token: Some(format!("token-{seat_index}")),
+            player_session_id: Some(seat_index as i64 + 1),
+            connected: true,
+            ready: true,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+            skill_loadout: Default::default(),
+        }
+    }
+
+    fn flower_action_room() -> RoomState {
+        RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: (0..4).map(seat_state).collect(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "east-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                wall: WallState {
+                    tiles: vec![suit("w9", "w9#head"), wind("east", "east#tail")],
+                    head_index: 0,
+                    tail_index: 1,
+                },
+                players: vec![
+                    PlayerRoundState {
+                        seat: 0,
+                        concealed_tiles: vec![
+                            flower("f1", "f1#0"),
+                            suit("w1", "w1#0"),
+                            suit("w2", "w2#0"),
+                        ],
+                        melds: vec![],
+                        flowers: vec![],
+                        discards: vec![],
+                        skill_loadout: Default::default(),
+                    },
+                    PlayerRoundState {
+                        seat: 1,
+                        concealed_tiles: vec![suit("t1", "t1#1")],
+                        melds: vec![],
+                        flowers: vec![],
+                        discards: vec![],
+                        skill_loadout: Default::default(),
+                    },
+                    PlayerRoundState {
+                        seat: 2,
+                        concealed_tiles: vec![suit("b1", "b1#2")],
+                        melds: vec![],
+                        flowers: vec![],
+                        discards: vec![],
+                        skill_loadout: Default::default(),
+                    },
+                    PlayerRoundState {
+                        seat: 3,
+                        concealed_tiles: vec![suit("w5", "w5#3")],
+                        melds: vec![],
+                        flowers: vec![],
+                        discards: vec![],
+                        skill_loadout: Default::default(),
+                    },
+                ],
+                last_discard: None,
+                pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
+                    dealer_seat: 0,
+                })),
+                settlement: None,
+                version: 1,
+                score_trackers: RoundScoreTrackers::default(),
+                last_action_context: LastActionContext::default(),
+                rule_state: RuleRuntimeState {
+                    enforce_minimum_eight_fan: true,
+                },
+                effect_state: Default::default(),
+                restricted_discard_tile_key: None,
+                skill_draft: None,
+                skill_trackers: RoundSkillTrackers {
+                    pending_honor_rebuy_tile_by_seat: std::collections::BTreeMap::from([(
+                        0,
+                        "east".to_string(),
+                    )]),
+                    ..Default::default()
+                },
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "opening_flowers".to_string(),
+                seat_index: 0,
+                deadline_at: None,
+                drawn_tile_id: Some("f1#0".to_string()),
+            }),
+            continue_action: None,
+        }
+    }
+
+    fn normalize_deadlines(mut room: RoomState) -> RoomState {
+        if let Some(timeout) = room.pending_timeout.as_mut() {
+            timeout.deadline_at = None;
+        }
+        room
+    }
+
+    #[test]
+    fn flower_action_value_wrapper_matches_room_state_variant() {
+        let expected_room = flower_action_room();
+        let mut value_room = flower_action_room()
+            .to_room_value()
+            .expect("room should serialize");
+        let value_output = apply_flower_action_output(&mut value_room, 0, &[String::from("f1#0")])
+            .expect("value wrapper should succeed");
+
+        let mut typed_room = flower_action_room();
+        let typed_output =
+            apply_flower_action_output_in_room_state(&mut typed_room, 0, &[String::from("f1#0")])
+                .expect("typed action should succeed");
+
+        assert_eq!(value_output.events, typed_output.events);
+        assert_eq!(value_output.emitted_messages, typed_output.emitted_messages);
+
+        let actual_room =
+            RoomState::from_room_value(&value_room).expect("value room should remain valid");
+        assert_eq!(
+            normalize_deadlines(actual_room),
+            normalize_deadlines(typed_room)
+        );
+        assert_ne!(
+            normalize_deadlines(expected_room).round_state,
+            normalize_deadlines(
+                RoomState::from_room_value(&value_room).expect("value room should parse")
+            )
+            .round_state
+        );
+    }
 }

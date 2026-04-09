@@ -13,8 +13,7 @@ use crate::core::state::{
     SettlementScoreDelta,
 };
 use crate::rules::skills::{
-    apply_draw_settlement_hooks, sync_match_skill_trackers_after_settlement,
-    sync_match_skill_trackers_after_settlement_in_room_state,
+    apply_draw_settlement_hooks, sync_match_skill_trackers_after_settlement_in_room_state,
 };
 
 use super::runtime::{project_room_state, round_event_message};
@@ -94,9 +93,9 @@ pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
                 );
             }
         }
+        sync_match_skill_trackers_after_settlement_in_room_state(state);
         Ok(())
     });
-    sync_match_skill_trackers_after_settlement(room);
     apply_settlement_to_match(room);
     let message = round_event_message(
         "round_drawn",
@@ -234,7 +233,11 @@ pub fn apply_settlement_to_match_in_room_state(room: &mut RoomState) {
             .cloned();
         if let Some(match_state) = room.match_state.as_mut() {
             if let Some(settlement) = settlement {
-                match_state.apply_completed_round(plan.round_id, plan.cumulative_scores, &settlement);
+                match_state.apply_completed_round(
+                    plan.round_id,
+                    plan.cumulative_scores,
+                    &settlement,
+                );
             }
         }
     }
@@ -262,4 +265,97 @@ fn total_kong_delta_by_seat(
         }
     }
     totals
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::Value;
+
+    use super::settle_exhaustive_draw_output;
+    use crate::core::state::{
+        LastActionContext, LianHuanJiTracker, MatchSkillTrackers, MatchState, PlayerRoundState,
+        RoomState, RoundState, SeatState, ZouWeiShangJiTracker,
+    };
+
+    #[test]
+    fn value_draw_settlement_output_syncs_match_skill_trackers_via_typed_helper() {
+        let mut room = test_room_value_with_match_trackers();
+
+        let _ = settle_exhaustive_draw_output(&mut room);
+
+        let parsed = RoomState::from_room_value(&room).expect("room should remain typed");
+        let trackers = &parsed
+            .match_state
+            .as_ref()
+            .expect("match state")
+            .skill_trackers;
+
+        assert_eq!(trackers.lian_huan_ji.streaks.get(&0), Some(&0));
+        assert_eq!(trackers.lian_huan_ji.streaks.get(&1), Some(&0));
+        assert_eq!(trackers.lian_huan_ji.streaks.get(&2), Some(&0));
+        assert_eq!(trackers.lian_huan_ji.streaks.get(&3), Some(&0));
+        assert_eq!(
+            trackers.zou_wei_shang_ji.pending_win_penalty.get(&2),
+            Some(&4)
+        );
+    }
+
+    fn test_room_value_with_match_trackers() -> Value {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: (0..4)
+                .map(|seat_index| SeatState {
+                    seat_index,
+                    ..Default::default()
+                })
+                .collect(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: (0..4).map(|seat| (seat, 0)).collect(),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                skill_trackers: MatchSkillTrackers {
+                    lian_huan_ji: LianHuanJiTracker {
+                        streaks: BTreeMap::from([(0, 2), (1, 5), (2, 1), (3, 3)]),
+                    },
+                    zou_wei_shang_ji: ZouWeiShangJiTracker {
+                        pending_win_penalty: BTreeMap::from([(2, 4)]),
+                    },
+                },
+            }),
+            round_state: Some(RoundState {
+                round_id: "east-1-dealer-0".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: (0..4)
+                    .map(|seat| PlayerRoundState {
+                        seat,
+                        ..Default::default()
+                    })
+                    .collect(),
+                last_action_context: LastActionContext {
+                    kind: "draw".to_string(),
+                    seat: 1,
+                    tile_id: Some("b1#0".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        state.to_room_value().expect("room value")
+    }
 }

@@ -802,7 +802,7 @@ ScoreResult
 - The skills runtime bridge is shrinking further. Several `rules/skills/mod.rs` helpers that previously edited `round_state.skill_trackers`, `match_state.cumulative_scores`, `match_state.skill_trackers`, `effect_state`, and skill charge/version fields in-place now project typed room state, mutate typed round/match structures, and write back through typed reducer updates instead.
 - The outer compatibility facade is also starting to follow the same rule. Parts of `mahjong.rs` that previously reasoned over raw room JSON for readiness checks, bot-seat injection, and local discard support now project or update typed `RoomState` first instead of hand-editing `serde_json::Value`.
 - Engine command dispatch now also enters through typed context first. `core/engine/flow.rs` constructs `EngineContext` from projected `RoomState`, and the older `EngineContext::from_legacy_room` compatibility constructor has been removed.
-- Several outward-facing runtime entrypoints now use neutral room/command APIs instead of explicit legacy naming. `parse_player_command`, `RoomState::from_room_value` / `to_room_value`, `RoomScoringCache::from_room_value`, and `apply_skill_events_to_room` / `apply_passive_skill_events_to_room` are now the active runtime-facing interfaces.
+- Several outward-facing runtime entrypoints now use neutral room/command APIs instead of explicit legacy naming. `parse_player_command`, `RoomState::from_room_value` / `to_room_value`, `RoomScoringCache::from_room_value`, and the typed `apply_skill_events_to_room_in_room_state` / `apply_passive_skill_events_to_room_in_room_state` interfaces now carry the active runtime path.
 - The same neutralization has now pushed much deeper into core value types. `Tile`, `RoomState`, `RoundState`, `RoundSettlement`, `SkillLoadout`, `EffectState`, pending-action state, wall/player/match state, and skill tracker helpers all expose `from_value` / `to_value` style APIs for active runtime use, while the older `from_legacy_value` / `to_legacy_value` names are increasingly just thin compatibility aliases.
 - The old `GameEvent::LegacyRoundEvent` outward transport has been removed from the active backend event model. Flower exposure, self-kong declaration, claim auto-pass, and skill-driven tile/score/meld/draw side effects now emit typed `GameEvent` variants directly, and the message-to-event shim in `core/engine/command.rs` only reconstructs those typed variants in tests.
 - Outward projection code is now typed more consistently as well. `room_messages` in `mahjong.rs` now projects room state once and delegates match-result shaping to `projection/match_result.rs`; `projection/room_snapshot.rs` also serializes typed `MatchState` directly instead of first degrading it to raw `Value`.
@@ -838,6 +838,9 @@ ScoreResult
 - `mahjong.rs` no longer acts as a live facade for production room execution. What remains to finish is retiring the last internal `Value` adapter seams behind the typed standard/core APIs, plus the broader outward protocol/schema cleanup.
 - Projection layering is still not fully finished. The current code has `room_snapshot`, `prompt`, `bot_view`, and `support`, but the document's dedicated `private_view.rs` style separation is not yet present.
 - The `infra/*` layer proposed earlier in this document still does not exist. Serialization/time/random helpers are still spread across the current modules instead of being centralized behind an infra boundary.
+- One important correction to the earlier read: not every remaining `Value` is cleanup debt. `SkillInstance.config`, `EffectInstance.payload`, and `RuleOverride.payload` are still valid intentional dynamic boundaries because skill definitions and effect payloads are data-driven by JSON. Those fields should be judged differently from older whole-room JSON compatibility layers.
+- The more actionable remaining skill-system debt is now above those intentional dynamic boundaries rather than inside them. The old `Value` helper families in `rules/skills/mod.rs` for tracker sync, event application, and settlement follow-up have been removed from active code, so the remaining `Value` usage is primarily either deliberate JSON payload/config data or higher-level test/compatibility facades.
+- Skill draft/runtime metadata also still has a small amount of transitional duplication. Some fields that are already first-class typed state (for example rarity and remaining-round bookkeeping) are also echoed back into `SkillInstance.config`. That duplication is a better cleanup candidate than the intentionally dynamic JSON payload boundary itself.
 
 ### 16.3 Current Architectural Read
 
@@ -846,6 +849,9 @@ ScoreResult
 - The app/runtime boundary is now good enough that further leverage mostly comes from consolidating write-time state transitions, not from additional `main.rs` cleanup.
 - This is the right point to stop treating skills as the main unknown and instead finish the typed reducer / scoring / outward-schema cleanup so the skill-enabled architecture becomes the default architecture rather than a partially bridged one.
 - Room creation/persistence helpers are also now more clearly typed-first: the active app path constructs new rooms from typed `RoomState` directly, and tests/persistence helpers increasingly serialize typed room state instead of synthesizing an intermediate room `Value` first.
+- The next refactor passes should therefore distinguish between two very different kinds of "untyped" code:
+  - deliberate dynamic skill/effect payloads that exist because the catalog and runtime payloads are JSON-defined
+  - compatibility-oriented whole-room or whole-message `Value` facades that duplicate already-typed behavior and should keep shrinking
 
 ## 17. Recommended Next Steps
 
@@ -875,6 +881,7 @@ Recommended target:
 - replace the persisted room JSON shape with a schema centered on typed `RoomState` instead of the older ad-hoc payload shape
 - collapse websocket/http command intake and outbound payload shaping onto typed request/response/event models instead of raw JSON glue
 - delete the last test-only whole-room conversion wrapper in `core/engine/flow.rs` once `mahjong.rs` test coverage is migrated or retired
+- shrink the remaining production use of `Value`-based skill helper entrypoints so `rules/standard/*` consumes the typed `_in_room_state` helpers consistently
 
 Goal:
 
@@ -918,6 +925,21 @@ Recommended target:
 Goal:
 
 - convert the current "mostly migrated but still compatibility-aware" structure into the default steady-state architecture
+
+### 17.6 Skill-System Cleanup Guidance For The Next Pass
+
+Recommended target:
+
+- keep the intentional JSON boundaries for `SkillInstance.config`, `EffectInstance.payload`, and `RuleOverride.payload`
+- treat duplicated `Value` helper surfaces in `rules/skills/mod.rs` as compatibility cleanup work, not as required dynamic behavior
+- remove production-path callers of the `Value` helper variants in `rules/standard/actions.rs`, `flow.rs`, `win.rs`, and `settlement.rs`
+- avoid moving stable runtime metadata such as rarity, counters, or remaining-round bookkeeping back into free-form `config` when those fields already exist in typed state
+- where skill payload consumption is stable but still stringly, prefer local typed decode helpers over ad-hoc scattered `payload.get("...")` lookups
+
+Goal:
+
+- preserve the data-driven JSON skill-definition model without letting it become a reason to keep duplicate compatibility facades alive
+- make the remaining untyped surface area intentional, explicit, and narrow instead of incidental
 
 ## 18. Current Conclusion
 

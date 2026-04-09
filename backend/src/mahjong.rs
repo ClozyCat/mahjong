@@ -1685,7 +1685,10 @@ mod tests {
             "east-1-dealer-0-hu"
         );
         assert_eq!(room["match_state"]["cumulative_scores"]["1"], 24);
-        assert_eq!(room["match_state"]["statistics"]["completed_round_count"], 1);
+        assert_eq!(
+            room["match_state"]["statistics"]["completed_round_count"],
+            1
+        );
         assert_eq!(
             room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["score_history"],
             json!([0, 24])
@@ -1811,7 +1814,10 @@ mod tests {
             room["match_state"]["cumulative_scores"],
             json!({"0": 0, "1": 0, "2": 0, "3": 0})
         );
-        assert_eq!(room["match_state"]["statistics"]["completed_round_count"], 0);
+        assert_eq!(
+            room["match_state"]["statistics"]["completed_round_count"],
+            0
+        );
         assert_eq!(
             room["match_state"]["statistics"]["seat_stats_by_seat"]["0"]["score_history"],
             json!([0])

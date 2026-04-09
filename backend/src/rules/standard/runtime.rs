@@ -2,7 +2,6 @@ use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 
 use crate::core::engine::planner::compute_pending_timeout_value;
-use crate::core::engine::reducer::update_room_state;
 use crate::core::state::RoomState;
 use crate::core::tile::Tile;
 
@@ -10,16 +9,6 @@ const PENDING_TIMEOUT_SECONDS: i64 = 30;
 
 pub fn project_room_state(room: &Value) -> Result<RoomState, String> {
     RoomState::from_room_value(room).map_err(|error| error.to_string())
-}
-
-pub fn sync_pending_timeout(room: &mut Value) {
-    let pending_timeout = project_room_state(room)
-        .ok()
-        .and_then(|state| compute_pending_timeout_value(&state, deadline_iso()));
-    let _ = update_room_state(room, |state| {
-        state.pending_timeout = pending_timeout;
-        Ok(())
-    });
 }
 
 pub fn sync_pending_timeout_in_room_state(room: &mut RoomState) {
