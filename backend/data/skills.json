@@ -418,15 +418,15 @@
       "skill_id": "shang_wu_chou_ti",
       "serial": "28",
       "name": "上屋抽梯",
-      "summary": "听牌时牌墙剩余牌越少得分越高；牌墙大于80张时胡牌扣分。",
+      "summary": "只能自摸；自摸胡牌额外得分，放铳时额外扣分。",
       "type": "passive",
       "interaction_kind": null,
       "interaction_hint": null,
-      "tags": ["听牌", "牌墙"],
+      "tags": ["自摸", "放铳"],
       "tiers": {
-        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "+8 / -3", "gain": 9, "loss": 3 }
+        "common": { "detail": "自摸+3 / 放铳-1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "自摸+5 / 放铳-2", "gain": 5, "loss": 2 },
+        "epic": { "detail": "自摸+9 / 放铳-3", "gain": 9, "loss": 3 }
       }
     },
     {

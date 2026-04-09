@@ -164,6 +164,11 @@ impl RuleHook for StratagemSkill {
                     .required_minimum_fan_total
                     .min(minimum_fan_override(ctx.skill_instance.level));
             }
+            "shang_wu_chou_ti" if request.evaluation.win_type == "discard" => {
+                request.required_minimum_fan_total = request
+                    .required_minimum_fan_total
+                    .max(self_draw_only_minimum_fan_total());
+            }
             _ => {}
         }
         Ok(())
@@ -285,6 +290,10 @@ fn an_du_preview_count(level: u8) -> usize {
 
 fn preview_minimum_penalty(level: u8) -> i64 {
     value_i64_for_skill("sheng_dong_ji_xi", level, "minimum_fan_penalty")
+}
+
+fn self_draw_only_minimum_fan_total() -> i64 {
+    99
 }
 
 fn active_effects<'a>(ctx: &'a RuleContext<'_>, effect_type: &'a str) -> Vec<&'a EffectInstance> {
@@ -983,13 +992,15 @@ fn apply_after_scoring(
             actor,
             if result.fan_total >= 16 { -loss } else { 0 },
         ),
-        "shang_wu_chou_ti" if is_winner => adjust_score_delta(
+        "shang_wu_chou_ti" => adjust_score_delta(
             result,
             actor,
-            if live_tiles_remaining(ctx) > 80 {
+            if is_winner && request.evaluation.win_type == "self_draw" {
+                gain
+            } else if request.evaluation.discarder_seat == Some(actor) {
                 -loss
             } else {
-                scaled_late_game_bonus(gain, live_tiles_remaining(ctx))
+                0
             },
         ),
         "shu_shang_kai_hua" if is_winner => adjust_score_delta(
@@ -1167,11 +1178,6 @@ fn tiles_drawn_since_opening(ctx: &RuleContext<'_>) -> usize {
         .unwrap_or(0)
 }
 
-fn scaled_late_game_bonus(max_bonus: i64, live_tiles: usize) -> i64 {
-    let scarcity = (80usize.saturating_sub(live_tiles)) as i64;
-    ((max_bonus * scarcity) / 80).max(1)
-}
-
 fn honour_group_count(request: &ScoreHookRequest) -> usize {
     let Some(decomposition) = request.evaluation.decompositions.first() else {
         return 0;
@@ -1228,7 +1234,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{apply_after_scoring, gain_value, loss_value};
+    use super::{
+        StratagemSkill, apply_after_scoring, gain_value, loss_value,
+        self_draw_only_minimum_fan_total,
+    };
     use crate::core::state::{
         MatchState, PlayerRoundState, RoomState, RoundState, RuleRuntimeState, SeatState,
         SkillInstance, SkillLoadout,
@@ -1236,7 +1245,7 @@ mod tests {
     use crate::rules::scoring::{
         EvaluationInput, FanResult, HandFeatures, ScoreDelta, TimingFeatures,
     };
-    use crate::rules::skills::{RuleContext, ScoreHookRequest};
+    use crate::rules::skills::{RuleContext, RuleHook, ScoreHookRequest};
 
     #[test]
     fn jia_chi_bu_dian_only_penalizes_big_hands() {
@@ -1372,6 +1381,86 @@ mod tests {
         assert_eq!(
             result.score_delta.total_delta_by_seat[0],
             -8 - loss_value("yi_yi_dai_lao", skill.level)
+        );
+    }
+
+    #[test]
+    fn shang_wu_chou_ti_forces_self_draw_only() {
+        let room = room_with_skill("shang_wu_chou_ti");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let definition = StratagemSkill {
+            id: "shang_wu_chou_ti",
+            name: "Shang Wu Chou Ti",
+        };
+
+        let mut discard_request = score_hook_request(vec!["w1", "w2", "w3"]);
+        definition
+            .before_scoring(&ctx, &mut discard_request)
+            .unwrap();
+        assert_eq!(
+            discard_request.required_minimum_fan_total,
+            self_draw_only_minimum_fan_total()
+        );
+
+        let mut self_draw_request =
+            score_hook_request_with_outcome("self_draw", Some(0), None, vec!["w1", "w2", "w3"]);
+        definition
+            .before_scoring(&ctx, &mut self_draw_request)
+            .unwrap();
+        assert_eq!(self_draw_request.required_minimum_fan_total, 8);
+    }
+
+    #[test]
+    fn shang_wu_chou_ti_rewards_self_draw_wins() {
+        let room = room_with_skill("shang_wu_chou_ti");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let mut result = fan_result_with_total(8);
+        apply_after_scoring(
+            "shang_wu_chou_ti",
+            &ctx,
+            &score_hook_request_with_outcome("self_draw", Some(0), None, vec!["w1", "w2", "w3"]),
+            &mut result,
+        );
+
+        assert_eq!(
+            result.score_delta.total_delta_by_seat[0],
+            24 + gain_value("shang_wu_chou_ti", skill.level)
+        );
+    }
+
+    #[test]
+    fn shang_wu_chou_ti_penalizes_discarder() {
+        let room = room_with_skill("shang_wu_chou_ti");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let mut result = fan_result_with_total(8);
+        result.score_delta.fan_delta_by_seat = vec![-24, 24, 0, 0];
+        result.score_delta.total_delta_by_seat = vec![-24, 24, 0, 0];
+
+        apply_after_scoring(
+            "shang_wu_chou_ti",
+            &ctx,
+            &score_hook_request_with_outcome("discard", Some(1), Some(0), vec!["w1", "w2", "w3"]),
+            &mut result,
+        );
+
+        assert_eq!(
+            result.score_delta.total_delta_by_seat[0],
+            -24 - loss_value("shang_wu_chou_ti", skill.level)
         );
     }
 
