@@ -1,4 +1,6 @@
 import type {
+  BackendSkillSelectionView,
+  BackendSkillView,
   ActionEffectView,
   BackendActionType,
   BattleActionId,
@@ -12,6 +14,7 @@ import type {
   PlayerView,
   PrivatePlayerState,
   PrivateState,
+  SkillChoiceView,
   QuickChatEventView,
   ResultSeatView,
   Seat,
@@ -66,6 +69,18 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   pung: '碰',
   pass: '过',
 };
+
+function isBackendActionType(value: unknown): value is BackendActionType {
+  return (
+    value === 'discard' ||
+    value === 'flower' ||
+    value === 'kong' ||
+    value === 'hu' ||
+    value === 'chow' ||
+    value === 'pung' ||
+    value === 'pass'
+  );
+}
 
 const PHASE_LABELS = {
   waiting: '等待中',
@@ -135,7 +150,7 @@ function formatSignedNumber(value: number) {
 
 function getPendingActionOptions(pendingAction: { options?: unknown } | null | undefined): BackendActionType[] {
   const options = pendingAction?.options;
-  return Array.isArray(options) ? (options as BackendActionType[]) : [];
+  return Array.isArray(options) ? options.filter(isBackendActionType) : [];
 }
 
 function formatActionLabels(options: BackendActionType[]) {
@@ -249,7 +264,10 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
   if (state.latestActionPrompt) {
     const promptSeat = state.latestActionPrompt.payload.seat_index;
     if (typeof currentActor !== 'number' || currentActor === promptSeat) {
-      return createActorPrompt(getSeatName(state, promptSeat), state.latestActionPrompt.payload.options);
+      return createActorPrompt(
+        getSeatName(state, promptSeat),
+        state.latestActionPrompt.payload.options.filter(isBackendActionType),
+      );
     }
   }
 
@@ -259,7 +277,10 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
   }
 
   if (state.latestActionPrompt) {
-    return createActorPrompt(getSeatName(state, state.latestActionPrompt.payload.seat_index), state.latestActionPrompt.payload.options);
+    return createActorPrompt(
+      getSeatName(state, state.latestActionPrompt.payload.seat_index),
+      state.latestActionPrompt.payload.options.filter(isBackendActionType),
+    );
   }
 
   if (state.roomSnapshot?.payload.phase === 'finished') {
@@ -284,12 +305,12 @@ function getLocalPromptOptions(state: SessionState): BackendActionType[] {
   if (pendingAction && 'options' in pendingAction) {
     const options = (pendingAction as { options?: unknown }).options;
     if (Array.isArray(options)) {
-      return options as BackendActionType[];
+      return options.filter(isBackendActionType);
     }
   }
 
   if (state.latestActionPrompt?.payload.seat_index === localSeat) {
-    return state.latestActionPrompt.payload.options;
+    return state.latestActionPrompt.payload.options.filter(isBackendActionType);
   }
 
   return [];
@@ -448,11 +469,11 @@ function getPromptOptions(state: SessionState): BackendActionType[] {
   if (pendingAction && 'options' in pendingAction) {
     const options = (pendingAction as { options?: unknown }).options;
     if (Array.isArray(options)) {
-      return options as BackendActionType[];
+      return options.filter(isBackendActionType);
     }
   }
 
-  return state.latestActionPrompt?.payload.options ?? [];
+  return (state.latestActionPrompt?.payload.options ?? []).filter(isBackendActionType);
 }
 
 function getRestrictedDiscardTileIdSet(state: SessionState) {
@@ -573,6 +594,73 @@ function findPrivatePlayer(state: SessionState, seatIndex: number): PrivatePlaye
   return state.roomSnapshot?.payload.private_state?.players.find((player) => player.seat_index === seatIndex);
 }
 
+function toPlayerSkillView(
+  skill: BackendSkillView | null | undefined,
+  cycleLabel: string | null = null,
+): PlayerView['skill'] {
+  if (!skill) {
+    return null;
+  }
+
+  return {
+    skillId: skill.skill_id,
+    serial: skill.serial ?? null,
+    name: skill.name,
+    rarity: skill.rarity,
+    rarityLabel: skill.rarity_label,
+    tone: skill.tone,
+    type: skill.type,
+    typeLabel: skill.type_label,
+    summary: skill.summary,
+    detail: skill.detail,
+    interactionKind: skill.interaction_kind ?? null,
+    interactionHint: skill.interaction_hint ?? null,
+    tags: Array.isArray(skill.tags) ? skill.tags : [],
+    cycleLabel,
+    remainingRounds: skill.remaining_rounds,
+    remainingActivationsThisRound: skill.remaining_activations_this_round,
+    canActivateNow: Boolean(skill.can_activate_now),
+  };
+}
+
+function toSkillChoiceView(selection: BackendSkillSelectionView, skill: BackendSkillView): SkillChoiceView {
+  const base = toPlayerSkillView(skill, selection.cycle_label);
+  return {
+    ...(base ?? {
+      skillId: skill.skill_id,
+      name: skill.name,
+      rarity: skill.rarity,
+      rarityLabel: skill.rarity_label,
+      tone: skill.tone,
+      type: skill.type,
+      typeLabel: skill.type_label,
+      summary: skill.summary,
+      detail: skill.detail,
+      interactionHint: skill.interaction_hint ?? null,
+      tags: Array.isArray(skill.tags) ? skill.tags : [],
+      cycleLabel: selection.cycle_label,
+      remainingRounds: skill.remaining_rounds,
+      remainingActivationsThisRound: skill.remaining_activations_this_round,
+    }),
+    cycleKey: selection.cycle_key,
+  };
+}
+
+function toSkillSelectionView(selection: BackendSkillSelectionView | null | undefined): BattleViewModel['skillSelection'] {
+  if (!selection) {
+    return null;
+  }
+
+  return {
+    cycleKey: selection.cycle_key,
+    cycleLabel: selection.cycle_label,
+    deadlineAt: selection.deadline_at,
+    title: selection.title,
+    detail: selection.detail,
+    options: (selection.options ?? []).map((skill) => toSkillChoiceView(selection, skill)),
+  };
+}
+
 function getDisplayedScores(state: SessionState) {
   const snapshot = state.roomSnapshot?.payload;
   const matchScores = snapshot?.match_state?.cumulative_scores ?? {};
@@ -632,6 +720,7 @@ function createPlayers(state: SessionState): PlayerView[] {
       const seatKey = String(seat.seat_index);
       const seatType = seat.seat_type ?? (seat.is_bot ? 'bot' : 'human');
       const isBotSeat = seatType === 'bot';
+      const cycleLabel = snapshot.private_state?.skill_draft?.cycle_label ?? null;
 
       return {
         seat: relativeSeat,
@@ -652,6 +741,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: normalizeDisplayMelds(privatePlayer?.melds),
         flowers: normalizeTileCodeList(privatePlayer?.flowers),
+        skill: toPlayerSkillView(privatePlayer?.equipped_skill, cycleLabel),
         statusText:
           isBotSeat
             ? 'Bot代打中'
@@ -1495,6 +1585,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state),
     quickChatEvent: createQuickChatEvent(state),
+    skillSelection: toSkillSelectionView(snapshot?.private_state?.skill_draft),
+    skillActivation: null,
     toasts: state.toasts,
   };
 }

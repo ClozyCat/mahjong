@@ -8,6 +8,7 @@ use crate::core::tile::Tile;
 use super::effect::EffectState;
 use super::pending::{LastActionContext, PendingAction};
 use super::settlement::RoundSettlement;
+use super::skill_draft::SkillDraftState;
 use super::skill_trackers::RoundSkillTrackers;
 use super::{PlayerRoundState, WallState, array, bool_or, seat_vec, string_opt, usize_or};
 
@@ -33,6 +34,7 @@ pub struct RoundState {
     #[serde(default, deserialize_with = "super::null_default")]
     pub effect_state: EffectState,
     pub restricted_discard_tile_key: Option<TileKey>,
+    pub skill_draft: Option<SkillDraftState>,
     #[serde(default, deserialize_with = "super::null_default")]
     pub skill_trackers: RoundSkillTrackers,
 }

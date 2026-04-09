@@ -25,9 +25,23 @@ pub struct SkillInstance {
     pub skill_id: SkillId,
     pub owner: Seat,
     pub level: u8,
+    #[serde(default)]
+    pub rarity: String,
+    #[serde(default = "default_skill_remaining_rounds")]
+    pub remaining_rounds: u8,
     pub cooldown: u8,
     pub charges: u8,
+    #[serde(default = "default_skill_charges_per_round")]
+    pub charges_per_round: u8,
     pub config: Value,
+}
+
+fn default_skill_remaining_rounds() -> u8 {
+    2
+}
+
+fn default_skill_charges_per_round() -> u8 {
+    1
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -1,4 +1,6 @@
 mod builtin;
+pub mod catalog;
+pub mod draft;
 pub mod effects;
 pub mod hooks;
 pub mod instances;
@@ -7,6 +9,7 @@ mod strategems;
 
 use std::sync::OnceLock;
 
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::engine::reducer::update_room_state;
@@ -14,6 +17,7 @@ use crate::core::event::GameEvent;
 use crate::core::ids::{Seat, SkillId, TileId};
 use crate::core::state::{
     LastActionContext, PendingAction, PendingTimeout, RoomState, RoundSettlement,
+    SkillDraftStatus, SkillRarity as DraftSkillRarity,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -21,6 +25,13 @@ use crate::rules::standard::runtime::project_room_state as standard_project_room
 use crate::rules::standard::win::{can_declare_hu_with_cache, can_declare_hu_with_cache_for_state};
 
 use self::builtin::{PeekOpponentTileSkill, ScoreBoostSkill};
+use self::catalog::{
+    catalog as loaded_skill_catalog,
+    detail_for_skill, entry as catalog_entry, interaction_hint_for_skill,
+    interaction_kind_for_skill as catalog_interaction_kind_for_skill, kind_for_skill,
+    rarity_for_level, SkillInteractionKind as CatalogInteractionKind, SkillKind,
+    SkillRarity as CatalogSkillRarity,
+};
 
 #[allow(unused_imports)]
 pub use effects::{
@@ -48,6 +59,489 @@ pub fn default_registry() -> &'static StaticSkillRegistry {
         }
         registry
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EquippedSkillView {
+    pub skill_id: SkillId,
+    pub serial: Option<String>,
+    pub name: String,
+    pub rarity: String,
+    pub rarity_label: String,
+    pub tone: String,
+    #[serde(rename = "type")]
+    pub skill_type: String,
+    pub type_label: String,
+    pub interaction_kind: Option<String>,
+    pub summary: String,
+    pub detail: String,
+    pub interaction_hint: Option<String>,
+    pub tags: Vec<String>,
+    pub remaining_rounds: u8,
+    pub remaining_activations_this_round: u8,
+    pub can_activate_now: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SkillSelectionView {
+    pub cycle_key: String,
+    pub cycle_label: String,
+    pub deadline_at: String,
+    pub title: String,
+    pub detail: String,
+    pub options: Vec<EquippedSkillView>,
+}
+
+pub fn equipped_skill_views(room_state: &RoomState, seat: Seat) -> Vec<EquippedSkillView> {
+    equipped_skill_views_with_registry(room_state, seat, default_registry())
+}
+
+pub fn equipped_skill_views_with_registry(
+    room_state: &RoomState,
+    seat: Seat,
+    registry: &dyn SkillRegistry,
+) -> Vec<EquippedSkillView> {
+    let Some(loadout) = seat_skill_loadout(room_state, seat) else {
+        return Vec::new();
+    };
+    loadout
+        .equipped
+        .iter()
+        .map(|skill_instance| equipped_skill_view(room_state, seat, skill_instance, registry))
+        .collect()
+}
+
+pub fn public_skill_view(room_state: &RoomState, seat: Seat) -> Option<EquippedSkillView> {
+    public_skill_view_with_registry(room_state, seat, default_registry())
+}
+
+pub fn public_skill_view_with_registry(
+    room_state: &RoomState,
+    seat: Seat,
+    registry: &dyn SkillRegistry,
+) -> Option<EquippedSkillView> {
+    seat_skill_loadout(room_state, seat)
+        .and_then(|loadout| loadout.equipped.first())
+        .map(|skill_instance| equipped_skill_view(room_state, seat, skill_instance, registry))
+}
+
+pub fn current_skill_selection_view(room_state: &RoomState, seat: Seat) -> Option<SkillSelectionView> {
+    current_skill_selection_view_with_registry(room_state, seat, default_registry())
+}
+
+pub fn current_skill_selection_view_with_registry(
+    room_state: &RoomState,
+    seat: Seat,
+    registry: &dyn SkillRegistry,
+) -> Option<SkillSelectionView> {
+    let round = room_state.round_state.as_ref()?;
+    let draft = round.skill_draft.as_ref()?;
+    let offer = draft.offers_by_seat.get(&seat)?;
+    if offer.status != SkillDraftStatus::Pending {
+        return None;
+    }
+
+    let options = offer
+        .options
+        .iter()
+        .map(|choice| offer_choice_view(room_state, seat, choice, &draft.cycle_label, registry))
+        .collect();
+
+    Some(SkillSelectionView {
+        cycle_key: draft.cycle_key.clone(),
+        cycle_label: draft.cycle_label.clone(),
+        deadline_at: draft.deadline_at.clone(),
+        title: format!("{} · 技能签启", draft.cycle_label),
+        detail: "每种技能至多持续两局；主动技能每局仅可发动一次，未用次数不会累加。".to_string(),
+        options,
+    })
+}
+
+fn interaction_kind_for_skill(skill_id: &str) -> Option<&'static str> {
+    match catalog_interaction_kind_for_skill(skill_id) {
+        Some(CatalogInteractionKind::Confirm) => Some("confirm"),
+        Some(CatalogInteractionKind::PreviewWall) => Some("preview_wall"),
+        Some(CatalogInteractionKind::SelectTarget) => Some("select_target"),
+        Some(CatalogInteractionKind::SelectHandTile) => Some("select_hand_tile"),
+        Some(CatalogInteractionKind::SelectMeld) => Some("select_meld"),
+        None => match skill_id {
+            "peek_opponent_tile" => Some("select_target"),
+            "score_boost" => Some("confirm"),
+            _ => None,
+        },
+    }
+}
+
+fn equipped_skill_view(
+    room_state: &RoomState,
+    owner: Seat,
+    skill_instance: &SkillInstance,
+    registry: &dyn SkillRegistry,
+) -> EquippedSkillView {
+    let catalog_entry = catalog_entry(&skill_instance.skill_id);
+    let name = catalog_entry
+        .map(|entry| entry.name.clone())
+        .or_else(|| registry.get(&skill_instance.skill_id).map(|definition| definition.name().to_string()))
+        .unwrap_or_else(|| "Unknown Skill".to_string());
+    let rarity = rarity_for_level(skill_instance.level);
+    let skill_kind = kind_for_skill(&skill_instance.skill_id).unwrap_or_else(|| {
+        registry
+            .get(&skill_instance.skill_id)
+            .map(|definition| match definition.activation() {
+                SkillActivation::ActiveTurn => SkillKind::Active,
+                SkillActivation::Passive => SkillKind::Passive,
+            })
+            .unwrap_or(SkillKind::Passive)
+    });
+
+    EquippedSkillView {
+        skill_id: skill_instance.skill_id.clone(),
+        serial: catalog_entry.and_then(|entry| entry.serial.clone()),
+        name: name.clone(),
+        rarity: skill_rarity_key(rarity).to_string(),
+        rarity_label: skill_rarity_label(rarity).to_string(),
+        tone: skill_rarity_tone(rarity).to_string(),
+        skill_type: match skill_kind {
+            SkillKind::Active => "active".to_string(),
+            SkillKind::Passive => "passive".to_string(),
+        },
+        type_label: match skill_kind {
+            SkillKind::Active => "主动技能".to_string(),
+            SkillKind::Passive => "被动技能".to_string(),
+        },
+        interaction_kind: interaction_kind_for_skill(&skill_instance.skill_id).map(ToString::to_string),
+        summary: catalog_entry
+            .map(|entry| entry.summary.clone())
+            .unwrap_or_else(|| name.clone()),
+        detail: detail_for_skill(&skill_instance.skill_id, skill_instance.level)
+            .map(|detail| format!("{}效果：{detail}", skill_rarity_label(rarity)))
+            .unwrap_or_default(),
+        interaction_hint: interaction_hint_for_skill(&skill_instance.skill_id),
+        tags: catalog_entry
+            .map(|entry| entry.tags.clone())
+            .unwrap_or_default(),
+        remaining_rounds: remaining_rounds_for_skill(skill_instance),
+        remaining_activations_this_round: skill_instance.charges,
+        can_activate_now: can_activate_skill_now(room_state, owner, skill_instance, skill_kind),
+    }
+}
+
+fn offer_choice_view(
+    room_state: &RoomState,
+    owner: Seat,
+    choice: &crate::core::state::SkillDraftChoice,
+    cycle_label: &str,
+    registry: &dyn SkillRegistry,
+) -> EquippedSkillView {
+    let rarity = match choice.rarity {
+        DraftSkillRarity::Common => CatalogSkillRarity::Common,
+        DraftSkillRarity::Rare => CatalogSkillRarity::Rare,
+        DraftSkillRarity::Epic => CatalogSkillRarity::Epic,
+    };
+    let level = choice.rarity.level();
+    let skill_instance = SkillInstance {
+        skill_id: choice.skill_id.clone(),
+        owner,
+        level,
+        rarity: rarity.key().to_string(),
+        remaining_rounds: 2,
+        cooldown: 0,
+        charges: match kind_for_skill(&choice.skill_id).unwrap_or(SkillKind::Passive) {
+            SkillKind::Active => 1,
+            SkillKind::Passive => 0,
+        },
+        charges_per_round: match kind_for_skill(&choice.skill_id).unwrap_or(SkillKind::Passive) {
+            SkillKind::Active => 1,
+            SkillKind::Passive => 0,
+        },
+        config: json!({
+            "remaining_rounds": 2,
+            "cycle_label": cycle_label,
+            "rarity": rarity.key(),
+        }),
+    };
+    let mut view = equipped_skill_view(room_state, owner, &skill_instance, registry);
+    view.rarity = skill_rarity_key(rarity).to_string();
+    view.rarity_label = skill_rarity_label(rarity).to_string();
+    view.tone = skill_rarity_tone(rarity).to_string();
+    view.remaining_rounds = 2;
+    view.remaining_activations_this_round = skill_instance.charges;
+    view.can_activate_now = false;
+    view
+}
+
+fn remaining_rounds_for_skill(skill_instance: &SkillInstance) -> u8 {
+    if skill_instance.remaining_rounds > 0 {
+        return skill_instance.remaining_rounds;
+    }
+    skill_instance
+        .config
+        .get("remaining_rounds")
+        .and_then(Value::as_u64)
+        .map(|value| value as u8)
+        .unwrap_or(0)
+}
+
+fn can_activate_skill_now(
+    room_state: &RoomState,
+    owner: Seat,
+    skill_instance: &SkillInstance,
+    skill_kind: SkillKind,
+) -> bool {
+    skill_kind == SkillKind::Active
+        && room_state.phase == "playing"
+        && room_state
+            .round_state
+            .as_ref()
+            .map(|round| round.current_actor == owner)
+            .unwrap_or(false)
+        && skill_instance.charges > 0
+}
+
+fn skill_rarity_label(rarity: CatalogSkillRarity) -> &'static str {
+    match rarity {
+        CatalogSkillRarity::Common => "普通",
+        CatalogSkillRarity::Rare => "稀有",
+        CatalogSkillRarity::Epic => "史诗",
+    }
+}
+
+fn skill_rarity_tone(rarity: CatalogSkillRarity) -> &'static str {
+    match rarity {
+        CatalogSkillRarity::Common => "jade",
+        CatalogSkillRarity::Rare => "azure",
+        CatalogSkillRarity::Epic => "violet",
+    }
+}
+
+fn skill_rarity_key(rarity: CatalogSkillRarity) -> &'static str {
+    match rarity {
+        CatalogSkillRarity::Common => "common",
+        CatalogSkillRarity::Rare => "rare",
+        CatalogSkillRarity::Epic => "epic",
+    }
+}
+
+pub fn begin_round_skill_draft_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    draft::begin_round_skill_draft_in_room_state(room)?;
+    if room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.skill_draft.as_ref())
+        .is_some_and(|draft| draft.is_active())
+    {
+        if let Some(round) = room.round_state.as_mut() {
+            round.pending_action = None;
+        }
+        room.pending_timeout = Some(PendingTimeout {
+            kind: "skill_draft".to_string(),
+            seat_index: next_pending_skill_draft_seat(room)
+                .or_else(|| room.round_state.as_ref().map(|round| round.current_actor))
+                .unwrap_or(0),
+            deadline_at: room
+                .round_state
+                .as_ref()
+                .and_then(|round| round.skill_draft.as_ref())
+                .map(|draft| draft.deadline_at.clone()),
+            drawn_tile_id: None,
+        });
+    } else {
+        restore_round_start_after_skill_draft_in_room_state(room)?;
+    }
+    Ok(())
+}
+
+pub fn advance_skill_loadouts_for_next_round_in_room_state(room: &mut RoomState) {
+    draft::advance_skill_loadouts_for_next_round_in_room_state(room);
+}
+
+pub fn clear_skill_loadouts_for_new_match_in_room_state(room: &mut RoomState) {
+    draft::clear_skill_loadouts_for_new_match_in_room_state(room);
+}
+
+pub fn resolve_due_skill_draft_in_room_state(room: &mut RoomState) -> Result<Vec<Value>, String> {
+    let messages = draft::resolve_due_skill_draft_in_room_state(room)?;
+    restore_round_start_after_skill_draft_in_room_state(room)?;
+    Ok(messages)
+}
+
+pub fn select_skill_for_draft_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+    skill_id: &str,
+) -> Result<crate::core::engine::EngineOutput, String> {
+    draft::select_skill_offer_in_room_state(room, seat, skill_id)?;
+    if draft::all_skill_draft_responses_complete(room) {
+        restore_round_start_after_skill_draft_in_room_state(room)?;
+    } else if let Some(deadline_at) = draft::next_skill_draft_deadline(room) {
+        room.pending_timeout = Some(PendingTimeout {
+            kind: "skill_draft".to_string(),
+            seat_index: next_pending_skill_draft_seat(room).unwrap_or(seat),
+            deadline_at: Some(deadline_at.to_string()),
+            drawn_tile_id: None,
+        });
+    }
+    Ok(crate::core::engine::EngineOutput::default())
+}
+
+pub fn decline_skill_draft_in_room_state(
+    room: &mut RoomState,
+    seat: Seat,
+) -> Result<crate::core::engine::EngineOutput, String> {
+    draft::decline_skill_offer_in_room_state(room, seat)?;
+    if draft::all_skill_draft_responses_complete(room) {
+        restore_round_start_after_skill_draft_in_room_state(room)?;
+    } else if let Some(deadline_at) = draft::next_skill_draft_deadline(room) {
+        room.pending_timeout = Some(PendingTimeout {
+            kind: "skill_draft".to_string(),
+            seat_index: next_pending_skill_draft_seat(room).unwrap_or(seat),
+            deadline_at: Some(deadline_at.to_string()),
+            drawn_tile_id: None,
+        });
+    }
+    Ok(crate::core::engine::EngineOutput::default())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SkillDraftSelectionView {
+    pub cycle_key: String,
+    pub cycle_label: String,
+    pub deadline_at: String,
+    pub title: String,
+    pub detail: String,
+    pub options: Vec<SkillDraftChoiceView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SkillDraftChoiceView {
+    pub skill_id: SkillId,
+    pub serial: Option<String>,
+    pub name: String,
+    pub rarity: String,
+    pub rarity_label: String,
+    pub tone: String,
+    #[serde(rename = "type")]
+    pub skill_type: String,
+    pub type_label: String,
+    pub interaction_kind: Option<String>,
+    pub summary: String,
+    pub detail: String,
+    pub interaction_hint: Option<String>,
+    pub tags: Vec<String>,
+    pub remaining_rounds: u8,
+    pub remaining_activations_this_round: u8,
+}
+
+pub fn skill_draft_view(room_state: &RoomState, seat: Seat) -> Option<SkillDraftSelectionView> {
+    let round = room_state.round_state.as_ref()?;
+    let draft = round.skill_draft.as_ref()?;
+    let offer = draft.offers_by_seat.get(&seat)?;
+    if offer.status != crate::core::state::SkillDraftStatus::Pending {
+        return None;
+    }
+    Some(SkillDraftSelectionView {
+        cycle_key: draft.cycle_key.clone(),
+        cycle_label: draft.cycle_label.clone(),
+        deadline_at: draft.deadline_at.clone(),
+        title: format!("{} · 技能签启", draft.cycle_label),
+        detail: "每种技能持续两局；主动技能每局仅可发动一次，未使用次数不会累加。".to_string(),
+        options: offer
+            .options
+            .iter()
+            .filter_map(|choice| {
+                let entry = catalog_entry(&choice.skill_id)?;
+                let rarity = match choice.rarity {
+                    crate::core::state::SkillRarity::Common => CatalogSkillRarity::Common,
+                    crate::core::state::SkillRarity::Rare => CatalogSkillRarity::Rare,
+                    crate::core::state::SkillRarity::Epic => CatalogSkillRarity::Epic,
+                };
+                Some(SkillDraftChoiceView {
+                    skill_id: choice.skill_id.clone(),
+                    serial: entry.serial.clone(),
+                    name: entry.name.clone(),
+                    rarity: match choice.rarity {
+                        crate::core::state::SkillRarity::Common => "common".to_string(),
+                        crate::core::state::SkillRarity::Rare => "rare".to_string(),
+                        crate::core::state::SkillRarity::Epic => "epic".to_string(),
+                    },
+                    rarity_label: choice.rarity.label().to_string(),
+                    tone: choice.rarity.tone().to_string(),
+                    skill_type: match entry.skill_type {
+                        SkillKind::Active => "active".to_string(),
+                        SkillKind::Passive => "passive".to_string(),
+                    },
+                    type_label: entry.skill_type.label().to_string(),
+                    interaction_kind: entry.interaction_kind.map(|kind| match kind {
+                        CatalogInteractionKind::Confirm => "confirm".to_string(),
+                        CatalogInteractionKind::PreviewWall => "preview_wall".to_string(),
+                        CatalogInteractionKind::SelectTarget => "select_target".to_string(),
+                        CatalogInteractionKind::SelectHandTile => "select_hand_tile".to_string(),
+                        CatalogInteractionKind::SelectMeld => "select_meld".to_string(),
+                    }),
+                    summary: entry.summary.clone(),
+                    detail: format!("{}效果：{}", choice.rarity.label(), entry.tier(rarity).detail),
+                    interaction_hint: entry.interaction_hint.clone(),
+                    tags: entry.tags.clone(),
+                    remaining_rounds: loaded_skill_catalog().selection.duration_rounds,
+                    remaining_activations_this_round: entry.skill_type.activation_limit_per_round(),
+                })
+            })
+            .collect(),
+    })
+}
+
+fn restore_round_start_after_skill_draft_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    draft::clear_skill_draft_in_room_state(room);
+    let round = room
+        .round_state
+        .as_mut()
+        .ok_or_else(|| "round_not_ready".to_string())?;
+    let dealer_seat = round.dealer_seat;
+    let dealer_drawn_tile_id = round.last_action_context.tile_id.clone();
+    let dealer_first_flower_id = round
+        .players
+        .get(dealer_seat)
+        .and_then(|player| player.concealed_tiles.iter().find(|tile| tile.kind == "flower"))
+        .map(|tile| tile.tile_id.clone());
+    let has_any_flower = round
+        .players
+        .iter()
+        .any(|player| player.concealed_tiles.iter().any(|tile| tile.kind == "flower"));
+    round.pending_action = if has_any_flower {
+        round.score_trackers.opening_flowers_completed = false;
+        Some(PendingAction::OpeningFlowers(crate::core::state::OpeningFlowersAction {
+            dealer_seat,
+        }))
+    } else {
+        round.score_trackers.opening_flowers_completed = true;
+        None
+    };
+    room.pending_timeout = Some(PendingTimeout {
+        kind: if has_any_flower {
+            "opening_flowers".to_string()
+        } else {
+            "active_turn".to_string()
+        },
+        seat_index: dealer_seat,
+        deadline_at: Some(crate::app::now_iso()),
+        drawn_tile_id: if has_any_flower {
+            dealer_first_flower_id
+        } else {
+            dealer_drawn_tile_id
+        },
+    });
+    Ok(())
+}
+
+fn next_pending_skill_draft_seat(room: &RoomState) -> Option<Seat> {
+    room.round_state
+        .as_ref()
+        .and_then(|round| round.skill_draft.as_ref())
+        .and_then(|draft| {
+            draft.offers_by_seat.iter().find_map(|(seat, offer)| {
+                (offer.status == SkillDraftStatus::Pending).then_some(*seat)
+            })
+        })
 }
 
 fn update_skill_round_state<F>(room: &mut Value, mut mutate: F) -> Result<(), String>
@@ -1569,8 +2063,11 @@ mod tests {
                                 skill_id: (*skill_id).to_string(),
                                 owner: 0,
                                 level: 1,
+                                rarity: "common".to_string(),
+                                remaining_rounds: 2,
                                 cooldown: 0,
                                 charges: 1,
+                                charges_per_round: 1,
                                 config: json!({}),
                             })
                             .collect(),
@@ -1587,6 +2084,7 @@ mod tests {
                 },
                 effect_state: EffectState::default(),
                 restricted_discard_tile_key: None,
+                skill_draft: None,
                 skill_trackers: Default::default(),
             }),
             pending_timeout: None,

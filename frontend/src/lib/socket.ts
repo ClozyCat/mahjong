@@ -1,4 +1,4 @@
-import type { BackendActionType, ClientMessage, QuickChatEmoji, ServerMessage } from '../types/match';
+import type { ActionRequestType, ClientMessage, QuickChatEmoji, ServerMessage } from '../types/match';
 
 function normalizeBaseUrl(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, '');
@@ -91,7 +91,7 @@ export function createRestartMatchMessage(): ClientMessage {
   };
 }
 
-export function createActionRequestMessage(actionType: BackendActionType, tileIds?: string[]): ClientMessage {
+export function createActionRequestMessage(actionType: ActionRequestType, tileIds?: string[]): ClientMessage {
   return {
     type: 'action_request',
     payload: {

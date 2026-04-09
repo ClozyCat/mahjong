@@ -12,13 +12,11 @@ import {
 } from './lib/kongSelection';
 import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
 import {
+  buildSkillActivationRequest,
   closeSkillActivation,
-  confirmSkillActivation,
   createInitialSkillRuntimeState,
   createSkillEnhancedBattleViewModel,
-  declineCurrentSkillOffer,
   openSkillActivation,
-  selectSkillForCurrentCycle,
   syncSkillRuntimeWithSession,
   updateSkillActivationSelection,
 } from './lib/skillSystem';
@@ -124,7 +122,9 @@ function getClaimSelectionSignature(state: SessionState) {
     return options.length > 0 ? `claim:${pendingAction.deadline_at}:${options.slice().sort().join(',')}` : null;
   }
 
-  const promptOptions = state.latestActionPrompt?.payload.options ?? [];
+  const promptOptions = (state.latestActionPrompt?.payload.options ?? []).filter(
+    (option): option is BackendActionType => CLAIM_ACTION_IDS.includes(option as ClaimActionId) || option === 'pass',
+  );
   if (promptOptions.includes('pass') && hasClaimAction(promptOptions)) {
     const options = promptOptions.filter((option): option is ClaimActionId => CLAIM_ACTION_IDS.includes(option as ClaimActionId));
     return options.length > 0 ? `claim:${state.latestActionPrompt?.payload.deadline_at ?? ''}:${options.slice().sort().join(',')}` : null;
@@ -770,25 +770,6 @@ export default function App() {
   });
   const skillEnhancedViewModel = createSkillEnhancedBattleViewModel(viewModel, state, skillRuntime);
 
-  useEffect(() => {
-    const skillSelection = skillEnhancedViewModel.skillSelection;
-    if (!skillSelection) {
-      return undefined;
-    }
-
-    const remainingMs = new Date(skillSelection.deadlineAt).getTime() - Date.now();
-    if (remainingMs <= 0) {
-      setSkillRuntime((currentRuntime) => declineCurrentSkillOffer(currentRuntime, state));
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => {
-      setSkillRuntime((currentRuntime) => declineCurrentSkillOffer(currentRuntime, state));
-    }, remainingMs);
-
-    return () => window.clearTimeout(timer);
-  }, [skillEnhancedViewModel.skillSelection?.cycleKey, skillEnhancedViewModel.skillSelection?.deadlineAt, state]);
-
   if (!state.roomSnapshot) {
     return (
       <ConnectGate
@@ -821,10 +802,25 @@ export default function App() {
       onClaimCandidateSelect={handleClaimCandidateSelect}
       onClaimCandidateActivate={handleClaimCandidateActivate}
       onAction={handleAction}
-      onSkillSelect={(skillId) => setSkillRuntime((currentRuntime) => selectSkillForCurrentCycle(currentRuntime, state, skillId))}
-      onSkillDecline={() => setSkillRuntime((currentRuntime) => declineCurrentSkillOffer(currentRuntime, state))}
+      onSkillSelect={(skillId) => {
+        sendMessage(serializeClientMessage(createActionRequestMessage('select_skill', [skillId])));
+      }}
+      onSkillDecline={() => {
+        sendMessage(serializeClientMessage(createActionRequestMessage('decline_skill')));
+      }}
       onCloseSkillActivation={() => setSkillRuntime((currentRuntime) => closeSkillActivation(currentRuntime))}
-      onConfirmSkillActivation={() => setSkillRuntime((currentRuntime) => confirmSkillActivation(currentRuntime, state))}
+      onConfirmSkillActivation={() => {
+        const request = buildSkillActivationRequest(skillRuntime);
+        if (!request) {
+          return;
+        }
+
+        if (!sendMessage(serializeClientMessage(createActionRequestMessage(request.actionType, request.tileIds)))) {
+          return;
+        }
+
+        setSkillRuntime((currentRuntime) => closeSkillActivation(currentRuntime));
+      }}
       onSkillActivationTargetSelect={(seatIndex) =>
         setSkillRuntime((currentRuntime) =>
           updateSkillActivationSelection(currentRuntime, {

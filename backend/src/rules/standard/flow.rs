@@ -12,6 +12,8 @@ use crate::core::engine::reducer::update_room_state;
 use crate::core::tile::Tile;
 use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState, SkillLoadout};
 use crate::rules::skills::{
+    advance_skill_loadouts_for_next_round_in_room_state, begin_round_skill_draft_in_room_state,
+    clear_skill_loadouts_for_new_match_in_room_state,
     note_tracker_draw, note_tracker_draw_in_room_state, sync_round_skill_trackers,
     sync_round_skill_trackers_in_room_state,
 };
@@ -68,16 +70,7 @@ pub fn start_match_in_room_state(
     dealer_seat: usize,
     seed: u64,
 ) -> Result<(), String> {
-    let enforce_minimum_eight_fan = room.enforce_minimum_eight_fan;
-    start_round_in_room_state(
-        room,
-        dealer_seat,
-        "east",
-        format!("east-1-dealer-{dealer_seat}-{seed}"),
-        enforce_minimum_eight_fan,
-        seed,
-    );
-
+    clear_skill_loadouts_for_new_match_in_room_state(room);
     let mut cumulative_scores = BTreeMap::new();
     for seat in 0..MAX_SEATS {
         cumulative_scores.insert(seat, 0);
@@ -91,6 +84,15 @@ pub fn start_match_in_room_state(
         last_completed_round_id: None,
         skill_trackers: Default::default(),
     });
+    let enforce_minimum_eight_fan = room.enforce_minimum_eight_fan;
+    start_round_in_room_state(
+        room,
+        dealer_seat,
+        "east",
+        format!("east-1-dealer-{dealer_seat}-{seed}"),
+        enforce_minimum_eight_fan,
+        seed,
+    );
     Ok(())
 }
 
@@ -541,6 +543,7 @@ fn start_round_in_room_state(
     room.round_state = Some(round_state);
     room.pending_timeout = Some(pending_timeout);
     room.continue_action = None;
+    let _ = begin_round_skill_draft_in_room_state(room);
 }
 
 #[cfg(test)]
@@ -1021,6 +1024,7 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         return Ok(());
     }
 
+    advance_skill_loadouts_for_next_round_in_room_state(room);
     let round_id = format!(
         "{next_wind}-{next_hand_number}-dealer-{next_dealer}-{}",
         rand::random::<u64>()

@@ -72,6 +72,16 @@ pub fn parse_player_command(
             tile_ids: tile_ids.to_vec(),
         }),
         "pass" => Ok(PlayerAction::Pass),
+        "select_skill" => {
+            if tile_ids.len() != 1 {
+                Err("invalid_action".to_string())
+            } else {
+                Ok(PlayerAction::SelectSkill {
+                    skill_id: tile_ids[0].clone(),
+                })
+            }
+        }
+        "decline_skill" => Ok(PlayerAction::DeclineSkillSelection),
         _ if action_type.starts_with("skill:") => {
             let skill_id = action_type.trim_start_matches("skill:");
             if skill_id.is_empty() {
@@ -394,6 +404,23 @@ mod tests {
                     skill_id: "peek_opponent_tile".to_string(),
                     target: Some(2),
                     tile_ids: vec!["w1#0".to_string()],
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn parses_select_skill_command() {
+        let command = parse_player_command(0, "select_skill", &[String::from("wu_zhong_sheng_you")])
+            .expect("select skill should be recognized")
+            .expect("select skill should parse");
+
+        assert_eq!(
+            command,
+            GameCommand::PlayerAction {
+                actor: 0,
+                action: PlayerAction::SelectSkill {
+                    skill_id: "wu_zhong_sheng_you".to_string(),
                 }
             }
         );

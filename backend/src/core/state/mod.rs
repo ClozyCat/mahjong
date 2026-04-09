@@ -5,6 +5,7 @@ pub mod player;
 pub mod room;
 pub mod round;
 pub mod settlement;
+pub mod skill_draft;
 pub mod skill_trackers;
 pub mod wall;
 
@@ -23,6 +24,7 @@ pub use settlement::{
     RoundSettlement, SettlementFanBreakdownEntry, SettlementKongScoreDetailEntry,
     SettlementScoreDelta,
 };
+pub use skill_draft::{SkillDraftChoice, SkillDraftOffer, SkillDraftState, SkillDraftStatus, SkillRarity};
 pub use skill_trackers::{
     LianHuanJiTracker, MatchSkillTrackers, RoundSkillTrackers, ZouWeiShangJiTracker,
 };

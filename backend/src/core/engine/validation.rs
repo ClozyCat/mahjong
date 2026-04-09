@@ -13,6 +13,7 @@ pub enum LocalPlayerActionKind {
     SelfKong,
     RobKongPass,
     OpeningFlowersPass,
+    SkillDraftSelection,
     ActivateSkill,
 }
 
@@ -49,6 +50,10 @@ pub fn classify_local_player_action(
             } else {
                 None
             }
+        }
+        PlayerAction::SelectSkill { .. } | PlayerAction::DeclineSkillSelection => {
+            skill_draft_selection_supported(context, actor)
+                .then_some(LocalPlayerActionKind::SkillDraftSelection)
         }
         PlayerAction::ActivateSkill { .. } => Some(LocalPlayerActionKind::ActivateSkill),
     }
@@ -133,6 +138,28 @@ fn opening_flowers_pass_supported(context: &EngineContext, actor: Seat) -> bool 
                     .all(|tile| tile.kind != "flower")
             })
             .unwrap_or(false)
+}
+
+fn skill_draft_selection_supported(context: &EngineContext, actor: Seat) -> bool {
+    if context.room.phase != "playing" {
+        return false;
+    }
+    if context
+        .room
+        .pending_timeout
+        .as_ref()
+        .map(|timeout| timeout.kind.as_str())
+        != Some("skill_draft")
+    {
+        return false;
+    }
+    context
+        .room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.skill_draft.as_ref())
+        .and_then(|draft| draft.offers_by_seat.get(&actor))
+        .is_some_and(|offer| offer.status == crate::core::state::SkillDraftStatus::Pending)
 }
 
 fn self_kong_supported(context: &EngineContext, actor: Seat) -> bool {

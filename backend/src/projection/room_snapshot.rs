@@ -9,7 +9,9 @@ use crate::core::state::{
 };
 use crate::projection::SeatProjectionSupport;
 use crate::rules::skills::{
-    EffectInstance, KnowledgeEffect, build_skill_projection, skill_action_options,
+    EffectInstance, EquippedSkillView, KnowledgeEffect, build_skill_projection,
+    equipped_skill_views, public_skill_view, skill_action_options, skill_draft_view,
+    SkillDraftSelectionView,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,7 +53,9 @@ struct PlayerRoundView {
     wall_tiles_remaining: usize,
     last_discard: Option<String>,
     pending_action: Option<PendingActionView>,
+    skill_draft: Option<SkillDraftSelectionView>,
     score_state: ScoreStateView,
+    equipped_skills: Vec<EquippedSkillView>,
     visible_effects: Vec<VisibleEffectView>,
     private_knowledge: Vec<KnowledgeView>,
     players: Vec<PlayerSeatView>,
@@ -67,6 +71,7 @@ struct PlayerSeatView {
     melds: Vec<Vec<String>>,
     flowers: Vec<String>,
     discards: Vec<String>,
+    equipped_skill: Option<EquippedSkillView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -145,6 +150,12 @@ pub enum PendingActionView {
         tile_key: Option<String>,
         deadline_at: Option<String>,
         responded_seats: Vec<Seat>,
+        options: Vec<String>,
+    },
+    #[serde(rename = "skill_draft")]
+    SkillDraft {
+        seat_index: Seat,
+        deadline_at: Option<String>,
         options: Vec<String>,
     },
 }
@@ -275,6 +286,11 @@ pub fn build_pending_action_view(
                 options,
             })
         }
+        "skill_draft" => skill_draft_view(state, local_seat).map(|selection| PendingActionView::SkillDraft {
+            seat_index: local_seat,
+            deadline_at: Some(selection.deadline_at),
+            options: vec!["select_skill".to_string(), "decline_skill".to_string()],
+        }),
         _ => None,
     }
 }
@@ -348,6 +364,7 @@ fn private_round_state(
                     .iter()
                     .map(|tile| tile.tile_key.clone())
                     .collect(),
+                equipped_skill: public_skill_view(state, player.seat),
             }
         })
         .collect();
@@ -363,7 +380,9 @@ fn private_round_state(
             .as_ref()
             .map(|tile| tile.tile_key.clone()),
         pending_action: build_pending_action_view(state, local_seat, support),
+        skill_draft: skill_draft_view(state, local_seat),
         score_state: score_state_view(state),
+        equipped_skills: equipped_skill_views(state, local_seat),
         visible_effects: visible_effects(skill_projection.visible_effects.as_slice()),
         private_knowledge: private_knowledge(skill_projection.private_knowledge.as_slice()),
         players: private_players,

@@ -311,6 +311,7 @@ mod tests {
                 },
                 effect_state: Default::default(),
                 restricted_discard_tile_key: Some("w1".to_string()),
+                skill_draft: None,
                 skill_trackers: Default::default(),
             }),
             pending_timeout: Some(PendingTimeout {

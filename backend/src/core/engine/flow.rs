@@ -103,6 +103,14 @@ fn try_handle_player_action_command(
         (LocalPlayerActionKind::OpeningFlowersPass, PlayerAction::Pass) => Some(
             apply_opening_flowers_pass_output_in_room_state(room, seat_index),
         ),
+        (
+            LocalPlayerActionKind::SkillDraftSelection,
+            PlayerAction::SelectSkill { skill_id },
+        ) => Some(skills::select_skill_for_draft_in_room_state(room, seat_index, &skill_id)),
+        (
+            LocalPlayerActionKind::SkillDraftSelection,
+            PlayerAction::DeclineSkillSelection,
+        ) => Some(skills::decline_skill_draft_in_room_state(room, seat_index)),
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Chow { tile_ids }) => Some(
             apply_claim_window_action_in_room_state(room, seat_index, "chow", &tile_ids),
         ),

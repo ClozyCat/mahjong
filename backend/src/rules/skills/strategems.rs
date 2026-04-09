@@ -12,6 +12,7 @@ use super::{
     RuleContext, RuleHook, ScoreHookRequest, SkillActivation, SkillContext, SkillDefinition,
     SkillProjection,
 };
+use super::catalog::{value_i64_for_skill, value_usize_for_skill};
 
 const STRATAGEMS: [(&str, &str); 36] = [
     ("man_tian_guo_hai", "Mantian Guohai"),
@@ -254,84 +255,24 @@ impl SkillDefinition for StratagemSkill {
     }
 }
 
-fn scaled_values(level: u8, normal: i64, rare: i64, epic: i64) -> i64 {
-    match level {
-        0 | 1 => normal,
-        2 => rare,
-        _ => epic,
-    }
-}
-
 fn gain_value(skill_id: &str, level: u8) -> i64 {
-    match skill_id {
-        "man_tian_guo_hai" | "yi_yi_dai_lao" | "da_cao_jing_she" | "jie_shi_huan_hun"
-        | "diao_hu_li_shan" | "hun_shui_mo_yu" | "shang_wu_chou_ti" | "fan_ke_wei_zhu"
-        | "fan_jian_ji" | "ku_rou_ji" => scaled_values(level, 2, 5, 12),
-        "wei_wei_jiu_zhao" => scaled_values(level, 1, 3, 8),
-        "jie_dao_sha_ren" => scaled_values(level, 1, 2, 4),
-        "chen_huo_da_jie" | "ge_an_guan_huo" | "xiao_li_cang_dao" | "qin_zei_qin_wang"
-        | "fu_di_chou_xin" | "jia_dao_fa_guo" | "kong_cheng_ji" => scaled_values(level, 3, 6, 15),
-        "wu_zhong_sheng_you" => scaled_values(level, 2, 5, 12),
-        "li_dai_tao_jiang" => scaled_values(level, 3, 8, 15),
-        "shun_shou_qian_yang" => scaled_values(level, 4, 8, 16),
-        "yu_qin_gu_zong" => scaled_values(level, 3, 6, 15),
-        "pao_zhuan_yin_yu" => scaled_values(level, 2, 5, 12),
-        "tou_liang_huan_zhu" => scaled_values(level, 3, 6, 12),
-        "zhi_sang_ma_huai" => scaled_values(level, 2, 5, 12),
-        "jia_chi_bu_dian" => scaled_values(level, 2, 5, 10),
-        "shu_shang_kai_hua" => scaled_values(level, 1, 2, 3),
-        "mei_ren_ji" => scaled_values(level, 1, 3, 6),
-        "lian_huan_ji" => scaled_values(level, 2, 5, 12),
-        _ => 0,
-    }
+    value_i64_for_skill(skill_id, level, "gain")
 }
 
 fn loss_value(skill_id: &str, level: u8) -> i64 {
-    match skill_id {
-        "man_tian_guo_hai" | "yi_yi_dai_lao" | "da_cao_jing_she" | "jie_shi_huan_hun"
-        | "diao_hu_li_shan" | "hun_shui_mo_yu" | "shang_wu_chou_ti" | "fan_ke_wei_zhu"
-        | "fan_jian_ji" | "ku_rou_ji" => scaled_values(level, 1, 3, 8),
-        "wei_wei_jiu_zhao" => scaled_values(level, 1, 2, 5),
-        "jie_dao_sha_ren" => scaled_values(level, 1, 2, 3),
-        "chen_huo_da_jie" | "ge_an_guan_huo" | "xiao_li_cang_dao" | "qin_zei_qin_wang"
-        | "fu_di_chou_xin" | "jia_dao_fa_guo" | "kong_cheng_ji" => scaled_values(level, 1, 3, 8),
-        "wu_zhong_sheng_you" => scaled_values(level, 1, 3, 8),
-        "an_du_chen_cang" => scaled_values(level, 1, 3, 6),
-        "li_dai_tao_jiang" => scaled_values(level, 2, 5, 10),
-        "shun_shou_qian_yang" => scaled_values(level, 2, 4, 10),
-        "yu_qin_gu_zong" => scaled_values(level, 2, 4, 10),
-        "jin_chan_tuo_qiao" => scaled_values(level, 1, 3, 8),
-        "tou_liang_huan_zhu" => scaled_values(level, 3, 6, 12),
-        "jia_chi_bu_dian" => scaled_values(level, 2, 5, 10),
-        "shu_shang_kai_hua" => scaled_values(level, 1, 2, 5),
-        "mei_ren_ji" => scaled_values(level, 1, 3, 8),
-        "lian_huan_ji" => scaled_values(level, 2, 4, 10),
-        "zou_wei_shang_ji" => scaled_values(level, 2, 5, 12),
-        _ => 0,
-    }
+    value_i64_for_skill(skill_id, level, "loss")
 }
 
 fn minimum_fan_override(level: u8) -> i64 {
-    match level {
-        0 | 1 => 7,
-        2 => 6,
-        _ => 5,
-    }
+    value_i64_for_skill("jia_chi_bu_dian", level, "minimum_fan_override")
 }
 
 fn preview_count(level: u8) -> usize {
-    match level {
-        0 | 1 => 1,
-        2 => 2,
-        _ => 3,
-    }
+    value_usize_for_skill("sheng_dong_ji_xi", level, "preview_count")
 }
 
 fn preview_minimum_penalty(level: u8) -> i64 {
-    match level {
-        0 | 1 | 2 => 1,
-        _ => 2,
-    }
+    value_i64_for_skill("sheng_dong_ji_xi", level, "minimum_fan_penalty")
 }
 
 fn active_effects<'a>(ctx: &'a RuleContext<'_>, effect_type: &'a str) -> Vec<&'a EffectInstance> {

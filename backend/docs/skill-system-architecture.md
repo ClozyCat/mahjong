@@ -849,7 +849,26 @@ ScoreResult
 
 ## 17. Recommended Next Steps
 
-### 17.1 First Priority: Retire The Remaining Outer JSON Compatibility Boundary
+### 17.1 Immediate Delivery Priority (2026-04-09): Connect The Frontend To The Real Skill Runtime
+
+Recommended target:
+
+- stop treating the frontend skill layer as an independent local runtime and move it onto backend-driven equipped-skill state plus real `skill:*` actions
+- keep this step intentionally narrow: integrate equipped-skill display, activation affordances, and post-activation state/effect rendering before attempting any frontend-side skill draft / offer / selection loop
+- if frontend display metadata is still partially catalog-backed for a transition period, keep the backend as the only source of runtime truth for charges, activation availability, effects, private knowledge, and action legality
+
+Goal:
+
+- remove the current split-brain state where backend skill execution is real but frontend skill selection/activation UX is still largely simulated
+- prioritize player-visible end-to-end leverage over further backend-only internal cleanup whose remaining scope is now mostly test shims and intentionally dynamic payloads
+
+Architectural read behind this priority:
+
+- production backend state, persistence, request intake, and runtime mutation are already typed-first enough that the biggest remaining product gap is no longer internal room-state typing
+- the main mismatch has shifted outward: the backend owns the real equipped-skill runtime, while the frontend still carries a separate catalog/runtime for offers, chosen skills, and activation state
+- because backend does not yet implement a live skill-offer / draft loop, the right near-term integration target is **equipped skills only**, not a forced merge of the frontend's local offer-selection mechanics into the current server
+
+### 17.2 First Cleanup Priority: Retire The Remaining Outer JSON Compatibility Boundary
 
 Recommended target:
 
@@ -862,7 +881,7 @@ Goal:
 - make `RoomState` / `RoundState` the default source of truth not only at runtime, but also at persistence and protocol boundaries
 - remove the last architectural mismatch between the typed core and the still-JSON outward contracts
 
-### 17.2 Second Priority: Deepen `core/engine/*` Separation
+### 17.3 Second Cleanup Priority: Deepen `core/engine/*` Separation
 
 Recommended target:
 
@@ -874,7 +893,7 @@ Goal:
 
 - stabilize the game core boundary so rules, app runtime, and compatibility layers stop leaning on one another's internal details
 
-### 17.3 Third Priority: Deepen `rules/scoring/*` Internal Separation
+### 17.4 Third Cleanup Priority: Deepen `rules/scoring/*` Internal Separation
 
 Recommended target:
 
@@ -888,7 +907,7 @@ Goal:
 - make future `ScoreModifier` / skill-driven scoring adjustments land on a stable scoring boundary
 - reduce the amount of scoring-specific domain data and fan-table definition still co-located in a single file
 
-### 17.4 Fourth Priority: Finish The Remaining Transitional Facades
+### 17.5 Fourth Cleanup Priority: Finish The Remaining Transitional Facades
 
 Recommended target:
 

@@ -161,6 +161,7 @@ pub fn plan_round_start_payload(
         },
         effect_state: EffectState::default(),
         restricted_discard_tile_key: None,
+        skill_draft: None,
         skill_trackers: Default::default(),
     };
 
@@ -195,6 +196,21 @@ pub fn compute_pending_timeout_value(
     let Some(round) = state.round_state.as_ref() else {
         return None;
     };
+    if let Some(draft) = round.skill_draft.as_ref().filter(|draft| draft.is_active()) {
+        let first_pending_seat = draft
+            .offers_by_seat
+            .iter()
+            .find_map(|(seat, offer)| {
+                (offer.status == crate::core::state::SkillDraftStatus::Pending).then_some(*seat)
+            })
+            .unwrap_or(round.current_actor);
+        return Some(PendingTimeout {
+            kind: "skill_draft".to_string(),
+            seat_index: first_pending_seat,
+            deadline_at: Some(draft.deadline_at.clone()),
+            drawn_tile_id: None,
+        });
+    }
     match round.pending_action.as_ref() {
         Some(PendingAction::OpeningFlowers(_)) => Some(PendingTimeout {
             kind: "opening_flowers".to_string(),

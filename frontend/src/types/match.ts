@@ -15,6 +15,9 @@ export type RoomPhase = 'waiting' | 'playing' | 'settlement' | 'finished';
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'error';
 
 export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
+export type SkillActionType = 'select_skill' | 'decline_skill' | `skill:${string}`;
+export type PromptActionType = BackendActionType | 'select_skill' | 'decline_skill';
+export type ActionRequestType = BackendActionType | SkillActionType;
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
 export type QuickChatEmoji = string;
 export type SkillRarity = 'common' | 'rare' | 'epic';
@@ -80,6 +83,35 @@ export interface PrivatePlayerState {
   melds: string[][];
   flowers: string[];
   discards: string[];
+  equipped_skill?: BackendSkillView | null;
+}
+
+export interface BackendSkillView {
+  skill_id: string;
+  serial?: string | null;
+  name: string;
+  rarity: SkillRarity;
+  rarity_label: string;
+  tone: 'jade' | 'azure' | 'violet';
+  type: 'active' | 'passive';
+  type_label: string;
+  interaction_kind?: SkillInteractionKind | null;
+  summary: string;
+  detail: string;
+  interaction_hint?: string | null;
+  tags: string[];
+  remaining_rounds: number;
+  remaining_activations_this_round: number;
+  can_activate_now?: boolean;
+}
+
+export interface BackendSkillSelectionView {
+  cycle_key: string;
+  cycle_label: string;
+  deadline_at: string;
+  title: string;
+  detail: string;
+  options: BackendSkillView[];
 }
 
 export type PendingAction =
@@ -87,7 +119,7 @@ export type PendingAction =
       type: 'opening_flowers';
       seat_index: number;
       deadline_at: string;
-      options: BackendActionType[];
+      options: PromptActionType[];
     }
   | {
       type: 'active_turn';
@@ -95,14 +127,14 @@ export type PendingAction =
       deadline_at: string;
       drawn_tile_id?: string;
       restricted_discard_tile_ids?: string[];
-      options: BackendActionType[];
+      options: PromptActionType[];
     }
   | {
       type: 'claim_window';
       discarder_seat: number;
       deadline_at: string;
       responded_seats: number[];
-      options: BackendActionType[];
+      options: PromptActionType[];
     }
   | {
       type: 'rob_kong_window';
@@ -110,7 +142,13 @@ export type PendingAction =
       tile_key: string;
       deadline_at: string;
       responded_seats: number[];
-      options: BackendActionType[];
+      options: PromptActionType[];
+    }
+  | {
+      type: 'skill_draft';
+      seat_index: number;
+      deadline_at: string;
+      options: PromptActionType[];
     }
   | Record<string, unknown>;
 
@@ -122,6 +160,8 @@ export interface PrivateState {
   wall_tiles_remaining?: number;
   last_discard?: string | null;
   pending_action?: PendingAction | null;
+  skill_draft?: BackendSkillSelectionView | null;
+  equipped_skills?: BackendSkillView[] | null;
   score_state?: ScoreState | null;
   players: PrivatePlayerState[];
 }
@@ -189,7 +229,7 @@ export interface ActionPromptMessage {
   type: 'action_prompt';
   payload: {
     seat_index: number;
-    options: BackendActionType[];
+    options: PromptActionType[];
     deadline_at: string;
   };
 }
@@ -264,7 +304,7 @@ export type ClientMessage =
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
   | { type: 'restart_match'; payload: Record<string, never> }
-  | { type: 'action_request'; payload: { action_type: BackendActionType; tile_ids: string[] } }
+  | { type: 'action_request'; payload: { action_type: ActionRequestType; tile_ids: string[] } }
   | { type: 'quick_chat'; payload: { target_seat: number; emoji: QuickChatEmoji } }
   | { type: 'heartbeat'; payload: { sent_at: string } };
 
@@ -322,6 +362,7 @@ export interface BattleActionView {
 
 export interface PlayerSkillView {
   skillId: string;
+  serial?: string | null;
   name: string;
   rarity: SkillRarity;
   rarityLabel: string;
@@ -330,11 +371,13 @@ export interface PlayerSkillView {
   typeLabel: string;
   summary: string;
   detail: string;
+  interactionKind?: SkillInteractionKind | null;
   interactionHint?: string | null;
   tags: string[];
-  cycleLabel: string;
+  cycleLabel?: string | null;
   remainingRounds: number;
   remainingActivationsThisRound: number;
+  canActivateNow?: boolean;
 }
 
 export interface PlayerView {

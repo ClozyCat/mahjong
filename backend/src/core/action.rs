@@ -48,6 +48,10 @@ pub enum PlayerAction {
     },
     Hu,
     Pass,
+    SelectSkill {
+        skill_id: SkillId,
+    },
+    DeclineSkillSelection,
     ActivateSkill {
         skill_id: SkillId,
         target: Option<Seat>,
