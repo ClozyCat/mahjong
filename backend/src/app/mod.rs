@@ -375,6 +375,25 @@ pub(crate) fn first_open_seat_index(room: &RoomState) -> Option<usize> {
     (0..MAX_SEATS).find(|seat_index| !occupied.contains(seat_index))
 }
 
+pub(crate) fn random_open_seat_index(room: &RoomState) -> Option<usize> {
+    let mut rng = rand::rng();
+    random_open_seat_index_with_rng(room, &mut rng)
+}
+
+pub(crate) fn random_open_seat_index_with_rng<R: Rng + ?Sized>(
+    room: &RoomState,
+    rng: &mut R,
+) -> Option<usize> {
+    let occupied = occupied_seats(room);
+    let open_seats: Vec<_> = (0..MAX_SEATS)
+        .filter(|seat_index| !occupied.contains(seat_index))
+        .collect();
+    if open_seats.is_empty() {
+        return None;
+    }
+    Some(open_seats[rng.random_range(0..open_seats.len())])
+}
+
 pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'static str> {
     if room_phase(room) != "waiting" || room_has_round_state(room) {
         return Err("room_already_started");

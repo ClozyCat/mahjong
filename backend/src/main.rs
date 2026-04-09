@@ -23,6 +23,7 @@ mod tests {
 
     use anyhow::Result;
     use chrono::Utc;
+    use rand::{SeedableRng, rngs::StdRng};
     use serde_json::{Value, json};
     use tokio::sync::{Notify, mpsc};
 
@@ -34,8 +35,8 @@ mod tests {
     use crate::app::{
         AppContext, ConnectionHandle, Settings, add_bot_to_waiting_room, initial_room_state,
         maybe_start_test_match, now_iso, occupied_seats, parse_datetime,
-        remove_bot_from_waiting_room, room_has_round_state, seat_matches_reconnect_credentials,
-        send_outbound,
+        random_open_seat_index_with_rng, remove_bot_from_waiting_room, room_has_round_state,
+        seat_matches_reconnect_credentials, send_outbound,
     };
     use crate::core::state::{RoomState, SeatState};
 
@@ -469,6 +470,59 @@ mod tests {
             7,
             "token-new"
         ));
+    }
+
+    #[test]
+    fn random_open_seat_index_can_pick_different_open_seats() {
+        let room = room_state(json!({
+            "table_code": "ROOM42",
+            "phase": "waiting",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
+                {
+                    "seat_index": 1,
+                    "nickname": "Alice",
+                    "reconnect_token": "token-1",
+                    "player_session_id": 1,
+                    "connected": true,
+                    "ready": true,
+                    "is_bot": false,
+                    "seat_type": "human",
+                    "bot_persona": Value::Null,
+                    "bot_aggression": Value::Null,
+                    "disconnect_deadline_at": Value::Null
+                },
+                {
+                    "seat_index": 3,
+                    "nickname": "Bob",
+                    "reconnect_token": "token-2",
+                    "player_session_id": 2,
+                    "connected": true,
+                    "ready": true,
+                    "is_bot": false,
+                    "seat_type": "human",
+                    "bot_persona": Value::Null,
+                    "bot_aggression": Value::Null,
+                    "disconnect_deadline_at": Value::Null
+                }
+            ],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
+
+        let mut rng = StdRng::seed_from_u64(7);
+        let picks: HashSet<_> = (0..16)
+            .map(|_| {
+                random_open_seat_index_with_rng(&room, &mut rng)
+                    .expect("room should still have open seats")
+            })
+            .collect();
+
+        assert_eq!(picks, HashSet::from([0, 2]));
     }
 
     #[tokio::test(flavor = "current_thread")]
