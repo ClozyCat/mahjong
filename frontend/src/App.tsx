@@ -151,6 +151,10 @@ function getDefaultClaimCandidateSelection(state: SessionState) {
 }
 
 function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
+  if (state.optimisticDiscard) {
+    return false;
+  }
+
   if (
     hasLocalTurnKongPrompt ||
     canUseClaimMultiSelect(state) ||
@@ -177,6 +181,19 @@ function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
   }
 
   return state.latestActionPrompt?.payload.seat_index === localSeat && state.latestActionPrompt.payload.options.includes('discard');
+}
+
+function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
+  return (
+    actionId === 'activate_skill' ||
+    actionId === 'discard' ||
+    actionId === 'flower' ||
+    actionId === 'kong' ||
+    actionId === 'hu' ||
+    actionId === 'chow' ||
+    actionId === 'pung' ||
+    actionId === 'pass'
+  );
 }
 
 export default function App() {
@@ -580,6 +597,10 @@ export default function App() {
   }
 
   function handleTileSelect(tileId: string) {
+    if (state.optimisticDiscard) {
+      return;
+    }
+
     if (
       canUseClaimMultiSelect(state) ||
       hasLocalTurnKongPrompt ||
@@ -608,6 +629,10 @@ export default function App() {
   }
 
   function handleAction(actionId: BattleActionId) {
+    if (state.optimisticDiscard && isActionBlockedByOptimisticDiscard(actionId)) {
+      return;
+    }
+
     if (actionId === 'activate_skill') {
       setSkillRuntime((currentRuntime) => openSkillActivation(currentRuntime, state));
       return;
@@ -643,7 +668,12 @@ export default function App() {
         return;
       }
 
-      sendMessage(serializeClientMessage(createActionRequestMessage(actionId, state.selectedTileIds)));
+      const discardTileId = state.selectedTileIds[0];
+      if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId, [discardTileId])))) {
+        return;
+      }
+
+      dispatch({ type: 'queue_optimistic_discard', tileId: discardTileId });
       dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
       return;
     }
@@ -711,6 +741,10 @@ export default function App() {
   }
 
   function handleClaimCandidateActivate(actionId: ClaimActionId, tileIds: string[]) {
+    if (state.optimisticDiscard) {
+      return;
+    }
+
     if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId, tileIds)))) {
       return;
     }
@@ -735,6 +769,7 @@ export default function App() {
       return;
     }
 
+    dispatch({ type: 'queue_optimistic_discard', tileId });
     dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
   }
 

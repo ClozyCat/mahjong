@@ -127,6 +127,14 @@ function getLocalSeat(state: SessionState): number {
   return state.roomSnapshot?.payload.local_seat ?? 0;
 }
 
+function getOptimisticDiscard(state: SessionState) {
+  return state.optimisticDiscard ?? null;
+}
+
+function hasOptimisticDiscardPending(state: SessionState) {
+  return Boolean(getOptimisticDiscard(state));
+}
+
 function toRelativeSeat(localSeat: number, absoluteSeat: number): Seat {
   const offset = (absoluteSeat - localSeat + 4) % 4;
   return RELATIVE_SEATS[offset] ?? 'bottom';
@@ -220,6 +228,10 @@ interface MatchViewModelOptions {
 }
 
 function createPromptText(state: SessionState, options: MatchViewModelOptions = {}): string | null {
+  if (hasOptimisticDiscardPending(state)) {
+    return '你已出牌，等待服务器确认...';
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const currentActor = getCurrentActorSeatIndex(snapshot?.private_state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
@@ -317,6 +329,10 @@ function getLocalPromptOptions(state: SessionState): BackendActionType[] {
 }
 
 function createPromptCue(state: SessionState, options: MatchViewModelOptions = {}): BattlePromptView | null {
+  if (hasOptimisticDiscardPending(state)) {
+    return null;
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const pendingAction = snapshot?.private_state?.pending_action;
   const localSeat = getLocalSeat(state);
@@ -503,6 +519,7 @@ function createActionViews(
   const pungCandidateGroups = getActionCandidateGroups(state, 'pung');
   const flowerCandidateTileIds = getFlowerCandidateTileIds(state);
   const restrictedDiscardTileIdSet = getRestrictedDiscardTileIdSet(state);
+  const optimisticDiscardPending = hasOptimisticDiscardPending(state);
   const hasSelectedFlower =
     state.selectedTileIds.length === 1 && flowerCandidateTileIds.includes(state.selectedTileIds[0]);
   const hasSelectedDiscard =
@@ -539,8 +556,15 @@ function createActionViews(
               : id === 'chow'
                 ? chowCandidateGroups.length > 0
                 : id === 'pung'
-                  ? pungCandidateGroups.length > 0
+                ? pungCandidateGroups.length > 0
                   : true;
+    }
+
+    if (
+      optimisticDiscardPending &&
+      (id === 'discard' || id === 'flower' || id === 'kong' || id === 'hu' || id === 'chow' || id === 'pung' || id === 'pass')
+    ) {
+      enabled = false;
     }
 
     const emphasis =
@@ -779,24 +803,35 @@ function createDiscards(state: SessionState): Record<Seat, string[]> {
     empty[toRelativeSeat(localSeat, player.seat_index)] = normalizeTileCodeList(player.discards);
   }
 
+  const optimisticDiscard = getOptimisticDiscard(state);
+  if (optimisticDiscard) {
+    const optimisticSeat = toRelativeSeat(localSeat, optimisticDiscard.seatIndex);
+    empty[optimisticSeat] = [...empty[optimisticSeat], optimisticDiscard.tileCode];
+  }
+
   return empty;
 }
 
 function createLocalHand(state: SessionState) {
   const localSeat = getLocalSeat(state);
   const localPlayer = findPrivatePlayer(state, localSeat);
+  const optimisticDiscard = getOptimisticDiscard(state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
-  const drawnTileId = pendingAction?.type === 'active_turn' ? pendingAction.drawn_tile_id : undefined;
+  const drawnTileId =
+    pendingAction?.type === 'active_turn' && pendingAction.drawn_tile_id !== optimisticDiscard?.tileId
+      ? pendingAction.drawn_tile_id
+      : undefined;
   const restrictedDiscardTileIdSet = getRestrictedDiscardTileIdSet(state);
 
   const sortedHand = (localPlayer?.concealed_tiles ?? [])
+    .filter((tile) => tile.tile_id !== optimisticDiscard?.tileId)
     .map((tile) => ({
       tileId: tile.tile_id,
       code: tile.tile_key,
       isSelected: state.selectedTileIds.includes(tile.tile_id),
       isDrawn: tile.tile_id === drawnTileId,
       isFlower: isFlowerTileKey(tile.tile_key),
-      isDisabled: restrictedDiscardTileIdSet.has(tile.tile_id),
+      isDisabled: Boolean(optimisticDiscard) || restrictedDiscardTileIdSet.has(tile.tile_id),
     }))
     .sort(compareLocalHandTiles);
 
@@ -814,6 +849,10 @@ function createLocalHand(state: SessionState) {
 }
 
 function createReadyHandInsight(state: SessionState): BattleViewModel['readyHandInsight'] {
+  if (hasOptimisticDiscardPending(state)) {
+    return null;
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
   const localSeat = snapshot?.local_seat;
@@ -970,6 +1009,10 @@ function getClaimCandidateSignature(actionId: ClaimActionId, tiles: ClaimCandida
 }
 
 export function createClaimCandidates(state: SessionState): ClaimCandidateView[] {
+  if (hasOptimisticDiscardPending(state)) {
+    return [];
+  }
+
   const privateState = state.roomSnapshot?.payload.private_state;
   const localSeat = getLocalSeat(state);
   const localPlayer =
@@ -1021,8 +1064,13 @@ export function createClaimCandidates(state: SessionState): ClaimCandidateView[]
 
 function createDrawnTileId(state: SessionState) {
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+  const optimisticDiscard = getOptimisticDiscard(state);
 
-  if (pendingAction?.type === 'active_turn' && typeof pendingAction.drawn_tile_id === 'string') {
+  if (
+    pendingAction?.type === 'active_turn' &&
+    typeof pendingAction.drawn_tile_id === 'string' &&
+    pendingAction.drawn_tile_id !== optimisticDiscard?.tileId
+  ) {
     return pendingAction.drawn_tile_id;
   }
 
@@ -1282,6 +1330,11 @@ function createResult(state: SessionState): BattleViewModel['result'] {
 }
 
 function createLastDiscardSeat(state: SessionState): Seat | null {
+  const optimisticDiscard = getOptimisticDiscard(state);
+  if (optimisticDiscard) {
+    return toRelativeSeat(getLocalSeat(state), optimisticDiscard.seatIndex);
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
   const lastDiscard = privateState?.last_discard ?? null;
@@ -1316,6 +1369,10 @@ function createLastDiscardSeat(state: SessionState): Seat | null {
 }
 
 function createShouldAutoReturnLastDiscardToRiver(state: SessionState) {
+  if (hasOptimisticDiscardPending(state)) {
+    return false;
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
 
@@ -1383,6 +1440,10 @@ function createRemainingTileCount(state: SessionState) {
 }
 
 function createActionIndicatorSeat(state: SessionState): Seat | null {
+  if (hasOptimisticDiscardPending(state)) {
+    return null;
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
 
@@ -1413,6 +1474,17 @@ function createActionIndicatorSeat(state: SessionState): Seat | null {
 }
 
 function createActionEffect(state: SessionState): ActionEffectView | null {
+  const optimisticDiscard = getOptimisticDiscard(state);
+  if (optimisticDiscard) {
+    return {
+      key: optimisticDiscard.actionEffectKey,
+      label: '出牌',
+      emphasis: 'discard',
+      seat: toRelativeSeat(getLocalSeat(state), optimisticDiscard.seatIndex),
+      calloutTone: null,
+    };
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const event = state.latestRoundEvent?.payload;
 
@@ -1526,6 +1598,7 @@ function getWinTypeLabel(result: MatchResultPayload) {
 
 export function createMatchViewModel(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
+  const optimisticDiscard = getOptimisticDiscard(state);
   const waitingControls = createWaitingControls(state);
   const isWaiting = snapshot?.phase === 'waiting';
   const isReconnecting = state.connectionStatus === 'reconnecting';
@@ -1549,6 +1622,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
         ? 'disconnected_or_waiting'
         : isSettlement
           ? 'resolving'
+          : optimisticDiscard
+            ? 'watching'
           : snapshot.private_state?.pending_action?.type === 'active_turn' &&
               snapshot.private_state.pending_action.seat_index === localSeat
             ? 'my_turn'
@@ -1589,7 +1664,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     promptCue,
     result: createResult(state),
     settlementHands: createSettlementHands(state),
-    lastDiscard: snapshot?.private_state?.last_discard ?? null,
+    lastDiscard: optimisticDiscard?.tileCode ?? snapshot?.private_state?.last_discard ?? null,
     lastDiscardSeat: createLastDiscardSeat(state),
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state),

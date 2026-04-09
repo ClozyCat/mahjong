@@ -1,6 +1,7 @@
 import type {
   ActionRejectedMessage,
   MatchStatisticsState,
+  OptimisticDiscardState,
   RoomSnapshotMessage,
   SeatSnapshot,
   ServerMessage,
@@ -13,6 +14,7 @@ export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
   | { type: 'set_credentials'; tableCode?: string; nickname?: string }
   | { type: 'set_connection_status'; status: SessionState['connectionStatus'] }
+  | { type: 'queue_optimistic_discard'; tileId: string }
   | { type: 'set_selected_tiles'; tileIds: string[]; mode: SessionState['selectionMode'] }
   | { type: 'reset_transient_feedback' }
   | { type: 'return_to_lobby'; tableCode?: string; keepNickname?: boolean }
@@ -133,6 +135,72 @@ function createMatchStatisticsFromSnapshot(snapshot: RoomSnapshotMessage): Match
   return createMatchStatisticsFromScores(matchState?.cumulative_scores);
 }
 
+function findSnapshotPlayer(snapshot: RoomSnapshotMessage['payload'] | null | undefined, seatIndex: number | null | undefined) {
+  if (!snapshot || typeof seatIndex !== 'number') {
+    return null;
+  }
+
+  return snapshot.private_state?.players.find((player) => player.seat_index === seatIndex) ?? null;
+}
+
+function createOptimisticDiscard(state: SessionState, tileId: string): OptimisticDiscardState | null {
+  if (state.optimisticDiscard) {
+    return state.optimisticDiscard;
+  }
+
+  const snapshot = state.roomSnapshot?.payload;
+  const localSeat = snapshot?.local_seat;
+  const pendingAction = snapshot?.private_state?.pending_action;
+  const localPlayer = findSnapshotPlayer(snapshot ?? null, localSeat);
+  const restrictedDiscardTileIds =
+    pendingAction?.type === 'active_turn' && Array.isArray(pendingAction.restricted_discard_tile_ids)
+      ? pendingAction.restricted_discard_tile_ids
+      : [];
+
+  if (
+    !snapshot ||
+    typeof localSeat !== 'number' ||
+    pendingAction?.type !== 'active_turn' ||
+    pendingAction.seat_index !== localSeat ||
+    !Array.isArray(pendingAction.options) ||
+    !pendingAction.options.includes('discard') ||
+    restrictedDiscardTileIds.includes(tileId)
+  ) {
+    return null;
+  }
+
+  const tile = localPlayer?.concealed_tiles?.find((candidate) => candidate.tile_id === tileId);
+  if (!tile) {
+    return null;
+  }
+
+  return {
+    tileId,
+    tileCode: tile.tile_key,
+    seatIndex: localSeat,
+    actionEffectKey: `optimistic-discard:${tileId}:${Date.now()}`,
+    requestedAt: new Date().toISOString(),
+  };
+}
+
+function reconcileOptimisticDiscardWithSnapshot(
+  optimisticDiscard: SessionState['optimisticDiscard'],
+  snapshot: RoomSnapshotMessage,
+) {
+  if (!optimisticDiscard) {
+    return null;
+  }
+
+  if (snapshot.payload.phase !== 'playing') {
+    return null;
+  }
+
+  const localPlayer = findSnapshotPlayer(snapshot.payload, optimisticDiscard.seatIndex);
+  const stillInHand = localPlayer?.concealed_tiles?.some((tile) => tile.tile_id === optimisticDiscard.tileId) ?? false;
+
+  return stillInHand ? optimisticDiscard : null;
+}
+
 export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
@@ -147,6 +215,7 @@ export function createInitialSessionState(): SessionState {
     latestQuickChatMessage: null,
     lastRejectedAction: null,
     reconnectToken: null,
+    optimisticDiscard: null,
     selectedTileIds: [],
     selectionMode: null,
     toasts: [],
@@ -176,6 +245,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
           ? []
           : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
       const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
+      const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(state.optimisticDiscard ?? null, message);
 
       return {
         ...state,
@@ -183,6 +253,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         tableCode: message.payload.table_code,
         reconnectToken: message.payload.reconnect_token ?? state.reconnectToken,
         lastRejectedAction: null,
+        optimisticDiscard: nextOptimisticDiscard,
         latestMatchResult: keepLatestResult ? state.latestMatchResult : null,
         latestActionPrompt: null,
         selectedTileIds: nextSelectedTileIds,
@@ -231,6 +302,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
       return {
         ...state,
         lastRejectedAction: message as ActionRejectedMessage,
+        optimisticDiscard: null,
         toasts: appendToast(state, 'error', getActionRejectedCopy(message.payload.reason)),
       };
     case 'heartbeat':
@@ -258,7 +330,19 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       return {
         ...state,
         connectionStatus: action.status,
+        optimisticDiscard: action.status === 'connected' ? state.optimisticDiscard ?? null : null,
       };
+    case 'queue_optimistic_discard': {
+      const optimisticDiscard = createOptimisticDiscard(state, action.tileId);
+      if (!optimisticDiscard) {
+        return state;
+      }
+
+      return {
+        ...state,
+        optimisticDiscard,
+      };
+    }
     case 'set_selected_tiles':
       return {
         ...state,

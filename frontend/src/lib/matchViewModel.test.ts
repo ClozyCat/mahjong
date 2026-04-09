@@ -1323,4 +1323,31 @@ describe('createMatchViewModel', () => {
     });
     expect(viewModel.actions.find((action) => action.id === 'discard')?.enabled).toBe(false);
   });
+
+  it('projects an optimistic discard into the local hand, river, and prompt state before the server snapshot arrives', () => {
+    const base = createPlayingSessionState({
+      selectedTileIds: ['w2#p0-1'],
+      optimisticDiscard: {
+        tileId: 'w2#p0-1',
+        tileCode: 'w2',
+        seatIndex: 2,
+        actionEffectKey: 'optimistic-discard:w2#p0-1',
+        requestedAt: '2026-03-26T06:01:00Z',
+      },
+    });
+    const viewModel = createMatchViewModel(base);
+
+    expect(viewModel.mode).toBe('watching');
+    expect(viewModel.localHand.map((tile) => tile.tileId)).not.toContain('w2#p0-1');
+    expect(viewModel.localHand.every((tile) => tile.isDisabled)).toBe(true);
+    expect(viewModel.discards.bottom).toEqual(['d1', 'w2']);
+    expect(viewModel.lastDiscard).toBe('w2');
+    expect(viewModel.lastDiscardSeat).toBe('bottom');
+    expect(viewModel.promptText).toBe('你已出牌，等待服务器确认...');
+    expect(viewModel.promptCue).toBeNull();
+    expect(viewModel.actions.find((action) => action.id === 'discard')?.enabled).toBe(false);
+    expect(viewModel.readyHandInsight).toBeNull();
+    expect(viewModel.shouldAutoReturnLastDiscardToRiver).toBe(false);
+    expect(viewModel.actionIndicatorSeat).toBeNull();
+  });
 });

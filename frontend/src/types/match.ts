@@ -337,6 +337,14 @@ export interface MatchStatisticsState {
   seatStatsBySeat: Record<string, MatchSeatStatisticsState>;
 }
 
+export interface OptimisticDiscardState {
+  tileId: string;
+  tileCode: string;
+  seatIndex: number;
+  actionEffectKey: string;
+  requestedAt: string;
+}
+
 export interface SessionState {
   apiBaseUrl?: string;
   wsBaseUrl?: string;
@@ -350,6 +358,7 @@ export interface SessionState {
   latestQuickChatMessage?: QuickChatMessage | null;
   lastRejectedAction: ActionRejectedMessage | null;
   reconnectToken: string | null;
+  optimisticDiscard?: OptimisticDiscardState | null;
   selectedTileIds: string[];
   selectionMode: 'single' | 'kong' | 'chow' | 'pung' | null;
   toasts: ToastMessage[];

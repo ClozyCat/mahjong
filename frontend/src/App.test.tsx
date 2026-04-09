@@ -917,11 +917,98 @@ describe('App', () => {
 
     await user.dblClick(getLocalHandButtons()[1]!);
 
+    expect(getLocalHandButtons()).toHaveLength(1);
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
     expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { nickname: 'Player A' } },
       { type: 'action_request', payload: { action_type: 'discard', tile_ids: ['w2#2'] } },
     ]);
+  });
+
+  it('rolls back an optimistic discard if the server rejects it', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 0,
+            last_discard: null,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: 'w2#2',
+              options: ['discard'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 14,
+                concealed_tiles: [
+                  { tile_id: 'w1#1', tile_key: 'w1' },
+                  { tile_id: 'w2#2', tile_key: 'w2' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    await user.dblClick(getLocalHandButtons()[1]!);
+    expect(getLocalHandButtons()).toHaveLength(1);
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'action_rejected',
+        payload: {
+          reason: 'invalid_action',
+        },
+      });
+    });
+
+    expect(getLocalHandButtons()).toHaveLength(2);
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
   });
 
   it('asks about kong before the normal turn flow when the local hand can self-kong', async () => {
