@@ -22,6 +22,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use anyhow::Result;
+    use chrono::Utc;
     use serde_json::{Value, json};
     use tokio::sync::{Notify, mpsc};
 
@@ -104,6 +105,50 @@ mod tests {
             room.match_state.as_ref().map(|state| state.dealer_seat),
             Some(0)
         );
+    }
+
+    #[test]
+    fn maybe_start_test_match_keeps_human_seat_and_future_timeout() {
+        let mut room = room_state(json!({
+            "table_code": "ROOM43",
+            "phase": "waiting",
+            "mode": "test",
+            "test_mode": true,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [{
+                "seat_index": 0,
+                "nickname": "Solo",
+                "reconnect_token": "token-1",
+                "player_session_id": 1,
+                "connected": true,
+                "ready": false,
+                "is_bot": false,
+                "seat_type": "human",
+                "bot_persona": Value::Null,
+                "bot_aggression": Value::Null,
+                "disconnect_deadline_at": Value::Null
+            }],
+            "match_state": null,
+            "round_state": null,
+            "pending_timeout": null
+        }));
+
+        maybe_start_test_match(&mut room);
+
+        assert!(
+            room.seats
+                .iter()
+                .find(|seat| seat.seat_index == 0)
+                .is_some_and(|seat| !seat.is_bot)
+        );
+        let deadline = room
+            .pending_timeout
+            .as_ref()
+            .and_then(|timeout| timeout.deadline_at.as_deref())
+            .and_then(parse_datetime)
+            .expect("test match should schedule a timeout");
+        assert!(deadline > Utc::now());
     }
 
     #[test]

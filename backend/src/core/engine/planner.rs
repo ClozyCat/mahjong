@@ -11,6 +11,7 @@ use crate::core::state::{
 use crate::core::tile::Tile;
 
 const MAX_SEATS: usize = 4;
+const PENDING_TIMEOUT_SECONDS: i64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct PlannedFlowerAction {
@@ -696,7 +697,8 @@ fn any_concealed_flower(players: &[PlayerRoundState]) -> bool {
 }
 
 fn deadline_iso() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
+    (chrono::Utc::now() + chrono::TimeDelta::seconds(PENDING_TIMEOUT_SECONDS))
+        .to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
 }
 
 fn full_tile_set() -> Vec<Tile> {
@@ -765,6 +767,7 @@ fn full_tile_set() -> Vec<Tile> {
 mod tests {
     use std::collections::BTreeMap;
 
+    use chrono::{TimeDelta, Utc};
     use serde_json::json;
 
     use super::{
@@ -803,6 +806,22 @@ mod tests {
             }
             Some(other) => panic!("unexpected pending action at round start: {other:?}"),
         }
+    }
+
+    #[test]
+    fn round_start_payload_sets_future_timeout_deadline() {
+        let (_round, timeout) =
+            plan_round_start_payload(2, "east", "round-future".to_string(), true, 13);
+
+        let deadline = timeout
+            .deadline_at
+            .as_deref()
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&Utc))
+            .expect("round start should set an RFC3339 timeout");
+
+        assert!(deadline > Utc::now());
+        assert!(deadline <= Utc::now() + TimeDelta::seconds(super::PENDING_TIMEOUT_SECONDS + 1));
     }
 
     #[test]

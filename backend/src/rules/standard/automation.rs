@@ -393,6 +393,7 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
 
 fn resolve_claim_timeout_in_room_state(room: &mut RoomState) -> Result<Option<Vec<Value>>, String> {
     let mut emitted_messages = Vec::new();
+    let mut processed_any = false;
 
     loop {
         let pending_action = room
@@ -415,10 +416,11 @@ fn resolve_claim_timeout_in_room_state(room: &mut RoomState) -> Result<Option<Ve
         let Some(messages) = output else {
             return Ok(None);
         };
+        processed_any = true;
         emitted_messages.extend(messages);
     }
 
-    Ok((!emitted_messages.is_empty()).then_some(emitted_messages))
+    Ok(processed_any.then_some(emitted_messages))
 }
 
 fn pending_timeout_pass_seat(pending_action: &PendingAction) -> Option<usize> {
@@ -445,5 +447,254 @@ fn extract_emitted_messages(
         Some(Ok(output)) => Ok(Some(output.emitted_messages)),
         Some(Err(reason)) => Err(reason),
         None => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::try_process_due_timeout_in_room_state;
+    use crate::core::engine::try_handle_player_action_in_room_state;
+    use crate::core::state::RoomState;
+
+    fn suit(tile_key: &str, tile_id: &str) -> serde_json::Value {
+        json!({
+            "tile_id": tile_id,
+            "tile_key": tile_key,
+            "kind": "suit",
+            "suit": if tile_key.starts_with('w') {
+                "characters"
+            } else if tile_key.starts_with('t') {
+                "bamboos"
+            } else {
+                "dots"
+            },
+            "rank": tile_key[1..].parse::<u8>().unwrap_or_default(),
+            "name": tile_key,
+        })
+    }
+
+    fn wind(tile_key: &str, tile_id: &str) -> serde_json::Value {
+        json!({
+            "tile_id": tile_id,
+            "tile_key": tile_key,
+            "kind": "wind",
+            "suit": null,
+            "rank": null,
+            "name": tile_key,
+        })
+    }
+
+    fn claim_window_room_state() -> RoomState {
+        RoomState::from_room_value(&json!({
+            "table_code": "ROOM2",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
+                {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "P1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "reconnect_token": "t2", "player_session_id": 3, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "reconnect_token": "t3", "player_session_id": 4, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+            ],
+            "match_state": {
+                "prevailing_wind": "east",
+                "hand_number": 1,
+                "dealer_seat": 0,
+                "cumulative_scores": {"0": 0, "1": 0, "2": 0, "3": 0},
+                "match_finished": false,
+                "last_completed_round_id": null
+            },
+            "round_state": {
+                "round_id": "east-1-dealer-0-claim",
+                "dealer_seat": 0,
+                "current_actor": 0,
+                "wall": {
+                    "tiles": [suit("w9", "w9#draw")],
+                    "head_index": 0,
+                    "tail_index": 0
+                },
+                "players": [
+                    {
+                        "seat": 0,
+                        "concealed_tiles": [
+                            suit("w3", "w3#discard"),
+                            suit("w2", "w2#a"), suit("w4", "w4#a"), suit("t2", "t2#a"),
+                            suit("t3", "t3#a"), suit("t4", "t4#a"), suit("b2", "b2#a"),
+                            suit("b3", "b3#a"), suit("b4", "b4#a"), suit("w6", "w6#a"),
+                            suit("w7", "w7#a"), suit("w8", "w8#a"), suit("b7", "b7#a"), suit("b8", "b8#a")
+                        ],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 1,
+                        "concealed_tiles": [
+                            suit("w1", "w1#1"), suit("w2", "w2#1"), suit("w4", "w4#1"),
+                            suit("t1", "t1#1"), suit("t2", "t2#1"), suit("t3", "t3#1"),
+                            suit("b1", "b1#1"), suit("b2", "b2#1"), suit("b3", "b3#1"),
+                            suit("w5", "w5#1"), suit("w6", "w6#1"), suit("t6", "t6#1"), suit("b6", "b6#1")
+                        ],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 2,
+                        "concealed_tiles": [
+                            suit("w3", "w3#2a"), suit("w3", "w3#2b"),
+                            suit("t1", "t1#2"), suit("t4", "t4#2"), suit("t7", "t7#2"),
+                            suit("b1", "b1#2"), suit("b4", "b4#2"), suit("b7", "b7#2"),
+                            suit("w9", "w9#2"), suit("t9", "t9#2"), suit("b9", "b9#2"), wind("south", "south#2"), wind("north", "north#2")
+                        ],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 3,
+                        "concealed_tiles": [
+                            suit("w1", "w1#3"), suit("w5", "w5#3"), suit("w7", "w7#3"),
+                            suit("t3", "t3#3"), suit("t5", "t5#3"), suit("t7", "t7#3"),
+                            suit("b3", "b3#3"), suit("b5", "b5#3"), suit("b7", "b7#3"),
+                            suit("w9", "w9#3"), suit("t9", "t9#3"), suit("b9", "b9#3"), wind("north", "north#3")
+                        ],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    }
+                ],
+                "last_discard": null,
+                "pending_action": null,
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "last_action_context": {
+                    "kind": "draw",
+                    "seat": 0,
+                    "tile_id": "w3#discard",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": {
+                "kind": "active_turn",
+                "seat_index": 0,
+                "deadline_at": "2026-04-07T00:00:30Z",
+                "drawn_tile_id": "w3#discard"
+            }
+        }))
+        .expect("room should parse")
+    }
+
+    #[test]
+    fn claim_timeout_advances_human_only_room_even_without_round_events() {
+        let mut room = claim_window_room_state();
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+
+        let result =
+            try_process_due_timeout_in_room_state(&mut room).expect("claim timeout should work");
+
+        assert!(result.is_some());
+        assert!(result.as_ref().is_some_and(Vec::is_empty));
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.current_actor),
+            Some(1)
+        );
+        assert!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref())
+                .is_none()
+        );
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.kind.as_str()),
+            Some("active_turn")
+        );
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.seat_index),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn claim_timeout_can_finish_after_recorded_chow_response() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(1))
+            .expect("seat 1 should exist")
+            .concealed_tiles = vec![
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#1extra"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w2", "w2#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w4", "w4#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t1", "t1#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t2", "t2#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t3", "t3#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b1", "b1#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b2", "b2#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b3", "b3#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w5", "w5#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w6", "w6#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t6", "t6#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b6", "b6#1"), "tile").expect("tile"),
+        ];
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled")
+        .expect("chow should succeed");
+
+        let result =
+            try_process_due_timeout_in_room_state(&mut room).expect("claim timeout should work");
+
+        assert!(result.is_some());
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.current_actor),
+            Some(1)
+        );
+        assert!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref())
+                .is_none()
+        );
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.kind.as_str()),
+            Some("active_turn")
+        );
     }
 }

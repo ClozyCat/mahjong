@@ -21,7 +21,9 @@ use crate::core::state::{
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
-use crate::rules::standard::runtime::project_room_state as standard_project_room_state;
+use crate::rules::standard::runtime::{
+    project_room_state as standard_project_room_state, sync_pending_timeout_in_room_state,
+};
 use crate::rules::standard::win::{can_declare_hu_with_cache, can_declare_hu_with_cache_for_state};
 
 use self::builtin::{PeekOpponentTileSkill, ScoreBoostSkill};
@@ -561,13 +563,14 @@ fn restore_round_start_after_skill_draft_in_room_state(room: &mut RoomState) -> 
             "active_turn".to_string()
         },
         seat_index: dealer_seat,
-        deadline_at: Some(crate::app::now_iso()),
+        deadline_at: None,
         drawn_tile_id: if has_any_flower {
             dealer_first_flower_id
         } else {
             dealer_drawn_tile_id
         },
     });
+    sync_pending_timeout_in_room_state(room);
     Ok(())
 }
 

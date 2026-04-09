@@ -4,6 +4,12 @@ use crate::core::state::RoomState;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::KongEntry as ScoringKongEntry;
 use crate::rules::skills::build_skill_projection;
+use crate::rules::skills::skill_action_options;
+#[cfg(not(test))]
+pub use crate::rules::standard::meld::{
+    SelfKongCandidate as BotSelfKongCandidate, SelfKongKind as BotSelfKongKind,
+};
+#[cfg(test)]
 pub use crate::rules::standard::meld::{
     SelfKongCandidate as BotSelfKongCandidate, SelfKongKind as BotSelfKongKind,
     claim_tile_id_options,
@@ -33,7 +39,14 @@ pub struct BotPlayerView {
 }
 
 #[derive(Clone)]
+pub struct BotSkillView {
+    pub skill_id: String,
+    pub charges: u8,
+}
+
+#[derive(Clone)]
 pub struct BotContextView {
+    pub is_skill_mode: bool,
     pub seat_index: usize,
     pub seat_count: usize,
     pub dealer_seat: usize,
@@ -54,6 +67,7 @@ pub struct BotContextView {
     pub add_kong_risk_tiles: HashSet<String>,
     pub visible_effect_types: Vec<String>,
     pub private_knowledge_tile_keys: Vec<String>,
+    pub available_skills: Vec<BotSkillView>,
 }
 
 pub fn build_bot_context_view(
@@ -66,7 +80,32 @@ pub fn build_bot_context_view(
 ) -> Option<BotContextView> {
     let player = cache.player(seat_index)?;
     let skill_projection = build_skill_projection(state, seat_index);
+    let skill_actions = skill_action_options(state, seat_index);
+    let available_skills = state
+        .round_state
+        .as_ref()
+        .and_then(|round| {
+            round
+                .players
+                .iter()
+                .find(|player| player.seat == seat_index)
+        })
+        .map(|player_state| {
+            player_state
+                .skill_loadout
+                .equipped
+                .iter()
+                .filter(|skill| skill.charges > 0)
+                .filter(|skill| skill_actions.contains(&format!("skill:{}", skill.skill_id)))
+                .map(|skill| BotSkillView {
+                    skill_id: skill.skill_id.clone(),
+                    charges: skill.charges,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     Some(BotContextView {
+        is_skill_mode: state.mode == "skill",
         seat_index,
         seat_count: cache.seat_count,
         dealer_seat: cache.dealer_seat,
@@ -108,6 +147,7 @@ pub fn build_bot_context_view(
             .iter()
             .flat_map(|knowledge| knowledge.tile_keys.clone())
             .collect(),
+        available_skills,
     })
 }
 
@@ -229,6 +269,7 @@ mod tests {
         .expect("seat should exist");
 
         assert_eq!(context.cumulative_scores, vec![12]);
+        assert!(!context.is_skill_mode);
         assert_eq!(context.wall_tiles_remaining, 7);
         assert_eq!(context.player.concealed_tiles.len(), 4);
         assert!(
@@ -242,6 +283,7 @@ mod tests {
         assert_eq!(context.drawn_tile_id.as_deref(), Some("w4#0"));
         assert!(context.visible_effect_types.is_empty());
         assert!(context.private_knowledge_tile_keys.is_empty());
+        assert!(context.available_skills.is_empty());
         assert_eq!(
             context.add_kong_risk_tiles,
             HashSet::from(["w3".to_string()])

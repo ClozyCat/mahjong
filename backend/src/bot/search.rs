@@ -16,11 +16,11 @@ const KONG_SCORE_MARGIN: i64 = 80;
 const CLAIM_SCORE_MARGIN: i64 = 100;
 const BASE_DRAW_SCAN_LIMIT: usize = 18;
 const EXPECTIMAX_DRAW_LIMIT: usize = 12;
-const MONTE_CARLO_SAMPLE_COUNT_EARLY: usize = 24;
-const MONTE_CARLO_SAMPLE_COUNT_MID: usize = 18;
-const MONTE_CARLO_SAMPLE_COUNT_LATE: usize = 12;
-const MONTE_CARLO_HORIZON_EARLY: usize = 3;
-const MONTE_CARLO_HORIZON_MID: usize = 2;
+const MONTE_CARLO_SAMPLE_COUNT_EARLY: usize = 12;
+const MONTE_CARLO_SAMPLE_COUNT_MID: usize = 8;
+const MONTE_CARLO_SAMPLE_COUNT_LATE: usize = 6;
+const MONTE_CARLO_HORIZON_EARLY: usize = 2;
+const MONTE_CARLO_HORIZON_MID: usize = 1;
 const MONTE_CARLO_HORIZON_LATE: usize = 1;
 
 #[derive(Clone)]
@@ -226,7 +226,7 @@ impl SearchEngine {
                 &threat_profiles,
             ),
             threat_profiles,
-            base_visible_counts: visible_tile_counts(&context.visible_tile_keys),
+            base_visible_counts: known_visible_tile_counts(context),
             hand_score_cache: HashMap::new(),
             expected_draw_cache: HashMap::new(),
             best_discard_cache: HashMap::new(),
@@ -243,6 +243,35 @@ impl SearchEngine {
 
     pub(crate) fn claim_margin(&self) -> i64 {
         self.profile.claim_margin
+    }
+
+    pub(crate) fn min_shanten(
+        &mut self,
+        concealed_counts: &TileCounts,
+        open_meld_count: usize,
+    ) -> i32 {
+        self.bot_min_shanten(concealed_counts, open_meld_count)
+    }
+
+    pub(crate) fn discard_tile_danger(
+        &mut self,
+        context: &BotContext,
+        concealed_counts: &TileCounts,
+        tile_key: &str,
+    ) -> i64 {
+        let Some(discard_tile_index) = tile_index(tile_key) else {
+            return 0;
+        };
+        self.discard_danger_penalty(context, concealed_counts, discard_tile_index)
+    }
+
+    pub(crate) fn strongest_threat_opponent(&self, context: &BotContext) -> Option<(usize, i64)> {
+        self.threat_profiles
+            .iter()
+            .enumerate()
+            .filter(|(seat, _)| *seat != context.seat_index)
+            .map(|(seat, threat)| (seat, threat.pressure + threat.tenpai_likelihood))
+            .max_by_key(|(_, score)| *score)
     }
 }
 
@@ -332,10 +361,10 @@ impl SearchEngine {
         concealed_counts: &TileCounts,
         meld_tile_key_groups: &[Vec<String>],
     ) -> bool {
-        if context.wall_tiles_remaining <= 24 {
+        if context.wall_tiles_remaining <= 14 {
             return true;
         }
-        self.bot_min_shanten(concealed_counts, meld_tile_key_groups.len()) <= 2
+        self.bot_min_shanten(concealed_counts, meld_tile_key_groups.len()) <= 1
     }
 
     fn rank_discard_plans_at_depth(
@@ -1190,7 +1219,7 @@ fn visible_tile_counts_for_state(
     context: &BotContext,
     meld_tile_key_groups: &[Vec<String>],
 ) -> [i32; TILE_KIND_COUNT] {
-    let mut counts = visible_tile_counts(&context.visible_tile_keys);
+    let mut counts = known_visible_tile_counts(context);
 
     for meld in &context.player.meld_tile_key_groups {
         apply_visible_meld_delta(&mut counts, meld, -1);
@@ -1199,6 +1228,15 @@ fn visible_tile_counts_for_state(
         apply_visible_meld_delta(&mut counts, meld, 1);
     }
     counts
+}
+
+fn known_visible_tile_counts(context: &BotContext) -> [i32; TILE_KIND_COUNT] {
+    let mut known_tile_keys = Vec::with_capacity(
+        context.visible_tile_keys.len() + context.private_knowledge_tile_keys.len(),
+    );
+    known_tile_keys.extend(context.visible_tile_keys.iter().cloned());
+    known_tile_keys.extend(context.private_knowledge_tile_keys.iter().cloned());
+    visible_tile_counts(&known_tile_keys)
 }
 
 fn estimated_remaining_tile_count(
@@ -1356,6 +1394,7 @@ fn monte_carlo_mix(value: u64) -> u64 {
     value.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(17)
 }
 
+#[cfg(test)]
 fn discard_danger_penalty(
     context: &BotContext,
     concealed_counts: &TileCounts,
@@ -1364,7 +1403,7 @@ fn discard_danger_penalty(
     let Some(discard_index) = tile_index(tile_key) else {
         return 0;
     };
-    let visible_counts = visible_tile_counts(&context.visible_tile_keys);
+    let visible_counts = known_visible_tile_counts(context);
     let known_count =
         |index: usize| i64::from(visible_counts[index]) + i64::from(concealed_counts[index]);
     let unseen_copies = i64::from((4 - visible_counts[discard_index]).max(0));
@@ -2339,6 +2378,7 @@ mod tests {
 
     fn base_context() -> BotContext {
         BotContext {
+            is_skill_mode: false,
             seat_index: 0,
             seat_count: 4,
             dealer_seat: 0,
@@ -2364,6 +2404,7 @@ mod tests {
             add_kong_risk_tiles: HashSet::new(),
             visible_effect_types: Vec::new(),
             private_knowledge_tile_keys: Vec::new(),
+            available_skills: Vec::new(),
         }
     }
 
@@ -2488,6 +2529,20 @@ mod tests {
         let zetsu_penalty = discard_danger_penalty(&context, &zetsu_counts, "w5");
 
         assert!(zetsu_penalty <= kabe_penalty);
+    }
+
+    #[test]
+    fn private_knowledge_counts_as_visible_information() {
+        let mut context = base_context();
+        context.private_knowledge_tile_keys = vec![
+            "w5".to_string(),
+            "w5".to_string(),
+            "w5".to_string(),
+            "w5".to_string(),
+        ];
+        let counts = [0_u8; TILE_KIND_COUNT];
+
+        assert_eq!(discard_danger_penalty(&context, &counts, "w5"), 0);
     }
 
     #[test]

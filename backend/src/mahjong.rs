@@ -209,6 +209,8 @@ fn deadline_iso() -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+
     use super::*;
     use crate::core::action::{GameCommand, PlayerAction};
     use crate::core::event::GameEvent;
@@ -236,6 +238,14 @@ mod tests {
             },
             "name": tile_key,
         })
+    }
+
+    fn pending_timeout_deadline(room: &Value) -> chrono::DateTime<Utc> {
+        room["pending_timeout"]["deadline_at"]
+            .as_str()
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&Utc))
+            .expect("pending timeout should carry an RFC3339 deadline")
     }
 
     fn suit(tile_key: &str, tile_id: &str) -> Value {
@@ -1288,6 +1298,44 @@ mod tests {
         assert_eq!(room["round_state"]["restricted_discard_tile_key"], "w3");
         assert!(!can_resolve_discard_locally(&room, 1, "w3#1extra"));
         assert!(try_handle_action(&mut room, 1, "discard", &[String::from("w3#1extra")]).is_none());
+    }
+
+    #[test]
+    fn local_chow_claim_keeps_turn_timeout_in_future() {
+        let mut room = room_for_local_claim_window();
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w3", "w3#1extra"),
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("t6", "t6#1"),
+            suit("b6", "b6#1")
+        ]);
+
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+        let _ = try_handle_action(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled locally")
+        .expect("chow should succeed");
+        let _ = try_handle_action(&mut room, 2, "pass", &[])
+            .expect("pass should be handled locally")
+            .expect("pass should succeed");
+
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert!(pending_timeout_deadline(&room) > Utc::now());
     }
 
     #[test]
