@@ -3128,6 +3128,9 @@ fn is_seven_pairs(counts: &TileCounts) -> bool {
     }
     let mut pair_count = 0usize;
     for count in counts {
+        if *count == 0 {
+            continue;
+        }
         if !matches!(*count, 2 | 4) {
             return false;
         }

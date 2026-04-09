@@ -4,12 +4,14 @@ import type { SessionState } from '../types/match';
 import {
   getActionCandidateGroups,
   getActionCandidateTileIds,
+  getFlowerCandidateTileIds,
   getKongCandidateGroups,
   getKongCandidateTileIds,
   getLocalTurnKongCandidateGroups,
   getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
   getMatchingKongGroup,
+  shouldAutoPassOpeningFlowers,
 } from './kongSelection';
 
 function createSessionState(overrides: Partial<SessionState> = {}): SessionState {
@@ -173,6 +175,37 @@ describe('kongSelection', () => {
       'w3#3',
     ]);
     expect(getMatchingKongGroup(['w3#0', 'east#0'], groups)).toBeNull();
+  });
+
+  it('auto-passes local opening flowers when the hand no longer contains flower tiles', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'opening_flowers',
+              seat_index: 0,
+              deadline_at: '2026-03-26T06:01:00Z',
+              options: ['pass'],
+            },
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 0,
+          options: ['pass'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(getFlowerCandidateTileIds(state)).toEqual([]);
+    expect(shouldAutoPassOpeningFlowers(state)).toBe(true);
   });
 
   it('derives claim-kong candidates from the latest discard and three matching concealed tiles', () => {

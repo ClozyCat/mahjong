@@ -776,11 +776,14 @@ mod tests {
 
     use serde_json::Value;
 
-    use super::apply_hu_settlement_output;
+    use super::{apply_hu_settlement_output, can_declare_hu_with_cache_for_state};
     use crate::core::state::{
         LastActionContext, LianHuanJiTracker, MatchSkillTrackers, MatchState, PlayerRoundState,
         RoomState, RoundSettlement, RoundState, SeatState, ZouWeiShangJiTracker,
     };
+    use crate::core::tile::Tile;
+    use crate::room_scoring::RoomScoringCache;
+    use crate::rules::scoring::decompose_winning_hand;
 
     #[test]
     fn value_hu_settlement_output_syncs_match_skill_trackers_via_typed_helper() {
@@ -820,6 +823,56 @@ mod tests {
             trackers.zou_wei_shang_ji.pending_win_penalty.get(&2),
             Some(&4)
         );
+    }
+
+    #[test]
+    fn can_declare_hu_for_standard_seven_pairs_hand() {
+        let tile_keys = [
+            "w1", "w1", "w2", "w2", "w3", "w3", "t4", "t4", "t5", "t5", "b6", "b6", "red", "red",
+        ];
+        let decompositions = decompose_winning_hand(
+            &tile_keys
+                .iter()
+                .map(|tile_key| (*tile_key).to_string())
+                .collect::<Vec<_>>(),
+        );
+        assert!(
+            decompositions
+                .iter()
+                .any(|decomposition| decomposition.kind == "seven_pairs")
+        );
+
+        let state = test_room_state_with_concealed_tiles(&tile_keys);
+        let cache = RoomScoringCache::from_state(&state);
+
+        assert!(can_declare_hu_with_cache_for_state(
+            &state, &cache, 0, None, None
+        ));
+    }
+
+    #[test]
+    fn can_declare_hu_for_seven_pairs_hand_with_four_of_a_kind_counted_as_two_pairs() {
+        let tile_keys = [
+            "w1", "w1", "w1", "w1", "w2", "w2", "w3", "w3", "t4", "t4", "t5", "t5", "red", "red",
+        ];
+        let decompositions = decompose_winning_hand(
+            &tile_keys
+                .iter()
+                .map(|tile_key| (*tile_key).to_string())
+                .collect::<Vec<_>>(),
+        );
+        assert!(
+            decompositions
+                .iter()
+                .any(|decomposition| decomposition.kind == "seven_pairs")
+        );
+
+        let state = test_room_state_with_concealed_tiles(&tile_keys);
+        let cache = RoomScoringCache::from_state(&state);
+
+        assert!(can_declare_hu_with_cache_for_state(
+            &state, &cache, 0, None, None
+        ));
     }
 
     fn test_room_value_with_match_trackers() -> Value {
@@ -877,6 +930,77 @@ mod tests {
         };
 
         state.to_room_value().expect("room value")
+    }
+
+    fn test_room_state_with_concealed_tiles(tile_keys: &[&str]) -> RoomState {
+        RoomState {
+            table_code: "ROOM7P".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: (0..4)
+                .map(|seat_index| SeatState {
+                    seat_index,
+                    ..Default::default()
+                })
+                .collect(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: (0..4).map(|seat| (seat, 0)).collect(),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                skill_trackers: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "east-1-dealer-0".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: vec![
+                    PlayerRoundState {
+                        seat: 0,
+                        concealed_tiles: tile_keys
+                            .iter()
+                            .enumerate()
+                            .map(|(index, tile_key)| Tile {
+                                tile_id: format!("{tile_key}#{index}"),
+                                tile_key: (*tile_key).to_string(),
+                                ..Default::default()
+                            })
+                            .collect(),
+                        ..Default::default()
+                    },
+                    PlayerRoundState {
+                        seat: 1,
+                        ..Default::default()
+                    },
+                    PlayerRoundState {
+                        seat: 2,
+                        ..Default::default()
+                    },
+                    PlayerRoundState {
+                        seat: 3,
+                        ..Default::default()
+                    },
+                ],
+                last_action_context: LastActionContext {
+                    kind: "draw".to_string(),
+                    seat: 0,
+                    tile_id: tile_keys
+                        .last()
+                        .map(|tile_key| format!("{tile_key}#{}", tile_keys.len() - 1)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        }
     }
 }
 

@@ -697,7 +697,7 @@ describe('createMatchViewModel', () => {
     });
   });
 
-  it('keeps a local opening-flower pass prompt actionable when no flower replacement is available', () => {
+  it('shows opening-flower auto-pass copy when no flower replacement is available', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -726,13 +726,13 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.promptText).toBe('Player C正在执行操作：过');
+    expect(viewModel.promptText).toBe('当前无花牌，系统正在自动过');
     expect(viewModel.promptCue).toMatchObject({
       kind: 'turn',
       tone: 'info',
-      title: '当前可以补花',
-      detail: '你可以 过',
-      actionIds: ['pass'],
+      title: '补花阶段',
+      detail: '当前无花牌，系统将自动过',
+      actionIds: [],
       highlightedActionIds: [],
       sourceSeat: null,
       isUrgent: false,

@@ -330,22 +330,21 @@ describe('BottomActionDock', () => {
     expect(screen.getByLabelText('当前听牌信息')).toBeInTheDocument();
   });
 
-  it('keeps pass available during opening flower prompts', () => {
+  it('hides manual actions when opening flowers will auto-pass locally', () => {
     render(
       <BottomActionDock
         hand={localHand}
         claimCandidates={[]}
         actions={[
-          { id: 'flower', label: '补花', enabled: true, emphasis: 'medium' },
           { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
         ]}
         isElevated
         promptCue={{
           kind: 'turn',
           tone: 'info',
-          title: '当前可以补花',
-          detail: '你可以 过',
-          actionIds: ['pass'],
+          title: '补花阶段',
+          detail: '当前无花牌，系统将自动过',
+          actionIds: [],
           highlightedActionIds: [],
           sourceSeat: null,
           isUrgent: false,
@@ -359,8 +358,7 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '补花' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '过' })).toBeNull();
   });
 
   it('derives dock width variables from the current hand count', () => {

@@ -26,6 +26,7 @@ import {
   getFlowerCandidateTileIds,
   getLocalTurnKongCandidateGroups,
   isFlowerTileKey,
+  shouldAutoPassOpeningFlowers,
 } from './kongSelection';
 import { getReadyHandWaits } from './readyHand';
 
@@ -235,7 +236,9 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
   const snapshot = state.roomSnapshot?.payload;
   const currentActor = getCurrentActorSeatIndex(snapshot?.private_state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+  const localSeat = getLocalSeat(state);
   const localPromptOptions = getLocalPromptOptions(state);
+  const autoPassOpeningFlowers = shouldAutoPassOpeningFlowers(state);
 
   if (
     options.showLocalTurnKongPrompt &&
@@ -260,6 +263,14 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
       return createActorPrompt(getSeatName(state, actorSeat), options);
     }
     if (pendingAction.type === 'opening_flowers') {
+      if (
+        autoPassOpeningFlowers &&
+        typeof pendingAction.seat_index === 'number' &&
+        pendingAction.seat_index === localSeat
+      ) {
+        return '当前无花牌，系统正在自动过';
+      }
+
       const options = getPendingActionOptions(pendingAction as { options?: unknown });
       return createActorPrompt(getSeatName(state, getPendingActionSeatIndex(pendingAction)), options);
     }
@@ -338,6 +349,7 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
   const localSeat = getLocalSeat(state);
   const localPromptOptions = orderPromptActions(getLocalPromptOptions(state));
   const highlightedActionIds = orderPromptActions(localPromptOptions.filter((option) => option !== 'pass'));
+  const autoPassOpeningFlowers = shouldAutoPassOpeningFlowers(state);
 
   if (
     options.showLocalTurnKongPrompt &&
@@ -401,6 +413,19 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
     pendingAction.seat_index === localSeat &&
     localPromptOptions.length > 0
   ) {
+    if (autoPassOpeningFlowers) {
+      return {
+        kind: 'turn',
+        tone: 'info',
+        title: '补花阶段',
+        detail: '当前无花牌，系统将自动过',
+        actionIds: [],
+        highlightedActionIds: [],
+        sourceSeat: null,
+        isUrgent: false,
+      };
+    }
+
     return {
       kind: 'turn',
       tone: 'info',
@@ -524,6 +549,7 @@ function createActionViews(
     state.selectedTileIds.length === 1 && flowerCandidateTileIds.includes(state.selectedTileIds[0]);
   const hasSelectedDiscard =
     state.selectedTileIds.length === 1 && !restrictedDiscardTileIdSet.has(state.selectedTileIds[0]);
+  const autoPassOpeningFlowers = shouldAutoPassOpeningFlowers(state);
   const canContinueRound = snapshot?.phase === 'settlement' && typeof snapshot.local_seat === 'number';
   const canRestartMatch =
     snapshot?.phase === 'finished' &&
@@ -547,7 +573,9 @@ function createActionViews(
       enabled = true;
     } else if (promptOptions.has(id as BackendActionType)) {
       enabled =
-        id === 'discard'
+        autoPassOpeningFlowers && id === 'pass'
+          ? false
+          : id === 'discard'
           ? hasSelectedDiscard
           : id === 'flower'
             ? hasSelectedFlower

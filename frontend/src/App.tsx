@@ -9,6 +9,7 @@ import {
   getLocalTurnKongCandidateGroups,
   getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
+  shouldAutoPassOpeningFlowers,
 } from './lib/kongSelection';
 import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
 import {
@@ -232,6 +233,7 @@ export default function App() {
   const leavingTableRef = useRef(false);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
+  const previousOpeningFlowerAutoPassSignatureRef = useRef<string | null>(null);
   const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
   const [skillRuntime, setSkillRuntime] = useState(createInitialSkillRuntimeState);
@@ -458,6 +460,27 @@ export default function App() {
     }
 
     previousClaimSelectionSignatureRef.current = claimSelectionSignature;
+  }, [state]);
+
+  useEffect(() => {
+    const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
+    const privateState = state.roomSnapshot?.payload.private_state;
+    const autoPassSignature =
+      shouldAutoPassOpeningFlowers(state) &&
+      pendingAction?.type === 'opening_flowers' &&
+      typeof pendingAction.seat_index === 'number'
+        ? `${privateState?.round_id ?? ''}:${pendingAction.seat_index}:${pendingAction.deadline_at}`
+        : null;
+
+    if (
+      autoPassSignature &&
+      autoPassSignature !== previousOpeningFlowerAutoPassSignatureRef.current &&
+      sendMessage(serializeClientMessage(createActionRequestMessage('pass')))
+    ) {
+      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+    }
+
+    previousOpeningFlowerAutoPassSignatureRef.current = autoPassSignature;
   }, [state]);
 
   const localTurnKongPromptSignature = getLocalTurnKongPromptSignature(state);
