@@ -69,9 +69,6 @@ pub fn discard_supported_locally(context: &EngineContext, actor: Seat, tile_id: 
     if round.current_actor != actor || round.pending_action.is_some() {
         return false;
     }
-    if round.wall.live_tiles_remaining() == 0 {
-        return false;
-    }
     let Some(player) = round.players.get(actor) else {
         return false;
     };
@@ -288,6 +285,16 @@ mod tests {
         let context = context(room);
 
         assert!(!discard_supported_locally(&context, 0, "east#discard"));
+    }
+
+    #[test]
+    fn allows_discard_after_last_live_tile_is_drawn() {
+        let mut room = base_room();
+        room["round_state"]["wall"]["head_index"] = json!(1);
+        room["round_state"]["wall"]["tail_index"] = json!(0);
+        let context = context(room);
+
+        assert!(discard_supported_locally(&context, 0, "east#discard"));
     }
 
     #[test]

@@ -511,6 +511,14 @@ mod tests {
         room
     }
 
+    fn room_for_last_live_tile_active_turn() -> Value {
+        let mut room = room_for_local_discard();
+        room["round_state"]["wall"]["tiles"] = json!([suit("w1", "w1#spent")]);
+        room["round_state"]["wall"]["head_index"] = json!(1);
+        room["round_state"]["wall"]["tail_index"] = json!(0);
+        room
+    }
+
     fn room_for_bot_shape_choice() -> Value {
         let mut room = room_for_bot_active_turn();
         room["round_state"]["players"][0]["concealed_tiles"] = json!([
@@ -794,6 +802,41 @@ mod tests {
                 .map(|tiles| tiles.len()),
             Some(14)
         );
+    }
+
+    #[test]
+    fn local_discard_after_last_live_tile_drawn_settles_exhaustive_draw() {
+        let mut room = room_for_last_live_tile_active_turn();
+        assert!(can_resolve_discard_locally(&room, 0, "east#discard"));
+
+        let result = try_handle_action(&mut room, 0, "discard", &[String::from("east#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should settle exhaustive draw");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(result[1]["payload"]["event_type"], "round_drawn");
+        assert_eq!(room["phase"], "settlement");
+        assert_eq!(room["round_state"]["phase"], "settlement");
+        assert!(room["pending_timeout"].is_null());
+        assert_eq!(room["round_state"]["settlement"]["win_type"], "draw");
+        assert_eq!(room["round_state"]["settlement"]["draw_type"], "exhaustive");
+    }
+
+    #[test]
+    fn due_timeout_after_last_live_tile_drawn_settles_exhaustive_draw() {
+        let mut room = room_for_last_live_tile_active_turn();
+
+        let result = try_process_due_timeout(&mut room).expect("timeout should auto-resolve");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(result[1]["payload"]["event_type"], "round_drawn");
+        assert_eq!(room["phase"], "settlement");
+        assert_eq!(room["round_state"]["phase"], "settlement");
+        assert!(room["pending_timeout"].is_null());
+        assert_eq!(room["round_state"]["settlement"]["win_type"], "draw");
+        assert_eq!(room["round_state"]["settlement"]["draw_type"], "exhaustive");
     }
 
     #[test]

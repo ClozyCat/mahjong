@@ -552,9 +552,6 @@ pub fn can_resolve_discard_locally(room: &Value, seat_index: usize, tile_id: &st
     if round.pending_action.is_some() {
         return false;
     }
-    if round.wall.live_tiles_remaining() <= 0 {
-        return false;
-    }
 
     let Some(discarded_tile) = round.players.get(seat_index).and_then(|player| {
         player

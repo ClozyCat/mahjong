@@ -19,9 +19,9 @@
       "interaction_hint": null,
       "tags": ["门清", "结算"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+12 / -8", "gain": 12, "loss": 8 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+12 / -8", "gain": 12, "loss": 8 }
       }
     },
     {
@@ -34,9 +34,9 @@
       "interaction_hint": null,
       "tags": ["止损", "防守"],
       "tiers": {
-        "common": { "detail": "普通效果：免1 / 扣1", "gain": 1, "loss": 1 },
-        "rare": { "detail": "稀有效果：免3 / 扣2", "gain": 3, "loss": 2 },
-        "epic": { "detail": "史诗效果：免8 / 扣5", "gain": 8, "loss": 5 }
+        "common": { "detail": "免1 / -1", "gain": 1, "loss": 1 },
+        "rare": { "detail": "免3 / -2", "gain": 3, "loss": 2 },
+        "epic": { "detail": "免8 / -3", "gain": 8, "loss": 3 }
       }
     },
     {
@@ -49,9 +49,9 @@
       "interaction_hint": null,
       "tags": ["副露", "结算"],
       "tiers": {
-        "common": { "detail": "普通效果：+1 / -1", "gain": 1, "loss": 1 },
-        "rare": { "detail": "稀有效果：+2 / -2", "gain": 2, "loss": 2 },
-        "epic": { "detail": "史诗效果：+4 / -3", "gain": 4, "loss": 3 }
+        "common": { "detail": "+1 / -1", "gain": 1, "loss": 1 },
+        "rare": { "detail": "+2 / -2", "gain": 2, "loss": 2 },
+        "epic": { "detail": "+4 / -3", "gain": 4, "loss": 3 }
       }
     },
     {
@@ -64,9 +64,9 @@
       "interaction_hint": null,
       "tags": ["牌墙", "时机"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+12 / -8", "gain": 12, "loss": 8 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
+        "epic": { "detail": "+8 / -3", "gain": 8, "loss": 3 }
       }
     },
     {
@@ -79,9 +79,9 @@
       "interaction_hint": null,
       "tags": ["局势", "结算"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+15 / -8", "gain": 15, "loss": 8 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -94,9 +94,9 @@
       "interaction_hint": "发动后会在技能说明中显示尾牌预览情报。",
       "tags": ["信息", "摸牌"],
       "tiers": {
-        "common": { "detail": "普通效果：看1张 / +1番", "preview_count": 1, "minimum_fan_penalty": 1 },
-        "rare": { "detail": "稀有效果：看2张 / +1番", "preview_count": 2, "minimum_fan_penalty": 1 },
-        "epic": { "detail": "史诗效果：看3张 / +2番", "preview_count": 3, "minimum_fan_penalty": 2 }
+        "common": { "detail": "看1张 / +1番", "preview_count": 1, "minimum_fan_penalty": 1 },
+        "rare": { "detail": "看2张 / +1番", "preview_count": 2, "minimum_fan_penalty": 1 },
+        "epic": { "detail": "看3张 / +2番", "preview_count": 3, "minimum_fan_penalty": 2 }
       }
     },
     {
@@ -109,9 +109,9 @@
       "interaction_hint": "发动时从当前手牌中点选一张作为置换目标。",
       "tags": ["功能", "手牌"],
       "tiers": {
-        "common": { "detail": "普通效果：每局1次 / 每次扣3", "score_penalty": 3, "active_uses_per_round": 1 },
-        "rare": { "detail": "稀有效果：每局1次 / 每次扣2", "score_penalty": 2, "active_uses_per_round": 1 },
-        "epic": { "detail": "史诗效果：每局2次 / 每次扣1", "score_penalty": 1, "active_uses_per_round": 2 }
+        "common": { "detail": "每局1次 / 每次扣3", "score_penalty": 3, "active_uses_per_round": 1 },
+        "rare": { "detail": "每局1次 / 每次扣2", "score_penalty": 2, "active_uses_per_round": 1 },
+        "epic": { "detail": "每局2次 / 每次扣1", "score_penalty": 1, "active_uses_per_round": 2 }
       }
     },
     {
@@ -124,9 +124,9 @@
       "interaction_hint": "发动时从其他三家中选择一名作为侦察目标。",
       "tags": ["信息", "目标"],
       "tiers": {
-        "common": { "detail": "普通效果：看1张 / 扣1", "preview_count": 1, "score_penalty": 1 },
-        "rare": { "detail": "稀有效果：看2张 / 扣3", "preview_count": 2, "score_penalty": 3 },
-        "epic": { "detail": "史诗效果：看3张 / 扣6", "preview_count": 3, "score_penalty": 6 }
+        "common": { "detail": "看1张 / -1", "preview_count": 1, "score_penalty": 1 },
+        "rare": { "detail": "看2张 / -2", "preview_count": 2, "score_penalty": 2 },
+        "epic": { "detail": "看3张 / -3", "preview_count": 3, "score_penalty": 3 }
       }
     },
     {
@@ -139,9 +139,9 @@
       "interaction_hint": null,
       "tags": ["流局", "止损"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+15 / -8", "gain": 15, "loss": 8 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+15 / -8", "gain": 15, "loss": 8 }
       }
     },
     {
@@ -154,9 +154,9 @@
       "interaction_hint": null,
       "tags": ["牌型", "幺九"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+15 / -8", "gain": 15, "loss": 8 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+15 / -8", "gain": 15, "loss": 8 }
       }
     },
     {
@@ -169,9 +169,9 @@
       "interaction_hint": null,
       "tags": ["防守", "被动"],
       "tiers": {
-        "common": { "detail": "普通效果：抵3分 / 扣1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：抵8分 / 扣3", "gain": 8, "loss": 3 },
-        "epic": { "detail": "史诗效果：抵15分 / 扣5", "gain": 15, "loss": 5 }
+        "common": { "detail": "抵3分 / 扣1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "抵8分 / 扣3", "gain": 8, "loss": 3 },
+        "epic": { "detail": "抵15分 / 扣5", "gain": 15, "loss": 5 }
       }
     },
     {
@@ -184,9 +184,9 @@
       "interaction_hint": null,
       "tags": ["截胡", "抢杠胡"],
       "tiers": {
-        "common": { "detail": "普通效果：+8 / -1", "gain": 8, "loss": 1 },
-        "rare": { "detail": "稀有效果：+12 / -2", "gain": 12, "loss": 2 },
-        "epic": { "detail": "史诗效果：+20 / -3", "gain": 20, "loss": 3 }
+        "common": { "detail": "+8 / -1", "gain": 8, "loss": 1 },
+        "rare": { "detail": "+12 / -2", "gain": 12, "loss": 2 },
+        "epic": { "detail": "+20 / -3", "gain": 20, "loss": 3 }
       }
     },
     {
@@ -199,9 +199,9 @@
       "interaction_hint": null,
       "tags": ["杠牌", "局势"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+8 / -5", "gain": 8, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -214,9 +214,9 @@
       "interaction_hint": null,
       "tags": ["熟张", "读牌"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+8 / -5", "gain": 8, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -229,9 +229,9 @@
       "interaction_hint": null,
       "tags": ["断幺", "牌型"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+8 / -5", "gain": 8, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -244,9 +244,9 @@
       "interaction_hint": null,
       "tags": ["时机", "追击"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -259,9 +259,9 @@
       "interaction_hint": null,
       "tags": ["数牌", "结构"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+8 / -5", "gain": 8, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -274,9 +274,9 @@
       "interaction_hint": null,
       "tags": ["番数", "上限"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -289,9 +289,9 @@
       "interaction_hint": null,
       "tags": ["牌墙", "残局"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -304,9 +304,9 @@
       "interaction_hint": null,
       "tags": ["花色", "结构"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -319,9 +319,9 @@
       "interaction_hint": "发动后仅对你本回合打出的下一张牌生效。",
       "tags": ["功能", "止损"],
       "tiers": {
-        "common": { "detail": "普通效果：每局1次 / 每次扣3", "score_penalty": 3, "active_uses_per_round": 1 },
-        "rare": { "detail": "稀有效果：每局1次 / 每次扣2", "score_penalty": 2, "active_uses_per_round": 1 },
-        "epic": { "detail": "史诗效果：每局2次 / 每次扣1", "score_penalty": 1, "active_uses_per_round": 2 }
+        "common": { "detail": "每局1次 / 每次扣3", "score_penalty": 3, "active_uses_per_round": 1 },
+        "rare": { "detail": "每局1次 / 每次扣2", "score_penalty": 2, "active_uses_per_round": 1 },
+        "epic": { "detail": "每局2次 / 每次扣1", "score_penalty": 1, "active_uses_per_round": 2 }
       }
     },
     {
@@ -334,9 +334,9 @@
       "interaction_hint": null,
       "tags": ["听型", "牌理"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -349,9 +349,9 @@
       "interaction_hint": null,
       "tags": ["座次", "结算"],
       "tiers": {
-        "common": { "detail": "普通效果：对家+3 / 旁-1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：对家+6 / 旁-3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：对家+15 / 旁-8", "gain": 15, "loss": 8 }
+        "common": { "detail": "对家+3 / 旁-1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "对家+6 / 旁-3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "对家+15 / 旁-8", "gain": 15, "loss": 8 }
       }
     },
     {
@@ -364,9 +364,9 @@
       "interaction_hint": null,
       "tags": ["杠上开花", "杠牌"],
       "tiers": {
-        "common": { "detail": "普通效果：+8 / -1", "gain": 8, "loss": 1 },
-        "rare": { "detail": "稀有效果：+12 / -2", "gain": 12, "loss": 2 },
-        "epic": { "detail": "史诗效果：+20 / -3", "gain": 20, "loss": 3 }
+        "common": { "detail": "+8 / -1", "gain": 8, "loss": 1 },
+        "rare": { "detail": "+12 / -2", "gain": 12, "loss": 2 },
+        "epic": { "detail": "+20 / -3", "gain": 20, "loss": 3 }
       }
     },
     {
@@ -379,9 +379,9 @@
       "interaction_hint": "发动时从自己已亮出的副露中选择一组进行回收。",
       "tags": ["功能", "副露"],
       "tiers": {
-        "common": { "detail": "普通效果：每局1次 / 每次扣3", "score_penalty": 3, "active_uses_per_round": 1 },
-        "rare": { "detail": "稀有效果：每局1次 / 每次扣2", "score_penalty": 2, "active_uses_per_round": 1 },
-        "epic": { "detail": "史诗效果：每局2次 / 每次扣1", "score_penalty": 1, "active_uses_per_round": 2 }
+        "common": { "detail": "每局1次 / 每次扣3", "score_penalty": 3, "active_uses_per_round": 1 },
+        "rare": { "detail": "每局1次 / 每次扣2", "score_penalty": 2, "active_uses_per_round": 1 },
+        "epic": { "detail": "每局2次 / 每次扣1", "score_penalty": 1, "active_uses_per_round": 2 }
       }
     },
     {
@@ -394,9 +394,9 @@
       "interaction_hint": null,
       "tags": ["字牌", "摸牌"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "史诗效果：+8 / -3", "gain": 8, "loss": 3 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
+        "epic": { "detail": "+8 / -3", "gain": 8, "loss": 3 }
       }
     },
     {
@@ -409,9 +409,9 @@
       "interaction_hint": null,
       "tags": ["起和门槛", "风险"],
       "tiers": {
-        "common": { "detail": "普通效果：7番起和 / 16番以上扣1", "loss": 1, "minimum_fan_override": 7 },
-        "rare": { "detail": "稀有效果：6番起和 / 16番以上扣2", "loss": 2, "minimum_fan_override": 6 },
-        "epic": { "detail": "史诗效果：5番起和 / 16番以上扣3", "loss": 3, "minimum_fan_override": 5 }
+        "common": { "detail": "7番起和 / 16番以上扣1", "loss": 1, "minimum_fan_override": 7 },
+        "rare": { "detail": "6番起和 / 16番以上扣2", "loss": 2, "minimum_fan_override": 6 },
+        "epic": { "detail": "5番起和 / 16番以上扣3", "loss": 3, "minimum_fan_override": 5 }
       }
     },
     {
@@ -424,9 +424,9 @@
       "interaction_hint": null,
       "tags": ["听牌", "牌墙"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "史诗效果：+9 / -3", "gain": 9, "loss": 3 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
+        "epic": { "detail": "+9 / -3", "gain": 9, "loss": 3 }
       }
     },
     {
@@ -439,9 +439,9 @@
       "interaction_hint": null,
       "tags": ["花牌", "结算"],
       "tiers": {
-        "common": { "detail": "普通效果：每张+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：每张+3 / -2", "gain": 3, "loss": 2 },
-        "epic": { "detail": "史诗效果：每张+5 / -5", "gain": 5, "loss": 5 }
+        "common": { "detail": "每张+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "每张+3 / -2", "gain": 3, "loss": 2 },
+        "epic": { "detail": "每张+5 / -3", "gain": 5, "loss": 3 }
       }
     },
     {
@@ -454,9 +454,9 @@
       "interaction_hint": null,
       "tags": ["庄家", "座次"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+8 / -5", "gain": 8, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
+        "epic": { "detail": "+8 / -3", "gain": 8, "loss": 3 }
       }
     },
     {
@@ -469,9 +469,9 @@
       "interaction_hint": null,
       "tags": ["字牌", "牌型"],
       "tiers": {
-        "common": { "detail": "普通效果：每组+1 / -1", "gain": 1, "loss": 1 },
-        "rare": { "detail": "稀有效果：每组+3 / -3", "gain": 3, "loss": 3 },
-        "epic": { "detail": "史诗效果：每组+6 / -8", "gain": 6, "loss": 8 }
+        "common": { "detail": "每组+1 / -1", "gain": 1, "loss": 1 },
+        "rare": { "detail": "每组+2 / -2", "gain": 2, "loss": 2 },
+        "epic": { "detail": "每组+3 / -3", "gain": 3, "loss": 3 }
       }
     },
     {
@@ -484,9 +484,9 @@
       "interaction_hint": null,
       "tags": ["暗牌", "听型"],
       "tiers": {
-        "common": { "detail": "普通效果：+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "稀有效果：+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -499,9 +499,9 @@
       "interaction_hint": null,
       "tags": ["博弈", "弃牌"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -514,9 +514,9 @@
       "interaction_hint": null,
       "tags": ["分差", "逆风"],
       "tiers": {
-        "common": { "detail": "普通效果：+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "稀有效果：+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "史诗效果：+9 / -5", "gain": 9, "loss": 5 }
+        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
       }
     },
     {
@@ -529,9 +529,9 @@
       "interaction_hint": null,
       "tags": ["连胜", "风险"],
       "tiers": {
-        "common": { "detail": "普通效果：+4 / -1", "gain": 4, "loss": 1 },
-        "rare": { "detail": "稀有效果：+8 / -3", "gain": 8, "loss": 3 },
-        "epic": { "detail": "史诗效果：+12 / -5", "gain": 12, "loss": 5 }
+        "common": { "detail": "+4 / -1", "gain": 4, "loss": 1 },
+        "rare": { "detail": "+8 / -3", "gain": 8, "loss": 3 },
+        "epic": { "detail": "+12 / -5", "gain": 12, "loss": 5 }
       }
     },
     {
@@ -544,9 +544,9 @@
       "interaction_hint": "发动后会立即向后端提交强制流局请求。",
       "tags": ["功能", "止损"],
       "tiers": {
-        "common": { "detail": "普通效果：减8分", "score_penalty": 8 },
-        "rare": { "detail": "稀有效果：减6分", "score_penalty": 6 },
-        "epic": { "detail": "史诗效果：减4分", "score_penalty": 4 }
+        "common": { "detail": "减8分", "score_penalty": 8 },
+        "rare": { "detail": "减6分", "score_penalty": 6 },
+        "epic": { "detail": "减4分", "score_penalty": 4 }
       }
     }
   ]

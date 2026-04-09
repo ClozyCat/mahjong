@@ -1178,7 +1178,10 @@ mod tests {
 
         for (raw, expected) in cases {
             let parsed = parse_client_message(raw).expect("message should parse");
-            assert_eq!(std::mem::discriminant(&parsed), std::mem::discriminant(&expected));
+            assert_eq!(
+                std::mem::discriminant(&parsed),
+                std::mem::discriminant(&expected)
+            );
         }
     }
 
