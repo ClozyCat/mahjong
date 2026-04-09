@@ -6,6 +6,7 @@ services:
       target: backend-runtime
     restart: unless-stopped
     environment:
+      MAHJONG_DEV_CORS_ORIGINS: https://mj.060889.xyz
       MAHJONG_DATABASE_URL: ${MAHJONG_DATABASE_URL:-sqlite+pysqlite:////data/mahjong.db}
     volumes:
       - mahjong-data:/data
