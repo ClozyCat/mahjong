@@ -844,15 +844,27 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
         return Ok(());
     }
 
+    let action = room
+        .continue_action
+        .get_or_insert_with(|| ContinueActionState {
+            action_id: action_id.to_string(),
+            confirmed_seats: Vec::new(),
+            required_seats: Vec::new(),
+            online_seats: Vec::new(),
+            auto_advance_deadline_at: None,
+        });
+    action.action_id = action_id.to_string();
+    action.confirmed_seats = confirmed.clone();
+    action.required_seats = required.clone();
+    action.online_seats = online.clone();
+
     let online_unconfirmed = online
         .iter()
         .filter(|seat| !confirmed.contains(seat))
         .copied()
         .collect::<Vec<_>>();
     if !online_unconfirmed.is_empty() {
-        if let Some(action) = room.continue_action.as_mut() {
-            action.auto_advance_deadline_at = None;
-        }
+        action.auto_advance_deadline_at = None;
         return Ok(());
     }
 
@@ -874,17 +886,9 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
     if !has_deadline {
         let deadline = (Utc::now() + TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
             .to_rfc3339_opts(SecondsFormat::Micros, true);
-        let action = room
-            .continue_action
-            .get_or_insert_with(|| ContinueActionState {
-                action_id: action_id.to_string(),
-                confirmed_seats: Vec::new(),
-                required_seats: Vec::new(),
-                online_seats: Vec::new(),
-                auto_advance_deadline_at: None,
-            });
-        action.action_id = action_id.to_string();
-        action.auto_advance_deadline_at = Some(deadline);
+        if let Some(action) = room.continue_action.as_mut() {
+            action.auto_advance_deadline_at = Some(deadline);
+        }
     }
     Ok(())
 }
@@ -1124,8 +1128,9 @@ fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
 mod tests {
     use super::*;
     use crate::core::state::{
-        LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout, PlayerRoundState,
-        RoundScoreTrackers, RoundSkillTrackers, RoundState, RuleRuntimeState, SeatState, WallState,
+        ContinueActionState, LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout,
+        PlayerRoundState, RoundScoreTrackers, RoundSkillTrackers, RoundState, RuleRuntimeState,
+        SeatState, WallState,
     };
 
     fn suit(tile_key: &str, tile_id: &str) -> Tile {
@@ -1314,5 +1319,27 @@ mod tests {
             )
             .round_state
         );
+    }
+
+    #[test]
+    fn reconcile_continue_action_room_state_populates_required_and_online_human_seats() {
+        let mut room = flower_action_room();
+        room.phase = "settlement".to_string();
+        room.seats = (0..3).map(seat_state).collect();
+        room.continue_action = Some(ContinueActionState {
+            action_id: "start_next_round".to_string(),
+            confirmed_seats: vec![0],
+            required_seats: Vec::new(),
+            online_seats: Vec::new(),
+            auto_advance_deadline_at: None,
+        });
+
+        reconcile_continue_action_in_room_state(&mut room).expect("continue action should reconcile");
+
+        let action = room.continue_action.expect("continue action should remain pending");
+        assert_eq!(action.confirmed_seats, vec![0]);
+        assert_eq!(action.required_seats, vec![0, 1, 2]);
+        assert_eq!(action.online_seats, vec![0, 1, 2]);
+        assert!(action.auto_advance_deadline_at.is_none());
     }
 }

@@ -1,6 +1,7 @@
 import type {
   BackendSkillSelectionView,
   BackendSkillView,
+  BackendKnowledgeView,
   ActionEffectView,
   BackendActionType,
   BattleActionId,
@@ -646,9 +647,27 @@ function findPrivatePlayer(state: SessionState, seatIndex: number): PrivatePlaye
   return state.roomSnapshot?.payload.private_state?.players.find((player) => player.seat_index === seatIndex);
 }
 
+function getSkillPreviewTileKeys(
+  knowledgeEntries: BackendKnowledgeView[] | null | undefined,
+  skillId: string | null | undefined,
+) {
+  if (!skillId || !Array.isArray(knowledgeEntries)) {
+    return [];
+  }
+
+  return knowledgeEntries.flatMap((entry) => {
+    if (entry.source_skill !== skillId || !Array.isArray(entry.tile_keys)) {
+      return [];
+    }
+
+    return entry.tile_keys.filter((tileKey): tileKey is string => typeof tileKey === 'string' && tileKey.length > 0);
+  });
+}
+
 function toPlayerSkillView(
   skill: BackendSkillView | null | undefined,
   cycleLabel: string | null = null,
+  previewTileKeys: string[] = [],
 ): PlayerView['skill'] {
   if (!skill) {
     return null;
@@ -672,6 +691,7 @@ function toPlayerSkillView(
     remainingRounds: skill.remaining_rounds,
     remainingActivationsThisRound: skill.remaining_activations_this_round,
     canActivateNow: Boolean(skill.can_activate_now),
+    previewTileKeys,
   };
 }
 
@@ -773,6 +793,13 @@ function createPlayers(state: SessionState): PlayerView[] {
       const seatType = seat.seat_type ?? (seat.is_bot ? 'bot' : 'human');
       const isBotSeat = seatType === 'bot';
       const cycleLabel = snapshot.private_state?.skill_draft?.cycle_label ?? null;
+      const previewTileKeys =
+        seat.seat_index === localSeat
+          ? getSkillPreviewTileKeys(
+              snapshot.private_state?.private_knowledge,
+              privatePlayer?.equipped_skill?.skill_id,
+            )
+          : [];
 
       return {
         seat: relativeSeat,
@@ -793,7 +820,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: normalizeDisplayMelds(privatePlayer?.melds),
         flowers: normalizeTileCodeList(privatePlayer?.flowers),
-        skill: toPlayerSkillView(privatePlayer?.equipped_skill, cycleLabel),
+        skill: toPlayerSkillView(privatePlayer?.equipped_skill, cycleLabel, previewTileKeys),
         statusText:
           isBotSeat
             ? 'Bot代打中'
@@ -1796,9 +1823,17 @@ function createContinueActionConfirmation(
   const confirmedSeats = Array.isArray(continueAction.confirmed_seats) ? continueAction.confirmed_seats : [];
   const requiredSeats = Array.isArray(continueAction.required_seats) ? continueAction.required_seats : [];
   const onlineSeats = Array.isArray(continueAction.online_seats) ? continueAction.online_seats : [];
+  const occupiedHumanSeatCount = Array.isArray(snapshot?.seats)
+    ? snapshot.seats.filter((seat) => seat.is_bot !== true).length
+    : 0;
   const countdownDeadlineAt =
     typeof continueAction.auto_advance_deadline_at === 'string' ? continueAction.auto_advance_deadline_at : null;
-  const requiredCount = requiredSeats.length > 0 ? requiredSeats.length : onlineSeats.length;
+  const requiredCount =
+    requiredSeats.length > 0
+      ? requiredSeats.length
+      : onlineSeats.length > 0
+        ? onlineSeats.length
+        : occupiedHumanSeatCount;
 
   return {
     confirmedCount: confirmedSeats.length,

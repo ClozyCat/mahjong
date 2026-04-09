@@ -378,6 +378,7 @@ describe('TableStage', () => {
               cycleLabel: '东1~东2局',
               remainingRounds: 2,
               remainingActivationsThisRound: 1,
+              previewTileKeys: ['w8', 'w9'],
             },
           },
           {
@@ -412,6 +413,7 @@ describe('TableStage', () => {
     });
 
     expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-left');
+    expect(within(screen.getByLabelText('声东击西 已查看牌')).getAllByTestId('mahjong-tile')).toHaveLength(2);
 
     fireEvent.mouseLeave(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
     fireEvent.mouseEnter(screen.getByRole('button', { name: '打开Player Right的快捷表情' }));

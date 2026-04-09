@@ -102,8 +102,8 @@ export function SkillActivationDialog({
             <div className="skill-activation-dialog__preview-grid">
               {activation.previewTiles.map((tile) => (
                 <div key={tile.key} className="skill-activation-dialog__preview-tile">
-                  <strong>{tile.revealedLabel}</strong>
-                  <span>{tile.hiddenLabel}</span>
+                  <MahjongTile code={tile.code} variant="discard" className="skill-activation-dialog__preview-tile-face" />
+                  <span>{tile.label}</span>
                 </div>
               ))}
             </div>

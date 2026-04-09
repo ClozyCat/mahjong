@@ -1,4 +1,5 @@
 import type { PlayerView } from '../../types/match';
+import { MahjongTile } from './MahjongTile';
 
 export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
   Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>>;
@@ -16,6 +17,7 @@ export function PlayerInfoBar({
   showSkillTooltip = false,
   tooltipPlacement = 'bottom',
 }: PlayerInfoBarProps) {
+  const skill = player.skill;
   const windLabel = player.wind ? (WIND_LABELS[player.wind] ?? player.wind) : null;
   const presenceLabel =
     player.seatType === 'bot'
@@ -45,24 +47,41 @@ export function PlayerInfoBar({
       <strong className="table-stage__player-info-name">{player.name}</strong>
       <span className="table-stage__player-info-meta">{metaText}</span>
       <span className="table-stage__player-info-detail">{detailText}</span>
-      {showSkillTooltip && player.skill ? (
+      {showSkillTooltip && skill ? (
         <div
-          className={`table-stage__skill-tooltip table-stage__skill-tooltip--${player.skill.tone} table-stage__skill-tooltip--seat-${tooltipPlacement}`.trim()}
+          className={`table-stage__skill-tooltip table-stage__skill-tooltip--${skill.tone} table-stage__skill-tooltip--seat-${tooltipPlacement}`.trim()}
           role="tooltip"
         >
           <div className="table-stage__skill-tooltip-header">
-            <span className="table-stage__skill-tooltip-rarity">{player.skill.rarityLabel}</span>
-            <span className="table-stage__skill-tooltip-type">{player.skill.typeLabel}</span>
+            <span className="table-stage__skill-tooltip-rarity">{skill.rarityLabel}</span>
+            <span className="table-stage__skill-tooltip-type">{skill.typeLabel}</span>
           </div>
-          <strong className="table-stage__skill-tooltip-name">{player.skill.name}</strong>
-          <p className="table-stage__skill-tooltip-summary">{player.skill.summary}</p>
-          <p className="table-stage__skill-tooltip-detail">{player.skill.detail}</p>
+          <strong className="table-stage__skill-tooltip-name">{skill.name}</strong>
+          <p className="table-stage__skill-tooltip-summary">{skill.summary}</p>
+          <p className="table-stage__skill-tooltip-detail">{skill.detail}</p>
           <div className="table-stage__skill-tooltip-meta">
-            <span>剩余 {player.skill.remainingRounds} 局</span>
-            {player.skill.type === 'active' ? <span>本局剩余 {player.skill.remainingActivationsThisRound} 次</span> : null}
+            <span>剩余 {skill.remainingRounds} 局</span>
+            {skill.type === 'active' ? <span>本局剩余 {skill.remainingActivationsThisRound} 次</span> : null}
           </div>
-          {player.skill.interactionHint ? (
-            <p className="table-stage__skill-tooltip-hint">{player.skill.interactionHint}</p>
+          {skill.previewTileKeys?.length ? (
+            <div className="table-stage__skill-tooltip-preview">
+              <span className="table-stage__skill-tooltip-preview-label">
+                {skill.interactionKind === 'preview_wall' ? '已查看尾牌' : '已获得情报'}
+              </span>
+              <div className="table-stage__skill-tooltip-preview-tiles" aria-label={`${skill.name} 已查看牌`}>
+                {skill.previewTileKeys.map((tileKey, index) => (
+                  <MahjongTile
+                    key={`${skill.skillId}-${tileKey}-${index}`}
+                    code={tileKey}
+                    variant="discard"
+                    className="table-stage__skill-tooltip-preview-tile"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {skill.interactionHint ? (
+            <p className="table-stage__skill-tooltip-hint">{skill.interactionHint}</p>
           ) : null}
         </div>
       ) : null}

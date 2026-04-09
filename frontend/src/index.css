@@ -8452,6 +8452,27 @@ input {
   color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--muted));
 }
 
+.table-stage__skill-tooltip-preview {
+  margin-top: 0.62rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.table-stage__skill-tooltip-preview-label {
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.table-stage__skill-tooltip-preview-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.table-stage__skill-tooltip-preview-tile {
+  filter: drop-shadow(0 0.4rem 0.75rem color-mix(in srgb, var(--theme-shadow-soft) 35%, transparent));
+}
+
 .skill-selection-overlay,
 .skill-activation-dialog {
   position: fixed;
@@ -8961,12 +8982,19 @@ input {
   border-radius: 1rem;
   background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
   border: 1px dashed color-mix(in srgb, var(--theme-border) 82%, transparent);
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
 }
 
 .skill-activation-dialog__preview-tile strong,
 .skill-activation-dialog__choice strong {
   display: block;
   color: var(--theme-paper-strong);
+}
+
+.skill-activation-dialog__preview-tile-face {
+  filter: drop-shadow(0 0.55rem 0.85rem color-mix(in srgb, var(--theme-shadow-soft) 38%, transparent));
 }
 
 .skill-activation-dialog__preview-tile span,

@@ -125,6 +125,25 @@ export interface BackendSkillSelectionView {
   options: BackendSkillView[];
 }
 
+export interface BackendVisibleEffectView {
+  effect_id: string;
+  effect_type: string;
+  owner: number;
+  target_seats: number[];
+  remaining_turns?: number | null;
+  stacks: number;
+  source_skill?: string | null;
+  payload: Record<string, unknown>;
+}
+
+export interface BackendKnowledgeView {
+  target_seat?: number | null;
+  tile_ids: string[];
+  tile_keys: string[];
+  source_skill?: string | null;
+  description?: string | null;
+}
+
 export type PendingAction =
   | {
       type: 'opening_flowers';
@@ -173,6 +192,8 @@ export interface PrivateState {
   pending_action?: PendingAction | null;
   skill_draft?: BackendSkillSelectionView | null;
   equipped_skills?: BackendSkillView[] | null;
+  visible_effects?: BackendVisibleEffectView[] | null;
+  private_knowledge?: BackendKnowledgeView[] | null;
   score_state?: ScoreState | null;
   players: PrivatePlayerState[];
 }
@@ -398,6 +419,7 @@ export interface PlayerSkillView {
   remainingRounds: number;
   remainingActivationsThisRound: number;
   canActivateNow?: boolean;
+  previewTileKeys?: string[];
 }
 
 export interface PlayerView {
@@ -578,8 +600,8 @@ export interface SkillActivationMeldChoiceView {
 
 export interface SkillActivationPreviewTileView {
   key: string;
-  revealedLabel: string;
-  hiddenLabel: string;
+  code: string;
+  label: string;
 }
 
 export interface SkillActivationView {

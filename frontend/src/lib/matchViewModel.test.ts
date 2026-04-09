@@ -925,6 +925,44 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('falls back to the occupied human seat count when continue-action totals are missing', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: base.roomSnapshot!.payload.seats.map((seat) =>
+            seat.seat_index === 3
+              ? {
+                  ...seat,
+                  is_bot: true,
+                }
+              : seat,
+          ),
+          continue_action: {
+            action_id: 'start_next_round',
+            confirmed_seats: [2],
+            required_seats: [],
+            online_seats: [],
+          },
+        },
+      },
+    });
+
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'start_next_round',
+      label: '已确认 1/3',
+      enabled: false,
+      confirmation: {
+        confirmedCount: 1,
+        requiredCount: 3,
+        isLocalConfirmed: true,
+      },
+    });
+  });
+
   it('shows a countdown after all online players confirm while offline humans are still pending', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-02T12:00:00Z'));
@@ -1373,5 +1411,61 @@ describe('createMatchViewModel', () => {
     expect(viewModel.readyHandInsight).toBeNull();
     expect(viewModel.shouldAutoReturnLastDiscardToRiver).toBe(false);
     expect(viewModel.actionIndicatorSeat).toBeNull();
+  });
+
+  it('attaches private knowledge preview tiles to the local equipped skill', () => {
+    const base = createPlayingSessionState();
+    const localSkill = {
+      skill_id: 'sheng_dong_ji_xi',
+      serial: '06',
+      name: '声东击西',
+      rarity: 'rare' as const,
+      rarity_label: '稀有',
+      tone: 'azure' as const,
+      type: 'active' as const,
+      type_label: '主动技能',
+      interaction_kind: 'preview_wall' as const,
+      summary: '查看牌墙尾部情报。',
+      detail: '稀有效果：看 2 张尾牌。',
+      interaction_hint: '发动后会在技能说明中显示尾牌预览情报。',
+      tags: ['信息', '摸牌'],
+      remaining_rounds: 2,
+      remaining_activations_this_round: 1,
+      can_activate_now: true,
+    };
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          mode: 'skill',
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            equipped_skills: [localSkill],
+            private_knowledge: [
+              {
+                source_skill: 'sheng_dong_ji_xi',
+                target_seat: null,
+                tile_ids: ['w8#1', 'w9#2'],
+                tile_keys: ['w8', 'w9'],
+                description: 'tail_preview',
+              },
+            ],
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    equipped_skill: localSkill,
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+    });
+
+    expect(viewModel.players.find((player) => player.isLocal)?.skill?.previewTileKeys).toEqual(['w8', 'w9']);
+    expect(viewModel.players.find((player) => !player.isLocal)?.skill?.previewTileKeys ?? []).toEqual([]);
   });
 });

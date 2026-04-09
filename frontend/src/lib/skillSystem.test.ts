@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BattleViewModel, SessionState } from '../types/match';
+import type { BackendSkillView, BattleViewModel, SessionState } from '../types/match';
 import {
   buildSkillActivationRequest,
   closeSkillActivation,
@@ -316,5 +316,63 @@ describe('skillSystem', () => {
       tileIds: ['seat:1'],
     });
     expect(closeSkillActivation(selected).activation).toBeNull();
+  });
+
+  it('maps private knowledge into preview-wall activation tiles', () => {
+    const baseState = createSessionState();
+    const previewSkill: BackendSkillView = {
+      skill_id: 'sheng_dong_ji_xi',
+      serial: '06',
+      name: '声东击西',
+      rarity: 'rare',
+      rarity_label: '稀有',
+      tone: 'azure',
+      type: 'active',
+      type_label: '主动技能',
+      interaction_kind: 'preview_wall',
+      summary: '查看牌墙尾部情报。',
+      detail: '稀有效果：看 2 张尾牌。',
+      interaction_hint: '发动后会在技能说明中显示尾牌预览情报。',
+      tags: ['信息', '摸牌'],
+      remaining_rounds: 2,
+      remaining_activations_this_round: 1,
+      can_activate_now: true,
+    };
+    const sessionState = {
+      ...baseState,
+      roomSnapshot: {
+        ...baseState.roomSnapshot!,
+        payload: {
+          ...baseState.roomSnapshot!.payload,
+          private_state: {
+            ...baseState.roomSnapshot!.payload.private_state!,
+            skill_draft: null,
+            equipped_skills: [previewSkill],
+            private_knowledge: [
+              {
+                source_skill: 'sheng_dong_ji_xi',
+                target_seat: null,
+                tile_ids: ['w8#1', 'w9#2'],
+                tile_keys: ['w8', 'w9'],
+                description: 'tail_preview',
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const runtime = openSkillActivation(createInitialSkillRuntimeState(), sessionState);
+    const viewModel = createSkillEnhancedBattleViewModel(
+      {
+        ...createBattleViewModel(),
+        skillSelection: null,
+      },
+      sessionState,
+      runtime,
+    );
+
+    expect(viewModel.skillActivation?.previewTiles?.map((tile) => tile.code)).toEqual(['w8', 'w9']);
+    expect(viewModel.skillActivation?.previewTiles?.map((tile) => tile.label)).toEqual(['尾1', '尾2']);
   });
 });

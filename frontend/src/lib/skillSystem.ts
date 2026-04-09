@@ -1,5 +1,6 @@
 import type {
   BackendSkillView,
+  BackendKnowledgeView,
   BattleActionView,
   BattleViewModel,
   PlayerSkillView,
@@ -67,6 +68,33 @@ function getLocalEquippedSkills(sessionState: SessionState): BackendSkillView[] 
     return [];
   }
   return sessionState.roomSnapshot?.payload.private_state?.equipped_skills ?? [];
+}
+
+function getLocalPrivateKnowledge(sessionState: SessionState): BackendKnowledgeView[] {
+  if (!isSkillMode(sessionState)) {
+    return [];
+  }
+
+  return sessionState.roomSnapshot?.payload.private_state?.private_knowledge ?? [];
+}
+
+function buildPreviewTiles(
+  sessionState: SessionState,
+  skillId: string,
+): SkillActivationView['previewTiles'] {
+  const knowledgeEntries = getLocalPrivateKnowledge(sessionState).filter(
+    (entry) => entry.source_skill === skillId && Array.isArray(entry.tile_keys),
+  );
+
+  return knowledgeEntries.flatMap((entry, knowledgeIndex) =>
+    entry.tile_keys
+      .filter((tileKey): tileKey is string => typeof tileKey === 'string' && tileKey.length > 0)
+      .map((tileKey, tileIndex) => ({
+        key: `${skillId}-${knowledgeIndex}-${tileIndex}-${tileKey}`,
+        code: tileKey,
+        label: `尾${tileIndex + 1}`,
+      })),
+  );
 }
 
 function getLocalActivatableSkill(sessionState: SessionState): PlayerSkillView | null {
@@ -276,7 +304,10 @@ function buildActivationView(
       activation.interactionKind === 'select_hand_tile' ? buildHandChoices(viewModel, activation) : undefined,
     meldChoices:
       activation.interactionKind === 'select_meld' ? buildMeldChoices(viewModel, activation) : undefined,
-    previewTiles: undefined,
+    previewTiles:
+      activation.interactionKind === 'preview_wall'
+        ? buildPreviewTiles(sessionState, activation.skillId)
+        : undefined,
   };
 }
 
