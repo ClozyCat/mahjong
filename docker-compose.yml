@@ -1,5 +1,5 @@
 services:
-  backend:
+  mahjong-backend:
     build:
       context: .
       dockerfile: Dockerfile
