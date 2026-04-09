@@ -784,13 +784,13 @@ fn apply_after_scoring(
             let melds = open_meld_count(request) as i64;
             adjust_score_delta(result, actor, if melds > 0 { gain * melds } else { -loss });
         }
-        "yi_yi_dai_lao" if is_winner => adjust_score_delta(
+        "yi_yi_dai_lao" if request.evaluation.winner_seat.is_some() => adjust_score_delta(
             result,
             actor,
-            if live_tiles_remaining(ctx) < 40 {
-                gain
-            } else {
-                -loss
+            match request.evaluation.win_type.as_str() {
+                "discard" if request.evaluation.discarder_seat != Some(actor) => gain,
+                "self_draw" => -loss,
+                _ => 0,
             },
         ),
         "chen_huo_da_jie" if is_winner => adjust_score_delta(
@@ -1300,6 +1300,81 @@ mod tests {
         );
     }
 
+    #[test]
+    fn yi_yi_dai_lao_rewards_non_discarders_on_discard_wins() {
+        let room = room_with_skill("yi_yi_dai_lao");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let mut result = fan_result_with_total(8);
+        result.score_delta.fan_delta_by_seat = vec![-8, -8, 24, -8];
+        result.score_delta.total_delta_by_seat = vec![-8, -8, 24, -8];
+
+        apply_after_scoring(
+            "yi_yi_dai_lao",
+            &ctx,
+            &score_hook_request_with_outcome("discard", Some(2), Some(1), vec!["w1", "w2", "w3"]),
+            &mut result,
+        );
+
+        assert_eq!(
+            result.score_delta.total_delta_by_seat[0],
+            -8 + gain_value("yi_yi_dai_lao", skill.level)
+        );
+    }
+
+    #[test]
+    fn yi_yi_dai_lao_does_not_reward_the_discarder() {
+        let room = room_with_skill("yi_yi_dai_lao");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let mut result = fan_result_with_total(8);
+        result.score_delta.fan_delta_by_seat = vec![-24, 24, 0, 0];
+        result.score_delta.total_delta_by_seat = vec![-24, 24, 0, 0];
+
+        apply_after_scoring(
+            "yi_yi_dai_lao",
+            &ctx,
+            &score_hook_request_with_outcome("discard", Some(1), Some(0), vec!["w1", "w2", "w3"]),
+            &mut result,
+        );
+
+        assert_eq!(result.score_delta.total_delta_by_seat[0], -24);
+    }
+
+    #[test]
+    fn yi_yi_dai_lao_penalizes_self_draw_wins() {
+        let room = room_with_skill("yi_yi_dai_lao");
+        let skill = room.round_state.as_ref().unwrap().players[0]
+            .skill_loadout
+            .equipped[0]
+            .clone();
+        let ctx = RuleContext::new(&room, 0, &skill);
+
+        let mut result = fan_result_with_total(8);
+        result.score_delta.fan_delta_by_seat = vec![-8, -8, 24, -8];
+        result.score_delta.total_delta_by_seat = vec![-8, -8, 24, -8];
+
+        apply_after_scoring(
+            "yi_yi_dai_lao",
+            &ctx,
+            &score_hook_request_with_outcome("self_draw", Some(2), None, vec!["w1", "w2", "w3"]),
+            &mut result,
+        );
+
+        assert_eq!(
+            result.score_delta.total_delta_by_seat[0],
+            -8 - loss_value("yi_yi_dai_lao", skill.level)
+        );
+    }
+
     fn room_with_skill(skill_id: &str) -> RoomState {
         RoomState {
             table_code: "ROOM42".to_string(),
@@ -1374,11 +1449,20 @@ mod tests {
     }
 
     fn score_hook_request(tile_keys: Vec<&str>) -> ScoreHookRequest {
+        score_hook_request_with_outcome("discard", Some(0), Some(1), tile_keys)
+    }
+
+    fn score_hook_request_with_outcome(
+        win_type: &str,
+        winner_seat: Option<usize>,
+        discarder_seat: Option<usize>,
+        tile_keys: Vec<&str>,
+    ) -> ScoreHookRequest {
         ScoreHookRequest {
             evaluation: EvaluationInput {
-                win_type: "discard".to_string(),
-                winner_seat: Some(0),
-                discarder_seat: Some(1),
+                win_type: win_type.to_string(),
+                winner_seat,
+                discarder_seat,
                 flower_count: 0,
                 seat_count: 4,
                 features: HandFeatures::default(),

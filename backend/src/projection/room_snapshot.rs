@@ -4,7 +4,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
-use crate::core::state::{MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry};
+use crate::core::state::{
+    MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry, SkillDraftStatus,
+};
 use crate::projection::SeatProjectionSupport;
 use crate::rules::skills::{
     EffectInstance, EquippedSkillView, KnowledgeEffect, SkillDraftSelectionView,
@@ -285,10 +287,23 @@ pub fn build_pending_action_view(
             })
         }
         "skill_draft" => {
-            skill_draft_view(state, local_seat).map(|selection| PendingActionView::SkillDraft {
-                seat_index: local_seat,
-                deadline_at: Some(selection.deadline_at),
-                options: vec!["select_skill".to_string(), "decline_skill".to_string()],
+            let draft = round.skill_draft.as_ref()?;
+            let next_pending_seat = draft
+                .offers_by_seat
+                .iter()
+                .find_map(|(seat, offer)| {
+                    (offer.status == SkillDraftStatus::Pending).then_some(*seat)
+                })
+                .unwrap_or(local_seat);
+            let local_selection = skill_draft_view(state, local_seat);
+            Some(PendingActionView::SkillDraft {
+                seat_index: next_pending_seat,
+                deadline_at: Some(draft.deadline_at.clone()),
+                options: if local_selection.is_some() {
+                    vec!["select_skill".to_string(), "decline_skill".to_string()]
+                } else {
+                    Vec::new()
+                },
             })
         }
         _ => None,
@@ -516,9 +531,10 @@ mod tests {
 
     use super::room_snapshot_message;
     use crate::core::state::{
-        MatchState, PlayerRoundState, RoomState, RoundScoreTrackers, RoundSettlement,
-        RoundSkillTrackers, RoundState, SeatState, SettlementKongScoreDetailEntry,
-        SettlementScoreDelta,
+        MatchState, PendingTimeout, PlayerRoundState, RoomState, RoundScoreTrackers,
+        RoundSettlement, RoundSkillTrackers, RoundState, SeatState, SettlementKongScoreDetailEntry,
+        SettlementScoreDelta, SkillDraftChoice, SkillDraftOffer, SkillDraftState, SkillDraftStatus,
+        SkillRarity,
     };
     use crate::projection::SeatProjectionSupport;
 
@@ -632,6 +648,94 @@ mod tests {
         assert_eq!(score_state["current_round_delta_by_seat"]["0"], -9);
         assert_eq!(score_state["projected_cumulative_scores"]["0"], -9);
         assert_eq!(score_state["projected_cumulative_scores"]["1"], 9);
+    }
+
+    #[test]
+    fn skill_draft_pending_action_remains_visible_after_local_seat_has_selected() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "skill".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: seats(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                skill_trackers: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: players(),
+                skill_draft: Some(SkillDraftState {
+                    cycle_key: "east-1".to_string(),
+                    cycle_label: "东1~东2局".to_string(),
+                    round_id: "round-1".to_string(),
+                    deadline_at: "2026-04-09T12:00:00Z".to_string(),
+                    offers_by_seat: BTreeMap::from([
+                        (
+                            0,
+                            SkillDraftOffer {
+                                seat: 0,
+                                status: SkillDraftStatus::Selected,
+                                options: vec![SkillDraftChoice {
+                                    skill_id: "wu_zhong_sheng_you".to_string(),
+                                    rarity: SkillRarity::Rare,
+                                }],
+                                selected_skill_id: Some("wu_zhong_sheng_you".to_string()),
+                                selected_rarity: Some(SkillRarity::Rare),
+                            },
+                        ),
+                        (
+                            1,
+                            SkillDraftOffer {
+                                seat: 1,
+                                status: SkillDraftStatus::Pending,
+                                options: vec![SkillDraftChoice {
+                                    skill_id: "sheng_dong_ji_xi".to_string(),
+                                    rarity: SkillRarity::Common,
+                                }],
+                                selected_skill_id: None,
+                                selected_rarity: None,
+                            },
+                        ),
+                    ]),
+                }),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "skill_draft".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-09T12:00:00Z".to_string()),
+                drawn_tile_id: None,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert!(snapshot["payload"]["private_state"]["skill_draft"].is_null());
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["type"],
+            "skill_draft"
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["seat_index"],
+            1
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!([])
+        );
     }
 
     fn seats() -> Vec<SeatState> {

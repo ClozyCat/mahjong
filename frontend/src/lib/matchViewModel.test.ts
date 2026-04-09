@@ -563,6 +563,36 @@ describe('createMatchViewModel', () => {
     expect(viewModel.promptText).toBe('Player C正在执行操作：出牌 / 杠 / 和牌');
   });
 
+  it('shows a center waiting status after the local player finishes skill selection first', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          mode: 'skill',
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'skill_draft',
+              seat_index: 1,
+              deadline_at: '2026-03-26T06:01:00Z',
+              options: [],
+            },
+            skill_draft: null,
+          },
+        },
+      },
+      latestActionPrompt: null,
+    });
+
+    expect(viewModel.centerStatusText).toBe('其他玩家正在选择技能');
+    expect(viewModel.promptText).toBeNull();
+    expect(viewModel.actionIndicatorSeat).toBeNull();
+    expect(viewModel.remainingTileCount).toBe(67);
+  });
+
   it('keeps the leave-table entry visible after the full match finishes', () => {
     const viewModel = createMatchViewModel(createFinishedSessionState());
 
@@ -922,6 +952,35 @@ describe('createMatchViewModel', () => {
         requiredCount: 4,
         isLocalConfirmed: true,
       },
+    });
+  });
+
+  it('uses final-score copy for the north-four settlement action', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          match_state: {
+            ...base.roomSnapshot!.payload.match_state!,
+            prevailing_wind: 'north',
+            hand_number: 4,
+          },
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            round_wind: 'north',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actions.find((action) => action.id === 'start_next_round')?.label).toBe('查看最终得分');
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'start_next_round',
+      label: '查看最终得分',
+      enabled: true,
     });
   });
 

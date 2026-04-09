@@ -1128,9 +1128,9 @@ fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
 mod tests {
     use super::*;
     use crate::core::state::{
-        ContinueActionState, LastActionContext, OpeningFlowersAction, PendingAction, PendingTimeout,
-        PlayerRoundState, RoundScoreTrackers, RoundSkillTrackers, RoundState, RuleRuntimeState,
-        SeatState, WallState,
+        ContinueActionState, LastActionContext, OpeningFlowersAction, PendingAction,
+        PendingTimeout, PlayerRoundState, RoundScoreTrackers, RoundSkillTrackers, RoundState,
+        RuleRuntimeState, SeatState, WallState,
     };
 
     fn suit(tile_key: &str, tile_id: &str) -> Tile {
@@ -1334,9 +1334,12 @@ mod tests {
             auto_advance_deadline_at: None,
         });
 
-        reconcile_continue_action_in_room_state(&mut room).expect("continue action should reconcile");
+        reconcile_continue_action_in_room_state(&mut room)
+            .expect("continue action should reconcile");
 
-        let action = room.continue_action.expect("continue action should remain pending");
+        let action = room
+            .continue_action
+            .expect("continue action should remain pending");
         assert_eq!(action.confirmed_seats, vec![0]);
         assert_eq!(action.required_seats, vec![0, 1, 2]);
         assert_eq!(action.online_seats, vec![0, 1, 2]);

@@ -58,7 +58,7 @@
       "skill_id": "yi_yi_dai_lao",
       "serial": "04",
       "name": "以逸待劳",
-      "summary": "牌局中后期胡牌加分；前期胡牌扣分。",
+      "summary": "有人放铳导致其他人胡牌时得分，自摸胡牌扣分。",
       "type": "passive",
       "interaction_kind": null,
       "interaction_hint": null,

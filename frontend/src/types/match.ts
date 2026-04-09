@@ -638,6 +638,7 @@ export interface BattleViewModel {
   claimCandidates: ClaimCandidateView[];
   drawnTileId: string | null;
   centerBanner: string | null;
+  centerStatusText: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue: BattlePromptView | null;

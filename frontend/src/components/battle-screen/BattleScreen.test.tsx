@@ -124,6 +124,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     claimCandidates: [],
     drawnTileId: 'w2#2',
     centerBanner: 'Opponent Turn',
+    centerStatusText: null,
     promptText: null,
     promptCue: null,
     result: null,

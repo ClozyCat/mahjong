@@ -25,6 +25,7 @@ interface TableStageProps {
   settlementWinnerSeat?: Seat | null;
   settlementWinType?: string | null;
   settlementWinTypeLabel?: string | null;
+  centerStatusText?: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
@@ -75,6 +76,7 @@ export function TableStage({
   settlementWinnerSeat = null,
   settlementWinType = null,
   settlementWinTypeLabel = null,
+  centerStatusText = null,
   remainingTileCount = null,
   promptText,
   promptCue = null,
@@ -139,6 +141,8 @@ export function TableStage({
   const shouldShowPreMatchActions = preMatchActions.length > 0;
   const shouldShowBotControls = shouldShowPreMatchActions || botCount > 0 || canAddBot || canRemoveBot;
   const scalePercentLabel = `${Math.round(tileScale * 100)}%`;
+  const centerPrimaryText =
+    centerStatusText ?? (typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局');
   const tableStageStyle = {
     '--table-stage-tile-scale': `${tileScale}`,
     '--table-stage-spotlight-scale': `${spotlightScale}`,
@@ -351,7 +355,7 @@ export function TableStage({
                 {PROMPT_KIND_COPY[promptCue.kind]}
               </span>
             ) : null}
-            <strong>{typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局'}</strong>
+            <strong>{centerPrimaryText}</strong>
             {promptText ? <em>{promptText}</em> : null}
           </div>
           {actionIndicatorSeat ? (

@@ -223,6 +223,7 @@ function createBattleViewModel(): BattleViewModel {
     claimCandidates: [],
     drawnTileId: null,
     centerBanner: null,
+    centerStatusText: null,
     promptText: null,
     promptCue: null,
     result: null,

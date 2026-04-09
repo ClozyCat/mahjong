@@ -42,6 +42,27 @@ describe('TableStage', () => {
     expect(screen.queryByText(/最新出牌/)).not.toBeInTheDocument();
   });
 
+  it('replaces the remaining-tile headline when a temporary center status is provided', () => {
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        centerStatusText="其他玩家正在选择技能"
+        remainingTileCount={66}
+        promptText={null}
+      />,
+    );
+
+    expect(screen.getByText('其他玩家正在选择技能')).toBeInTheDocument();
+    expect(screen.queryByText('剩余 66 张')).toBeNull();
+  });
+
   it('marks only the latest matching discard as the last discard', () => {
     const { container } = render(
       <TableStage

@@ -256,6 +256,10 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
     return createActorPrompt(getSeatName(state, pendingAction.seat_index), turnKongOptions);
   }
 
+  if (pendingAction?.type === 'skill_draft') {
+    return null;
+  }
+
   if (pendingAction && typeof pendingAction.type === 'string') {
     if (pendingAction.type === 'active_turn') {
       const actorSeat =
@@ -604,7 +608,7 @@ function createActionViews(
           : 'low';
     return {
       id,
-      label: getActionLabel(id, waitingControls, {
+      label: getActionLabel(state, id, waitingControls, {
         startNextRound: nextRoundConfirmation,
         restartMatch: restartMatchConfirmation,
       }),
@@ -615,6 +619,7 @@ function createActionViews(
 }
 
 function getActionLabel(
+  state: SessionState,
   id: BattleActionId,
   waitingControls: WaitingControls | null,
   continueActionConfirmations?: {
@@ -638,6 +643,10 @@ function getActionLabel(
 
   if (confirmation?.isLocalConfirmed) {
     return formatContinueActionConfirmedLabel(confirmation.confirmedCount, confirmation.requiredCount);
+  }
+
+  if (id === 'start_next_round') {
+    return getStartNextRoundLabel(state);
   }
 
   return ACTION_LABELS[id];
@@ -1333,7 +1342,7 @@ function createResult(state: SessionState): BattleViewModel['result'] {
                   nextRoundConfirmation.confirmedCount,
                   nextRoundConfirmation.requiredCount,
                 )
-              : ACTION_LABELS.start_next_round,
+              : getStartNextRoundLabel(state),
         enabled:
           isConnectionInteractive &&
           typeof snapshot.local_seat === 'number' &&
@@ -1489,6 +1498,21 @@ function createCenterBanner(state: SessionState) {
   return snapshot.private_state?.last_discard ?? null;
 }
 
+function createCenterStatusText(state: SessionState) {
+  if (hasOptimisticDiscardPending(state)) {
+    return null;
+  }
+
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+
+  if (privateState?.pending_action?.type === 'skill_draft' && !privateState.skill_draft) {
+    return '其他玩家正在选择技能';
+  }
+
+  return null;
+}
+
 function createRemainingTileCount(state: SessionState) {
   const remaining = state.roomSnapshot?.payload.private_state?.wall_tiles_remaining;
   return typeof remaining === 'number' ? remaining : null;
@@ -1510,6 +1534,10 @@ function createActionIndicatorSeat(state: SessionState): Seat | null {
   const pendingAction = privateState.pending_action;
 
   if (pendingAction?.type === 'claim_window') {
+    return null;
+  }
+
+  if (pendingAction?.type === 'skill_draft') {
     return null;
   }
 
@@ -1724,6 +1752,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     claimCandidates: createClaimCandidates(state),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
+    centerStatusText: createCenterStatusText(state),
     remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state, options),
     promptCue,
@@ -1841,6 +1870,18 @@ function createContinueActionConfirmation(
     isLocalConfirmed: typeof localSeat === 'number' && confirmedSeats.includes(localSeat),
     countdownDeadlineAt,
   };
+}
+
+function getStartNextRoundLabel(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  const roundWind = snapshot?.private_state?.round_wind ?? snapshot?.match_state?.prevailing_wind;
+  const handNumber = snapshot?.match_state?.hand_number;
+
+  if (roundWind === 'north' && handNumber === 4) {
+    return '查看最终得分';
+  }
+
+  return ACTION_LABELS.start_next_round;
 }
 
 function formatContinueActionConfirmedLabel(confirmedCount: number, requiredCount: number) {
