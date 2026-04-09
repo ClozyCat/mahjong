@@ -32,6 +32,10 @@ export function createInitialSkillRuntimeState(): SkillRuntimeState {
   };
 }
 
+function isSkillMode(sessionState: SessionState) {
+  return sessionState.roomSnapshot?.payload.mode === 'skill';
+}
+
 function toPlayerSkillView(skill: BackendSkillView | null | undefined): PlayerSkillView | null {
   if (!skill) {
     return null;
@@ -59,6 +63,9 @@ function toPlayerSkillView(skill: BackendSkillView | null | undefined): PlayerSk
 }
 
 function getLocalEquippedSkills(sessionState: SessionState): BackendSkillView[] {
+  if (!isSkillMode(sessionState)) {
+    return [];
+  }
   return sessionState.roomSnapshot?.payload.private_state?.equipped_skills ?? [];
 }
 
@@ -87,6 +94,12 @@ function isActivationStillValid(runtime: SkillRuntimeState, sessionState: Sessio
 }
 
 export function syncSkillRuntimeWithSession(runtime: SkillRuntimeState, sessionState: SessionState): SkillRuntimeState {
+  if (!isSkillMode(sessionState)) {
+    return {
+      activation: null,
+    };
+  }
+
   if (sessionState.roomSnapshot?.payload.private_state?.skill_draft) {
     return {
       activation: null,
@@ -299,6 +312,13 @@ export function createSkillEnhancedBattleViewModel(
   sessionState: SessionState,
   runtime: SkillRuntimeState,
 ): BattleViewModel {
+  if (!isSkillMode(sessionState)) {
+    return {
+      ...viewModel,
+      skillActivation: null,
+    };
+  }
+
   const activatableSkill = getLocalActivatableSkill(sessionState);
   return {
     ...viewModel,

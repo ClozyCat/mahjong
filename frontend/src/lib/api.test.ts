@@ -43,7 +43,7 @@ describe('api helpers', () => {
         JSON.stringify({
           table_code: 'ROOM42',
           phase: 'waiting',
-          mode: 'test',
+          mode: 'skill',
           created_at: '2026-03-26T06:00:00Z',
           seats: [],
         }),
@@ -55,14 +55,14 @@ describe('api helpers', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createTable('http://localhost:8080', 'ROOM42', 'test', false);
+    await createTable('http://localhost:8080', 'ROOM42', 'skill', false);
 
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/tables', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ table_code: 'ROOM42', mode: 'test', enforce_minimum_eight_fan: false }),
+      body: JSON.stringify({ table_code: 'ROOM42', mode: 'skill', enforce_minimum_eight_fan: false }),
     });
   });
 

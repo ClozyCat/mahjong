@@ -23,6 +23,7 @@ function createSessionState(): SessionState {
       payload: {
         table_code: 'AB12CD',
         phase: 'playing',
+        mode: 'skill',
         seats: [
           { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
           { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
@@ -161,7 +162,7 @@ function createSessionState(): SessionState {
 
 function createBattleViewModel(): BattleViewModel {
   return {
-    roomMode: 'normal',
+    roomMode: 'skill',
     mode: 'my_turn',
     tableCode: 'AB12CD',
     canLeaveTable: true,

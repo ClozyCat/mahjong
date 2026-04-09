@@ -846,6 +846,7 @@ mod tests {
     #[test]
     fn action_prompt_exposes_equipped_skill_option() {
         let mut room = room_for_local_discard();
+        room["mode"] = json!("skill");
         room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
                 "skill_id": "score_boost",
@@ -872,6 +873,7 @@ mod tests {
     #[test]
     fn local_skill_action_persists_effects_and_consumes_charge() {
         let mut room = room_for_local_discard();
+        room["mode"] = json!("skill");
         room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
                 "skill_id": "score_boost",
@@ -914,6 +916,7 @@ mod tests {
             .expect("baseline fan total");
 
         let mut boosted_room = room_for_local_self_hu();
+        boosted_room["mode"] = json!("skill");
         boosted_room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
                 "skill_id": "score_boost",
@@ -948,6 +951,7 @@ mod tests {
     #[test]
     fn peek_skill_populates_private_knowledge_in_snapshot() {
         let mut room = room_for_local_discard();
+        room["mode"] = json!("skill");
         room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
                 "skill_id": "peek_opponent_tile",
@@ -1018,6 +1022,7 @@ mod tests {
     #[test]
     fn zou_wei_shang_ji_forces_draw_without_next_round_penalty() {
         let mut room = room_for_local_discard();
+        room["mode"] = json!("skill");
         room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
                 "skill_id": "zou_wei_shang_ji",
@@ -1059,6 +1064,7 @@ mod tests {
     #[test]
     fn jin_chan_tuo_qiao_blocks_claim_window_for_next_discard() {
         let mut room = room_for_local_claim_window();
+        room["mode"] = json!("skill");
         room["round_state"]["players"][0]["skill_loadout"] = json!({
             "equipped": [{
                 "skill_id": "jin_chan_tuo_qiao",

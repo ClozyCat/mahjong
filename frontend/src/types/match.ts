@@ -1,5 +1,5 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
-export type TableMode = 'normal' | 'test';
+export type TableMode = 'normal' | 'skill' | 'test';
 export type SeatType = 'human' | 'bot';
 
 export type MatchPhase =

@@ -92,6 +92,10 @@ pub struct SkillSelectionView {
     pub options: Vec<EquippedSkillView>,
 }
 
+fn skills_enabled(room_state: &RoomState) -> bool {
+    room_state.mode == "skill"
+}
+
 pub fn equipped_skill_views(room_state: &RoomState, seat: Seat) -> Vec<EquippedSkillView> {
     equipped_skill_views_with_registry(room_state, seat, default_registry())
 }
@@ -101,6 +105,10 @@ pub fn equipped_skill_views_with_registry(
     seat: Seat,
     registry: &dyn SkillRegistry,
 ) -> Vec<EquippedSkillView> {
+    if !skills_enabled(room_state) {
+        return Vec::new();
+    }
+
     let Some(loadout) = seat_skill_loadout(room_state, seat) else {
         return Vec::new();
     };
@@ -120,6 +128,10 @@ pub fn public_skill_view_with_registry(
     seat: Seat,
     registry: &dyn SkillRegistry,
 ) -> Option<EquippedSkillView> {
+    if !skills_enabled(room_state) {
+        return None;
+    }
+
     seat_skill_loadout(room_state, seat)
         .and_then(|loadout| loadout.equipped.first())
         .map(|skill_instance| equipped_skill_view(room_state, seat, skill_instance, registry))
@@ -137,6 +149,10 @@ pub fn current_skill_selection_view_with_registry(
     seat: Seat,
     registry: &dyn SkillRegistry,
 ) -> Option<SkillSelectionView> {
+    if !skills_enabled(room_state) {
+        return None;
+    }
+
     let round = room_state.round_state.as_ref()?;
     let draft = round.skill_draft.as_ref()?;
     let offer = draft.offers_by_seat.get(&seat)?;
@@ -436,6 +452,10 @@ pub struct SkillDraftChoiceView {
 }
 
 pub fn skill_draft_view(room_state: &RoomState, seat: Seat) -> Option<SkillDraftSelectionView> {
+    if !skills_enabled(room_state) {
+        return None;
+    }
+
     let round = room_state.round_state.as_ref()?;
     let draft = round.skill_draft.as_ref()?;
     let offer = draft.offers_by_seat.get(&seat)?;
@@ -641,6 +661,10 @@ pub fn activate_skill_with_registry(
     tile_ids: &[TileId],
     registry: &dyn SkillRegistry,
 ) -> Result<Vec<GameEvent>, String> {
+    if !skills_enabled(room_state) {
+        return Err("invalid_action".to_string());
+    }
+
     if room_state.phase != "playing" {
         return Err("invalid_action".to_string());
     }
@@ -682,6 +706,10 @@ pub fn skill_action_options_with_registry(
     seat: Seat,
     registry: &dyn SkillRegistry,
 ) -> Vec<String> {
+    if !skills_enabled(room_state) {
+        return Vec::new();
+    }
+
     let mut options = Vec::new();
     let _ = for_each_equipped_skill(room_state, registry, |ctx, definition| {
         if ctx.actor == seat {
@@ -703,6 +731,10 @@ pub fn build_skill_projection_with_registry(
     local_seat: Seat,
     registry: &dyn SkillRegistry,
 ) -> SkillProjection {
+    if !skills_enabled(room_state) {
+        return SkillProjection::default();
+    }
+
     let mut projection = SkillProjection::default();
     let _ = for_each_equipped_skill(room_state, registry, |ctx, definition| {
         definition.build_view(ctx, local_seat, &mut projection)
@@ -723,6 +755,10 @@ pub fn apply_before_scoring_hooks_with_registry(
     request: &mut ScoreHookRequest,
     registry: &dyn SkillRegistry,
 ) -> Result<(), String> {
+    if !skills_enabled(room_state) {
+        return Ok(());
+    }
+
     for_each_equipped_skill(room_state, registry, |ctx, definition| {
         definition.before_scoring(ctx, request)
     })
@@ -742,6 +778,10 @@ pub fn apply_after_scoring_hooks_with_registry(
     result: &mut crate::rules::scoring::FanResult,
     registry: &dyn SkillRegistry,
 ) -> Result<(), String> {
+    if !skills_enabled(room_state) {
+        return Ok(());
+    }
+
     for_each_equipped_skill(room_state, registry, |ctx, definition| {
         definition.after_scoring(ctx, request, result)
     })
@@ -759,6 +799,10 @@ pub fn apply_draw_settlement_hooks_with_registry(
     settlement: &mut RoundSettlement,
     registry: &dyn SkillRegistry,
 ) -> Result<(), String> {
+    if !skills_enabled(room_state) {
+        return Ok(());
+    }
+
     for_each_equipped_skill(room_state, registry, |ctx, definition| {
         definition.after_draw_settlement(ctx, settlement)
     })
@@ -2009,6 +2053,10 @@ fn for_each_equipped_skill<F>(
 where
     F: FnMut(&RuleContext<'_>, &dyn SkillDefinition) -> Result<(), String>,
 {
+    if !skills_enabled(room_state) {
+        return Ok(());
+    }
+
     let Some(round) = room_state.round_state.as_ref() else {
         return Ok(());
     };
@@ -2062,7 +2110,7 @@ mod tests {
         RoomState {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
-            mode: "normal".to_string(),
+            mode: "skill".to_string(),
             test_mode: false,
             enforce_minimum_eight_fan: true,
             seats: Vec::new(),

@@ -62,13 +62,15 @@ describe('ConnectGate', () => {
     );
 
     await user.type(screen.getByLabelText(/牌桌编号/i), 'Z');
-    await user.click(screen.getByRole('button', { name: /牌桌模式：普通模式/i }));
+    const tableModeButton = screen.getByRole('button', { name: /牌桌模式：普通模式/i });
+    await user.click(tableModeButton);
+    await user.click(tableModeButton);
     await user.click(screen.getByRole('button', { name: /八番起胡/i }));
     await user.click(screen.getByRole('button', { name: '创建牌桌' }));
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(onChange).toHaveBeenCalled();
-    expect(onChange).toHaveBeenCalledWith({ tableMode: 'test' });
+    expect(onChange).toHaveBeenCalledWith({ tableMode: 'skill' });
     expect(onChange).toHaveBeenCalledWith({ enforceMinimumEightFan: false });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);

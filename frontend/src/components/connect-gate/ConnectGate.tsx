@@ -37,11 +37,17 @@ const TABLE_MODE_COPY: Record<TableMode, { label: string; description: string }>
     label: '普通模式',
     description: '手动准备开局',
   },
+  skill: {
+    label: '技能模式',
+    description: '奇数局起手抽取技能',
+  },
   test: {
     label: '测试模式',
     description: '自动补满机器人',
   },
 };
+
+const TABLE_MODE_ORDER: TableMode[] = ['normal', 'skill', 'test'];
 
 export function ConnectGate({
   value,
@@ -94,7 +100,8 @@ export function ConnectGate({
 
   function renderTableModeToggle() {
     const currentMode = TABLE_MODE_COPY[value.tableMode];
-    const nextMode: TableMode = value.tableMode === 'normal' ? 'test' : 'normal';
+    const currentModeIndex = TABLE_MODE_ORDER.indexOf(value.tableMode);
+    const nextMode = TABLE_MODE_ORDER[(currentModeIndex + 1) % TABLE_MODE_ORDER.length] ?? 'normal';
     const nextModeLabel = TABLE_MODE_COPY[nextMode].label;
 
     return (
@@ -103,7 +110,7 @@ export function ConnectGate({
         className="connect-gate__toggle"
         onClick={() => onChange({ tableMode: nextMode })}
         disabled={disabled}
-        aria-pressed={value.tableMode === 'test'}
+        aria-pressed={value.tableMode !== 'normal'}
         aria-label={`牌桌模式：${currentMode.label}`}
         title={`点击切换为${nextModeLabel}`}
       >

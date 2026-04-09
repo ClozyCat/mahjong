@@ -344,7 +344,8 @@ fn auto_select_offer_for_bot(
 }
 
 fn should_offer_skills(room: &RoomState) -> bool {
-    room.phase == "playing"
+    room.mode == "skill"
+        && room.phase == "playing"
         && room
             .match_state
             .as_ref()
@@ -450,9 +451,13 @@ fn advance_loadout(loadout: &mut SkillLoadout) {
 mod tests {
     use serde_json::json;
 
-    use crate::core::state::{SkillDraftChoice, SkillInstance, SkillLoadout, SkillRarity};
+    use crate::core::state::{
+        LastActionContext, MatchState, PlayerRoundState, RoomState, RoundScoreTrackers,
+        RoundState, RuleRuntimeState, SkillDraftChoice, SkillInstance, SkillLoadout,
+        SkillRarity, WallState,
+    };
 
-    use super::{advance_loadout, build_skill_instance};
+    use super::{advance_loadout, begin_round_skill_draft_in_room_state, build_skill_instance};
 
     #[test]
     fn build_skill_instance_uses_tier_activation_limit() {
@@ -490,5 +495,84 @@ mod tests {
         assert_eq!(loadout.equipped[0].remaining_rounds, 1);
         assert_eq!(loadout.equipped[0].charges, 2);
         assert_eq!(loadout.equipped[0].charges_per_round, 2);
+    }
+
+    #[test]
+    fn normal_mode_does_not_offer_round_skills() {
+        let mut room = skill_mode_room("normal");
+
+        begin_round_skill_draft_in_room_state(&mut room).expect("draft initialization should succeed");
+
+        assert!(room.round_state.as_ref().and_then(|round| round.skill_draft.as_ref()).is_none());
+    }
+
+    #[test]
+    fn skill_mode_offers_round_skills_on_odd_hands() {
+        let mut room = skill_mode_room("skill");
+
+        begin_round_skill_draft_in_room_state(&mut room).expect("draft initialization should succeed");
+
+        assert!(room.round_state.as_ref().and_then(|round| round.skill_draft.as_ref()).is_some());
+    }
+
+    fn skill_mode_room(mode: &str) -> RoomState {
+        RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: mode.to_string(),
+            test_mode: mode == "test",
+            enforce_minimum_eight_fan: true,
+            seats: vec![],
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                cumulative_scores: Default::default(),
+                match_finished: false,
+                last_completed_round_id: None,
+                skill_trackers: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "east-1-room42".to_string(),
+                dealer_seat: 0,
+                current_actor: 0,
+                wall: WallState::default(),
+                players: vec![
+                    PlayerRoundState {
+                        seat: 0,
+                        concealed_tiles: vec![],
+                        melds: vec![],
+                        flowers: vec![],
+                        discards: vec![],
+                        skill_loadout: SkillLoadout::default(),
+                    },
+                    PlayerRoundState {
+                        seat: 1,
+                        concealed_tiles: vec![],
+                        melds: vec![],
+                        flowers: vec![],
+                        discards: vec![],
+                        skill_loadout: SkillLoadout::default(),
+                    },
+                ],
+                last_discard: None,
+                pending_action: None,
+                phase: "playing".to_string(),
+                settlement: None,
+                version: 1,
+                score_trackers: RoundScoreTrackers::default(),
+                last_action_context: LastActionContext::default(),
+                rule_state: RuleRuntimeState {
+                    enforce_minimum_eight_fan: true,
+                },
+                effect_state: Default::default(),
+                restricted_discard_tile_key: None,
+                skill_draft: None,
+                skill_trackers: Default::default(),
+                round_wind: "east".to_string(),
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        }
     }
 }
