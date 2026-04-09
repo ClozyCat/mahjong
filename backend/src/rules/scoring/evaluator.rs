@@ -1573,7 +1573,7 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             fan_value: 16,
             matcher: match_three_concealed_pungs,
             value_resolver: None,
-            excludes: &[],
+            excludes: &["two_concealed_pungs"],
             forbidden_with: &[],
         },
         FanRule {
@@ -1589,7 +1589,12 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             fan_value: 64,
             matcher: match_four_concealed_pungs,
             value_resolver: None,
-            excludes: &["all_pungs", "concealed_hand"],
+            excludes: &[
+                "all_pungs",
+                "concealed_hand",
+                "three_concealed_pungs",
+                "two_concealed_pungs",
+            ],
             forbidden_with: &[],
         },
         FanRule {
@@ -1825,7 +1830,7 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             fan_value: 4,
             matcher: match_two_melded_kongs,
             value_resolver: None,
-            excludes: &[],
+            excludes: &["melded_kong"],
             forbidden_with: &[],
         },
         FanRule {
@@ -1841,7 +1846,12 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             fan_value: 32,
             matcher: match_three_kongs,
             value_resolver: None,
-            excludes: &[],
+            excludes: &[
+                "concealed_kong",
+                "two_concealed_kongs",
+                "melded_kong",
+                "two_melded_kongs",
+            ],
             forbidden_with: &[],
         },
         FanRule {
@@ -1849,7 +1859,15 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             fan_value: 88,
             matcher: match_four_kongs,
             value_resolver: None,
-            excludes: &["all_pungs", "single_wait"],
+            excludes: &[
+                "all_pungs",
+                "single_wait",
+                "three_kongs",
+                "concealed_kong",
+                "two_concealed_kongs",
+                "melded_kong",
+                "two_melded_kongs",
+            ],
             forbidden_with: &[],
         },
         FanRule {
@@ -3820,5 +3838,160 @@ mod tests {
         });
 
         assert!(!result.fan_keys.iter().any(|fan| fan == "melded_hand"));
+    }
+
+    #[test]
+    fn three_concealed_pungs_does_not_double_count_two_concealed_pungs() {
+        let tile_keys = vec![
+            "w1", "w1", "w1", "w4", "w4", "w4", "t7", "t7", "t7", "b1", "b2", "b3", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w1".to_string(), "w1".to_string()],
+                vec!["w4".to_string(), "w4".to_string(), "w4".to_string()],
+                vec!["t7".to_string(), "t7".to_string(), "t7".to_string()],
+                vec!["b1".to_string(), "b2".to_string(), "b3".to_string()],
+            ],
+            ..Default::default()
+        }];
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("south"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys: tile_keys.clone(),
+            visible_tile_keys: vec![],
+            concealed_tile_keys: tile_keys,
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions,
+        });
+
+        assert!(
+            result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "three_concealed_pungs")
+        );
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "two_concealed_pungs")
+        );
+    }
+
+    #[test]
+    fn four_concealed_pungs_does_not_double_count_lower_concealed_pung_fans() {
+        let tile_keys = vec![
+            "w1", "w1", "w1", "w4", "w4", "w4", "t7", "t7", "t7", "red", "red", "red", "green",
+            "green",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("green".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w1".to_string(), "w1".to_string()],
+                vec!["w4".to_string(), "w4".to_string(), "w4".to_string()],
+                vec!["t7".to_string(), "t7".to_string(), "t7".to_string()],
+                vec!["red".to_string(), "red".to_string(), "red".to_string()],
+            ],
+            ..Default::default()
+        }];
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("south"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys: tile_keys.clone(),
+            visible_tile_keys: vec![],
+            concealed_tile_keys: tile_keys,
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions,
+        });
+
+        assert!(
+            result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "four_concealed_pungs")
+        );
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "three_concealed_pungs")
+        );
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "two_concealed_pungs")
+        );
+    }
+
+    #[test]
+    fn higher_kong_rules_explicitly_exclude_lower_kong_rules() {
+        let three_kongs_rule = StandardFanTable::rules()
+            .iter()
+            .find(|rule| rule.fan_key == "three_kongs")
+            .expect("three_kongs rule");
+        let four_kongs_rule = StandardFanTable::rules()
+            .iter()
+            .find(|rule| rule.fan_key == "four_kongs")
+            .expect("four_kongs rule");
+
+        for excluded in [
+            "concealed_kong",
+            "two_concealed_kongs",
+            "melded_kong",
+            "two_melded_kongs",
+        ] {
+            assert!(three_kongs_rule.excludes.contains(&excluded));
+            assert!(four_kongs_rule.excludes.contains(&excluded));
+        }
+        assert!(four_kongs_rule.excludes.contains(&"three_kongs"));
+        let two_melded_kongs_rule = StandardFanTable::rules()
+            .iter()
+            .find(|rule| rule.fan_key == "two_melded_kongs")
+            .expect("two_melded_kongs rule");
+        assert!(two_melded_kongs_rule.excludes.contains(&"melded_kong"));
     }
 }

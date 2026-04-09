@@ -19,9 +19,9 @@
       "interaction_hint": null,
       "tags": ["门清", "结算"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "+12 / -8", "gain": 12, "loss": 8 }
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -34,9 +34,9 @@
       "interaction_hint": null,
       "tags": ["止损", "防守"],
       "tiers": {
-        "common": { "detail": "免1 / -1", "gain": 1, "loss": 1 },
-        "rare": { "detail": "免3 / -2", "gain": 3, "loss": 2 },
-        "epic": { "detail": "免8 / -3", "gain": 8, "loss": 3 }
+        "common": { "detail": "免3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "免5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "免8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -58,15 +58,15 @@
       "skill_id": "yi_yi_dai_lao",
       "serial": "04",
       "name": "以逸待劳",
-      "summary": "有人放铳导致其他人胡牌时得分，自摸胡牌扣分。",
+      "summary": "他人放铳导致任意玩家胡牌时得分，自摸胡牌扣分。",
       "type": "passive",
       "interaction_kind": null,
       "interaction_hint": null,
       "tags": ["牌墙", "时机"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "+8 / -3", "gain": 8, "loss": 3 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -80,8 +80,8 @@
       "tags": ["局势", "结算"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -140,8 +140,8 @@
       "tags": ["流局", "止损"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+15 / -8", "gain": 15, "loss": 8 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -155,8 +155,8 @@
       "tags": ["牌型", "幺九"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+15 / -8", "gain": 15, "loss": 8 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -170,8 +170,8 @@
       "tags": ["防守", "被动"],
       "tiers": {
         "common": { "detail": "抵3分 / 扣1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "抵8分 / 扣3", "gain": 8, "loss": 3 },
-        "epic": { "detail": "抵15分 / 扣5", "gain": 15, "loss": 5 }
+        "rare": { "detail": "抵5分 / 扣3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "抵8分 / 扣5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -199,7 +199,7 @@
       "interaction_hint": null,
       "tags": ["杠牌", "局势"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
         "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
@@ -214,7 +214,7 @@
       "interaction_hint": null,
       "tags": ["熟张", "读牌"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
         "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
@@ -229,7 +229,7 @@
       "interaction_hint": null,
       "tags": ["断幺", "牌型"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
         "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
@@ -245,8 +245,8 @@
       "tags": ["时机", "追击"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -259,7 +259,7 @@
       "interaction_hint": null,
       "tags": ["数牌", "结构"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
         "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
@@ -275,8 +275,8 @@
       "tags": ["番数", "上限"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -290,8 +290,8 @@
       "tags": ["牌墙", "残局"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -305,8 +305,8 @@
       "tags": ["花色", "结构"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -334,9 +334,9 @@
       "interaction_hint": null,
       "tags": ["听型", "牌理"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -350,8 +350,8 @@
       "tags": ["座次", "结算"],
       "tiers": {
         "common": { "detail": "对家+3 / 旁-1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "对家+6 / 旁-3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "对家+15 / 旁-8", "gain": 15, "loss": 8 }
+        "rare": { "detail": "对家+5 / 旁-3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "对家+8 / 旁-5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -395,8 +395,8 @@
       "tags": ["字牌", "摸牌"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "+8 / -3", "gain": 8, "loss": 3 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -424,9 +424,9 @@
       "interaction_hint": null,
       "tags": ["听牌", "牌墙"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "+9 / -3", "gain": 9, "loss": 3 }
+        "epic": { "detail": "+8 / -3", "gain": 9, "loss": 3 }
       }
     },
     {
@@ -454,9 +454,9 @@
       "interaction_hint": null,
       "tags": ["庄家", "座次"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
-        "rare": { "detail": "+5 / -2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "+8 / -3", "gain": 8, "loss": 3 }
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -485,8 +485,8 @@
       "tags": ["暗牌", "听型"],
       "tiers": {
         "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "+6 / -3", "gain": 6, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -499,9 +499,9 @@
       "interaction_hint": null,
       "tags": ["博弈", "弃牌"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -514,9 +514,9 @@
       "interaction_hint": null,
       "tags": ["分差", "逆风"],
       "tiers": {
-        "common": { "detail": "+2 / -1", "gain": 2, "loss": 1 },
+        "common": { "detail": "+3 / -1", "gain": 3, "loss": 1 },
         "rare": { "detail": "+5 / -3", "gain": 5, "loss": 3 },
-        "epic": { "detail": "+9 / -5", "gain": 9, "loss": 5 }
+        "epic": { "detail": "+8 / -5", "gain": 8, "loss": 5 }
       }
     },
     {
@@ -530,8 +530,8 @@
       "tags": ["连胜", "风险"],
       "tiers": {
         "common": { "detail": "+4 / -1", "gain": 4, "loss": 1 },
-        "rare": { "detail": "+8 / -3", "gain": 8, "loss": 3 },
-        "epic": { "detail": "+12 / -5", "gain": 12, "loss": 5 }
+        "rare": { "detail": "+8 / -2", "gain": 8, "loss": 2 },
+        "epic": { "detail": "+12 / -3", "gain": 12, "loss": 3 }
       }
     },
     {
@@ -546,7 +546,7 @@
       "tiers": {
         "common": { "detail": "减8分", "score_penalty": 8 },
         "rare": { "detail": "减6分", "score_penalty": 6 },
-        "epic": { "detail": "减4分", "score_penalty": 4 }
+        "epic": { "detail": "减3分", "score_penalty": 3 }
       }
     }
   ]
