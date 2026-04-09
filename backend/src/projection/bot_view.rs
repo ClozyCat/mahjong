@@ -192,6 +192,7 @@ mod tests {
                 cumulative_scores: BTreeMap::from([(0, 12), (1, -12)]),
                 match_finished: false,
                 last_completed_round_id: None,
+                statistics: Default::default(),
                 skill_trackers: Default::default(),
             }),
             round_state: Some(RoundState {

@@ -44,6 +44,16 @@ export interface SeatSnapshot {
   seat_type?: SeatType;
 }
 
+export interface BackendMatchSeatStatistics {
+  score_history: number[];
+  win_count: number;
+}
+
+export interface BackendMatchStatistics {
+  completed_round_count: number;
+  seat_stats_by_seat: Record<string, BackendMatchSeatStatistics>;
+}
+
 export interface ConcealedTile {
   tile_id: string;
   tile_key: string;
@@ -56,6 +66,7 @@ export interface MatchState {
   cumulative_scores: Record<string, number>;
   match_finished: boolean;
   last_completed_round_id: string | null;
+  statistics?: BackendMatchStatistics | null;
 }
 
 export interface KongScoreDetail {

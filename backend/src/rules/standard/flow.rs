@@ -75,15 +75,18 @@ pub fn start_match_in_room_state(
     for seat in 0..MAX_SEATS {
         cumulative_scores.insert(seat, 0);
     }
-    room.match_state = Some(MatchState {
+    let mut match_state = MatchState {
         prevailing_wind: "east".to_string(),
         hand_number: 1,
         dealer_seat,
         cumulative_scores,
         match_finished: false,
         last_completed_round_id: None,
+        statistics: Default::default(),
         skill_trackers: Default::default(),
-    });
+    };
+    match_state.sync_statistics_to_cumulative_scores();
+    room.match_state = Some(match_state);
     let enforce_minimum_eight_fan = room.enforce_minimum_eight_fan;
     start_round_in_room_state(
         room,
@@ -165,15 +168,17 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
     for seat in 0..MAX_SEATS {
         cumulative_scores.insert(seat, 0);
     }
-    let match_state = MatchState {
+    let mut match_state = MatchState {
         prevailing_wind: "east".to_string(),
         hand_number: 1,
         dealer_seat,
         cumulative_scores,
         match_finished: false,
         last_completed_round_id: None,
+        statistics: Default::default(),
         skill_trackers: Default::default(),
     };
+    match_state.sync_statistics_to_cumulative_scores();
     let _ = update_room_state(room, |state| {
         state.match_state = Some(match_state);
         Ok(())

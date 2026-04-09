@@ -1976,6 +1976,7 @@ fn adjust_match_cumulative_score(room: &mut Value, seat: Seat, delta: i64) {
     *scores.entry(seat).or_default() += delta;
     let _ = update_skill_match_state(room, |match_state| {
         match_state.cumulative_scores = scores.clone();
+        match_state.sync_statistics_to_cumulative_scores();
         Ok(())
     });
 }
@@ -1988,6 +1989,7 @@ fn adjust_match_cumulative_score_in_room_state(room: &mut RoomState, seat: Seat,
     *scores.entry(seat).or_default() += delta;
     let _ = update_skill_match_state_in_room_state(room, |match_state| {
         match_state.cumulative_scores = scores.clone();
+        match_state.sync_statistics_to_cumulative_scores();
         Ok(())
     });
 }

@@ -87,8 +87,11 @@ pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
         }
         if let Some(plan) = settlement_match_plan.as_ref() {
             if let Some(match_state) = state.match_state.as_mut() {
-                match_state.cumulative_scores = plan.cumulative_scores.clone();
-                match_state.last_completed_round_id = Some(plan.round_id.clone());
+                match_state.apply_completed_round(
+                    plan.round_id.clone(),
+                    plan.cumulative_scores.clone(),
+                    &settlement_for_write,
+                );
             }
         }
         Ok(())
@@ -163,8 +166,7 @@ pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> Engi
     }
     if let Some(plan) = settlement_match_plan {
         if let Some(match_state) = room.match_state.as_mut() {
-            match_state.cumulative_scores = plan.cumulative_scores;
-            match_state.last_completed_round_id = Some(plan.round_id);
+            match_state.apply_completed_round(plan.round_id, plan.cumulative_scores, &settlement);
         }
     }
     sync_match_skill_trackers_after_settlement_in_room_state(room);
@@ -198,9 +200,19 @@ pub fn apply_settlement_to_match(room: &mut Value) {
     });
     let _ = update_room_state(room, |state| {
         if let Some(plan) = plan.as_ref() {
+            let settlement = state
+                .round_state
+                .as_ref()
+                .and_then(|round| round.settlement.as_ref())
+                .cloned();
             if let Some(match_state) = state.match_state.as_mut() {
-                match_state.cumulative_scores = plan.cumulative_scores.clone();
-                match_state.last_completed_round_id = Some(plan.round_id.clone());
+                if let Some(settlement) = settlement {
+                    match_state.apply_completed_round(
+                        plan.round_id.clone(),
+                        plan.cumulative_scores.clone(),
+                        &settlement,
+                    );
+                }
             }
         }
         Ok(())
@@ -215,9 +227,15 @@ pub fn apply_settlement_to_match_in_room_state(room: &mut RoomState) {
             .and_then(|settlement| plan_settlement_to_match(room, settlement))
     });
     if let Some(plan) = plan {
+        let settlement = room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.settlement.as_ref())
+            .cloned();
         if let Some(match_state) = room.match_state.as_mut() {
-            match_state.cumulative_scores = plan.cumulative_scores;
-            match_state.last_completed_round_id = Some(plan.round_id);
+            if let Some(settlement) = settlement {
+                match_state.apply_completed_round(plan.round_id, plan.cumulative_scores, &settlement);
+            }
         }
     }
 }

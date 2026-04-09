@@ -845,6 +845,7 @@ mod tests {
                 cumulative_scores: BTreeMap::new(),
                 match_finished: false,
                 last_completed_round_id: None,
+                statistics: Default::default(),
                 skill_trackers: Default::default(),
             }),
             round_state: Some(round.clone()),

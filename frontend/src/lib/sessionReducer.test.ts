@@ -52,6 +52,15 @@ const playingRoomSnapshotMessage: RoomSnapshotMessage = {
       cumulative_scores: { '0': 0, '1': 0, '2': 0, '3': 0 },
       match_finished: false,
       last_completed_round_id: null,
+      statistics: {
+        completed_round_count: 1,
+        seat_stats_by_seat: {
+          '0': { score_history: [0, -8], win_count: 0 },
+          '1': { score_history: [0, 8], win_count: 1 },
+          '2': { score_history: [0, 0], win_count: 0 },
+          '3': { score_history: [0, 0], win_count: 0 },
+        },
+      },
     },
   },
 };
@@ -300,19 +309,14 @@ describe('sessionReducer', () => {
     expect(next.selectionMode).toBeNull();
   });
 
-  it('accumulates score trends and win counts from match_result messages', () => {
+  it('hydrates match statistics from room_snapshot and keeps match_result read-only for chart data', () => {
     const afterSnapshot = sessionReducer(createInitialSessionState(), {
       type: 'ws_message',
       message: playingRoomSnapshotMessage,
     });
-    const afterResult = sessionReducer(afterSnapshot, {
-      type: 'ws_message',
-      message: matchResultMessage,
-    });
-
-    expect(afterResult.matchStatistics).toEqual({
+    expect(afterSnapshot.matchStatistics).toEqual({
       completedRoundCount: 1,
-      lastAppliedRoundId: 'round-1',
+      lastAppliedRoundId: null,
       seatStatsBySeat: {
         '0': { scoreHistory: [0, -8], winCount: 0 },
         '1': { scoreHistory: [0, 8], winCount: 1 },
@@ -321,11 +325,11 @@ describe('sessionReducer', () => {
       },
     });
 
-    const deduped = sessionReducer(afterResult, {
+    const afterResult = sessionReducer(afterSnapshot, {
       type: 'ws_message',
       message: matchResultMessage,
     });
 
-    expect(deduped.matchStatistics).toEqual(afterResult.matchStatistics);
+    expect(afterResult.matchStatistics).toEqual(afterSnapshot.matchStatistics);
   });
 });

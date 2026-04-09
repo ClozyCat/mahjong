@@ -220,8 +220,11 @@ pub fn apply_hu_settlement_output(
         }
         if let Some(plan) = settlement_match_plan.as_ref() {
             if let Some(match_state) = state.match_state.as_mut() {
-                match_state.cumulative_scores = plan.cumulative_scores.clone();
-                match_state.last_completed_round_id = Some(plan.round_id.clone());
+                match_state.apply_completed_round(
+                    plan.round_id.clone(),
+                    plan.cumulative_scores.clone(),
+                    &settlement_for_write,
+                );
             }
         }
         Ok(())
@@ -464,8 +467,7 @@ pub fn apply_hu_settlement_output_in_room_state(
     }
     if let Some(plan) = settlement_match_plan {
         if let Some(match_state) = room.match_state.as_mut() {
-            match_state.cumulative_scores = plan.cumulative_scores;
-            match_state.last_completed_round_id = Some(plan.round_id);
+            match_state.apply_completed_round(plan.round_id, plan.cumulative_scores, &settlement);
         }
     }
 

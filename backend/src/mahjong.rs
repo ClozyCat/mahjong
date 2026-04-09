@@ -1685,6 +1685,15 @@ mod tests {
             "east-1-dealer-0-hu"
         );
         assert_eq!(room["match_state"]["cumulative_scores"]["1"], 24);
+        assert_eq!(room["match_state"]["statistics"]["completed_round_count"], 1);
+        assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["score_history"],
+            json!([0, 24])
+        );
+        assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["win_count"],
+            1
+        );
     }
 
     #[test]
@@ -1783,6 +1792,15 @@ mod tests {
         room["match_state"]["dealer_seat"] = json!(3);
         room["match_state"]["match_finished"] = json!(true);
         room["match_state"]["cumulative_scores"] = json!({"0": 20, "1": -10, "2": -5, "3": -5});
+        room["match_state"]["statistics"] = json!({
+            "completed_round_count": 3,
+            "seat_stats_by_seat": {
+                "0": {"score_history": [0, 12, 20], "win_count": 2},
+                "1": {"score_history": [0, -4, -10], "win_count": 0},
+                "2": {"score_history": [0, -4, -5], "win_count": 1},
+                "3": {"score_history": [0, -4, -5], "win_count": 0}
+            }
+        });
 
         record_continue_action(&mut room, 0, "restart_match").expect("restart should succeed");
 
@@ -1792,6 +1810,11 @@ mod tests {
         assert_eq!(
             room["match_state"]["cumulative_scores"],
             json!({"0": 0, "1": 0, "2": 0, "3": 0})
+        );
+        assert_eq!(room["match_state"]["statistics"]["completed_round_count"], 0);
+        assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["0"]["score_history"],
+            json!([0])
         );
     }
 }
