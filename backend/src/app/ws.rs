@@ -8,6 +8,7 @@ use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 use super::protocol::{
@@ -53,6 +54,23 @@ enum ClientMessage {
     ActionRequest(ActionRequest),
     QuickChat(QuickChatRequest),
     Heartbeat(HeartbeatPayload),
+}
+
+fn has_empty_payload(value: &Value) -> bool {
+    value.get("payload").is_none_or(|payload| {
+        payload.is_null() || payload.as_object().is_some_and(|object| object.is_empty())
+    })
+}
+
+fn parse_client_message(raw: &str) -> Result<ClientMessage, serde_json::Error> {
+    let value: Value = serde_json::from_str(raw)?;
+    match value.get("type").and_then(Value::as_str) {
+        Some("start_match") if has_empty_payload(&value) => Ok(ClientMessage::StartMatch),
+        Some("start_next_round") if has_empty_payload(&value) => Ok(ClientMessage::StartNextRound),
+        Some("restart_match") if has_empty_payload(&value) => Ok(ClientMessage::RestartMatch),
+        Some("leave_table") if has_empty_payload(&value) => Ok(ClientMessage::LeaveTable),
+        _ => serde_json::from_value(value),
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -186,7 +204,7 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
         let Message::Text(text) = message else {
             continue;
         };
-        let message: ClientMessage = match serde_json::from_str(text.as_str()) {
+        let message: ClientMessage = match parse_client_message(text.as_str()) {
             Ok(value) => value,
             Err(_) => {
                 send_outbound(vec![
@@ -1131,4 +1149,49 @@ async fn handle_disconnect(
     drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ClientMessage, parse_client_message};
+
+    #[test]
+    fn parse_payloadless_commands_with_empty_payload_object() {
+        let cases = [
+            (
+                r#"{"type":"start_match","payload":{}}"#,
+                ClientMessage::StartMatch,
+            ),
+            (
+                r#"{"type":"start_next_round","payload":{}}"#,
+                ClientMessage::StartNextRound,
+            ),
+            (
+                r#"{"type":"restart_match","payload":{}}"#,
+                ClientMessage::RestartMatch,
+            ),
+            (
+                r#"{"type":"leave_table","payload":{}}"#,
+                ClientMessage::LeaveTable,
+            ),
+        ];
+
+        for (raw, expected) in cases {
+            let parsed = parse_client_message(raw).expect("message should parse");
+            assert_eq!(std::mem::discriminant(&parsed), std::mem::discriminant(&expected));
+        }
+    }
+
+    #[test]
+    fn parse_payloadless_commands_without_payload() {
+        let parsed =
+            parse_client_message(r#"{"type":"start_next_round"}"#).expect("message should parse");
+        assert!(matches!(parsed, ClientMessage::StartNextRound));
+    }
+
+    #[test]
+    fn reject_non_empty_payload_for_payloadless_commands() {
+        let result = parse_client_message(r#"{"type":"leave_table","payload":{"force":true}}"#);
+        assert!(result.is_err());
+    }
 }
