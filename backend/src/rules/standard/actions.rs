@@ -2203,4 +2203,32 @@ mod tests {
             normalize_deadlines(typed_room)
         );
     }
+
+    #[test]
+    fn typed_discard_after_last_live_tile_drawn_settles_even_with_dead_wall_tiles_present() {
+        let mut room = discard_action_room();
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.wall.head_index = 1;
+        round.wall.tail_index = 0;
+        round.last_action_context.was_last_live_tile = true;
+
+        let output = apply_discard_action_output_in_room_state(&mut room, 0, "east#discard")
+            .expect("discard action should settle exhaustive draw");
+
+        assert_eq!(output.emitted_messages.len(), 2);
+        assert_eq!(
+            output.emitted_messages[0]["payload"]["event_type"],
+            "tile_discarded"
+        );
+        assert_eq!(
+            output.emitted_messages[1]["payload"]["event_type"],
+            "round_drawn"
+        );
+        assert_eq!(room.phase, "settlement");
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.phase.as_str()),
+            Some("settlement")
+        );
+        assert!(room.pending_timeout.is_none());
+    }
 }

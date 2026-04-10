@@ -704,13 +704,21 @@ export default function App() {
     if (actionId === 'flower') {
       const flowerTileIds = getFlowerCandidateTileIds(state);
       if (state.selectedTileIds.length === 1 && flowerTileIds.includes(state.selectedTileIds[0])) {
-        sendMessage(serializeClientMessage(createActionRequestMessage(actionId, state.selectedTileIds)));
+        if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId, state.selectedTileIds)))) {
+          return;
+        }
+
+        dispatch({ type: 'queue_optimistic_flower', tileId: state.selectedTileIds[0] });
         dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
         return;
       }
 
       if (flowerTileIds.length === 1) {
-        sendMessage(serializeClientMessage(createActionRequestMessage(actionId, flowerTileIds)));
+        if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId, flowerTileIds)))) {
+          return;
+        }
+
+        dispatch({ type: 'queue_optimistic_flower', tileId: flowerTileIds[0] });
         return;
       }
 

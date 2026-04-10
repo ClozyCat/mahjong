@@ -25,6 +25,7 @@ import type {
 import {
   getActionCandidateGroups,
   getFlowerCandidateTileIds,
+  getOptimisticFlowerTileId,
   getLocalTurnKongCandidateGroups,
   isFlowerTileKey,
   shouldAutoPassOpeningFlowers,
@@ -880,6 +881,7 @@ function createLocalHand(state: SessionState) {
   const localSeat = getLocalSeat(state);
   const localPlayer = findPrivatePlayer(state, localSeat);
   const optimisticDiscard = getOptimisticDiscard(state);
+  const optimisticFlowerTileId = getOptimisticFlowerTileId(state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
   const drawnTileId =
     pendingAction?.type === 'active_turn' && pendingAction.drawn_tile_id !== optimisticDiscard?.tileId
@@ -888,7 +890,7 @@ function createLocalHand(state: SessionState) {
   const restrictedDiscardTileIdSet = getRestrictedDiscardTileIdSet(state);
 
   const sortedHand = (localPlayer?.concealed_tiles ?? [])
-    .filter((tile) => tile.tile_id !== optimisticDiscard?.tileId)
+    .filter((tile) => tile.tile_id !== optimisticDiscard?.tileId && tile.tile_id !== optimisticFlowerTileId)
     .map((tile) => ({
       tileId: tile.tile_id,
       code: tile.tile_key,

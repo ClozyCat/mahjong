@@ -455,6 +455,59 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '补花' })).toBeNull();
   });
 
+  it('immediately auto-passes after exposing the last local flower', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+    const baseSnapshot = createPlayingSnapshotPayload();
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            ...baseSnapshot.private_state,
+            pending_action: {
+              type: 'opening_flowers',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              options: ['flower', 'pass'],
+            },
+            players: [
+              {
+                ...baseSnapshot.private_state.players[0],
+                concealed_count: 2,
+                concealed_tiles: [
+                  { tile_id: 'f1#0', tile_key: 'f1' },
+                  { tile_id: 'w2#2', tile_key: 'w2' },
+                ],
+              },
+              ...baseSnapshot.private_state.players.slice(1),
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '春' }));
+    expect(screen.getByRole('button', { name: '补花' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '补花' }));
+
+    await waitFor(() => {
+      expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+        { type: 'join_table', payload: { nickname: 'Player A' } },
+        { type: 'action_request', payload: { action_type: 'flower', tile_ids: ['f1#0'] } },
+        { type: 'action_request', payload: { action_type: 'pass', tile_ids: [] } },
+      ]);
+    });
+
+    expect(screen.queryByRole('button', { name: '过' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '补花' })).toBeNull();
+    expect(screen.getByText('当前无花牌，系统正在自动过')).toBeInTheDocument();
+  });
+
   it('clears preselected claim tiles after the claim window times out and play resumes', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

@@ -663,6 +663,9 @@ fn replacement_tile_from_tail(state: &RoomState) -> Option<Tile> {
 
 fn peek_draw_for_turn(state: &RoomState) -> Option<Tile> {
     let round = state.round_state.as_ref()?;
+    if round.wall.head_index > round.wall.tail_index {
+        return None;
+    }
     round.wall.tiles.get(round.wall.head_index).cloned()
 }
 

@@ -2,6 +2,7 @@ import type {
   ActionRejectedMessage,
   MatchStatisticsState,
   OptimisticDiscardState,
+  OptimisticFlowerState,
   RoomSnapshotMessage,
   SeatSnapshot,
   ServerMessage,
@@ -15,6 +16,7 @@ export type SessionAction =
   | { type: 'set_credentials'; tableCode?: string; nickname?: string }
   | { type: 'set_connection_status'; status: SessionState['connectionStatus'] }
   | { type: 'queue_optimistic_discard'; tileId: string }
+  | { type: 'queue_optimistic_flower'; tileId: string }
   | { type: 'set_selected_tiles'; tileIds: string[]; mode: SessionState['selectionMode'] }
   | { type: 'reset_transient_feedback' }
   | { type: 'return_to_lobby'; tableCode?: string; keepNickname?: boolean }
@@ -201,6 +203,41 @@ function reconcileOptimisticDiscardWithSnapshot(
   return stillInHand ? optimisticDiscard : null;
 }
 
+function createOptimisticFlower(tileId: string): OptimisticFlowerState {
+  return {
+    tileId,
+    requestedAt: new Date().toISOString(),
+  };
+}
+
+function reconcileOptimisticFlowerWithSnapshot(
+  optimisticFlower: SessionState['optimisticFlower'],
+  snapshot: RoomSnapshotMessage,
+) {
+  if (!optimisticFlower) {
+    return null;
+  }
+
+  if (snapshot.payload.phase !== 'playing') {
+    return null;
+  }
+
+  const localSeat = snapshot.payload.local_seat;
+  const pendingAction = snapshot.payload.private_state?.pending_action;
+  if (
+    typeof localSeat !== 'number' ||
+    pendingAction?.type !== 'opening_flowers' ||
+    pendingAction.seat_index !== localSeat
+  ) {
+    return null;
+  }
+
+  const localPlayer = findSnapshotPlayer(snapshot.payload, localSeat);
+  const stillInHand = localPlayer?.concealed_tiles?.some((tile) => tile.tile_id === optimisticFlower.tileId) ?? false;
+
+  return stillInHand ? optimisticFlower : null;
+}
+
 export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
@@ -216,6 +253,7 @@ export function createInitialSessionState(): SessionState {
     lastRejectedAction: null,
     reconnectToken: null,
     optimisticDiscard: null,
+    optimisticFlower: null,
     selectedTileIds: [],
     selectionMode: null,
     toasts: [],
@@ -246,6 +284,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
           : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
       const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
       const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(state.optimisticDiscard ?? null, message);
+      const nextOptimisticFlower = reconcileOptimisticFlowerWithSnapshot(state.optimisticFlower ?? null, message);
 
       return {
         ...state,
@@ -254,6 +293,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         reconnectToken: message.payload.reconnect_token ?? state.reconnectToken,
         lastRejectedAction: null,
         optimisticDiscard: nextOptimisticDiscard,
+        optimisticFlower: nextOptimisticFlower,
         latestMatchResult: keepLatestResult ? state.latestMatchResult : null,
         latestActionPrompt: null,
         selectedTileIds: nextSelectedTileIds,
@@ -303,6 +343,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         ...state,
         lastRejectedAction: message as ActionRejectedMessage,
         optimisticDiscard: null,
+        optimisticFlower: null,
         toasts: appendToast(state, 'error', getActionRejectedCopy(message.payload.reason)),
       };
     case 'heartbeat':
@@ -331,6 +372,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         ...state,
         connectionStatus: action.status,
         optimisticDiscard: action.status === 'connected' ? state.optimisticDiscard ?? null : null,
+        optimisticFlower: action.status === 'connected' ? state.optimisticFlower ?? null : null,
       };
     case 'queue_optimistic_discard': {
       const optimisticDiscard = createOptimisticDiscard(state, action.tileId);
@@ -343,6 +385,11 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         optimisticDiscard,
       };
     }
+    case 'queue_optimistic_flower':
+      return {
+        ...state,
+        optimisticFlower: createOptimisticFlower(action.tileId),
+      };
     case 'set_selected_tiles':
       return {
         ...state,

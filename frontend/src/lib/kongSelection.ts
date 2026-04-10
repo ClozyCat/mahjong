@@ -78,6 +78,10 @@ function getLocalPrivatePlayer(state: SessionState) {
   return snapshot?.private_state?.players.find((player) => player.seat_index === localSeat) ?? null;
 }
 
+export function getOptimisticFlowerTileId(state: SessionState) {
+  return state.optimisticFlower?.tileId ?? null;
+}
+
 function getLocalSeat(state: SessionState) {
   return state.roomSnapshot?.payload.local_seat ?? null;
 }
@@ -115,7 +119,8 @@ function getPromptAllowsAction(state: SessionState, action: MeldAction) {
 
 function getConcealedByKey(state: SessionState) {
   const localPlayer = getLocalPrivatePlayer(state);
-  const concealedTiles = localPlayer?.concealed_tiles ?? [];
+  const optimisticFlowerTileId = getOptimisticFlowerTileId(state);
+  const concealedTiles = (localPlayer?.concealed_tiles ?? []).filter((tile) => tile.tile_id !== optimisticFlowerTileId);
   const concealedByKey = new Map<string, string[]>();
 
   for (const tile of concealedTiles) {
@@ -293,7 +298,8 @@ export function getActionCandidateTileIds(state: SessionState, action: MeldActio
 
 export function getFlowerCandidateTileIds(state: SessionState): string[] {
   const localPlayer = getLocalPrivatePlayer(state);
-  const concealedTiles = localPlayer?.concealed_tiles ?? [];
+  const optimisticFlowerTileId = getOptimisticFlowerTileId(state);
+  const concealedTiles = (localPlayer?.concealed_tiles ?? []).filter((tile) => tile.tile_id !== optimisticFlowerTileId);
 
   return concealedTiles.filter((tile) => isFlowerTileKey(tile.tile_key)).map((tile) => tile.tile_id);
 }

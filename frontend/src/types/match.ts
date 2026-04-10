@@ -366,6 +366,11 @@ export interface OptimisticDiscardState {
   requestedAt: string;
 }
 
+export interface OptimisticFlowerState {
+  tileId: string;
+  requestedAt: string;
+}
+
 export interface SessionState {
   apiBaseUrl?: string;
   wsBaseUrl?: string;
@@ -380,6 +385,7 @@ export interface SessionState {
   lastRejectedAction: ActionRejectedMessage | null;
   reconnectToken: string | null;
   optimisticDiscard?: OptimisticDiscardState | null;
+  optimisticFlower?: OptimisticFlowerState | null;
   selectedTileIds: string[];
   selectionMode: 'single' | 'kong' | 'chow' | 'pung' | null;
   toasts: ToastMessage[];
