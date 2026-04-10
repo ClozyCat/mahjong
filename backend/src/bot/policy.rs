@@ -1,8 +1,7 @@
 use super::context::*;
 use super::search::{
     STAGE_ONE_DEPTH, SearchEngine, claim_action_bonus, claim_meld_tile_keys,
-    meld_is_value_honor_set, meld_open_flags_for_state, simulated_tiles_after_removal,
-    strategic_signals,
+    meld_is_value_honor_set, simulated_tiles_after_removal,
 };
 
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
@@ -25,10 +24,11 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
             continue;
         }
 
-        let concealed_after =
-            simulated_tiles_after_removal(&context.player.concealed_tiles, &candidate.tile_ids);
-        let concealed_counts_after =
-            tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
+        let concealed_counts_after = tile_counts_after_removal(
+            &context.player.concealed_tiles,
+            &context.player.concealed_tile_counts,
+            &candidate.tile_ids,
+        );
         let mut meld_groups_after = context.player.meld_tile_key_groups.clone();
         let mut appended_open_flags = Vec::new();
         match candidate.kind {
@@ -103,8 +103,11 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
 
     let mut best_claim = None;
     for option in &context.claim_options {
-        let concealed_after =
-            simulated_tiles_after_removal(&context.player.concealed_tiles, &option.tile_ids);
+        let concealed_counts_after = tile_counts_after_removal(
+            &context.player.concealed_tiles,
+            &context.player.concealed_tile_counts,
+            &option.tile_ids,
+        );
         let mut meld_groups_after = context.player.meld_tile_key_groups.clone();
         let claim_meld = claim_meld_tile_keys(
             &option.action_type,
@@ -116,8 +119,6 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         meld_groups_after.push(claim_meld.clone());
 
         let total_score = if option.action_type == "kong" {
-            let concealed_counts_after =
-                tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
             engine.expected_score_after_forced_draw(
                 context,
                 &concealed_counts_after,
@@ -127,8 +128,8 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 STAGE_ONE_DEPTH,
             )? + 140
         } else {
-            let concealed_counts_after =
-                tile_counts34(concealed_after.iter().map(|tile| tile.tile_key.as_str()));
+            let concealed_after =
+                simulated_tiles_after_removal(&context.player.concealed_tiles, &option.tile_ids);
             let plan = engine.best_discard_plan(
                 context,
                 &concealed_after,
@@ -138,13 +139,11 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 Some(discard_tile_key),
                 None,
             )?;
-            let meld_open_flags =
-                meld_open_flags_for_state(context, &meld_groups_after, &appended_open_flags);
-            let signals = strategic_signals(
+            let signals = engine.strategic_signals_for_state(
                 context,
                 &concealed_counts_after,
                 &meld_groups_after,
-                &meld_open_flags,
+                &appended_open_flags,
             );
             if context.enforce_minimum_eight_fan {
                 let should_skip = match option.action_type.as_str() {
@@ -268,13 +267,11 @@ fn choose_active_turn_skill_action(
         && open_meld_count > 0
         && shanten <= 2
     {
-        let meld_open_flags =
-            meld_open_flags_for_state(context, &context.player.meld_tile_key_groups, &[]);
-        let signals = strategic_signals(
+        let signals = engine.strategic_signals_for_state(
             context,
             &context.player.concealed_tile_counts,
             &context.player.meld_tile_key_groups,
-            &meld_open_flags,
+            &[],
         );
         if signals.fan_estimate < 8 {
             if let Some((meld_index, _)) = context
@@ -333,6 +330,27 @@ fn should_replace_dead_tile(concealed_counts: &TileCounts, tile_key: &str) -> bo
         .into_iter()
         .flatten()
         .all(|index| concealed_counts[index] == 0)
+}
+
+fn tile_counts_after_removal(
+    concealed_tiles: &[BotTileView],
+    concealed_counts: &TileCounts,
+    removed_tile_ids: &[String],
+) -> TileCounts {
+    let mut counts = *concealed_counts;
+    for removed_tile_id in removed_tile_ids {
+        let Some(tile) = concealed_tiles
+            .iter()
+            .find(|tile| tile.tile_id == *removed_tile_id)
+        else {
+            continue;
+        };
+        let Some(tile_index) = tile_index(&tile.tile_key) else {
+            continue;
+        };
+        counts[tile_index] = counts[tile_index].saturating_sub(1);
+    }
+    counts
 }
 
 fn is_sequence_meld(meld: &[String]) -> bool {
@@ -434,5 +452,25 @@ mod tests {
 
         let action = choose_active_turn_action(&context).expect("action");
         assert_eq!(action.action_type, "skill:jin_chan_tuo_qiao");
+    }
+
+    #[test]
+    fn tile_counts_after_removal_subtracts_requested_tiles_only() {
+        let concealed_tiles = tiles(&["w1", "w1", "east", "red"]);
+        let concealed_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+
+        let counts = tile_counts_after_removal(
+            &concealed_tiles,
+            &concealed_counts,
+            &[
+                concealed_tiles[1].tile_id.clone(),
+                concealed_tiles[3].tile_id.clone(),
+            ],
+        );
+
+        assert_eq!(counts[tile_index("w1").expect("tile index")], 1);
+        assert_eq!(counts[tile_index("east").expect("tile index")], 1);
+        assert_eq!(counts[tile_index("red").expect("tile index")], 0);
     }
 }

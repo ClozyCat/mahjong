@@ -59,6 +59,7 @@ pub(crate) fn player_tile_keys_from_parts(
     tile_keys
 }
 
+#[cfg(test)]
 pub(crate) fn tile_counts34<'a>(tile_keys: impl Iterator<Item = &'a str>) -> TileCounts {
     let mut counts = [0_u8; TILE_KIND_COUNT];
     for tile_key in tile_keys {

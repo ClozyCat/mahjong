@@ -79,31 +79,50 @@ pub fn build_bot_context_view(
     add_kong_risk_tiles: HashSet<String>,
 ) -> Option<BotContextView> {
     let player = cache.player(seat_index)?;
-    let skill_projection = build_skill_projection(state, seat_index);
-    let skill_actions = skill_action_options(state, seat_index);
-    let available_skills = state
-        .round_state
-        .as_ref()
-        .and_then(|round| {
-            round
-                .players
+    let (visible_effect_types, private_knowledge_tile_keys, available_skills) = if state.mode
+        == "skill"
+    {
+        let skill_projection = build_skill_projection(state, seat_index);
+        let skill_actions = skill_action_options(state, seat_index);
+        let available_skills = state
+            .round_state
+            .as_ref()
+            .and_then(|round| {
+                round
+                    .players
+                    .iter()
+                    .find(|player| player.seat == seat_index)
+            })
+            .map(|player_state| {
+                player_state
+                    .skill_loadout
+                    .equipped
+                    .iter()
+                    .filter(|skill| skill.charges > 0)
+                    .filter(|skill| skill_actions.contains(&format!("skill:{}", skill.skill_id)))
+                    .map(|skill| BotSkillView {
+                        skill_id: skill.skill_id.clone(),
+                        charges: skill.charges,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        (
+            skill_projection
+                .visible_effects
                 .iter()
-                .find(|player| player.seat == seat_index)
-        })
-        .map(|player_state| {
-            player_state
-                .skill_loadout
-                .equipped
+                .map(|effect| effect.effect_type.clone())
+                .collect(),
+            skill_projection
+                .private_knowledge
                 .iter()
-                .filter(|skill| skill.charges > 0)
-                .filter(|skill| skill_actions.contains(&format!("skill:{}", skill.skill_id)))
-                .map(|skill| BotSkillView {
-                    skill_id: skill.skill_id.clone(),
-                    charges: skill.charges,
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+                .flat_map(|knowledge| knowledge.tile_keys.clone())
+                .collect(),
+            available_skills,
+        )
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
     Some(BotContextView {
         is_skill_mode: state.mode == "skill",
         seat_index,
@@ -137,16 +156,8 @@ pub fn build_bot_context_view(
         claim_options,
         last_discard_tile_key: cache.last_discard_tile_key.clone(),
         add_kong_risk_tiles,
-        visible_effect_types: skill_projection
-            .visible_effects
-            .iter()
-            .map(|effect| effect.effect_type.clone())
-            .collect(),
-        private_knowledge_tile_keys: skill_projection
-            .private_knowledge
-            .iter()
-            .flat_map(|knowledge| knowledge.tile_keys.clone())
-            .collect(),
+        visible_effect_types,
+        private_knowledge_tile_keys,
         available_skills,
     })
 }
@@ -156,8 +167,8 @@ mod tests {
     use std::collections::{BTreeMap, HashSet};
 
     use crate::core::state::{
-        LastActionContext, MatchState, PendingTimeout, PlayerRoundState, RoomState,
-        RoundScoreTrackers, RoundState, RuleRuntimeState, WallState,
+        EffectInstance, LastActionContext, MatchState, PendingTimeout, PlayerRoundState, RoomState,
+        RoundScoreTrackers, RoundState, RuleRuntimeState, SkillInstance, WallState,
     };
     use crate::core::tile::Tile;
     use crate::projection::bot_view::{
@@ -301,5 +312,42 @@ mod tests {
             chow_options,
             vec![vec!["w2#0".to_string(), "w4#0".to_string()]]
         );
+    }
+
+    #[test]
+    fn normal_mode_skips_skill_projection_details() {
+        let mut state = sample_state();
+        let round = state.round_state.as_mut().expect("round state");
+        round.players[0].skill_loadout.equipped.push(SkillInstance {
+            skill_id: "jin_chan_tuo_qiao".to_string(),
+            owner: 0,
+            level: 1,
+            rarity: "rare".to_string(),
+            remaining_rounds: 2,
+            cooldown: 0,
+            charges: 1,
+            charges_per_round: 1,
+            config: serde_json::json!({}),
+        });
+        round.effect_state.ongoing.push(EffectInstance {
+            effect_id: "effect-1".to_string(),
+            effect_type: "jin_chan_tuo_qiao_guard".to_string(),
+            owner: 0,
+            target_seats: vec![0],
+            source_skill: Some("jin_chan_tuo_qiao".to_string()),
+            remaining_turns: Some(1),
+            stacks: 1,
+            consumed: false,
+            payload: serde_json::json!({}),
+        });
+        let cache = RoomScoringCache::from_state(&state);
+
+        let context =
+            build_bot_context_view(&cache, &state, 0, Vec::new(), Vec::new(), HashSet::new())
+                .expect("seat should exist");
+
+        assert!(context.visible_effect_types.is_empty());
+        assert!(context.private_knowledge_tile_keys.is_empty());
+        assert!(context.available_skills.is_empty());
     }
 }

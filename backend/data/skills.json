@@ -424,9 +424,9 @@
       "interaction_hint": null,
       "tags": ["自摸", "放铳"],
       "tiers": {
-        "common": { "detail": "自摸+3 / 放铳-1", "gain": 3, "loss": 1 },
-        "rare": { "detail": "自摸+5 / 放铳-2", "gain": 5, "loss": 2 },
-        "epic": { "detail": "自摸+9 / 放铳-3", "gain": 9, "loss": 3 }
+        "common": { "detail": "自摸+5 / 放铳-1", "gain": 5, "loss": 1 },
+        "rare": { "detail": "自摸+8 / 放铳-2", "gain": 8, "loss": 2 },
+        "epic": { "detail": "自摸+12 / 放铳-3", "gain": 12, "loss": 3 }
       }
     },
     {
