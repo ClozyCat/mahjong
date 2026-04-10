@@ -657,6 +657,19 @@ function findPrivatePlayer(state: SessionState, seatIndex: number): PrivatePlaye
   return state.roomSnapshot?.payload.private_state?.players.find((player) => player.seat_index === seatIndex);
 }
 
+function findEquippedSkill(state: SessionState, seatIndex: number): BackendSkillView | null {
+  const privatePlayer = findPrivatePlayer(state, seatIndex);
+  if (privatePlayer?.equipped_skill) {
+    return privatePlayer.equipped_skill;
+  }
+
+  if (seatIndex === getLocalSeat(state)) {
+    return state.roomSnapshot?.payload.private_state?.equipped_skills?.[0] ?? null;
+  }
+
+  return null;
+}
+
 function getSkillPreviewTileKeys(
   knowledgeEntries: BackendKnowledgeView[] | null | undefined,
   skillId: string | null | undefined,
@@ -1687,6 +1700,58 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
   return null;
 }
 
+function createSkillKnowledge(state: SessionState): BattleViewModel['skillKnowledge'] {
+  const snapshot = state.roomSnapshot?.payload;
+  const privateState = snapshot?.private_state;
+  const event = state.latestRoundEvent?.payload;
+  const localSeat = snapshot?.local_seat;
+
+  if (
+    snapshot?.mode !== 'skill' ||
+    !privateState ||
+    typeof localSeat !== 'number' ||
+    event?.event_type !== 'skill_activated' ||
+    event.event?.seat !== localSeat
+  ) {
+    return null;
+  }
+
+  const skillId = typeof event.event?.skill_id === 'string' ? event.event.skill_id : null;
+  if (!skillId) {
+    return null;
+  }
+
+  const knowledgeEntries = (privateState.private_knowledge ?? []).filter(
+    (entry) => entry.source_skill === skillId && Array.isArray(entry.tile_keys) && entry.tile_keys.length > 0,
+  );
+  if (knowledgeEntries.length === 0) {
+    return null;
+  }
+
+  const tileCodes = knowledgeEntries.flatMap((entry) =>
+    entry.tile_keys.filter((tileKey): tileKey is string => typeof tileKey === 'string' && tileKey.length > 0),
+  );
+  if (tileCodes.length === 0) {
+    return null;
+  }
+
+  const targetSeat = knowledgeEntries.find((entry) => typeof entry.target_seat === 'number')?.target_seat ?? null;
+  const targetName = getSeatName(state, targetSeat);
+  const skillName = findEquippedSkill(state, localSeat)?.name ?? '技能情报';
+
+  return {
+    key: `${skillId}:${targetSeat ?? 'none'}:${tileCodes.join('|')}`,
+    title: skillName,
+    skillName,
+    targetName,
+    detail:
+      targetSeat !== null
+        ? `已查看 ${targetName} 的 ${tileCodes.length} 张手牌`
+        : `已获得 ${tileCodes.length} 张牌的情报`,
+    tileCodes,
+  };
+}
+
 function getWinTypeLabel(result: MatchResultPayload) {
   return result.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type;
 }
@@ -1767,6 +1832,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     quickChatEvent: createQuickChatEvent(state),
     skillSelection: toSkillSelectionView(snapshot?.private_state?.skill_draft),
     skillActivation: null,
+    skillKnowledge: createSkillKnowledge(state),
     toasts: state.toasts,
   };
 }

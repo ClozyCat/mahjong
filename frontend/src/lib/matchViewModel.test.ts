@@ -1527,4 +1527,80 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((player) => player.isLocal)?.skill?.previewTileKeys).toEqual(['w8', 'w9']);
     expect(viewModel.players.find((player) => !player.isLocal)?.skill?.previewTileKeys ?? []).toEqual([]);
   });
+
+  it('surfaces a visible skill knowledge preview after an du chen cang resolves', () => {
+    const base = createPlayingSessionState();
+    const localSkill = {
+      skill_id: 'an_du_chen_cang',
+      serial: '08',
+      name: '暗度陈仓',
+      rarity: 'rare' as const,
+      rarity_label: '稀有',
+      tone: 'azure' as const,
+      type: 'active' as const,
+      type_label: '主动技能',
+      interaction_kind: 'select_target' as const,
+      summary: '查看一名对手的情报。',
+      detail: '稀有效果：看 2 张 / -2',
+      interaction_hint: '发动时从其他三家中选择一名作为侦察目标。',
+      tags: ['信息', '目标'],
+      remaining_rounds: 2,
+      remaining_activations_this_round: 0,
+      can_activate_now: false,
+    };
+    const rawViewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          mode: 'skill',
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            equipped_skills: [localSkill],
+            private_knowledge: [
+              {
+                source_skill: 'an_du_chen_cang',
+                target_seat: 1,
+                tile_ids: ['w8#1', 't3#2'],
+                tile_keys: ['w8', 't3'],
+                description: 'partial_hand_preview',
+              },
+            ],
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    equipped_skill: localSkill,
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'skill_activated',
+          event: {
+            seat: 2,
+            skill_id: 'an_du_chen_cang',
+          },
+        },
+      },
+    });
+    const viewModel = rawViewModel as typeof rawViewModel & {
+      skillKnowledge?: {
+        title: string;
+        targetName: string;
+        tileCodes: string[];
+      } | null;
+    };
+
+    expect(viewModel.skillKnowledge).toMatchObject({
+      title: '暗度陈仓',
+      targetName: 'Player B',
+      tileCodes: ['w8', 't3'],
+    });
+  });
 });

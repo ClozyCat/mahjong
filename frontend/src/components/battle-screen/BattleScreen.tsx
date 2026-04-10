@@ -7,6 +7,7 @@ import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 import { SkillActivationDialog } from './SkillActivationDialog';
+import { SkillKnowledgeDialog } from './SkillKnowledgeDialog';
 import { SkillSelectionOverlay } from './SkillSelectionOverlay';
 import { TableStage } from './TableStage';
 
@@ -71,9 +72,11 @@ export function BattleScreen({
   const [viewportState, setViewportState] = useState(getBattleViewportState);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
+  const [visibleSkillKnowledge, setVisibleSkillKnowledge] = useState(viewModel.skillKnowledge ?? null);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
+  const consumedSkillKnowledgeKeyRef = useRef<string | null>(viewModel.skillKnowledge?.key ?? null);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
   const isReadyActionCoolingDownRef = useRef(false);
@@ -153,6 +156,21 @@ export function BattleScreen({
     consumedActionEffectKeyRef.current = nextActionEffect.key;
     setConsumedActionEffect(nextActionEffect);
   }, [viewModel.actionEffect]);
+
+  useEffect(() => {
+    const nextSkillKnowledge = viewModel.skillKnowledge;
+    if (!nextSkillKnowledge?.key) {
+      setVisibleSkillKnowledge(null);
+      return;
+    }
+
+    if (consumedSkillKnowledgeKeyRef.current === nextSkillKnowledge.key) {
+      return;
+    }
+
+    consumedSkillKnowledgeKeyRef.current = nextSkillKnowledge.key;
+    setVisibleSkillKnowledge(nextSkillKnowledge);
+  }, [viewModel.skillKnowledge]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -344,6 +362,9 @@ export function BattleScreen({
               onTileSelect={onSkillActivationTileSelect}
               onMeldSelect={onSkillActivationMeldSelect}
             />
+          ) : null}
+          {visibleSkillKnowledge ? (
+            <SkillKnowledgeDialog knowledge={visibleSkillKnowledge} onClose={() => setVisibleSkillKnowledge(null)} />
           ) : null}
         </div>
       </div>

@@ -387,6 +387,33 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-bottom');
   });
 
+  it('shows a visible knowledge dialog after a skill reveals opponent tiles', async () => {
+    const user = userEvent.setup();
+
+    renderBattleScreen(
+      {
+        ...createBattleViewModel(),
+        skillKnowledge: {
+          key: 'an-du-preview-1',
+          title: '暗度陈仓',
+          skillName: '暗度陈仓',
+          targetName: 'Player B',
+          detail: '已查看 Player B 的 2 张手牌',
+          tileCodes: ['w8', 't3'],
+        },
+      } as BattleViewModel,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '暗度陈仓 · 情报' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText('Player B')).toBeInTheDocument();
+    expect(within(dialog).getByText('已查看 Player B 的 2 张手牌')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('暗度陈仓 查看到的牌')).getAllByTestId('mahjong-tile')).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: '关闭情报浮窗' }));
+    expect(screen.queryByRole('dialog', { name: '暗度陈仓 · 情报' })).toBeNull();
+  });
+
   it('shows settlement breakdown in resolving state', () => {
     renderBattleScreen(
       createBattleViewModel({

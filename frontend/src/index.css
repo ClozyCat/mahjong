@@ -8909,6 +8909,10 @@ input {
   padding: 1.35rem;
 }
 
+.skill-knowledge-dialog__panel {
+  width: min(32rem, calc(100vw - 3rem));
+}
+
 .skill-activation-dialog__panel--jade {
   box-shadow: 0 24px 50px color-mix(in srgb, var(--theme-success) 16%, transparent), 0 0 0 1px color-mix(in srgb, var(--theme-success) 10%, transparent);
 }
@@ -8930,6 +8934,15 @@ input {
   margin-bottom: 0.6rem;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.skill-knowledge-dialog__target {
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 20%, var(--theme-border));
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
+  color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-2));
+  font-weight: 600;
 }
 
 .skill-activation-dialog__choice-grid,

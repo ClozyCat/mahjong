@@ -622,6 +622,15 @@ export interface SkillActivationView {
   previewTiles?: SkillActivationPreviewTileView[];
 }
 
+export interface SkillKnowledgeView {
+  key: string;
+  title: string;
+  skillName: string;
+  targetName: string;
+  detail: string;
+  tileCodes: string[];
+}
+
 export interface BattleViewModel {
   roomMode: TableMode;
   mode: MatchPhase;
@@ -657,5 +666,6 @@ export interface BattleViewModel {
   quickChatEvent?: QuickChatEventView | null;
   skillSelection?: SkillSelectionView | null;
   skillActivation?: SkillActivationView | null;
+  skillKnowledge?: SkillKnowledgeView | null;
   toasts: ToastMessage[];
 }
