@@ -2171,19 +2171,22 @@ pub(crate) fn strategic_signals(
         route_supply_penalty(dominant_suit_remaining, mixed_one_suit_conversion_need);
 
     let pure_one_suit_route = if dominant_suit_count > 0 {
-        dominant_suit_count * 28 - off_suit_count * 64 - honor_count * 30 - pure_one_suit_supply_penalty
+        dominant_suit_count * 28
+            - off_suit_count * 64
+            - honor_count * 30
+            - pure_one_suit_supply_penalty
     } else {
         0
     };
     let mixed_one_suit_route = if dominant_suit_count > 0 && honor_count > 0 {
-        dominant_suit_count * 24 + honor_count * 16 - off_suit_count * 66 - mixed_one_suit_supply_penalty
+        dominant_suit_count * 24 + honor_count * 16
+            - off_suit_count * 66
+            - mixed_one_suit_supply_penalty
     } else {
         dominant_suit_count * 14 - off_suit_count * 50 - mixed_one_suit_supply_penalty
     };
     let seven_pairs_route = if open_meld_count == 0 {
-        concealed_pair_count * 92
-            - concealed_singleton_count * 12
-            + quad_count * 18
+        concealed_pair_count * 92 - concealed_singleton_count * 12 + quad_count * 18
             - triplet_count * 72
             - sequence_density * 10
     } else {
@@ -2303,7 +2306,11 @@ fn route_supply_penalty(remaining_tiles: i64, conversion_need: i64) -> i64 {
     shortage * 28
 }
 
-fn remaining_tiles_for_suit(context: &BotContext, full_counts: &TileCounts, suit_index: usize) -> i32 {
+fn remaining_tiles_for_suit(
+    context: &BotContext,
+    full_counts: &TileCounts,
+    suit_index: usize,
+) -> i32 {
     let visible_counts = known_visible_tile_counts(context);
     let suit_start = suit_index * 9;
     let mut remaining = 0_i32;
@@ -2954,10 +2961,10 @@ mod tests {
     fn composite_routes_can_exceed_single_route_fan_ceiling() {
         let context = base_context();
         let concealed_tiles = tiles(&[
-            "w1", "w1", "w1", "w2", "w2", "w2", "w3", "w3", "w3", "w4", "w4", "w4", "w5",
-            "w5",
+            "w1", "w1", "w1", "w2", "w2", "w2", "w3", "w3", "w3", "w4", "w4", "w4", "w5", "w5",
         ]);
-        let concealed_counts = tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        let concealed_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
 
         let signals = strategic_signals(&context, &concealed_counts, &[], &[]);
         assert!(signals.fan_estimate > 24);
@@ -2967,10 +2974,10 @@ mod tests {
     fn triplets_do_not_count_as_free_seven_pairs_progress() {
         let context = base_context();
         let concealed_tiles = tiles(&[
-            "w1", "w1", "w1", "t2", "t2", "t2", "b3", "b3", "east", "east", "red", "red",
-            "white",
+            "w1", "w1", "w1", "t2", "t2", "t2", "b3", "b3", "east", "east", "red", "red", "white",
         ]);
-        let concealed_counts = tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        let concealed_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
 
         let signals = strategic_signals(&context, &concealed_counts, &[], &[]);
         assert!(signals.fan_estimate < 16);
@@ -2982,7 +2989,8 @@ mod tests {
         let concealed_tiles = tiles(&[
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "w9", "b1", "b2", "b3",
         ]);
-        let concealed_counts = tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        let concealed_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
 
         let live_signals = strategic_signals(&live_context, &concealed_counts, &[], &[]);
 

@@ -29,6 +29,8 @@ use super::win::can_declare_hu_with_cache_for_state;
 #[cfg(test)]
 use super::win::claim_window_offers_claim;
 
+const MAX_SEATS: usize = 4;
+
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
     Ok(next_bot_action_for_state(room))
 }
@@ -362,9 +364,8 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
         }
         "claim_window" => match round.pending_action.as_ref()? {
             PendingAction::RobKongWindow(rob) => {
-                let seat_index = rob.offered_hu_seats.iter().copied().find(|seat| {
-                    seat_is_bot(state, *seat) && !rob.responded_seats.contains(seat)
-                })?;
+                let seat_index =
+                    next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
                 Some(BotAction {
                     seat_index,
                     action_type: "hu".to_string(),
@@ -373,16 +374,8 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
             }
             PendingAction::ClaimWindow(claim) => {
                 let cache = RoomScoringCache::from_state(state);
-                let seat_index = claim
-                    .claim_window
-                    .iter()
-                    .enumerate()
-                    .find(|(seat, claims)| {
-                        seat_is_bot(state, *seat)
-                            && !claims.is_empty()
-                            && !claim.responded_seats.contains(seat)
-                    })
-                    .map(|(seat, _)| seat)?;
+                let seat_index = next_claim_window_responder_seat(claim)
+                    .filter(|seat| seat_is_bot(state, *seat))?;
                 choose_bot_claim_action_with_cache_for_state(state, &cache, seat_index)
             }
             _ => None,
@@ -425,19 +418,31 @@ fn resolve_claim_timeout_in_room_state(room: &mut RoomState) -> Result<Option<Ve
 
 fn pending_timeout_pass_seat(pending_action: &PendingAction) -> Option<usize> {
     match pending_action {
-        PendingAction::ClaimWindow(claim) => claim
-            .claim_window
-            .iter()
-            .enumerate()
-            .find(|(seat, claims)| !claims.is_empty() && !claim.responded_seats.contains(seat))
-            .map(|(seat, _)| seat),
-        PendingAction::RobKongWindow(rob) => rob
-            .offered_hu_seats
-            .iter()
-            .copied()
-            .find(|seat| !rob.responded_seats.contains(seat)),
+        PendingAction::ClaimWindow(claim) => next_claim_window_responder_seat(claim),
+        PendingAction::RobKongWindow(rob) => next_rob_kong_responder_seat(rob),
         _ => None,
     }
+}
+
+fn next_claim_window_responder_seat(
+    claim: &crate::core::state::ClaimWindowAction,
+) -> Option<usize> {
+    response_order_from(claim.discarder_seat).find(|seat| {
+        claim
+            .claim_window
+            .get(*seat)
+            .is_some_and(|claims| !claims.is_empty())
+            && !claim.responded_seats.contains(seat)
+    })
+}
+
+fn next_rob_kong_responder_seat(rob: &crate::core::state::RobKongWindowAction) -> Option<usize> {
+    response_order_from(rob.actor_seat)
+        .find(|seat| rob.offered_hu_seats.contains(seat) && !rob.responded_seats.contains(seat))
+}
+
+fn response_order_from(origin_seat: usize) -> impl Iterator<Item = usize> {
+    (1..MAX_SEATS).map(move |offset| (origin_seat + offset) % MAX_SEATS)
 }
 
 fn extract_emitted_messages(
@@ -454,7 +459,7 @@ fn extract_emitted_messages(
 mod tests {
     use serde_json::json;
 
-    use super::try_process_due_timeout_in_room_state;
+    use super::{next_bot_action_in_room_state, try_process_due_timeout_in_room_state};
     use crate::core::engine::try_handle_player_action_in_room_state;
     use crate::core::state::RoomState;
 
@@ -594,6 +599,127 @@ mod tests {
             }
         }))
         .expect("room should parse")
+    }
+
+    fn claim_window_priority_room_state() -> RoomState {
+        RoomState::from_room_value(&json!({
+            "table_code": "ROOM3",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
+                {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "Bot 1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": true, "seat_type": "bot", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "reconnect_token": "t2", "player_session_id": 3, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "reconnect_token": "t3", "player_session_id": 4, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+            ],
+            "match_state": {
+                "prevailing_wind": "east",
+                "hand_number": 1,
+                "dealer_seat": 0,
+                "cumulative_scores": {"0": 0, "1": 0, "2": 0, "3": 0},
+                "match_finished": false,
+                "last_completed_round_id": null
+            },
+            "round_state": {
+                "round_id": "east-1-dealer-0-priority",
+                "dealer_seat": 0,
+                "current_actor": 3,
+                "wall": {
+                    "tiles": [suit("w9", "w9#draw")],
+                    "head_index": 0,
+                    "tail_index": 0
+                },
+                "players": [
+                    {
+                        "seat": 0,
+                        "concealed_tiles": [suit("w1", "w1#0")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 1,
+                        "concealed_tiles": [suit("w1", "w1#1")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 2,
+                        "concealed_tiles": [suit("w2", "w2#2")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 3,
+                        "concealed_tiles": [suit("w3", "w3#discard")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": [suit("w3", "w3#discard")]
+                    }
+                ],
+                "last_discard": suit("w3", "w3#discard"),
+                "pending_action": {
+                    "type": "claim_window",
+                    "discarder_seat": 3,
+                    "claim_window": [
+                        ["hu"],
+                        ["hu"],
+                        [],
+                        []
+                    ],
+                    "responded_seats": [],
+                    "claim_responses": []
+                },
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "last_action_context": {
+                    "kind": "discard",
+                    "seat": 3,
+                    "tile_id": "w3#discard",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": {
+                "kind": "claim_window",
+                "seat_index": 3,
+                "deadline_at": "2026-04-07T00:00:30Z",
+                "drawn_tile_id": null
+            }
+        }))
+        .expect("room should parse")
+    }
+
+    #[test]
+    fn claim_window_bot_waits_for_earlier_human_hu_response() {
+        let mut room = claim_window_priority_room_state();
+
+        assert!(
+            next_bot_action_in_room_state(&room)
+                .expect("bot lookup should succeed")
+                .is_none()
+        );
+
+        let _ = try_handle_player_action_in_room_state(&mut room, 0, "pass", &[])
+            .expect("pass should be handled")
+            .expect("pass should succeed");
+
+        let action = next_bot_action_in_room_state(&room)
+            .expect("bot lookup should succeed")
+            .expect("bot should act after earlier human response");
+        assert_eq!(action.seat_index, 1);
+        assert_eq!(action.action_type, "hu");
     }
 
     #[test]
