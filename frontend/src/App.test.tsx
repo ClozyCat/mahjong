@@ -330,6 +330,31 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('returns to the lobby when a stale room snapshot receives table_not_found', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'action_rejected',
+        payload: {
+          reason: 'table_not_found',
+        },
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Mahjong table')).toBeNull();
+    expect(screen.getByText('牌桌不存在，请检查牌桌编号后重试。')).toBeInTheDocument();
+  });
+
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

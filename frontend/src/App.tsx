@@ -307,17 +307,15 @@ export default function App() {
 
     if (message.type === 'action_rejected') {
       const current = sessionRef.current;
+      const isFatalTableMissing = message.payload.reason === 'table_not_found';
+      const isFatalReconnectFailure = message.payload.reason === 'invalid_reconnect_token';
+      const isFatalJoinFailure = !current.roomSnapshot && message.payload.reason === 'table_full';
 
       if (leavingTableRef.current) {
         leavingTableRef.current = false;
       }
 
-      if (message.payload.reason === 'invalid_reconnect_token') {
-        handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
-        return;
-      }
-
-      if (!current.roomSnapshot && (message.payload.reason === 'table_not_found' || message.payload.reason === 'table_full')) {
+      if (isFatalReconnectFailure || isFatalTableMissing || isFatalJoinFailure) {
         handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
         return;
       }
