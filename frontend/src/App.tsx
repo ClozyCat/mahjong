@@ -50,6 +50,7 @@ import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isTh
 import type { BackendActionType, BattleActionId, ClaimActionId, QuickChatEmoji, SessionState } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
+const MAX_CACHED_RECONNECT_CLOSES = 3;
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
 
@@ -231,6 +232,7 @@ export default function App() {
   const heartbeatTimerRef = useRef<number | null>(null);
   const sessionRef = useRef(state);
   const leavingTableRef = useRef(false);
+  const reconnectCloseCountRef = useRef(0);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
   const previousOpeningFlowerAutoPassSignatureRef = useRef<string | null>(null);
@@ -279,6 +281,7 @@ export default function App() {
 
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
+    reconnectCloseCountRef.current = 0;
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
@@ -289,6 +292,7 @@ export default function App() {
   });
 
   const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
+    reconnectCloseCountRef.current = 0;
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
@@ -327,6 +331,7 @@ export default function App() {
     }
 
     if (message.type === 'room_snapshot') {
+      reconnectCloseCountRef.current = 0;
       dispatch({ type: 'set_connection_status', status: 'connected' });
       startTransition(() => {
         setConnectValue((current) => ({
@@ -351,6 +356,9 @@ export default function App() {
       closeSocket(socketRef, heartbeatTimerRef);
 
       const { tableCode, nickname, wsBaseUrl, reconnectToken, reconnect } = options;
+      if (!reconnect) {
+        reconnectCloseCountRef.current = 0;
+      }
       dispatch({ type: 'set_connection_status', status: reconnect ? 'reconnecting' : 'connecting' });
       dispatch({ type: 'set_credentials', tableCode, nickname });
       dispatch({ type: 'set_config', wsBaseUrl });
@@ -393,6 +401,14 @@ export default function App() {
           return;
         }
         if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {
+          reconnectCloseCountRef.current += 1;
+          if (
+            !current.roomSnapshot &&
+            reconnectCloseCountRef.current >= MAX_CACHED_RECONNECT_CLOSES
+          ) {
+            handleFatalLobbyReset('未能恢复座位，请重新加入牌桌。', current.tableCode);
+            return;
+          }
           dispatch({ type: 'set_connection_status', status: 'reconnecting' });
           setStatusMessage('连接已断开，正在尝试恢复座位。');
           return;

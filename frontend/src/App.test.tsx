@@ -355,6 +355,47 @@ describe('App', () => {
     expect(screen.getByText('牌桌不存在，请检查牌桌编号后重试。')).toBeInTheDocument();
   });
 
+  it('stops retrying cached reconnects after repeated socket closes', async () => {
+    vi.useFakeTimers();
+
+    try {
+      localStorage.setItem(
+        'mahjong:session',
+        JSON.stringify({
+          tableCode: 'AB12CD',
+          nickname: 'Player A',
+          reconnectToken: 'token-1',
+          wsBaseUrl: 'ws://localhost:8000',
+        }),
+      );
+
+      render(<App />);
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(1000);
+        });
+
+        const socket = MockWebSocket.instances[attempt];
+        expect(socket).toBeDefined();
+
+        await act(async () => {
+          socket!.close();
+        });
+      }
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      expect(MockWebSocket.instances).toHaveLength(3);
+      expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+      expect(screen.getByText('未能恢复座位，请重新加入牌桌。')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
