@@ -355,7 +355,7 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     kong: 'action-dock__action--themed action-dock__action--themed-kong',
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
-    activate_skill: 'action-dock__action--skill-lightning',
+    activate_skill: 'action-dock__action--themed action-dock__action--themed-skill',
   };
 
   return lookup[actionId] ?? '';

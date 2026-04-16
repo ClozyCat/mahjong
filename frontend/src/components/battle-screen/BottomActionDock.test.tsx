@@ -197,7 +197,7 @@ describe('BottomActionDock', () => {
     );
   });
 
-  it('renders the active skill action with the lightning treatment', () => {
+  it('renders the active skill action with the same treatment as pass but a deeper color', () => {
     render(
       <BottomActionDock
         hand={localHand}
@@ -228,7 +228,7 @@ describe('BottomActionDock', () => {
 
     const button = screen.getByRole('button', { name: '发动技能' });
 
-    expect(button).toHaveClass('action-dock__action--skill-lightning');
+    expect(button).toHaveClass('action-dock__action--themed', 'action-dock__action--themed-skill');
     expect(button.querySelector('.action-dock__action-label--skill-script')).toBeNull();
     expect(button.querySelector('.action-dock__action-seal')).toBeNull();
   });
