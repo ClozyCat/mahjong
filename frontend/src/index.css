@@ -1659,8 +1659,17 @@ button:active:not(:disabled) {
   z-index: 4;
 }
 
+@keyframes tile-drop-slam {
+  0% { transform: scale(1.8) translateY(-1.5rem); opacity: 0; filter: drop-shadow(0 20px 10px rgba(0,0,0,0.5)); }
+  40% { transform: scale(1) translateY(0); opacity: 1; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
+  60% { transform: scale(1.05) translateY(-0.2rem); }
+  100% { transform: scale(1) translateY(-0.04rem); }
+}
+
 .mahjong-tile--last-discard {
   transform: translateY(-0.04rem);
+  animation: tile-drop-slam 0.4s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  z-index: 10;
 }
 
 .mahjong-tile--last-discard .mahjong-tile__shell {
@@ -2410,8 +2419,15 @@ button:active:not(:disabled) {
   overflow: visible;
 }
 
+@keyframes action-dock-drawn-pop {
+  0% { transform: translateY(1.5rem) scale(0.9); opacity: 0; }
+  60% { transform: translateY(-0.1rem) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
 .action-dock__tile--drawn {
   margin-left: var(--action-dock-drawn-gap-extra);
+  animation: action-dock-drawn-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
 .action-dock__tile--selected {
@@ -4662,18 +4678,25 @@ input {
 @keyframes table-stage-action-callout-fade {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) + 0.38rem)) scale(0.88);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(3);
+    filter: blur(4px);
   }
-
-  12%,
-  58% {
+  15% {
     opacity: 1;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.16rem)) scale(1);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(0.9);
+    filter: blur(0);
   }
-
+  25% {
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.05);
+  }
+  35%,
+  85% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1);
+  }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.72rem)) scale(1.08);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 1rem)) scale(0.9);
   }
 }
 
