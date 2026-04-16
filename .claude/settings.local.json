@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Bash(npx vitest *)",
+      "Bash(][^\\\\\"'}`]+[\\\\\"'})",
+      "Bash(grep -ohE \"className=[\\\\\"{'`][^\\\\\"'}`]+[\\\\\"'}`]\" src/components/**/*.tsx src/App.tsx)",
+      "Bash(grep -rhE \"className=.\\(battle-drawer|battle-screen__viewport|action-dock__heading|action-dock__heading-side|skill-selection-overlay|skill-card|skill-activation-dialog|result-overlay|ambient-overlay|table-stage__room|fan-guide|skill-knowledge-dialog\\)[^\\\\\"'\\\\`]*\" src/)",
+      "Bash(grep -rh -oE '`[^`]*\\\\$\\\\{[^}]+\\\\}[^`]*`' src/ --include='*.ts' --include='*.tsx')",
+      "Bash(grep -rhE \"className=\\\\\\\\{[^}]*\\\\\\\\\\\\`[^}]*\\\\\\\\\\\\$\\\\\\\\{\" src/ --include='*.tsx')",
+      "Bash(xargs cat *)",
+      "Bash(cat)",
+      "Bash(bash /tmp/check_classes.sh)",
+      "Bash(grep -rhoE '[a-zA-Z][a-zA-Z0-9_-]*--?\\\\$\\\\{' src/ --include='*.tsx' --include='*.ts')",
+      "Bash(grep -rhoE '[a-zA-Z][a-zA-Z0-9_-]*--[$][{]' src/ --include='*.tsx' --include='*.ts')",
+      "Bash(bash /tmp/filter_dynamic.sh)",
+      "Bash(grep -v '^googleapis$' /tmp/unused_truly.txt)",
+      "Bash(awk -F'[_-]' '{print $1\"-\"$2}' /tmp/unused_truly.txt)",
+      "Bash(grep -nE '^[^@/[:space:]].*\\\\{\\\\s*$' src/index.css)",
+      "Bash(awk -F: '{sel=$0; sub\\(/^[0-9]+:/,\"\",sel\\); sub\\(/ *\\\\{$/,\"\",sel\\); print $1\":\"sel}')",
+      "Bash(awk -F: '{print $2}' /tmp/rules.txt)",
+      "Bash(awk '$1>1')",
+      "Bash(awk 'NR>=5100 && NR<=5170' src/index.css)",
+      "Bash(grep -n '^\\\\.battle-drawer\\\\|^[[:space:]]\\\\{0,2\\\\}\\\\.battle-drawer\\\\|\\\\.battle-drawer' src/index.css)",
+      "Bash(awk 'NR>=4898 && NR<=4930' src/index.css)",
+      "Bash(node -e \"console.log\\(require.resolve\\('postcss'\\)\\)\")",
+      "Bash(node -e \"console.log\\(require.resolve\\('postcss-selector-parser'\\)\\)\")",
+      "Bash(node scripts/filter-unused-css.mjs src/index.css /tmp/unused_truly.txt /tmp/index.css.new)",
+      "Bash(awk 'NR>=4096 && NR<=4120' src/index.css)"
+    ]
+  }
+}

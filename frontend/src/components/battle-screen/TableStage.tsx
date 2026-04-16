@@ -633,13 +633,6 @@ const ACTION_POINTER_COPY: Record<Seat, string> = {
   bottom: '你',
 };
 
-const SEAT_COPY: Record<Seat, string> = {
-  top: '对家',
-  left: '左家',
-  right: '右家',
-  bottom: '你',
-};
-
 const ACTION_CALLOUT_COPY = {
   chow: '吃',
   pung: '碰',

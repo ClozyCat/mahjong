@@ -143,18 +143,6 @@ export function syncSkillRuntimeWithSession(runtime: SkillRuntimeState, sessionS
   };
 }
 
-export function declineCurrentSkillOffer(runtime: SkillRuntimeState, _sessionState: SessionState): SkillRuntimeState {
-  return runtime;
-}
-
-export function selectSkillForCurrentCycle(
-  runtime: SkillRuntimeState,
-  _sessionState: SessionState,
-  _skillId: string,
-): SkillRuntimeState {
-  return runtime;
-}
-
 export function openSkillActivation(runtime: SkillRuntimeState, sessionState: SessionState): SkillRuntimeState {
   const skill = getLocalActivatableSkill(sessionState);
   if (!skill?.interactionKind) {
@@ -191,12 +179,6 @@ export function updateSkillActivationSelection(
       ...runtime.activation,
       ...patch,
     },
-  };
-}
-
-export function confirmSkillActivation(_runtime: SkillRuntimeState, _sessionState: SessionState): SkillRuntimeState {
-  return {
-    activation: null,
   };
 }
 
