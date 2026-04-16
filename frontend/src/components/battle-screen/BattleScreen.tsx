@@ -35,7 +35,7 @@ interface BattleScreenProps {
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
 }
 
-const DEFAULT_TABLE_TILE_SCALE = 1.12;
+const DEFAULT_TABLE_TILE_SCALE = 1.00;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
@@ -43,7 +43,7 @@ const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const READY_ACTION_COOLDOWN_MS = 3000;
 const MIN_BATTLE_VIEWPORT_WIDTH = 1280;
 const MIN_BATTLE_VIEWPORT_HEIGHT = 720;
-const MIN_BATTLE_VIEWPORT_RATIO = 16 / 9;
+const MIN_BATTLE_VIEWPORT_RATIO = 4 / 3;
 
 export function BattleScreen({
   viewModel,
