@@ -1,3 +1,15 @@
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+# [修改 1] 前端构建：使用腾讯云 NPM 镜像源
+RUN npm ci --registry=https://mirrors.cloud.tencent.com/npm/
+
+COPY frontend/ ./
+RUN npm run build
+
+
 FROM rust:1.94-bookworm AS rust-backend-builder
 
 WORKDIR /app/backend
