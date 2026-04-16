@@ -6,12 +6,11 @@ services:
       target: backend-runtime
     restart: unless-stopped
     environment:
-      MAHJONG_DEV_CORS_ORIGINS: https://mj.060889.xyz
       MAHJONG_DATABASE_URL: ${MAHJONG_DATABASE_URL:-sqlite+pysqlite:////data/mahjong.db}
     volumes:
       - mahjong-data:/data
     expose:
-      - 8000
+      - "8000"
     healthcheck:
       test:
         ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null"]
@@ -19,11 +18,19 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    networks:
-      - web
-networks:
-  web:
-    name: web
-    driver: bridge
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend-runtime
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${APP_PORT:-80}:80"    # 监听 IPv4 的 localhost
+      - "[::1]:${APP_PORT:-80}:80"        # 监听 IPv6 的 localhost
+
 volumes:
   mahjong-data:

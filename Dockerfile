@@ -1,18 +1,14 @@
-FROM node:22-bookworm-slim AS frontend-builder
-
-WORKDIR /app/frontend
-
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-COPY frontend/ ./
-RUN npm run build
-
-
 FROM rust:1.94-bookworm AS rust-backend-builder
 
 WORKDIR /app/backend
-
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+RUN mkdir -p $CARGO_HOME \
+    && echo '[source.crates-io]' > $CARGO_HOME/config.toml \
+    && echo 'replace-with = "rsproxy"' >> $CARGO_HOME/config.toml \
+    && echo '[source.rsproxy]' >> $CARGO_HOME/config.toml \
+    && echo 'registry = "sparse+https://rsproxy.cn/index/"' >> $CARGO_HOME/config.toml \
+    && echo '[net]' >> $CARGO_HOME/config.toml \
+    && echo 'git-fetch-with-cli = true' >> $CARGO_HOME/config.toml
 COPY backend/ ./
 RUN cargo build --release
 
@@ -24,7 +20,9 @@ WORKDIR /app
 COPY --from=rust-backend-builder /app/backend/target/release/backend /usr/local/bin/backend
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
-RUN apt-get update \
+# [修改 2] 运行时：将 Debian 12 (Bookworm) 的 apt 源替换为腾讯云镜像源
+RUN sed -i 's/deb.debian.org/mirrors.cloud.tencent.com/g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /bin/bash appuser \
