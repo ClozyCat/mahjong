@@ -874,6 +874,26 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('pins the settlement last discard seat to the recorded discarder instead of inferring from current actor', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            current_actor: 2,
+          },
+        },
+      },
+      latestRoundEvent: null,
+    });
+
+    expect(viewModel.lastDiscardSeat).toBe('top');
+  });
+
   it('maps per-seat match statistics into the settlement score rows', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

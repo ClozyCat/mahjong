@@ -1416,6 +1416,7 @@ function createLastDiscardSeat(state: SessionState): Seat | null {
 
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
+  const result = state.latestMatchResult?.payload;
   const lastDiscard = privateState?.last_discard ?? null;
 
   if (!snapshot || !privateState || typeof lastDiscard !== 'string' || lastDiscard.trim().length === 0) {
@@ -1423,6 +1424,15 @@ function createLastDiscardSeat(state: SessionState): Seat | null {
   }
 
   const localSeat = getLocalSeat(state);
+
+  if (
+    snapshot.phase === 'settlement' &&
+    result?.win_type === 'discard' &&
+    typeof result.discarder_seat === 'number'
+  ) {
+    return toRelativeSeat(localSeat, result.discarder_seat);
+  }
+
   const latestRoundEvent = state.latestRoundEvent;
   const latestDiscardEvent =
     latestRoundEvent?.payload.event_type === 'tile_discarded' ? latestRoundEvent.payload.event : null;
