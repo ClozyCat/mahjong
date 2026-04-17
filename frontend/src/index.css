@@ -1246,15 +1246,33 @@ button:active:not(:disabled) {
 }
 
 @keyframes tile-drop-slam {
-  0% { transform: scale(1.8) translateY(-1.5rem); opacity: 0; filter: drop-shadow(0 20px 10px rgba(0,0,0,0.5)); }
-  40% { transform: scale(1) translateY(0); opacity: 1; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
-  60% { transform: scale(1.05) translateY(-0.2rem); }
-  100% { transform: scale(1) translateY(-0.04rem); }
+  0% { 
+    transform: translateY(-3.5rem) scale(1.25) rotateX(15deg) rotateY(5deg);
+    opacity: 0; 
+    filter: drop-shadow(8px 24px 12px rgba(0, 0, 0, 0.3)); 
+  }
+  25% { 
+    transform: translateY(0.1rem) scale(0.95) rotateX(0) rotateY(0); 
+    opacity: 1; 
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5)); 
+  }
+  50% { 
+    transform: translateY(-0.6rem) scale(1.02); 
+    filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.2)); 
+  }
+  75% { 
+    transform: translateY(0.05rem) scale(0.99); 
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); 
+  }
+  100% { 
+    transform: translateY(-0.04rem) scale(1); 
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); 
+  }
 }
 
 .mahjong-tile--last-discard {
   transform: translateY(-0.04rem);
-  animation: tile-drop-slam 0.4s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+  animation: tile-drop-slam 0.45s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
   z-index: 10;
 }
 
@@ -1803,14 +1821,22 @@ button:active:not(:disabled) {
 }
 
 @keyframes action-dock-drawn-pop {
-  0% { transform: translateY(1.5rem) scale(0.9); opacity: 0; }
-  60% { transform: translateY(-0.1rem) scale(1.02); opacity: 1; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0% { 
+    transform: translate(1.5rem, 3rem) scale(0.85) rotateZ(12deg); 
+    opacity: 0; 
+  }
+  40% { 
+    opacity: 1; 
+  }
+  100% { 
+    transform: translate(0, 0) scale(1) rotateZ(0); 
+    opacity: 1; 
+  }
 }
 
 .action-dock__tile--drawn {
   margin-left: var(--action-dock-drawn-gap-extra);
-  animation: action-dock-drawn-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  animation: action-dock-drawn-pop 0.45s cubic-bezier(0.34, 1.25, 0.64, 1) forwards;
 }
 
 .action-dock__tile--selected {
