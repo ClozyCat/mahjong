@@ -7545,3 +7545,160 @@ input {
     display: none;
   }
 }
+
+/* =========================================
+   高端定制化补充样式 (Premium Elegance Overrides)
+   ========================================= */
+
+:root {
+  /* 引入丝滑的贝塞尔曲线：更有物理阻尼感，起步快，收尾柔和 */
+  --ease-lux: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 带有轻微回弹感 */
+  
+  /* 多层阴影设计，增加空间的深邃感，取代单一的生硬阴影 */
+  --shadow-premium-soft: 
+    0 2px 8px -2px rgba(0, 0, 0, 0.12), 
+    0 12px 32px -4px rgba(0, 0, 0, 0.25);
+  --shadow-premium-hard: 
+    0 4px 12px rgba(0, 0, 0, 0.2), 
+    0 24px 64px rgba(0, 0, 0, 0.4);
+}
+/* 让所有麻将牌的变换都应用奢华的缓动曲线 */
+.mahjong-tile {
+  transition: 
+    transform 0.4s var(--ease-spring), 
+    filter 0.4s var(--ease-lux),
+    opacity 0.3s var(--ease-lux);
+}
+
+.mahjong-tile__shell {
+  transition: 
+    border-color 0.3s var(--ease-lux), 
+    background-color 0.3s var(--ease-lux), 
+    box-shadow 0.4s var(--ease-lux);
+}
+
+/* 手牌悬浮时：轻微放大 + 平滑上升 + 光晕扩散 */
+.action-dock__tile {
+  transition: transform 0.4s var(--ease-spring);
+}
+
+.action-dock__tile:hover:not(:disabled) .mahjong-tile--hand:not(.mahjong-tile--selected) {
+  transform: translateY(-0.4rem) scale(1.02); /* 增加极微小的缩放，更有拿起来的感觉 */
+  filter: drop-shadow(0 20px 32px color-mix(in srgb, var(--accent-3) 35%, transparent));
+}
+
+/* 选中的牌：加强悬浮深度 */
+.mahjong-tile--selected {
+  transform: translateY(-0.7rem) scale(1.04);
+}
+.mahjong-tile--selected .mahjong-tile__shell {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(180, 193, 208, 0.86),
+    0 24px 40px rgba(0, 0, 0, 0.25), /* 更深的物理阴影 */
+    0 0 32px color-mix(in srgb, var(--accent) 40%, transparent); /* 更柔和的发光 */
+}
+
+/* 打出牌的动画重写：更有力量感和落桌的清脆感 */
+@keyframes tile-drop-slam-premium {
+  0% { 
+    transform: translateY(-4rem) scale(1.15) rotateX(20deg);
+    opacity: 0; 
+    filter: drop-shadow(0 32px 24px rgba(0, 0, 0, 0.4)); 
+  }
+  40% { 
+    transform: translateY(0.15rem) scale(0.98) rotateX(-2deg); 
+    opacity: 1; 
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6)); 
+  }
+  70% { 
+    transform: translateY(-0.3rem) scale(1.01); 
+    filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.2)); 
+  }
+  100% { 
+    transform: translateY(0) scale(1); 
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3)); 
+  }
+}
+
+.mahjong-tile--last-discard {
+  animation: tile-drop-slam-premium 0.5s var(--ease-spring) forwards;
+}
+/* 按钮全局动画升级 */
+button {
+  transition:
+    transform 0.3s var(--ease-spring),
+    border-color 0.3s var(--ease-lux),
+    background-color 0.3s var(--ease-lux),
+    box-shadow 0.4s var(--ease-lux),
+    opacity 0.3s var(--ease-lux);
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-2px); /* 更有悬浮感 */
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 25%, transparent),
+    0 16px 32px var(--theme-shadow-soft),
+    0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* 所有带毛玻璃背景的面板（悬浮窗、弹窗、结算界面的卡片） */
+.win10-window,
+.action-dock,
+.result-overlay__card,
+.connect-gate__panel,
+.battle-drawer,
+.table-stage__melds,
+.ambient-overlay__panel,
+.skill-selection-overlay__panel {
+  box-shadow: var(--shadow-premium-hard); /* 使用多层深邃阴影 */
+  /* 让边框的亮线更细腻（0.5px 的视觉效果） */
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+/* 操作区的动作按钮（吃、碰、杠、胡）高亮呼吸效果优化 */
+@keyframes premium-breathe {
+  0%, 100% { 
+    opacity: 0.8; 
+    box-shadow: 0 0 20px color-mix(in srgb, var(--response-button-shadow) 50%, transparent);
+  }
+  50% { 
+    opacity: 1; 
+    box-shadow: 0 0 40px color-mix(in srgb, var(--response-button-shadow) 90%, transparent);
+  }
+}
+
+.action-dock__action--response-glow::after {
+  animation: premium-breathe 2.5s ease-in-out infinite; /* 放慢呼吸频率，显得更从容高端 */
+}
+
+/* 结算页面、技能选择页面的全局淡入 + 上浮 */
+@keyframes overlay-fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.98);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.result-overlay__card,
+.skill-selection-overlay__panel,
+.connect-gate__panel {
+  animation: overlay-fade-in-up 0.6s var(--ease-lux) forwards;
+  will-change: transform, opacity, filter;
+}
+
+/* 结算列表座位的逐个淡入（级联动画效果） */
+.result-overlay__seat-row {
+  animation: overlay-fade-in-up 0.5s var(--ease-lux) backwards;
+}
+.result-overlay__seat-row:nth-child(1) { animation-delay: 0.1s; }
+.result-overlay__seat-row:nth-child(2) { animation-delay: 0.15s; }
+.result-overlay__seat-row:nth-child(3) { animation-delay: 0.2s; }
+.result-overlay__seat-row:nth-child(4) { animation-delay: 0.25s; }
