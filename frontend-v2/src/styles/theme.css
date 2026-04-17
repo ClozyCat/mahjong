@@ -1,0 +1,154 @@
+:root {
+  /* 绢丝水墨背景 */
+  --table-bg:
+    radial-gradient(circle at 15% 20%, rgba(121, 137, 146, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, rgba(140, 150, 155, 0.1) 0%, transparent 50%),
+    linear-gradient(135deg, #f9f9f7 0%, #eaeae4 100%);
+
+  --silk-texture: url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity="0.04"/></svg>');
+
+  --gold: #b8975e;
+  --gold-deep: #a67d3d;
+  --gold-glow: rgba(184, 151, 94, 0.6);
+  --ink-dark: #2c3539;
+  --ink-mid: #566268;
+  --ink-soft: #7c858a;
+  --cinnabar: #9a3b2a;
+  --cinnabar-deep: #8b251b;
+  --jade: #365b48;
+
+  --paper: #f9f9f7;
+  --paper-deep: #eaeae4;
+
+  --tile-bg: linear-gradient(180deg, #ffffff 0%, #f6f6f3 100%);
+  --tile-back-bg: linear-gradient(135deg, #eae8e3 0%, #d8d6d0 100%);
+
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-border: rgba(184, 151, 94, 0.22);
+  --glass-shadow: 0 4px 14px rgba(44, 53, 57, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: "PingFang SC", "Noto Serif CJK SC", "Helvetica Neue",
+    -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--paper);
+  background-image: var(--silk-texture), var(--table-bg);
+  color: var(--ink-dark);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------------- 通用毛玻璃面板 ---------------- */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-pill {
+  border-radius: 999px;
+  padding: 8px 18px;
+}
+
+.glass-card {
+  border-radius: 14px;
+  padding: 18px 22px;
+}
+
+/* ---------------- 应用根容器 ---------------- */
+.app-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ---------------- Toast 层 ---------------- */
+.toast-layer {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 200;
+  pointer-events: none;
+}
+.toast {
+  background: rgba(44, 53, 57, 0.88);
+  color: #faf8f1;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  animation: toastIn 0.25s cubic-bezier(0.2, 0.9, 0.2, 1);
+  pointer-events: auto;
+}
+.toast.warn {
+  background: rgba(154, 59, 42, 0.92);
+}
+.toast.error {
+  background: rgba(139, 37, 27, 0.95);
+  border: 1px solid var(--gold);
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------------- 共用文本 ---------------- */
+.muted {
+  color: var(--ink-soft);
+}
+.gold {
+  color: var(--gold-deep);
+}
+.red {
+  color: var(--cinnabar);
+}
+.jade {
+  color: var(--jade);
+}
+.serif {
+  font-family: "Noto Serif CJK SC", "Songti SC", "STSong", serif;
+}

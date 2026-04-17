@@ -6,3 +6,4 @@ backend/*.log
 .omx/
 __pycache__/
 .superpowers/
+node_modules/

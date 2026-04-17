@@ -1,0 +1,315 @@
+/* ============ 大厅 ============ */
+.lobby {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+.lobby-panel {
+  width: min(520px, 100%);
+  border-radius: 20px;
+  padding: 38px 40px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.lobby-title {
+  font-family: "Noto Serif CJK SC", serif;
+  letter-spacing: 14px;
+  font-size: 30px;
+  font-weight: 400;
+  color: var(--ink-dark);
+  text-align: center;
+  margin-bottom: 4px;
+}
+.lobby-subtitle {
+  text-align: center;
+  color: var(--ink-soft);
+  letter-spacing: 4px;
+  font-size: 12px;
+  margin-top: -14px;
+}
+.lobby-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lobby-field label {
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: 2px;
+}
+.lobby-input {
+  padding: 11px 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--ink-dark);
+  outline: none;
+  letter-spacing: 1px;
+  transition: border-color 0.2s ease;
+}
+.lobby-input:focus {
+  border-color: var(--gold);
+}
+.lobby-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.mode-chip {
+  padding: 10px 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 2px;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--ink-mid);
+}
+.mode-chip.active {
+  background: rgba(184, 151, 94, 0.18);
+  border-color: var(--gold);
+  color: var(--ink-dark);
+}
+.lobby-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.btn-primary {
+  flex: 1;
+  padding: 13px 0;
+  background: linear-gradient(135deg, #2c3539 0%, #1b2225 100%);
+  color: #f7f1dd;
+  border-radius: 10px;
+  letter-spacing: 6px;
+  font-size: 14px;
+  border: 1px solid rgba(184, 151, 94, 0.45);
+  transition: transform 0.12s ease;
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+.btn-secondary {
+  flex: 1;
+  padding: 13px 0;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  letter-spacing: 6px;
+  font-size: 14px;
+  color: var(--ink-dark);
+}
+.btn-ghost {
+  padding: 10px 18px;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  letter-spacing: 2px;
+  font-size: 12px;
+}
+
+.lobby-tip {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: 2px;
+}
+.lobby-error {
+  background: rgba(154, 59, 42, 0.1);
+  border: 1px solid rgba(154, 59, 42, 0.3);
+  color: var(--cinnabar);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.lobby-eightfan {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.toggle {
+  width: 42px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(44, 53, 57, 0.15);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.toggle.on {
+  background: var(--gold);
+}
+.toggle.on::after {
+  transform: translateX(20px);
+}
+
+/* ============ 等待房间 ============ */
+.waiting-room {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 28px;
+  gap: 22px;
+}
+.waiting-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.waiting-code {
+  font-family: "Noto Serif CJK SC", serif;
+  font-size: 22px;
+  letter-spacing: 8px;
+  color: var(--ink-dark);
+}
+.waiting-code-sub {
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 3px;
+  margin-top: 2px;
+}
+.waiting-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  align-content: center;
+}
+.seat-card {
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 160px;
+  position: relative;
+  overflow: hidden;
+}
+.seat-card.empty {
+  border-style: dashed;
+  opacity: 0.7;
+}
+.seat-card.local {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-glow);
+}
+.seat-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.seat-name {
+  font-size: 17px;
+  letter-spacing: 2px;
+}
+.seat-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 2px;
+  background: rgba(184, 151, 94, 0.15);
+  color: var(--gold-deep);
+}
+.seat-badge.ready {
+  background: rgba(54, 91, 72, 0.18);
+  color: var(--jade);
+}
+.seat-badge.bot {
+  background: rgba(44, 53, 57, 0.1);
+  color: var(--ink-mid);
+}
+.seat-badge.offline {
+  background: rgba(154, 59, 42, 0.15);
+  color: var(--cinnabar);
+}
+.seat-meta {
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: 1px;
+}
+.waiting-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.waiting-footer .ready-btn {
+  padding: 13px 38px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2c3539 0%, #1b2225 100%);
+  color: #f7f1dd;
+  letter-spacing: 6px;
+  border: 1px solid rgba(184, 151, 94, 0.45);
+}
+.waiting-footer .ready-btn.unready {
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink-dark);
+  border-color: var(--glass-border);
+}
+.waiting-footer .start-btn {
+  padding: 13px 34px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #b54434 0%, #8b251b 100%);
+  color: #fff;
+  letter-spacing: 6px;
+  border: 1px solid var(--gold);
+  box-shadow: 0 10px 20px rgba(139, 37, 27, 0.22);
+}
+.waiting-footer .start-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============ Overlay (loading/error) ============ */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(249, 249, 247, 0.8);
+  z-index: 500;
+  backdrop-filter: blur(4px);
+}
+.spinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid rgba(184, 151, 94, 0.3);
+  border-top-color: var(--gold);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

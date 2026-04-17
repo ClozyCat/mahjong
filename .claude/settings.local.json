@@ -27,7 +27,10 @@
       "Bash(node -e \"console.log\\(require.resolve\\('postcss'\\)\\)\")",
       "Bash(node -e \"console.log\\(require.resolve\\('postcss-selector-parser'\\)\\)\")",
       "Bash(node scripts/filter-unused-css.mjs src/index.css /tmp/unused_truly.txt /tmp/index.css.new)",
-      "Bash(awk 'NR>=4096 && NR<=4120' src/index.css)"
+      "Bash(awk 'NR>=4096 && NR<=4120' src/index.css)",
+      "Bash(npm install *)",
+      "Bash(ls dist/assets/)",
+      "Bash(cat src/main.tsx)"
     ]
   }
 }

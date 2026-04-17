@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: frontend-runtime
+      target: frontend-v2-runtime
     restart: unless-stopped
     depends_on:
       backend:

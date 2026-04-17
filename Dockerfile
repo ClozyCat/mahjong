@@ -1,12 +1,12 @@
-FROM node:22-bookworm-slim AS frontend-builder
+FROM node:22-bookworm-slim AS frontend-v2-builder
 
-WORKDIR /app/frontend
+WORKDIR /app/frontend-v2
 
-COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend-v2/package.json frontend-v2/package-lock.json ./
 # [修改 1] 前端构建：使用腾讯云 NPM 镜像源
 RUN npm ci --registry=https://mirrors.cloud.tencent.com/npm/
 
-COPY frontend/ ./
+COPY frontend-v2/ ./
 RUN npm run build
 
 
@@ -33,7 +33,7 @@ COPY --from=rust-backend-builder /app/backend/target/release/backend /usr/local/
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
 # [修改 2] 运行时：将 Debian 12 (Bookworm) 的 apt 源替换为腾讯云镜像源
-RUN sed -i 's/deb.debian.org/mirrors.cloud.tencent.com/g' /etc/apt/sources.list.d/debian.sources \
+RUN sed /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -49,9 +49,9 @@ EXPOSE 8000
 ENTRYPOINT ["backend-entrypoint.sh"]
 
 
-FROM nginx:1.28-alpine AS frontend-runtime
+FROM nginx:1.28-alpine AS frontend-v2-runtime
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+COPY --from=frontend-v2-builder /app/frontend-v2/dist /usr/share/nginx/html
 
 EXPOSE 80
