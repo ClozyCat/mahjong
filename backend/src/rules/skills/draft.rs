@@ -14,7 +14,7 @@ use crate::rules::standard::runtime::sync_pending_timeout_in_room_state;
 
 use super::catalog::{
     SkillKind, active_uses_per_round_for_skill, catalog, entry, rarity_weights,
-    stratagem_skill_ids, value_i64_for_skill, value_usize_for_skill,
+    stratagem_skill_ids,
 };
 
 pub fn clear_skill_loadouts_for_new_match_in_room_state(room: &mut RoomState) {
@@ -319,119 +319,13 @@ fn finalize_draft_if_complete(room: &mut RoomState) {
 fn auto_select_offer_for_bot(
     room: &mut RoomState,
     seat: Seat,
-    cycle_key: &str,
+    _cycle_key: &str,
 ) -> Result<(), String> {
-    let choice = room
-        .round_state
-        .as_ref()
-        .and_then(|round| round.skill_draft.as_ref())
-        .and_then(|draft| draft.offers_by_seat.get(&seat))
-        .and_then(|offer| {
-            offer
-                .options
-                .iter()
-                .max_by_key(|choice| bot_skill_choice_score(room, seat, choice))
-                .cloned()
-        });
-    let Some(choice) = choice else {
+    if ensure_pending_offer(room, seat).is_err() {
         return Ok(());
-    };
-
-    let skill_instance = build_skill_instance(seat, &choice, cycle_key)?;
-    apply_skill_selection(
-        room,
-        seat,
-        Some(skill_instance),
-        Some(choice.skill_id),
-        Some(choice.rarity),
-    );
+    }
+    apply_skill_selection(room, seat, None, None, None);
     Ok(())
-}
-
-fn bot_skill_choice_score(room: &RoomState, seat: Seat, choice: &SkillDraftChoice) -> i64 {
-    let level = choice.rarity.level();
-    let mut score = rarity_score(choice.rarity);
-    score += value_i64_for_skill(&choice.skill_id, level, "gain") * 28;
-    score -= value_i64_for_skill(&choice.skill_id, level, "loss") * 12;
-    score -= value_i64_for_skill(&choice.skill_id, level, "score_penalty") * 14;
-    score += value_usize_for_skill(&choice.skill_id, level, "preview_count") as i64 * 22;
-
-    score += match choice.skill_id.as_str() {
-        "jin_chan_tuo_qiao" => 220,
-        "zou_wei_shang_ji" => 185,
-        "wu_zhong_sheng_you" => 160,
-        "an_du_chen_cang" => 140,
-        "sheng_dong_ji_xi" => 72,
-        "tou_liang_huan_zhu" => 20,
-        _ => 0,
-    };
-
-    match bot_score_posture(room, seat) {
-        BotDraftPosture::Leading => {
-            score += match choice.skill_id.as_str() {
-                "jin_chan_tuo_qiao" | "an_du_chen_cang" | "sheng_dong_ji_xi" => 70,
-                "zou_wei_shang_ji" | "wu_zhong_sheng_you" => -25,
-                _ => 0,
-            };
-        }
-        BotDraftPosture::Trailing => {
-            score += match choice.skill_id.as_str() {
-                "zou_wei_shang_ji" => 140,
-                "wu_zhong_sheng_you" => 95,
-                "jin_chan_tuo_qiao" => -20,
-                _ => 0,
-            };
-        }
-        BotDraftPosture::Balanced => {}
-    }
-
-    score
-}
-
-fn rarity_score(rarity: SkillRarity) -> i64 {
-    match rarity {
-        SkillRarity::Common => 80,
-        SkillRarity::Rare => 150,
-        SkillRarity::Epic => 240,
-    }
-}
-
-#[derive(Clone, Copy)]
-enum BotDraftPosture {
-    Balanced,
-    Leading,
-    Trailing,
-}
-
-fn bot_score_posture(room: &RoomState, seat: Seat) -> BotDraftPosture {
-    let Some(scores) = room
-        .match_state
-        .as_ref()
-        .map(|state| &state.cumulative_scores)
-    else {
-        return BotDraftPosture::Balanced;
-    };
-    let my_score = scores.get(&seat).copied().unwrap_or(0);
-    let best_other = scores
-        .iter()
-        .filter(|(other_seat, _)| **other_seat != seat)
-        .map(|(_, score)| *score)
-        .max()
-        .unwrap_or(my_score);
-    let worst_other = scores
-        .iter()
-        .filter(|(other_seat, _)| **other_seat != seat)
-        .map(|(_, score)| *score)
-        .min()
-        .unwrap_or(my_score);
-
-    if my_score - best_other >= 24 {
-        BotDraftPosture::Leading
-    } else if best_other - my_score >= 20 || worst_other - my_score >= 12 {
-        BotDraftPosture::Trailing
-    } else {
-        BotDraftPosture::Balanced
-    }
 }
 
 fn should_offer_skills(room: &RoomState) -> bool {
@@ -621,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn bot_prefers_guard_skill_when_leading() {
+    fn bot_declines_skill_offer_when_leading() {
         let mut room = skill_mode_room("skill");
         room.seats = vec![
             crate::core::state::SeatState {
@@ -686,18 +580,18 @@ mod tests {
                 .collect(),
             });
 
-        auto_select_offer_for_bot(&mut room, 0, "east-1").expect("bot auto pick");
+        auto_select_offer_for_bot(&mut room, 0, "east-1").expect("bot auto decline");
 
         let selected = room
             .seats
             .first()
             .and_then(|seat| seat.skill_loadout.equipped.first())
             .map(|skill| skill.skill_id.as_str());
-        assert_eq!(selected, Some("jin_chan_tuo_qiao"));
+        assert_eq!(selected, None);
     }
 
     #[test]
-    fn bot_prefers_force_draw_skill_when_trailing() {
+    fn bot_declines_skill_offer_when_trailing() {
         let mut room = skill_mode_room("skill");
         room.seats = vec![
             crate::core::state::SeatState {
@@ -762,14 +656,14 @@ mod tests {
                 .collect(),
             });
 
-        auto_select_offer_for_bot(&mut room, 0, "east-1").expect("bot auto pick");
+        auto_select_offer_for_bot(&mut room, 0, "east-1").expect("bot auto decline");
 
         let selected = room
             .seats
             .first()
             .and_then(|seat| seat.skill_loadout.equipped.first())
             .map(|skill| skill.skill_id.as_str());
-        assert_eq!(selected, Some("zou_wei_shang_ji"));
+        assert_eq!(selected, None);
     }
 
     fn skill_mode_room(mode: &str) -> RoomState {

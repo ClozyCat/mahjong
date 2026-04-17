@@ -83,10 +83,6 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
         }
     }
 
-    if let Some(action) = choose_active_turn_skill_action(context, &mut engine, &baseline) {
-        return Some(action);
-    }
-
     Some(BotAction {
         seat_index: context.seat_index,
         action_type: "discard".to_string(),
@@ -102,6 +98,12 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         &context.player.meld_tile_key_groups,
         &[],
         STAGE_ONE_DEPTH,
+    );
+    let pass_signals = engine.strategic_signals_for_state(
+        context,
+        &context.player.concealed_tile_counts,
+        &context.player.meld_tile_key_groups,
+        &[],
     );
     let discard_tile_key = context.last_discard_tile_key.as_deref()?;
 
@@ -162,7 +164,7 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 }
             }
             let action_bonus =
-                claim_action_bonus(context, &option.action_type, &claim_meld, signals);
+                claim_action_bonus(context, &option.action_type, &claim_meld, pass_signals, signals);
             plan.score + action_bonus
         };
 
@@ -221,147 +223,6 @@ fn trace_discard_decision_if_enabled(
     );
 }
 
-fn choose_active_turn_skill_action(
-    context: &BotContext,
-    engine: &mut SearchEngine,
-    baseline: &super::search::BotDiscardPlan,
-) -> Option<BotAction> {
-    if !context.is_skill_mode || context.available_skills.is_empty() {
-        return None;
-    }
-
-    let open_meld_count = context.player.meld_tile_key_groups.len();
-    let shanten = engine.min_shanten(&context.player.concealed_tile_counts, open_meld_count);
-    let discard_danger = engine.discard_tile_danger(
-        context,
-        &context.player.concealed_tile_counts,
-        &baseline.tile_key,
-    );
-    let strongest_threat = engine.strongest_threat_opponent(context);
-
-    if skill_ready(context, "jin_chan_tuo_qiao")
-        && !context
-            .visible_effect_types
-            .iter()
-            .any(|effect| effect == "jin_chan_tuo_qiao_guard")
-    {
-        let threat_score = strongest_threat.map(|(_, score)| score).unwrap_or(0);
-        if discard_danger >= 140 && (threat_score >= 90 || shanten <= 2) {
-            return Some(skill_action(context, "jin_chan_tuo_qiao", Vec::new()));
-        }
-    }
-
-    if skill_ready(context, "zou_wei_shang_ji")
-        && context.wall_tiles_remaining >= 8
-        && shanten <= 1
-        && !is_leading_conservative(context)
-    {
-        return Some(skill_action(context, "zou_wei_shang_ji", Vec::new()));
-    }
-
-    if skill_ready(context, "an_du_chen_cang") && context.private_knowledge_tile_keys.is_empty() {
-        if let Some((target, threat_score)) = strongest_threat {
-            if threat_score >= 70 {
-                return Some(skill_action(
-                    context,
-                    "an_du_chen_cang",
-                    vec![format!("seat:{target}")],
-                ));
-            }
-        }
-    }
-
-    if skill_ready(context, "wu_zhong_sheng_you")
-        && context.wall_tiles_remaining >= 18
-        && shanten >= 1
-        && !is_leading_conservative(context)
-        && should_replace_dead_tile(&context.player.concealed_tile_counts, &baseline.tile_key)
-    {
-        return Some(skill_action(
-            context,
-            "wu_zhong_sheng_you",
-            vec![baseline.tile_id.clone()],
-        ));
-    }
-
-    if skill_ready(context, "sheng_dong_ji_xi")
-        && context.private_knowledge_tile_keys.is_empty()
-        && context.wall_tiles_remaining >= 16
-        && shanten >= 2
-    {
-        return Some(skill_action(context, "sheng_dong_ji_xi", Vec::new()));
-    }
-
-    if skill_ready(context, "tou_liang_huan_zhu")
-        && context.enforce_minimum_eight_fan
-        && open_meld_count > 0
-        && shanten <= 2
-    {
-        let signals = engine.strategic_signals_for_state(
-            context,
-            &context.player.concealed_tile_counts,
-            &context.player.meld_tile_key_groups,
-            &[],
-        );
-        if signals.fan_estimate < 8 {
-            if let Some((meld_index, _)) = context
-                .player
-                .meld_tile_key_groups
-                .iter()
-                .enumerate()
-                .find(|(_, meld)| is_sequence_meld(meld))
-            {
-                return Some(skill_action(
-                    context,
-                    "tou_liang_huan_zhu",
-                    vec![format!("meld:{meld_index}")],
-                ));
-            }
-        }
-    }
-
-    None
-}
-
-fn skill_ready(context: &BotContext, skill_id: &str) -> bool {
-    context
-        .available_skills
-        .iter()
-        .any(|skill| skill.skill_id == skill_id && skill.charges > 0)
-}
-
-fn skill_action(context: &BotContext, skill_id: &str, tile_ids: Vec<String>) -> BotAction {
-    BotAction {
-        seat_index: context.seat_index,
-        action_type: format!("skill:{skill_id}"),
-        tile_ids,
-    }
-}
-
-fn should_replace_dead_tile(concealed_counts: &TileCounts, tile_key: &str) -> bool {
-    let Some(tile_index) = tile_index(tile_key) else {
-        return false;
-    };
-    if concealed_counts[tile_index] != 1 {
-        return false;
-    }
-    if tile_index >= HONOR_TILE_START {
-        return true;
-    }
-
-    let rank = tile_index % 9;
-    let neighbor_indices = [
-        rank.checked_sub(2).map(|_| tile_index - 2),
-        rank.checked_sub(1).map(|_| tile_index - 1),
-        (rank <= 7).then_some(tile_index + 1),
-        (rank <= 6).then_some(tile_index + 2),
-    ];
-    neighbor_indices
-        .into_iter()
-        .flatten()
-        .all(|index| concealed_counts[index] == 0)
-}
-
 fn tile_counts_after_removal(
     concealed_tiles: &[BotTileView],
     concealed_counts: &TileCounts,
@@ -383,30 +244,6 @@ fn tile_counts_after_removal(
     counts
 }
 
-fn is_sequence_meld(meld: &[String]) -> bool {
-    meld.len() == 3
-        && meld
-            .first()
-            .is_some_and(|first| meld.iter().any(|tile_key| tile_key != first))
-}
-
-fn is_leading_conservative(context: &BotContext) -> bool {
-    let my_score = context
-        .cumulative_scores
-        .get(context.seat_index)
-        .copied()
-        .unwrap_or(0);
-    let best_other = context
-        .cumulative_scores
-        .iter()
-        .enumerate()
-        .filter(|(seat, _)| *seat != context.seat_index)
-        .map(|(_, score)| *score)
-        .max()
-        .unwrap_or(my_score);
-    my_score - best_other >= 24
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,7 +261,6 @@ mod tests {
 
     fn base_context() -> BotContext {
         BotContext {
-            is_skill_mode: true,
             seat_index: 0,
             seat_count: 4,
             dealer_seat: 0,
@@ -448,19 +284,13 @@ mod tests {
             claim_options: Vec::new(),
             last_discard_tile_key: None,
             add_kong_risk_tiles: std::collections::HashSet::new(),
-            visible_effect_types: Vec::new(),
             private_knowledge_tile_keys: Vec::new(),
-            available_skills: Vec::new(),
         }
     }
 
     #[test]
-    fn uses_escape_skill_before_risky_discard() {
+    fn bot_never_uses_active_skill_even_if_available() {
         let mut context = base_context();
-        context.available_skills.push(BotSkillView {
-            skill_id: "jin_chan_tuo_qiao".to_string(),
-            charges: 1,
-        });
         context.wall_tiles_remaining = 14;
         context.opponent_melds_by_seat[1] = vec![
             vec!["w3".to_string(), "w4".to_string(), "w5".to_string()],
@@ -481,7 +311,8 @@ mod tests {
         context.player.concealed_tiles = concealed_tiles;
 
         let action = choose_active_turn_action(&context).expect("action");
-        assert_eq!(action.action_type, "skill:jin_chan_tuo_qiao");
+        assert_ne!(action.action_type, "skill:jin_chan_tuo_qiao");
+        assert_eq!(action.action_type, "discard");
     }
 
     #[test]

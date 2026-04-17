@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 pub(crate) use crate::projection::bot_view::{
     BotClaimOption, BotContextView as BotContext, BotPlayerView as BotPlayerContext,
-    BotSelfKongKind, BotSkillView, BotTileCounts as ProjectionTileCounts, BotTileView,
+    BotSelfKongKind, BotTileCounts as ProjectionTileCounts, BotTileView,
 };
 pub(crate) use crate::rules::scoring::KongEntry as ScoringKongEntry;
 

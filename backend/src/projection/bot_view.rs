@@ -3,8 +3,6 @@ use std::collections::HashSet;
 use crate::core::state::RoomState;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::KongEntry as ScoringKongEntry;
-use crate::rules::skills::build_skill_projection;
-use crate::rules::skills::skill_action_options;
 #[cfg(not(test))]
 pub use crate::rules::standard::meld::{
     SelfKongCandidate as BotSelfKongCandidate, SelfKongKind as BotSelfKongKind,
@@ -39,14 +37,7 @@ pub struct BotPlayerView {
 }
 
 #[derive(Clone)]
-pub struct BotSkillView {
-    pub skill_id: String,
-    pub charges: u8,
-}
-
-#[derive(Clone)]
 pub struct BotContextView {
-    pub is_skill_mode: bool,
     pub seat_index: usize,
     pub seat_count: usize,
     pub dealer_seat: usize,
@@ -65,66 +56,19 @@ pub struct BotContextView {
     pub claim_options: Vec<BotClaimOption>,
     pub last_discard_tile_key: Option<String>,
     pub add_kong_risk_tiles: HashSet<String>,
-    pub visible_effect_types: Vec<String>,
     pub private_knowledge_tile_keys: Vec<String>,
-    pub available_skills: Vec<BotSkillView>,
 }
 
 pub fn build_bot_context_view(
     cache: &RoomScoringCache,
-    state: &RoomState,
+    _state: &RoomState,
     seat_index: usize,
     claim_options: Vec<BotClaimOption>,
     self_kong_candidates: Vec<BotSelfKongCandidate>,
     add_kong_risk_tiles: HashSet<String>,
 ) -> Option<BotContextView> {
     let player = cache.player(seat_index)?;
-    let (visible_effect_types, private_knowledge_tile_keys, available_skills) = if state.mode
-        == "skill"
-    {
-        let skill_projection = build_skill_projection(state, seat_index);
-        let skill_actions = skill_action_options(state, seat_index);
-        let available_skills = state
-            .round_state
-            .as_ref()
-            .and_then(|round| {
-                round
-                    .players
-                    .iter()
-                    .find(|player| player.seat == seat_index)
-            })
-            .map(|player_state| {
-                player_state
-                    .skill_loadout
-                    .equipped
-                    .iter()
-                    .filter(|skill| skill.charges > 0)
-                    .filter(|skill| skill_actions.contains(&format!("skill:{}", skill.skill_id)))
-                    .map(|skill| BotSkillView {
-                        skill_id: skill.skill_id.clone(),
-                        charges: skill.charges,
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        (
-            skill_projection
-                .visible_effects
-                .iter()
-                .map(|effect| effect.effect_type.clone())
-                .collect(),
-            skill_projection
-                .private_knowledge
-                .iter()
-                .flat_map(|knowledge| knowledge.tile_keys.clone())
-                .collect(),
-            available_skills,
-        )
-    } else {
-        (Vec::new(), Vec::new(), Vec::new())
-    };
     Some(BotContextView {
-        is_skill_mode: state.mode == "skill",
         seat_index,
         seat_count: cache.seat_count,
         dealer_seat: cache.dealer_seat,
@@ -156,9 +100,7 @@ pub fn build_bot_context_view(
         claim_options,
         last_discard_tile_key: cache.last_discard_tile_key.clone(),
         add_kong_risk_tiles,
-        visible_effect_types,
-        private_knowledge_tile_keys,
-        available_skills,
+        private_knowledge_tile_keys: Vec::new(),
     })
 }
 
@@ -281,7 +223,6 @@ mod tests {
         .expect("seat should exist");
 
         assert_eq!(context.cumulative_scores, vec![12]);
-        assert!(!context.is_skill_mode);
         assert_eq!(context.wall_tiles_remaining, 7);
         assert_eq!(context.player.concealed_tiles.len(), 4);
         assert!(
@@ -293,9 +234,7 @@ mod tests {
         );
         assert_eq!(context.restricted_discard_tile_key.as_deref(), Some("w3"));
         assert_eq!(context.drawn_tile_id.as_deref(), Some("w4#0"));
-        assert!(context.visible_effect_types.is_empty());
         assert!(context.private_knowledge_tile_keys.is_empty());
-        assert!(context.available_skills.is_empty());
         assert_eq!(
             context.add_kong_risk_tiles,
             HashSet::from(["w3".to_string()])
@@ -346,8 +285,42 @@ mod tests {
             build_bot_context_view(&cache, &state, 0, Vec::new(), Vec::new(), HashSet::new())
                 .expect("seat should exist");
 
-        assert!(context.visible_effect_types.is_empty());
         assert!(context.private_knowledge_tile_keys.is_empty());
-        assert!(context.available_skills.is_empty());
+    }
+
+    #[test]
+    fn skill_mode_still_hides_skill_projection_details_from_bot() {
+        let mut state = sample_state();
+        state.mode = "skill".to_string();
+        let round = state.round_state.as_mut().expect("round state");
+        round.players[0].skill_loadout.equipped.push(SkillInstance {
+            skill_id: "jin_chan_tuo_qiao".to_string(),
+            owner: 0,
+            level: 1,
+            rarity: "rare".to_string(),
+            remaining_rounds: 2,
+            cooldown: 0,
+            charges: 1,
+            charges_per_round: 1,
+            config: serde_json::json!({}),
+        });
+        round.effect_state.ongoing.push(EffectInstance {
+            effect_id: "effect-1".to_string(),
+            effect_type: "jin_chan_tuo_qiao_guard".to_string(),
+            owner: 0,
+            target_seats: vec![0],
+            source_skill: Some("jin_chan_tuo_qiao".to_string()),
+            remaining_turns: Some(1),
+            stacks: 1,
+            consumed: false,
+            payload: serde_json::json!({}),
+        });
+        let cache = RoomScoringCache::from_state(&state);
+
+        let context =
+            build_bot_context_view(&cache, &state, 0, Vec::new(), Vec::new(), HashSet::new())
+                .expect("seat should exist");
+
+        assert!(context.private_knowledge_tile_keys.is_empty());
     }
 }
