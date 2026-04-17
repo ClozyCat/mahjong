@@ -12,3 +12,10 @@
 **/*.pyd
 frontend/coverage
 frontend/*.tsbuildinfo
+backend/target
+output
+.vscode
+.codex
+.claude
+.playwright-cli
+.env
