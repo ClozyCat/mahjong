@@ -33,7 +33,7 @@ COPY --from=rust-backend-builder /app/backend/target/release/backend /usr/local/
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
 # [修改 2] 运行时：将 Debian 12 (Bookworm) 的 apt 源替换为腾讯云镜像源
-RUN sed /etc/apt/sources.list.d/debian.sources \
+RUN sed -i 's/deb.debian.org/mirrors.cloud.tencent.com/g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
