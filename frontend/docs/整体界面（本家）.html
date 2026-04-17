@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, landscape">
+<title>新中式雅奢 - 绢丝水墨麻将UI</title>
+<style>
+    :root {
+        /* 核心更新：绢丝水墨背景 
+           1. 底色为暖素白 (绢丝本色)
+           2. 两个径向渐变模拟水墨在水中的晕染 (淡淡的青灰和墨蓝色)
+           3. 线性渐变增加光影层次
+        */
+        --table-bg: 
+            radial-gradient(circle at 15% 20%, rgba(121, 137, 146, 0.15) 0%, transparent 40%),
+            radial-gradient(circle at 85% 80%, rgba(140, 150, 155, 0.1) 0%, transparent 50%),
+            linear-gradient(135deg, #F9F9F7 0%, #EAEAE4 100%);
+        
+        /* 绢丝肌理：通过微弱的SVG噪点实现 */
+        --silk-texture: url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23noiseFilter)" opacity="0.04"/></svg>');
+
+        /* UI配色调整以适应浅色背景 */
+        --gold: #A67D3D; /* 调整为更深沉的哑金，压住浅色背景 */
+        --ink-dark: #2C3539; /* 墨黑色，用于文字 */
+        --tile-bg: linear-gradient(180deg, #FFFFFF 0%, #F4F4F0 100%);
+        --glass-bg: rgba(255, 255, 255, 0.4); /* 毛玻璃变得更白透 */
+        --glass-border: rgba(166, 125, 61, 0.2);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    
+    body { 
+        font-family: "PingFang SC", "Noto Serif CJK SC", serif; 
+        background-color: #F9F9F7;
+        background-image: var(--silk-texture), var(--table-bg); /* 叠加肌理和水墨 */
+        height: 100vh; 
+        display: flex; 
+        flex-direction: column; 
+        overflow: hidden; 
+        color: var(--ink-dark); /* 全局文字改为墨黑色 */
+    }
+
+    /* 顶部信息区 */
+    .top-bar { display: flex; justify-content: space-between; padding: 20px; z-index: 10; }
+    .player-info { background: var(--glass-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); padding: 8px 16px; border-radius: 30px; display: flex; align-items: center; gap: 10px; font-size: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
+    .avatar { width: 32px; height: 32px; background: var(--gold); border-radius: 50%; }
+
+    /* 中央桌面区 (牌池与风向) */
+    .center-table { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; perspective: 800px; }
+    .compass { width: 120px; height: 120px; border: 1px solid var(--glass-border); border-radius: 50%; display: flex; justify-content: center; align-items: center; background: rgba(255,255,255,0.3); backdrop-filter: blur(4px); box-shadow: 0 10px 30px rgba(0,0,0,0.05), inset 0 0 20px rgba(255,255,255,0.5); }
+    .compass-center { color: var(--gold); font-size: 28px; font-weight: bold; font-family: "Noto Serif CJK SC", serif; }
+    
+    /* 右侧操作区 (吃碰杠胡) */
+    .action-panel { position: absolute; right: 40px; bottom: 120px; display: flex; gap: 15px; z-index: 20; }
+    .action-btn { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, #FFF, #F0EFEA); color: var(--ink-dark); font-size: 28px; font-weight: bold; font-family: "Noto Serif CJK SC", serif; border: 2px solid rgba(166,125,61,0.5); box-shadow: 0 8px 16px rgba(0,0,0,0.1), inset 0 -3px 5px rgba(0,0,0,0.05); display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.15s ease; }
+    .action-btn:active { transform: scale(0.95); }
+    .action-btn.pass { background: rgba(200,200,200,0.3); backdrop-filter: blur(5px); color: #666; border-color: transparent; font-size: 20px; box-shadow: none; }
+    .action-btn.hu { color: white; background: linear-gradient(135deg, #B54434, #8B251B); border-color: var(--gold); box-shadow: 0 10px 20px rgba(139, 37, 27, 0.3); } /* 胡牌按钮用经典的朱砂红 */
+
+    /* 底部手牌区 */
+    .hand-tiles { display: flex; justify-content: center; align-items: flex-end; padding-bottom: 20px; gap: 2px; height: 120px; z-index: 10; }
+    /* 加深了阴影，确保在浅色背景上依然立体 */
+    .tile { width: 5.5vw; max-width: 65px; height: 9vh; min-height: 85px; background: var(--tile-bg); border-radius: 6px; box-shadow: 2px 6px 12px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1), inset -1px -2px 4px rgba(0,0,0,0.05); display: flex; justify-content: center; align-items: center; font-size: clamp(20px, 4vw, 32px); color: var(--ink-dark); font-weight: bold; cursor: pointer; transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1); border-top: 1px solid #FFF; border-left: 1px solid #FFF; position: relative; }
+    
+    /* 牌面颜色微调：降低饱和度，契合水墨风 */
+    .tile.wan { color: #8A3324; } /* 朱砂红 */
+    .tile.tiao { color: #2A4C3B; } /* 黛绿 */
+    
+    /* 交互态：选中 */
+    .tile.selected { transform: translateY(-20px); box-shadow: 0 15px 25px rgba(0,0,0,0.15), inset 0 0 0 1px var(--gold); }
+    
+    /* 摸牌间距 */
+    .tile.new-card { margin-left: 15px; }
+
+</style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="player-info">
+            <div class="avatar"></div>
+            <div>
+                <div style="color: var(--ink-dark); font-weight: bold;">游客 89757</div>
+                <div style="font-size: 12px; color: #666;">余额: 12,500</div>
+            </div>
+        </div>
+        <div class="player-info" style="border-radius: 10px; cursor: pointer;">
+            ≡ 菜单
+        </div>
+    </div>
+
+    <div class="center-table">
+        <div class="compass">
+            <div class="compass-center">東</div>
+        </div>
+    </div>
+
+    <div class="action-panel">
+        <div class="action-btn pass">过</div>
+        <div class="action-btn">碰</div>
+        <div class="action-btn hu">胡</div>
+    </div>
+
+    <div class="hand-tiles">
+        <div class="tile wan">一萬</div>
+        <div class="tile wan">二萬</div>
+        <div class="tile wan">三萬</div>
+        <div class="tile tiao">四條</div>
+        <div class="tile tiao">五條</div>
+        <div class="tile tiao">六條</div>
+        <div class="tile">東</div>
+        <div class="tile">東</div>
+        <div class="tile selected">南</div> 
+        <div class="tile">白</div>
+        <div class="tile">白</div>
+        <div class="tile">中</div>
+        <div class="tile">中</div>
+        <div class="tile new-card">中</div>
+    </div>
+
+    <script>
+        document.querySelectorAll('.tile').forEach(tile => {
+            tile.addEventListener('click', function() {
+                document.querySelectorAll('.tile').forEach(t => t.classList.remove('selected'));
+                this.classList.add('selected');
+            });
+        });
+    </script>
+</body>
+</html>

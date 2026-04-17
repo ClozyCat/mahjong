@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body { margin: 0; background: #2C3539; height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; font-family: "Noto Serif CJK SC", serif; }
+    
+    /* 画卷容器 */
+    .scroll-scene {
+        width: 100vw;
+        height: 100vh;
+        background: radial-gradient(circle at center, #F9F9F7 0%, #EAEAE4 100%);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        /* 核心动效：初始状态，从中轴线将内容裁切掉 (左右各裁50%) */
+        clip-path: inset(0 50% 0 50%);
+        /* 极其舒缓的贝塞尔曲线，模拟人手展开画轴的节奏：起手慢，中间快，收尾缓 */
+        transition: clip-path 1.5s cubic-bezier(0.65, 0, 0.15, 1);
+    }
+
+    /* 展开后的状态 */
+    .scroll-scene.opened {
+        clip-path: inset(0 0% 0 0%);
+    }
+
+    /* 内部元素延迟浮现，增加层次感 */
+    .content {
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 1s ease-out 0.8s; /* 等画卷展开一半后再浮现 */
+        text-align: center;
+        color: #B8975E;
+    }
+    .scroll-scene.opened .content { opacity: 1; transform: translateY(0); }
+    
+    button { position: absolute; bottom: 50px; padding: 10px 20px; background: transparent; border: 1px solid #B8975E; color: #B8975E; cursor: pointer; }
+</style>
+</head>
+<body>
+    <div class="scroll-scene" id="gameScene">
+        <div class="content">
+            <h1 style="font-size: 3rem; margin: 0; letter-spacing: 10px;">東風局</h1>
+            <p style="color: #2C3539; margin-top: 10px;">第一场</p>
+        </div>
+    </div>
+    <button onclick="document.getElementById('gameScene').classList.toggle('opened')">触发：画卷展开/合拢</button>
+</body>
+</html>
