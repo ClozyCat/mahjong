@@ -3970,67 +3970,6 @@ input {
   padding-bottom: max(var(--battle-shell-bottom-gap), env(safe-area-inset-bottom));
 }
 
-.battle-screen--viewport-blocked {
-  background: rgba(5, 12, 20, 0.72);
-}
-
-.battle-screen--viewport-blocked .battle-shell,
-.battle-screen--viewport-blocked .battle-drawer,
-.battle-screen--viewport-blocked .action-dock {
-  filter: blur(9px);
-  opacity: 0.26;
-  pointer-events: none;
-  user-select: none;
-}
-
-.battle-screen__viewport-guard {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 1.4rem;
-  background:
-    linear-gradient(180deg, rgba(6, 14, 24, 0.84), rgba(4, 10, 18, 0.9)),
-    rgba(4, 10, 18, 0.78);
-}
-
-.battle-screen__viewport-guard-card {
-  display: grid;
-  gap: 0.7rem;
-  width: min(32rem, calc(100vw - 2rem));
-  padding: 1.15rem 1.25rem;
-  border-radius: 1.2rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
-    rgba(9, 19, 31, 0.92);
-  box-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  color: #f6fbff;
-  text-align: center;
-}
-
-.battle-screen__viewport-guard-eyebrow {
-  color: rgba(139, 233, 255, 0.88);
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.battle-screen__viewport-guard-card strong {
-  font-size: clamp(1rem, 1.55vw, 1.24rem);
-  line-height: 1.35;
-}
-
-.battle-screen__viewport-guard-card p {
-  margin: 0;
-  color: rgba(223, 236, 247, 0.82);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
 .battle-shell {
   position: relative;
   width: 100%;

@@ -41,9 +41,6 @@ const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const READY_ACTION_COOLDOWN_MS = 3000;
-const MIN_BATTLE_VIEWPORT_WIDTH = 640;
-const MIN_BATTLE_VIEWPORT_HEIGHT = 480;
-const MIN_BATTLE_VIEWPORT_RATIO = 4 / 3;
 
 export function BattleScreen({
   viewModel,
@@ -69,7 +66,6 @@ export function BattleScreen({
   onQuickChat,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
-  const [viewportState, setViewportState] = useState(getBattleViewportState);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
   const [visibleSkillKnowledge, setVisibleSkillKnowledge] = useState(viewModel.skillKnowledge ?? null);
@@ -173,20 +169,6 @@ export function BattleScreen({
   }, [viewModel.skillKnowledge]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    function handleResize() {
-      setViewportState(getBattleViewportState());
-    }
-
-    window.addEventListener('resize', handleResize);
-
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
     if (lastDiscardSpotlightKey === trackedLastDiscardKeyRef.current) {
       return;
     }
@@ -287,7 +269,7 @@ export function BattleScreen({
   }, [settlementVisibilityKey, viewModel.result?.winType]);
 
   return (
-    <main className={`battle-screen ${viewportState.isSupported ? '' : 'battle-screen--viewport-blocked'}`}>
+    <main className="battle-screen">
       <div className="battle-shell">
         <div className="battle-stage">
           <div className="battle-stage__halo" />
@@ -383,17 +365,6 @@ export function BattleScreen({
         onClaimCandidateActivate={onClaimCandidateActivate}
         onAction={handleAction}
       />
-      {viewportState.isSupported ? null : (
-        <div className="battle-screen__viewport-guard" role="alert" aria-live="assertive">
-          <div className="battle-screen__viewport-guard-card">
-            <span className="battle-screen__viewport-guard-eyebrow">显示条件不足</span>
-            <strong>请把浏览器窗口调整到大于 1280 x 720，且宽高比大于 16:9</strong>
-            <p>
-              当前可用区域为 {viewportState.width} x {viewportState.height}，宽高比 {viewportState.ratioLabel}。
-            </p>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
@@ -401,31 +372,6 @@ export function BattleScreen({
 const PRE_MATCH_ACTION_IDS: BattleActionId[] = ['ready', 'start_match'];
 const HIDDEN_TABLE_ACTION_IDS: BattleActionId[] = ['start_next_round', 'restart_match'];
 const TABLE_ONLY_ACTION_IDS: BattleActionId[] = [...PRE_MATCH_ACTION_IDS, ...HIDDEN_TABLE_ACTION_IDS];
-
-function getBattleViewportState() {
-  if (typeof window === 'undefined') {
-    return {
-      width: 1920,
-      height: 1080,
-      ratioLabel: '1.78',
-      isSupported: true,
-    };
-  }
-
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  const ratio = height > 0 ? width / height : 0;
-
-  return {
-    width,
-    height,
-    ratioLabel: ratio.toFixed(2),
-    isSupported:
-      width > MIN_BATTLE_VIEWPORT_WIDTH &&
-      height > MIN_BATTLE_VIEWPORT_HEIGHT &&
-      ratio > MIN_BATTLE_VIEWPORT_RATIO,
-  };
-}
 
 function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
   if (!viewModel.lastDiscard || !viewModel.lastDiscardSeat) {

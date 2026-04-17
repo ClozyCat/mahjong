@@ -1842,20 +1842,20 @@ describe('BattleScreen', () => {
     const hand = screen.getByLabelText(/local hand/i);
     const scaleControls = screen.getByRole('group', { name: '调整牌桌牌面大小' });
 
-    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
-    expect(within(scaleControls).getByText('112%')).toBeInTheDocument();
+    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1');
+    expect(within(scaleControls).getByText('100%')).toBeInTheDocument();
 
     await user.click(within(scaleControls).getByRole('button', { name: '放大牌桌牌面' }));
 
-    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.18');
-    expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.48');
-    expect(within(scaleControls).getByText('118%')).toBeInTheDocument();
+    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.06');
+    expect(table.style.getPropertyValue('--table-stage-spotlight-scale')).toBe('1.33');
+    expect(within(scaleControls).getByText('106%')).toBeInTheDocument();
     expect(hand.querySelector('.mahjong-tile--hand')?.getAttribute('style')).toBeNull();
 
     await user.click(within(scaleControls).getByRole('button', { name: '缩小牌桌牌面' }));
 
-    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1.12');
-    expect(within(scaleControls).getByText('112%')).toBeInTheDocument();
+    expect(table.style.getPropertyValue('--table-stage-tile-scale')).toBe('1');
+    expect(within(scaleControls).getByText('100%')).toBeInTheDocument();
   });
 
   it('does not render an action overlay when a battle action effect is active', () => {
@@ -2232,29 +2232,6 @@ describe('BattleScreen', () => {
     expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
     expect(screen.getByText('房间座位数：4/4')).toBeInTheDocument();
     expect(screen.getByText('round-123 | playing')).toBeInTheDocument();
-  });
-
-  it('blocks interaction with a viewport guard when the browser window is below the required size', () => {
-    setViewportSize(1280, 720);
-
-    render(
-      <BattleScreen
-        viewModel={createBattleViewModel()}
-        themeId="tian-shui-bi"
-        themeLabel="天水碧"
-        onCycleTheme={vi.fn()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onTileDoubleClick={vi.fn()}
-        onClaimCandidateSelect={vi.fn()}
-        onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
-        onLeaveTable={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole('alert')).toHaveTextContent('请把浏览器窗口调整到大于 1280 x 720，且宽高比大于 16:9');
-    expect(document.body.querySelector('.battle-screen--viewport-blocked')).not.toBeNull();
   });
 
   it('renders the local control area as a retro control panel with chinese labels', () => {
