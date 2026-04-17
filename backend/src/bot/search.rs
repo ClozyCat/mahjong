@@ -11,6 +11,7 @@ use std::hash::{Hash, Hasher};
 pub(crate) const STAGE_ONE_DEPTH: u8 = 0;
 const STAGE_TWO_DEPTH: u8 = 1;
 const STAGE_TWO_CANDIDATES: usize = 2;
+const STAGE_TWO_CANDIDATES_PRESSURE: usize = 3;
 const STAGE_ONE_EARLY_RETURN_MARGIN: i64 = 180;
 const KONG_SCORE_MARGIN: i64 = 80;
 const CLAIM_SCORE_MARGIN: i64 = 100;
@@ -29,6 +30,15 @@ pub(crate) struct BotDiscardPlan {
     pub(crate) tile_id: String,
     pub(crate) tile_key: String,
     pub(crate) score: i64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DiscardDecisionTelemetry {
+    pub(crate) stage_one_candidates: usize,
+    pub(crate) finalist_gap: Option<i64>,
+    pub(crate) stage_two_candidates: usize,
+    pub(crate) ran_stage_two: bool,
+    pub(crate) ran_monte_carlo: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,6 +74,12 @@ struct OpponentThreat {
 pub(crate) struct StrategicSignals {
     pub(crate) route_score: i64,
     pub(crate) fan_estimate: i64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct RoutePatternProgress {
+    fan_estimate: i64,
+    route_bonus: i64,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -124,6 +140,14 @@ struct ShantenKey {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct ShantenAfterDrawKey {
+    counts: TileCounts,
+    draw_tile_index: u8,
+    open_meld_count: u8,
+    restricted_discard_tile_index: Option<u8>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct DiscardStateKey {
     counts: TileCounts,
     tile_index: u8,
@@ -142,8 +166,11 @@ pub(crate) struct SearchEngine {
     strategic_signals_cache: HashMap<StaticStateKey, StrategicSignals>,
     winning_fan_cache: HashMap<WinningKey, Option<i64>>,
     shanten_cache: HashMap<ShantenKey, i32>,
+    shanten_after_draw_cache: HashMap<ShantenAfterDrawKey, i32>,
     discard_danger_cache: HashMap<DiscardStateKey, i64>,
     discard_preference_cache: HashMap<DiscardStateKey, i64>,
+    strongest_threat_seat: Option<usize>,
+    last_discard_telemetry: Option<DiscardDecisionTelemetry>,
 }
 
 fn select_bot_mode(context: &BotContext) -> BotMode {
@@ -236,6 +263,13 @@ impl SearchEngine {
                 }
             })
             .collect::<Vec<_>>();
+        let strongest_threat_seat = threat_profiles
+            .iter()
+            .enumerate()
+            .filter(|(seat, _)| *seat != context.seat_index)
+            .map(|(seat, threat)| (seat, threat.pressure + threat.tenpai_likelihood))
+            .max_by_key(|(_, score)| *score)
+            .and_then(|(seat, score)| (score > 0).then_some(seat));
 
         Self {
             profile,
@@ -253,8 +287,11 @@ impl SearchEngine {
             strategic_signals_cache: HashMap::new(),
             winning_fan_cache: HashMap::new(),
             shanten_cache: HashMap::new(),
+            shanten_after_draw_cache: HashMap::new(),
             discard_danger_cache: HashMap::new(),
             discard_preference_cache: HashMap::new(),
+            strongest_threat_seat,
+            last_discard_telemetry: None,
         }
     }
 
@@ -293,6 +330,10 @@ impl SearchEngine {
             .filter(|(seat, _)| *seat != context.seat_index)
             .map(|(seat, threat)| (seat, threat.pressure + threat.tenpai_likelihood))
             .max_by_key(|(_, score)| *score)
+    }
+
+    pub(crate) fn last_discard_telemetry(&self) -> Option<DiscardDecisionTelemetry> {
+        self.last_discard_telemetry
     }
 
     fn state_analysis(
@@ -379,26 +420,45 @@ impl SearchEngine {
             drawn_tile_id,
             STAGE_ONE_DEPTH,
         );
+        let mut telemetry = DiscardDecisionTelemetry {
+            stage_one_candidates: stage_one.len(),
+            ..Default::default()
+        };
         if stage_one.is_empty() {
+            self.last_discard_telemetry = Some(telemetry);
             return None;
         }
         if stage_one.len() == 1 {
+            self.last_discard_telemetry = Some(telemetry);
             return stage_one.into_iter().next();
         }
-        if stage_one[0].score - stage_one[1].score >= STAGE_ONE_EARLY_RETURN_MARGIN {
+        let finalist_gap = stage_one[0].score - stage_one[1].score;
+        telemetry.finalist_gap = Some(finalist_gap);
+        if finalist_gap >= STAGE_ONE_EARLY_RETURN_MARGIN {
+            self.last_discard_telemetry = Some(telemetry);
             return stage_one.into_iter().next();
         }
 
-        let finalist_gap = stage_one[0].score - stage_one[1].score;
+        let stage_two_candidates = self
+            .stage_two_candidate_count(
+                context,
+                concealed_counts,
+                meld_tile_key_groups,
+                finalist_gap,
+            )
+            .min(stage_one.len());
         let run_monte_carlo = self.should_run_monte_carlo(
             context,
             concealed_counts,
             meld_tile_key_groups,
             finalist_gap,
         );
+        telemetry.ran_stage_two = true;
+        telemetry.stage_two_candidates = stage_two_candidates;
+        telemetry.ran_monte_carlo = run_monte_carlo;
         let mut finalists = stage_one
             .into_iter()
-            .take(STAGE_TWO_CANDIDATES)
+            .take(stage_two_candidates)
             .collect::<Vec<_>>();
         for finalist in &mut finalists {
             if let Some(tile) = concealed_tiles
@@ -440,7 +500,31 @@ impl SearchEngine {
                 .cmp(&left.score)
                 .then_with(|| right.tile_key.cmp(&left.tile_key))
         });
+        self.last_discard_telemetry = Some(telemetry);
         finalists.into_iter().next()
+    }
+
+    fn stage_two_candidate_count(
+        &mut self,
+        context: &BotContext,
+        concealed_counts: &TileCounts,
+        meld_tile_key_groups: &[Vec<String>],
+        finalist_gap: i64,
+    ) -> usize {
+        if finalist_gap > MONTE_CARLO_SCORE_GAP_LIMIT / 2 {
+            return STAGE_TWO_CANDIDATES;
+        }
+
+        let shanten = self.bot_min_shanten(concealed_counts, meld_tile_key_groups.len());
+        let strongest_threat = self
+            .strongest_threat_opponent(context)
+            .map(|(_, score)| score)
+            .unwrap_or(0);
+        if shanten <= 1 || context.wall_tiles_remaining <= 14 || strongest_threat >= 90 {
+            STAGE_TWO_CANDIDATES_PRESSURE
+        } else {
+            STAGE_TWO_CANDIDATES
+        }
     }
 
     fn should_run_monte_carlo(
@@ -591,8 +675,14 @@ impl SearchEngine {
             return Some(opening_score);
         }
 
-        let sample_count = monte_carlo_sample_count(context, hidden_pool.len());
-        let horizon = monte_carlo_horizon(context);
+        let sample_count = self.monte_carlo_sample_count_for_state(
+            context,
+            &next_counts,
+            meld_tile_key_groups,
+            hidden_pool.len(),
+        );
+        let horizon =
+            self.monte_carlo_horizon_for_state(context, &next_counts, meld_tile_key_groups);
         let seed = monte_carlo_seed(
             context,
             &next_counts,
@@ -627,6 +717,40 @@ impl SearchEngine {
         }
         let average_rollout_score = rollout_total / completed_rollouts;
         Some((opening_score * 3 + average_rollout_score * 4) / 7)
+    }
+
+    fn monte_carlo_sample_count_for_state(
+        &mut self,
+        context: &BotContext,
+        concealed_counts: &TileCounts,
+        meld_tile_key_groups: &[Vec<String>],
+        hidden_tile_count: usize,
+    ) -> usize {
+        let base = monte_carlo_sample_count(context, hidden_tile_count);
+        let shanten = self.bot_min_shanten(concealed_counts, meld_tile_key_groups.len());
+        let strongest_threat = self
+            .strongest_threat_opponent(context)
+            .map(|(_, score)| score)
+            .unwrap_or(0);
+        let bonus = usize::from(shanten <= 1) * 2
+            + usize::from(strongest_threat >= 90)
+            + usize::from(context.wall_tiles_remaining <= 14);
+        (base + bonus).min(hidden_tile_count.max(1))
+    }
+
+    fn monte_carlo_horizon_for_state(
+        &mut self,
+        context: &BotContext,
+        concealed_counts: &TileCounts,
+        meld_tile_key_groups: &[Vec<String>],
+    ) -> usize {
+        let base = monte_carlo_horizon(context);
+        let shanten = self.bot_min_shanten(concealed_counts, meld_tile_key_groups.len());
+        if base == 1 && shanten <= 1 && context.wall_tiles_remaining >= 16 {
+            2
+        } else {
+            base
+        }
     }
 
     fn simulate_rollout_after_discard(
@@ -991,20 +1115,33 @@ impl SearchEngine {
         appended_open_flags: &[bool],
         draw_tile_index: usize,
     ) -> Option<i64> {
+        let meld_open_flags =
+            meld_open_flags_for_state(context, meld_tile_key_groups, appended_open_flags);
+        let key = WinningKey {
+            counts: *concealed_counts,
+            melds: compact_melds(meld_tile_key_groups, &meld_open_flags),
+            draw_tile_index: draw_tile_index as u8,
+        };
+        if let Some(score) = self.winning_fan_cache.get(&key).cloned() {
+            return score;
+        }
+
+        if !draw_completes_hand_precheck(
+            concealed_counts,
+            draw_tile_index,
+            meld_tile_key_groups.len(),
+        ) {
+            self.winning_fan_cache.insert(key, None);
+            return None;
+        }
+
         let (state_key, analysis) = self.state_analysis(
             context,
             concealed_counts,
             meld_tile_key_groups,
             appended_open_flags,
         );
-        let key = WinningKey {
-            counts: *concealed_counts,
-            melds: state_key.melds.clone(),
-            draw_tile_index: draw_tile_index as u8,
-        };
-        if let Some(score) = self.winning_fan_cache.get(&key).cloned() {
-            return score;
-        }
+        debug_assert_eq!(state_key.melds, key.melds);
 
         let incoming_tile = tile_key_for_index(draw_tile_index);
         let concealed_tile_keys = analysis.concealed_tile_keys.clone();
@@ -1113,7 +1250,10 @@ impl SearchEngine {
                 continue;
             }
             let threat = self.threat_profiles.get(seat).copied().unwrap_or_default();
-            penalty += threat.pressure + threat.tenpai_likelihood;
+            penalty += weighted_threat_score(
+                threat.pressure + threat.tenpai_likelihood,
+                Some(seat) == self.strongest_threat_seat,
+            );
             let same_tile_discards = discards
                 .iter()
                 .filter(|key| key.as_str() == tile_key)
@@ -2071,6 +2211,19 @@ fn thirteen_orphans_shanten(counts: &TileCounts, open_meld_count: usize) -> i32 
     13 - unique_count - has_pair
 }
 
+fn draw_completes_hand_precheck(
+    concealed_counts: &TileCounts,
+    draw_tile_index: usize,
+    open_meld_count: usize,
+) -> bool {
+    let mut counts_after_draw = *concealed_counts;
+    counts_after_draw[draw_tile_index] = counts_after_draw[draw_tile_index].saturating_add(1);
+    standard_shanten_with_open_melds(&counts_after_draw, open_meld_count)
+        .min(seven_pairs_shanten(&counts_after_draw, open_meld_count))
+        .min(thirteen_orphans_shanten(&counts_after_draw, open_meld_count))
+        <= -1
+}
+
 fn best_shanten_after_draw(
     engine: &mut SearchEngine,
     concealed_counts: &TileCounts,
@@ -2078,6 +2231,16 @@ fn best_shanten_after_draw(
     open_meld_count: usize,
     restricted_discard_tile_index: Option<usize>,
 ) -> i32 {
+    let key = ShantenAfterDrawKey {
+        counts: *concealed_counts,
+        draw_tile_index: draw_tile_index as u8,
+        open_meld_count: open_meld_count as u8,
+        restricted_discard_tile_index: restricted_discard_tile_index.map(|index| index as u8),
+    };
+    if let Some(best_shanten) = engine.shanten_after_draw_cache.get(&key).copied() {
+        return best_shanten;
+    }
+
     let mut counts_after_draw = *concealed_counts;
     counts_after_draw[draw_tile_index] = counts_after_draw[draw_tile_index].saturating_add(1);
     let mut best_shanten = i32::MAX;
@@ -2093,7 +2256,19 @@ fn best_shanten_after_draw(
             best_shanten.min(engine.bot_min_shanten(&counts_after_draw, open_meld_count));
         counts_after_draw[discard_tile_index] += 1;
     }
+    engine.shanten_after_draw_cache.insert(key, best_shanten);
     best_shanten
+}
+
+fn weighted_threat_score(threat_score: i64, is_primary: bool) -> i64 {
+    if threat_score <= 0 {
+        return 0;
+    }
+    if is_primary {
+        threat_score + 18
+    } else {
+        threat_score * 3 / 5
+    }
 }
 
 pub(crate) fn strategic_signals(
@@ -2200,6 +2375,8 @@ pub(crate) fn strategic_signals(
         estimate_pure_one_suit_fan(dominant_suit_count, off_suit_count, honor_count);
     let mixed_one_suit_fan_estimate =
         estimate_mixed_one_suit_fan(dominant_suit_count, off_suit_count, honor_count);
+    let pure_straight_progress = pure_straight_progress(&full_counts);
+    let mixed_triple_chow_progress = mixed_triple_chow_progress(&full_counts);
     let seven_pairs_fan_estimate = if open_meld_count == 0 {
         match concealed_pair_count {
             6.. => 24,
@@ -2224,20 +2401,33 @@ pub(crate) fn strategic_signals(
         composite_fan_estimate(pure_one_suit_fan_estimate, seven_pairs_fan_estimate);
     let mixed_seven_pairs_fan_estimate =
         composite_fan_estimate(mixed_one_suit_fan_estimate, seven_pairs_fan_estimate);
+    let pure_straight_mixed_one_suit_fan_estimate = composite_fan_estimate(
+        mixed_one_suit_fan_estimate,
+        pure_straight_progress.fan_estimate,
+    );
+    let pure_straight_pure_one_suit_fan_estimate = composite_fan_estimate(
+        pure_one_suit_fan_estimate,
+        pure_straight_progress.fan_estimate,
+    );
     let fan_estimate = pure_one_suit_fan_estimate
         .max(mixed_one_suit_fan_estimate)
+        .max(pure_straight_progress.fan_estimate)
+        .max(mixed_triple_chow_progress.fan_estimate)
         .max(seven_pairs_fan_estimate)
         .max(all_pungs_fan_estimate)
         .max(pure_all_pungs_fan_estimate)
         .max(mixed_all_pungs_fan_estimate)
         .max(pure_seven_pairs_fan_estimate)
-        .max(mixed_seven_pairs_fan_estimate);
+        .max(mixed_seven_pairs_fan_estimate)
+        .max(pure_straight_mixed_one_suit_fan_estimate)
+        .max(pure_straight_pure_one_suit_fan_estimate);
 
     let mut route_score = pure_one_suit_route
         .max(mixed_one_suit_route)
         .max(seven_pairs_route)
         .max(all_pungs_route)
         + value_honor_route_bonus;
+    route_score += pure_straight_progress.route_bonus + mixed_triple_chow_progress.route_bonus;
 
     route_score += if fan_estimate >= 8 {
         fan_estimate * 18 + 80
@@ -2288,6 +2478,66 @@ fn estimate_mixed_one_suit_fan(
         (8.., 2) => 3,
         _ => 0,
     }
+}
+
+fn pure_straight_progress(full_counts: &TileCounts) -> RoutePatternProgress {
+    let mut best = RoutePatternProgress::default();
+
+    for suit_index in 0..3 {
+        let mut complete_segments = 0_i64;
+        let mut near_segments = 0_i64;
+        let mut present_tiles = 0_i64;
+
+        for start in [0, 3, 6] {
+            let support = sequence_support(full_counts, suit_index, start);
+            present_tiles += i64::from(support.present_tiles);
+            if support.complete {
+                complete_segments += 1;
+            } else if support.present_tiles >= 2 {
+                near_segments += 1;
+            }
+        }
+
+        let progress = RoutePatternProgress {
+            fan_estimate: i64::from(complete_segments == 3) * 2,
+            route_bonus: complete_segments * 42 + near_segments * 18 + present_tiles * 4,
+        };
+        if progress.fan_estimate > best.fan_estimate || progress.route_bonus > best.route_bonus {
+            best = progress;
+        }
+    }
+
+    best
+}
+
+fn mixed_triple_chow_progress(full_counts: &TileCounts) -> RoutePatternProgress {
+    let mut best = RoutePatternProgress::default();
+
+    for start in 0..=6 {
+        let mut complete_suits = 0_i64;
+        let mut near_suits = 0_i64;
+        let mut present_tiles = 0_i64;
+
+        for suit_index in 0..3 {
+            let support = sequence_support(full_counts, suit_index, start);
+            present_tiles += i64::from(support.present_tiles);
+            if support.complete {
+                complete_suits += 1;
+            } else if support.present_tiles >= 2 {
+                near_suits += 1;
+            }
+        }
+
+        let progress = RoutePatternProgress {
+            fan_estimate: i64::from(complete_suits == 3) * 8,
+            route_bonus: complete_suits * 54 + near_suits * 22 + present_tiles * 4,
+        };
+        if progress.fan_estimate > best.fan_estimate || progress.route_bonus > best.route_bonus {
+            best = progress;
+        }
+    }
+
+    best
 }
 
 fn composite_fan_estimate(primary: i64, secondary: i64) -> i64 {
@@ -2389,6 +2639,25 @@ fn sequence_density_score(
     }
 
     density
+}
+
+#[derive(Clone, Copy, Default)]
+struct SequenceSupport {
+    present_tiles: u8,
+    complete: bool,
+}
+
+fn sequence_support(full_counts: &TileCounts, suit_index: usize, start: usize) -> SequenceSupport {
+    let base_index = suit_index * 9 + start;
+    let present_tiles = u8::from(full_counts[base_index] > 0)
+        + u8::from(full_counts[base_index + 1] > 0)
+        + u8::from(full_counts[base_index + 2] > 0);
+    SequenceSupport {
+        present_tiles,
+        complete: full_counts[base_index] > 0
+            && full_counts[base_index + 1] > 0
+            && full_counts[base_index + 2] > 0,
+    }
 }
 
 pub(crate) fn claim_action_bonus(
@@ -2971,6 +3240,34 @@ mod tests {
     }
 
     #[test]
+    fn mixed_triple_chow_route_reaches_eight_fan_estimate() {
+        let context = base_context();
+        let concealed_tiles = tiles(&[
+            "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "red", "red",
+            "w5",
+        ]);
+        let concealed_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+
+        let signals = strategic_signals(&context, &concealed_counts, &[], &[]);
+        assert!(signals.fan_estimate >= 8);
+    }
+
+    #[test]
+    fn pure_straight_can_complete_mixed_one_suit_route_to_eight_fan() {
+        let context = base_context();
+        let concealed_tiles = tiles(&[
+            "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "east", "east", "red", "red",
+            "w5",
+        ]);
+        let concealed_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+
+        let signals = strategic_signals(&context, &concealed_counts, &[], &[]);
+        assert!(signals.fan_estimate >= 8);
+    }
+
+    #[test]
     fn triplets_do_not_count_as_free_seven_pairs_progress() {
         let context = base_context();
         let concealed_tiles = tiles(&[
@@ -3052,6 +3349,148 @@ mod tests {
             &context.player.meld_tile_key_groups,
             120,
         ));
+    }
+
+    #[test]
+    fn self_draw_precheck_accepts_standard_hand_completion() {
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t2", "t3", "t4", "red",
+            ]
+            .into_iter(),
+        );
+
+        assert!(draw_completes_hand_precheck(
+            &concealed_counts,
+            tile_index("red").expect("tile index"),
+            0,
+        ));
+    }
+
+    #[test]
+    fn self_draw_precheck_rejects_non_winning_draw() {
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "t1", "t2", "t3", "red", "green",
+            ]
+            .into_iter(),
+        );
+
+        assert!(!draw_completes_hand_precheck(
+            &concealed_counts,
+            tile_index("white").expect("tile index"),
+            0,
+        ));
+    }
+
+    #[test]
+    fn precheck_failure_is_cached_in_winning_fan_cache() {
+        let context = base_context();
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "t1", "t2", "t3", "red", "green",
+            ]
+            .into_iter(),
+        );
+        let mut engine = SearchEngine::new(&context);
+        let draw_tile_index = tile_index("white").expect("tile index");
+        let key = WinningKey {
+            counts: concealed_counts,
+            melds: Vec::new(),
+            draw_tile_index: draw_tile_index as u8,
+        };
+
+        assert_eq!(
+            engine.hypothetical_self_draw_fan_total(&context, &concealed_counts, &[], &[], draw_tile_index),
+            None
+        );
+        assert!(engine.winning_fan_cache.contains_key(&key));
+        assert_eq!(engine.winning_fan_cache.get(&key), Some(&None));
+    }
+
+    #[test]
+    fn records_discard_telemetry_for_close_decision() {
+        let mut context = base_context();
+        context.wall_tiles_remaining = 12;
+        let concealed_tiles = tiles(&[
+            "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b7", "b8", "east", "east",
+        ]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles.clone();
+
+        let mut engine = SearchEngine::new(&context);
+        let _ = engine.best_discard_plan(
+            &context,
+            &concealed_tiles,
+            &context.player.concealed_tile_counts,
+            &context.player.meld_tile_key_groups,
+            &[],
+            None,
+            None,
+        );
+
+        let telemetry = engine.last_discard_telemetry().expect("telemetry");
+        assert!(telemetry.stage_one_candidates >= 2);
+        assert!(telemetry.ran_stage_two);
+        assert!(telemetry.finalist_gap.is_some());
+    }
+
+    #[test]
+    fn elevates_stage_two_budget_for_close_high_pressure_spot() {
+        let mut context = base_context();
+        context.wall_tiles_remaining = 12;
+        context.opponent_melds_by_seat[1] = vec![
+            vec!["w3".to_string(), "w4".to_string(), "w5".to_string()],
+            vec!["red".to_string(), "red".to_string(), "red".to_string()],
+        ];
+        context.opponent_discards_by_seat[1] = vec![
+            "white".to_string(),
+            "north".to_string(),
+            "b9".to_string(),
+            "w9".to_string(),
+        ];
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "green",
+                "w9",
+            ]
+            .into_iter(),
+        );
+        let mut engine = SearchEngine::new(&context);
+
+        assert_eq!(
+            engine.stage_two_candidate_count(&context, &concealed_counts, &[], 20),
+            3
+        );
+    }
+
+    #[test]
+    fn caches_best_shanten_after_draw_results() {
+        let context = base_context();
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b7", "b8", "east",
+                "east",
+            ]
+            .into_iter(),
+        );
+        let draw_tile_index = tile_index("b9").expect("tile index");
+        let mut engine = SearchEngine::new(&context);
+        let key = ShantenAfterDrawKey {
+            counts: concealed_counts,
+            draw_tile_index: draw_tile_index as u8,
+            open_meld_count: 0,
+            restricted_discard_tile_index: None,
+        };
+
+        let best = best_shanten_after_draw(&mut engine, &concealed_counts, draw_tile_index, 0, None);
+        assert_eq!(engine.shanten_after_draw_cache.get(&key), Some(&best));
+    }
+
+    #[test]
+    fn primary_threat_gets_more_weight_than_secondary_threat() {
+        assert!(weighted_threat_score(120, true) > weighted_threat_score(120, false));
     }
 
     #[test]

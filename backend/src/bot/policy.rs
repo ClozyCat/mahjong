@@ -3,8 +3,10 @@ use super::search::{
     STAGE_ONE_DEPTH, SearchEngine, claim_action_bonus, claim_meld_tile_keys,
     meld_is_value_honor_set, simulated_tiles_after_removal,
 };
+use std::{env, time::Instant};
 
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
+    let decision_started = Instant::now();
     let mut engine = SearchEngine::new(context);
     let baseline = engine.best_discard_plan(
         context,
@@ -72,6 +74,8 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
             ));
         }
     }
+
+    trace_discard_decision_if_enabled(context, &engine, &baseline, decision_started.elapsed());
 
     if let Some((action, score)) = best_kong {
         if score > baseline.score + engine.kong_margin() {
@@ -189,6 +193,32 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         action_type: "pass".to_string(),
         tile_ids: vec![],
     })
+}
+
+fn trace_discard_decision_if_enabled(
+    context: &BotContext,
+    engine: &SearchEngine,
+    baseline: &super::search::BotDiscardPlan,
+    elapsed: std::time::Duration,
+) {
+    if env::var_os("MAHJONG_BOT_TRACE").is_none() {
+        return;
+    }
+    let Some(telemetry) = engine.last_discard_telemetry() else {
+        return;
+    };
+    eprintln!(
+        "bot-discard seat={} tile={} score={} elapsed_ms={} stage1={} gap={:?} stage2={} ran_stage2={} ran_mc={}",
+        context.seat_index,
+        baseline.tile_key,
+        baseline.score,
+        elapsed.as_millis(),
+        telemetry.stage_one_candidates,
+        telemetry.finalist_gap,
+        telemetry.stage_two_candidates,
+        telemetry.ran_stage_two,
+        telemetry.ran_monte_carlo,
+    );
 }
 
 fn choose_active_turn_skill_action(
