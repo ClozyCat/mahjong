@@ -428,6 +428,51 @@ export interface PlayerSkillView {
   canActivateNow?: boolean;
   previewTileKeys?: string[];
 }
+
+export interface PlayerView {
+  seat: Seat;
+  absoluteSeat?: number;
+  name: string;
+  seatType?: SeatType;
+  score: number;
+  liveDelta: number;
+  flowerCount: number;
+  wind: 'East' | 'South' | 'West' | 'North';
+  isDealer: boolean;
+  isActive: boolean;
+  isLocal: boolean;
+  connected: boolean;
+  isBotControlled?: boolean;
+  ready: boolean;
+  concealedCount: number;
+  meldCount: number;
+  melds: string[][];
+  flowers: string[];
+  statusText?: string;
+  skill?: PlayerSkillView | null;
+}
+
+export interface WaitingControls {
+  canReady: boolean;
+  canStart: boolean;
+  isReady: boolean;
+  occupiedSeats: number;
+  botCount: number;
+  canAddBot: boolean;
+  canRemoveBot: boolean;
+}
+
+export interface LocalTileView {
+  tileId: string;
+  code: string;
+  isSelected: boolean;
+  isDrawn: boolean;
+  isReplacementDrawn?: boolean;
+  isFlower: boolean;
+  isDisabled?: boolean;
+}
+
+export interface ClaimCandidateTileView {
   code: string;
   source: 'hand' | 'claim';
 }

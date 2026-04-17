@@ -895,6 +895,7 @@ function createLocalHand(state: SessionState) {
   const localPlayer = findPrivatePlayer(state, localSeat);
   const optimisticDiscard = getOptimisticDiscard(state);
   const optimisticFlowerTileId = getOptimisticFlowerTileId(state);
+  const replacementDrawnTileId = state.latestReplacementTileId ?? null;
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
   const drawnTileId =
     pendingAction?.type === 'active_turn' && pendingAction.drawn_tile_id !== optimisticDiscard?.tileId
@@ -909,6 +910,7 @@ function createLocalHand(state: SessionState) {
       code: tile.tile_key,
       isSelected: state.selectedTileIds.includes(tile.tile_id),
       isDrawn: tile.tile_id === drawnTileId,
+      isReplacementDrawn: tile.tile_id === replacementDrawnTileId,
       isFlower: isFlowerTileKey(tile.tile_key),
       isDisabled: Boolean(optimisticDiscard) || restrictedDiscardTileIdSet.has(tile.tile_id),
     }))

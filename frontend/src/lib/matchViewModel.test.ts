@@ -1414,6 +1414,83 @@ describe('createMatchViewModel', () => {
     expect(viewModel.localHand.some((tile) => tile.isDrawn)).toBe(false);
   });
 
+  it('marks the local replacement draw tile for the dock animation and keeps it at the hand tail', () => {
+    const viewModel = createMatchViewModel(
+      createPlayingSessionState({
+        latestReplacementTileId: 'w1#p0-5',
+        roomSnapshot: {
+          type: 'room_snapshot',
+          payload: {
+            ...createPlayingSessionState().roomSnapshot!.payload,
+            private_state: {
+              ...createPlayingSessionState().roomSnapshot!.payload.private_state!,
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 2,
+                deadline_at: '2026-03-26T06:01:00Z',
+                drawn_tile_id: 'w1#p0-5',
+                options: ['discard'],
+              },
+              players: [
+                {
+                  seat_index: 0,
+                  nickname: 'Player A',
+                  connected: true,
+                  concealed_count: 13,
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+                {
+                  seat_index: 1,
+                  nickname: 'Player B',
+                  connected: true,
+                  concealed_count: 13,
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+                {
+                  seat_index: 2,
+                  nickname: 'Player C',
+                  connected: true,
+                  concealed_count: 6,
+                  concealed_tiles: [
+                    { tile_id: 'w1#p0-5', tile_key: 'w1' },
+                    { tile_id: 't9#p0-4', tile_key: 't9' },
+                    { tile_id: 'b3#p0-3', tile_key: 'b3' },
+                    { tile_id: 'w7#p0-2', tile_key: 'w7' },
+                    { tile_id: 'd1#p0-1', tile_key: 'd1' },
+                    { tile_id: 'b1#p0-0', tile_key: 'b1' },
+                  ],
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+                {
+                  seat_index: 3,
+                  nickname: 'Player D',
+                  connected: false,
+                  concealed_count: 10,
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(viewModel.localHand.at(-1)).toMatchObject({
+      tileId: 'w1#p0-5',
+      isDrawn: true,
+      isReplacementDrawn: true,
+    });
+    expect(viewModel.localHand.filter((tile) => tile.isReplacementDrawn)).toHaveLength(1);
+  });
+
   it('marks same-turn restricted tiles as disabled and keeps discard unavailable for them', () => {
     const base = createPlayingSessionState({
       selectedTileIds: ['w1#p0-0'],
