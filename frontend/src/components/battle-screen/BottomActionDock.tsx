@@ -48,7 +48,7 @@ export function BottomActionDock({
   const [isReadyHandPopoverPinned, setIsReadyHandPopoverPinned] = useState(false);
   const readyHandPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
-  const hasDrawnTile = hand.some((tile) => tile.isDrawn);
+  const hasDrawnTile = hand.some((tile) => tile.isDrawn || tile.isReplacementDrawn);
   const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
   const dockLabel = '手牌区';
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
@@ -244,6 +244,7 @@ export function BottomActionDock({
                         'action-dock__tile',
                         tile.isSelected ? 'action-dock__tile--selected' : '',
                         tile.isDrawn ? 'action-dock__tile--drawn' : '',
+                        tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
                         tile.isDisabled ? 'action-dock__tile--disabled' : '',
                       ]
                         .filter(Boolean)

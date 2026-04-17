@@ -258,6 +258,7 @@ export function createInitialSessionState(): SessionState {
     selectionMode: null,
     toasts: [],
     matchStatistics: null,
+    latestReplacementTileId: null,
   };
 }
 
@@ -283,6 +284,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
           ? []
           : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
       const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
+      const keepLatestReplacement = message.payload.private_state?.pending_action?.type === 'active_turn';
       const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(state.optimisticDiscard ?? null, message);
       const nextOptimisticFlower = reconcileOptimisticFlowerWithSnapshot(state.optimisticFlower ?? null, message);
 
@@ -299,6 +301,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         selectedTileIds: nextSelectedTileIds,
         selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
         matchStatistics: createMatchStatisticsFromSnapshot(message),
+        latestReplacementTileId: keepLatestReplacement ? state.latestReplacementTileId : null,
       };
     }
     case 'action_prompt':
@@ -318,9 +321,16 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         state.roomSnapshot?.payload.seats,
       );
 
+      const localSeat = state.roomSnapshot?.payload.local_seat;
+      const nextReplacementTileId =
+        message.payload.event_type === 'replacement_draw' && message.payload.event?.seat === localSeat
+          ? (message.payload.event?.tile_id as string)
+          : state.latestReplacementTileId;
+
       return {
         ...state,
         latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
+        latestReplacementTileId: nextReplacementTileId,
         toasts: appendToast(state, 'event', text),
       };
     }
