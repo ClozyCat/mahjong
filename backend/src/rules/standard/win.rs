@@ -28,6 +28,7 @@ use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
+const LOW_FAN_WIN_LABEL: &str = "屁和";
 
 struct PreparedWinEvaluation {
     concealed_tile_keys: Vec<String>,
@@ -41,6 +42,17 @@ struct PreparedWinEvaluation {
 struct EvaluatedWinResult {
     fan_result: crate::rules::scoring::FanResult,
     required_minimum_fan_total: i64,
+}
+
+fn low_fan_display_win_label(
+    enforce_minimum_eight_fan: bool,
+    fan_result: &crate::rules::scoring::FanResult,
+) -> Option<String> {
+    if !enforce_minimum_eight_fan && fan_result.minimum_qualifying_fan_total < 8 {
+        return Some(LOW_FAN_WIN_LABEL.to_string());
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -108,13 +120,7 @@ pub fn compute_hu_settlement(
         win_type: hu_context.to_string(),
         winner_seat: Some(winner_seat),
         discarder_seat,
-        display_win_label: if !enforce_minimum_eight_fan
-            && fan_result.fan_total < evaluated.required_minimum_fan_total
-        {
-            Some("灞佸拰".to_string())
-        } else {
-            None
-        },
+        display_win_label: low_fan_display_win_label(enforce_minimum_eight_fan, fan_result),
         fan_total: fan_result.fan_total,
         fan_keys: fan_result.fan_keys.clone(),
         fan_breakdown: fan_result
@@ -380,13 +386,7 @@ pub(crate) fn compute_hu_settlement_for_state(
         win_type: hu_context.to_string(),
         winner_seat: Some(winner_seat),
         discarder_seat,
-        display_win_label: if !enforce_minimum_eight_fan
-            && fan_result.fan_total < evaluated.required_minimum_fan_total
-        {
-            Some("鐏炰礁鎷?".to_string())
-        } else {
-            None
-        },
+        display_win_label: low_fan_display_win_label(enforce_minimum_eight_fan, fan_result),
         fan_total: fan_result.fan_total,
         fan_keys: fan_result.fan_keys.clone(),
         fan_breakdown: fan_result
@@ -776,7 +776,10 @@ mod tests {
 
     use serde_json::Value;
 
-    use super::{apply_hu_settlement_output, can_declare_hu_with_cache_for_state};
+    use super::{
+        apply_hu_settlement_output, can_declare_hu_with_cache_for_state,
+        compute_hu_settlement_for_state,
+    };
     use crate::core::state::{
         LastActionContext, LianHuanJiTracker, MatchSkillTrackers, MatchState, PlayerRoundState,
         RoomState, RoundSettlement, RoundState, SeatState, ZouWeiShangJiTracker,
@@ -873,6 +876,23 @@ mod tests {
         assert!(can_declare_hu_with_cache_for_state(
             &state, &cache, 0, None, None
         ));
+    }
+
+    #[test]
+    fn labels_low_fan_wins_as_pi_he_when_eight_fan_requirement_is_disabled() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        state.enforce_minimum_eight_fan = false;
+        let round = state.round_state.as_mut().expect("round state");
+        round.rule_state.enforce_minimum_eight_fan = false;
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
+
+        assert!(settlement.fan_total < 8);
+        assert_eq!(settlement.display_win_label.as_deref(), Some("屁和"));
     }
 
     fn test_room_value_with_match_trackers() -> Value {
