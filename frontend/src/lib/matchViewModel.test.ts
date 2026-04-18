@@ -1194,7 +1194,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((item) => item.name === 'Player B')?.seat).toBe('left');
   });
 
-  it('sorts each meld group for display so chow tiles render in suit order', () => {
+  it('preserves meld tile order for display so source orientation is not lost', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -1217,7 +1217,15 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([['w6', 'w7', 'w8']]);
+    expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([
+      {
+        tiles: [
+          { code: 'w8', source: 'hand' },
+          { code: 'w6', source: 'hand' },
+          { code: 'w7', source: 'hand' },
+        ],
+      },
+    ]);
   });
 
   it('ignores invalid meld tile codes instead of crashing the table view', () => {
@@ -1243,7 +1251,42 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([['w6', 'w7', 'w8']]);
+    expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([
+      {
+        tiles: [
+          { code: 'w8', source: 'hand' },
+          { code: 'w6', source: 'hand' },
+          { code: 'w7', source: 'hand' },
+        ],
+      },
+    ]);
+  });
+
+  it('prefers session display meld metadata so claimed tiles keep their source marker', () => {
+    const base = createPlayingSessionState({
+      displayMeldsBySeat: {
+        '1': [
+          {
+            tiles: [
+              { code: 'w3', source: 'claim' },
+              { code: 'w3', source: 'hand' },
+              { code: 'w3', source: 'hand' },
+            ],
+          },
+        ],
+      },
+    });
+    const viewModel = createMatchViewModel(base);
+
+    expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([
+      {
+        tiles: [
+          { code: 'w3', source: 'claim' },
+          { code: 'w3', source: 'hand' },
+          { code: 'w3', source: 'hand' },
+        ],
+      },
+    ]);
   });
 
   it('computes player winds relative to the current dealer seat', () => {

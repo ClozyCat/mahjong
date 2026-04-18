@@ -8,6 +8,7 @@ import type {
   ClaimActionId,
   ClaimCandidateTileView,
   ClaimCandidateView,
+  DisplayMeldView,
   MatchResultPayload,
   PlayerView,
   PrivatePlayerState,
@@ -684,8 +685,13 @@ function normalizeTileCodeList(tileCodes: readonly (string | null | undefined)[]
 
 function normalizeDisplayMelds(melds: string[][] | null | undefined) {
   return (melds ?? [])
-    .map((meld) => normalizeTileCodeList(meld).sort(compareTileCodes))
-    .filter((meld) => meld.length > 0);
+    .map((meld) => normalizeTileCodeList(meld))
+    .filter((meld) => meld.length > 0)
+    .map(
+      (meld): DisplayMeldView => ({
+        tiles: meld.map((code) => ({ code, source: 'hand' as const })),
+      }),
+    );
 }
 
 function createPlayers(state: SessionState): PlayerView[] {
@@ -700,6 +706,7 @@ function createPlayers(state: SessionState): PlayerView[] {
   const displayedScores = getDisplayedScores(state);
   const liveDeltaBySeat = getLiveDeltaBySeat(state);
   const flowerCountBySeat = getFlowerCountBySeat(state);
+  const displayMeldsBySeat = state.displayMeldsBySeat ?? {};
 
   return snapshot.seats
     .map((seat) => {
@@ -726,7 +733,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         ready: seat.ready,
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,
-        melds: normalizeDisplayMelds(privatePlayer?.melds),
+        melds: displayMeldsBySeat[seatKey] ?? normalizeDisplayMelds(privatePlayer?.melds),
         flowers: normalizeTileCodeList(privatePlayer?.flowers),
         statusText:
           isBotSeat

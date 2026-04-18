@@ -69,4 +69,25 @@ describe('MeldRack', () => {
     expect(shell.querySelector('.meld-rack__toggle')).toBeNull();
     expect(shell.querySelector('.meld-rack--collapsed')).toBeNull();
   });
+
+  it('renders the claimed tile in a dedicated sideways slot', () => {
+    render(
+      <MeldRack
+        seat="right"
+        melds={[
+          {
+            tiles: [
+              { code: 'w3', source: 'hand' },
+              { code: 'w3', source: 'claim' },
+              { code: 'w3', source: 'hand' },
+            ],
+          },
+        ]}
+        ariaLabel="Claim melds"
+      />,
+    );
+
+    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile--claim')).not.toBeNull();
+    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile-face--claim')).not.toBeNull();
+  });
 });

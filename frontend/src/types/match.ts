@@ -341,6 +341,7 @@ export interface SessionState {
   selectionMode: 'single' | 'kong' | 'chow' | 'pung' | null;
   toasts: ToastMessage[];
   matchStatistics?: MatchStatisticsState | null;
+  displayMeldsBySeat?: Record<string, DisplayMeldView[]>;
 }
 
 export type BattleActionId =
@@ -374,10 +375,21 @@ export interface PlayerView {
   ready: boolean;
   concealedCount: number;
   meldCount: number;
-  melds: string[][];
+  melds: PlayerMeldView[];
   flowers: string[];
   statusText?: string;
 }
+
+export interface DisplayMeldTileView {
+  code: string;
+  source: 'hand' | 'claim';
+}
+
+export interface DisplayMeldView {
+  tiles: DisplayMeldTileView[];
+}
+
+export type PlayerMeldView = string[] | DisplayMeldView;
 
 export interface WaitingControls {
   canReady: boolean;

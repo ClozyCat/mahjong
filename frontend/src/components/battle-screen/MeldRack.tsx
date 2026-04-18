@@ -1,12 +1,12 @@
 import type { CSSProperties } from 'react';
 import { useLayoutEffect, useRef, useState } from 'react';
 
-import type { Seat } from '../../types/match';
+import type { DisplayMeldView, PlayerMeldView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 
 interface MeldRackProps {
   seat: Seat | 'local';
-  melds: string[][];
+  melds: PlayerMeldView[];
   ariaLabel: string;
   emptyLabel?: string | null;
   collapsible?: boolean;
@@ -83,12 +83,17 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
         {hasMelds
           ? melds.map((meld, meldIndex) => (
               <div key={`${seat}-meld-${meldIndex}`} className="meld-rack__group">
-                {meld.map((tile, tileIndex) => (
-                  <MahjongTile
-                    key={`${seat}-meld-${meldIndex}-${tile}-${tileIndex}`}
-                    code={tile}
-                    variant="discard"
-                  />
+                {normalizeMeldTiles(meld).map((tile, tileIndex) => (
+                  <span
+                    key={`${seat}-meld-${meldIndex}-${tile.code}-${tileIndex}`}
+                    className={`meld-rack__tile ${tile.source === 'claim' ? 'meld-rack__tile--claim' : ''}`.trim()}
+                  >
+                    <MahjongTile
+                      code={tile.code}
+                      variant="discard"
+                      className={tile.source === 'claim' ? 'meld-rack__tile-face--claim' : undefined}
+                    />
+                  </span>
                 ))}
               </div>
             ))
@@ -110,4 +115,12 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
       ) : null}
     </div>
   );
+}
+
+function normalizeMeldTiles(meld: PlayerMeldView): DisplayMeldView['tiles'] {
+  if (Array.isArray(meld)) {
+    return meld.map((code) => ({ code, source: 'hand' as const }));
+  }
+
+  return meld.tiles;
 }

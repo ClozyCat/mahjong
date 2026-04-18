@@ -382,6 +382,17 @@
   padding: calc(var(--table-stage-river-gap) * 0.18);
 }
 
+.table-stage__melds .meld-rack__tile {
+  width: var(--table-stage-meld-tile-width);
+  height: var(--table-stage-meld-tile-height);
+}
+
+.table-stage__melds .meld-rack__tile--claim {
+  width: var(--table-stage-meld-tile-height);
+  height: var(--table-stage-meld-tile-width);
+  margin-inline: 0.08rem;
+}
+
 .table-stage__melds--top,
 .table-stage__melds--bottom,
 .table-stage__melds--left,

@@ -1,5 +1,6 @@
 import type {
   ActionRejectedMessage,
+  DisplayMeldView,
   MatchStatisticsState,
   OptimisticDiscardState,
   OptimisticFlowerState,
@@ -137,6 +138,211 @@ function createMatchStatisticsFromSnapshot(snapshot: RoomSnapshotMessage): Match
   return createMatchStatisticsFromScores(matchState?.cumulative_scores);
 }
 
+function normalizeMeldTileCodeGroups(melds: string[][] | null | undefined) {
+  return (melds ?? [])
+    .map((meld) =>
+      (meld ?? []).filter((tileCode): tileCode is string => typeof tileCode === 'string' && tileCode.trim().length > 0),
+    )
+    .filter((meld) => meld.length > 0);
+}
+
+function createDisplayMeld(meld: string[], claimedTileIndex: number | null = null): DisplayMeldView {
+  return {
+    tiles: meld.map((code, index) => ({
+      code,
+      source: claimedTileIndex !== null && index === claimedTileIndex ? ('claim' as const) : ('hand' as const),
+    })),
+  };
+}
+
+function getDisplayMeldCodes(meld: DisplayMeldView) {
+  return meld.tiles.map((tile) => tile.code);
+}
+
+function getClaimedTileIndex(
+  meld: string[],
+  claimTileKey: string,
+  preferredIndex: number,
+) {
+  const matchingIndexes = meld.flatMap((code, index) => (code === claimTileKey ? [index] : []));
+
+  if (matchingIndexes.length === 0) {
+    return null;
+  }
+
+  if (matchingIndexes.includes(preferredIndex)) {
+    return preferredIndex;
+  }
+
+  return matchingIndexes[0];
+}
+
+function getPreferredClaimIndex(actorSeat: number, sourceSeat: number, meldLength: number) {
+  const relativeSourceSeat = (sourceSeat - actorSeat + 4) % 4;
+
+  if (relativeSourceSeat === 3) {
+    return 0;
+  }
+
+  if (relativeSourceSeat === 2) {
+    return Math.max(0, Math.floor((meldLength - 1) / 2));
+  }
+
+  return Math.max(0, meldLength - 1);
+}
+
+function createClaimDisplayMeld(meld: string[], actorSeat: number, sourceSeat: number, claimTileKey: string) {
+  const preferredIndex = getPreferredClaimIndex(actorSeat, sourceSeat, meld.length);
+  const claimedTileIndex = getClaimedTileIndex(meld, claimTileKey, preferredIndex);
+
+  return createDisplayMeld(meld, claimedTileIndex);
+}
+
+function sameMeldTileOrder(left: string[], right: string[]) {
+  return left.length === right.length && left.every((tile, index) => tile === right[index]);
+}
+
+function isMatchingAddKongUpgrade(previousMeld: DisplayMeldView, nextMeld: string[]) {
+  const previousCodes = getDisplayMeldCodes(previousMeld);
+
+  return (
+    previousCodes.length >= 3 &&
+    nextMeld.length === 4 &&
+    new Set(previousCodes).size === 1 &&
+    new Set(nextMeld).size === 1 &&
+    previousCodes[0] === nextMeld[0]
+  );
+}
+
+function mergeDisplayMeld(previousMeld: DisplayMeldView, nextMeld: string[]) {
+  if (sameMeldTileOrder(getDisplayMeldCodes(previousMeld), nextMeld)) {
+    return {
+      tiles: nextMeld.map((code, index) => ({
+        code,
+        source: previousMeld.tiles[index]?.source === 'claim' ? ('claim' as const) : ('hand' as const),
+      })),
+    };
+  }
+
+  if (isMatchingAddKongUpgrade(previousMeld, nextMeld)) {
+    const claimedTileIndex = previousMeld.tiles.findIndex((tile) => tile.source === 'claim');
+    return createDisplayMeld(nextMeld, claimedTileIndex >= 0 ? claimedTileIndex : null);
+  }
+
+  return createDisplayMeld(nextMeld);
+}
+
+function reconcileDisplayMeldsWithSnapshot(
+  previousDisplayMeldsBySeat: SessionState['displayMeldsBySeat'],
+  snapshot: RoomSnapshotMessage,
+) {
+  const nextDisplayMeldsBySeat: Record<string, DisplayMeldView[]> = {};
+
+  snapshot.payload.private_state?.players.forEach((player) => {
+    const seatKey = String(player.seat_index);
+    const snapshotMelds = normalizeMeldTileCodeGroups(player.melds);
+    const previousDisplayMelds = previousDisplayMeldsBySeat?.[seatKey] ?? [];
+    const usedPreviousIndexes = new Set<number>();
+
+    nextDisplayMeldsBySeat[seatKey] = snapshotMelds.map((meld) => {
+      const exactMatchIndex = previousDisplayMelds.findIndex(
+        (previousMeld, index) =>
+          !usedPreviousIndexes.has(index) && sameMeldTileOrder(getDisplayMeldCodes(previousMeld), meld),
+      );
+
+      if (exactMatchIndex >= 0) {
+        usedPreviousIndexes.add(exactMatchIndex);
+        return mergeDisplayMeld(previousDisplayMelds[exactMatchIndex], meld);
+      }
+
+      const addKongUpgradeIndex = previousDisplayMelds.findIndex(
+        (previousMeld, index) =>
+          !usedPreviousIndexes.has(index) && isMatchingAddKongUpgrade(previousMeld, meld),
+      );
+
+      if (addKongUpgradeIndex >= 0) {
+        usedPreviousIndexes.add(addKongUpgradeIndex);
+        return mergeDisplayMeld(previousDisplayMelds[addKongUpgradeIndex], meld);
+      }
+
+      return createDisplayMeld(meld);
+    });
+  });
+
+  return nextDisplayMeldsBySeat;
+}
+
+function appendDisplayMeldForClaim(
+  displayMeldsBySeat: SessionState['displayMeldsBySeat'],
+  event: Extract<ServerMessage, { type: 'round_event' }>['payload']['event'],
+) {
+  const actorSeat = typeof event?.seat === 'number' ? event.seat : null;
+  const sourceSeat = typeof event?.from === 'number' ? event.from : null;
+  const claimTileKey = typeof event?.tile_key === 'string' ? event.tile_key : null;
+  const meld =
+    Array.isArray(event?.meld)
+      ? event.meld.filter((tile): tile is string => typeof tile === 'string' && tile.trim().length > 0)
+      : [];
+
+  if (actorSeat === null || sourceSeat === null || !claimTileKey || meld.length === 0) {
+    return displayMeldsBySeat ?? {};
+  }
+
+  const seatKey = String(actorSeat);
+
+  return {
+    ...(displayMeldsBySeat ?? {}),
+    [seatKey]: [
+      ...((displayMeldsBySeat ?? {})[seatKey] ?? []),
+      createClaimDisplayMeld(meld, actorSeat, sourceSeat, claimTileKey),
+    ],
+  };
+}
+
+function updateDisplayMeldForSelfKong(
+  displayMeldsBySeat: SessionState['displayMeldsBySeat'],
+  event: Extract<ServerMessage, { type: 'round_event' }>['payload']['event'],
+) {
+  const actorSeat = typeof event?.seat === 'number' ? event.seat : null;
+  const kongType = typeof event?.kong_type === 'string' ? event.kong_type : null;
+  const tileKey = typeof event?.tile_key === 'string' ? event.tile_key : null;
+
+  if (actorSeat === null || !kongType || !tileKey) {
+    return displayMeldsBySeat ?? {};
+  }
+
+  const seatKey = String(actorSeat);
+  const currentSeatMelds = [...((displayMeldsBySeat ?? {})[seatKey] ?? [])];
+
+  if (kongType === 'add_kong') {
+    const meldIndex = currentSeatMelds.findIndex((meld) => {
+      const codes = getDisplayMeldCodes(meld);
+      return codes.length >= 3 && new Set(codes).size === 1 && codes[0] === tileKey;
+    });
+
+    if (meldIndex >= 0) {
+      currentSeatMelds[meldIndex] = mergeDisplayMeld(currentSeatMelds[meldIndex], [
+        tileKey,
+        tileKey,
+        tileKey,
+        tileKey,
+      ]);
+      return {
+        ...(displayMeldsBySeat ?? {}),
+        [seatKey]: currentSeatMelds,
+      };
+    }
+  }
+
+  return {
+    ...(displayMeldsBySeat ?? {}),
+    [seatKey]: [
+      ...currentSeatMelds,
+      createDisplayMeld([tileKey, tileKey, tileKey, tileKey]),
+    ],
+  };
+}
+
 function findSnapshotPlayer(snapshot: RoomSnapshotMessage['payload'] | null | undefined, seatIndex: number | null | undefined) {
   if (!snapshot || typeof seatIndex !== 'number') {
     return null;
@@ -259,6 +465,7 @@ export function createInitialSessionState(): SessionState {
     toasts: [],
     matchStatistics: null,
     latestReplacementTileId: null,
+    displayMeldsBySeat: {},
   };
 }
 
@@ -302,6 +509,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
         matchStatistics: createMatchStatisticsFromSnapshot(message),
         latestReplacementTileId: keepLatestReplacement ? state.latestReplacementTileId : null,
+        displayMeldsBySeat: reconcileDisplayMeldsWithSnapshot(state.displayMeldsBySeat, message),
       };
     }
     case 'action_prompt':
@@ -331,6 +539,12 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         ...state,
         latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
         latestReplacementTileId: nextReplacementTileId,
+        displayMeldsBySeat:
+          message.payload.event_type === 'claim_made' && message.payload.event?.claim_type !== 'hu'
+            ? appendDisplayMeldForClaim(state.displayMeldsBySeat, message.payload.event)
+            : message.payload.event_type === 'self_kong_declared'
+              ? updateDisplayMeldForSelfKong(state.displayMeldsBySeat, message.payload.event)
+              : state.displayMeldsBySeat,
         toasts: appendToast(state, 'event', text),
       };
     }

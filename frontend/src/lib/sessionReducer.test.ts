@@ -167,6 +167,83 @@ describe('sessionReducer', () => {
     expect(next.latestRoundEvent).toEqual(roundEventMessage);
   });
 
+  it('tracks claimed meld tiles so the UI can preserve their source orientation', () => {
+    const afterClaim = sessionReducer(createInitialSessionState(), {
+      type: 'ws_message',
+      message: {
+        type: 'round_event',
+        payload: {
+          event_type: 'claim_made',
+          event: {
+            seat: 1,
+            from: 0,
+            claim_type: 'pung',
+            tile_key: 'w3',
+            meld: ['w3', 'w3', 'w3'],
+          },
+        },
+      },
+    });
+
+    expect(afterClaim.displayMeldsBySeat?.['1']).toEqual([
+      {
+        tiles: [
+          { code: 'w3', source: 'claim' },
+          { code: 'w3', source: 'hand' },
+          { code: 'w3', source: 'hand' },
+        ],
+      },
+    ]);
+
+    const afterSnapshot = sessionReducer(afterClaim, {
+      type: 'ws_message',
+      message: {
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'playing',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
+            { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+          ],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 1,
+            last_discard: null,
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 10,
+                concealed_tiles: [],
+                melds: [],
+                flowers: [],
+                discards: ['w3'],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 10,
+                concealed_tiles: [],
+                melds: [['w3', 'w3', 'w3']],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(afterSnapshot.displayMeldsBySeat?.['1']).toEqual(afterClaim.displayMeldsBySeat?.['1']);
+  });
+
   it('keeps a hu round_event active when settlement_ready arrives immediately after it', () => {
     const huRoundEventMessage = {
       type: 'round_event' as const,
