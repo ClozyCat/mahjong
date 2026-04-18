@@ -12,8 +12,10 @@ import type {
 import { FanGuideDialog } from './FanGuideDialog';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
-import { PlayerInfoBar, type TableStagePlayer } from './PlayerInfoBar';
 import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
+
+export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
+  Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>>;
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
@@ -115,7 +117,8 @@ export function TableStage({
   const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
-  const [openQuickChatSeat, setOpenQuickChatSeat] = useState<Seat | null>(null);
+  const [isQuickChatOpen, setIsQuickChatOpen] = useState(false);
+  const [countdownPercent, setCountdownPercent] = useState(1);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
@@ -168,13 +171,7 @@ export function TableStage({
   }, []);
 
   useEffect(() => {
-    if (openQuickChatSeat && !playerBySeat.has(openQuickChatSeat)) {
-      setOpenQuickChatSeat(null);
-    }
-  }, [openQuickChatSeat, playerBySeat]);
-
-  useEffect(() => {
-    if (!openQuickChatSeat) {
+    if (!isQuickChatOpen) {
       return undefined;
     }
 
@@ -183,12 +180,42 @@ export function TableStage({
       if (target instanceof Element && target.closest('[data-quick-chat-root="true"]')) {
         return;
       }
-      setOpenQuickChatSeat(null);
+      setIsQuickChatOpen(false);
     }
 
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [openQuickChatSeat]);
+  }, [isQuickChatOpen]);
+
+  useEffect(() => {
+    if (!deadlineAt) {
+      setCountdownPercent(1);
+      return;
+    }
+
+    const start = Date.now();
+    const end = new Date(deadlineAt).getTime();
+    const total = end - start;
+
+    if (total <= 0) {
+      setCountdownPercent(0);
+      return;
+    }
+
+    const update = () => {
+      const now = Date.now();
+      const remaining = end - now;
+      const nextPercent = Math.max(0, remaining / total);
+      setCountdownPercent(nextPercent);
+
+      if (nextPercent > 0) {
+        requestAnimationFrame(update);
+      }
+    };
+
+    const frameId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frameId);
+  }, [deadlineAt]);
 
   useEffect(() => {
     if (!actionEffect) {
@@ -309,7 +336,7 @@ export function TableStage({
               aria-label="打开国标麻将番种说明"
               title="国标麻将番种说明"
               onClick={() => {
-                setOpenQuickChatSeat(null);
+                setIsQuickChatOpen(false);
                 setIsFanGuideOpen(true);
               }}
             >
@@ -340,6 +367,14 @@ export function TableStage({
           </div>
           <div className="table-stage__center-meta">
             <strong>{centerPrimaryText}</strong>
+            {deadlineAt && (
+              <div className="table-stage__center-countdown" aria-hidden="true">
+                <div
+                  className="table-stage__center-countdown-bar"
+                  style={{ width: `${countdownPercent * 100}%` }}
+                />
+              </div>
+            )}
             {promptText ? <em>{promptText}</em> : null}
           </div>
           {actionIndicatorSeat ? (
@@ -394,31 +429,6 @@ export function TableStage({
             </div>
           ) : null}
           {tableSummary ? <div className="table-stage__status-summary">{tableSummary}</div> : null}
-          {shouldShowScaleControls ? (
-            <div className="table-stage__scale-controls" role="group" aria-label="调整牌桌牌面大小">
-              <button
-                type="button"
-                className="table-stage__scale-button"
-                aria-label="缩小牌桌牌面"
-                onClick={onDecreaseTileScale}
-                disabled={!canDecreaseTileScale}
-              >
-                -
-              </button>
-              <span className="table-stage__scale-readout" aria-label={`当前牌面大小 ${scalePercentLabel}`}>
-                {scalePercentLabel}
-              </span>
-              <button
-                type="button"
-                className="table-stage__scale-button"
-                aria-label="放大牌桌牌面"
-                onClick={onIncreaseTileScale}
-                disabled={!canIncreaseTileScale}
-              >
-                +
-              </button>
-            </div>
-          ) : null}
           {barrageMessages.length > 0 ? (
             <div className="table-stage__barrage-layer" aria-hidden="true">
               {barrageMessages.map((message) => (
@@ -508,44 +518,45 @@ export function TableStage({
                       </div>
                     </div>
                   ) : null}
-                  {shouldRenderSeatInfo && player ? (
-                    <div
-                      className={`table-stage__player-info-cluster table-stage__player-info-cluster--${seat}`}
-                      data-quick-chat-root="true"
-                    >
-                      <button
-                        type="button"
-                        className={`table-stage__player-info-button ${
-                          openQuickChatSeat === seat ? 'table-stage__player-info-button--open' : ''
-                        }`.trim()}
-                        aria-label={`打开${player.name}的快捷表情`}
-                        aria-expanded={openQuickChatSeat === seat}
-                        aria-controls={`table-stage-quick-chat-${seat}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenQuickChatSeat((currentSeat) => (currentSeat === seat ? null : seat));
-                        }}
-                      >
-                        <PlayerInfoBar player={player} deadlineAt={deadlineAt} />
-                      </button>
-                      {openQuickChatSeat === seat ? (
-                        <QuickChatMenu
-                          seat={seat}
-                          player={player}
-                          onSelect={(emoji) => {
-                            if (typeof player.absoluteSeat === 'number') {
-                              onQuickChat?.(player.absoluteSeat, emoji);
-                            }
-                            setOpenQuickChatSeat(null);
-                          }}
-                        />
-                      ) : null}
+                  <div className={`table-stage__seat-watermark table-stage__seat-watermark--${seat}`} aria-hidden="true">
+                    {WIND_COPY[seat]}
+                  </div>
+                  {player ? (
+                    <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
+                      <b>{player.name}</b>
+                      <span>
+                        分数 {player.score?.toLocaleString() ?? 0} · 花 {player.flowerCount ?? 0} · 手牌{' '}
+                        {player.concealedCount ?? 0}
+                      </span>
                     </div>
                   ) : null}
                 </div>
               </Fragment>
             );
           })}
+          <div className="table-stage__global-emoji-cluster" data-quick-chat-root="true">
+            <button
+              type="button"
+              className={`table-stage__global-emoji-trigger ${isQuickChatOpen ? 'table-stage__global-emoji-trigger--open' : ''}`}
+              aria-label="打开快捷表情"
+              aria-expanded={isQuickChatOpen}
+              onClick={() => setIsQuickChatOpen(!isQuickChatOpen)}
+            >
+              {isQuickChatOpen ? '×' : '😄'}
+            </button>
+            {isQuickChatOpen ? (
+              <QuickChatMenu
+                seat="bottom"
+                onSelect={(emoji) => {
+                  const localPlayer = players.find((p) => p.isLocal);
+                  if (localPlayer && typeof localPlayer.absoluteSeat === 'number') {
+                    onQuickChat?.(localPlayer.absoluteSeat, emoji);
+                  }
+                  setIsQuickChatOpen(false);
+                }}
+              />
+            ) : null}
+          </div>
           {!hasSettlementHands && spotlightSeat && spotlightTile ? (
             <div
               className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
@@ -586,6 +597,13 @@ const ACTION_POINTER_COPY: Record<Seat, string> = {
   bottom: '你',
 };
 
+const WIND_COPY: Record<Seat, string> = {
+  bottom: '东',
+  right: '南',
+  top: '西',
+  left: '北',
+};
+
 const ACTION_CALLOUT_COPY = {
   chow: '吃',
   pung: '碰',
@@ -604,11 +622,14 @@ const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '🀄', label: '红中' },
   { emoji: '☠️', label: '骷髅' },
   { emoji: '😡', label: '生气' },
+  { emoji: '🙏', label: '谢谢' },
+  { emoji: '👍', label: '赞' },
+  { emoji: '🍵', label: '喝茶' },
 ];
 const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   top: 135,
   right: 220,
-  bottom: 220,
+  bottom: 225,
   left: 320,
 };
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string }> = {
@@ -686,7 +707,6 @@ interface ActionCalloutMarkerProps {
 
 interface QuickChatMenuProps {
   seat: Seat;
-  player: TableStagePlayer;
   onSelect: (emoji: QuickChatEmoji) => void;
 }
 
@@ -717,9 +737,8 @@ function SettlementCenterCallout({ label }: { label: string }) {
   );
 }
 
-function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
+function QuickChatMenu({ seat, onSelect }: QuickChatMenuProps) {
   const menuId = `table-stage-quick-chat-${seat}`;
-  const isLocalTarget = Boolean(player.isLocal);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [isComposing, setIsComposing] = useState(false);
@@ -757,8 +776,8 @@ function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
           type="button"
           className="table-stage__quick-chat-item"
           role="menuitem"
-          aria-label={`${isLocalTarget ? '发送' : `向${player.name}发送`}${item.label}表情`}
-          title={`${isLocalTarget ? '发送' : `向${player.name}发送`}${item.label}表情`}
+          aria-label={`发送${item.label}表情`}
+          title={`发送${item.label}表情`}
           style={getQuickChatItemStyle(seat, index)}
           onClick={(event) => {
             event.stopPropagation();
@@ -774,8 +793,8 @@ function QuickChatMenu({ seat, player, onSelect }: QuickChatMenuProps) {
           isComposerOpen ? 'table-stage__quick-chat-item--active' : ''
         }`.trim()}
         role="menuitem"
-        aria-label={`${isLocalTarget ? '发送' : `向${player.name}发送`}自定义文字`}
-        title={`${isLocalTarget ? '发送' : `向${player.name}发送`}自定义文字`}
+        aria-label="发送自定义文字"
+        title="发送自定义文字"
         style={getQuickChatItemStyle(seat, QUICK_CHAT_ITEMS.length)}
         onClick={(event) => {
           event.stopPropagation();

@@ -836,67 +836,6 @@
   line-height: 1;
 }
 
-/* --- Scale controls --- */
-.table-stage__scale-controls {
-  position: absolute;
-  right: 1.2rem;
-  bottom: 1rem;
-  z-index: 5;
-  display: inline-grid;
-  grid-auto-flow: column;
-  align-items: center;
-  gap: 0.22rem;
-  padding: 0.22rem 0.24rem;
-  border-radius: 999px;
-  border-color: color-mix(in srgb, var(--accent-3) 24%, var(--theme-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 12%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
-    color-mix(in srgb, var(--theme-panel-bg) 94%, black);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
-    0 10px 24px var(--theme-shadow-soft),
-    0 0 0 1px color-mix(in srgb, var(--accent-3) 8%, transparent);
-  backdrop-filter: blur(10px);
-}
-
-.table-stage__scale-readout {
-  min-width: 2.52rem;
-  color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-3));
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  line-height: 1;
-  text-align: center;
-}
-
-.table-stage__scale-button {
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border-radius: 0.55rem;
-  border-color: color-mix(in srgb, var(--accent-3) 34%, var(--theme-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 20%, transparent), color-mix(in srgb, var(--theme-paper) 5%, transparent)),
-    color-mix(in srgb, var(--panel-strong) 92%, black);
-  color: color-mix(in srgb, var(--theme-paper-strong) 92%, var(--accent-3));
-  font-size: 0.92rem;
-  line-height: 1;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
-    0 8px 18px var(--theme-shadow-soft);
-}
-
-.table-stage__scale-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.table-stage__scale-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent-3) 56%, var(--theme-border-strong));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
-    0 12px 22px var(--theme-shadow-soft),
-    0 0 0 1px color-mix(in srgb, var(--accent-3) 16%, transparent);
-}
 
 /* ==============================
    Result overlay (settlement)
