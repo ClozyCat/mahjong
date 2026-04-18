@@ -5,13 +5,15 @@ import { createPortal } from 'react-dom';
 import type { BattleActionId, ResultView, ResultSeatView, Seat } from '../../types/match';
 import { getFanGuideEntry, getFanLabel } from './fanGuide';
 import { FanGuideCard } from './FanGuideCard';
+import { MahjongTile } from './MahjongTile';
 
 interface ResultOverlayProps {
   result: ResultView;
+  settlementHands?: Partial<Record<Seat, string[]>> | null;
   onAction: (actionId: BattleActionId) => void;
 }
 
-export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
+export function ResultOverlay({ result, settlementHands, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeResultPageIndex, setActiveResultPageIndex] = useState(0);
   const [fanPanelHeight, setFanPanelHeight] = useState<number | null>(null);
@@ -30,6 +32,7 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     rowKey: string;
     seat: ResultSeatView;
   } | null>(null);
+  const [dynamicScale, setDynamicScale] = useState(1);
   const [seatStatsPopoverPosition, setSeatStatsPopoverPosition] = useState<{
     top: number;
     left: number;
@@ -242,6 +245,26 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
     };
   }, [activeSeatStats]);
 
+  useLayoutEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      const targetW = 900;
+      const targetH = 700;
+
+      const scaleW = w < targetW ? (w - 32) / targetW : 1;
+      const scaleH = h < targetH ? (h - 32) / targetH : 1;
+
+      const nextScale = Math.max(0.55, Math.min(scaleW, scaleH, 1.1));
+      setDynamicScale(nextScale);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     return () => {
       clearFanGuideTimers(openFanGuideTimerRef, closeFanGuideTimerRef);
@@ -251,7 +274,11 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
 
   if (isCollapsed) {
     return (
-      <section className="result-overlay result-overlay--collapsed" aria-label="Match settlement result">
+      <section
+        className="result-overlay result-overlay--collapsed"
+        aria-label="Match settlement result"
+        style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
+      >
         <button
           type="button"
           className="result-overlay__restore"
@@ -411,7 +438,11 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
 
   return (
     <>
-      <section className="result-overlay" aria-label="Match settlement result">
+      <section
+        className="result-overlay"
+        aria-label="Match settlement result"
+        style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
+      >
         <div className="result-overlay__card">
           <div className="result-overlay__header">
             <div className="result-overlay__heading">
@@ -577,13 +608,35 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
                       }}
                     >
                       <div className="result-overlay__seat-main">
-                        <span className="result-overlay__seat-name">{seat.name}</span>
-                        <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+                        <div className="result-overlay__seat-info">
+                          <span className="result-overlay__seat-name">{seat.name}</span>
+                          <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+                        </div>
+                        <strong className="result-overlay__seat-score">{seat.score}</strong>
+                        <span className={deltaClassName}>
+                          {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
+                        </span>
                       </div>
-                      <strong className="result-overlay__seat-score">{seat.score}</strong>
-                      <span className={deltaClassName}>
-                        {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
-                      </span>
+                      {settlementHands?.[seat.seat] && (
+                        <div className="result-overlay__seat-hand">
+                          {settlementHands[seat.seat]!.map((tile, index) => {
+                            const isWinningTile =
+                              result.winType === 'discard' &&
+                              result.winnerSeat === seat.seat &&
+                              index === settlementHands[seat.seat]!.length - 1;
+
+                            return (
+                              <MahjongTile
+                                key={`${seat.seat}-hand-${index}-${tile}`}
+                                code={tile}
+                                variant="discard"
+                                isLastDiscard={isWinningTile}
+                                className="result-overlay__seat-hand-tile"
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -119,6 +119,10 @@ export function TableStage({
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const [isQuickChatOpen, setIsQuickChatOpen] = useState(false);
   const [countdownPercent, setCountdownPercent] = useState(1);
+  const [riverColumnsH, setRiverColumnsH] = useState(8);
+  const [riverColumnsV, setRiverColumnsV] = useState(8);
+  const [meldRowsH, setMeldRowsH] = useState(2);
+  const [meldColsV, setMeldColsV] = useState(1);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
@@ -151,6 +155,9 @@ export function TableStage({
     '--battle-hand-tile-width-base': 'clamp(1.38rem, 4.8vw, 3.25rem)',
     '--battle-hand-tile-width': 'calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1))',
     '--battle-hand-tile-height': 'calc(var(--battle-hand-tile-width) * 1.57)',
+    '--table-stage-river-columns': `${riverColumnsH}`,
+    '--table-stage-meld-rows-h': `${meldRowsH}`,
+    '--table-stage-meld-cols-v': `${meldColsV}`,
   } as CSSProperties;
 
   useEffect(() => {
@@ -216,6 +223,40 @@ export function TableStage({
     const frameId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frameId);
   }, [deadlineAt]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const ratio = width / height;
+
+      if (ratio > 1.6) {
+        setRiverColumnsH(12);
+        setRiverColumnsV(6);
+        setMeldRowsH(1);
+        setMeldColsV(1);
+      } else if (ratio > 1.3) {
+        setRiverColumnsH(10);
+        setRiverColumnsV(6);
+        setMeldRowsH(1);
+        setMeldColsV(1);
+      } else if (ratio < 0.8) {
+        setRiverColumnsH(6);
+        setRiverColumnsV(10);
+        setMeldRowsH(2);
+        setMeldColsV(2);
+      } else {
+        setRiverColumnsH(8);
+        setRiverColumnsV(8);
+        setMeldRowsH(2);
+        setMeldColsV(1);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!actionEffect) {
@@ -447,50 +488,73 @@ export function TableStage({
             const hasMelds = (player?.melds.length ?? 0) > 0;
             const finalHandTiles = settlementHands?.[seat] ?? [];
             const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
-            const shouldRenderSeatInfo = Boolean(player);
             const settlementWinningTileIndex =
               settlementWinType === 'discard' &&
-              settlementWinnerSeat === seat &&
-              lastDiscard !== null &&
-              finalHandTiles.at(-1) === lastDiscard
+                settlementWinnerSeat === seat &&
+                lastDiscard !== null &&
+                finalHandTiles.at(-1) === lastDiscard
                 ? finalHandTiles.length - 1
                 : -1;
 
             return (
-              <Fragment key={seat}>
-                <div className={`table-stage__seat-zone table-stage__seat-zone--${seat}`}>
-                  <div className={`table-stage__seat-panel table-stage__seat-panel--${seat}`}>
-                    <div
-                      className={`table-stage__river table-stage__river--${seat} ${
-                        activeSeat === seat ? 'table-stage__river--active' : ''
-                      }`}
-                      data-seat={seat}
-                    >
-                      <div className={`table-stage__river-track table-stage__river-track--${seat}`}>
-                        {discards[seat].map((tile, index) => {
-                          const isSpotlightTile =
-                            lastDiscardPosition !== null &&
-                            lastDiscardPosition.seat === seat &&
-                            lastDiscardPosition.index === index;
+              <Fragment key={`seat-zone-${seat}`}>
+                <div
+                  className={`table-stage__seat-zone table-stage__seat-zone--${seat}`}
+                  style={
+                    {
+                      '--table-stage-river-columns':
+                        seat === 'top' || seat === 'bottom'
+                          ? `${riverColumnsH}`
+                          : `${riverColumnsV}`,
+                    } as CSSProperties
+                  }
+                >
+                  <div className={`table-stage__seat-group table-stage__seat-group--${seat}`}>
+                    <div className={`table-stage__seat-panel table-stage__seat-panel--${seat}`}>
+                      <div
+                        className={`table-stage__river table-stage__river--${seat} ${activeSeat === seat ? 'table-stage__river--active' : ''
+                          }`}
+                        data-seat={seat}
+                      >
+                        <div className={`table-stage__river-track table-stage__river-track--${seat}`}>
+                          {discards[seat].map((tile, index) => {
+                            const isLastDiscard =
+                              lastDiscardSeat === seat && index === discards[seat].length - 1;
 
-                          if (isSpotlightTile) {
-                            return null;
-                          }
+                            // HIDE: Don't show in river while spotlighted in focus area
+                            if (isLastDiscard && spotlightSeat && spotlightTile && !hasSettlementHands) {
+                              return null;
+                            }
 
-                          return <MahjongTile key={`${seat}-${tile}-${index}`} code={tile} variant="discard" />;
-                        })}
+                            return (
+                              <MahjongTile
+                                key={`river-${seat}-${index}-${tile}`}
+                                code={tile}
+                                variant="discard"
+                                isLastDiscard={isLastDiscard}
+                              />
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
+
+                    {player && hasMelds ? (
+                      <div
+                        className={`table-stage__melds table-stage__melds--${seat} ${shouldPinDenseMeldRack(seat, player.melds.length)
+                            ? 'table-stage__melds--dense'
+                            : ''
+                          }`}
+                      >
+                        <MeldRack
+                          seat={seat}
+                          melds={player.melds}
+                          ariaLabel={`${player.name} melds`}
+                        />
+                      </div>
+                    ) : null}
                   </div>
-                  {player && hasMelds ? (
-                    <div
-                      className={`table-stage__melds table-stage__melds--${seat} ${
-                        shouldPinDenseMeldRack(seat, player.melds.length) ? 'table-stage__melds--dense' : ''
-                      }`.trim()}
-                    >
-                      <MeldRack seat={seat} melds={player.melds} ariaLabel={`${player.name} melds`} />
-                    </div>
-                  ) : null}
+
                   {finalHandTiles.length > 0 && settlementHandLabel ? (
                     <div
                       className={`table-stage__settlement-hand table-stage__settlement-hand--${seat}`}
@@ -559,9 +623,8 @@ export function TableStage({
           </div>
           {!hasSettlementHands && spotlightSeat && spotlightTile ? (
             <div
-              className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
-                promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
-              }`}
+              className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
+                }`}
               style={getSettlementCalloutStyle(spotlightSeat)}
               aria-label="Latest discard spotlight"
             >
@@ -633,10 +696,10 @@ const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   left: 320,
 };
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string }> = {
-  top: { left: '50%', top: '32%' },
-  bottom: { left: '50%', top: '50%' },
-  left: { left: '32%', top: '41%' },
-  right: { left: '68%', top: '41%' },
+  top: { left: '50%', top: '41%' },
+  bottom: { left: '50%', top: '41%' },
+  left: { left: '50%', top: '41%' },
+  right: { left: '50%', top: '41%' },
 };
 
 type ActionCallout = {
@@ -655,15 +718,15 @@ type BarrageMessage = {
 
 type SettlementHandCell =
   | {
-      kind: 'placeholder';
-      key: string;
-    }
+    kind: 'placeholder';
+    key: string;
+  }
   | {
-      kind: 'tile';
-      key: string;
-      tile: string;
-      index: number;
-    };
+    kind: 'tile';
+    key: string;
+    tile: string;
+    index: number;
+  };
 
 function buildSettlementHandCells(seat: Seat, tiles: string[]): SettlementHandCell[] {
   const tileCells = tiles.map(
@@ -714,9 +777,8 @@ interface QuickChatMenuProps {
 function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
   return (
     <div
-      className={`table-stage__action-callout table-stage__spotlight--${callout.seat} table-stage__action-callout--${callout.tone} ${
-        callout.huVariant ? `table-stage__action-callout--hu-${callout.huVariant}` : ''
-      } table-stage__action-callout--${phase}`.trim()}
+      className={`table-stage__action-callout table-stage__spotlight--${callout.seat} table-stage__action-callout--${callout.tone} ${callout.huVariant ? `table-stage__action-callout--hu-${callout.huVariant}` : ''
+        } table-stage__action-callout--${phase}`.trim()}
       aria-hidden="true"
       style={getSettlementCalloutStyle(callout.seat)}
     >
@@ -789,9 +851,8 @@ function QuickChatMenu({ seat, onSelect }: QuickChatMenuProps) {
       ))}
       <button
         type="button"
-        className={`table-stage__quick-chat-item ${
-          isComposerOpen ? 'table-stage__quick-chat-item--active' : ''
-        }`.trim()}
+        className={`table-stage__quick-chat-item ${isComposerOpen ? 'table-stage__quick-chat-item--active' : ''
+          }`.trim()}
         role="menuitem"
         aria-label="发送自定义文字"
         title="发送自定义文字"

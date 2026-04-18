@@ -257,7 +257,7 @@ export function BattleScreen({
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
               players={viewModel.players}
-              settlementHands={isSettlementPanelReady ? viewModel.settlementHands : null}
+              settlementHands={null}
               settlementCenterCalloutLabel={visibleSettlementCenterCalloutLabel}
               tableCode={viewModel.tableCode}
               roundLabel={viewModel.roundLabel}
@@ -308,7 +308,13 @@ export function BattleScreen({
             onRemoveBot={onRemoveBot}
             onLeaveTable={onLeaveTable}
           />
-          {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}
+          {visibleResult ? (
+            <ResultOverlay
+              result={visibleResult}
+              settlementHands={viewModel.settlementHands}
+              onAction={onAction}
+            />
+          ) : null}
         </div>
       </div>
     </main>

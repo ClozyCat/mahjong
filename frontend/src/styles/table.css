@@ -15,7 +15,7 @@
   --table-stage-river-base-height: var(--battle-stage-discard-height, 3.18rem);
   --table-stage-river-tile-width: calc(var(--table-stage-river-base-width) * var(--table-stage-tile-scale));
   --table-stage-river-tile-height: calc(var(--table-stage-river-base-height) * var(--table-stage-tile-scale));
-  --table-stage-meld-base-width: clamp(1.78rem, 2.38vw, 2.22rem);
+  --table-stage-meld-base-width: clamp(1.1rem, 2.2vw, 2.1rem);
   --table-stage-meld-tile-width: calc(var(--table-stage-meld-base-width) * var(--table-stage-tile-scale));
   --table-stage-meld-tile-height: calc(var(--table-stage-meld-tile-width) * 1.36);
   --table-stage-settlement-base-width: 1.38rem;
@@ -26,10 +26,7 @@
   --table-stage-seat-panel-padding-block: clamp(0.3rem, 0.65vw, 0.46rem);
   --table-stage-seat-panel-padding-inline: clamp(0.3rem, 0.65vw, 0.46rem);
   --table-stage-horizontal-river-reference-rows: 2;
-  --table-stage-horizontal-river-reference-height: calc(
-    (var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) +
-    (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1))
-  );
+  --table-stage-horizontal-river-reference-height: calc((var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) + (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1)));
   --table-stage-action-pointer-size: 1.42rem;
   --table-stage-action-pointer-offset-y: 4.35rem;
   --table-stage-action-pointer-offset-x: calc(var(--table-stage-action-pointer-offset-y) * 2);
@@ -141,7 +138,7 @@
 
 .table-stage__seat-zone--top {
   left: 50%;
-  top: clamp(1.35rem, 4.8%, 2.2rem);
+  top: clamp(3rem, 10%, 6rem);
   transform: translateX(-50%);
 }
 
@@ -152,13 +149,13 @@
 }
 
 .table-stage__seat-zone--left {
-  left: clamp(1.2rem, 4.4%, 2rem);
+  left: clamp(4rem, 12%, 8rem);
   top: 41%;
   transform: translateY(-50%);
 }
 
 .table-stage__seat-zone--right {
-  right: clamp(1.2rem, 4.4%, 2rem);
+  right: clamp(4rem, 12%, 8rem);
   top: 41%;
   transform: translateY(-50%);
 }
@@ -199,6 +196,33 @@
   transform: translateY(-50%) rotate(-90deg);
 }
 
+.table-stage__seat-group {
+  position: relative;
+  display: block;
+  /* Back to block to let children position themselves */
+  width: max-content;
+  margin: 0 auto;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.table-stage__seat-group--top {
+  transform: rotate(180deg);
+}
+
+.table-stage__seat-group--left {
+  transform: rotate(90deg);
+}
+
+.table-stage__seat-group--right {
+  transform: rotate(-90deg);
+}
+
+.table-stage__seat-group>* {
+  pointer-events: auto;
+}
+
+
 /* ------- Rivers ------- */
 
 .table-stage__river {
@@ -215,6 +239,7 @@
 .table-stage__river--left,
 .table-stage__river--right {
   width: auto;
+  margin-inline: auto;
 }
 
 .table-stage__river--active {
@@ -241,11 +266,9 @@
   border-radius: clamp(0.75rem, 1.2vw, 1rem);
   background:
     var(--seat-panel-sheen),
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       color-mix(in srgb, var(--table) 46%, var(--theme-panel-bg-strong)),
-      color-mix(in srgb, var(--table-2) 36%, var(--theme-panel-bg))
-    );
+      color-mix(in srgb, var(--table-2) 36%, var(--theme-panel-bg)));
   border: 1px solid color-mix(in srgb, var(--theme-paper) 16%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
@@ -269,25 +292,17 @@
 .table-stage__seat-panel--left,
 .table-stage__seat-panel--right {
   --seat-panel-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0.16), transparent 48%);
+  transform: perspective(18rem) rotateX(7deg);
+  transform-origin: center bottom;
 }
 
 .table-stage__seat-panel--right {
   --seat-panel-sheen: linear-gradient(270deg, rgba(255, 255, 255, 0.16), transparent 48%);
 }
 
-.table-stage__seat-panel--left {
-  transform: perspective(18rem) rotateY(7deg);
-  transform-origin: left center;
-}
-
-.table-stage__seat-panel--right {
-  transform: perspective(18rem) rotateY(-7deg);
-  transform-origin: right center;
-}
-
 .table-stage__seat-panel--top {
-  transform: perspective(18rem) rotateX(-5deg);
-  transform-origin: center top;
+  transform: perspective(18rem) rotateX(5deg);
+  transform-origin: center bottom;
 }
 
 .table-stage__seat-panel--bottom {
@@ -340,20 +355,16 @@
 
 .table-stage__melds {
   position: absolute;
+  left: calc(100% + clamp(0.4rem, 1vw, 0.8rem));
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 2;
   width: max-content;
   max-width: none;
-  padding:
-    calc(var(--table-stage-river-gap) * 0.68)
-    calc(var(--table-stage-river-gap) * 0.82);
-  border-radius: 0.9rem;
-  border: 1px solid rgba(242, 236, 217, 0.18);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
-    rgba(9, 25, 37, 0.48);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0.4rem 1rem rgba(0, 0, 0, 0.14);
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
   color: var(--text);
 }
 
@@ -371,52 +382,26 @@
   padding: calc(var(--table-stage-river-gap) * 0.18);
 }
 
-.table-stage__melds--top {
-  left: 100%;
-  top: 0;
-  transform: translate(clamp(0.36rem, 1vw, 0.56rem), 0);
-}
-
-.table-stage__melds--bottom {
-  left: 100%;
-  bottom: 0;
-  transform: translate(clamp(0.36rem, 1vw, 0.56rem), 0);
-}
-
-.table-stage__melds--top.table-stage__melds--dense {
-  top: 0;
-}
-
-.table-stage__melds--bottom.table-stage__melds--dense {
-  top: auto;
-  bottom: 0;
-}
-
-.table-stage__melds--left {
-  left: 0;
-  top: 100%;
-  transform: translateY(clamp(0.34rem, 0.9vw, 0.5rem));
-}
-
+.table-stage__melds--top,
+.table-stage__melds--bottom,
+.table-stage__melds--left,
 .table-stage__melds--right {
-  right: 0;
-  top: 100%;
-  transform: translateY(clamp(0.34rem, 0.9vw, 0.5rem));
+  /* Inherit rotation from group */
 }
 
 .table-stage__melds--top .meld-rack {
-  grid-template-rows: repeat(3, max-content);
+  grid-template-rows: repeat(var(--table-stage-meld-rows-h, 2), max-content);
   grid-auto-flow: column;
 }
 
 .table-stage__melds--bottom .meld-rack {
-  grid-template-rows: repeat(3, max-content);
+  grid-template-rows: repeat(var(--table-stage-meld-rows-h, 2), max-content);
   grid-auto-flow: column;
 }
 
 .table-stage__melds--left .meld-rack,
 .table-stage__melds--right .meld-rack {
-  grid-template-columns: repeat(2, max-content);
+  grid-template-columns: repeat(var(--table-stage-meld-cols-v, 1), max-content);
   grid-auto-flow: row;
 }
 
@@ -482,21 +467,21 @@
 }
 
 .table-stage__player-edge-info--bottom {
-  bottom: 0.8rem;
+  bottom: -3.6rem;
   left: 50%;
   transform: translateX(-50%);
   align-items: center;
 }
 
 .table-stage__player-edge-info--top {
-  top: 0.8rem;
+  top: -3.6rem;
   left: 50%;
   transform: translateX(-50%);
   align-items: center;
 }
 
 .table-stage__player-edge-info--left {
-  left: 0.8rem;
+  left: -4.8rem;
   top: 50%;
   transform: translateY(-50%) rotate(90deg);
   transform-origin: center;
@@ -504,7 +489,7 @@
 }
 
 .table-stage__player-edge-info--right {
-  right: 0.8rem;
+  right: -4.8rem;
   top: 50%;
   transform: translateY(-50%) rotate(-90deg);
   transform-origin: center;
@@ -686,31 +671,14 @@
 /* ------- Spotlight ------- */
 
 .table-stage__spotlight {
-  --spotlight-left: 50%;
-  --spotlight-top: 50%;
   position: absolute;
-  left: var(--spotlight-left);
-  top: var(--spotlight-top);
+  left: var(--spotlight-left, 50%);
+  top: var(--spotlight-top, 41%);
   z-index: 2;
   pointer-events: none;
   transform: translate(-50%, -50%);
 }
 
-.table-stage__spotlight--top {
-  --spotlight-top: 32%;
-}
-
-.table-stage__spotlight--bottom {
-  --spotlight-top: 68%;
-}
-
-.table-stage__spotlight--left {
-  --spotlight-left: 32%;
-}
-
-.table-stage__spotlight--right {
-  --spotlight-left: 68%;
-}
 
 .table-stage__spotlight .mahjong-tile--discard,
 .table-stage__spotlight-tile {
@@ -741,7 +709,7 @@
 }
 
 .table-stage__spotlight--urgent {
-  animation: urgent-spotlight-pulse 1.2s ease-in-out infinite;
+  /* No pulsing animation as per user request */
 }
 
 .table-stage__spotlight--urgent .mahjong-tile__shell {
@@ -859,15 +827,38 @@
   --spotlight-top: 50%;
 }
 
+/* Seat-specific spotlight & callout positioning (higher specificity) */
+.table-stage__spotlight.table-stage__spotlight--top,
+.table-stage__action-callout.table-stage__spotlight--top {
+  top: calc(41% - var(--table-stage-action-pointer-offset-y));
+  transform: translate(-50%, -50%) rotate(180deg);
+}
+
+.table-stage__spotlight.table-stage__spotlight--bottom,
+.table-stage__action-callout.table-stage__spotlight--bottom {
+  top: calc(41% + var(--table-stage-action-pointer-offset-y));
+  transform: translate(-50%, -50%);
+}
+
+.table-stage__spotlight.table-stage__spotlight--left,
+.table-stage__action-callout.table-stage__spotlight--left {
+  left: calc(50% - var(--table-stage-action-pointer-offset-x));
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.table-stage__spotlight.table-stage__spotlight--right,
+.table-stage__action-callout.table-stage__spotlight--right {
+  left: calc(50% + var(--table-stage-action-pointer-offset-x));
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
 .table-stage__action-callout--draw {
   --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-3));
   --table-stage-action-callout-glow: color-mix(in srgb, var(--accent-3) 34%, transparent);
   --table-stage-action-callout-plaque-fill:
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       color-mix(in srgb, var(--theme-paper) 24%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg) 30%, transparent)
-    );
+      color-mix(in srgb, var(--theme-panel-bg) 30%, transparent));
   --table-stage-action-callout-plaque-rim: color-mix(in srgb, var(--accent-3) 42%, var(--theme-border));
   --table-stage-action-callout-plaque-shadow: color-mix(in srgb, var(--accent-3) 28%, transparent);
   --table-stage-action-callout-aura-core: color-mix(in srgb, var(--accent-3) 26%, transparent);
@@ -944,13 +935,11 @@
   inset: 0;
   border-radius: inherit;
   background:
-    conic-gradient(
-      from 180deg,
+    conic-gradient(from 180deg,
       color-mix(in srgb, var(--accent) 90%, transparent),
       color-mix(in srgb, var(--accent-2) 88%, transparent),
       color-mix(in srgb, var(--accent-3) 88%, transparent),
-      color-mix(in srgb, var(--accent) 90%, transparent)
-    );
+      color-mix(in srgb, var(--accent) 90%, transparent));
   opacity: 0.3;
 }
 
@@ -986,6 +975,7 @@
 /* ------- Responsive: table ------- */
 
 @media (max-width: 760px) {
+
   .table-stage__seat-panel--left,
   .table-stage__seat-panel--right,
   .table-stage__seat-panel--top,
