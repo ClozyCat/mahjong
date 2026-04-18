@@ -1042,13 +1042,6 @@
   --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 24%, transparent);
 }
 
-.table-stage__action-callout--skill {
-  --table-stage-action-callout-ink: color-mix(in srgb, var(--accent-2) 84%, var(--theme-paper-strong));
-  --table-stage-action-callout-glow: color-mix(in srgb, var(--accent-2) 38%, transparent);
-  --table-stage-action-callout-aura-core: color-mix(in srgb, var(--accent-2) 28%, transparent);
-  --table-stage-action-callout-aura-ring: color-mix(in srgb, var(--theme-paper) 42%, var(--accent-2));
-}
-
 .table-stage__action-callout--center {
   --spotlight-left: 50%;
   --spotlight-top: 50%;

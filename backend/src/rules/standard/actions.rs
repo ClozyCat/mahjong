@@ -12,10 +12,6 @@ use crate::core::state::{
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
-use crate::rules::skills::{
-    note_tracker_claimed_discard_in_room_state, note_tracker_discard_in_room_state,
-    note_tracker_draw_in_room_state, sync_round_skill_trackers_in_room_state,
-};
 
 use super::meld::{
     SelfKongCandidate, SelfKongKind, available_self_kongs_from_cache,
@@ -62,38 +58,15 @@ where
 }
 
 #[cfg(test)]
-fn note_tracker_discard_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
-    apply_room_state_side_effect(room, |state| {
-        note_tracker_discard_in_room_state(state, seat_index, tile_key);
-    });
+fn sync_pending_timeout_for_value_room(room: &mut Value) {
+    apply_room_state_side_effect(room, sync_pending_timeout_in_room_state);
 }
 
-#[cfg(test)]
-fn note_tracker_draw_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
-    apply_room_state_side_effect(room, |state| {
-        note_tracker_draw_in_room_state(state, seat_index, tile_key);
-    });
+fn has_discard_response_lock(_round: &RoundState, _seat_index: usize) -> bool {
+    false
 }
 
-#[cfg(test)]
-fn note_tracker_claimed_discard_for_value_room(room: &mut Value, seat_index: usize) {
-    apply_room_state_side_effect(room, |state| {
-        note_tracker_claimed_discard_in_room_state(state, seat_index);
-    });
-}
-
-#[cfg(test)]
-fn sync_round_skill_trackers_for_value_room(room: &mut Value) {
-    apply_room_state_side_effect(room, sync_round_skill_trackers_in_room_state);
-}
-
-#[cfg(test)]
-fn sync_round_skill_trackers_and_timeout_for_value_room(room: &mut Value) {
-    apply_room_state_side_effect(room, |state| {
-        sync_round_skill_trackers_in_room_state(state);
-        sync_pending_timeout_in_room_state(state);
-    });
-}
+fn consume_discard_response_lock(_round: &mut RoundState, _seat_index: usize) {}
 
 fn tile_discarded_event(seat_index: usize, tile: &Tile) -> GameEvent {
     GameEvent::TileDiscarded {
@@ -178,22 +151,6 @@ fn round_player_mut(
         .players
         .get_mut(seat_index)
         .ok_or_else(|| "invalid_action".to_string())
-}
-
-fn has_discard_response_lock(round: &RoundState, seat_index: usize) -> bool {
-    round.effect_state.ongoing.iter().any(|effect| {
-        effect.owner == seat_index
-            && effect.effect_type == "jin_chan_tuo_qiao_guard"
-            && effect.source_skill.as_deref() == Some("jin_chan_tuo_qiao")
-    })
-}
-
-fn consume_discard_response_lock(round: &mut RoundState, seat_index: usize) {
-    round.effect_state.ongoing.retain(|effect| {
-        !(effect.owner == seat_index
-            && effect.effect_type == "jin_chan_tuo_qiao_guard"
-            && effect.source_skill.as_deref() == Some("jin_chan_tuo_qiao"))
-    });
 }
 
 fn empty_claim_window() -> Vec<Vec<String>> {
@@ -337,7 +294,7 @@ pub fn apply_claim_window_action(
         Ok(())
     })?;
     if !plan.unresolved_seats.is_empty() {
-        sync_round_skill_trackers_and_timeout_for_value_room(room);
+        sync_pending_timeout_for_value_room(room);
         return Ok(EngineOutput::default());
     }
     resolve_recorded_claims_local_output(room)
@@ -362,7 +319,6 @@ pub fn apply_claim_window_action_in_room_state(
         round.version += 1;
     }
     if !plan.unresolved_seats.is_empty() {
-        sync_round_skill_trackers_in_room_state(room);
         sync_pending_timeout_in_room_state(room);
         return Ok(EngineOutput::default());
     }
@@ -440,9 +396,8 @@ pub fn apply_discard_action_output(
         }
         Ok(())
     })?;
-    note_tracker_discard_for_value_room(room, seat_index, &plan.discarded_tile.tile_key);
     if plan.continuation.needs_exhaustive_draw {
-        sync_round_skill_trackers_for_value_room(room);
+        sync_pending_timeout_for_value_room(room);
         let discard_message = tile_discarded_message(seat_index, &plan.discarded_tile);
         let settlement_output = settle_exhaustive_draw_output(room);
         let mut events = vec![tile_discarded_event(seat_index, &plan.discarded_tile)];
@@ -458,7 +413,7 @@ pub fn apply_discard_action_output(
     let updated_state = project_room_state(room)?;
     let updated_round = round_state_ref(&updated_state)?;
     let next_actor = updated_round.current_actor;
-    let drawn_tile_key = updated_round
+    let _drawn_tile_key = updated_round
         .last_action_context
         .tile_id
         .as_deref()
@@ -474,10 +429,7 @@ pub fn apply_discard_action_output(
                 })
                 .map(|tile| tile.tile_key.clone())
         });
-    if let Some(tile_key) = drawn_tile_key.as_deref() {
-        note_tracker_draw_for_value_room(room, next_actor, tile_key);
-    }
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     Ok(EngineOutput::new(
         vec![tile_discarded_event(seat_index, &plan.discarded_tile)],
         vec![tile_discarded_message(seat_index, &plan.discarded_tile)],
@@ -547,9 +499,7 @@ pub fn apply_discard_action_output_in_room_state(
             consume_discard_response_lock(round, seat_index);
         }
     }
-    note_tracker_discard_in_room_state(room, seat_index, &plan.discarded_tile.tile_key);
     if plan.continuation.needs_exhaustive_draw {
-        sync_round_skill_trackers_in_room_state(room);
         let discard_message = tile_discarded_message(seat_index, &plan.discarded_tile);
         let settlement_output = settle_exhaustive_draw_output_in_room_state(room);
         let mut events = vec![tile_discarded_event(seat_index, &plan.discarded_tile)];
@@ -564,7 +514,7 @@ pub fn apply_discard_action_output_in_room_state(
     }
     let updated_round = round_state_ref(room)?;
     let next_actor = updated_round.current_actor;
-    let drawn_tile_key = updated_round
+    let _drawn_tile_key = updated_round
         .last_action_context
         .tile_id
         .as_deref()
@@ -580,10 +530,6 @@ pub fn apply_discard_action_output_in_room_state(
                 })
                 .map(|tile| tile.tile_key.clone())
         });
-    if let Some(tile_key) = drawn_tile_key.as_deref() {
-        note_tracker_draw_in_room_state(room, next_actor, tile_key);
-    }
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     Ok(EngineOutput::new(
         vec![tile_discarded_event(seat_index, &plan.discarded_tile)],
@@ -687,7 +633,7 @@ pub fn resolve_claim_window_timeout(room: &mut Value) -> Result<Vec<Value>, Stri
         round.version += 1;
         Ok(())
     })?;
-    sync_round_skill_trackers_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
 
     let mut messages = vec![round_event_message(
         "claim_auto_passed",
@@ -751,7 +697,7 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Engine
         .filter(|offered_seat| !next_responded.contains(offered_seat))
         .collect::<Vec<_>>();
     if !unresolved.is_empty() {
-        sync_round_skill_trackers_and_timeout_for_value_room(room);
+        sync_pending_timeout_for_value_room(room);
         return Ok(EngineOutput::default());
     }
     complete_add_kong_after_passes_output(room)
@@ -797,7 +743,7 @@ pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
         round.version += 1;
         Ok(())
     })?;
-    sync_round_skill_trackers_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     let mut messages = vec![round_event_message(
         "rob_kong_auto_passed",
         json!({
@@ -855,8 +801,7 @@ fn complete_self_kong_output(
         let round = round_state_mut(state)?;
         apply_self_kong_plan_to_round(round, seat_index, &plan)
     })?;
-    note_tracker_draw_for_value_room(room, seat_index, &replacement_tile.tile_key);
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     Ok(EngineOutput::new(
         vec![
             self_kong_declared_event(
@@ -907,8 +852,6 @@ fn complete_self_kong_output_in_room_state(
         let round = round_state_mut(room)?;
         apply_self_kong_plan_to_round(round, seat_index, &plan)?;
     }
-    note_tracker_draw_in_room_state(room, seat_index, &replacement_tile.tile_key);
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     Ok(EngineOutput::new(
         vec![
@@ -958,7 +901,7 @@ fn start_rob_kong_window_output(
         round.version += 1;
         Ok(())
     })?;
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     let kong_type = "add_kong";
     let event = self_kong_declared_payload(
         seat_index,
@@ -1007,7 +950,6 @@ fn start_rob_kong_window_output_in_room_state(
         }));
         round.version += 1;
     }
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     let kong_type = "add_kong";
     let event = self_kong_declared_payload(
@@ -1255,7 +1197,7 @@ fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput
     let state = project_room_state(room)?;
     let plan = plan_claim_window_continuation_without_winner(&state, discarder_seat)?;
     if plan.needs_exhaustive_draw() {
-        sync_round_skill_trackers_for_value_room(room);
+        sync_pending_timeout_for_value_room(room);
         return Ok(settle_exhaustive_draw_output(room));
     }
     update_room_state(room, |state| {
@@ -1287,7 +1229,7 @@ fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput
     let updated_state = project_room_state(room)?;
     let updated_round = round_state_ref(&updated_state)?;
     let seat = updated_round.current_actor;
-    let drawn_tile_key = updated_round
+    let _drawn_tile_key = updated_round
         .last_action_context
         .tile_id
         .as_deref()
@@ -1303,10 +1245,7 @@ fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput
                 })
                 .map(|tile| tile.tile_key.clone())
         });
-    if let Some(tile_key) = drawn_tile_key.as_deref() {
-        note_tracker_draw_for_value_room(room, seat, tile_key);
-    }
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     Ok(EngineOutput::default())
 }
 
@@ -1335,7 +1274,6 @@ fn resolve_recorded_claims_local_output_in_room_state(
 
     let plan = plan_claim_window_continuation_without_winner(room, discarder_seat)?;
     if plan.needs_exhaustive_draw() {
-        sync_round_skill_trackers_in_room_state(room);
         return Ok(settle_exhaustive_draw_output_in_room_state(room));
     }
     {
@@ -1365,7 +1303,7 @@ fn resolve_recorded_claims_local_output_in_room_state(
     }
     let updated_round = round_state_ref(room)?;
     let seat = updated_round.current_actor;
-    let drawn_tile_key = updated_round
+    let _drawn_tile_key = updated_round
         .last_action_context
         .tile_id
         .as_deref()
@@ -1381,10 +1319,6 @@ fn resolve_recorded_claims_local_output_in_room_state(
                 })
                 .map(|tile| tile.tile_key.clone())
         });
-    if let Some(tile_key) = drawn_tile_key.as_deref() {
-        note_tracker_draw_in_room_state(room, seat, tile_key);
-    }
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     Ok(EngineOutput::default())
 }
@@ -1511,11 +1445,7 @@ fn apply_selected_claim(
         let round = round_state_mut(state)?;
         apply_selected_claim_plan_to_round(round, seat_index, &plan)
     })?;
-    note_tracker_claimed_discard_for_value_room(room, plan.discarder_seat);
-    if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
-        note_tracker_draw_for_value_room(room, seat_index, &replacement_tile.tile_key);
-    }
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     let mut events = vec![meld_claimed_event(
         seat_index,
         &plan.meld,
@@ -1542,11 +1472,6 @@ fn apply_selected_claim_in_room_state(
         let round = round_state_mut(room)?;
         apply_selected_claim_plan_to_round(round, seat_index, &plan)?;
     }
-    note_tracker_claimed_discard_in_room_state(room, plan.discarder_seat);
-    if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
-        note_tracker_draw_in_room_state(room, seat_index, &replacement_tile.tile_key);
-    }
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     let mut events = vec![meld_claimed_event(
         seat_index,
@@ -1847,17 +1772,13 @@ fn complete_add_kong_after_passes_output(room: &mut Value) -> Result<EngineOutpu
         tile_key,
         meld_index,
     };
-    let drawn_tile_key = Some(replacement_tile.tile_key.clone());
     let output_replacement_tile = replacement_tile.clone();
     let plan = plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
     update_room_state(room, |state| {
         let round = round_state_mut(state)?;
         apply_self_kong_plan_to_round(round, actor_seat, &plan)
     })?;
-    if let Some(tile_key) = drawn_tile_key.as_deref() {
-        note_tracker_draw_for_value_room(room, actor_seat, tile_key);
-    }
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     Ok(EngineOutput::new(
         vec![
             self_kong_declared_event(
@@ -1901,7 +1822,6 @@ fn complete_add_kong_after_passes_output_in_room_state(
         tile_key,
         meld_index,
     };
-    let drawn_tile_key = Some(replacement_tile.tile_key.clone());
     let output_replacement_tile = replacement_tile.clone();
     let plan = plan_self_kong_completion_in_room_state(
         room,
@@ -1914,10 +1834,6 @@ fn complete_add_kong_after_passes_output_in_room_state(
         let round = round_state_mut(room)?;
         apply_self_kong_plan_to_round(round, actor_seat, &plan)?;
     }
-    if let Some(tile_key) = drawn_tile_key.as_deref() {
-        note_tracker_draw_in_room_state(room, actor_seat, tile_key);
-    }
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     Ok(EngineOutput::new(
         vec![
@@ -2010,7 +1926,6 @@ pub fn apply_rob_kong_pass_in_room_state(
         .filter(|offered_seat| !next_responded.contains(offered_seat))
         .collect::<Vec<_>>();
     if !unresolved.is_empty() {
-        sync_round_skill_trackers_in_room_state(room);
         sync_pending_timeout_in_room_state(room);
         return Ok(EngineOutput::default());
     }
@@ -2029,7 +1944,7 @@ mod tests {
     use super::*;
     use crate::core::state::{
         LastActionContext, PendingTimeout, PlayerRoundState, RoundScoreTrackers,
-        RoundSkillTrackers, RoundState, RuleRuntimeState, SeatState, WallState,
+        RoundState, RuleRuntimeState, SeatState, WallState,
     };
 
     fn suit(tile_key: &str, tile_id: &str) -> Tile {
@@ -2076,7 +1991,6 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
-            skill_loadout: Default::default(),
         }
     }
 
@@ -2115,7 +2029,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                     PlayerRoundState {
                         seat: 1,
@@ -2123,7 +2036,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                     PlayerRoundState {
                         seat: 2,
@@ -2131,7 +2043,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                     PlayerRoundState {
                         seat: 3,
@@ -2139,7 +2050,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                 ],
                 last_discard: None,
@@ -2158,10 +2068,7 @@ mod tests {
                 rule_state: RuleRuntimeState {
                     enforce_minimum_eight_fan: true,
                 },
-                effect_state: Default::default(),
                 restricted_discard_tile_key: None,
-                skill_draft: None,
-                skill_trackers: RoundSkillTrackers::default(),
             }),
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
@@ -2232,3 +2139,4 @@ mod tests {
         assert!(room.pending_timeout.is_none());
     }
 }
+

@@ -72,38 +72,6 @@ pub fn parse_player_command(
             tile_ids: tile_ids.to_vec(),
         }),
         "pass" => Ok(PlayerAction::Pass),
-        "select_skill" => {
-            if tile_ids.len() != 1 {
-                Err("invalid_action".to_string())
-            } else {
-                Ok(PlayerAction::SelectSkill {
-                    skill_id: tile_ids[0].clone(),
-                })
-            }
-        }
-        "decline_skill" => Ok(PlayerAction::DeclineSkillSelection),
-        _ if action_type.starts_with("skill:") => {
-            let skill_id = action_type.trim_start_matches("skill:");
-            if skill_id.is_empty() {
-                Err("invalid_action".to_string())
-            } else {
-                let target = tile_ids.iter().find_map(|value| {
-                    value
-                        .strip_prefix("seat:")
-                        .and_then(|seat| seat.parse::<usize>().ok())
-                });
-                let consumed_tile_ids = tile_ids
-                    .iter()
-                    .filter(|value| !value.starts_with("seat:"))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                Ok(PlayerAction::ActivateSkill {
-                    skill_id: skill_id.to_string(),
-                    target,
-                    tile_ids: consumed_tile_ids,
-                })
-            }
-        }
         _ => return None,
     };
 
@@ -244,86 +212,6 @@ fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
                 })
                 .unwrap_or_default(),
         }),
-        "skill_tile_replaced" => Some(GameEvent::SkillTileReplaced {
-            seat: event
-                .get("seat")
-                .and_then(Value::as_u64)
-                .map(|value| value as Seat)
-                .unwrap_or(0),
-            removed_tile_id: event
-                .get("removed_tile_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            replacement_tile: Tile {
-                tile_id: event
-                    .get("replacement_tile_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                tile_key: event
-                    .get("replacement_tile_key")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                kind: String::new(),
-                suit: None,
-                rank: None,
-                name: None,
-            },
-        }),
-        "skill_reclaim_meld" => Some(GameEvent::SkillReclaimMeld {
-            seat: event
-                .get("seat")
-                .and_then(Value::as_u64)
-                .map(|value| value as Seat)
-                .unwrap_or(0),
-            meld_index: event
-                .get("meld_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
-                .unwrap_or(0),
-            tile_keys: event
-                .get("tile_keys")
-                .and_then(Value::as_array)
-                .map(|tile_keys| {
-                    tile_keys
-                        .iter()
-                        .filter_map(|tile_key| tile_key.as_str().map(ToString::to_string))
-                        .collect()
-                })
-                .unwrap_or_default(),
-        }),
-        "skill_force_draw" => Some(GameEvent::SkillForceDraw {
-            seat: event
-                .get("seat")
-                .and_then(Value::as_u64)
-                .map(|value| value as Seat)
-                .unwrap_or(0),
-            penalty: event
-                .get("penalty")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            next_round_penalty: event
-                .get("next_round_penalty")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-        }),
-        "skill_score_adjusted" => Some(GameEvent::SkillScoreAdjusted {
-            seat: event
-                .get("seat")
-                .and_then(Value::as_u64)
-                .map(|value| value as Seat)
-                .unwrap_or(0),
-            delta: event
-                .get("delta")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            reason: event
-                .get("reason")
-                .and_then(Value::as_str)
-                .map(ToString::to_string),
-        }),
         "settlement_ready" | "round_drawn" => event
             .get("settlement")
             .map(RoundSettlement::from_value)
@@ -384,47 +272,6 @@ mod tests {
         let command =
             parse_player_command(0, "discard", &[]).expect("discard should be recognized");
         assert_eq!(command, Err("select_tile_first".to_string()));
-    }
-
-    #[test]
-    fn parses_skill_command_with_optional_target() {
-        let command = parse_player_command(
-            1,
-            "skill:peek_opponent_tile",
-            &[String::from("seat:2"), String::from("w1#0")],
-        )
-        .expect("skill should be recognized")
-        .expect("skill should parse");
-
-        assert_eq!(
-            command,
-            GameCommand::PlayerAction {
-                actor: 1,
-                action: PlayerAction::ActivateSkill {
-                    skill_id: "peek_opponent_tile".to_string(),
-                    target: Some(2),
-                    tile_ids: vec!["w1#0".to_string()],
-                }
-            }
-        );
-    }
-
-    #[test]
-    fn parses_select_skill_command() {
-        let command =
-            parse_player_command(0, "select_skill", &[String::from("wu_zhong_sheng_you")])
-                .expect("select skill should be recognized")
-                .expect("select skill should parse");
-
-        assert_eq!(
-            command,
-            GameCommand::PlayerAction {
-                actor: 0,
-                action: PlayerAction::SelectSkill {
-                    skill_id: "wu_zhong_sheng_you".to_string(),
-                }
-            }
-        );
     }
 
     #[test]

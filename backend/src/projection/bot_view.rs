@@ -56,7 +56,6 @@ pub struct BotContextView {
     pub claim_options: Vec<BotClaimOption>,
     pub last_discard_tile_key: Option<String>,
     pub add_kong_risk_tiles: HashSet<String>,
-    pub private_knowledge_tile_keys: Vec<String>,
 }
 
 pub fn build_bot_context_view(
@@ -100,7 +99,6 @@ pub fn build_bot_context_view(
         claim_options,
         last_discard_tile_key: cache.last_discard_tile_key.clone(),
         add_kong_risk_tiles,
-        private_knowledge_tile_keys: Vec::new(),
     })
 }
 
@@ -109,8 +107,8 @@ mod tests {
     use std::collections::{BTreeMap, HashSet};
 
     use crate::core::state::{
-        EffectInstance, LastActionContext, MatchState, PendingTimeout, PlayerRoundState, RoomState,
-        RoundScoreTrackers, RoundState, RuleRuntimeState, SkillInstance, WallState,
+        LastActionContext, MatchState, PendingTimeout, PlayerRoundState, RoomState,
+        RoundScoreTrackers, RoundState, RuleRuntimeState, WallState,
     };
     use crate::core::tile::Tile;
     use crate::projection::bot_view::{
@@ -146,7 +144,6 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
-                skill_trackers: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "round-1".to_string(),
@@ -174,7 +171,6 @@ mod tests {
                     ]],
                     flowers: vec![tile("f1#shown", "f1", "flower")],
                     discards: vec![tile("red#0", "red", "dragon")],
-                    skill_loadout: Default::default(),
                 }],
                 last_discard: Some(tile("w3#discard", "w3", "suit")),
                 pending_action: None,
@@ -185,10 +181,7 @@ mod tests {
                 rule_state: RuleRuntimeState {
                     enforce_minimum_eight_fan: true,
                 },
-                effect_state: Default::default(),
                 restricted_discard_tile_key: Some("w3".to_string()),
-                skill_draft: None,
-                skill_trackers: Default::default(),
             }),
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
@@ -234,7 +227,6 @@ mod tests {
         );
         assert_eq!(context.restricted_discard_tile_key.as_deref(), Some("w3"));
         assert_eq!(context.drawn_tile_id.as_deref(), Some("w4#0"));
-        assert!(context.private_knowledge_tile_keys.is_empty());
         assert_eq!(
             context.add_kong_risk_tiles,
             HashSet::from(["w3".to_string()])
@@ -253,74 +245,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn normal_mode_skips_skill_projection_details() {
-        let mut state = sample_state();
-        let round = state.round_state.as_mut().expect("round state");
-        round.players[0].skill_loadout.equipped.push(SkillInstance {
-            skill_id: "jin_chan_tuo_qiao".to_string(),
-            owner: 0,
-            level: 1,
-            rarity: "rare".to_string(),
-            remaining_rounds: 2,
-            cooldown: 0,
-            charges: 1,
-            charges_per_round: 1,
-            config: serde_json::json!({}),
-        });
-        round.effect_state.ongoing.push(EffectInstance {
-            effect_id: "effect-1".to_string(),
-            effect_type: "jin_chan_tuo_qiao_guard".to_string(),
-            owner: 0,
-            target_seats: vec![0],
-            source_skill: Some("jin_chan_tuo_qiao".to_string()),
-            remaining_turns: Some(1),
-            stacks: 1,
-            consumed: false,
-            payload: serde_json::json!({}),
-        });
-        let cache = RoomScoringCache::from_state(&state);
-
-        let context =
-            build_bot_context_view(&cache, &state, 0, Vec::new(), Vec::new(), HashSet::new())
-                .expect("seat should exist");
-
-        assert!(context.private_knowledge_tile_keys.is_empty());
-    }
-
-    #[test]
-    fn skill_mode_still_hides_skill_projection_details_from_bot() {
-        let mut state = sample_state();
-        state.mode = "skill".to_string();
-        let round = state.round_state.as_mut().expect("round state");
-        round.players[0].skill_loadout.equipped.push(SkillInstance {
-            skill_id: "jin_chan_tuo_qiao".to_string(),
-            owner: 0,
-            level: 1,
-            rarity: "rare".to_string(),
-            remaining_rounds: 2,
-            cooldown: 0,
-            charges: 1,
-            charges_per_round: 1,
-            config: serde_json::json!({}),
-        });
-        round.effect_state.ongoing.push(EffectInstance {
-            effect_id: "effect-1".to_string(),
-            effect_type: "jin_chan_tuo_qiao_guard".to_string(),
-            owner: 0,
-            target_seats: vec![0],
-            source_skill: Some("jin_chan_tuo_qiao".to_string()),
-            remaining_turns: Some(1),
-            stacks: 1,
-            consumed: false,
-            payload: serde_json::json!({}),
-        });
-        let cache = RoomScoringCache::from_state(&state);
-
-        let context =
-            build_bot_context_view(&cache, &state, 0, Vec::new(), Vec::new(), HashSet::new())
-                .expect("seat should exist");
-
-        assert!(context.private_knowledge_tile_keys.is_empty());
-    }
 }

@@ -545,7 +545,6 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
-            skill_loadout: Default::default(),
         });
         let room_json = crate::app::serialize_room_state(&room)?;
         worker
@@ -592,7 +591,6 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
-            skill_loadout: Default::default(),
         });
         let room_json = crate::app::serialize_room_state(&room)?;
         worker

@@ -37,17 +37,13 @@ const TABLE_MODE_COPY: Record<TableMode, { label: string; description: string }>
     label: '普通模式',
     description: '手动准备开局',
   },
-  skill: {
-    label: '技能模式',
-    description: '奇数局起手抽取技能',
-  },
   test: {
     label: '测试模式',
     description: '自动补满机器人',
   },
 };
 
-const TABLE_MODE_ORDER: TableMode[] = ['normal', 'skill', 'test'];
+const TABLE_MODE_ORDER: TableMode[] = ['normal', 'test'];
 
 export function ConnectGate({
   value,

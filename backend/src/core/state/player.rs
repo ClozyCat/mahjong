@@ -5,7 +5,7 @@ use crate::core::error::EngineError;
 use crate::core::ids::{Seat, TileKey};
 use crate::core::tile::Tile;
 
-use super::{SkillLoadout, array, bool_or, i64_opt, string_opt, usize_or};
+use super::{array, bool_or, i64_opt, string_opt, usize_or};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -21,8 +21,6 @@ pub struct SeatState {
     pub bot_persona: Option<String>,
     pub bot_aggression: Option<i64>,
     pub disconnect_deadline_at: Option<String>,
-    #[serde(default, deserialize_with = "super::null_default")]
-    pub skill_loadout: SkillLoadout,
 }
 
 impl SeatState {
@@ -39,8 +37,6 @@ pub struct PlayerRoundState {
     pub melds: Vec<Vec<TileKey>>,
     pub flowers: Vec<Tile>,
     pub discards: Vec<Tile>,
-    #[serde(default, deserialize_with = "super::null_default")]
-    pub skill_loadout: SkillLoadout,
 }
 
 impl PlayerRoundState {

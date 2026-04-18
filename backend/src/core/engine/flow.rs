@@ -1,18 +1,14 @@
 use crate::core::action::{GameCommand, PlayerAction};
 use crate::core::state::RoomState;
-use crate::rules::{
-    skills,
-    standard::{
-        actions::{
-            apply_claim_window_action_in_room_state, apply_discard_action_output_in_room_state,
-            apply_rob_kong_pass_in_room_state, try_handle_self_kong_action_output_in_room_state,
-        },
-        flow::{
-            apply_flower_action_output_in_room_state,
-            apply_opening_flowers_pass_output_in_room_state,
-        },
-        win::apply_hu_action_output_in_room_state,
+use crate::rules::standard::{
+    actions::{
+        apply_claim_window_action_in_room_state, apply_discard_action_output_in_room_state,
+        apply_rob_kong_pass_in_room_state, try_handle_self_kong_action_output_in_room_state,
     },
+    flow::{
+        apply_flower_action_output_in_room_state, apply_opening_flowers_pass_output_in_room_state,
+    },
+    win::apply_hu_action_output_in_room_state,
 };
 
 use super::{EngineContext, EngineOutput, LocalPlayerActionKind, classify_local_player_action};
@@ -71,80 +67,21 @@ fn try_handle_player_action_command(
                 .flatten()
         }
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pass) => {
-            let declined_hu =
-                crate::rules::standard::win::hu_action_hint_in_room_state(room, seat_index)
-                    .is_some();
-            Some(
-                apply_claim_window_action_in_room_state(room, seat_index, "pass", &[]).and_then(
-                    |mut output| {
-                        if declined_hu {
-                            let events = skills::decline_hu_events(&context.room, seat_index)?;
-                            output.emitted_messages.extend(
-                                skills::apply_passive_skill_events_to_room_in_room_state(
-                                    room, &events,
-                                )?,
-                            );
-                            output.events.extend(events);
-                        }
-                        Ok(output)
-                    },
-                ),
-            )
+            Some(apply_claim_window_action_in_room_state(
+                room, seat_index, "pass", &[],
+            ))
         }
         (LocalPlayerActionKind::RobKongPass, PlayerAction::Pass) => {
-            let declined_hu =
-                crate::rules::standard::win::hu_action_hint_in_room_state(room, seat_index)
-                    .is_some();
-            Some(
-                apply_rob_kong_pass_in_room_state(room, seat_index).and_then(|mut output| {
-                    if declined_hu {
-                        let events = skills::decline_hu_events(&context.room, seat_index)?;
-                        output.emitted_messages.extend(
-                            skills::apply_passive_skill_events_to_room_in_room_state(
-                                room, &events,
-                            )?,
-                        );
-                        output.events.extend(events);
-                    }
-                    Ok(output)
-                }),
-            )
+            Some(apply_rob_kong_pass_in_room_state(room, seat_index))
         }
         (LocalPlayerActionKind::OpeningFlowersPass, PlayerAction::Pass) => Some(
             apply_opening_flowers_pass_output_in_room_state(room, seat_index),
         ),
-        (LocalPlayerActionKind::SkillDraftSelection, PlayerAction::SelectSkill { skill_id }) => {
-            Some(skills::select_skill_for_draft_in_room_state(
-                room, seat_index, &skill_id,
-            ))
-        }
-        (LocalPlayerActionKind::SkillDraftSelection, PlayerAction::DeclineSkillSelection) => {
-            Some(skills::decline_skill_draft_in_room_state(room, seat_index))
-        }
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Chow { tile_ids }) => Some(
             apply_claim_window_action_in_room_state(room, seat_index, "chow", &tile_ids),
         ),
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pung { tile_ids }) => Some(
             apply_claim_window_action_in_room_state(room, seat_index, "pung", &tile_ids),
-        ),
-        (
-            LocalPlayerActionKind::ActivateSkill,
-            PlayerAction::ActivateSkill {
-                skill_id,
-                target,
-                tile_ids,
-            },
-        ) => Some(
-            skills::activate_skill(&context.room, seat_index, &skill_id, target, &tile_ids)
-                .and_then(|events| {
-                    let emitted_messages = skills::apply_skill_events_to_room_in_room_state(
-                        room, seat_index, &skill_id, &events,
-                    )?;
-                    Ok(EngineOutput {
-                        events,
-                        emitted_messages,
-                    })
-                }),
         ),
         _ => None,
     }

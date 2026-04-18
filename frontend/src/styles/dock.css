@@ -719,12 +719,6 @@
   --action-button-ink: color-mix(in srgb, var(--theme-paper-strong) 72%, var(--theme-paper-edge));
 }
 
-.action-dock__action--themed-skill {
-  --action-button-accent: color-mix(in srgb, var(--theme-paper-edge) 82%, var(--accent-3));
-  --action-button-accent-soft: color-mix(in srgb, var(--accent-3) 16%, transparent);
-  --action-button-ink: color-mix(in srgb, var(--theme-paper-strong) 78%, var(--theme-border-strong));
-}
-
 /* ------- Flower bloom effect ------- */
 
 .action-dock__action--flower-bloom {

@@ -1,5 +1,5 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
-export type TableMode = 'normal' | 'skill' | 'test';
+export type TableMode = 'normal' | 'test';
 export type SeatType = 'human' | 'bot';
 
 export type MatchPhase =
@@ -15,13 +15,10 @@ export type RoomPhase = 'waiting' | 'playing' | 'settlement' | 'finished';
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'error';
 
 export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
-export type SkillActionType = 'select_skill' | 'decline_skill' | `skill:${string}`;
-export type PromptActionType = BackendActionType | 'select_skill' | 'decline_skill';
-export type ActionRequestType = BackendActionType | SkillActionType;
+export type PromptActionType = BackendActionType;
+export type ActionRequestType = BackendActionType;
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
 export type QuickChatEmoji = string;
-export type SkillRarity = 'common' | 'rare' | 'epic';
-export type SkillInteractionKind = 'confirm' | 'preview_wall' | 'select_target' | 'select_hand_tile' | 'select_meld';
 
 export interface HealthResponse {
   status: string;
@@ -94,54 +91,6 @@ export interface PrivatePlayerState {
   melds: string[][];
   flowers: string[];
   discards: string[];
-  equipped_skill?: BackendSkillView | null;
-}
-
-export interface BackendSkillView {
-  skill_id: string;
-  serial?: string | null;
-  name: string;
-  rarity: SkillRarity;
-  rarity_label: string;
-  tone: 'jade' | 'azure' | 'violet';
-  type: 'active' | 'passive';
-  type_label: string;
-  interaction_kind?: SkillInteractionKind | null;
-  summary: string;
-  detail: string;
-  interaction_hint?: string | null;
-  tags: string[];
-  remaining_rounds: number;
-  remaining_activations_this_round: number;
-  can_activate_now?: boolean;
-}
-
-export interface BackendSkillSelectionView {
-  cycle_key: string;
-  cycle_label: string;
-  deadline_at: string;
-  title: string;
-  detail: string;
-  options: BackendSkillView[];
-}
-
-export interface BackendVisibleEffectView {
-  effect_id: string;
-  effect_type: string;
-  owner: number;
-  target_seats: number[];
-  remaining_turns?: number | null;
-  stacks: number;
-  source_skill?: string | null;
-  payload: Record<string, unknown>;
-}
-
-export interface BackendKnowledgeView {
-  target_seat?: number | null;
-  tile_ids: string[];
-  tile_keys: string[];
-  source_skill?: string | null;
-  description?: string | null;
 }
 
 export type PendingAction =
@@ -174,12 +123,6 @@ export type PendingAction =
       responded_seats: number[];
       options: PromptActionType[];
     }
-  | {
-      type: 'skill_draft';
-      seat_index: number;
-      deadline_at: string;
-      options: PromptActionType[];
-    }
   | Record<string, unknown>;
 
 export interface PrivateState {
@@ -190,10 +133,6 @@ export interface PrivateState {
   wall_tiles_remaining?: number;
   last_discard?: string | null;
   pending_action?: PendingAction | null;
-  skill_draft?: BackendSkillSelectionView | null;
-  equipped_skills?: BackendSkillView[] | null;
-  visible_effects?: BackendVisibleEffectView[] | null;
-  private_knowledge?: BackendKnowledgeView[] | null;
   score_state?: ScoreState | null;
   players: PrivatePlayerState[];
 }
@@ -398,7 +337,6 @@ export type BattleActionId =
   | 'start_match'
   | 'start_next_round'
   | 'restart_match'
-  | 'activate_skill'
   | BackendActionType;
 
 export interface BattleActionView {
@@ -406,27 +344,6 @@ export interface BattleActionView {
   label: string;
   enabled: boolean;
   emphasis: 'high' | 'medium' | 'low';
-}
-
-export interface PlayerSkillView {
-  skillId: string;
-  serial?: string | null;
-  name: string;
-  rarity: SkillRarity;
-  rarityLabel: string;
-  tone: 'jade' | 'azure' | 'violet';
-  type: 'active' | 'passive';
-  typeLabel: string;
-  summary: string;
-  detail: string;
-  interactionKind?: SkillInteractionKind | null;
-  interactionHint?: string | null;
-  tags: string[];
-  cycleLabel?: string | null;
-  remainingRounds: number;
-  remainingActivationsThisRound: number;
-  canActivateNow?: boolean;
-  previewTileKeys?: string[];
 }
 
 export interface PlayerView {
@@ -449,7 +366,6 @@ export interface PlayerView {
   melds: string[][];
   flowers: string[];
   statusText?: string;
-  skill?: PlayerSkillView | null;
 }
 
 export interface WaitingControls {
@@ -548,7 +464,7 @@ export interface ActionEffectView {
   label: string;
   emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
   seat: Seat | null;
-  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'skill' | null;
+  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | null;
 }
 
 export interface BattlePromptView {
@@ -570,67 +486,6 @@ export interface QuickChatEventView {
   targetName: string;
   emoji: QuickChatEmoji;
   text: string;
-}
-
-export interface SkillChoiceView extends PlayerSkillView {
-  cycleKey: string;
-}
-
-export interface SkillSelectionView {
-  cycleKey: string;
-  cycleLabel: string;
-  deadlineAt: string;
-  title: string;
-  detail: string;
-  options: SkillChoiceView[];
-}
-
-export interface SkillActivationChoiceView {
-  id: string;
-  label: string;
-  description?: string;
-  selected: boolean;
-}
-
-export interface SkillActivationTileChoiceView {
-  tileId: string;
-  code: string;
-  selected: boolean;
-}
-
-export interface SkillActivationMeldChoiceView {
-  index: number;
-  label: string;
-  tiles: string[];
-  selected: boolean;
-}
-
-export interface SkillActivationPreviewTileView {
-  key: string;
-  code: string;
-  label: string;
-}
-
-export interface SkillActivationView {
-  skill: PlayerSkillView;
-  kind: SkillInteractionKind;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  canConfirm: boolean;
-  targetChoices?: SkillActivationChoiceView[];
-  handChoices?: SkillActivationTileChoiceView[];
-  meldChoices?: SkillActivationMeldChoiceView[];
-  previewTiles?: SkillActivationPreviewTileView[];
-}
-
-export interface SkillKnowledgeView {
-  key: string;
-  title: string;
-  skillName: string;
-  targetName: string;
-  detail: string;
-  tileCodes: string[];
 }
 
 export interface BattleViewModel {
@@ -666,8 +521,5 @@ export interface BattleViewModel {
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
-  skillSelection?: SkillSelectionView | null;
-  skillActivation?: SkillActivationView | null;
-  skillKnowledge?: SkillKnowledgeView | null;
   toasts: ToastMessage[];
 }

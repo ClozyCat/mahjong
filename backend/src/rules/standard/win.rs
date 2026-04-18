@@ -14,10 +14,6 @@ use crate::rules::scoring::{
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
 };
-use crate::rules::skills::{
-    ScoreHookRequest, apply_after_scoring_hooks, apply_before_scoring_hooks,
-    sync_match_skill_trackers_after_settlement_in_room_state,
-};
 
 use super::runtime::round_event_message;
 
@@ -238,7 +234,6 @@ pub fn apply_hu_settlement_output(
                 );
             }
         }
-        sync_match_skill_trackers_after_settlement_in_room_state(state);
         Ok(())
     })?;
 
@@ -476,8 +471,6 @@ pub fn apply_hu_settlement_output_in_room_state(
         }
     }
 
-    sync_match_skill_trackers_after_settlement_in_room_state(room);
-
     let first_event = if hu_context == "self_draw" {
         round_event_message(
             "self_hu_declared",
@@ -694,35 +687,30 @@ fn fan_result_for_win_with_state(
         .as_ref()
         .map(|round| round.rule_state.enforce_minimum_eight_fan)
         .unwrap_or(state.enforce_minimum_eight_fan);
-    let mut request = ScoreHookRequest {
-        evaluation: ScoringEvaluationInput {
-            win_type: win_type.clone(),
-            winner_seat: Some(winner_seat),
-            discarder_seat,
-            flower_count: cache
-                .player(winner_seat)
-                .map(|player| player.flower_count)
-                .unwrap_or(0),
-            seat_count: cache.seat_count,
-            features,
-            timing: timing_features_for_win_state(state, incoming_tile.is_none()),
-            kong_entries,
-            tile_keys: player_tile_keys,
-            visible_tile_keys: cache.visible_tile_keys.clone(),
-            concealed_tile_keys,
-            meld_tile_key_groups,
-            open_meld_tile_key_groups,
-            incoming_tile: incoming_tile.map(ToString::to_string),
-            decompositions,
-        },
-        required_minimum_fan_total: if enforce_minimum_eight_fan { 8 } else { 0 },
+    let evaluation = ScoringEvaluationInput {
+        win_type: win_type.clone(),
+        winner_seat: Some(winner_seat),
+        discarder_seat,
+        flower_count: cache
+            .player(winner_seat)
+            .map(|player| player.flower_count)
+            .unwrap_or(0),
+        seat_count: cache.seat_count,
+        features,
+        timing: timing_features_for_win_state(state, incoming_tile.is_none()),
+        kong_entries,
+        tile_keys: player_tile_keys,
+        visible_tile_keys: cache.visible_tile_keys.clone(),
+        concealed_tile_keys,
+        meld_tile_key_groups,
+        open_meld_tile_key_groups,
+        incoming_tile: incoming_tile.map(ToString::to_string),
+        decompositions,
     };
-    apply_before_scoring_hooks(&state, &mut request)?;
-    let mut result = scoring_evaluate_fans(request.evaluation.clone());
-    apply_after_scoring_hooks(&state, &request, &mut result)?;
+    let result = scoring_evaluate_fans(evaluation);
     Ok(EvaluatedWinResult {
         fan_result: result,
-        required_minimum_fan_total: request.required_minimum_fan_total,
+        required_minimum_fan_total: if enforce_minimum_eight_fan { 8 } else { 0 },
     })
 }
 
@@ -777,56 +765,14 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        apply_hu_settlement_output, can_declare_hu_with_cache_for_state,
-        compute_hu_settlement_for_state,
+        can_declare_hu_with_cache_for_state, compute_hu_settlement_for_state,
     };
     use crate::core::state::{
-        LastActionContext, LianHuanJiTracker, MatchSkillTrackers, MatchState, PlayerRoundState,
-        RoomState, RoundSettlement, RoundState, SeatState, ZouWeiShangJiTracker,
+        LastActionContext, MatchState, PlayerRoundState, RoomState, RoundState, SeatState,
     };
     use crate::core::tile::Tile;
     use crate::room_scoring::RoomScoringCache;
     use crate::rules::scoring::decompose_winning_hand;
-
-    #[test]
-    fn value_hu_settlement_output_syncs_match_skill_trackers_via_typed_helper() {
-        let mut room = test_room_value_with_match_trackers();
-
-        apply_hu_settlement_output(
-            &mut room,
-            1,
-            "self_draw",
-            RoundSettlement {
-                provisional: true,
-                win_type: "self_draw".to_string(),
-                winner_seat: Some(1),
-                ..Default::default()
-            },
-        )
-        .expect("hu settlement should succeed");
-
-        let parsed = RoomState::from_room_value(&room).expect("room should remain typed");
-        let trackers = &parsed
-            .match_state
-            .as_ref()
-            .expect("match state")
-            .skill_trackers;
-
-        assert_eq!(trackers.lian_huan_ji.streaks.get(&0), Some(&0));
-        assert_eq!(trackers.lian_huan_ji.streaks.get(&1), Some(&6));
-        assert_eq!(trackers.lian_huan_ji.streaks.get(&2), Some(&0));
-        assert_eq!(trackers.lian_huan_ji.streaks.get(&3), Some(&0));
-        assert!(
-            !trackers
-                .zou_wei_shang_ji
-                .pending_win_penalty
-                .contains_key(&1)
-        );
-        assert_eq!(
-            trackers.zou_wei_shang_ji.pending_win_penalty.get(&2),
-            Some(&4)
-        );
-    }
 
     #[test]
     fn can_declare_hu_for_standard_seven_pairs_hand() {
@@ -895,63 +841,6 @@ mod tests {
         assert_eq!(settlement.display_win_label.as_deref(), Some("屁和"));
     }
 
-    fn test_room_value_with_match_trackers() -> Value {
-        let state = RoomState {
-            table_code: "ROOM42".to_string(),
-            phase: "playing".to_string(),
-            mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
-            seats: (0..4)
-                .map(|seat_index| SeatState {
-                    seat_index,
-                    ..Default::default()
-                })
-                .collect(),
-            match_state: Some(MatchState {
-                prevailing_wind: "east".to_string(),
-                hand_number: 1,
-                dealer_seat: 0,
-                cumulative_scores: (0..4).map(|seat| (seat, 0)).collect(),
-                match_finished: false,
-                last_completed_round_id: None,
-                statistics: Default::default(),
-                skill_trackers: MatchSkillTrackers {
-                    lian_huan_ji: LianHuanJiTracker {
-                        streaks: BTreeMap::from([(0, 2), (1, 5), (2, 1), (3, 3)]),
-                    },
-                    zou_wei_shang_ji: ZouWeiShangJiTracker {
-                        pending_win_penalty: BTreeMap::from([(1, 9), (2, 4)]),
-                    },
-                },
-            }),
-            round_state: Some(RoundState {
-                round_id: "east-1-dealer-0".to_string(),
-                dealer_seat: 0,
-                round_wind: "east".to_string(),
-                current_actor: 1,
-                phase: "playing".to_string(),
-                players: (0..4)
-                    .map(|seat| PlayerRoundState {
-                        seat,
-                        ..Default::default()
-                    })
-                    .collect(),
-                last_action_context: LastActionContext {
-                    kind: "draw".to_string(),
-                    seat: 1,
-                    tile_id: Some("b1#0".to_string()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            pending_timeout: None,
-            continue_action: None,
-        };
-
-        state.to_room_value().expect("room value")
-    }
-
     fn test_room_state_with_concealed_tiles(tile_keys: &[&str]) -> RoomState {
         RoomState {
             table_code: "ROOM7P".to_string(),
@@ -973,7 +862,6 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
-                skill_trackers: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "east-1-dealer-0".to_string(),

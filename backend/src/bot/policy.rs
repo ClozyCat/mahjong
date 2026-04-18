@@ -284,12 +284,11 @@ mod tests {
             claim_options: Vec::new(),
             last_discard_tile_key: None,
             add_kong_risk_tiles: std::collections::HashSet::new(),
-            private_knowledge_tile_keys: Vec::new(),
         }
     }
 
     #[test]
-    fn bot_never_uses_active_skill_even_if_available() {
+    fn bot_still_prefers_standard_actions_when_discarding() {
         let mut context = base_context();
         context.wall_tiles_remaining = 14;
         context.opponent_melds_by_seat[1] = vec![
@@ -311,7 +310,6 @@ mod tests {
         context.player.concealed_tiles = concealed_tiles;
 
         let action = choose_active_turn_action(&context).expect("action");
-        assert_ne!(action.action_type, "skill:jin_chan_tuo_qiao");
         assert_eq!(action.action_type, "discard");
     }
 
@@ -335,3 +333,4 @@ mod tests {
         assert_eq!(counts[tile_index("red").expect("tile index")], 0);
     }
 }
+

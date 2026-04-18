@@ -8,13 +8,8 @@ use crate::core::engine::planner::{
     plan_advance_opening_flowers, plan_flower_action, plan_round_start_payload,
 };
 use crate::core::event::GameEvent;
-use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState, SkillLoadout};
+use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState};
 use crate::core::tile::Tile;
-use crate::rules::skills::{
-    advance_skill_loadouts_for_next_round_in_room_state, begin_round_skill_draft_in_room_state,
-    clear_skill_loadouts_for_new_match_in_room_state, note_tracker_draw_in_room_state,
-    sync_round_skill_trackers_in_room_state,
-};
 
 use super::runtime::{
     current_actor_in_room_state, is_last_live_tile_point_in_room_state, round_event_message,
@@ -45,23 +40,8 @@ where
 }
 
 #[cfg(test)]
-fn note_tracker_draw_for_value_room(room: &mut Value, seat_index: usize, tile_key: &str) {
-    apply_room_state_side_effect(room, |state| {
-        note_tracker_draw_in_room_state(state, seat_index, tile_key);
-    });
-}
-
-#[cfg(test)]
-fn sync_round_skill_trackers_for_value_room(room: &mut Value) {
-    apply_room_state_side_effect(room, sync_round_skill_trackers_in_room_state);
-}
-
-#[cfg(test)]
-fn sync_round_skill_trackers_and_timeout_for_value_room(room: &mut Value) {
-    apply_room_state_side_effect(room, |state| {
-        sync_round_skill_trackers_in_room_state(state);
-        sync_pending_timeout_in_room_state(state);
-    });
+fn sync_pending_timeout_for_value_room(room: &mut Value) {
+    apply_room_state_side_effect(room, sync_pending_timeout_in_room_state);
 }
 
 pub fn room_ready_to_start(room: &RoomState) -> bool {
@@ -94,7 +74,6 @@ pub fn add_bot_seats_for_test(room: &mut RoomState) {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
-            skill_loadout: Default::default(),
         });
     }
     room.seats.sort_by_key(|seat| seat.seat_index);
@@ -105,7 +84,6 @@ pub fn start_match_in_room_state(
     dealer_seat: usize,
     seed: u64,
 ) -> Result<(), String> {
-    clear_skill_loadouts_for_new_match_in_room_state(room);
     let mut cumulative_scores = BTreeMap::new();
     for seat in 0..MAX_SEATS {
         cumulative_scores.insert(seat, 0);
@@ -118,7 +96,6 @@ pub fn start_match_in_room_state(
         match_finished: false,
         last_completed_round_id: None,
         statistics: Default::default(),
-        skill_trackers: Default::default(),
     };
     match_state.sync_statistics_to_cumulative_scores();
     room.match_state = Some(match_state);
@@ -211,7 +188,6 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         match_finished: false,
         last_completed_round_id: None,
         statistics: Default::default(),
-        skill_trackers: Default::default(),
     };
     match_state.sync_statistics_to_cumulative_scores();
     let _ = update_room_state(room, |state| {
@@ -317,7 +293,7 @@ pub fn apply_opening_flowers_pass_output(
         }
         Ok(())
     })?;
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
     Ok(EngineOutput::default())
 }
 
@@ -352,7 +328,6 @@ pub fn apply_opening_flowers_pass_output_in_room_state(
     if let Some(score_trackers) = plan.score_trackers {
         round.score_trackers = score_trackers;
     }
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
     Ok(EngineOutput::default())
 }
@@ -426,8 +401,7 @@ pub fn apply_flower_action_output(
         }
         Ok(())
     })?;
-    note_tracker_draw_for_value_room(room, seat_index, &plan.replacement_tile.tile_key);
-    sync_round_skill_trackers_and_timeout_for_value_room(room);
+    sync_pending_timeout_for_value_room(room);
 
     let flower_event = json!({
         "type": "flower_exposed",
@@ -510,8 +484,6 @@ pub fn apply_flower_action_output_in_room_state(
             }
         }
     }
-    note_tracker_draw_in_room_state(room, seat_index, &plan.replacement_tile.tile_key);
-    sync_round_skill_trackers_in_room_state(room);
     sync_pending_timeout_in_room_state(room);
 
     let flower_event = json!({
@@ -555,7 +527,6 @@ fn start_round(
         enforce_minimum_eight_fan,
         seed,
     );
-    seed_round_skill_loadouts(room, &mut round_state);
     let _ = update_room_state(room, |state| {
         state.phase = "playing".to_string();
         state.round_state = Some(round_state);
@@ -563,7 +534,6 @@ fn start_round(
         state.continue_action = None;
         Ok(())
     });
-    sync_round_skill_trackers_for_value_room(room);
 }
 
 fn start_round_in_room_state(
@@ -581,72 +551,10 @@ fn start_round_in_room_state(
         enforce_minimum_eight_fan,
         seed,
     );
-    seed_round_skill_loadouts_in_room_state(room, &mut round_state);
     room.phase = "playing".to_string();
     room.round_state = Some(round_state);
     room.pending_timeout = Some(pending_timeout);
     room.continue_action = None;
-    let _ = begin_round_skill_draft_in_room_state(room);
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn seed_round_skill_loadouts(room: &Value, round_state: &mut crate::core::state::RoundState) {
-    for player in &mut round_state.players {
-        player.skill_loadout = skill_loadout_for_seat(room, player.seat);
-    }
-}
-
-fn seed_round_skill_loadouts_in_room_state(
-    room: &RoomState,
-    round_state: &mut crate::core::state::RoundState,
-) {
-    for player in &mut round_state.players {
-        player.skill_loadout = skill_loadout_for_seat_in_room_state(room, player.seat);
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn skill_loadout_for_seat(room: &Value, seat: usize) -> SkillLoadout {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .and_then(|seats| {
-            seats.iter().find(|entry| {
-                entry
-                    .get("seat_index")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize)
-                    == Some(seat)
-            })
-        })
-        .and_then(|seat_state| SkillLoadout::from_value(seat_state.get("skill_loadout")).ok())
-        .filter(|loadout| !loadout.equipped.is_empty())
-        .or_else(|| {
-            room.get("round_state")
-                .and_then(|round| round.get("players"))
-                .and_then(Value::as_array)
-                .and_then(|players| players.get(seat))
-                .and_then(|player| SkillLoadout::from_value(player.get("skill_loadout")).ok())
-                .filter(|loadout| !loadout.equipped.is_empty())
-        })
-        .unwrap_or_default()
-}
-
-fn skill_loadout_for_seat_in_room_state(room: &RoomState, seat: usize) -> SkillLoadout {
-    room.seats
-        .iter()
-        .find(|seat_state| seat_state.seat_index == seat)
-        .map(|seat_state| seat_state.skill_loadout.clone())
-        .filter(|loadout| !loadout.equipped.is_empty())
-        .or_else(|| {
-            room.round_state
-                .as_ref()
-                .and_then(|round| round.players.get(seat))
-                .map(|player| player.skill_loadout.clone())
-                .filter(|loadout| !loadout.equipped.is_empty())
-        })
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1064,7 +972,6 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         return Ok(());
     }
 
-    advance_skill_loadouts_for_next_round_in_room_state(room);
     let round_id = format!(
         "{next_wind}-{next_hand_number}-dealer-{next_dealer}-{}",
         rand::random::<u64>()
@@ -1129,7 +1036,7 @@ mod tests {
     use super::*;
     use crate::core::state::{
         ContinueActionState, LastActionContext, OpeningFlowersAction, PendingAction,
-        PendingTimeout, PlayerRoundState, RoundScoreTrackers, RoundSkillTrackers, RoundState,
+        PendingTimeout, PlayerRoundState, RoundScoreTrackers, RoundState,
         RuleRuntimeState, SeatState, WallState,
     };
 
@@ -1188,7 +1095,6 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
-            skill_loadout: Default::default(),
         }
     }
 
@@ -1223,7 +1129,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                     PlayerRoundState {
                         seat: 1,
@@ -1231,7 +1136,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                     PlayerRoundState {
                         seat: 2,
@@ -1239,7 +1143,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                     PlayerRoundState {
                         seat: 3,
@@ -1247,7 +1150,6 @@ mod tests {
                         melds: vec![],
                         flowers: vec![],
                         discards: vec![],
-                        skill_loadout: Default::default(),
                     },
                 ],
                 last_discard: None,
@@ -1261,16 +1163,7 @@ mod tests {
                 rule_state: RuleRuntimeState {
                     enforce_minimum_eight_fan: true,
                 },
-                effect_state: Default::default(),
                 restricted_discard_tile_key: None,
-                skill_draft: None,
-                skill_trackers: RoundSkillTrackers {
-                    pending_honor_rebuy_tile_by_seat: std::collections::BTreeMap::from([(
-                        0,
-                        "east".to_string(),
-                    )]),
-                    ..Default::default()
-                },
             }),
             pending_timeout: Some(PendingTimeout {
                 kind: "opening_flowers".to_string(),
@@ -1346,3 +1239,4 @@ mod tests {
         assert!(action.auto_advance_deadline_at.is_none());
     }
 }
+

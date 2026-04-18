@@ -70,7 +70,7 @@ describe('ConnectGate', () => {
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(onChange).toHaveBeenCalled();
-    expect(onChange).toHaveBeenCalledWith({ tableMode: 'skill' });
+    expect(onChange).toHaveBeenCalledWith({ tableMode: 'test' });
     expect(onChange).toHaveBeenCalledWith({ enforceMinimumEightFan: false });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);

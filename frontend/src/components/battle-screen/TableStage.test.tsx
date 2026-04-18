@@ -53,13 +53,13 @@ describe('TableStage', () => {
         }}
         activeSeat="bottom"
         lastDiscard={null}
-        centerStatusText="其他玩家正在选择技能"
+        centerStatusText="其他玩家正在等待操作"
         remainingTileCount={66}
         promptText={null}
       />,
     );
 
-    expect(screen.getByText('其他玩家正在选择技能')).toBeInTheDocument();
+    expect(screen.getByText('其他玩家正在等待操作')).toBeInTheDocument();
     expect(screen.queryByText('剩余 66 张')).toBeNull();
   });
 
@@ -363,87 +363,6 @@ describe('TableStage', () => {
     expect(screen.getByLabelText('Player Left 信息栏')).toHaveTextContent('手牌 13 · 花 1');
     expect(screen.getByLabelText('Player Bottom 信息栏')).toHaveTextContent('手牌 14 · 花 0');
     expect(container.querySelector('.table-stage__spotlight--left')).not.toBeNull();
-  });
-
-  it('anchors left and right seat skill tooltips inward so the content stays visible', () => {
-    vi.useFakeTimers();
-
-    render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        players={[
-          {
-            seat: 'left',
-            name: 'Player Left',
-            melds: [],
-            skill: {
-              skillId: 'left-skill',
-              name: '声东击西',
-              rarity: 'rare',
-              rarityLabel: '稀有',
-              tone: 'azure',
-              type: 'active',
-              typeLabel: '主动技能',
-              summary: '获得额外尾牌预览。',
-              detail: '稀有效果：可额外查看 2 张。',
-              interactionHint: '发动后会显示尾牌预览。',
-              tags: ['信息'],
-              cycleLabel: '东1~东2局',
-              remainingRounds: 2,
-              remainingActivationsThisRound: 1,
-              previewTileKeys: ['w8', 'w9'],
-            },
-          },
-          {
-            seat: 'right',
-            name: 'Player Right',
-            melds: [],
-            skill: {
-              skillId: 'right-skill',
-              name: '借刀杀人',
-              rarity: 'common',
-              rarityLabel: '普通',
-              tone: 'jade',
-              type: 'passive',
-              typeLabel: '被动技能',
-              summary: '特定条件下追加收益。',
-              detail: '普通效果：达成条件时额外加分。',
-              interactionHint: null,
-              tags: ['收益'],
-              cycleLabel: '东1~东2局',
-              remainingRounds: 2,
-              remainingActivationsThisRound: 0,
-            },
-          },
-          { seat: 'bottom', name: 'Player Bottom', melds: [] },
-        ]}
-      />,
-    );
-
-    fireEvent.mouseEnter(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-
-    expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-left');
-    expect(within(screen.getByLabelText('声东击西 已查看牌')).getAllByTestId('mahjong-tile')).toHaveLength(2);
-
-    fireEvent.mouseLeave(screen.getByRole('button', { name: '打开Player Left的快捷表情' }));
-    fireEvent.mouseEnter(screen.getByRole('button', { name: '打开Player Right的快捷表情' }));
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-
-    expect(screen.getByRole('tooltip')).toHaveClass('table-stage__skill-tooltip--seat-right');
-    vi.useRealTimers();
   });
 
   it('uses a unified theme-driven player info style without visually marking the dealer', () => {
@@ -843,34 +762,6 @@ describe('TableStage', () => {
     expect(callout).not.toBeNull();
     expect((callout as HTMLElement).style.getPropertyValue('--spotlight-left').trim()).toBe('68%');
     expect((callout as HTMLElement).style.getPropertyValue('--spotlight-top').trim()).toBe('50%');
-  });
-
-  it('shows the calligraphy skill glyph when an active skill is activated', () => {
-    const { container } = render(
-      <TableStage
-        discards={{
-          top: [],
-          left: ['b1'],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard="b1"
-        lastDiscardSeat="left"
-        promptText={null}
-        actionEffect={{
-          key: 'skill-1',
-          label: '发动技能',
-          emphasis: 'claim',
-          seat: 'right',
-          calloutTone: 'skill',
-        }}
-      />,
-    );
-
-    expect(screen.getByText('技')).toBeInTheDocument();
-    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
-    expect(container.querySelector('.table-stage__action-callout--skill')).not.toBeNull();
   });
 
   it.each([

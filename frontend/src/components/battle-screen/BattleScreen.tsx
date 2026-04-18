@@ -6,9 +6,6 @@ import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
-import { SkillActivationDialog } from './SkillActivationDialog';
-import { SkillKnowledgeDialog } from './SkillKnowledgeDialog';
-import { SkillSelectionOverlay } from './SkillSelectionOverlay';
 import { TableStage } from './TableStage';
 
 interface BattleScreenProps {
@@ -21,13 +18,6 @@ interface BattleScreenProps {
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
   onClaimCandidateActivate: (actionId: ClaimActionId, tileIds: string[]) => void;
   onAction: (actionId: BattleActionId) => void;
-  onSkillSelect?: (skillId: string) => void;
-  onSkillDecline?: () => void;
-  onCloseSkillActivation?: () => void;
-  onConfirmSkillActivation?: () => void;
-  onSkillActivationTargetSelect?: (seatIndex: number) => void;
-  onSkillActivationTileSelect?: (tileId: string) => void;
-  onSkillActivationMeldSelect?: (meldIndex: number) => void;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
   onAddBot?: () => void;
@@ -52,13 +42,6 @@ export function BattleScreen({
   onClaimCandidateSelect,
   onClaimCandidateActivate,
   onAction,
-  onSkillSelect,
-  onSkillDecline,
-  onCloseSkillActivation,
-  onConfirmSkillActivation,
-  onSkillActivationTargetSelect,
-  onSkillActivationTileSelect,
-  onSkillActivationMeldSelect,
   onCopyTableCode,
   onLeaveTable,
   onAddBot,
@@ -68,11 +51,9 @@ export function BattleScreen({
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
-  const [visibleSkillKnowledge, setVisibleSkillKnowledge] = useState(viewModel.skillKnowledge ?? null);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
-  const consumedSkillKnowledgeKeyRef = useRef<string | null>(viewModel.skillKnowledge?.key ?? null);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
   const isReadyActionCoolingDownRef = useRef(false);
@@ -152,21 +133,6 @@ export function BattleScreen({
     consumedActionEffectKeyRef.current = nextActionEffect.key;
     setConsumedActionEffect(nextActionEffect);
   }, [viewModel.actionEffect]);
-
-  useEffect(() => {
-    const nextSkillKnowledge = viewModel.skillKnowledge;
-    if (!nextSkillKnowledge?.key) {
-      setVisibleSkillKnowledge(null);
-      return;
-    }
-
-    if (consumedSkillKnowledgeKeyRef.current === nextSkillKnowledge.key) {
-      return;
-    }
-
-    consumedSkillKnowledgeKeyRef.current = nextSkillKnowledge.key;
-    setVisibleSkillKnowledge(nextSkillKnowledge);
-  }, [viewModel.skillKnowledge]);
 
   useEffect(() => {
     if (lastDiscardSpotlightKey === trackedLastDiscardKeyRef.current) {
@@ -327,27 +293,6 @@ export function BattleScreen({
             onLeaveTable={onLeaveTable}
           />
           {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}
-          {viewModel.skillSelection && onSkillSelect && onSkillDecline ? (
-            <SkillSelectionOverlay selection={viewModel.skillSelection} onSelect={onSkillSelect} onDecline={onSkillDecline} />
-          ) : null}
-          {viewModel.skillActivation &&
-          onCloseSkillActivation &&
-          onConfirmSkillActivation &&
-          onSkillActivationTargetSelect &&
-          onSkillActivationTileSelect &&
-          onSkillActivationMeldSelect ? (
-            <SkillActivationDialog
-              activation={viewModel.skillActivation}
-              onClose={onCloseSkillActivation}
-              onConfirm={onConfirmSkillActivation}
-              onTargetSelect={onSkillActivationTargetSelect}
-              onTileSelect={onSkillActivationTileSelect}
-              onMeldSelect={onSkillActivationMeldSelect}
-            />
-          ) : null}
-          {visibleSkillKnowledge ? (
-            <SkillKnowledgeDialog knowledge={visibleSkillKnowledge} onClose={() => setVisibleSkillKnowledge(null)} />
-          ) : null}
         </div>
       </div>
       <BottomActionDock

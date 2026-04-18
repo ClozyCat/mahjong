@@ -127,13 +127,7 @@ mod tests {
                     "was_last_live_tile": false,
                     "was_last_discard": false
                 },
-                "effect_state": {
-                    "ongoing": [],
-                    "hidden_knowledge": [],
-                    "rule_overrides": []
-                },
                 "restricted_discard_tile_key": null,
-                "skill_trackers": null,
                 "enforce_minimum_eight_fan": true
             },
             "pending_timeout": null,

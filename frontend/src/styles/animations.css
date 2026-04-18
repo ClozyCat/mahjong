@@ -379,7 +379,6 @@
 /* ------- Panel entrance duration ------- */
 
 .connect-gate__panel,
-.result-overlay__card,
-.skill-selection-overlay__panel {
+.result-overlay__card {
   animation: overlay-fade-in-up 0.35s var(--ease-lux) forwards;
 }

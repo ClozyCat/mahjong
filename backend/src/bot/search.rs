@@ -1573,11 +1573,8 @@ fn visible_tile_counts_for_state(
 }
 
 fn known_visible_tile_counts(context: &BotContext) -> [i32; TILE_KIND_COUNT] {
-    let mut known_tile_keys = Vec::with_capacity(
-        context.visible_tile_keys.len() + context.private_knowledge_tile_keys.len(),
-    );
+    let mut known_tile_keys = Vec::with_capacity(context.visible_tile_keys.len());
     known_tile_keys.extend(context.visible_tile_keys.iter().cloned());
-    known_tile_keys.extend(context.private_knowledge_tile_keys.iter().cloned());
     visible_tile_counts(&known_tile_keys)
 }
 
@@ -3179,7 +3176,6 @@ mod tests {
             claim_options: Vec::new(),
             last_discard_tile_key: None,
             add_kong_risk_tiles: HashSet::new(),
-            private_knowledge_tile_keys: Vec::new(),
         }
     }
 
@@ -3304,20 +3300,6 @@ mod tests {
         let zetsu_penalty = discard_danger_penalty(&context, &zetsu_counts, "w5");
 
         assert!(zetsu_penalty <= kabe_penalty);
-    }
-
-    #[test]
-    fn private_knowledge_counts_as_visible_information() {
-        let mut context = base_context();
-        context.private_knowledge_tile_keys = vec![
-            "w5".to_string(),
-            "w5".to_string(),
-            "w5".to_string(),
-            "w5".to_string(),
-        ];
-        let counts = [0_u8; TILE_KIND_COUNT];
-
-        assert_eq!(discard_danger_penalty(&context, &counts, "w5"), 0);
     }
 
     #[test]
@@ -3995,3 +3977,4 @@ mod tests {
         assert!(white_score > green_score);
     }
 }
+

@@ -329,7 +329,6 @@ mod tests {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
-                skill_loadout: Default::default(),
             }],
             match_state: None,
             round_state: None,

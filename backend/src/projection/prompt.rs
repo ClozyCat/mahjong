@@ -47,8 +47,7 @@ impl PendingActionView {
             Self::OpeningFlowers { options, .. }
             | Self::ActiveTurn { options, .. }
             | Self::ClaimWindow { options, .. }
-            | Self::RobKongWindow { options, .. }
-            | Self::SkillDraft { options, .. } => options.clone(),
+            | Self::RobKongWindow { options, .. } => options.clone(),
         }
     }
 
@@ -57,16 +56,14 @@ impl PendingActionView {
             Self::OpeningFlowers { deadline_at, .. }
             | Self::ActiveTurn { deadline_at, .. }
             | Self::ClaimWindow { deadline_at, .. }
-            | Self::RobKongWindow { deadline_at, .. }
-            | Self::SkillDraft { deadline_at, .. } => deadline_at.clone(),
+            | Self::RobKongWindow { deadline_at, .. } => deadline_at.clone(),
         }
     }
 
     pub fn seat_index(&self) -> Option<Seat> {
         match self {
             Self::OpeningFlowers { seat_index, .. }
-            | Self::ActiveTurn { seat_index, .. }
-            | Self::SkillDraft { seat_index, .. } => Some(*seat_index),
+            | Self::ActiveTurn { seat_index, .. } => Some(*seat_index),
             Self::ClaimWindow { .. } | Self::RobKongWindow { .. } => None,
         }
     }

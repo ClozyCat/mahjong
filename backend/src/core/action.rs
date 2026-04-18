@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::ids::{Seat, SkillId, TileId};
+use crate::core::ids::{Seat, TileId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameCommand {
@@ -48,13 +48,4 @@ pub enum PlayerAction {
     },
     Hu,
     Pass,
-    SelectSkill {
-        skill_id: SkillId,
-    },
-    DeclineSkillSelection,
-    ActivateSkill {
-        skill_id: SkillId,
-        target: Option<Seat>,
-        tile_ids: Vec<TileId>,
-    },
 }

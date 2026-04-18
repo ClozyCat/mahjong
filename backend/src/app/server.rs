@@ -114,7 +114,7 @@ async fn create_table(
         }
     });
 
-    if resolved_mode != "normal" && resolved_mode != "test" && resolved_mode != "skill" {
+    if resolved_mode != "normal" && resolved_mode != "test" {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(detail_response("unsupported_mode")),

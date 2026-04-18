@@ -7,7 +7,6 @@ use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
 use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
 use crate::room_scoring::RoomScoringCache;
-use crate::rules::skills;
 
 #[cfg(test)]
 use super::actions::{
@@ -82,7 +81,6 @@ pub fn try_process_due_timeout_in_room_state(
             }
         }
         "claim_window" => resolve_claim_timeout_in_room_state(room),
-        "skill_draft" => Ok(Some(skills::resolve_due_skill_draft_in_room_state(room)?)),
         _ => Ok(None),
     }
 }

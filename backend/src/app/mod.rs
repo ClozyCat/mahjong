@@ -414,7 +414,6 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
         bot_persona: None,
         bot_aggression: None,
         disconnect_deadline_at: None,
-        skill_loadout: Default::default(),
     });
     room.seats.sort_by_key(|seat| seat.seat_index);
     Ok(seat_index)

@@ -2,7 +2,6 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use serde_json::{Value, json};
 
-use crate::core::state::effect::EffectState;
 use crate::core::state::{
     ClaimResponse, ClaimWindowAction, LastActionContext, OpeningFlowersAction, PendingAction,
     PendingTimeout, PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers,
@@ -103,7 +102,6 @@ pub fn plan_round_start_payload(
             melds: Vec::new(),
             flowers: Vec::new(),
             discards: Vec::new(),
-            skill_loadout: Default::default(),
         });
     }
 
@@ -159,10 +157,7 @@ pub fn plan_round_start_payload(
         rule_state: RuleRuntimeState {
             enforce_minimum_eight_fan,
         },
-        effect_state: EffectState::default(),
         restricted_discard_tile_key: None,
-        skill_draft: None,
-        skill_trackers: Default::default(),
     };
 
     let pending_timeout = if opening_completed {
@@ -196,21 +191,6 @@ pub fn compute_pending_timeout_value(
     let Some(round) = state.round_state.as_ref() else {
         return None;
     };
-    if let Some(draft) = round.skill_draft.as_ref().filter(|draft| draft.is_active()) {
-        let first_pending_seat = draft
-            .offers_by_seat
-            .iter()
-            .find_map(|(seat, offer)| {
-                (offer.status == crate::core::state::SkillDraftStatus::Pending).then_some(*seat)
-            })
-            .unwrap_or(round.current_actor);
-        return Some(PendingTimeout {
-            kind: "skill_draft".to_string(),
-            seat_index: first_pending_seat,
-            deadline_at: Some(draft.deadline_at.clone()),
-            drawn_tile_id: None,
-        });
-    }
     match round.pending_action.as_ref() {
         Some(PendingAction::OpeningFlowers(_)) => Some(PendingTimeout {
             kind: "opening_flowers".to_string(),
@@ -849,7 +829,6 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
-                skill_trackers: Default::default(),
             }),
             round_state: Some(round.clone()),
             pending_timeout: None,
@@ -1412,3 +1391,4 @@ mod tests {
         assert!(!plan.continuation.last_action_context.was_last_live_tile);
     }
 }
+

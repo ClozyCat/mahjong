@@ -13,15 +13,6 @@ import {
 } from './lib/kongSelection';
 import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
 import {
-  buildSkillActivationRequest,
-  closeSkillActivation,
-  createInitialSkillRuntimeState,
-  createSkillEnhancedBattleViewModel,
-  openSkillActivation,
-  syncSkillRuntimeWithSession,
-  updateSkillActivationSelection,
-} from './lib/skillSystem';
-import {
   buildWebSocketUrl,
   createAdjustBotsMessage,
   createActionRequestMessage,
@@ -187,7 +178,6 @@ function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
 
 function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
   return (
-    actionId === 'activate_skill' ||
     actionId === 'discard' ||
     actionId === 'flower' ||
     actionId === 'kong' ||
@@ -238,14 +228,9 @@ export default function App() {
   const previousOpeningFlowerAutoPassSignatureRef = useRef<string | null>(null);
   const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
-  const [skillRuntime, setSkillRuntime] = useState(createInitialSkillRuntimeState);
 
   useEffect(() => {
     sessionRef.current = state;
-  }, [state]);
-
-  useEffect(() => {
-    setSkillRuntime((currentRuntime) => syncSkillRuntimeWithSession(currentRuntime, state));
   }, [state]);
 
   useEffect(() => {
@@ -670,11 +655,6 @@ export default function App() {
       return;
     }
 
-    if (actionId === 'activate_skill') {
-      setSkillRuntime((currentRuntime) => openSkillActivation(currentRuntime, state));
-      return;
-    }
-
     if (actionId === 'ready') {
       const localSeat = state.roomSnapshot?.payload.local_seat;
       const localSeatState =
@@ -851,7 +831,6 @@ export default function App() {
   const viewModel = createMatchViewModel(state, {
     showLocalTurnKongPrompt: hasLocalTurnKongPrompt,
   });
-  const skillEnhancedViewModel = createSkillEnhancedBattleViewModel(viewModel, state, skillRuntime);
 
   if (!state.roomSnapshot) {
     return (
@@ -876,7 +855,7 @@ export default function App() {
 
   return (
     <BattleScreen
-      viewModel={skillEnhancedViewModel}
+      viewModel={viewModel}
       themeId={themeId}
       themeLabel={getThemeLabel(themeId)}
       onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
@@ -885,46 +864,6 @@ export default function App() {
       onClaimCandidateSelect={handleClaimCandidateSelect}
       onClaimCandidateActivate={handleClaimCandidateActivate}
       onAction={handleAction}
-      onSkillSelect={(skillId) => {
-        sendMessage(serializeClientMessage(createActionRequestMessage('select_skill', [skillId])));
-      }}
-      onSkillDecline={() => {
-        sendMessage(serializeClientMessage(createActionRequestMessage('decline_skill')));
-      }}
-      onCloseSkillActivation={() => setSkillRuntime((currentRuntime) => closeSkillActivation(currentRuntime))}
-      onConfirmSkillActivation={() => {
-        const request = buildSkillActivationRequest(skillRuntime);
-        if (!request) {
-          return;
-        }
-
-        if (!sendMessage(serializeClientMessage(createActionRequestMessage(request.actionType, request.tileIds)))) {
-          return;
-        }
-
-        setSkillRuntime((currentRuntime) => closeSkillActivation(currentRuntime));
-      }}
-      onSkillActivationTargetSelect={(seatIndex) =>
-        setSkillRuntime((currentRuntime) =>
-          updateSkillActivationSelection(currentRuntime, {
-            selectedTargetSeat: seatIndex,
-          }),
-        )
-      }
-      onSkillActivationTileSelect={(tileId) =>
-        setSkillRuntime((currentRuntime) =>
-          updateSkillActivationSelection(currentRuntime, {
-            selectedTileId: tileId,
-          }),
-        )
-      }
-      onSkillActivationMeldSelect={(meldIndex) =>
-        setSkillRuntime((currentRuntime) =>
-          updateSkillActivationSelection(currentRuntime, {
-            selectedMeldIndex: meldIndex,
-          }),
-        )
-      }
       onCopyTableCode={handleCopyTableCode}
       onLeaveTable={handleLeaveTable}
       onAddBot={() => handleAdjustBots(1)}

@@ -1,7 +1,4 @@
 import type {
-  BackendSkillSelectionView,
-  BackendSkillView,
-  BackendKnowledgeView,
   ActionEffectView,
   BackendActionType,
   BattleActionId,
@@ -15,7 +12,6 @@ import type {
   PlayerView,
   PrivatePlayerState,
   PrivateState,
-  SkillChoiceView,
   QuickChatEventView,
   ResultSeatView,
   Seat,
@@ -63,7 +59,6 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   start_match: '开始对局',
   start_next_round: '下一局',
   restart_match: '再来一局',
-  activate_skill: '发动技能',
   discard: '出牌',
   flower: '补花',
   kong: '杠',
@@ -255,10 +250,6 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
     ]);
 
     return createActorPrompt(getSeatName(state, pendingAction.seat_index), turnKongOptions);
-  }
-
-  if (pendingAction?.type === 'skill_draft') {
-    return null;
   }
 
   if (pendingAction && typeof pendingAction.type === 'string') {
@@ -657,105 +648,6 @@ function findPrivatePlayer(state: SessionState, seatIndex: number): PrivatePlaye
   return state.roomSnapshot?.payload.private_state?.players.find((player) => player.seat_index === seatIndex);
 }
 
-function findEquippedSkill(state: SessionState, seatIndex: number): BackendSkillView | null {
-  const privatePlayer = findPrivatePlayer(state, seatIndex);
-  if (privatePlayer?.equipped_skill) {
-    return privatePlayer.equipped_skill;
-  }
-
-  if (seatIndex === getLocalSeat(state)) {
-    return state.roomSnapshot?.payload.private_state?.equipped_skills?.[0] ?? null;
-  }
-
-  return null;
-}
-
-function getSkillPreviewTileKeys(
-  knowledgeEntries: BackendKnowledgeView[] | null | undefined,
-  skillId: string | null | undefined,
-) {
-  if (!skillId || !Array.isArray(knowledgeEntries)) {
-    return [];
-  }
-
-  return knowledgeEntries.flatMap((entry) => {
-    if (entry.source_skill !== skillId || !Array.isArray(entry.tile_keys)) {
-      return [];
-    }
-
-    return entry.tile_keys.filter((tileKey): tileKey is string => typeof tileKey === 'string' && tileKey.length > 0);
-  });
-}
-
-function toPlayerSkillView(
-  skill: BackendSkillView | null | undefined,
-  cycleLabel: string | null = null,
-  previewTileKeys: string[] = [],
-): PlayerView['skill'] {
-  if (!skill) {
-    return null;
-  }
-
-  return {
-    skillId: skill.skill_id,
-    serial: skill.serial ?? null,
-    name: skill.name,
-    rarity: skill.rarity,
-    rarityLabel: skill.rarity_label,
-    tone: skill.tone,
-    type: skill.type,
-    typeLabel: skill.type_label,
-    summary: skill.summary,
-    detail: skill.detail,
-    interactionKind: skill.interaction_kind ?? null,
-    interactionHint: skill.interaction_hint ?? null,
-    tags: Array.isArray(skill.tags) ? skill.tags : [],
-    cycleLabel,
-    remainingRounds: skill.remaining_rounds,
-    remainingActivationsThisRound: skill.remaining_activations_this_round,
-    canActivateNow: Boolean(skill.can_activate_now),
-    previewTileKeys,
-  };
-}
-
-function toSkillChoiceView(selection: BackendSkillSelectionView, skill: BackendSkillView): SkillChoiceView {
-  const base = toPlayerSkillView(skill, selection.cycle_label);
-  return {
-    ...(base ?? {
-      skillId: skill.skill_id,
-      name: skill.name,
-      rarity: skill.rarity,
-      rarityLabel: skill.rarity_label,
-      tone: skill.tone,
-      type: skill.type,
-      typeLabel: skill.type_label,
-      summary: skill.summary,
-      detail: skill.detail,
-      interactionHint: skill.interaction_hint ?? null,
-      tags: Array.isArray(skill.tags) ? skill.tags : [],
-      cycleLabel: selection.cycle_label,
-      remainingRounds: skill.remaining_rounds,
-      remainingActivationsThisRound: skill.remaining_activations_this_round,
-    }),
-    cycleKey: selection.cycle_key,
-  };
-}
-
-function toSkillSelectionView(selection: BackendSkillSelectionView | null | undefined): BattleViewModel['skillSelection'] {
-  if (!selection) {
-    return null;
-  }
-
-  return {
-    cycleKey: selection.cycle_key,
-    cycleLabel: selection.cycle_label,
-    deadlineAt: selection.deadline_at,
-    title: selection.title,
-    detail: selection.detail,
-    options: (selection.options ?? []).map((skill) => toSkillChoiceView(selection, skill)),
-  };
-}
-
 function getDisplayedScores(state: SessionState) {
   const snapshot = state.roomSnapshot?.payload;
   const matchScores = snapshot?.match_state?.cumulative_scores ?? {};
@@ -815,14 +707,6 @@ function createPlayers(state: SessionState): PlayerView[] {
       const seatKey = String(seat.seat_index);
       const seatType = seat.seat_type ?? (seat.is_bot ? 'bot' : 'human');
       const isBotSeat = seatType === 'bot';
-      const cycleLabel = snapshot.private_state?.skill_draft?.cycle_label ?? null;
-      const previewTileKeys =
-        seat.seat_index === localSeat
-          ? getSkillPreviewTileKeys(
-              snapshot.private_state?.private_knowledge,
-              privatePlayer?.equipped_skill?.skill_id,
-            )
-          : [];
 
       return {
         seat: relativeSeat,
@@ -843,7 +727,6 @@ function createPlayers(state: SessionState): PlayerView[] {
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: normalizeDisplayMelds(privatePlayer?.melds),
         flowers: normalizeTileCodeList(privatePlayer?.flowers),
-        skill: toPlayerSkillView(privatePlayer?.equipped_skill, cycleLabel, previewTileKeys),
         statusText:
           isBotSeat
             ? 'Bot代打中'
@@ -1526,17 +1409,6 @@ function createCenterBanner(state: SessionState) {
 }
 
 function createCenterStatusText(state: SessionState) {
-  if (hasOptimisticDiscardPending(state)) {
-    return null;
-  }
-
-  const snapshot = state.roomSnapshot?.payload;
-  const privateState = snapshot?.private_state;
-
-  if (privateState?.pending_action?.type === 'skill_draft' && !privateState.skill_draft) {
-    return '其他玩家正在选择技能';
-  }
-
   return null;
 }
 
@@ -1561,10 +1433,6 @@ function createActionIndicatorSeat(state: SessionState): Seat | null {
   const pendingAction = privateState.pending_action;
 
   if (pendingAction?.type === 'claim_window') {
-    return null;
-  }
-
-  if (pendingAction?.type === 'skill_draft') {
     return null;
   }
 
@@ -1668,16 +1536,6 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
     };
   }
 
-  if (event.event_type === 'skill_activated') {
-    return {
-      key,
-      label: '发动技能',
-      emphasis: 'claim',
-      seat: effectSeat,
-      calloutTone: 'skill',
-    };
-  }
-
   if (event.event_type === 'self_kong_declared') {
     const kongType = String(event.event?.kong_type ?? '');
     return {
@@ -1710,58 +1568,6 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
   }
 
   return null;
-}
-
-function createSkillKnowledge(state: SessionState): BattleViewModel['skillKnowledge'] {
-  const snapshot = state.roomSnapshot?.payload;
-  const privateState = snapshot?.private_state;
-  const event = state.latestRoundEvent?.payload;
-  const localSeat = snapshot?.local_seat;
-
-  if (
-    snapshot?.mode !== 'skill' ||
-    !privateState ||
-    typeof localSeat !== 'number' ||
-    event?.event_type !== 'skill_activated' ||
-    event.event?.seat !== localSeat
-  ) {
-    return null;
-  }
-
-  const skillId = typeof event.event?.skill_id === 'string' ? event.event.skill_id : null;
-  if (!skillId) {
-    return null;
-  }
-
-  const knowledgeEntries = (privateState.private_knowledge ?? []).filter(
-    (entry) => entry.source_skill === skillId && Array.isArray(entry.tile_keys) && entry.tile_keys.length > 0,
-  );
-  if (knowledgeEntries.length === 0) {
-    return null;
-  }
-
-  const tileCodes = knowledgeEntries.flatMap((entry) =>
-    entry.tile_keys.filter((tileKey): tileKey is string => typeof tileKey === 'string' && tileKey.length > 0),
-  );
-  if (tileCodes.length === 0) {
-    return null;
-  }
-
-  const targetSeat = knowledgeEntries.find((entry) => typeof entry.target_seat === 'number')?.target_seat ?? null;
-  const targetName = getSeatName(state, targetSeat);
-  const skillName = findEquippedSkill(state, localSeat)?.name ?? '技能情报';
-
-  return {
-    key: `${skillId}:${targetSeat ?? 'none'}:${tileCodes.join('|')}`,
-    title: skillName,
-    skillName,
-    targetName,
-    detail:
-      targetSeat !== null
-        ? `已查看 ${targetName} 的 ${tileCodes.length} 张手牌`
-        : `已获得 ${tileCodes.length} 张牌的情报`,
-    tileCodes,
-  };
 }
 
 function getWinTypeLabel(result: MatchResultPayload) {
@@ -1842,9 +1648,6 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state),
     quickChatEvent: createQuickChatEvent(state),
-    skillSelection: toSkillSelectionView(snapshot?.private_state?.skill_draft),
-    skillActivation: null,
-    skillKnowledge: createSkillKnowledge(state),
     toasts: state.toasts,
   };
 }

@@ -410,7 +410,6 @@ async fn handle_join_table(
         bot_persona: None,
         bot_aggression: None,
         disconnect_deadline_at: None,
-        skill_loadout: Default::default(),
     });
     runtime.room.seats.sort_by_key(|seat| seat.seat_index);
     maybe_start_test_match(&mut runtime.room);

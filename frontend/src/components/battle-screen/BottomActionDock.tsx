@@ -70,10 +70,6 @@ export function BottomActionDock({
         return true;
       }
 
-      if (action.id === 'activate_skill') {
-        return true;
-      }
-
       return promptCue.actionIds.includes(action.id as BackendActionType);
     })
     .sort(
@@ -328,10 +324,9 @@ const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {
   kong: 1,
   pung: 2,
   chow: 3,
-  activate_skill: 4,
-  flower: 5,
-  discard: 6,
-  pass: 7,
+  flower: 4,
+  discard: 5,
+  pass: 6,
 };
 
 function isResponsePrompt(promptCue: BattlePromptView | null) {
@@ -356,7 +351,6 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     kong: 'action-dock__action--themed action-dock__action--themed-kong',
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
-    activate_skill: 'action-dock__action--themed action-dock__action--themed-skill',
   };
 
   return lookup[actionId] ?? '';

@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::core::error::EngineError;
 use crate::core::ids::{RoundId, Seat};
 
-use super::{MatchSkillTrackers, RoundSettlement};
+use super::RoundSettlement;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -33,8 +33,6 @@ pub struct MatchState {
     pub last_completed_round_id: Option<RoundId>,
     #[serde(default, deserialize_with = "super::null_default")]
     pub statistics: MatchStatistics,
-    #[serde(default, deserialize_with = "super::null_default")]
-    pub skill_trackers: MatchSkillTrackers,
 }
 
 impl MatchState {

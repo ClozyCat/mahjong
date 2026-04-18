@@ -1,4 +1,4 @@
-use crate::core::state::{EffectInstance, KnowledgeEffect, RoomState};
+use crate::core::state::RoomState;
 use crate::core::tile::Tile;
 use crate::rules::scoring::KongEntry as ScoringKongEntry;
 
@@ -36,8 +36,6 @@ pub struct RoomScoringCache {
     pub drawn_tile_id: Option<String>,
     pub enforce_minimum_eight_fan: bool,
     pub last_discard_tile_key: Option<String>,
-    pub ongoing_effects: Vec<EffectInstance>,
-    pub knowledge_effects: Vec<KnowledgeEffect>,
     players: Vec<RoomScoringPlayer>,
 }
 
@@ -92,8 +90,6 @@ impl RoomScoringCache {
                     .and_then(|timeout| timeout.drawn_tile_id.clone()),
                 enforce_minimum_eight_fan: state.enforce_minimum_eight_fan,
                 last_discard_tile_key: None,
-                ongoing_effects: Vec::new(),
-                knowledge_effects: Vec::new(),
                 players: Vec::new(),
             };
         };
@@ -165,8 +161,6 @@ impl RoomScoringCache {
                 .last_discard
                 .as_ref()
                 .map(|tile| tile.tile_key.clone()),
-            ongoing_effects: round.effect_state.ongoing.clone(),
-            knowledge_effects: round.effect_state.hidden_knowledge.clone(),
             players,
         }
     }
@@ -255,7 +249,6 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
-                skill_trackers: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "round-1".to_string(),
@@ -295,7 +288,6 @@ mod tests {
                     ]],
                     flowers: vec![crate::core::tile::Tile::tile_key_only("f1")],
                     discards: vec![crate::core::tile::Tile::tile_key_only("red")],
-                    skill_loadout: Default::default(),
                 }],
                 last_discard: Some(crate::core::tile::Tile::tile_key_only("red")),
                 pending_action: None,
@@ -314,10 +306,7 @@ mod tests {
                 rule_state: RuleRuntimeState {
                     enforce_minimum_eight_fan: true,
                 },
-                effect_state: Default::default(),
                 restricted_discard_tile_key: Some("w1".to_string()),
-                skill_draft: None,
-                skill_trackers: Default::default(),
             }),
             pending_timeout: Some(PendingTimeout {
                 kind: "active_turn".to_string(),
@@ -347,8 +336,6 @@ mod tests {
         assert_eq!(cache.restricted_discard_tile_key.as_deref(), Some("w1"));
         assert_eq!(cache.drawn_tile_id.as_deref(), Some("w1#1"));
         assert_eq!(cache.last_discard_tile_key.as_deref(), Some("red"));
-        assert!(cache.ongoing_effects.is_empty());
-        assert!(cache.knowledge_effects.is_empty());
         assert_eq!(
             cache
                 .player(0)

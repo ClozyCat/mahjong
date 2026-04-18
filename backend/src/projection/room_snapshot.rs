@@ -4,15 +4,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
-use crate::core::state::{
-    MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry, SkillDraftStatus,
-};
+use crate::core::state::{MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry};
 use crate::projection::SeatProjectionSupport;
-use crate::rules::skills::{
-    EffectInstance, EquippedSkillView, KnowledgeEffect, SkillDraftSelectionView,
-    build_skill_projection, equipped_skill_views, public_skill_view, skill_action_options,
-    skill_draft_view,
-};
 
 #[derive(Debug, Clone, Serialize)]
 struct RoomSnapshotMessage {
@@ -53,11 +46,7 @@ struct PlayerRoundView {
     wall_tiles_remaining: usize,
     last_discard: Option<String>,
     pending_action: Option<PendingActionView>,
-    skill_draft: Option<SkillDraftSelectionView>,
     score_state: ScoreStateView,
-    equipped_skills: Vec<EquippedSkillView>,
-    visible_effects: Vec<VisibleEffectView>,
-    private_knowledge: Vec<KnowledgeView>,
     players: Vec<PlayerSeatView>,
 }
 
@@ -71,7 +60,6 @@ struct PlayerSeatView {
     melds: Vec<Vec<String>>,
     flowers: Vec<String>,
     discards: Vec<String>,
-    equipped_skill: Option<EquippedSkillView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,27 +76,6 @@ struct ScoreStateView {
     current_round_delta_by_seat: BTreeMap<Seat, i64>,
     base_cumulative_scores: BTreeMap<Seat, i64>,
     projected_cumulative_scores: BTreeMap<Seat, i64>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct VisibleEffectView {
-    effect_id: String,
-    effect_type: String,
-    owner: Seat,
-    target_seats: Vec<Seat>,
-    remaining_turns: Option<u8>,
-    stacks: u8,
-    source_skill: Option<String>,
-    payload: Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct KnowledgeView {
-    target_seat: Option<Seat>,
-    tile_ids: Vec<String>,
-    tile_keys: Vec<String>,
-    source_skill: Option<String>,
-    description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,12 +117,6 @@ pub enum PendingActionView {
         tile_key: Option<String>,
         deadline_at: Option<String>,
         responded_seats: Vec<Seat>,
-        options: Vec<String>,
-    },
-    #[serde(rename = "skill_draft")]
-    SkillDraft {
-        seat_index: Seat,
-        deadline_at: Option<String>,
         options: Vec<String>,
     },
 }
@@ -237,7 +198,6 @@ pub fn build_pending_action_view(
             if support.can_hu {
                 options.push("hu".to_string());
             }
-            options.extend(skill_action_options(state, local_seat));
             Some(PendingActionView::ActiveTurn {
                 seat_index: local_seat,
                 deadline_at,
@@ -286,26 +246,6 @@ pub fn build_pending_action_view(
                 options,
             })
         }
-        "skill_draft" => {
-            let draft = round.skill_draft.as_ref()?;
-            let next_pending_seat = draft
-                .offers_by_seat
-                .iter()
-                .find_map(|(seat, offer)| {
-                    (offer.status == SkillDraftStatus::Pending).then_some(*seat)
-                })
-                .unwrap_or(local_seat);
-            let local_selection = skill_draft_view(state, local_seat);
-            Some(PendingActionView::SkillDraft {
-                seat_index: next_pending_seat,
-                deadline_at: Some(draft.deadline_at.clone()),
-                options: if local_selection.is_some() {
-                    vec!["select_skill".to_string(), "decline_skill".to_string()]
-                } else {
-                    Vec::new()
-                },
-            })
-        }
         _ => None,
     }
 }
@@ -339,7 +279,6 @@ fn private_round_state(
     support: &SeatProjectionSupport,
 ) -> Option<PlayerRoundView> {
     let round = state.round_state.as_ref()?;
-    let skill_projection = build_skill_projection(state, local_seat);
     let private_players = round
         .players
         .iter()
@@ -379,7 +318,6 @@ fn private_round_state(
                     .iter()
                     .map(|tile| tile.tile_key.clone())
                     .collect(),
-                equipped_skill: public_skill_view(state, player.seat),
             }
         })
         .collect();
@@ -395,11 +333,7 @@ fn private_round_state(
             .as_ref()
             .map(|tile| tile.tile_key.clone()),
         pending_action: build_pending_action_view(state, local_seat, support),
-        skill_draft: skill_draft_view(state, local_seat),
         score_state: score_state_view(state),
-        equipped_skills: equipped_skill_views(state, local_seat),
-        visible_effects: visible_effects(skill_projection.visible_effects.as_slice()),
-        private_knowledge: private_knowledge(skill_projection.private_knowledge.as_slice()),
         players: private_players,
     })
 }
@@ -426,11 +360,6 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
         .as_ref()
         .map(|value| value.kong_score_detail.clone())
         .unwrap_or_default();
-    let score_adjustments_by_seat = state
-        .round_state
-        .as_ref()
-        .map(|round| round.skill_trackers.score_adjustments_by_seat.clone())
-        .unwrap_or_default();
 
     for entry in &kong_score_detail {
         for (seat, delta) in &entry.delta_by_seat {
@@ -450,7 +379,6 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
             .as_ref()
             .and_then(|match_state| match_state.cumulative_scores.get(&seat).copied())
             .unwrap_or(0);
-        let score_adjustment = score_adjustments_by_seat.get(&seat).copied().unwrap_or(0);
         let settlement_total = settlement
             .as_ref()
             .and_then(|value| value.score_delta.total_delta_by_seat.get(&seat))
@@ -459,12 +387,12 @@ fn score_state_view(state: &RoomState) -> ScoreStateView {
         let current_delta = if settlement.is_some() {
             settlement_total
         } else {
-            kong_delta_by_seat.get(&seat).copied().unwrap_or(0) + score_adjustment
+            kong_delta_by_seat.get(&seat).copied().unwrap_or(0)
         };
         let base_score = if settlement.is_some() {
             base - settlement_total
         } else {
-            base - score_adjustment
+            base
         };
         flower_count_by_seat.insert(seat, flower_total);
         base_cumulative_scores.insert(seat, base_score);
@@ -496,98 +424,23 @@ fn continue_action_snapshot(state: &RoomState) -> Option<ContinueActionView> {
         })
 }
 
-fn visible_effects(effects: &[EffectInstance]) -> Vec<VisibleEffectView> {
-    effects
-        .iter()
-        .map(|effect| VisibleEffectView {
-            effect_id: effect.effect_id.clone(),
-            effect_type: effect.effect_type.clone(),
-            owner: effect.owner,
-            target_seats: effect.target_seats.clone(),
-            remaining_turns: effect.remaining_turns,
-            stacks: effect.stacks,
-            source_skill: effect.source_skill.clone(),
-            payload: effect.payload.clone(),
-        })
-        .collect()
-}
-
-fn private_knowledge(knowledge: &[KnowledgeEffect]) -> Vec<KnowledgeView> {
-    knowledge
-        .iter()
-        .map(|knowledge| KnowledgeView {
-            target_seat: knowledge.target_seat,
-            tile_ids: knowledge.tile_ids.clone(),
-            tile_keys: knowledge.tile_keys.clone(),
-            source_skill: knowledge.source_skill.clone(),
-            description: knowledge.description.clone(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::room_snapshot_message;
     use crate::core::state::{
-        MatchState, PendingTimeout, PlayerRoundState, RoomState, RoundScoreTrackers,
-        RoundSettlement, RoundSkillTrackers, RoundState, SeatState, SettlementKongScoreDetailEntry,
-        SettlementScoreDelta, SkillDraftChoice, SkillDraftOffer, SkillDraftState, SkillDraftStatus,
-        SkillRarity,
+        MatchState, PlayerRoundState, RoomState, RoundSettlement, RoundState, SeatState,
+        SettlementKongScoreDetailEntry, SettlementScoreDelta,
     };
     use crate::projection::SeatProjectionSupport;
-
-    #[test]
-    fn score_state_projection_includes_immediate_skill_adjustments() {
-        let state = RoomState {
-            table_code: "ROOM42".to_string(),
-            phase: "playing".to_string(),
-            mode: "skill".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
-            seats: seats(),
-            match_state: Some(MatchState {
-                prevailing_wind: "east".to_string(),
-                hand_number: 1,
-                dealer_seat: 0,
-                cumulative_scores: BTreeMap::from([(0, -3), (1, 0), (2, 0), (3, 0)]),
-                match_finished: false,
-                last_completed_round_id: None,
-                statistics: Default::default(),
-                skill_trackers: Default::default(),
-            }),
-            round_state: Some(RoundState {
-                round_id: "round-1".to_string(),
-                dealer_seat: 0,
-                round_wind: "east".to_string(),
-                current_actor: 0,
-                phase: "playing".to_string(),
-                players: players(),
-                score_trackers: RoundScoreTrackers::default(),
-                skill_trackers: RoundSkillTrackers {
-                    score_adjustments_by_seat: BTreeMap::from([(0, -3)]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            pending_timeout: None,
-            continue_action: None,
-        };
-
-        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
-        let score_state = &snapshot["payload"]["private_state"]["score_state"];
-        assert_eq!(score_state["base_cumulative_scores"]["0"], 0);
-        assert_eq!(score_state["current_round_delta_by_seat"]["0"], -3);
-        assert_eq!(score_state["projected_cumulative_scores"]["0"], -3);
-    }
 
     #[test]
     fn score_state_projection_uses_total_settlement_delta_without_double_counting_kongs() {
         let state = RoomState {
             table_code: "ROOM42".to_string(),
             phase: "settlement".to_string(),
-            mode: "skill".to_string(),
+            mode: "normal".to_string(),
             test_mode: false,
             enforce_minimum_eight_fan: true,
             seats: seats(),
@@ -599,7 +452,6 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: Some("round-1".to_string()),
                 statistics: Default::default(),
-                skill_trackers: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "round-1".to_string(),
@@ -648,94 +500,6 @@ mod tests {
         assert_eq!(score_state["current_round_delta_by_seat"]["0"], -9);
         assert_eq!(score_state["projected_cumulative_scores"]["0"], -9);
         assert_eq!(score_state["projected_cumulative_scores"]["1"], 9);
-    }
-
-    #[test]
-    fn skill_draft_pending_action_remains_visible_after_local_seat_has_selected() {
-        let state = RoomState {
-            table_code: "ROOM42".to_string(),
-            phase: "playing".to_string(),
-            mode: "skill".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
-            seats: seats(),
-            match_state: Some(MatchState {
-                prevailing_wind: "east".to_string(),
-                hand_number: 1,
-                dealer_seat: 0,
-                cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
-                match_finished: false,
-                last_completed_round_id: None,
-                statistics: Default::default(),
-                skill_trackers: Default::default(),
-            }),
-            round_state: Some(RoundState {
-                round_id: "round-1".to_string(),
-                dealer_seat: 0,
-                round_wind: "east".to_string(),
-                current_actor: 0,
-                phase: "playing".to_string(),
-                players: players(),
-                skill_draft: Some(SkillDraftState {
-                    cycle_key: "east-1".to_string(),
-                    cycle_label: "东1~东2局".to_string(),
-                    round_id: "round-1".to_string(),
-                    deadline_at: "2026-04-09T12:00:00Z".to_string(),
-                    offers_by_seat: BTreeMap::from([
-                        (
-                            0,
-                            SkillDraftOffer {
-                                seat: 0,
-                                status: SkillDraftStatus::Selected,
-                                options: vec![SkillDraftChoice {
-                                    skill_id: "wu_zhong_sheng_you".to_string(),
-                                    rarity: SkillRarity::Rare,
-                                }],
-                                selected_skill_id: Some("wu_zhong_sheng_you".to_string()),
-                                selected_rarity: Some(SkillRarity::Rare),
-                            },
-                        ),
-                        (
-                            1,
-                            SkillDraftOffer {
-                                seat: 1,
-                                status: SkillDraftStatus::Pending,
-                                options: vec![SkillDraftChoice {
-                                    skill_id: "sheng_dong_ji_xi".to_string(),
-                                    rarity: SkillRarity::Common,
-                                }],
-                                selected_skill_id: None,
-                                selected_rarity: None,
-                            },
-                        ),
-                    ]),
-                }),
-                ..Default::default()
-            }),
-            pending_timeout: Some(PendingTimeout {
-                kind: "skill_draft".to_string(),
-                seat_index: 1,
-                deadline_at: Some("2026-04-09T12:00:00Z".to_string()),
-                drawn_tile_id: None,
-            }),
-            continue_action: None,
-        };
-
-        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
-
-        assert!(snapshot["payload"]["private_state"]["skill_draft"].is_null());
-        assert_eq!(
-            snapshot["payload"]["private_state"]["pending_action"]["type"],
-            "skill_draft"
-        );
-        assert_eq!(
-            snapshot["payload"]["private_state"]["pending_action"]["seat_index"],
-            1
-        );
-        assert_eq!(
-            snapshot["payload"]["private_state"]["pending_action"]["options"],
-            serde_json::json!([])
-        );
     }
 
     fn seats() -> Vec<SeatState> {
