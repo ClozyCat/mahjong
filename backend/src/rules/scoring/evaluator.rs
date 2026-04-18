@@ -514,39 +514,6 @@ pub fn evaluate_fans(input: EvaluationInput) -> FanResult {
     )
 }
 
-pub fn recompute_score_delta(
-    result: &mut FanResult,
-    win_type: &str,
-    winner_seat: Option<usize>,
-    discarder_seat: Option<usize>,
-    seat_count: usize,
-) {
-    let fan_delta_by_seat = fan_delta_by_seat(
-        win_type,
-        winner_seat,
-        discarder_seat,
-        result.fan_total,
-        seat_count,
-    );
-    let total_delta_by_seat = fan_delta_by_seat
-        .iter()
-        .enumerate()
-        .map(|(seat, fan_delta)| {
-            fan_delta
-                + result
-                    .score_delta
-                    .kong_delta_by_seat
-                    .get(seat)
-                    .copied()
-                    .unwrap_or(0)
-        })
-        .collect::<Vec<_>>();
-    result.score_delta.basic_points = result.fan_total;
-    result.score_delta.fan_total = result.fan_total;
-    result.score_delta.minimum_qualifying_fan_total = result.minimum_qualifying_fan_total;
-    result.score_delta.fan_delta_by_seat = fan_delta_by_seat;
-    result.score_delta.total_delta_by_seat = total_delta_by_seat;
-}
 fn evaluate_fans_uncached(input: EvaluationInput) -> FanResult {
     let context = FanContext::from_input(input);
     let best_result = fan_scenarios(&context)

@@ -520,7 +520,7 @@ fn start_round(
     enforce_minimum_eight_fan: bool,
     seed: u64,
 ) {
-    let (mut round_state, pending_timeout) = plan_round_start_payload(
+    let (round_state, pending_timeout) = plan_round_start_payload(
         dealer_seat,
         round_wind,
         round_id,
@@ -544,7 +544,7 @@ fn start_round_in_room_state(
     enforce_minimum_eight_fan: bool,
     seed: u64,
 ) {
-    let (mut round_state, pending_timeout) = plan_round_start_payload(
+    let (round_state, pending_timeout) = plan_round_start_payload(
         dealer_seat,
         round_wind,
         round_id,

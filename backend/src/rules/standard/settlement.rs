@@ -43,7 +43,7 @@ pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
         })
         .unwrap_or_default();
     let kong_delta = total_kong_delta_by_seat(&kong_score_detail, seat_count);
-    let mut settlement = RoundSettlement {
+    let settlement = RoundSettlement {
         provisional: true,
         win_type: "draw".to_string(),
         winner_seat: None,
@@ -123,7 +123,7 @@ pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> Engi
         })
         .unwrap_or_default();
     let kong_delta = total_kong_delta_by_seat(&kong_score_detail, seat_count);
-    let mut settlement = RoundSettlement {
+    let settlement = RoundSettlement {
         provisional: true,
         win_type: "draw".to_string(),
         winner_seat: None,
