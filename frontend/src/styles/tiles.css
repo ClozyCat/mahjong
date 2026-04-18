@@ -1,0 +1,223 @@
+/* =================================================
+   Mahjong Tiles & Meld Racks
+   ================================================= */
+
+/* ------- Base tile ------- */
+
+.mahjong-tile {
+  display: block;
+  position: relative;
+  width: var(--tile-w, 2rem);
+  height: var(--tile-h, 3rem);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.mahjong-tile--hand {
+  cursor: pointer;
+}
+
+.mahjong-tile--hand:hover {
+  z-index: 2;
+}
+
+.mahjong-tile--discard {
+  --tile-w: var(--battle-stage-discard-width, 1.45rem);
+  --tile-h: var(--battle-stage-discard-height, 1.97rem);
+}
+
+/* ------- Tile shell (3D surface) ------- */
+
+.mahjong-tile__shell {
+  position: absolute;
+  inset: 0;
+  border-radius: clamp(0.18rem, 0.14em + 0.16vw, 0.42rem);
+  border: 1.2px solid color-mix(in srgb, var(--theme-paper-edge) 92%, var(--theme-paper-line) 8%);
+  box-shadow:
+    0 1.6px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 86%, black),
+    0 2.4px 0 0.1px color-mix(in srgb, var(--theme-paper-line) 70%, var(--theme-paper-edge)),
+    0 3.4px 1.6px rgba(0, 0, 0, 0.22),
+    inset 0 0.6px 0 0.5px color-mix(in srgb, var(--theme-paper-strong) 60%, white),
+    inset 0 -0.8px 1.2px rgba(0, 0, 0, 0.02);
+  background:
+    linear-gradient(
+      175deg,
+      color-mix(in srgb, var(--theme-paper-strong) 60%, white) 0%,
+      var(--theme-paper) 22%,
+      color-mix(in srgb, var(--theme-paper) 94%, var(--theme-paper-edge)) 65%,
+      color-mix(in srgb, var(--theme-paper-edge) 36%, var(--theme-paper)) 100%
+    );
+  transition:
+    transform 0.12s var(--ease-snap),
+    box-shadow 0.12s var(--ease-snap);
+}
+
+/* ------- Tile face ------- */
+
+.mahjong-tile__face-area {
+  position: absolute;
+  inset: clamp(0.18rem, 0.12em + 0.08vw, 0.32rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: clamp(0.1rem, 0.06em + 0.08vw, 0.24rem);
+  background:
+    radial-gradient(
+      circle at 46% 38%,
+      color-mix(in srgb, var(--theme-paper-strong) 40%, white) 0%,
+      var(--theme-paper) 50%,
+      color-mix(in srgb, var(--theme-paper) 92%, var(--theme-paper-edge)) 100%
+    );
+  box-shadow: inset 0 0.6px 1.2px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.mahjong-tile__face-viewport {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mahjong-tile__face-image {
+  max-width: 90%;
+  max-height: 95%;
+  object-fit: contain;
+  filter: saturate(1.1) contrast(1.04);
+}
+
+.mahjong-tile__face-blank,
+.mahjong-tile__face-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.mahjong-tile__face-blank {
+  background:
+    repeating-linear-gradient(
+      145deg,
+      transparent 0 4px,
+      rgba(0, 0, 0, 0.012) 4px 5px
+    ),
+    linear-gradient(
+      175deg,
+      color-mix(in srgb, var(--theme-paper-strong) 60%, white) 0%,
+      var(--theme-paper) 32%,
+      color-mix(in srgb, var(--theme-paper) 84%, var(--theme-paper-edge)) 100%
+    );
+}
+
+.mahjong-tile__face-placeholder {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--theme-paper-edge) 22%, var(--theme-paper)) 0%, var(--theme-paper) 100%);
+  opacity: 0.88;
+}
+
+/* ------- Tile states ------- */
+
+.mahjong-tile--selected .mahjong-tile__shell {
+  border-color: var(--accent);
+  box-shadow:
+    0 1.6px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 86%, black),
+    0 2.4px 0 0.1px color-mix(in srgb, var(--theme-paper-line) 70%, var(--theme-paper-edge)),
+    0 3.4px 1.6px rgba(0, 0, 0, 0.22),
+    inset 0 0.6px 0 0.5px color-mix(in srgb, var(--theme-paper-strong) 60%, white),
+    inset 0 -0.8px 1.2px rgba(0, 0, 0, 0.02),
+    0 0 0 2px color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+.mahjong-tile--drawn {
+  position: relative;
+}
+
+.mahjong-tile--disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.mahjong-tile--last-discard {
+  animation: tile-drop-slam-premium 0.25s var(--ease-snap) forwards;
+}
+
+.mahjong-tile--last-discard .mahjong-tile__shell {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--theme-paper-edge));
+  box-shadow:
+    0 1.6px 0 0 color-mix(in srgb, var(--accent) 40%, var(--theme-paper-line-strong)),
+    0 2.4px 0 0.1px color-mix(in srgb, var(--theme-paper-line) 70%, var(--theme-paper-edge)),
+    0 3.4px 1.6px rgba(0, 0, 0, 0.24),
+    inset 0 0.6px 0 0.5px color-mix(in srgb, var(--theme-paper-strong) 60%, white),
+    0 0 12px 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* ------- Hand tile special sizing ------- */
+
+.battle-screen .mahjong-tile--hand {
+  --tile-w: var(--battle-hand-tile-width);
+  --tile-h: var(--battle-hand-tile-height);
+}
+
+.battle-screen .mahjong-tile--hand:hover .mahjong-tile__shell {
+  transform: translateY(-0.24rem) scale(1.04);
+  box-shadow:
+    0 3px 2px 0 color-mix(in srgb, var(--theme-paper-line-strong) 78%, black),
+    0 4px 2px 0.2px color-mix(in srgb, var(--theme-paper-line) 54%, var(--theme-paper-edge)),
+    0 6.6px 5px rgba(0, 0, 0, 0.2),
+    inset 0 0.6px 0 0.5px color-mix(in srgb, var(--theme-paper-strong) 60%, white);
+}
+
+.battle-screen .mahjong-tile--hand:active .mahjong-tile__shell {
+  transform: translateY(-0.06rem) scale(0.98);
+  box-shadow:
+    0 1px 0.6px 0 color-mix(in srgb, var(--theme-paper-line-strong) 86%, black),
+    0 1.6px 0 0.1px color-mix(in srgb, var(--theme-paper-line) 70%, var(--theme-paper-edge)),
+    0 2px 1.2px rgba(0, 0, 0, 0.24),
+    inset 0 0.6px 0 0.5px color-mix(in srgb, var(--theme-paper-strong) 60%, white);
+}
+
+.battle-screen .mahjong-tile__shell {
+  border-radius: clamp(0.22rem, 0.18em + 0.2vw, 0.52rem);
+}
+
+.battle-screen .mahjong-tile__face-area {
+  inset: clamp(0.22rem, 0.14em + 0.12vw, 0.4rem);
+  border-radius: clamp(0.12rem, 0.08em + 0.1vw, 0.3rem);
+}
+
+/* ------- Meld rack ------- */
+
+.meld-rack-shell {
+  display: contents;
+}
+
+.meld-rack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.meld-rack__group {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.6px;
+  border: 1px solid color-mix(in srgb, var(--theme-paper-edge) 36%, rgba(0, 0, 0, 0.08));
+  border-radius: clamp(0.24rem, 0.16em + 0.14vw, 0.42rem);
+  padding: clamp(0.1rem, 0.06em + 0.06vw, 0.2rem);
+  background:
+    linear-gradient(
+      175deg,
+      color-mix(in srgb, var(--theme-paper) 30%, var(--theme-paper-edge)) 0%,
+      color-mix(in srgb, var(--theme-paper) 80%, var(--theme-paper-edge)) 100%
+    );
+  box-shadow:
+    0 1.8px 0 0.1px color-mix(in srgb, var(--theme-paper-line) 60%, var(--theme-paper-edge)),
+    0 3px 2px rgba(0, 0, 0, 0.12),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.28);
+}

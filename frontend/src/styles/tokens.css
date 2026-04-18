@@ -1,0 +1,162 @@
+/* =================================================
+   Design Tokens & Global Base Styles
+   Merged from all cascade layers into final values.
+   ================================================= */
+
+:root {
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+
+  /* Shadow system */
+  --shadow-xl: 0 28px 70px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 18px 38px rgba(0, 8, 20, 0.34);
+  --shadow-premium-soft: 0 2px 8px -2px rgba(0, 0, 0, 0.12), 0 12px 32px -4px rgba(0, 0, 0, 0.25);
+  --shadow-premium-hard: 0 4px 12px rgba(0, 0, 0, 0.2), 0 24px 64px rgba(0, 0, 0, 0.4);
+
+  /* Easing curves */
+  --ease-lux: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  --ease-snap: cubic-bezier(0.2, 1, 0.2, 1);
+
+  /* Battle layout system */
+  --battle-shell-gap: clamp(1.2rem, 1.8vw, 1.6rem);
+  --battle-shell-top-gap: clamp(0.45rem, 0.85vh, 0.85rem);
+  --battle-shell-bottom-gap: clamp(0.6rem, 1.1vh, 0.95rem);
+  --battle-top-clearance: clamp(0.14rem, 0.26vh, 0.3rem);
+  --battle-stage-size-trim: clamp(1.2rem, 2vw, 2rem);
+  --battle-hand-tile-width: clamp(1.38rem, 4.8vw, 3.25rem);
+  --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
+  --battle-bottom-clearance: clamp(0.8rem, 1.4vh, 1.1rem);
+  --battle-stage-bottom-reserve: clamp(1.4rem, 3vh, 2.25rem);
+  --battle-dock-bottom-gap: clamp(0.08rem, 0.18vh, 0.18rem);
+  --battle-drawer-top-offset: clamp(0.55rem, 1vh, 0.9rem);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: var(--desktop);
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 16% 18%, var(--theme-glow-a), transparent 24%),
+    radial-gradient(circle at 82% 16%, var(--theme-glow-b), transparent 26%),
+    radial-gradient(circle at 52% 84%, var(--theme-glow-c), transparent 26%),
+    linear-gradient(145deg, color-mix(in srgb, var(--desktop) 92%, black) 0%, var(--desktop) 44%, color-mix(in srgb, var(--desktop) 82%, var(--table)) 100%);
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::before {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-paper) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--theme-paper) 16%, transparent) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.86), transparent 88%);
+  opacity: 0.18;
+}
+
+body::after {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 12%, transparent), transparent 18%, transparent 84%, color-mix(in srgb, var(--theme-paper) 7%, transparent)),
+    radial-gradient(circle at center, color-mix(in srgb, var(--theme-paper) 10%, transparent), transparent 60%);
+  opacity: 1;
+}
+
+/* ------- Global element base ------- */
+
+button,
+input {
+  font: inherit;
+  color: var(--text);
+}
+
+button {
+  position: relative;
+  border: 1px solid var(--theme-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-sheen) 88%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 92%, transparent)),
+    var(--panel);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
+    0 10px 24px var(--theme-shadow-soft);
+  transition:
+    transform 0.15s var(--ease-snap),
+    border-color 0.15s var(--ease-lux),
+    background-color 0.15s var(--ease-lux),
+    box-shadow 0.2s var(--ease-lux),
+    opacity 0.15s var(--ease-lux);
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--theme-border-strong));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 25%, transparent),
+    0 16px 32px var(--theme-shadow-soft),
+    0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+button:active:not(:disabled) {
+  border-color: #404040;
+  border-right-color: #d4d0c8;
+  border-bottom-color: #d4d0c8;
+  transform: translateY(0);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 6%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
+    color-mix(in srgb, var(--panel-strong) 92%, black);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 72%, white),
+    0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+input {
+  border: 1px solid var(--theme-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 6%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 86%, transparent)),
+    color-mix(in srgb, var(--panel) 92%, black);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+/* ------- Cross-component base ------- */
+
+.battle-screen,
+.connect-gate {
+  position: relative;
+  z-index: 1;
+}
+
+.win10-window__titlebar strong,
+.connect-gate__panel h1,
+.result-overlay__card h2,
+.top-match-bar__brand strong,
+.top-match-bar__meta span:first-child {
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', 'Noto Sans SC', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

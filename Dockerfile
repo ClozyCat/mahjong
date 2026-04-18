@@ -1,12 +1,12 @@
-FROM node:22-bookworm-slim AS frontend-v2-builder
+FROM node:22-bookworm-slim AS frontend-builder
 
-WORKDIR /app/frontend-v2
+WORKDIR /app/frontend
 
-COPY frontend-v2/package.json frontend-v2/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 # [修改 1] 前端构建：使用腾讯云 NPM 镜像源
 RUN npm ci --registry=https://mirrors.cloud.tencent.com/npm/
 
-COPY frontend-v2/ ./
+COPY frontend/ ./
 RUN npm run build
 
 
@@ -49,9 +49,9 @@ EXPOSE 8000
 ENTRYPOINT ["backend-entrypoint.sh"]
 
 
-FROM nginx:1.28-alpine AS frontend-v2-runtime
+FROM nginx:1.28-alpine AS frontend-runtime
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=frontend-v2-builder /app/frontend-v2/dist /usr/share/nginx/html
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80
