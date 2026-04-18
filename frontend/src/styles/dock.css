@@ -876,19 +876,15 @@
 /* ------- Disabled tile overlay ------- */
 
 .mahjong-tile--disabled {
-  opacity: 0.88;
+  pointer-events: none;
 }
 
-.mahjong-tile--disabled .mahjong-tile__shell {
-  position: relative;
-  overflow: hidden;
-}
-
-.mahjong-tile--disabled .mahjong-tile__shell::after {
+.mahjong-tile--disabled .mahjong-tile__face-area::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(28, 34, 44, 0.24);
+  background: rgba(26, 30, 40, 0.22);
+  z-index: 2;
   pointer-events: none;
 }
 

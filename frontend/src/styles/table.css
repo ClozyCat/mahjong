@@ -15,7 +15,7 @@
   --table-stage-river-base-height: var(--battle-stage-discard-height, 3.18rem);
   --table-stage-river-tile-width: calc(var(--table-stage-river-base-width) * var(--table-stage-tile-scale));
   --table-stage-river-tile-height: calc(var(--table-stage-river-base-height) * var(--table-stage-tile-scale));
-  --table-stage-meld-base-width: clamp(1.6rem, 2.1vw, 2.08rem);
+  --table-stage-meld-base-width: clamp(1.78rem, 2.38vw, 2.22rem);
   --table-stage-meld-tile-width: calc(var(--table-stage-meld-base-width) * var(--table-stage-tile-scale));
   --table-stage-meld-tile-height: calc(var(--table-stage-meld-tile-width) * 1.36);
   --table-stage-settlement-base-width: 1.38rem;
