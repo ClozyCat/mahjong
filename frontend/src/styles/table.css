@@ -955,8 +955,6 @@
 /* ------- Action callout ------- */
 
 .table-stage__action-callout {
-  --spotlight-left: 50%;
-  --spotlight-top: 50%;
   --spotlight-offset-x: 0rem;
   --spotlight-offset-y: 0rem;
   --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent));
@@ -965,8 +963,8 @@
   --table-stage-action-callout-aura-core: transparent;
   --table-stage-action-callout-aura-ring: transparent;
   position: absolute;
-  left: var(--spotlight-left);
-  top: var(--spotlight-top);
+  left: var(--spotlight-left, 50%);
+  top: var(--spotlight-top, 50%);
   z-index: 3;
   pointer-events: none;
   transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y));

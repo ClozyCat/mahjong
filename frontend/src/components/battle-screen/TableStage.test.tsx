@@ -816,6 +816,35 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__action-callout--pung')).not.toBeNull();
   });
 
+  it('anchors the action callout to the spotlight seat instead of the table center', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'claim-anchor-right',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'pung',
+        }}
+      />,
+    );
+
+    const callout = container.querySelector('.table-stage__action-callout.table-stage__spotlight--right');
+    expect(callout).not.toBeNull();
+    expect((callout as HTMLElement).style.getPropertyValue('--spotlight-left').trim()).toBe('68%');
+    expect((callout as HTMLElement).style.getPropertyValue('--spotlight-top').trim()).toBe('50%');
+  });
+
   it('shows the calligraphy skill glyph when an active skill is activated', () => {
     const { container } = render(
       <TableStage

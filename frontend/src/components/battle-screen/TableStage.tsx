@@ -659,6 +659,12 @@ const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   bottom: 220,
   left: 320,
 };
+const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string }> = {
+  top: { left: '50%', top: '32%' },
+  bottom: { left: '50%', top: '68%' },
+  left: { left: '32%', top: '50%' },
+  right: { left: '68%', top: '50%' },
+};
 
 type ActionCallout = {
   key: string;
@@ -740,7 +746,7 @@ function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
         callout.huVariant ? `table-stage__action-callout--hu-${callout.huVariant}` : ''
       } table-stage__action-callout--${phase}`.trim()}
       aria-hidden="true"
-      style={getSettlementCalloutStyle()}
+      style={getSettlementCalloutStyle(callout.seat)}
     >
       <span className="table-stage__action-callout-glyph">{callout.label}</span>
     </div>
@@ -972,9 +978,13 @@ function normalizeQuickChatText(value: string) {
   return clampQuickChatText(value).trim();
 }
 
-function getSettlementCalloutStyle(): CSSProperties {
+function getSettlementCalloutStyle(seat: Seat | null = null): CSSProperties {
+  const position = seat ? SPOTLIGHT_POSITION_VARS[seat] : { left: '50%', top: '50%' };
+
   return {
     '--table-stage-action-callout-duration': SETTLEMENT_CALLOUT_DURATION_CSS,
+    '--spotlight-left': position.left,
+    '--spotlight-top': position.top,
   } as CSSProperties;
 }
 
