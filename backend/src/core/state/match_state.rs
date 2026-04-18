@@ -85,7 +85,7 @@ impl MatchState {
             seat_stats.score_history.push(score);
         }
 
-        if let Some(winner_seat) = settlement.winner_seat {
+        for winner_seat in settlement.winning_seats() {
             let winner_stats = self
                 .statistics
                 .seat_stats_by_seat

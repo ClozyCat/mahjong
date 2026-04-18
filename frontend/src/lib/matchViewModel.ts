@@ -13,6 +13,7 @@ import type {
   PrivatePlayerState,
   PrivateState,
   QuickChatEventView,
+  ResultPageView,
   ResultSeatView,
   Seat,
   SessionState,
@@ -1060,12 +1061,12 @@ function createSettlementHands(state: SessionState): BattleViewModel['settlement
       .slice()
       .sort(compareTileCodes);
 
-    if (tiles.length === 0 && settlementWinningDiscard?.winnerSeat !== seat) {
+    if (tiles.length === 0 && !settlementWinningDiscard?.winnerSeats.has(seat)) {
       continue;
     }
 
     settlementHands[seat] =
-      settlementWinningDiscard?.winnerSeat === seat
+      settlementWinningDiscard?.winnerSeats.has(seat)
         ? [...tiles, settlementWinningDiscard.tileCode]
         : tiles;
   }
@@ -1073,10 +1074,18 @@ function createSettlementHands(state: SessionState): BattleViewModel['settlement
   return Object.keys(settlementHands).length > 0 ? settlementHands : null;
 }
 
-function getSettlementWinningDiscard(state: SessionState): { winnerSeat: Seat; tileCode: string } | null {
+function getSettlementWinningDiscard(state: SessionState): { winnerSeats: Set<Seat>; tileCode: string } | null {
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
   const result = state.latestMatchResult?.payload;
+  const localSeat = getLocalSeat(state);
+  const winnerSeats = new Set(
+    (result?.winning_details ?? [])
+      .map((detail) =>
+        typeof detail.winner_seat === 'number' ? toRelativeSeat(localSeat, detail.winner_seat) : null,
+      )
+      .filter((seat): seat is Seat => seat !== null),
+  );
 
   if (
     !snapshot ||
@@ -1084,16 +1093,67 @@ function getSettlementWinningDiscard(state: SessionState): { winnerSeat: Seat; t
     !privateState ||
     !result ||
     result.win_type !== 'discard' ||
-    typeof result.winner_seat !== 'number' ||
     !privateState.last_discard
   ) {
     return null;
   }
 
+  if (winnerSeats.size === 0 && typeof result.winner_seat === 'number') {
+    winnerSeats.add(toRelativeSeat(localSeat, result.winner_seat));
+  }
+  if (winnerSeats.size === 0) {
+    return null;
+  }
+
   return {
-    winnerSeat: toRelativeSeat(getLocalSeat(state), result.winner_seat),
+    winnerSeats,
     tileCode: privateState.last_discard,
   };
+}
+
+function createResultPages(result: MatchResultPayload, localSeat: number): ResultPageView[] {
+  const winningDetails =
+    Array.isArray(result.winning_details) && result.winning_details.length > 0
+      ? result.winning_details
+      : result.win_type === 'draw'
+        ? []
+        : [
+            {
+              winner_seat: result.winner_seat ?? -1,
+              display_win_label: result.display_win_label ?? null,
+              fan_total: result.fan_total,
+              fan_keys: result.fan_keys,
+              fan_breakdown: result.fan_breakdown,
+              flower_count: result.flower_count,
+            },
+          ];
+
+  return winningDetails
+    .filter((detail) => typeof detail.winner_seat === 'number' && detail.winner_seat >= 0)
+    .map((detail) => ({
+      fanTotal: detail.fan_total,
+      winnerSeat: toRelativeSeat(localSeat, detail.winner_seat),
+      discarderSeat: typeof result.discarder_seat === 'number' ? toRelativeSeat(localSeat, result.discarder_seat) : null,
+      winType: result.win_type,
+      winTypeLabel: detail.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type,
+      flowerCount: detail.flower_count,
+      fanBreakdown: detail.fan_breakdown.map((item) => ({
+        fanKey: item.fan_key,
+        fanValue: item.fan_value,
+      })),
+    }));
+}
+
+function createResultSummary(result: MatchResultPayload, pageCount: number) {
+  if (result.win_type === 'draw') {
+    return result.draw_type === 'exhaustive' ? '荒牌流局' : '本局流局';
+  }
+
+  if (result.win_type === 'discard' && pageCount > 1) {
+    return `${pageCount} 家同时和牌，等待玩家开始下一局`;
+  }
+
+  return `${getWinTypeLabel(result)}，等待玩家开始下一局`;
 }
 
 function compareLocalHandTiles(
@@ -1205,6 +1265,8 @@ function createResult(state: SessionState): BattleViewModel['result'] {
 
   if (snapshot.phase === 'settlement' && state.latestMatchResult) {
     const result = state.latestMatchResult.payload;
+    const pages = createResultPages(result, localSeat);
+    const primaryPage = pages[0] ?? null;
     const scoreDeltaBySeat: Partial<Record<Seat, number>> = {};
     for (const [seatIndex, delta] of Object.entries(result.score_delta.total_delta_by_seat)) {
       scoreDeltaBySeat[toRelativeSeat(localSeat, Number(seatIndex))] = delta;
@@ -1212,23 +1274,25 @@ function createResult(state: SessionState): BattleViewModel['result'] {
 
     return {
       title: '本局结算',
-      summary:
-        result.win_type === 'draw'
-          ? result.draw_type === 'exhaustive'
-            ? '荒牌流局'
-            : '本局流局'
-          : `${getWinTypeLabel(result)}，等待玩家开始下一局`,
-      fanTotal: result.fan_total,
-      winnerSeat: typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null,
-      discarderSeat: typeof result.discarder_seat === 'number' ? toRelativeSeat(localSeat, result.discarder_seat) : null,
+      summary: createResultSummary(result, pages.length),
+      fanTotal: primaryPage?.fanTotal ?? result.fan_total,
+      winnerSeat:
+        primaryPage?.winnerSeat ??
+        (typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null),
+      discarderSeat:
+        primaryPage?.discarderSeat ??
+        (typeof result.discarder_seat === 'number' ? toRelativeSeat(localSeat, result.discarder_seat) : null),
       winType: result.win_type,
-      winTypeLabel: getWinTypeLabel(result),
+      winTypeLabel: primaryPage?.winTypeLabel ?? getWinTypeLabel(result),
       provisional: result.score_delta.provisional,
-      flowerCount: result.flower_count,
-      fanBreakdown: result.fan_breakdown.map((item) => ({
-        fanKey: item.fan_key,
-        fanValue: item.fan_value,
-      })),
+      flowerCount: primaryPage?.flowerCount ?? result.flower_count,
+      fanBreakdown:
+        primaryPage?.fanBreakdown ??
+        result.fan_breakdown.map((item) => ({
+          fanKey: item.fan_key,
+          fanValue: item.fan_value,
+        })),
+      pages,
       scoreDeltaBySeat,
       seats: createResultSeats(state, result.score_delta.total_delta_by_seat),
       continueAction: {

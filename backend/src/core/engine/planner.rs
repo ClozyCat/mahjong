@@ -355,7 +355,17 @@ pub fn plan_claim_window_response(
             action_type: action_type.to_string(),
             tiles: tile_ids.to_vec(),
         });
-        if let Some(winning_claim) = resolve_claims(&claim_responses, discarder_seat) {
+        let winning_hu_claims = resolve_hu_claims(&claim_responses, discarder_seat);
+        if !winning_hu_claims.is_empty() {
+            for (other_seat, claims) in claim.claim_window.iter().enumerate() {
+                if claims.is_empty() || responded_seats.contains(&other_seat) {
+                    continue;
+                }
+                if !claims.iter().any(|claim_type| claim_type == "hu") {
+                    responded_seats.push(other_seat);
+                }
+            }
+        } else if let Some(winning_claim) = resolve_claims(&claim_responses, discarder_seat) {
             for (other_seat, claims) in claim.claim_window.iter().enumerate() {
                 if claims.is_empty() || responded_seats.contains(&other_seat) {
                     continue;
@@ -532,6 +542,22 @@ pub fn resolve_claims(
         (-claim_priority, distance as i32)
     });
     candidates.into_iter().next()
+}
+
+pub fn resolve_hu_claims(claim_requests: &[ClaimResponse], discarder_seat: usize) -> Vec<ClaimResponse> {
+    let mut candidates = claim_requests
+        .iter()
+        .filter(|request| request.action_type == "hu")
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|request| {
+        let mut distance = (request.seat + MAX_SEATS - discarder_seat) % MAX_SEATS;
+        if distance == 0 {
+            distance = MAX_SEATS;
+        }
+        distance
+    });
+    candidates
 }
 
 pub fn plan_claim_window_continuation_without_winner(

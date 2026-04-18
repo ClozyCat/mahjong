@@ -136,6 +136,7 @@ pub struct RobKongWindowAction {
     pub meld_index: Option<usize>,
     pub offered_hu_seats: Vec<Seat>,
     pub responded_seats: Vec<Seat>,
+    pub claim_responses: Vec<ClaimResponse>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -4,11 +4,12 @@ use std::collections::HashSet;
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::{
     plan_claim_window_continuation_without_winner, plan_claim_window_response, plan_discard_action,
-    resolve_claims,
+    resolve_claims, resolve_hu_claims,
 };
 use crate::core::event::GameEvent;
 use crate::core::state::{
-    KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction, RoomState, RoundState,
+    ClaimResponse, KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction,
+    RoomState, RoundState,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -24,7 +25,10 @@ use super::runtime::{
     sync_pending_timeout_in_room_state,
 };
 use super::settlement::settle_exhaustive_draw_output_in_room_state;
-use super::win::{apply_hu_settlement_output_in_room_state, compute_hu_settlement_for_state};
+use super::win::{
+    apply_hu_settlement_output_in_room_state, compute_hu_settlement_for_state,
+    compute_multi_hu_settlement_for_state,
+};
 
 #[cfg(test)]
 use super::meld::{
@@ -38,7 +42,9 @@ use super::runtime::{
 #[cfg(test)]
 use super::settlement::settle_exhaustive_draw_output;
 #[cfg(test)]
-use super::win::{apply_hu_settlement_output, compute_hu_settlement};
+use super::win::{
+    apply_hu_settlement_output, compute_hu_settlement,
+};
 #[cfg(test)]
 use crate::core::engine::reducer::update_room_state;
 #[cfg(test)]
@@ -685,6 +691,7 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Engine
             meld_index: rob.meld_index,
             offered_hu_seats: rob.offered_hu_seats.clone(),
             responded_seats: next_responded.clone(),
+            claim_responses: rob.claim_responses.clone(),
         }));
         round.version += 1;
         Ok(())
@@ -699,6 +706,15 @@ pub fn apply_rob_kong_pass(room: &mut Value, seat_index: usize) -> Result<Engine
     if !unresolved.is_empty() {
         sync_pending_timeout_for_value_room(room);
         return Ok(EngineOutput::default());
+    }
+    let winner_seats = resolve_hu_claims(&rob.claim_responses, rob.actor_seat)
+        .into_iter()
+        .map(|response| response.seat)
+        .collect::<Vec<_>>();
+    if !winner_seats.is_empty() {
+        let state = project_room_state(room)?;
+        let settlement = compute_multi_hu_settlement_for_state(&state, &winner_seats)?;
+        return apply_hu_settlement_output(room, winner_seats[0], "discard", settlement);
     }
     complete_add_kong_after_passes_output(room)
 }
@@ -721,6 +737,7 @@ pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
         .copied()
         .filter(|seat| !rob.responded_seats.contains(seat))
         .collect();
+    let claim_responses = rob.claim_responses.clone();
     let unresolved: Vec<Value> = unresolved_seats
         .iter()
         .map(|seat| Value::Number((*seat as u64).into()))
@@ -739,6 +756,7 @@ pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
             meld_index: rob.meld_index,
             offered_hu_seats: rob.offered_hu_seats.clone(),
             responded_seats: next_responded,
+            claim_responses: rob.claim_responses.clone(),
         }));
         round.version += 1;
         Ok(())
@@ -752,6 +770,17 @@ pub fn resolve_rob_kong_timeout(room: &mut Value) -> Result<Vec<Value>, String> 
             "seats": unresolved,
         }),
     )];
+    let winner_seats = resolve_hu_claims(&claim_responses, actor_seat)
+        .into_iter()
+        .map(|response| response.seat)
+        .collect::<Vec<_>>();
+    if !winner_seats.is_empty() {
+        let state = project_room_state(room)?;
+        let settlement = compute_multi_hu_settlement_for_state(&state, &winner_seats)?;
+        let output = apply_hu_settlement_output(room, winner_seats[0], "discard", settlement)?;
+        messages.extend(output.emitted_messages);
+        return Ok(messages);
+    }
     messages.extend(complete_add_kong_after_passes(room)?);
     Ok(messages)
 }
@@ -897,6 +926,7 @@ fn start_rob_kong_window_output(
             meld_index: selection.meld_index,
             offered_hu_seats: offered_hu_seats.clone(),
             responded_seats: vec![],
+            claim_responses: vec![],
         }));
         round.version += 1;
         Ok(())
@@ -947,6 +977,7 @@ fn start_rob_kong_window_output_in_room_state(
             meld_index: selection.meld_index,
             offered_hu_seats: offered_hu_seats.clone(),
             responded_seats: vec![],
+            claim_responses: vec![],
         }));
         round.version += 1;
     }
@@ -1189,6 +1220,15 @@ fn resolve_recorded_claims_local_output(room: &mut Value) -> Result<EngineOutput
     };
     let discarder_seat = claim.discarder_seat;
     let claim_responses = claim.claim_responses.clone();
+    let hu_winners = resolve_hu_claims(&claim_responses, discarder_seat)
+        .into_iter()
+        .map(|response| response.seat)
+        .collect::<Vec<_>>();
+
+    if !hu_winners.is_empty() {
+        let settlement = compute_multi_hu_settlement_for_state(&state, &hu_winners)?;
+        return apply_hu_settlement_output(room, hu_winners[0], "discard", settlement);
+    }
 
     if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
         return apply_selected_claim(room, winner.seat, &winner.action_type, &winner.tiles);
@@ -1262,6 +1302,15 @@ fn resolve_recorded_claims_local_output_in_room_state(
     };
     let discarder_seat = claim.discarder_seat;
     let claim_responses = claim.claim_responses.clone();
+    let hu_winners = resolve_hu_claims(&claim_responses, discarder_seat)
+        .into_iter()
+        .map(|response| response.seat)
+        .collect::<Vec<_>>();
+
+    if !hu_winners.is_empty() {
+        let settlement = compute_multi_hu_settlement_for_state(room, &hu_winners)?;
+        return apply_hu_settlement_output_in_room_state(room, hu_winners[0], "discard", settlement);
+    }
 
     if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
         return apply_selected_claim_in_room_state(
@@ -1902,6 +1951,7 @@ pub fn apply_rob_kong_pass_in_room_state(
     let tile_key = rob.tile_key.clone();
     let meld_index = rob.meld_index;
     let offered_hu_seats = rob.offered_hu_seats.clone();
+    let claim_responses = rob.claim_responses.clone();
     let mut next_responded = rob.responded_seats.clone();
     next_responded.push(seat_index);
     {
@@ -1916,6 +1966,7 @@ pub fn apply_rob_kong_pass_in_room_state(
             meld_index,
             offered_hu_seats: offered_hu_seats.clone(),
             responded_seats: next_responded.clone(),
+            claim_responses: claim_responses.clone(),
         }));
         round.version += 1;
     }
@@ -1929,7 +1980,79 @@ pub fn apply_rob_kong_pass_in_room_state(
         sync_pending_timeout_in_room_state(room);
         return Ok(EngineOutput::default());
     }
+    let winner_seats = resolve_hu_claims(&claim_responses, actor_seat)
+        .into_iter()
+        .map(|response| response.seat)
+        .collect::<Vec<_>>();
+    if !winner_seats.is_empty() {
+        let settlement = compute_multi_hu_settlement_for_state(room, &winner_seats)?;
+        return apply_hu_settlement_output_in_room_state(room, winner_seats[0], "discard", settlement);
+    }
     complete_add_kong_after_passes_output_in_room_state(room)
+}
+
+pub fn apply_rob_kong_hu_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+) -> Result<EngineOutput, String> {
+    let round = room
+        .round_state
+        .as_ref()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let rob = match round.pending_action.as_ref() {
+        Some(PendingAction::RobKongWindow(rob)) => rob,
+        _ => return Err("invalid_action".to_string()),
+    };
+    if !rob.offered_hu_seats.contains(&seat_index) || rob.responded_seats.contains(&seat_index) {
+        return Err("invalid_action".to_string());
+    }
+
+    let actor_seat = rob.actor_seat;
+    let tile_id = rob.tile_id.clone();
+    let tile_key = rob.tile_key.clone();
+    let meld_index = rob.meld_index;
+    let offered_hu_seats = rob.offered_hu_seats.clone();
+    let mut next_responded = rob.responded_seats.clone();
+    next_responded.push(seat_index);
+    let mut claim_responses = rob.claim_responses.clone();
+    claim_responses.push(ClaimResponse {
+        seat: seat_index,
+        action_type: "hu".to_string(),
+        tiles: vec![],
+    });
+    {
+        let round = room
+            .round_state
+            .as_mut()
+            .ok_or_else(|| "invalid_action".to_string())?;
+        round.pending_action = Some(PendingAction::RobKongWindow(RobKongWindowAction {
+            actor_seat,
+            tile_id,
+            tile_key,
+            meld_index,
+            offered_hu_seats: offered_hu_seats.clone(),
+            responded_seats: next_responded.clone(),
+            claim_responses: claim_responses.clone(),
+        }));
+        round.version += 1;
+    }
+
+    let unresolved = offered_hu_seats
+        .iter()
+        .copied()
+        .filter(|offered_seat| !next_responded.contains(offered_seat))
+        .collect::<Vec<_>>();
+    if !unresolved.is_empty() {
+        sync_pending_timeout_in_room_state(room);
+        return Ok(EngineOutput::default());
+    }
+
+    let winner_seats = resolve_hu_claims(&claim_responses, actor_seat)
+        .into_iter()
+        .map(|response| response.seat)
+        .collect::<Vec<_>>();
+    let settlement = compute_multi_hu_settlement_for_state(room, &winner_seats)?;
+    apply_hu_settlement_output_in_room_state(room, winner_seats[0], "discard", settlement)
 }
 
 fn self_kong_kind_name(kind: SelfKongKind) -> &'static str {

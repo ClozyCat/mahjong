@@ -18,6 +18,7 @@ pub struct RoundSettlement {
     pub fan_total: i64,
     pub fan_keys: Vec<String>,
     pub fan_breakdown: Vec<SettlementFanBreakdownEntry>,
+    pub winning_details: Vec<SettlementWinningDetailEntry>,
     pub score_delta: SettlementScoreDelta,
     pub flower_count: usize,
     pub draw_type: Option<String>,
@@ -25,6 +26,18 @@ pub struct RoundSettlement {
 }
 
 impl RoundSettlement {
+    pub fn winning_seats(&self) -> Vec<Seat> {
+        if !self.winning_details.is_empty() {
+            return self
+                .winning_details
+                .iter()
+                .map(|detail| detail.winner_seat)
+                .collect();
+        }
+
+        self.winner_seat.into_iter().collect()
+    }
+
     pub(crate) fn from_value(value: &Value) -> Self {
         Self {
             provisional: value
@@ -69,6 +82,16 @@ impl RoundSettlement {
                         .collect()
                 })
                 .unwrap_or_default(),
+            winning_details: value
+                .get("winning_details")
+                .and_then(Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(SettlementWinningDetailEntry::from_value)
+                        .collect()
+                })
+                .unwrap_or_default(),
             score_delta: SettlementScoreDelta::from_value(value.get("score_delta")),
             flower_count: value
                 .get("flower_count")
@@ -103,6 +126,11 @@ impl RoundSettlement {
                 .iter()
                 .map(SettlementFanBreakdownEntry::to_value)
                 .collect::<Vec<_>>(),
+            "winning_details": self
+                .winning_details
+                .iter()
+                .map(SettlementWinningDetailEntry::to_value)
+                .collect::<Vec<_>>(),
             "score_delta": self.score_delta.to_value(),
             "flower_count": self.flower_count,
             "draw_type": self.draw_type,
@@ -111,6 +139,74 @@ impl RoundSettlement {
                 .iter()
                 .map(SettlementKongScoreDetailEntry::to_value)
                 .collect::<Vec<_>>(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct SettlementWinningDetailEntry {
+    pub winner_seat: Seat,
+    pub display_win_label: Option<String>,
+    pub fan_total: i64,
+    pub fan_keys: Vec<String>,
+    pub fan_breakdown: Vec<SettlementFanBreakdownEntry>,
+    pub flower_count: usize,
+}
+
+impl SettlementWinningDetailEntry {
+    fn from_value(value: &Value) -> Self {
+        Self {
+            winner_seat: value
+                .get("winner_seat")
+                .and_then(Value::as_u64)
+                .map(|seat| seat as Seat)
+                .unwrap_or_default(),
+            display_win_label: string_opt(value, "display_win_label"),
+            fan_total: value
+                .get("fan_total")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            fan_keys: value
+                .get("fan_keys")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(ToString::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            fan_breakdown: value
+                .get("fan_breakdown")
+                .and_then(Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(SettlementFanBreakdownEntry::from_value)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            flower_count: value
+                .get("flower_count")
+                .and_then(Value::as_u64)
+                .map(|count| count as usize)
+                .unwrap_or_default(),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::json!({
+            "winner_seat": self.winner_seat,
+            "display_win_label": self.display_win_label,
+            "fan_total": self.fan_total,
+            "fan_keys": self.fan_keys,
+            "fan_breakdown": self
+                .fan_breakdown
+                .iter()
+                .map(SettlementFanBreakdownEntry::to_value)
+                .collect::<Vec<_>>(),
+            "flower_count": self.flower_count,
         })
     }
 }

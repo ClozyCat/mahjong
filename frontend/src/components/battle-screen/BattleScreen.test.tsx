@@ -286,6 +286,76 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
   });
 
+  it('allows paging between multiple winning hands in the settlement overlay', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '2 家同时和牌，等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          discarderSeat: 'left',
+          winType: 'discard',
+          winTypeLabel: '荣和',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          pages: [
+            {
+              fanTotal: 8,
+              winnerSeat: 'right',
+              discarderSeat: 'left',
+              winType: 'discard',
+              winTypeLabel: '荣和',
+              flowerCount: 0,
+              fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            },
+            {
+              fanTotal: 16,
+              winnerSeat: 'top',
+              discarderSeat: 'left',
+              winType: 'discard',
+              winTypeLabel: '荣和',
+              flowerCount: 1,
+              fanBreakdown: [{ fanKey: 'full_flush', fanValue: 16 }],
+            },
+          ],
+          scoreDeltaBySeat: {
+            bottom: -8,
+            left: -24,
+            top: 16,
+            right: 8,
+          },
+          seats: [
+            { seat: 'top', name: 'Player Top', score: 26816, delta: 16 },
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24268, delta: -24 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    expect(screen.getByRole('group', { name: '番型明细分页' })).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+    expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
+    expect(screen.getByText('平胡')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看下一位和牌者' }));
+
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+    expect(screen.getByText(/胜者 Player Top（对家）/)).toBeInTheDocument();
+    expect(screen.getByText(/花牌 1/)).toBeInTheDocument();
+    expect(screen.getByText('清一色')).toBeInTheDocument();
+    expect(screen.queryByText('平胡')).toBeNull();
+  });
+
   it('shows the matching fan guide tooltip after hovering a settlement fan row for 0.5s', () => {
     vi.useFakeTimers();
 

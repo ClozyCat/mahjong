@@ -176,6 +176,17 @@ export interface MatchResultPayload {
     fan_key: string;
     fan_value: number;
   }>;
+  winning_details?: Array<{
+    winner_seat: number;
+    display_win_label?: string | null;
+    fan_total: number;
+    fan_keys: string[];
+    fan_breakdown: Array<{
+      fan_key: string;
+      fan_value: number;
+    }>;
+    flower_count: number;
+  }>;
   flower_count: number;
   kong_score_detail: KongScoreDetail[];
   score_delta: {
@@ -427,6 +438,19 @@ export interface ResultSeatView {
   } | null;
 }
 
+export interface ResultPageView {
+  fanTotal: number | null;
+  winnerSeat: Seat | null;
+  discarderSeat: Seat | null;
+  winType: string | null;
+  winTypeLabel: string | null;
+  flowerCount: number;
+  fanBreakdown: Array<{
+    fanKey: string;
+    fanValue: number;
+  }>;
+}
+
 export interface ResultView {
   title: string;
   summary: string;
@@ -441,6 +465,7 @@ export interface ResultView {
     fanKey: string;
     fanValue: number;
   }>;
+  pages?: ResultPageView[];
   scoreDeltaBySeat: Partial<Record<Seat, number>>;
   seats: ResultSeatView[];
   continueAction:

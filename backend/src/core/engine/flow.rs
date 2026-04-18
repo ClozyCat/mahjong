@@ -3,7 +3,8 @@ use crate::core::state::RoomState;
 use crate::rules::standard::{
     actions::{
         apply_claim_window_action_in_room_state, apply_discard_action_output_in_room_state,
-        apply_rob_kong_pass_in_room_state, try_handle_self_kong_action_output_in_room_state,
+        apply_rob_kong_hu_in_room_state, apply_rob_kong_pass_in_room_state,
+        try_handle_self_kong_action_output_in_room_state,
     },
     flow::{
         apply_flower_action_output_in_room_state, apply_opening_flowers_pass_output_in_room_state,
@@ -50,7 +51,20 @@ fn try_handle_player_action_command(
     let action_kind = classify_local_player_action(context, seat_index, &action)?;
     match (action_kind, action) {
         (LocalPlayerActionKind::Hu, PlayerAction::Hu) => {
-            Some(apply_hu_action_output_in_room_state(room, seat_index))
+            let pending_action = context
+                .room
+                .round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref());
+            match pending_action {
+                Some(crate::core::state::PendingAction::ClaimWindow(_)) => Some(
+                    apply_claim_window_action_in_room_state(room, seat_index, "hu", &[]),
+                ),
+                Some(crate::core::state::PendingAction::RobKongWindow(_)) => {
+                    Some(apply_rob_kong_hu_in_room_state(room, seat_index))
+                }
+                _ => Some(apply_hu_action_output_in_room_state(room, seat_index)),
+            }
         }
         (LocalPlayerActionKind::Flower, PlayerAction::Flower { tile_ids }) => Some(
             apply_flower_action_output_in_room_state(room, seat_index, &tile_ids),

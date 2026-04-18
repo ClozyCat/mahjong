@@ -469,6 +469,7 @@ mod tests {
                     fan_total: 8,
                     fan_keys: Vec::new(),
                     fan_breakdown: Vec::new(),
+                    winning_details: Vec::new(),
                     score_delta: SettlementScoreDelta {
                         provisional: true,
                         basic_points: 8,

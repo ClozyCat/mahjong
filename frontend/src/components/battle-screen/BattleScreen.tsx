@@ -362,6 +362,7 @@ function getSettlementVisibilityKey(result: BattleViewModel['result']) {
     provisional: result.provisional,
     flowerCount: result.flowerCount,
     fanBreakdown: result.fanBreakdown,
+    pages: result.pages,
     seats: result.seats,
   });
 }

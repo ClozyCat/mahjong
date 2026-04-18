@@ -977,6 +977,80 @@ mod tests {
     }
 
     #[test]
+    fn local_discard_hu_allows_multiple_winners_before_settlement() {
+        let mut room = room_for_local_claim_window();
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w1", "w1#1"),
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("t6", "t6#1a"),
+            suit("t6", "t6#1b")
+        ]);
+        room["round_state"]["players"][2]["concealed_tiles"] = json!([
+            suit("w1", "w1#2"),
+            suit("w2", "w2#2"),
+            suit("w4", "w4#2"),
+            suit("w5", "w5#2"),
+            suit("w6", "w6#2"),
+            suit("t1", "t1#2"),
+            suit("t2", "t2#2"),
+            suit("t3", "t3#2"),
+            suit("b1", "b1#2"),
+            suit("b2", "b2#2"),
+            suit("b3", "b3#2"),
+            suit("t6", "t6#2a"),
+            suit("t6", "t6#2b")
+        ]);
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        let first_hu = try_handle_action(&mut room, 1, "hu", &[])
+            .expect("first hu should be handled locally")
+            .expect("first hu should succeed");
+        assert!(first_hu.is_empty());
+        assert_eq!(
+            room["round_state"]["pending_action"]["responded_seats"],
+            json!([1])
+        );
+        assert_eq!(room["phase"], "playing");
+
+        let second_hu = try_handle_action(&mut room, 2, "hu", &[])
+            .expect("second hu should be handled locally")
+            .expect("second hu should succeed");
+
+        assert_eq!(second_hu.len(), 3);
+        assert_eq!(second_hu[0]["payload"]["event_type"], "claim_made");
+        assert_eq!(second_hu[0]["payload"]["event"]["seat"], 1);
+        assert_eq!(second_hu[1]["payload"]["event_type"], "claim_made");
+        assert_eq!(second_hu[1]["payload"]["event"]["seat"], 2);
+        assert_eq!(second_hu[2]["payload"]["event_type"], "settlement_ready");
+        assert_eq!(room["phase"], "settlement");
+        assert_eq!(
+            room["round_state"]["settlement"]["winning_details"]
+                .as_array()
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["win_count"],
+            1
+        );
+        assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["2"]["win_count"],
+            1
+        );
+    }
+
+    #[test]
     fn local_pung_claim_resolves_and_sets_restricted_discard() {
         let mut room = room_for_local_claim_window();
         let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])

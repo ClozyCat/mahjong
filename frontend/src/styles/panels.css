@@ -1124,6 +1124,40 @@
   margin: 0.38rem 0 0;
 }
 
+.result-overlay__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  margin: 0.7rem 0 0;
+}
+
+.result-overlay__pagination-button {
+  border: 1px solid color-mix(in srgb, var(--accent-2) 22%, var(--theme-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 12%, transparent), color-mix(in srgb, var(--theme-surface-elevated) 92%, transparent));
+  color: color-mix(in srgb, var(--theme-paper-strong) 82%, var(--accent-2));
+  border-radius: 999px;
+  padding: 0.24rem 0.72rem;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.result-overlay__pagination-button:hover {
+  border-color: color-mix(in srgb, var(--accent-2) 38%, var(--theme-border));
+  transform: translateY(-1px);
+}
+
+.result-overlay__pagination-status {
+  color: color-mix(in srgb, var(--theme-paper) 58%, var(--accent-3));
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
 .result-overlay__fan-list,
 .result-overlay__seat-list {
   display: grid;

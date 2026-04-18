@@ -844,6 +844,56 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('builds settlement pages and winning hands for multiple discard winners', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestMatchResult: {
+        ...base.latestMatchResult!,
+        payload: {
+          ...base.latestMatchResult!.payload,
+          display_win_label: '一炮多响',
+          winning_details: [
+            {
+              winner_seat: 1,
+              display_win_label: null,
+              fan_total: 8,
+              fan_keys: ['ping_hu'],
+              fan_breakdown: [{ fan_key: 'ping_hu', fan_value: 8 }],
+              flower_count: 0,
+            },
+            {
+              winner_seat: 2,
+              display_win_label: null,
+              fan_total: 16,
+              fan_keys: ['full_flush'],
+              fan_breakdown: [{ fan_key: 'full_flush', fan_value: 16 }],
+              flower_count: 1,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.result?.summary).toContain('2 家同时和牌');
+    expect(viewModel.result?.pages).toHaveLength(2);
+    expect(viewModel.result?.pages?.[0]).toMatchObject({
+      winnerSeat: 'left',
+      fanTotal: 8,
+    });
+    expect(viewModel.result?.pages?.[1]).toMatchObject({
+      winnerSeat: 'bottom',
+      fanTotal: 16,
+      flowerCount: 1,
+    });
+    expect(viewModel.settlementHands).toEqual({
+      top: ['w1', 'w9'],
+      left: ['b1', 'b3', 'b4'],
+      bottom: ['w2', 't9', 'b4'],
+      right: ['d1', 'd2'],
+    });
+  });
+
   it('pins the settlement last discard seat to the recorded discarder instead of inferring from current actor', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

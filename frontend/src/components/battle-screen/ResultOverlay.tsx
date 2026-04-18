@@ -13,6 +13,7 @@ interface ResultOverlayProps {
 
 export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [activeResultPageIndex, setActiveResultPageIndex] = useState(0);
   const [fanPanelHeight, setFanPanelHeight] = useState<number | null>(null);
   const [continueActionRemainingSeconds, setContinueActionRemainingSeconds] = useState<number | null>(null);
   const [activeFanGuide, setActiveFanGuide] = useState<{
@@ -44,19 +45,25 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
   const closeFanGuideTimerRef = useRef<number | null>(null);
   const openSeatStatsTimerRef = useRef<number | null>(null);
   const closeSeatStatsTimerRef = useRef<number | null>(null);
-  const hasFanPanel = result.fanTotal !== null || result.fanBreakdown.length > 0;
-  const winTypeLabel = result.winTypeLabel ?? (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
+  const resultPages = getResultPages(result);
+  const activeResultPage = resultPages[activeResultPageIndex] ?? null;
+  const hasFanPanel = activeResultPage?.fanTotal !== null || (activeResultPage?.fanBreakdown.length ?? 0) > 0;
+  const winTypeLabel =
+    activeResultPage?.winTypeLabel ??
+    result.winTypeLabel ??
+    (result.winType ? WIN_TYPE_LABELS[result.winType] ?? result.winType : null);
   const fanMeta = [
     winTypeLabel,
-    result.winnerSeat ? `胜者 ${formatResultActor(result.winnerSeat, result.seats)}` : null,
-    result.discarderSeat ? `放铳 ${formatResultActor(result.discarderSeat, result.seats)}` : null,
-    result.flowerCount > 0 ? `花牌 ${result.flowerCount}` : null,
+    activeResultPage?.winnerSeat ? `胜者 ${formatResultActor(activeResultPage.winnerSeat, result.seats)}` : null,
+    activeResultPage?.discarderSeat ? `放铳 ${formatResultActor(activeResultPage.discarderSeat, result.seats)}` : null,
+    activeResultPage && activeResultPage.flowerCount > 0 ? `花牌 ${activeResultPage.flowerCount}` : null,
   ]
     .filter((item): item is string => Boolean(item))
     .join(' · ');
 
   useEffect(() => {
     setIsCollapsed(false);
+    setActiveResultPageIndex(0);
   }, [result]);
 
   useEffect(() => {
@@ -430,17 +437,48 @@ export function ResultOverlay({ result, onAction }: ResultOverlayProps) {
               >
                 <div className="result-overlay__section-head">
                   <span className="result-overlay__section-label">番型明细</span>
-                  {result.fanTotal !== null ? (
-                    <strong className="result-overlay__fan-total">{result.fanTotal} 番</strong>
+                  {activeResultPage?.fanTotal !== null ? (
+                    <strong className="result-overlay__fan-total">{activeResultPage.fanTotal} 番</strong>
                   ) : null}
                 </div>
                 {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
+                {resultPages.length > 1 ? (
+                  <div className="result-overlay__pagination" role="group" aria-label="番型明细分页">
+                    <button
+                      type="button"
+                      className="result-overlay__pagination-button"
+                      onClick={() =>
+                        setActiveResultPageIndex((currentIndex) =>
+                          currentIndex === 0 ? resultPages.length - 1 : currentIndex - 1,
+                        )
+                      }
+                      aria-label="查看上一位和牌者"
+                    >
+                      上一位
+                    </button>
+                    <span className="result-overlay__pagination-status">
+                      {activeResultPageIndex + 1} / {resultPages.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="result-overlay__pagination-button"
+                      onClick={() =>
+                        setActiveResultPageIndex((currentIndex) =>
+                          currentIndex === resultPages.length - 1 ? 0 : currentIndex + 1,
+                        )
+                      }
+                      aria-label="查看下一位和牌者"
+                    >
+                      下一位
+                    </button>
+                  </div>
+                ) : null}
 
-                {result.fanBreakdown.length > 0 ? (
+                {(activeResultPage?.fanBreakdown.length ?? 0) > 0 ? (
                   <div className="result-overlay__fan-list-viewport">
                     <div className="result-overlay__fan-list" aria-label="番型明细列表">
-                      {result.fanBreakdown.map((item, index) => {
-                        const rowKey = `${item.fanKey}-${index}`;
+                      {activeResultPage?.fanBreakdown.map((item, index) => {
+                        const rowKey = `${activeResultPageIndex}-${item.fanKey}-${index}`;
                         const hasGuideEntry = Boolean(getFanGuideEntry(item.fanKey));
 
                         return (
@@ -597,6 +635,24 @@ const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
 
 function getRelativeSeatLabel(seat: Seat) {
   return RELATIVE_SEAT_LABELS[seat];
+}
+
+function getResultPages(result: ResultView) {
+  if (Array.isArray(result.pages) && result.pages.length > 0) {
+    return result.pages;
+  }
+
+  return [
+    {
+      fanTotal: result.fanTotal,
+      winnerSeat: result.winnerSeat,
+      discarderSeat: result.discarderSeat,
+      winType: result.winType,
+      winTypeLabel: result.winTypeLabel,
+      flowerCount: result.flowerCount,
+      fanBreakdown: result.fanBreakdown,
+    },
+  ];
 }
 
 function formatResultActor(seat: Seat, seats: ResultSeatView[]) {

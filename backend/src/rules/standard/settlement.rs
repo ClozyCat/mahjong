@@ -52,6 +52,7 @@ pub fn settle_exhaustive_draw_output(room: &mut Value) -> EngineOutput {
         fan_total: 0,
         fan_keys: vec![],
         fan_breakdown: vec![],
+        winning_details: vec![],
         score_delta: SettlementScoreDelta {
             provisional: true,
             basic_points: 0,
@@ -132,6 +133,7 @@ pub fn settle_exhaustive_draw_output_in_room_state(room: &mut RoomState) -> Engi
         fan_total: 0,
         fan_keys: vec![],
         fan_breakdown: vec![],
+        winning_details: vec![],
         score_delta: SettlementScoreDelta {
             provisional: true,
             basic_points: 0,

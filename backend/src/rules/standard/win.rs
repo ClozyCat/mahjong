@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::event::GameEvent;
+use crate::core::state::settlement::{SettlementWinningDetailEntry, zero_score_map};
 use crate::core::state::{
     PendingAction, RoomState, RoundSettlement, SettlementFanBreakdownEntry,
     SettlementKongScoreDetailEntry, SettlementScoreDelta,
@@ -25,6 +26,7 @@ use crate::core::engine::reducer::update_room_state;
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const LOW_FAN_WIN_LABEL: &str = "屁和";
+const MULTI_HU_WIN_LABEL: &str = "一炮多响";
 
 struct PreparedWinEvaluation {
     concealed_tile_keys: Vec<String>,
@@ -49,6 +51,95 @@ fn low_fan_display_win_label(
     }
 
     None
+}
+
+fn winning_detail_entry(
+    winner_seat: usize,
+    display_win_label: Option<String>,
+    flower_count: usize,
+    fan_result: &crate::rules::scoring::FanResult,
+) -> SettlementWinningDetailEntry {
+    SettlementWinningDetailEntry {
+        winner_seat,
+        display_win_label,
+        fan_total: fan_result.fan_total,
+        fan_keys: fan_result.fan_keys.clone(),
+        fan_breakdown: fan_result
+            .fan_breakdown
+            .iter()
+            .map(|entry| SettlementFanBreakdownEntry {
+                fan_key: entry.fan_key.clone(),
+                fan_value: entry.fan_value,
+            })
+            .collect(),
+        flower_count,
+    }
+}
+
+pub(crate) fn compute_multi_hu_settlement_for_state(
+    state: &RoomState,
+    winner_seats: &[usize],
+) -> Result<RoundSettlement, String> {
+    let Some((&primary_winner_seat, _)) = winner_seats.split_first() else {
+        return Err("invalid_action".to_string());
+    };
+    if winner_seats.len() == 1 {
+        return compute_hu_settlement_for_state(state, primary_winner_seat, "discard");
+    }
+
+    let settlements = winner_seats
+        .iter()
+        .copied()
+        .map(|winner_seat| compute_hu_settlement_for_state(state, winner_seat, "discard"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let seat_count = state
+        .round_state
+        .as_ref()
+        .map(|round| round.players.len())
+        .unwrap_or(MAX_SEATS);
+    let mut fan_delta_by_seat = zero_score_map(seat_count);
+    for settlement in &settlements {
+        for seat in 0..seat_count {
+            *fan_delta_by_seat.entry(seat).or_default() += settlement
+                .score_delta
+                .fan_delta_by_seat
+                .get(&seat)
+                .copied()
+                .unwrap_or(0);
+        }
+    }
+
+    let primary_settlement = settlements
+        .first()
+        .cloned()
+        .ok_or_else(|| "invalid_action".to_string())?;
+    let kong_delta_by_seat = primary_settlement.score_delta.kong_delta_by_seat.clone();
+    let total_delta_by_seat = (0..seat_count)
+        .map(|seat| {
+            (
+                seat,
+                fan_delta_by_seat.get(&seat).copied().unwrap_or(0)
+                    + kong_delta_by_seat.get(&seat).copied().unwrap_or(0),
+            )
+        })
+        .collect();
+
+    let mut winning_details = primary_settlement.winning_details.clone();
+    for settlement in settlements.iter().skip(1) {
+        winning_details.extend(settlement.winning_details.clone());
+    }
+
+    let mut aggregated = primary_settlement;
+    aggregated.display_win_label = Some(MULTI_HU_WIN_LABEL.to_string());
+    aggregated.winning_details = winning_details;
+    aggregated.score_delta.fan_delta_by_seat = fan_delta_by_seat;
+    aggregated.score_delta.kong_delta_by_seat = kong_delta_by_seat;
+    aggregated.score_delta.total_delta_by_seat = total_delta_by_seat;
+
+    // Preserve deterministic primary-winner fields for legacy consumers.
+    aggregated.winner_seat = Some(primary_winner_seat);
+
+    Ok(aggregated)
 }
 
 #[cfg(test)]
@@ -110,13 +201,14 @@ pub fn compute_hu_settlement(
         .map(|player| player.flowers.len())
         .unwrap_or(0);
     let enforce_minimum_eight_fan = round.rule_state.enforce_minimum_eight_fan;
+    let display_win_label = low_fan_display_win_label(enforce_minimum_eight_fan, fan_result);
 
     Ok(RoundSettlement {
         provisional: true,
         win_type: hu_context.to_string(),
         winner_seat: Some(winner_seat),
         discarder_seat,
-        display_win_label: low_fan_display_win_label(enforce_minimum_eight_fan, fan_result),
+        display_win_label: display_win_label.clone(),
         fan_total: fan_result.fan_total,
         fan_keys: fan_result.fan_keys.clone(),
         fan_breakdown: fan_result
@@ -127,6 +219,12 @@ pub fn compute_hu_settlement(
                 fan_value: entry.fan_value,
             })
             .collect(),
+        winning_details: vec![winning_detail_entry(
+            winner_seat,
+            display_win_label,
+            flower_count,
+            fan_result,
+        )],
         score_delta: SettlementScoreDelta {
             provisional: fan_result.score_delta.provisional,
             basic_points: fan_result.score_delta.basic_points,
@@ -237,25 +335,31 @@ pub fn apply_hu_settlement_output(
         Ok(())
     })?;
 
-    let first_event = if hu_context == "self_draw" {
-        round_event_message(
+    let winning_seats = settlement.winning_seats();
+    let first_events = if hu_context == "self_draw" {
+        vec![round_event_message(
             "self_hu_declared",
             json!({
                 "type": "self_hu_declared",
                 "seat": winner_seat,
                 "tile_id": winning_tile_id,
             }),
-        )
+        )]
     } else {
-        round_event_message(
-            "claim_made",
-            json!({
-                "type": "claim_made",
-                "seat": winner_seat,
-                "claim_type": "hu",
-                "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
-            }),
-        )
+        winning_seats
+            .iter()
+            .map(|winning_seat| {
+                round_event_message(
+                    "claim_made",
+                    json!({
+                        "type": "claim_made",
+                        "seat": winning_seat,
+                        "claim_type": "hu",
+                        "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
+                    }),
+                )
+            })
+            .collect()
     };
     let settlement_message = round_event_message(
         "settlement_ready",
@@ -265,21 +369,25 @@ pub fn apply_hu_settlement_output(
             "settlement": settlement_value,
         }),
     );
+    let mut events = winning_seats
+        .iter()
+        .map(|winning_seat| GameEvent::HuDeclared {
+            winner: *winning_seat,
+            source: if hu_context == "self_draw" {
+                "self_draw".to_string()
+            } else {
+                "discard".to_string()
+            },
+        })
+        .collect::<Vec<_>>();
+    events.push(GameEvent::SettlementPrepared {
+        settlement: settlement.clone(),
+    });
+    let mut emitted_messages = first_events;
+    emitted_messages.push(settlement_message);
     Ok(EngineOutput::new(
-        vec![
-            GameEvent::HuDeclared {
-                winner: winner_seat,
-                source: if hu_context == "self_draw" {
-                    "self_draw".to_string()
-                } else {
-                    "discard".to_string()
-                },
-            },
-            GameEvent::SettlementPrepared {
-                settlement: settlement.clone(),
-            },
-        ],
-        vec![first_event, settlement_message],
+        events,
+        emitted_messages,
     ))
 }
 
@@ -375,13 +483,14 @@ pub(crate) fn compute_hu_settlement_for_state(
         .map(|player| player.flowers.len())
         .unwrap_or(0);
     let enforce_minimum_eight_fan = round.rule_state.enforce_minimum_eight_fan;
+    let display_win_label = low_fan_display_win_label(enforce_minimum_eight_fan, fan_result);
 
     Ok(RoundSettlement {
         provisional: true,
         win_type: hu_context.to_string(),
         winner_seat: Some(winner_seat),
         discarder_seat,
-        display_win_label: low_fan_display_win_label(enforce_minimum_eight_fan, fan_result),
+        display_win_label: display_win_label.clone(),
         fan_total: fan_result.fan_total,
         fan_keys: fan_result.fan_keys.clone(),
         fan_breakdown: fan_result
@@ -392,6 +501,12 @@ pub(crate) fn compute_hu_settlement_for_state(
                 fan_value: entry.fan_value,
             })
             .collect(),
+        winning_details: vec![winning_detail_entry(
+            winner_seat,
+            display_win_label,
+            flower_count,
+            fan_result,
+        )],
         score_delta: SettlementScoreDelta {
             provisional: fan_result.score_delta.provisional,
             basic_points: fan_result.score_delta.basic_points,
@@ -471,28 +586,34 @@ pub fn apply_hu_settlement_output_in_room_state(
         }
     }
 
-    let first_event = if hu_context == "self_draw" {
-        round_event_message(
+    let winning_seats = settlement.winning_seats();
+    let first_events = if hu_context == "self_draw" {
+        vec![round_event_message(
             "self_hu_declared",
             json!({
                 "type": "self_hu_declared",
                 "seat": winner_seat,
                 "tile_id": winning_tile_id,
             }),
-        )
+        )]
     } else {
-        round_event_message(
-            "claim_made",
-            json!({
-                "type": "claim_made",
-                "seat": winner_seat,
-                "claim_type": "hu",
-                "tile_id": discarded_tile
-                    .as_ref()
-                    .map(|tile| Value::String(tile.tile_id.clone()))
-                    .unwrap_or(Value::Null),
-            }),
-        )
+        winning_seats
+            .iter()
+            .map(|winning_seat| {
+                round_event_message(
+                    "claim_made",
+                    json!({
+                        "type": "claim_made",
+                        "seat": winning_seat,
+                        "claim_type": "hu",
+                        "tile_id": discarded_tile
+                            .as_ref()
+                            .map(|tile| Value::String(tile.tile_id.clone()))
+                            .unwrap_or(Value::Null),
+                    }),
+                )
+            })
+            .collect()
     };
     let settlement_message = round_event_message(
         "settlement_ready",
@@ -502,21 +623,25 @@ pub fn apply_hu_settlement_output_in_room_state(
             "settlement": settlement.to_value(),
         }),
     );
+    let mut events = winning_seats
+        .iter()
+        .map(|winning_seat| GameEvent::HuDeclared {
+            winner: *winning_seat,
+            source: if hu_context == "self_draw" {
+                "self_draw".to_string()
+            } else {
+                "discard".to_string()
+            },
+        })
+        .collect::<Vec<_>>();
+    events.push(GameEvent::SettlementPrepared {
+        settlement: settlement.clone(),
+    });
+    let mut emitted_messages = first_events;
+    emitted_messages.push(settlement_message);
     Ok(EngineOutput::new(
-        vec![
-            GameEvent::HuDeclared {
-                winner: winner_seat,
-                source: if hu_context == "self_draw" {
-                    "self_draw".to_string()
-                } else {
-                    "discard".to_string()
-                },
-            },
-            GameEvent::SettlementPrepared {
-                settlement: settlement.clone(),
-            },
-        ],
-        vec![first_event, settlement_message],
+        events,
+        emitted_messages,
     ))
 }
 
@@ -760,10 +885,6 @@ fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use serde_json::Value;
-
     use super::{
         can_declare_hu_with_cache_for_state, compute_hu_settlement_for_state,
     };
