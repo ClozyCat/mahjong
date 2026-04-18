@@ -8,3 +8,4 @@ __pycache__/
 .superpowers/
 node_modules/
 .tmp/
+.pytest_cache/
