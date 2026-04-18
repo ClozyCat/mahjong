@@ -253,6 +253,7 @@ export function BattleScreen({
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
+              deadlineAt={viewModel.deadlineAt}
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
               players={viewModel.players}
@@ -283,6 +284,21 @@ export function BattleScreen({
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
             />
           </div>
+          <BottomActionDock
+            hand={viewModel.localHand}
+            readyHandInsight={viewModel.readyHandInsight}
+            claimCandidates={viewModel.claimCandidates}
+            actions={battleActions}
+            isElevated={viewModel.isActionDockElevated}
+            isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
+            promptCue={viewModel.promptCue}
+            deadlineAt={viewModel.deadlineAt}
+            onTileSelect={onTileSelect}
+            onTileDoubleClick={onTileDoubleClick}
+            onClaimCandidateSelect={onClaimCandidateSelect}
+            onClaimCandidateActivate={onClaimCandidateActivate}
+            onAction={handleAction}
+          />
           <AmbientOverlay
             mode={viewModel.mode}
             promptText={viewModel.promptText}
@@ -295,21 +311,6 @@ export function BattleScreen({
           {visibleResult ? <ResultOverlay result={visibleResult} onAction={onAction} /> : null}
         </div>
       </div>
-      <BottomActionDock
-        hand={viewModel.localHand}
-        readyHandInsight={viewModel.readyHandInsight}
-        claimCandidates={viewModel.claimCandidates}
-        actions={battleActions}
-        isElevated={viewModel.isActionDockElevated}
-        isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
-        promptCue={viewModel.promptCue}
-        deadlineAt={viewModel.deadlineAt}
-        onTileSelect={onTileSelect}
-        onTileDoubleClick={onTileDoubleClick}
-        onClaimCandidateSelect={onClaimCandidateSelect}
-        onClaimCandidateActivate={onClaimCandidateActivate}
-        onAction={handleAction}
-      />
     </main>
   );
 }

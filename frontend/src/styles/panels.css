@@ -612,7 +612,7 @@
 /* --- Center meta (positioned) --- */
 .table-stage__center-meta {
   position: absolute;
-  inset: 50% auto auto 50%;
+  inset: 41% auto auto 50%;
   transform: translate(-50%, -50%);
   display: grid;
   justify-items: center;
@@ -634,7 +634,7 @@
 .table-stage__action-pointer {
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: 41%;
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -720,7 +720,7 @@
 /* --- Lobby controls --- */
 .table-stage__lobby-controls {
   position: absolute;
-  top: 50%;
+  top: 41%;
   left: 50%;
   z-index: 5;
   display: grid;

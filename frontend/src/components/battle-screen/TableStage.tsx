@@ -28,6 +28,7 @@ interface TableStageProps {
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
+  deadlineAt?: string | null;
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
   players?: TableStagePlayer[];
@@ -79,6 +80,7 @@ export function TableStage({
   remainingTileCount = null,
   promptText,
   promptCue = null,
+  deadlineAt = null,
   actionEffect = null,
   quickChatEvent = null,
   players = [],
@@ -143,6 +145,9 @@ export function TableStage({
   const tableStageStyle = {
     '--table-stage-tile-scale': `${tileScale}`,
     '--table-stage-spotlight-scale': `${spotlightScale}`,
+    '--battle-hand-tile-width-base': 'clamp(1.38rem, 4.8vw, 3.25rem)',
+    '--battle-hand-tile-width': 'calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1))',
+    '--battle-hand-tile-height': 'calc(var(--battle-hand-tile-width) * 1.57)',
   } as CSSProperties;
 
   useEffect(() => {
@@ -283,7 +288,7 @@ export function TableStage({
 
   return (
     <section
-      className={`table-stage ${promptCue?.isUrgent ? 'table-stage--urgent' : ''}`}
+      className="table-stage"
       aria-label="Mahjong table"
       style={tableStageStyle}
     >
@@ -333,16 +338,7 @@ export function TableStage({
               </button>
             ) : null}
           </div>
-          <div
-            className={`table-stage__center-meta ${promptCue ? 'table-stage__center-meta--with-cue' : ''} ${
-              promptCue?.isUrgent ? 'table-stage__center-meta--urgent' : ''
-            }`}
-          >
-            {promptCue ? (
-              <span className={`table-stage__cue table-stage__cue--${promptCue.tone}`}>
-                {PROMPT_KIND_COPY[promptCue.kind]}
-              </span>
-            ) : null}
+          <div className="table-stage__center-meta">
             <strong>{centerPrimaryText}</strong>
             {promptText ? <em>{promptText}</em> : null}
           </div>
@@ -530,7 +526,7 @@ export function TableStage({
                           setOpenQuickChatSeat((currentSeat) => (currentSeat === seat ? null : seat));
                         }}
                       >
-                        <PlayerInfoBar player={player} />
+                        <PlayerInfoBar player={player} deadlineAt={deadlineAt} />
                       </button>
                       {openQuickChatSeat === seat ? (
                         <QuickChatMenu
@@ -555,6 +551,7 @@ export function TableStage({
               className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${
                 promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
               }`}
+              style={getSettlementCalloutStyle(spotlightSeat)}
               aria-label="Latest discard spotlight"
             >
               <MahjongTile
@@ -575,12 +572,6 @@ export function TableStage({
   );
 }
 
-const PROMPT_KIND_COPY: Record<NonNullable<TableStageProps['promptCue']>['kind'], string> = {
-  turn: '当前可操作',
-  claim: '可响应',
-  rob_kong: '抢杠',
-  turn_kong: '杠响应',
-};
 
 const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
   top: '对家手牌',
@@ -622,9 +613,9 @@ const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
 };
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string }> = {
   top: { left: '50%', top: '32%' },
-  bottom: { left: '50%', top: '68%' },
-  left: { left: '32%', top: '50%' },
-  right: { left: '68%', top: '50%' },
+  bottom: { left: '50%', top: '50%' },
+  left: { left: '32%', top: '41%' },
+  right: { left: '68%', top: '41%' },
 };
 
 type ActionCallout = {
@@ -940,7 +931,7 @@ function normalizeQuickChatText(value: string) {
 }
 
 function getSettlementCalloutStyle(seat: Seat | null = null): CSSProperties {
-  const position = seat ? SPOTLIGHT_POSITION_VARS[seat] : { left: '50%', top: '50%' };
+  const position = seat ? SPOTLIGHT_POSITION_VARS[seat] : { left: '50%', top: '41%' };
 
   return {
     '--table-stage-action-callout-duration': SETTLEMENT_CALLOUT_DURATION_CSS,

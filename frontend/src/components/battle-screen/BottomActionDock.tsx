@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import type {
   BackendActionType,
@@ -42,16 +41,12 @@ export function BottomActionDock({
   onClaimCandidateActivate,
   onAction,
 }: BottomActionDockProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [isReadyHandPopoverHovered, setIsReadyHandPopoverHovered] = useState(false);
   const [isReadyHandPopoverPinned, setIsReadyHandPopoverPinned] = useState(false);
   const readyHandPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
   const hasDrawnTile = hand.some((tile) => tile.isDrawn || tile.isReplacementDrawn);
   const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
-  const dockLabel = '手牌区';
-  const portalTarget = typeof document !== 'undefined' ? document.body : null;
   const dockStyle = {
     '--action-dock-hand-count': `${handCount}`,
     '--action-dock-effective-hand-count': `${Math.max(handCount, 1)}`,
@@ -78,28 +73,8 @@ export function BottomActionDock({
         (ACTION_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER),
     );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
-  const shouldShowCountdown = Boolean(promptCue) && remainingSeconds !== null;
   const isReadyHandPopoverOpen =
     Boolean(readyHandInsight) && (isReadyHandPopoverHovered || isReadyHandPopoverPinned);
-
-  useEffect(() => {
-    if (!deadlineAt) {
-      setRemainingSeconds(null);
-      return;
-    }
-
-    const update = () => {
-      const nextRemaining = Math.max(0, Math.ceil((new Date(deadlineAt).getTime() - Date.now()) / 1000));
-      setRemainingSeconds(nextRemaining);
-    };
-
-    update();
-    const timer = window.setInterval(update, 250);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [deadlineAt]);
 
   useEffect(() => {
     if (!isReadyHandPopoverPinned) {
@@ -161,160 +136,125 @@ export function BottomActionDock({
   ) : null;
 
   const content = (
-    <>
-      {!isCollapsed ? (
-        <section
-          className={`action-dock ${shouldElevateDock ? 'action-dock--elevated' : ''}`}
-          data-testid="action-dock"
-          data-elevated={shouldElevateDock}
-          style={dockStyle}
-        >
-          {visibleActions.length > 0 ? (
-            <div className="action-dock__response-stack">
-              {claimCandidates.length > 0 ? (
-                <div className="action-dock__claim-candidates" aria-label="可选吃碰杠组合">
-                  {claimCandidates.map((candidate, index) => (
-                    <button
-                      key={candidate.key}
-                      type="button"
-                      className={`action-dock__claim-candidate action-dock__claim-candidate--${candidate.actionId} ${
-                        candidate.isSelected ? 'action-dock__claim-candidate--selected' : ''
-                      }`.trim()}
-                      aria-label={`${candidate.actionLabel}候选组合 ${index + 1}`}
-                      aria-pressed={candidate.isSelected}
-                      onClick={() => onClaimCandidateSelect(candidate.actionId, candidate.tileIds)}
-                      onDoubleClick={() => onClaimCandidateActivate(candidate.actionId, candidate.tileIds)}
-                    >
-                      <span className="action-dock__claim-candidate-badge">{candidate.actionLabel}</span>
-                      <span className="action-dock__claim-candidate-strip">
-                        {candidate.tiles.map((tile, tileIndex) => (
-                          <MahjongTile
-                            key={`${candidate.key}-${tile.source}-${tile.code}-${tileIndex}`}
-                            code={tile.code}
-                            variant="discard"
-                            className={`action-dock__claim-preview-tile ${
-                              tile.source === 'claim' ? 'action-dock__claim-preview-tile--claim' : ''
-                            }`.trim()}
-                          />
-                        ))}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="action-dock__actions" aria-label="即时操作按钮">
-                {visibleActions.map((action) => {
-                  const isPassAction = action.id === 'pass';
-                  const isHuAction = action.id === 'hu';
-                  const actionEffectClass = getActionEffectClass(action.id);
-
-                  return (
-                    <button
-                      key={action.id}
-                      type="button"
-                      className={`action-dock__action action-dock__action--response ${
-                        isPassAction ? 'action-dock__action--passive' : ''
-                      } ${
-                        isHuAction ? 'action-dock__action--hu-burn' : ''
-                      } ${
-                        actionEffectClass
-                      }`.trim()}
-                      onClick={() => onAction(action.id)}
-                    >
-                      <span className="action-dock__action-label">{action.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+    <section
+      className={`action-dock ${shouldElevateDock ? 'action-dock--elevated' : ''}`}
+      data-testid="action-dock"
+      data-elevated={shouldElevateDock}
+      style={dockStyle}
+    >
+      {visibleActions.length > 0 ? (
+        <div className="action-dock__response-stack">
+          {claimCandidates.length > 0 ? (
+            <div className="action-dock__claim-candidates" aria-label="可选吃碰杠组合">
+              {claimCandidates.map((candidate, index) => (
+                <button
+                  key={candidate.key}
+                  type="button"
+                  className={`action-dock__claim-candidate action-dock__claim-candidate--${candidate.actionId} ${
+                    candidate.isSelected ? 'action-dock__claim-candidate--selected' : ''
+                  }`.trim()}
+                  aria-label={`${candidate.actionLabel}候选组合 ${index + 1}`}
+                  aria-pressed={candidate.isSelected}
+                  onClick={() => onClaimCandidateSelect(candidate.actionId, candidate.tileIds)}
+                  onDoubleClick={() => onClaimCandidateActivate(candidate.actionId, candidate.tileIds)}
+                >
+                  <span className="action-dock__claim-candidate-badge">{candidate.actionLabel}</span>
+                  <span className="action-dock__claim-candidate-strip">
+                    {candidate.tiles.map((tile, tileIndex) => (
+                      <MahjongTile
+                        key={`${candidate.key}-${tile.source}-${tile.code}-${tileIndex}`}
+                        code={tile.code}
+                        variant="discard"
+                        className={`action-dock__claim-preview-tile ${
+                          tile.source === 'claim' ? 'action-dock__claim-preview-tile--claim' : ''
+                        }`.trim()}
+                      />
+                    ))}
+                  </span>
+                </button>
+              ))}
             </div>
           ) : null}
-          <div className="action-dock__tableau action-dock__tableau--full">
-            <div className="action-dock__hand-zone">
-              {hand.length > 0 ? (
-                <div className="action-dock__hand" aria-label="Local hand">
-                  {hand.map((tile, index) => (
-                    <button
-                      key={`${tile.tileId}-${index}`}
-                      type="button"
-                      className={[
-                        'action-dock__tile',
-                        tile.isSelected ? 'action-dock__tile--selected' : '',
-                        tile.isDrawn ? 'action-dock__tile--drawn' : '',
-                        tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
-                        tile.isDisabled ? 'action-dock__tile--disabled' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      disabled={tile.isDisabled}
-                      aria-label={tile.isDisabled ? `${tile.code} 当前回合禁止打出` : undefined}
-                      onClick={(event) => {
-                        if (event.detail > 1) {
-                          return;
-                        }
+          <div className="action-dock__actions" aria-label="即时操作按钮">
+            {visibleActions.map((action) => {
+              const isPassAction = action.id === 'pass';
+              const isHuAction = action.id === 'hu';
+              const actionEffectClass = getActionEffectClass(action.id);
 
-                        onTileSelect(tile.tileId);
-                      }}
-                      onDoubleClick={() => onTileDoubleClick(tile.tileId)}
-                    >
-                      <MahjongTile
-                        code={tile.code}
-                        variant="hand"
-                        isSelected={tile.isSelected}
-                        isDrawn={tile.isDrawn}
-                        isDisabled={tile.isDisabled}
-                      />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>
-              )}
-            </div>
-            <div className="action-dock__info-rail">
-              {readyHandControl || shouldShowCountdown ? (
-                <div className="action-dock__status-group">
-                  {shouldShowCountdown ? (
-                    <div
-                      className={`action-dock__countdown ${remainingSeconds <= 3 ? 'action-dock__countdown--critical' : ''}`}
-                      aria-label={`剩余 ${remainingSeconds} 秒`}
-                    >
-                      <div className="action-dock__countdown-head">
-                        {readyHandControl}
-                        <span>倒计时</span>
-                      </div>
-                      <strong>{remainingSeconds}</strong>
-                    </div>
-                  ) : (
-                    <div className="action-dock__status-group-standalone">{readyHandControl}</div>
-                  )}
-                </div>
-              ) : null}
-              <button
-                type="button"
-                className="action-dock__action action-dock__action--medium action-dock__action--collapse"
-                aria-label={`收起${dockLabel}`}
-                onClick={() => setIsCollapsed(true)}
-              >
-                收起
-              </button>
-            </div>
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  className={`action-dock__action action-dock__action--response ${
+                    isPassAction ? 'action-dock__action--passive' : ''
+                  } ${
+                    isHuAction ? 'action-dock__action--hu-burn' : ''
+                  } ${
+                    actionEffectClass
+                  }`.trim()}
+                  onClick={() => onAction(action.id)}
+                >
+                  <span className="action-dock__action-label">{action.label}</span>
+                </button>
+              );
+            })}
           </div>
-        </section>
+        </div>
       ) : null}
-      {isCollapsed ? (
-        <button
-          type="button"
-          className="action-dock__restore"
-          aria-label={`展开${dockLabel}`}
-          onClick={() => setIsCollapsed(false)}
-        >
-          展开手牌区
-        </button>
-      ) : null}
-    </>
+      <div className="action-dock__tableau action-dock__tableau--full">
+        <div className="action-dock__hand-zone">
+          {hand.length > 0 ? (
+            <div className="action-dock__hand" aria-label="Local hand">
+              {hand.map((tile, index) => (
+                <button
+                  key={`${tile.tileId}-${index}`}
+                  type="button"
+                  className={[
+                    'action-dock__tile',
+                    tile.isSelected ? 'action-dock__tile--selected' : '',
+                    tile.isDrawn ? 'action-dock__tile--drawn' : '',
+                    tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
+                    tile.isDisabled ? 'action-dock__tile--disabled' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  disabled={tile.isDisabled}
+                  aria-label={tile.isDisabled ? `${tile.code} 当前回合禁止打出` : undefined}
+                  onClick={(event) => {
+                    if (event.detail > 1) {
+                      return;
+                    }
+
+                    onTileSelect(tile.tileId);
+                  }}
+                  onDoubleClick={() => onTileDoubleClick(tile.tileId)}
+                >
+                  <MahjongTile
+                    code={tile.code}
+                    variant="hand"
+                    isSelected={tile.isSelected}
+                    isDrawn={tile.isDrawn}
+                    isDisabled={tile.isDisabled}
+                  />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>
+          )}
+          <div className="action-dock__info-rail">
+            {readyHandControl ? (
+              <div className="action-dock__status-group">
+                <div className="action-dock__status-group-standalone">{readyHandControl}</div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 
-  return portalTarget ? createPortal(content, portalTarget) : content;
+  return content;
 }
 
 const WAITING_HAND_PLACEHOLDER_COUNT = 13;
