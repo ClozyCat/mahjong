@@ -1144,7 +1144,8 @@ button:active:not(:disabled) {
 }
 
 .table-stage__action-callout--active {
-  animation: table-stage-action-callout-fade var(--table-stage-action-callout-duration, 3000ms) cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  /* 从默认的 3000ms 大幅缩短至 1200ms，快速反馈后即刻消失 */
+  animation: table-stage-action-callout-fade var(--table-stage-action-callout-duration, 1200ms) var(--ease-snap) forwards;
 }
 
 .table-stage__action-callout--exit {
@@ -1159,10 +1160,11 @@ button:active:not(:disabled) {
   padding: 0;
   border: 0;
   background: transparent;
+  /* 从 0.4s 加速到 0.2s，使用硬挺的 snap 曲线 */
   transition:
-    transform 0.4s var(--ease-spring),
-    filter 0.4s var(--ease-lux),
-    opacity 0.3s var(--ease-lux);
+    transform 0.2s var(--ease-snap),
+    filter 0.2s var(--ease-lux),
+    opacity 0.2s var(--ease-lux);
 }
 
 .mahjong-tile--hand {
@@ -1243,32 +1245,25 @@ button:active:not(:disabled) {
 
 @keyframes tile-drop-slam {
   0% { 
-    transform: translateY(-3.5rem) scale(1.25) rotateX(15deg) rotateY(5deg);
+    transform: translateY(-2.5rem) scale(1.1) rotateX(15deg);
     opacity: 0; 
-    filter: drop-shadow(8px 24px 12px rgba(0, 0, 0, 0.3)); 
+    filter: drop-shadow(0 16px 12px rgba(0, 0, 0, 0.3)); 
   }
-  25% { 
-    transform: translateY(0.1rem) scale(0.95) rotateX(0) rotateY(0); 
+  60% { 
+    transform: translateY(0.1rem) scale(0.98) rotateX(0); 
     opacity: 1; 
     filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5)); 
   }
-  50% { 
-    transform: translateY(-0.6rem) scale(1.02); 
-    filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.2)); 
-  }
-  75% { 
-    transform: translateY(0.05rem) scale(0.99); 
-    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); 
-  }
   100% { 
-    transform: translateY(-0.04rem) scale(1); 
+    transform: translateY(0) scale(1); 
     filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); 
   }
 }
 
 .mahjong-tile--last-discard {
-  transform: translateY(-0.04rem);
-  animation: tile-drop-slam-premium 0.5s var(--ease-spring) forwards;
+  transform: translateY(0);
+  /* 动画时间从 0.5s 缩短到 0.25s */
+  animation: tile-drop-slam-premium 0.25s var(--ease-snap) forwards;
   z-index: 10;
 }
 
@@ -1816,11 +1811,8 @@ button:active:not(:disabled) {
 
 @keyframes action-dock-drawn-pop {
   0% { 
-    transform: translate(1.5rem, 3rem) scale(0.85) rotateZ(12deg); 
+    transform: translate(1rem, 2rem) scale(0.9) rotateZ(8deg); 
     opacity: 0; 
-  }
-  40% { 
-    opacity: 1; 
   }
   100% { 
     transform: translate(0, 0) scale(1) rotateZ(0); 
@@ -1830,26 +1822,24 @@ button:active:not(:disabled) {
 
 .action-dock__tile--drawn {
   margin-left: var(--action-dock-drawn-gap-extra);
-  animation: action-dock-drawn-pop 0.45s cubic-bezier(0.34, 1.25, 0.64, 1) forwards;
+  /* 0.45s 降至 0.25s，并使用干净的缓动 */
+  animation: action-dock-drawn-pop 0.25s var(--ease-snap) forwards;
 }
 
 @keyframes action-dock-replacement-pop {
   0% { 
-    transform: translate(0, -3rem) scale(0.9) rotateZ(0); 
+    transform: translate(0, -2rem) scale(0.9); 
     opacity: 0; 
   }
-  30% { 
-    opacity: 1; 
-  }
   100% { 
-    transform: translate(0, 0) scale(1) rotateZ(0); 
+    transform: translate(0, 0) scale(1); 
     opacity: 1; 
   }
 }
 
 .action-dock__tile--replacement-drawn {
   margin-left: var(--action-dock-drawn-gap-extra);
-  animation: action-dock-replacement-pop 0.5s cubic-bezier(0.34, 1.25, 0.64, 1) forwards;
+  animation: action-dock-replacement-pop 0.25s var(--ease-snap) forwards;
 }
 
 .action-dock__tile--selected {
@@ -2869,12 +2859,12 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 10px 24px rgba(0, 8, 20, 0.24);
-  transition:
-    transform 0.3s var(--ease-spring),
-    border-color 0.3s var(--ease-lux),
-    background-color 0.3s var(--ease-lux),
-    box-shadow 0.4s var(--ease-lux),
-    opacity 0.3s var(--ease-lux);
+transition:
+    transform 0.15s var(--ease-snap),
+    border-color 0.15s var(--ease-lux),
+    background-color 0.15s var(--ease-lux),
+    box-shadow 0.2s var(--ease-lux),
+    opacity 0.15s var(--ease-lux);
 }
 
 button:hover:not(:disabled) {
@@ -3769,25 +3759,24 @@ input {
 @keyframes table-stage-action-callout-fade {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(3);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.8);
     filter: blur(4px);
   }
   15% {
     opacity: 1;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(0.9);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(0.95);
     filter: blur(0);
   }
   25% {
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.05);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1);
   }
-  35%,
-  85% {
+  80% {
     opacity: 1;
     transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 1rem)) scale(0.9);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), calc(var(--spotlight-offset-y) - 0.5rem)) scale(0.95);
   }
 }
 
@@ -7566,34 +7555,31 @@ input {
    ========================================= */
 
 :root {
-  /* 引入丝滑的贝塞尔曲线：更有物理阻尼感，起步快，收尾柔和 */
+  /* 丝滑的贝塞尔曲线：用于透明度、发光等渐变 */
   --ease-lux: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 带有轻微回弹感 */
   
-  /* 多层阴影设计，增加空间的深邃感，取代单一的生硬阴影 */
-  --shadow-premium-soft: 
-    0 2px 8px -2px rgba(0, 0, 0, 0.12), 
-    0 12px 32px -4px rgba(0, 0, 0, 0.25);
-  --shadow-premium-hard: 
-    0 4px 12px rgba(0, 0, 0, 0.2), 
-    0 24px 64px rgba(0, 0, 0, 0.4);
+  /* 竞技化微回弹：保留极少的反馈感，不拖泥带水 */
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.3, 1.1); 
+  
+  /* 极速吸附：用于打牌、摸牌、选中，极其干脆 */
+  --ease-snap: cubic-bezier(0.2, 1, 0.2, 1); 
+  
+  /* 保留你原有的阴影设计... */
+  --shadow-premium-soft: 0 2px 8px -2px rgba(0, 0, 0, 0.12), 0 12px 32px -4px rgba(0, 0, 0, 0.25);
+  --shadow-premium-hard: 0 4px 12px rgba(0, 0, 0, 0.2), 0 24px 64px rgba(0, 0, 0, 0.4);
 }
 
 /* 打出牌的动画重写：更有力量感和落桌的清脆感 */
 @keyframes tile-drop-slam-premium {
   0% { 
-    transform: translateY(-4rem) scale(1.15) rotateX(20deg);
+    transform: translateY(-3rem) scale(1.15) rotateX(20deg);
     opacity: 0; 
-    filter: drop-shadow(0 32px 24px rgba(0, 0, 0, 0.4)); 
+    filter: drop-shadow(0 24px 16px rgba(0, 0, 0, 0.4)); 
   }
-  40% { 
+  60% { 
     transform: translateY(0.15rem) scale(0.98) rotateX(-2deg); 
     opacity: 1; 
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6)); 
-  }
-  70% { 
-    transform: translateY(-0.3rem) scale(1.01); 
-    filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.2)); 
   }
   100% { 
     transform: translateY(0) scale(1); 
@@ -7615,12 +7601,11 @@ input {
 }
 
 
-/* 结算页面、技能选择页面的全局淡入 + 上浮 */
 @keyframes overlay-fade-in-up {
   0% {
     opacity: 0;
-    transform: translateY(1.5rem) scale(0.98);
-    filter: blur(8px);
+    transform: translateY(1rem) scale(0.98);
+    filter: blur(6px);
   }
   100% {
     opacity: 1;
@@ -7633,3 +7618,17 @@ input {
 .result-overlay__seat-row:nth-child(2) { animation-delay: 0.15s; }
 .result-overlay__seat-row:nth-child(3) { animation-delay: 0.2s; }
 .result-overlay__seat-row:nth-child(4) { animation-delay: 0.25s; }
+
+
+/* 修改所有应用该动画的面板，从 0.6s 缩减到 0.35s */
+.connect-gate__panel, 
+.result-overlay__card, 
+.skill-selection-overlay__panel {
+  animation: overlay-fade-in-up 0.35s var(--ease-lux) forwards;
+}
+
+/* 结算列表连带动画缩短延迟时间 */
+.result-overlay__seat-row:nth-child(1) { animation-delay: 0.05s; }
+.result-overlay__seat-row:nth-child(2) { animation-delay: 0.08s; }
+.result-overlay__seat-row:nth-child(3) { animation-delay: 0.11s; }
+.result-overlay__seat-row:nth-child(4) { animation-delay: 0.14s; }
