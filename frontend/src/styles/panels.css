@@ -890,9 +890,8 @@
   --result-overlay-neutral-fill: color-mix(in srgb, var(--accent-2) 10%, transparent);
   pointer-events: auto;
   position: relative;
-  width: min(54rem, calc(100vw / var(--result-overlay-dynamic-scale, 1) - 2rem));
-  max-height: calc(100vh / var(--result-overlay-dynamic-scale, 1) - 3rem);
-  overflow-y: auto;
+  width: min(54rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   padding: 1.1rem 1.15rem 1rem;
   border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   border-radius: 1.6rem;

@@ -5,6 +5,7 @@ import type {
   ActionEffectView,
   BattleActionView,
   BattlePromptView,
+  PlayerView,
   QuickChatEmoji,
   QuickChatEventView,
   Seat,
@@ -583,7 +584,7 @@ export function TableStage({
                     </div>
                   ) : null}
                   <div className={`table-stage__seat-watermark table-stage__seat-watermark--${seat}`} aria-hidden="true">
-                    {WIND_COPY[seat]}
+                    {player?.wind ? WIND_NAME_TO_CHAR[player.wind] : WIND_COPY[seat]}
                   </div>
                   {player ? (
                     <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
@@ -611,6 +612,8 @@ export function TableStage({
             {isQuickChatOpen ? (
               <QuickChatMenu
                 seat="bottom"
+                playerName={players.find((player) => player.isLocal)?.name ?? '本家'}
+                isLocalTarget
                 onSelect={(emoji) => {
                   const localPlayer = players.find((p) => p.isLocal);
                   if (localPlayer && typeof localPlayer.absoluteSeat === 'number') {
@@ -665,6 +668,13 @@ const WIND_COPY: Record<Seat, string> = {
   right: '南',
   top: '西',
   left: '北',
+};
+
+const WIND_NAME_TO_CHAR: Record<string, string> = {
+  East: '东',
+  South: '南',
+  West: '西',
+  North: '北',
 };
 
 const ACTION_CALLOUT_COPY = {
@@ -770,6 +780,8 @@ interface ActionCalloutMarkerProps {
 
 interface QuickChatMenuProps {
   seat: Seat;
+  playerName: string;
+  isLocalTarget?: boolean;
   onSelect: (emoji: QuickChatEmoji) => void;
 }
 
@@ -799,7 +811,7 @@ function SettlementCenterCallout({ label }: { label: string }) {
   );
 }
 
-function QuickChatMenu({ seat, onSelect }: QuickChatMenuProps) {
+function QuickChatMenu({ seat, playerName, isLocalTarget = false, onSelect }: QuickChatMenuProps) {
   const menuId = `table-stage-quick-chat-${seat}`;
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -828,7 +840,7 @@ function QuickChatMenu({ seat, onSelect }: QuickChatMenuProps) {
       id={menuId}
       className={`table-stage__quick-chat-menu table-stage__quick-chat-menu--${seat}`}
       role="menu"
-      aria-label={`${player.name} 快捷表情`}
+      aria-label={`${playerName} 快捷表情`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
@@ -878,7 +890,7 @@ function QuickChatMenu({ seat, onSelect }: QuickChatMenuProps) {
             ref={inputRef}
             type="text"
             className="table-stage__quick-chat-input"
-            aria-label={`${isLocalTarget ? '输入' : `向${player.name}发送`}快捷文字`}
+            aria-label={`${isLocalTarget ? '输入' : `向${playerName}发送`}快捷文字`}
             placeholder="输入文字"
             value={draft}
             onChange={(event) => setDraft(clampQuickChatText(event.target.value))}

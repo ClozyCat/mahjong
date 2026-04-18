@@ -39,6 +39,7 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
     placement: 'left' | 'right';
     arrowTop: number;
   } | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const scorePanelRef = useRef<HTMLDivElement | null>(null);
   const fanGuidePopoverRef = useRef<HTMLDivElement | null>(null);
   const seatStatsPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -246,24 +247,56 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
   }, [activeSeatStats]);
 
   useLayoutEffect(() => {
-    const handleResize = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+    if (typeof window === 'undefined' || isCollapsed) {
+      return undefined;
+    }
 
-      const targetW = 900;
-      const targetH = 700;
+    let animationFrameId = 0;
 
-      const scaleW = w < targetW ? (w - 32) / targetW : 1;
-      const scaleH = h < targetH ? (h - 32) / targetH : 1;
+    const updateScale = () => {
+      const cardElement = cardRef.current;
+      if (!cardElement) {
+        return;
+      }
 
-      const nextScale = Math.max(0.55, Math.min(scaleW, scaleH, 1.1));
-      setDynamicScale(nextScale);
+      const availableWidth = Math.max(window.innerWidth - 32, 1);
+      const availableHeight = Math.max(window.innerHeight - 32, 1);
+      const baseWidth = Math.max(cardElement.offsetWidth, 1);
+      const baseHeight = Math.max(cardElement.offsetHeight, 1);
+      const nextScale = Math.max(
+        0.55,
+        Math.min(availableWidth / baseWidth, availableHeight / baseHeight, 1),
+      );
+
+      setDynamicScale((currentScale) =>
+        Math.abs(currentScale - nextScale) < 0.01 ? currentScale : nextScale,
+      );
     };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    const requestScaleUpdate = () => {
+      window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(updateScale);
+    };
+
+    requestScaleUpdate();
+    const cardElement = cardRef.current;
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' || !cardElement
+        ? null
+        : new ResizeObserver(requestScaleUpdate);
+
+    if (resizeObserver && cardElement) {
+      resizeObserver.observe(cardElement);
+    }
+    window.addEventListener('resize', requestScaleUpdate);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', requestScaleUpdate);
+    };
+  }, [isCollapsed, result, settlementHands, activeResultPageIndex, fanMeta, hasFanPanel]);
 
   useEffect(() => {
     return () => {
@@ -443,7 +476,7 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
         aria-label="Match settlement result"
         style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
       >
-        <div className="result-overlay__card">
+        <div ref={cardRef} className="result-overlay__card">
           <div className="result-overlay__header">
             <div className="result-overlay__heading">
               <span className="result-overlay__eyebrow">结算面板</span>
