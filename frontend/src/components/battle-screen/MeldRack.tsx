@@ -13,9 +13,17 @@ interface MeldRackProps {
   ariaLabel: string;
   emptyLabel?: string | null;
   collapsible?: boolean;
+  selectedTileCode?: string | null;
 }
 
-export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsible = false }: MeldRackProps) {
+export function MeldRack({
+  seat,
+  melds,
+  ariaLabel,
+  emptyLabel = null,
+  collapsible = false,
+  selectedTileCode = null,
+}: MeldRackProps) {
   const hasMelds = melds.length > 0;
   const rackRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -109,6 +117,7 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
                         code={tile.code}
                         variant="discard"
                         isFaceDown={tile.orientation === 'face_down'}
+                        relatedTileCode={selectedTileCode}
                         className={
                           isSourcedTile
                             ? 'meld-rack__tile-face--sourced'

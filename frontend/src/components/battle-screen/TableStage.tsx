@@ -20,6 +20,7 @@ export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
+  selectedTileCode?: string | null;
   activeSeat: Seat;
   actionIndicatorSeat?: Seat | null;
   lastDiscard: string | null;
@@ -72,6 +73,7 @@ const SETTLEMENT_HAND_COLUMN_COUNT: Record<Seat, number> = {
 
 export function TableStage({
   discards,
+  selectedTileCode = null,
   activeSeat,
   actionIndicatorSeat = null,
   lastDiscard,
@@ -521,6 +523,7 @@ export function TableStage({
                                 code={tile}
                                 variant="discard"
                                 isLastDiscard={isLastDiscard}
+                                relatedTileCode={selectedTileCode}
                               />
                             );
                           })}
@@ -539,6 +542,7 @@ export function TableStage({
                           seat={seat}
                           melds={player.melds}
                           ariaLabel={`${player.name} melds`}
+                          selectedTileCode={selectedTileCode}
                         />
                       </div>
                     ) : null}
@@ -574,6 +578,7 @@ export function TableStage({
                               code={cell.tile}
                               variant="discard"
                               isLastDiscard={cell.index === settlementWinningTileIndex}
+                              relatedTileCode={selectedTileCode}
                               className="table-stage__settlement-hand-tile"
                             />
                           ),
@@ -624,6 +629,7 @@ export function TableStage({
                 code={spotlightTile}
                 variant="discard"
                 isLastDiscard
+                relatedTileCode={selectedTileCode}
                 className="table-stage__spotlight-tile"
               />
             </div>
@@ -787,6 +793,27 @@ interface CenterIndicatorProps {
   isAmbiguous?: boolean;
 }
 
+const POINTER_ROTATION_BY_SEAT: Record<Seat, number> = {
+  bottom: 0,
+  right: -90,
+  top: 180,
+  left: 90,
+};
+
+function resolveShortestPointerRotation(previousRotation: number, actionSeat: Seat): number {
+  let nextRotation = POINTER_ROTATION_BY_SEAT[actionSeat];
+
+  while (nextRotation - previousRotation > 180) {
+    nextRotation -= 360;
+  }
+
+  while (nextRotation - previousRotation < -180) {
+    nextRotation += 360;
+  }
+
+  return nextRotation;
+}
+
 function CenterIndicator({
   remainingCount,
   actionSeat,
@@ -796,16 +823,15 @@ function CenterIndicator({
   const radius = 34; // Smaller radius to fit pointer outside
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - countdownPercent * circumference;
+  const [pointerRotation, setPointerRotation] = useState(() => (actionSeat ? POINTER_ROTATION_BY_SEAT[actionSeat] : 0));
 
-  // Rotation angles for pointer (0 is bottom)
-  const rotationMap: Record<Seat, number> = {
-    bottom: 0,
-    right: -90,
-    top: 180,
-    left: 90,
-  };
+  useEffect(() => {
+    if (!actionSeat) {
+      return;
+    }
 
-  const pointerRotation = actionSeat ? rotationMap[actionSeat] : 0;
+    setPointerRotation((previousRotation) => resolveShortestPointerRotation(previousRotation, actionSeat));
+  }, [actionSeat]);
 
   return (
     <div className="table-stage__center-indicator" aria-label="游戏进度指示器">

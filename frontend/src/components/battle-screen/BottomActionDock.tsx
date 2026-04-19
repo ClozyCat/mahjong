@@ -12,6 +12,7 @@ import { MahjongTile } from './MahjongTile';
 
 interface BottomActionDockProps {
   hand: BattleViewModel['localHand'];
+  selectedTileCode?: string | null;
   readyHandInsight?: BattleViewModel['readyHandInsight'];
   claimCandidates: BattleViewModel['claimCandidates'];
   actions: BattleActionView[];
@@ -28,6 +29,7 @@ interface BottomActionDockProps {
 
 export function BottomActionDock({
   hand,
+  selectedTileCode = null,
   readyHandInsight = null,
   claimCandidates,
   actions,
@@ -124,7 +126,12 @@ export function BottomActionDock({
             {readyHandInsight.waits.map((wait) => (
               <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
                 <div className="action-dock__ready-hand-tile">
-                  <MahjongTile code={wait.code} variant="discard" className="action-dock__ready-hand-preview-tile" />
+                  <MahjongTile
+                    code={wait.code}
+                    variant="discard"
+                    relatedTileCode={selectedTileCode}
+                    className="action-dock__ready-hand-preview-tile"
+                  />
                 </div>
                 <strong>{wait.availableCount}</strong>
               </div>
@@ -165,6 +172,7 @@ export function BottomActionDock({
                         key={`${candidate.key}-${tile.source}-${tile.code}-${tileIndex}`}
                         code={tile.code}
                         variant="discard"
+                        relatedTileCode={selectedTileCode}
                         className={`action-dock__claim-preview-tile ${
                           tile.source === 'claim' ? 'action-dock__claim-preview-tile--claim' : ''
                         }`.trim()}
@@ -235,6 +243,7 @@ export function BottomActionDock({
                     isSelected={tile.isSelected}
                     isDrawn={tile.isDrawn}
                     isDisabled={tile.isDisabled}
+                    relatedTileCode={selectedTileCode}
                   />
                 </button>
               ))}

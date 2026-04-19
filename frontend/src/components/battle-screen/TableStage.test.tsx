@@ -309,6 +309,28 @@ describe('TableStage', () => {
     expect(pointer?.getAttribute('transform')).toBe(expectedTransform);
   });
 
+  it('keeps the center indicator pointer on the shortest counterclockwise path when moving from right to top', () => {
+    const props = {
+      discards: {
+        top: [],
+        left: [],
+        right: [],
+        bottom: [],
+      },
+      activeSeat: 'bottom' as const,
+      lastDiscard: null,
+      promptText: null,
+    };
+
+    const { container, rerender } = render(<TableStage {...props} actionIndicatorSeat="right" />);
+
+    rerender(<TableStage {...props} actionIndicatorSeat="top" />);
+
+    const pointer = container.querySelector('.table-stage__center-indicator-pointer');
+    expect(pointer).not.toBeNull();
+    expect(pointer?.getAttribute('transform')).toBe('rotate(-180 50 50)');
+  });
+
   it('renders player info bars on the table and reuses the same accent on the spotlight seat', () => {
     const { container } = render(
       <TableStage

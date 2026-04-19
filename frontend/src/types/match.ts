@@ -536,6 +536,7 @@ export interface BattleViewModel {
   actions: BattleActionView[];
   waitingControls: WaitingControls | null;
   discards: Record<Seat, string[]>;
+  selectedTileCode?: string | null;
   localHand: LocalTileView[];
   readyHandInsight: ReadyHandInsightView | null;
   claimCandidates: ClaimCandidateView[];

@@ -385,7 +385,7 @@
   left: 50%;
   top: 0;
   z-index: 2;
-  transform: translate(-50%, calc(-100% - 0.32rem));
+  transform: translate(-50%, calc(-100% - 0.88rem));
   display: grid;
   justify-items: center;
   gap: 0.46rem;
@@ -794,7 +794,7 @@
 }
 
 .action-dock__claim-candidate {
-  --claim-candidate-tint: var(--accent-3);
+  --claim-candidate-tint: var(--accent);
   display: inline-flex;
   align-items: center;
   gap: 0.64rem;
@@ -816,18 +816,6 @@
     transform 140ms ease,
     border-color 140ms ease,
     box-shadow 140ms ease;
-}
-
-.action-dock__claim-candidate--kong {
-  --claim-candidate-tint: #D4AF37; /* Royal Gold */
-}
-
-.action-dock__claim-candidate--pung {
-  --claim-candidate-tint: #0F52BA; /* Sapphire Blue */
-}
-
-.action-dock__claim-candidate--chow {
-  --claim-candidate-tint: #00A86B; /* Jade Green */
 }
 
 .action-dock__claim-candidate:hover:not(:disabled) {

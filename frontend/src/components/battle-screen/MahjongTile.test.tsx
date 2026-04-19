@@ -53,4 +53,14 @@ describe('MahjongTile', () => {
 
     expect(screen.getByTestId('mahjong-tile')).toHaveClass('mahjong-tile--selected', 'mahjong-tile--drawn');
   });
+
+  it('adds the related highlight only to matching non-hand tiles', () => {
+    const { rerender } = render(<MahjongTile code="w2" variant="discard" relatedTileCode="w2" />);
+
+    expect(screen.getByTestId('mahjong-tile')).toHaveClass('mahjong-tile--related-highlight');
+
+    rerender(<MahjongTile code="w2" variant="hand" relatedTileCode="w2" />);
+
+    expect(screen.getByTestId('mahjong-tile')).not.toHaveClass('mahjong-tile--related-highlight');
+  });
 });

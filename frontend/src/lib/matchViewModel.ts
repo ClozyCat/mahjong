@@ -730,6 +730,19 @@ function createDiscards(state: SessionState): Record<Seat, string[]> {
   return empty;
 }
 
+function createSelectedTileCode(state: SessionState) {
+  if (state.selectionMode !== 'single' || state.selectedTileIds.length !== 1) {
+    return null;
+  }
+
+  const localSeat = getLocalSeat(state);
+  const localPlayer = findPrivatePlayer(state, localSeat);
+  const selectedTileId = state.selectedTileIds[0];
+  const selectedTile = (localPlayer?.concealed_tiles ?? []).find((tile) => tile.tile_id === selectedTileId);
+
+  return selectedTile?.tile_key ?? null;
+}
+
 function createLocalHand(state: SessionState) {
   const localSeat = getLocalSeat(state);
   const localPlayer = findPrivatePlayer(state, localSeat);
@@ -1652,6 +1665,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     actions: createActionViews(state, waitingControls, options),
     waitingControls,
     discards: createDiscards(state),
+    selectedTileCode: createSelectedTileCode(state),
     localHand: createLocalHand(state),
     readyHandInsight: createReadyHandInsight(state),
     claimCandidates: createClaimCandidates(state),

@@ -242,6 +242,7 @@ export function BattleScreen({
           <div className="battle-stage__table-wrap">
             <TableStage
               discards={viewModel.discards}
+              selectedTileCode={viewModel.selectedTileCode}
               activeSeat={viewModel.activePlayerSeat}
               actionIndicatorSeat={viewModel.actionIndicatorSeat}
               lastDiscard={visibleLastDiscard}
@@ -286,6 +287,7 @@ export function BattleScreen({
           </div>
           <BottomActionDock
             hand={viewModel.localHand}
+            selectedTileCode={viewModel.selectedTileCode}
             readyHandInsight={viewModel.readyHandInsight}
             claimCandidates={viewModel.claimCandidates}
             actions={battleActions}

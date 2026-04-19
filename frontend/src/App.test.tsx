@@ -76,6 +76,10 @@ function countSelectedTiles(container: HTMLElement) {
   return container.querySelectorAll('.mahjong-tile--selected').length;
 }
 
+function countRelatedHighlightTiles(container: HTMLElement) {
+  return container.querySelectorAll('.mahjong-tile--related-highlight').length;
+}
+
 function getLocalHandButtons() {
   const hand = screen.getByLabelText(/local hand/i);
   return Array.from(hand.querySelectorAll('button'));
@@ -916,6 +920,83 @@ describe('App', () => {
 
     expect(countSelectedTiles(document.body)).toBe(2);
     expect(screen.getByRole('button', { name: '吃候选组合 1' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('highlights matching non-hand tiles after selecting a hand tile', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 0,
+            last_discard: null,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: 'b3#2',
+              options: ['discard'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 3,
+                concealed_tiles: [
+                  { tile_id: 'w2#0', tile_key: 'w2' },
+                  { tile_id: 'w2#1', tile_key: 'w2' },
+                  { tile_id: 'b3#2', tile_key: 'b3' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [['w2', 'w2', 'w2']],
+                flowers: [],
+                discards: ['w2'],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(countRelatedHighlightTiles(document.body)).toBe(0);
+
+    await user.click(getLocalHandButtons()[0]!);
+
+    expect(countSelectedTiles(document.body)).toBe(1);
+    expect(countRelatedHighlightTiles(document.body)).toBe(4);
   });
 
   it('lets the player choose a claim candidate pane before confirming chow', async () => {
