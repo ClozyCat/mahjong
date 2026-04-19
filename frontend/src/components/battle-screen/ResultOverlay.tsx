@@ -484,7 +484,7 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
             {hasFanPanel ? (
               <div
                 className="result-overlay__fan-panel"
-                style={fanPanelHeight ? { height: `${fanPanelHeight}px` } : undefined}
+                style={fanPanelHeight ? { maxHeight: `${fanPanelHeight}px` } : undefined}
               >
                 <div className="result-overlay__section-head">
                   <span className="result-overlay__section-label">番型明细</span>
