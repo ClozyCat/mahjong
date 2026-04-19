@@ -30,6 +30,8 @@
   --table-stage-action-pointer-size: 1.4rem;
   --table-stage-center-indicator-size: clamp(4.2rem, 10vw, 5.8rem);
   --table-stage-spotlight-offset: calc(var(--table-stage-center-indicator-size) * 1.1);
+  --table-stage-center-v: 41%;
+  --table-stage-seat-top-v: clamp(3rem, 10%, 6rem);
   --table-player-accent: color-mix(in srgb, var(--accent) 62%, var(--theme-paper));
   --table-player-accent-strong: color-mix(in srgb, var(--accent) 54%, var(--theme-paper));
   --table-player-accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
@@ -86,7 +88,7 @@
 .table-stage__center-indicator {
   position: absolute;
   left: 50%;
-  top: 41%;
+  top: var(--table-stage-center-v);
   width: var(--table-stage-center-indicator-size);
   height: var(--table-stage-center-indicator-size);
   transform: translate(-50%, -50%);
@@ -190,25 +192,25 @@
 
 .table-stage__seat-zone--top {
   left: 50%;
-  top: clamp(3rem, 10%, 6rem);
+  top: var(--table-stage-seat-top-v);
   transform: translateX(-50%);
 }
 
 .table-stage__seat-zone--bottom {
   left: 50%;
-  bottom: 22%;
+  bottom: calc(100% - (var(--table-stage-center-v) + (var(--table-stage-center-v) - var(--table-stage-seat-top-v))));
   transform: translateX(-50%);
 }
 
 .table-stage__seat-zone--left {
   left: clamp(4rem, 12%, 8rem);
-  top: 41%;
+  top: var(--table-stage-center-v);
   transform: translateY(-50%);
 }
 
 .table-stage__seat-zone--right {
   right: clamp(4rem, 12%, 8rem);
-  top: 41%;
+  top: var(--table-stage-center-v);
   transform: translateY(-50%);
 }
 
@@ -737,7 +739,7 @@
 .table-stage__spotlight {
   position: absolute;
   left: var(--spotlight-left, 50%);
-  top: var(--spotlight-top, 41%);
+  top: var(--spotlight-top, var(--table-stage-center-v));
   z-index: 2;
   pointer-events: none;
   transform: translate(-50%, -50%) rotate(var(--spotlight-rotation, 0deg));

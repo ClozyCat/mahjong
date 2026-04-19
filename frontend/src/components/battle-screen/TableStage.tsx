@@ -694,10 +694,10 @@ const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   left: 320,
 };
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotation: string }> = {
-  top: { left: '50%', top: 'calc(41% - var(--table-stage-spotlight-offset))', rotation: '180deg' },
-  bottom: { left: '50%', top: 'calc(41% + var(--table-stage-spotlight-offset))', rotation: '0deg' },
-  left: { left: 'calc(50% - var(--table-stage-spotlight-offset))', top: '41%', rotation: '90deg' },
-  right: { left: 'calc(50% + var(--table-stage-spotlight-offset))', top: '41%', rotation: '-90deg' },
+  top: { left: '50%', top: 'calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset))', rotation: '180deg' },
+  bottom: { left: '50%', top: 'calc(var(--table-stage-center-v) + var(--table-stage-spotlight-offset))', rotation: '0deg' },
+  left: { left: 'calc(50% - var(--table-stage-spotlight-offset))', top: 'var(--table-stage-center-v)', rotation: '90deg' },
+  right: { left: 'calc(50% + var(--table-stage-spotlight-offset))', top: 'var(--table-stage-center-v)', rotation: '-90deg' },
 };
 
 type ActionCallout = {
@@ -1068,7 +1068,7 @@ function normalizeQuickChatText(value: string) {
 }
 
 function getSettlementCalloutStyle(seat: Seat | null = null): CSSProperties {
-  const position = seat ? SPOTLIGHT_POSITION_VARS[seat] : { left: '50%', top: '41%', rotation: '0deg' };
+  const position = seat ? SPOTLIGHT_POSITION_VARS[seat] : { left: '50%', top: 'var(--table-stage-center-v)', rotation: '0deg' };
 
   return {
     '--table-stage-action-callout-duration': SETTLEMENT_CALLOUT_DURATION_CSS,
