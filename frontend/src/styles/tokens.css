@@ -89,6 +89,19 @@ html[data-small-screen='true'] {
   font-size: 14px;
 }
 
+html[data-small-screen='true'],
+html[data-small-screen='true'] body,
+html[data-small-screen='true'] #root {
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+html[data-small-screen='true'],
+html[data-small-screen='true'] body {
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   color: var(--text);

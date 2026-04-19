@@ -38,6 +38,7 @@ import {
 } from './lib/storage';
 import {
   exitFullscreenMode,
+  isFullscreenModeActive,
   isMobileDevice,
   requestFullscreenMode,
   requestLandscapeOrientation,
@@ -523,14 +524,28 @@ export default function App() {
   }, [shouldForceSmallScreen]);
 
   useEffect(() => {
-    if (!isMobileClient) {
+    if (!isMobileClient || typeof document === 'undefined') {
       return;
     }
 
     if (shouldForceSmallScreen) {
-      requestLandscapeOrientation();
+      const handleFullscreenChange = () => {
+        if (isFullscreenModeActive()) {
+          requestLandscapeOrientation();
+        }
+      };
+
+      document.addEventListener('fullscreenchange', handleFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
       requestFullscreenMode();
-      return;
+      if (isFullscreenModeActive()) {
+        requestLandscapeOrientation();
+      }
+
+      return () => {
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      };
     }
 
     exitFullscreenMode();

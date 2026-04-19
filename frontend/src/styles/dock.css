@@ -38,7 +38,7 @@
   width: min(var(--action-dock-content-width), var(--action-dock-max-width));
   min-width: min(var(--action-dock-content-width), var(--action-dock-max-width));
   max-width: var(--action-dock-max-width);
-  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
   overflow: visible;
   padding: 0;
   border: 0;
@@ -948,7 +948,7 @@
   .action-dock {
     bottom: 0.75rem;
     width: calc(100vw - 1rem);
-    max-height: calc(100vh - 1.5rem);
+    max-height: calc(100dvh - 1.5rem);
     padding: 0.7rem 0.75rem 0.8rem;
   }
 
@@ -1072,7 +1072,7 @@
   width: calc(100vw - (var(--battle-shell-gap) * 2));
   min-width: calc(100vw - (var(--battle-shell-gap) * 2));
   max-width: calc(100vw - (var(--battle-shell-gap) * 2));
-  max-height: calc(100vh - 1.5rem);
+  max-height: calc(100dvh - 1.5rem);
   padding: 0.46rem 0.38rem;
 }
 

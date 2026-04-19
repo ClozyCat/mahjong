@@ -77,6 +77,18 @@ export function requestFullscreenMode() {
   swallowAsyncResult(requestFullscreen.call(rootElement));
 }
 
+export function isFullscreenModeActive() {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  const fullscreenDocument = document as DocumentWithFullscreen;
+  return (
+    fullscreenDocument.fullscreenElement === document.documentElement ||
+    fullscreenDocument.webkitFullscreenElement === document.documentElement
+  );
+}
+
 export function exitFullscreenMode() {
   if (typeof document === 'undefined') {
     return;

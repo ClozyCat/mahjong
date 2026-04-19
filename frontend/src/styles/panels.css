@@ -523,7 +523,7 @@
   width: min(clamp(10.8rem, 14vw, 12.6rem), calc(100vw - 1.6rem));
   display: grid;
   grid-template-rows: auto auto;
-  max-height: calc(100vh - var(--battle-shell-top-gap) - var(--battle-shell-bottom-gap) - 1rem);
+  max-height: calc(100dvh - var(--battle-shell-top-gap) - var(--battle-shell-bottom-gap) - 1rem);
   overflow: hidden;
   border-radius: 1.5rem;
   color: var(--text);

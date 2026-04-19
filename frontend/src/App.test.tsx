@@ -162,9 +162,11 @@ function mockMobileBattleImmersiveApis() {
   const lock = vi.fn().mockResolvedValue(undefined);
   const requestFullscreen = vi.fn().mockImplementation(async () => {
     fullscreenElement = document.documentElement;
+    document.dispatchEvent(new Event('fullscreenchange'));
   });
   const exitFullscreen = vi.fn().mockImplementation(async () => {
     fullscreenElement = null;
+    document.dispatchEvent(new Event('fullscreenchange'));
   });
   let fullscreenElement: Element | null = null;
 
@@ -286,6 +288,24 @@ describe('App', () => {
 
     expect(exitFullscreen).toHaveBeenCalled();
     expect(document.documentElement.dataset.smallScreen).toBeUndefined();
+  });
+
+  it('retries landscape orientation after fullscreen becomes active on mobile battle sessions', async () => {
+    const user = userEvent.setup();
+    const { lock } = mockMobileBattleImmersiveApis();
+    const socket = await joinTable(user);
+
+    expect(lock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    expect(lock.mock.calls.length).toBeGreaterThan(1);
+    expect(lock).toHaveBeenLastCalledWith('landscape');
   });
 
   it('picks a random zhongguose theme when the lobby opens', async () => {
