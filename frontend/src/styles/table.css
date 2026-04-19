@@ -613,21 +613,27 @@
   z-index: 2;
   border-radius: 50%;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--theme-paper) 18%, transparent), transparent 45%),
-    color-mix(in srgb, var(--theme-panel-bg-strong) 92%, black);
+    linear-gradient(135deg, color-mix(in srgb, var(--theme-paper) 22%, transparent), transparent 45%),
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
+    var(--theme-panel-bg-strong);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 20%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   font-size: 1.4rem;
-  box-shadow: 0 10px 24px var(--theme-shadow-lg);
-  transition: transform 0.2s var(--ease-spring), border-color 0.2s, background-color 0.2s;
+  box-shadow: 
+    var(--shadow-lg),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
 }
 
 .table-stage__global-emoji-trigger:hover {
   transform: scale(1.1) translateY(-2px);
   border-color: var(--accent-2);
+  box-shadow: 
+    var(--shadow-xl),
+    0 0 18px color-mix(in srgb, var(--accent-2) 24%, transparent);
 }
 
 .table-stage__global-emoji-trigger:active {
@@ -637,6 +643,9 @@
 .table-stage__global-emoji-trigger--open {
   background: var(--accent-2);
   color: white;
+  transform: rotate(90deg);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent-2) 34%, transparent);
 }
 
 /* ------- Quick chat menu ------- */
@@ -676,10 +685,11 @@
   box-shadow: 0 8px 16px var(--theme-shadow);
   backdrop-filter: blur(12px);
   transition: 
-    transform 0.4s var(--ease-spring), 
-    opacity 0.3s ease, 
-    border-color 0.2s,
-    background-color 0.2s;
+    transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), 
+    opacity 0.35s ease, 
+    border-color 0.25s var(--ease-lux),
+    background-color 0.25s var(--ease-lux),
+    box-shadow 0.25s var(--ease-lux);
 }
 
 /* Expansion state */
@@ -689,20 +699,21 @@
 }
 
 /* Staggered entry animation */
-.table-stage__quick-chat-item:nth-child(1) { transition-delay: 0.02s; }
-.table-stage__quick-chat-item:nth-child(2) { transition-delay: 0.05s; }
-.table-stage__quick-chat-item:nth-child(3) { transition-delay: 0.08s; }
-.table-stage__quick-chat-item:nth-child(4) { transition-delay: 0.11s; }
-.table-stage__quick-chat-item:nth-child(5) { transition-delay: 0.14s; }
-.table-stage__quick-chat-item:nth-child(6) { transition-delay: 0.17s; }
-.table-stage__quick-chat-item:nth-child(7) { transition-delay: 0.20s; }
-.table-stage__quick-chat-item:nth-child(8) { transition-delay: 0.23s; }
-.table-stage__quick-chat-item:nth-child(9) { transition-delay: 0.26s; }
+.table-stage__quick-chat-item:nth-child(1) { transition-delay: 0.025s; }
+.table-stage__quick-chat-item:nth-child(2) { transition-delay: 0.050s; }
+.table-stage__quick-chat-item:nth-child(3) { transition-delay: 0.075s; }
+.table-stage__quick-chat-item:nth-child(4) { transition-delay: 0.100s; }
+.table-stage__quick-chat-item:nth-child(5) { transition-delay: 0.125s; }
+.table-stage__quick-chat-item:nth-child(6) { transition-delay: 0.150s; }
+.table-stage__quick-chat-item:nth-child(7) { transition-delay: 0.175s; }
+.table-stage__quick-chat-item:nth-child(8) { transition-delay: 0.200s; }
+.table-stage__quick-chat-item:nth-child(9) { transition-delay: 0.225s; }
 
 .table-stage__quick-chat-item:hover {
   transform: translate(-50%, -50%) scale(1.15);
   border-color: var(--accent-2);
   background: color-mix(in srgb, var(--theme-panel-bg-strong) 95%, white);
+  box-shadow: 0 12px 28px var(--theme-shadow-lg);
 }
 
 .table-stage__quick-chat-item--active {
@@ -726,7 +737,22 @@
   pointer-events: auto;
   min-width: 14rem;
   transform-origin: bottom right;
-  animation: overlay-fade-in-up 0.3s var(--ease-spring);
+  animation: overlay-fade-in-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.table-stage__quick-chat-composer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    color-mix(in srgb, var(--accent-2) 40%, transparent), 
+    transparent
+  );
+  pointer-events: none;
 }
 
 .table-stage__quick-chat-input {
@@ -742,6 +768,8 @@
 
 .table-stage__quick-chat-input:focus {
   border-color: var(--accent-2);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-2) 20%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 40%, white);
 }
 
 .table-stage__quick-chat-counter {

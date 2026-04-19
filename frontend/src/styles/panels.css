@@ -16,18 +16,20 @@
 .connect-gate__panel,
 .battle-drawer,
 .table-stage__settlement-hand-grid,
-.ambient-overlay__panel {
-  border-color: var(--theme-border);
+.ambient-overlay__panel,
+.fan-guide__dialog {
+  border-color: color-mix(in srgb, var(--theme-paper) 10%, transparent);
   background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 40%),
     linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-sheen) 78%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-soft) 86%, transparent)),
-    var(--panel);
+      color-mix(in srgb, var(--theme-paper) 8%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
+    var(--theme-panel-bg-strong);
   box-shadow:
-    0 18px 40px var(--theme-shadow),
-    0 0 0 1px color-mix(in srgb, var(--theme-paper) 4%, transparent),
-    0 0 28px color-mix(in srgb, var(--accent) 7%, transparent);
-  backdrop-filter: blur(22px) saturate(120%);
+    var(--shadow-premium-hard),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
+    0 0 32px color-mix(in srgb, var(--accent) 10%, transparent);
+  backdrop-filter: blur(28px) saturate(140%);
 }
 
 .battle-drawer,
@@ -223,12 +225,13 @@
 .connect-gate__theme-badge {
   padding: 0.4rem 0.8rem;
   border-radius: 99px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 8%, transparent));
   color: var(--accent);
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
+  transition: transform 0.2s var(--ease-lux), filter 0.2s var(--ease-lux);
 }
 
 .connect-gate__body {
@@ -437,6 +440,23 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent),
     var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.top-match-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    color-mix(in srgb, var(--accent) 40%, transparent), 
+    transparent
+  );
+  pointer-events: none;
 }
 
 .top-match-bar__copy {
@@ -457,6 +477,21 @@
 .top-match-bar__copy,
 .top-match-bar__leave {
   min-height: 2.5rem;
+  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux);
+}
+
+.top-match-bar__copy:hover:not(:disabled),
+.top-match-bar__leave:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.top-match-bar__copy:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-2) 40%, var(--theme-border));
+}
+
+.top-match-bar__leave:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--theme-danger) 40%, var(--theme-border));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-danger) 20%, transparent);
 }
 
 .top-match-bar__leave {
@@ -549,6 +584,7 @@
 .ambient-overlay__panel {
   border-radius: 1.5rem;
   border-color: color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  animation: overlay-fade-in-up 0.4s var(--ease-lux) forwards;
 }
 
 .ambient-overlay__panel strong,
@@ -561,6 +597,13 @@
 .ambient-overlay__bot-button,
 .result-overlay__actions button {
   color: var(--theme-paper-strong);
+  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux);
+}
+
+.ambient-overlay__leave-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--theme-danger) 40%, var(--theme-border));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--theme-danger) 24%, transparent);
 }
 
 .ambient-overlay__bot-controls {
@@ -578,6 +621,12 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--accent-3) 18%, transparent), color-mix(in srgb, var(--theme-paper) 6%, transparent)),
     color-mix(in srgb, var(--panel-strong) 90%, black);
+  transition: transform 0.2s var(--ease-lux), border-color 0.2s var(--ease-lux);
+}
+
+.ambient-overlay__bot-button:hover:not(:disabled) {
+  transform: scale(1.08);
+  border-color: color-mix(in srgb, var(--accent-3) 40%, var(--theme-border));
 }
 
 .ambient-overlay__bot-label {
@@ -808,8 +857,24 @@
   box-shadow: var(--shadow-premium-hard);
   transform: scale(var(--result-overlay-dynamic-scale, 1));
   transform-origin: center center;
-  animation: overlay-fade-in-up 0.35s var(--ease-lux) forwards;
+  animation: overlay-fade-in-up 0.5s var(--ease-lux) forwards;
   will-change: transform, opacity, filter;
+}
+
+.result-overlay__card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    color-mix(in srgb, var(--accent) 50%, transparent), 
+    transparent
+  );
+  pointer-events: none;
+  z-index: 2;
 }
 
 .result-overlay__card::before {
@@ -869,6 +934,17 @@
   letter-spacing: 0.04em;
   white-space: nowrap;
   color: var(--theme-paper-strong);
+  border: 1px solid color-mix(in srgb, var(--theme-border) 76%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
+  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux);
+}
+
+.result-overlay__collapse:hover:not(:disabled),
+.result-overlay__restore:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-2) 40%, transparent);
+  background: color-mix(in srgb, var(--theme-paper) 10%, transparent);
 }
 
 .result-overlay__restore {
@@ -998,8 +1074,9 @@
 }
 
 .result-overlay__pagination-button:hover {
-  border-color: color-mix(in srgb, var(--accent-2) 38%, var(--theme-border));
+  border-color: color-mix(in srgb, var(--accent-2) 40%, var(--theme-border));
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent-2) 15%, transparent);
 }
 
 .result-overlay__pagination-status {
@@ -1060,6 +1137,7 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
     0 14px 22px color-mix(in srgb, var(--theme-shadow-soft) 92%, transparent);
+  transform: translateY(-1px);
 }
 
 .result-overlay__row span {
@@ -1151,7 +1229,10 @@
 .result-overlay__seat-row--interactive:hover,
 .result-overlay__seat-row--interactive:focus-visible {
   transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent), 0 14px 22px var(--theme-shadow-soft);
+  box-shadow: 
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent), 
+    0 14px 22px var(--theme-shadow-soft);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--theme-border));
 }
 
 .result-overlay__seat-row--interactive:focus-visible {
@@ -1290,6 +1371,14 @@
   border-radius: 999px;
   font-weight: 700;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 24%, transparent);
+  transition: transform 0.3s var(--ease-spring), box-shadow 0.3s var(--ease-spring);
+}
+
+.result-overlay__primary-btn:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 10px 24px color-mix(in srgb, var(--accent) 34%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* Seat tooltip */
@@ -1528,8 +1617,9 @@
     max(0.75rem, env(safe-area-inset-left));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-veil) 62%, transparent), color-mix(in srgb, var(--theme-veil) 88%, transparent)),
-    rgba(5, 10, 15, 0.34);
-  backdrop-filter: blur(10px);
+    rgba(5, 10, 15, 0.48);
+  backdrop-filter: blur(12px);
+  animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
 
 .fan-guide__dialog {
@@ -1537,18 +1627,19 @@
   max-height: min(42rem, calc(100dvh - 1.5rem));
   display: flex;
   flex-direction: column;
-  padding: 1.15rem;
+  padding: 1.5rem;
   border: 1px solid color-mix(in srgb, var(--accent-2) 28%, var(--theme-border));
-  border-radius: 1.4rem;
+  border-radius: 1.8rem;
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 26%),
     linear-gradient(135deg, color-mix(in srgb, var(--theme-panel-head-accent) 44%, transparent), transparent 38%),
     linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
     color-mix(in srgb, var(--theme-panel-bg-strong) 92%, black);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
-    0 24px 60px color-mix(in srgb, var(--theme-shadow) 92%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
+    0 32px 80px color-mix(in srgb, var(--theme-shadow) 92%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+  animation: modal-scale-in 0.45s var(--ease-lux), overlay-fade-in-up 0.45s var(--ease-lux);
 }
 
 .fan-guide__header {
@@ -1581,7 +1672,7 @@
 .fan-guide__content {
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: 0.8rem;
+  margin-top: 1.2rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 0.2rem;
@@ -1595,21 +1686,28 @@
 .fan-guide__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .fan-guide__card {
   display: grid;
   gap: 0.62rem;
-  padding: 0.95rem 1rem;
+  padding: 1.15rem 1.25rem;
   border: 1px solid color-mix(in srgb, var(--accent-2) 18%, var(--theme-border));
-  border-radius: 1.08rem;
+  border-radius: 1.2rem;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
     color-mix(in srgb, var(--theme-panel-bg) 82%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
     0 10px 24px var(--theme-shadow-soft);
+  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux);
+}
+
+.fan-guide__card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent-2) 40%, var(--theme-border));
+  box-shadow: 0 12px 24px var(--theme-shadow);
 }
 
 .fan-guide__card-head,
@@ -1631,13 +1729,19 @@
 
 .fan-guide__fan-pill {
   flex: 0 0 auto;
-  padding: 0.28rem 0.58rem;
+  padding: 0.32rem 0.68rem;
   border: 1px solid color-mix(in srgb, var(--accent-2) 28%, var(--theme-border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent-2) 16%, transparent);
   color: color-mix(in srgb, var(--theme-paper-strong) 84%, var(--accent-2));
   font-size: 0.78rem;
   font-weight: 700;
+  transition: transform 0.2s var(--ease-lux), filter 0.2s var(--ease-lux);
+}
+
+.fan-guide__fan-pill:hover {
+  transform: translateY(-0.5px);
+  filter: brightness(1.1) saturate(1.1);
 }
 
 .fan-guide__card-copy,
@@ -1657,17 +1761,23 @@
 }
 
 .fan-guide__close {
-  min-height: 2.2rem;
-  padding: 0.38rem 0.84rem;
-  border: 1px solid color-mix(in srgb, var(--accent-2) 24%, var(--theme-border));
+  min-width: 4.5rem;
+  padding: 0.45rem 1.25rem;
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 10%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
-    color-mix(in srgb, var(--panel) 94%, black);
-  color: color-mix(in srgb, var(--theme-paper-strong) 78%, var(--accent-2));
+  background: color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-border) 76%, transparent);
+  color: var(--theme-paper-strong);
+  font-weight: 600;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
     0 8px 16px color-mix(in srgb, var(--theme-shadow-soft) 84%, transparent);
+  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux);
+}
+
+.fan-guide__close:hover:not(:disabled) {
+  transform: translateY(-1.5px);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
 /* ==============================
