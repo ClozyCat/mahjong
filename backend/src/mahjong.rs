@@ -350,7 +350,7 @@ mod tests {
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
-                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "score_trackers": {"kong_entries": []},
                 "last_action_context": {
                     "kind": "draw",
                     "seat": 0,
@@ -459,7 +459,7 @@ mod tests {
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
-                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "score_trackers": {"kong_entries": []},
                 "last_action_context": {
                     "kind": "draw",
                     "seat": 0,
@@ -621,7 +621,7 @@ mod tests {
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
-                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "score_trackers": {"kong_entries": []},
                 "last_action_context": {
                     "kind": "draw",
                     "seat": 0,
@@ -726,7 +726,7 @@ mod tests {
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
-                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "score_trackers": {"kong_entries": []},
                 "last_action_context": {
                     "kind": "discard",
                     "seat": 1,

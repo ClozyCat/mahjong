@@ -201,8 +201,7 @@ mod tests {
                         "actor_seat": 1,
                         "payer_seats": [0],
                         "tile_key": "east"
-                    }],
-                    "opening_flowers_completed": true
+                    }]
                 },
                 "last_action_context": {
                     "kind": "discard",

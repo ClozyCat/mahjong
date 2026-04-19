@@ -96,12 +96,6 @@ export interface PrivatePlayerState {
 
 export type PendingAction =
   | {
-      type: 'opening_flowers';
-      seat_index: number;
-      deadline_at: string;
-      options: PromptActionType[];
-    }
-  | {
       type: 'active_turn';
       seat_index: number;
       deadline_at: string;

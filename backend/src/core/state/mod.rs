@@ -8,8 +8,8 @@ pub mod wall;
 
 pub use match_state::MatchState;
 pub use pending::{
-    ClaimResponse, ClaimWindowAction, ContinueActionState, LastActionContext, OpeningFlowersAction,
-    PendingAction, PendingTimeout, RobKongWindowAction,
+    ClaimResponse, ClaimWindowAction, ContinueActionState, LastActionContext, PendingAction,
+    PendingTimeout, RobKongWindowAction,
 };
 pub use player::{
     DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, PlayerRoundState, SeatState,

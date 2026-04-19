@@ -178,8 +178,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "draw",

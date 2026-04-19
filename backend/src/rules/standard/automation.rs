@@ -15,8 +15,6 @@ use super::actions::{
     resolve_claim_window_timeout, resolve_rob_kong_timeout, rob_kong_window_supported_locally,
 };
 #[cfg(test)]
-use super::flow::{apply_flower_action, apply_opening_flowers_pass};
-#[cfg(test)]
 use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
     SelfKongKind, available_self_kongs_from_cache, claim_tile_id_options,
@@ -62,24 +60,6 @@ pub fn try_process_due_timeout_in_room_state(
                 std::slice::from_ref(&tile_id),
             )?)
         }
-        "opening_flowers" => {
-            let seat_index = round.current_actor;
-            if let Some(tile_id) = pending_timeout.drawn_tile_id {
-                extract_emitted_messages(try_handle_player_action_in_room_state(
-                    room,
-                    seat_index,
-                    "flower",
-                    std::slice::from_ref(&tile_id),
-                )?)
-            } else {
-                extract_emitted_messages(try_handle_player_action_in_room_state(
-                    room,
-                    seat_index,
-                    "pass",
-                    &[],
-                )?)
-            }
-        }
         "claim_window" => resolve_claim_timeout_in_room_state(room),
         _ => Ok(None),
     }
@@ -110,15 +90,6 @@ pub fn try_process_due_timeout(room: &mut Value) -> Option<Vec<Value>> {
                 return None;
             }
             apply_discard_action(room, seat_index, &tile_id).ok()
-        }
-        "opening_flowers" => {
-            let seat_index = round.current_actor;
-            let result = if let Some(tile_id) = pending_timeout.drawn_tile_id.clone() {
-                apply_flower_action(room, seat_index, &[tile_id])
-            } else {
-                apply_opening_flowers_pass(room, seat_index)
-            };
-            result.ok()
         }
         "claim_window" => {
             if claim_window_supported_locally(room)
@@ -319,25 +290,6 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
     let pending_timeout = state.pending_timeout.as_ref()?;
     let round = state.round_state.as_ref()?;
     match pending_timeout.kind.as_str() {
-        "opening_flowers" => {
-            let seat_index = round.current_actor;
-            if !seat_is_bot(state, seat_index) {
-                return None;
-            }
-            let cache = RoomScoringCache::from_state(state);
-            let tile_ids = player_first_flower_tile_id_from_cache(&cache, seat_index)
-                .map(|value| vec![value])
-                .unwrap_or_default();
-            Some(BotAction {
-                seat_index,
-                action_type: if tile_ids.is_empty() {
-                    "pass".to_string()
-                } else {
-                    "flower".to_string()
-                },
-                tile_ids,
-            })
-        }
         "active_turn" => {
             let seat_index = round.current_actor;
             if !seat_is_bot(state, seat_index) {
@@ -376,7 +328,6 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
                     .filter(|seat| seat_is_bot(state, *seat))?;
                 choose_bot_claim_action_with_cache_for_state(state, &cache, seat_index)
             }
-            _ => None,
         },
         _ => None,
     }
@@ -418,7 +369,6 @@ fn pending_timeout_pass_seat(pending_action: &PendingAction) -> Option<usize> {
     match pending_action {
         PendingAction::ClaimWindow(claim) => next_claim_window_responder_seat(claim),
         PendingAction::RobKongWindow(rob) => next_rob_kong_responder_seat(rob),
-        _ => None,
     }
 }
 
@@ -576,7 +526,7 @@ mod tests {
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
-                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "score_trackers": {"kong_entries": []},
                 "last_action_context": {
                     "kind": "draw",
                     "seat": 0,
@@ -676,7 +626,7 @@ mod tests {
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
-                "score_trackers": {"kong_entries": [], "opening_flowers_completed": true},
+                "score_trackers": {"kong_entries": []},
                 "last_action_context": {
                     "kind": "discard",
                     "seat": 3,

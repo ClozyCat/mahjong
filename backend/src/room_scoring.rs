@@ -301,7 +301,6 @@ mod tests {
                         payer_seats: vec![1, 2, 3],
                         tile_key: Some("w1".to_string()),
                     }],
-                    opening_flowers_completed: true,
                 },
                 last_action_context: LastActionContext::default(),
                 rule_state: RuleRuntimeState {

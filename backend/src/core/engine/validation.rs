@@ -12,7 +12,6 @@ pub enum LocalPlayerActionKind {
     ClaimWindow,
     SelfKong,
     RobKongPass,
-    OpeningFlowersPass,
 }
 
 pub fn classify_local_player_action(
@@ -43,8 +42,6 @@ pub fn classify_local_player_action(
                 Some(LocalPlayerActionKind::ClaimWindow)
             } else if rob_kong_pass_supported(context, actor) {
                 Some(LocalPlayerActionKind::RobKongPass)
-            } else if opening_flowers_pass_supported(context, actor) {
-                Some(LocalPlayerActionKind::OpeningFlowersPass)
             } else {
                 None
             }
@@ -105,29 +102,6 @@ fn rob_kong_pass_supported(context: &EngineContext, actor: Seat) -> bool {
         return false;
     };
     rob.offered_hu_seats.contains(&actor) && !rob.responded_seats.contains(&actor)
-}
-
-fn opening_flowers_pass_supported(context: &EngineContext, actor: Seat) -> bool {
-    if context.room.phase != "playing" {
-        return false;
-    }
-    let Some(round) = context.room.round_state.as_ref() else {
-        return false;
-    };
-    if round.current_actor != actor {
-        return false;
-    }
-    matches!(round.pending_action, Some(PendingAction::OpeningFlowers(_)))
-        && round
-            .players
-            .get(actor)
-            .map(|player| {
-                player
-                    .concealed_tiles
-                    .iter()
-                    .all(|tile| tile.kind != "flower")
-            })
-            .unwrap_or(false)
 }
 
 fn self_kong_supported(context: &EngineContext, actor: Seat) -> bool {
@@ -208,8 +182,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "draw",
@@ -285,29 +258,6 @@ mod tests {
         );
         assert_eq!(
             classify_local_player_action(&context, 0, &PlayerAction::Pass),
-            None
-        );
-    }
-
-    #[test]
-    fn opening_flowers_pass_requires_no_remaining_flower() {
-        let mut room = base_room();
-        room["round_state"]["pending_action"] = json!({
-            "type": "opening_flowers",
-            "dealer_seat": 0
-        });
-        room["pending_timeout"]["kind"] = json!("opening_flowers");
-        let context_without_flower = context(room.clone());
-        assert_eq!(
-            classify_local_player_action(&context_without_flower, 0, &PlayerAction::Pass),
-            Some(LocalPlayerActionKind::OpeningFlowersPass)
-        );
-
-        room["round_state"]["players"][0]["concealed_tiles"] =
-            json!([tile("f1#0", "f1", "flower")]);
-        let context_with_flower = context(room);
-        assert_eq!(
-            classify_local_player_action(&context_with_flower, 0, &PlayerAction::Pass),
             None
         );
     }

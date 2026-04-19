@@ -304,26 +304,6 @@ export function getFlowerCandidateTileIds(state: SessionState): string[] {
   return concealedTiles.filter((tile) => isFlowerTileKey(tile.tile_key)).map((tile) => tile.tile_id);
 }
 
-export function shouldAutoPassOpeningFlowers(state: SessionState): boolean {
-  const snapshot = state.roomSnapshot?.payload;
-  const localSeat = snapshot?.local_seat;
-  const pendingAction = snapshot?.private_state?.pending_action;
-
-  if (
-    typeof localSeat !== 'number' ||
-    pendingAction?.type !== 'opening_flowers' ||
-    pendingAction.seat_index !== localSeat
-  ) {
-    return false;
-  }
-
-  if (getFlowerCandidateTileIds(state).length > 0) {
-    return false;
-  }
-
-  return true;
-}
-
 export function getMatchingActionGroup(selectedTileIds: string[], candidateGroups: string[][]): string[] | null {
   const normalizedSelection = [...new Set(selectedTileIds)].sort();
 

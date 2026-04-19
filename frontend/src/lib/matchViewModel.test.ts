@@ -697,10 +697,11 @@ describe('createMatchViewModel', () => {
     });
   });
 
-  it('shows opening-flower auto-pass copy when no flower replacement is available', () => {
+  it('shows flower as a local active-turn option when a flower tile is selected', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
+      selectedTileIds: ['f1#0'],
       roomSnapshot: {
         type: 'room_snapshot',
         payload: {
@@ -708,11 +709,24 @@ describe('createMatchViewModel', () => {
           private_state: {
             ...base.roomSnapshot!.payload.private_state!,
             pending_action: {
-              type: 'opening_flowers',
+              type: 'active_turn',
               seat_index: 2,
               deadline_at: '2026-03-26T06:01:00Z',
-              options: ['pass'],
+              drawn_tile_id: 'f1#0',
+              options: ['discard', 'flower'],
             },
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    concealed_count: 2,
+                    concealed_tiles: [
+                      { tile_id: 'f1#0', tile_key: 'f1' },
+                      { tile_id: 'w2#0', tile_key: 'w2' },
+                    ],
+                  }
+                : player,
+            ),
           },
         },
       },
@@ -720,22 +734,26 @@ describe('createMatchViewModel', () => {
         type: 'action_prompt',
         payload: {
           seat_index: 2,
-          options: ['pass'],
+          options: ['discard', 'flower'],
           deadline_at: '2026-03-26T06:01:00Z',
         },
       },
     });
 
-    expect(viewModel.promptText).toBe('当前无花牌，系统正在自动过');
+    expect(viewModel.promptText).toBe('Player C正在执行操作：出牌 / 补花');
     expect(viewModel.promptCue).toMatchObject({
       kind: 'turn',
       tone: 'info',
-      title: '补花阶段',
-      detail: '当前无花牌，系统将自动过',
-      actionIds: [],
-      highlightedActionIds: [],
+      title: '轮到你操作',
+      detail: '你可以 补花 / 出牌',
+      actionIds: ['flower', 'discard'],
+      highlightedActionIds: ['flower', 'discard'],
       sourceSeat: null,
       isUrgent: false,
+    });
+    expect(viewModel.actions.find((action) => action.id === 'flower')).toMatchObject({
+      enabled: true,
+      label: '补花',
     });
   });
 

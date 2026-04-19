@@ -105,12 +105,6 @@ struct ContinueActionView {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum PendingActionView {
-    #[serde(rename = "opening_flowers")]
-    OpeningFlowers {
-        seat_index: Seat,
-        deadline_at: Option<String>,
-        options: Vec<String>,
-    },
     #[serde(rename = "active_turn")]
     ActiveTurn {
         seat_index: Seat,
@@ -184,21 +178,6 @@ pub fn build_pending_action_view(
     let deadline_at = pending_timeout.deadline_at.clone();
 
     match pending_timeout.kind.as_str() {
-        "opening_flowers" => {
-            if round.current_actor != local_seat {
-                return None;
-            }
-            let options = if support.has_concealed_flower {
-                vec!["flower".to_string()]
-            } else {
-                vec!["pass".to_string()]
-            };
-            Some(PendingActionView::OpeningFlowers {
-                seat_index: local_seat,
-                deadline_at,
-                options,
-            })
-        }
         "active_turn" => {
             if round.current_actor != local_seat {
                 return None;

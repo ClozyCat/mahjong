@@ -4,9 +4,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use crate::core::engine::EngineOutput;
-use crate::core::engine::planner::{
-    plan_advance_opening_flowers, plan_flower_action, plan_round_start_payload,
-};
+use crate::core::engine::planner::{plan_flower_action, plan_round_start_payload};
 use crate::core::event::GameEvent;
 use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState};
 use crate::core::tile::Tile;
@@ -253,95 +251,6 @@ pub fn reconcile_continue_action_state(room: &mut Value) -> Result<(), String> {
 }
 
 #[cfg(test)]
-pub fn apply_opening_flowers_pass(
-    room: &mut Value,
-    seat_index: usize,
-) -> Result<Vec<Value>, String> {
-    apply_opening_flowers_pass_output(room, seat_index).map(|output| output.emitted_messages)
-}
-
-#[cfg(test)]
-pub fn apply_opening_flowers_pass_output(
-    room: &mut Value,
-    seat_index: usize,
-) -> Result<EngineOutput, String> {
-    let round_state = room
-        .get("round_state")
-        .ok_or_else(|| "round_not_ready".to_string())?;
-    let pending_action = round_state.get("pending_action").unwrap_or(&Value::Null);
-    if pending_action.get("type").and_then(Value::as_str) != Some("opening_flowers") {
-        return Err("invalid_action".to_string());
-    }
-    if current_actor(room) != Some(seat_index) {
-        return Err("not_your_turn".to_string());
-    }
-    if player_has_concealed_flower(round_state, seat_index) {
-        return Err("invalid_action".to_string());
-    }
-
-    let state = project_room_state(room)?;
-    let plan = plan_advance_opening_flowers(&state, seat_index);
-    update_room_state(room, |state| {
-        let round = state
-            .round_state
-            .as_mut()
-            .ok_or_else(|| "round_not_ready".to_string())?;
-        round.current_actor = plan.current_actor;
-        round.pending_action = plan.pending_action.clone();
-        if let Some(score_trackers) = plan.score_trackers.as_ref() {
-            round.score_trackers = score_trackers.clone();
-        }
-        Ok(())
-    })?;
-    sync_pending_timeout_for_value_room(room);
-    Ok(EngineOutput::default())
-}
-
-pub fn apply_opening_flowers_pass_output_in_room_state(
-    room: &mut RoomState,
-    seat_index: usize,
-) -> Result<EngineOutput, String> {
-    let round = room
-        .round_state
-        .as_ref()
-        .ok_or_else(|| "round_not_ready".to_string())?;
-    if !matches!(
-        round.pending_action,
-        Some(crate::core::state::PendingAction::OpeningFlowers(_))
-    ) {
-        return Err("invalid_action".to_string());
-    }
-    if current_actor_in_room_state(room) != Some(seat_index) {
-        return Err("not_your_turn".to_string());
-    }
-    if player_has_concealed_flower_in_room_state(round, seat_index) {
-        return Err("invalid_action".to_string());
-    }
-
-    let plan = plan_advance_opening_flowers(room, seat_index);
-    let round = room
-        .round_state
-        .as_mut()
-        .ok_or_else(|| "round_not_ready".to_string())?;
-    round.current_actor = plan.current_actor;
-    round.pending_action = plan.pending_action;
-    if let Some(score_trackers) = plan.score_trackers {
-        round.score_trackers = score_trackers;
-    }
-    sync_pending_timeout_in_room_state(room);
-    Ok(EngineOutput::default())
-}
-
-#[cfg(test)]
-pub fn apply_flower_action(
-    room: &mut Value,
-    seat_index: usize,
-    tile_ids: &[String],
-) -> Result<Vec<Value>, String> {
-    apply_flower_action_output(room, seat_index, tile_ids).map(|output| output.emitted_messages)
-}
-
-#[cfg(test)]
 pub fn apply_flower_action_output(
     room: &mut Value,
     seat_index: usize,
@@ -365,7 +274,7 @@ pub fn apply_flower_action_output(
         .and_then(|round| round.get("pending_action"))
         .and_then(|pending| pending.get("type"))
         .and_then(Value::as_str);
-    if pending_type.is_some() && pending_type != Some("opening_flowers") {
+    if pending_type.is_some() {
         return Err("invalid_action".to_string());
     }
 
@@ -392,13 +301,6 @@ pub fn apply_flower_action_output(
         round.wall.tail_index = round.wall.tail_index.saturating_sub(1);
         round.last_action_context = plan.last_action_context.clone();
         round.version += 1;
-        if let Some(advance) = plan.opening_flowers_advance.as_ref() {
-            round.current_actor = advance.current_actor;
-            round.pending_action = advance.pending_action.clone();
-            if let Some(score_trackers) = advance.score_trackers.as_ref() {
-                round.score_trackers = score_trackers.clone();
-            }
-        }
         Ok(())
     })?;
     sync_pending_timeout_for_value_room(room);
@@ -450,7 +352,7 @@ pub fn apply_flower_action_output_in_room_state(
         .as_ref()
         .and_then(|round| round.pending_action.as_ref())
         .map(|pending| pending.action_type());
-    if pending_type.is_some() && pending_type != Some("opening_flowers") {
+    if pending_type.is_some() {
         return Err("invalid_action".to_string());
     }
 
@@ -476,13 +378,6 @@ pub fn apply_flower_action_output_in_room_state(
         round.wall.tail_index = round.wall.tail_index.saturating_sub(1);
         round.last_action_context = plan.last_action_context.clone();
         round.version += 1;
-        if let Some(advance) = plan.opening_flowers_advance.as_ref() {
-            round.current_actor = advance.current_actor;
-            round.pending_action = advance.pending_action.clone();
-            if let Some(score_trackers) = advance.score_trackers.as_ref() {
-                round.score_trackers = score_trackers.clone();
-            }
-        }
     }
     sync_pending_timeout_in_room_state(room);
 
@@ -987,38 +882,6 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
     Ok(())
 }
 
-#[cfg(test)]
-fn player_has_concealed_flower(round_state: &Value, seat_index: usize) -> bool {
-    round_state
-        .get("players")
-        .and_then(Value::as_array)
-        .and_then(|players| players.get(seat_index))
-        .and_then(|player| player.get("concealed_tiles"))
-        .and_then(Value::as_array)
-        .map(|tiles| {
-            tiles
-                .iter()
-                .any(|tile| tile.get("kind").and_then(Value::as_str) == Some("flower"))
-        })
-        .unwrap_or(false)
-}
-
-fn player_has_concealed_flower_in_room_state(
-    round_state: &crate::core::state::RoundState,
-    seat_index: usize,
-) -> bool {
-    round_state
-        .players
-        .get(seat_index)
-        .map(|player| {
-            player
-                .concealed_tiles
-                .iter()
-                .any(|tile| tile.kind == "flower")
-        })
-        .unwrap_or(false)
-}
-
 fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
     round_event_message(
         "replacement_draw",
@@ -1035,9 +898,8 @@ fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
 mod tests {
     use super::*;
     use crate::core::state::{
-        ContinueActionState, LastActionContext, OpeningFlowersAction, PendingAction,
-        PendingTimeout, PlayerRoundState, RoundScoreTrackers, RoundState,
-        RuleRuntimeState, SeatState, WallState,
+        ContinueActionState, LastActionContext, PendingTimeout, PlayerRoundState,
+        RoundScoreTrackers, RoundState, RuleRuntimeState, SeatState, WallState,
     };
 
     fn suit(tile_key: &str, tile_id: &str) -> Tile {
@@ -1157,9 +1019,7 @@ mod tests {
                     },
                 ],
                 last_discard: None,
-                pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
-                    dealer_seat: 0,
-                })),
+                pending_action: None,
                 settlement: None,
                 version: 1,
                 score_trackers: RoundScoreTrackers::default(),
@@ -1170,7 +1030,7 @@ mod tests {
                 restricted_discard_tile_key: None,
             }),
             pending_timeout: Some(PendingTimeout {
-                kind: "opening_flowers".to_string(),
+                kind: "active_turn".to_string(),
                 seat_index: 0,
                 deadline_at: None,
                 drawn_tile_id: Some("f1#0".to_string()),

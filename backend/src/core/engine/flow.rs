@@ -6,9 +6,7 @@ use crate::rules::standard::{
         apply_rob_kong_hu_in_room_state, apply_rob_kong_pass_in_room_state,
         try_handle_self_kong_action_output_in_room_state,
     },
-    flow::{
-        apply_flower_action_output_in_room_state, apply_opening_flowers_pass_output_in_room_state,
-    },
+    flow::apply_flower_action_output_in_room_state,
     win::apply_hu_action_output_in_room_state,
 };
 
@@ -88,9 +86,6 @@ fn try_handle_player_action_command(
         (LocalPlayerActionKind::RobKongPass, PlayerAction::Pass) => {
             Some(apply_rob_kong_pass_in_room_state(room, seat_index))
         }
-        (LocalPlayerActionKind::OpeningFlowersPass, PlayerAction::Pass) => Some(
-            apply_opening_flowers_pass_output_in_room_state(room, seat_index),
-        ),
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Chow { tile_ids }) => Some(
             apply_claim_window_action_in_room_state(room, seat_index, "chow", &tile_ids),
         ),

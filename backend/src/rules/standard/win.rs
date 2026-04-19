@@ -409,7 +409,6 @@ pub fn hu_action_hint_in_room_state(room: &RoomState, seat_index: usize) -> Opti
             Some("discard")
         }
         PendingAction::ClaimWindow(_) | PendingAction::RobKongWindow(_) => None,
-        _ => None,
     }
 }
 
@@ -666,7 +665,6 @@ pub fn hu_action_hint(room: &Value, seat_index: usize) -> Option<&'static str> {
             Some("discard")
         }
         PendingAction::ClaimWindow(_) | PendingAction::RobKongWindow(_) => None,
-        _ => None,
     }
 }
 
@@ -726,15 +724,6 @@ pub fn can_declare_hu_with_cache_for_state(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    if state
-        .round_state
-        .as_ref()
-        .and_then(|round| round.pending_action.as_ref())
-        .is_some_and(|pending| matches!(pending, PendingAction::OpeningFlowers(_)))
-    {
-        return false;
-    }
-
     fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat)
         .map(|evaluated| {
             evaluated.fan_result.minimum_qualifying_fan_total

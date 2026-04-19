@@ -90,7 +90,6 @@ impl LastActionContext {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PendingAction {
-    OpeningFlowers(OpeningFlowersAction),
     ClaimWindow(ClaimWindowAction),
     RobKongWindow(RobKongWindowAction),
 }
@@ -101,7 +100,6 @@ impl PendingAction {
     }
     pub fn action_type(&self) -> &str {
         match self {
-            Self::OpeningFlowers(_) => "opening_flowers",
             Self::ClaimWindow(_) => "claim_window",
             Self::RobKongWindow(_) => "rob_kong_window",
         }
@@ -110,12 +108,6 @@ impl PendingAction {
     pub(crate) fn to_value(&self) -> Value {
         serde_json::to_value(self).unwrap_or(Value::Null)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct OpeningFlowersAction {
-    pub dealer_seat: Seat,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

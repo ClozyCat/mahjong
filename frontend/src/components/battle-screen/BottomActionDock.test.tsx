@@ -294,37 +294,6 @@ describe('BottomActionDock', () => {
     expect(screen.getByLabelText('当前听牌信息')).toBeInTheDocument();
   });
 
-  it('hides manual actions when opening flowers will auto-pass locally', () => {
-    render(
-      <BottomActionDock
-        hand={localHand}
-        claimCandidates={[]}
-        actions={[
-          { id: 'pass', label: '过', enabled: true, emphasis: 'low' },
-        ]}
-        isElevated
-        promptCue={{
-          kind: 'turn',
-          tone: 'info',
-          title: '补花阶段',
-          detail: '当前无花牌，系统将自动过',
-          actionIds: [],
-          highlightedActionIds: [],
-          sourceSeat: null,
-          isUrgent: false,
-        }}
-        deadlineAt="2099-03-30T12:10:40+08:00"
-        onTileSelect={vi.fn()}
-        onTileDoubleClick={vi.fn()}
-        onClaimCandidateSelect={vi.fn()}
-        onClaimCandidateActivate={vi.fn()}
-        onAction={vi.fn()}
-      />,
-    );
-
-    expect(screen.queryByRole('button', { name: '过' })).toBeNull();
-  });
-
   it('derives dock width variables from the current hand count', () => {
     render(
       <BottomActionDock

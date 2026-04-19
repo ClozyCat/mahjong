@@ -3,9 +3,9 @@ use rand::seq::SliceRandom;
 use serde_json::{Value, json};
 
 use crate::core::state::{
-    ClaimResponse, ClaimWindowAction, LastActionContext, OpeningFlowersAction, PendingAction,
-    PendingTimeout, PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers,
-    RoundSettlement, RoundState, RuleRuntimeState, WallState,
+    ClaimResponse, ClaimWindowAction, LastActionContext, PendingAction, PendingTimeout,
+    PlayerRoundState, RobKongWindowAction, RoomState, RoundScoreTrackers, RoundSettlement,
+    RoundState, RuleRuntimeState, WallState,
 };
 use crate::core::tile::Tile;
 
@@ -17,7 +17,6 @@ pub struct PlannedFlowerAction {
     pub flower_tile: Tile,
     pub replacement_tile: Tile,
     pub last_action_context: LastActionContext,
-    pub opening_flowers_advance: Option<PlannedOpeningFlowersAdvance>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,13 +43,6 @@ pub struct PlannedDiscardContinuation {
 #[derive(Debug, Clone)]
 pub struct PlannedClaimWindowContinuation {
     pub outcome: PlannedClaimWindowOutcome,
-}
-
-#[derive(Debug, Clone)]
-pub struct PlannedOpeningFlowersAdvance {
-    pub current_actor: usize,
-    pub pending_action: Option<PendingAction>,
-    pub score_trackers: Option<RoundScoreTrackers>,
 }
 
 #[derive(Debug, Clone)]
@@ -107,25 +99,26 @@ pub fn plan_round_start_payload(
     }
 
     let current_actor = dealer_seat;
-    let mut pending_action = None;
-    let opening_completed = if any_concealed_flower(&players) {
-        pending_action = Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
-            dealer_seat,
-        }));
-        false
-    } else {
-        true
-    };
 
     let draw_tile = wall_tiles[head_index].clone();
     head_index += 1;
     players[current_actor]
         .concealed_tiles
         .push(draw_tile.clone());
-
-    if opening_completed {
-        pending_action = None;
-    }
+    let (tail_index, last_action_context) = resolve_starting_flowers(
+        &mut players,
+        &wall_tiles,
+        143,
+        dealer_seat,
+        LastActionContext {
+            kind: "draw".to_string(),
+            seat: current_actor,
+            tile_id: Some(draw_tile.tile_id.clone()),
+            from_kong_replacement: false,
+            was_last_live_tile: false,
+            was_last_discard: false,
+        },
+    );
 
     let round_state = RoundState {
         round_id,
@@ -136,50 +129,80 @@ pub fn plan_round_start_payload(
         wall: WallState {
             tiles: wall_tiles,
             head_index,
-            tail_index: 143,
+            tail_index,
         },
         players,
         last_discard: None,
-        pending_action,
+        pending_action: None,
         settlement: None,
         version: 1,
         score_trackers: RoundScoreTrackers {
             kong_entries: Vec::new(),
-            opening_flowers_completed: opening_completed,
         },
-        last_action_context: LastActionContext {
-            kind: "draw".to_string(),
-            seat: current_actor,
-            tile_id: Some(draw_tile.tile_id.clone()),
-            from_kong_replacement: false,
-            was_last_live_tile: false,
-            was_last_discard: false,
-        },
+        last_action_context,
         rule_state: RuleRuntimeState {
             enforce_minimum_eight_fan,
         },
         restricted_discard_tile_key: None,
     };
 
-    let pending_timeout = if opening_completed {
-        PendingTimeout {
-            kind: "active_turn".to_string(),
-            seat_index: current_actor,
-            deadline_at: Some(deadline_iso()),
-            drawn_tile_id: Some(draw_tile.tile_id.clone()),
-        }
-    } else {
-        PendingTimeout {
-            kind: "opening_flowers".to_string(),
-            seat_index: current_actor,
-            deadline_at: Some(deadline_iso()),
-            drawn_tile_id: player_first_flower_tile_id_from_player(
-                &round_state.players[current_actor],
-            ),
-        }
+    let pending_timeout = PendingTimeout {
+        kind: "active_turn".to_string(),
+        seat_index: current_actor,
+        deadline_at: Some(deadline_iso()),
+        drawn_tile_id: round_state.last_action_context.tile_id.clone(),
     };
 
     (round_state, pending_timeout)
+}
+
+fn resolve_starting_flowers(
+    players: &mut [PlayerRoundState],
+    wall_tiles: &[Tile],
+    initial_tail_index: usize,
+    dealer_seat: usize,
+    initial_dealer_context: LastActionContext,
+) -> (usize, LastActionContext) {
+    let mut tail_index = initial_tail_index;
+    let mut dealer_context = initial_dealer_context;
+
+    for seat_offset in 0..MAX_SEATS {
+        let seat_index = (dealer_seat + seat_offset) % MAX_SEATS;
+
+        loop {
+            let Some(player) = players.get_mut(seat_index) else {
+                break;
+            };
+            let Some(flower_index) = player
+                .concealed_tiles
+                .iter()
+                .position(|tile| tile.kind == "flower")
+            else {
+                break;
+            };
+            let Some(replacement_tile) = wall_tiles.get(tail_index).cloned() else {
+                break;
+            };
+
+            let flower_tile = player.concealed_tiles.remove(flower_index);
+            player.flowers.push(flower_tile);
+            player.concealed_tiles.push(replacement_tile.clone());
+            tail_index = tail_index.saturating_sub(1);
+
+            if seat_index == dealer_seat {
+                dealer_context = LastActionContext {
+                    kind: "replacement_draw".to_string(),
+                    seat: seat_index,
+                    tile_id: Some(replacement_tile.tile_id),
+                    from_kong_replacement: false,
+                    was_last_live_tile: false,
+                    was_last_discard: false,
+                };
+            }
+        }
+    }
+
+    (tail_index, dealer_context)
 }
 
 pub fn compute_pending_timeout_value(
@@ -193,12 +216,6 @@ pub fn compute_pending_timeout_value(
         return None;
     };
     match round.pending_action.as_ref() {
-        Some(PendingAction::OpeningFlowers(_)) => Some(PendingTimeout {
-            kind: "opening_flowers".to_string(),
-            seat_index: round.current_actor,
-            deadline_at: Some(deadline_at),
-            drawn_tile_id: player_first_flower_tile_id(state, round.current_actor),
-        }),
         Some(PendingAction::ClaimWindow(claim)) => Some(PendingTimeout {
             kind: "claim_window".to_string(),
             seat_index: claim.discarder_seat,
@@ -220,49 +237,6 @@ pub fn compute_pending_timeout_value(
     }
 }
 
-pub fn plan_advance_opening_flowers(
-    state: &RoomState,
-    seat_index: usize,
-) -> PlannedOpeningFlowersAdvance {
-    let dealer_seat = state
-        .round_state
-        .as_ref()
-        .map(|round| round.dealer_seat)
-        .unwrap_or(0);
-    let next_seat = (seat_index + 1) % MAX_SEATS;
-    let seat_has_flower = player_has_concealed_flower(state, seat_index);
-
-    if seat_has_flower {
-        return PlannedOpeningFlowersAdvance {
-            current_actor: seat_index,
-            pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
-                dealer_seat,
-            })),
-            score_trackers: None,
-        };
-    }
-    if next_seat == dealer_seat {
-        let mut score_trackers = state
-            .round_state
-            .as_ref()
-            .map(|round| round.score_trackers.clone())
-            .unwrap_or_default();
-        score_trackers.opening_flowers_completed = true;
-        return PlannedOpeningFlowersAdvance {
-            current_actor: dealer_seat,
-            pending_action: None,
-            score_trackers: Some(score_trackers),
-        };
-    }
-    PlannedOpeningFlowersAdvance {
-        current_actor: next_seat,
-        pending_action: Some(PendingAction::OpeningFlowers(OpeningFlowersAction {
-            dealer_seat,
-        })),
-        score_trackers: None,
-    }
-}
-
 pub fn plan_flower_action(
     state: &RoomState,
     seat_index: usize,
@@ -272,8 +246,6 @@ pub fn plan_flower_action(
         .round_state
         .as_ref()
         .ok_or_else(|| "round_not_ready".to_string())?;
-    let opening_flowers_mode =
-        matches!(round.pending_action, Some(PendingAction::OpeningFlowers(_)));
 
     let flower_tile = round
         .players
@@ -306,8 +278,6 @@ pub fn plan_flower_action(
         flower_tile,
         replacement_tile,
         last_action_context,
-        opening_flowers_advance: opening_flowers_mode
-            .then(|| plan_advance_opening_flowers(state, seat_index)),
     })
 }
 
@@ -612,40 +582,6 @@ fn active_turn_drawn_tile_id(state: &RoomState, seat_index: usize) -> Option<Str
     if exists { Some(tile_id) } else { None }
 }
 
-fn player_first_flower_tile_id(state: &RoomState, seat_index: usize) -> Option<String> {
-    state
-        .round_state
-        .as_ref()?
-        .players
-        .get(seat_index)?
-        .concealed_tiles
-        .iter()
-        .find(|tile| tile.kind == "flower")
-        .map(|tile| tile.tile_id.clone())
-}
-
-fn player_first_flower_tile_id_from_player(player: &PlayerRoundState) -> Option<String> {
-    player
-        .concealed_tiles
-        .iter()
-        .find(|tile| tile.kind == "flower")
-        .map(|tile| tile.tile_id.clone())
-}
-
-fn player_has_concealed_flower(state: &RoomState, seat_index: usize) -> bool {
-    state
-        .round_state
-        .as_ref()
-        .and_then(|round| round.players.get(seat_index))
-        .map(|player| {
-            player
-                .concealed_tiles
-                .iter()
-                .any(|tile| tile.kind == "flower")
-        })
-        .unwrap_or(false)
-}
-
 fn seat_can_beat_recorded_claim(
     seat_index: usize,
     claims: &[String],
@@ -788,33 +724,21 @@ mod tests {
     use crate::core::state::RoomState;
 
     #[test]
-    fn round_start_payload_builds_typed_round_state() {
-        let (round, timeout) = plan_round_start_payload(2, "east", "round-1".to_string(), true, 7);
+    fn round_start_payload_starts_directly_in_active_turn() {
+        for seed in 0..64 {
+            let (round, timeout) =
+                plan_round_start_payload(2, "east", format!("round-{seed}"), true, seed);
 
-        assert_eq!(round.dealer_seat, 2);
-        assert_eq!(round.current_actor, 2);
-        assert_eq!(round.players.len(), 4);
-        assert_eq!(round.wall.head_index, 53);
-        assert_eq!(round.wall.tail_index, 143);
-        assert_eq!(round.players[2].concealed_tiles.len(), 14);
-        assert_eq!(round.players[0].concealed_tiles.len(), 13);
-        assert!(timeout.deadline_at.is_some());
-
-        match round.pending_action {
-            Some(crate::core::state::PendingAction::OpeningFlowers(_)) => {
-                assert_eq!(timeout.kind, "opening_flowers");
-                assert_eq!(
-                    timeout.drawn_tile_id,
-                    super::player_first_flower_tile_id_from_player(
-                        &round.players[round.current_actor]
-                    )
-                );
-            }
-            None => {
-                assert_eq!(timeout.kind, "active_turn");
-                assert_eq!(round.last_action_context.tile_id, timeout.drawn_tile_id);
-            }
-            Some(other) => panic!("unexpected pending action at round start: {other:?}"),
+            assert_eq!(round.dealer_seat, 2);
+            assert_eq!(round.current_actor, 2);
+            assert_eq!(round.players.len(), 4);
+            assert_eq!(round.wall.head_index, 53);
+            assert_eq!(round.players[2].concealed_tiles.len(), 14, "seed {seed}");
+            assert_eq!(round.players[0].concealed_tiles.len(), 13, "seed {seed}");
+            assert!(timeout.deadline_at.is_some());
+            assert!(round.pending_action.is_none(), "seed {seed}");
+            assert_eq!(timeout.kind, "active_turn", "seed {seed}");
+            assert_eq!(round.last_action_context.tile_id, timeout.drawn_tile_id, "seed {seed}");
         }
     }
 
@@ -839,8 +763,6 @@ mod tests {
         let (mut round, _timeout) =
             plan_round_start_payload(0, "east", "round-2".to_string(), true, 11);
         round.pending_action = None;
-        round.score_trackers.opening_flowers_completed = true;
-
         let state = RoomState {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
@@ -922,16 +844,12 @@ mod tests {
                     "discards": []
                 }],
                 "last_discard": null,
-                "pending_action": {
-                    "type": "opening_flowers",
-                    "dealer_seat": 0
-                },
+                "pending_action": null,
                 "phase": "playing",
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": false
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "draw",
@@ -955,11 +873,6 @@ mod tests {
         assert_eq!(plan.flower_tile.tile_id, "f1#hand");
         assert_eq!(plan.replacement_tile.tile_id, "f1#0");
         assert_eq!(plan.last_action_context.kind, "replacement_draw");
-        let advance = plan
-            .opening_flowers_advance
-            .as_ref()
-            .expect("opening flowers should advance");
-        assert_eq!(advance.current_actor, 0);
     }
 
     #[test]
@@ -1006,8 +919,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "discard",
@@ -1085,8 +997,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "discard",
@@ -1175,8 +1086,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "discard",
@@ -1272,8 +1182,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "draw",
@@ -1386,8 +1295,7 @@ mod tests {
                 "settlement": null,
                 "version": 1,
                 "score_trackers": {
-                    "kong_entries": [],
-                    "opening_flowers_completed": true
+                    "kong_entries": []
                 },
                 "last_action_context": {
                     "kind": "draw",

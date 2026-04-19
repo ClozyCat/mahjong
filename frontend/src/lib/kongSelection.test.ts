@@ -11,7 +11,6 @@ import {
   getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
   getMatchingKongGroup,
-  shouldAutoPassOpeningFlowers,
 } from './kongSelection';
 
 function createSessionState(overrides: Partial<SessionState> = {}): SessionState {
@@ -177,7 +176,7 @@ describe('kongSelection', () => {
     expect(getMatchingKongGroup(['w3#0', 'east#0'], groups)).toBeNull();
   });
 
-  it('auto-passes local opening flowers when the hand no longer contains flower tiles', () => {
+  it('lists local concealed flower tiles as flower candidates', () => {
     const state = createSessionState({
       roomSnapshot: {
         type: 'room_snapshot',
@@ -186,11 +185,28 @@ describe('kongSelection', () => {
           private_state: {
             ...createSessionState().roomSnapshot!.payload.private_state!,
             pending_action: {
-              type: 'opening_flowers',
+              type: 'active_turn',
               seat_index: 0,
               deadline_at: '2026-03-26T06:01:00Z',
-              options: ['pass'],
+              drawn_tile_id: 'f1#0',
+              options: ['discard', 'flower'],
             },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 2,
+                concealed_tiles: [
+                  { tile_id: 'f1#0', tile_key: 'f1' },
+                  { tile_id: 'w2#0', tile_key: 'w2' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(1),
+            ],
           },
         },
       },
@@ -198,14 +214,56 @@ describe('kongSelection', () => {
         type: 'action_prompt',
         payload: {
           seat_index: 0,
-          options: ['pass'],
+          options: ['discard', 'flower'],
           deadline_at: '2026-03-26T06:01:00Z',
         },
       },
     });
 
+    expect(getFlowerCandidateTileIds(state)).toEqual(['f1#0']);
+  });
+
+  it('ignores an optimistic flower tile once it has been queued for exposure', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-26T06:01:00Z',
+              drawn_tile_id: 'f1#0',
+              options: ['discard', 'flower'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 2,
+                concealed_tiles: [
+                  { tile_id: 'f1#0', tile_key: 'f1' },
+                  { tile_id: 'w2#0', tile_key: 'w2' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(1),
+            ],
+          },
+        },
+      },
+      optimisticFlower: {
+        tileId: 'f1#0',
+        requestedAt: '2026-03-26T06:01:00Z',
+      },
+    });
+
     expect(getFlowerCandidateTileIds(state)).toEqual([]);
-    expect(shouldAutoPassOpeningFlowers(state)).toBe(true);
   });
 
   it('derives claim-kong candidates from the latest discard and three matching concealed tiles', () => {

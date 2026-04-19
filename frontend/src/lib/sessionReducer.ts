@@ -223,12 +223,7 @@ function reconcileOptimisticFlowerWithSnapshot(
   }
 
   const localSeat = snapshot.payload.local_seat;
-  const pendingAction = snapshot.payload.private_state?.pending_action;
-  if (
-    typeof localSeat !== 'number' ||
-    pendingAction?.type !== 'opening_flowers' ||
-    pendingAction.seat_index !== localSeat
-  ) {
+  if (typeof localSeat !== 'number') {
     return null;
   }
 

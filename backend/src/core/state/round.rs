@@ -45,7 +45,6 @@ impl RoundState {
 #[serde(default)]
 pub struct RoundScoreTrackers {
     pub kong_entries: Vec<KongTrackerEntry>,
-    pub opening_flowers_completed: bool,
 }
 
 impl RoundScoreTrackers {
@@ -65,10 +64,6 @@ impl RoundScoreTrackers {
             .unwrap_or_default();
         Self {
             kong_entries,
-            opening_flowers_completed: value
-                .get("opening_flowers_completed")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
         }
     }
 }
