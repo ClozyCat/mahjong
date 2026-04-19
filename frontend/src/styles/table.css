@@ -168,7 +168,7 @@
 }
 
 .table-stage__center-indicator-count {
-  font-size: calc(var(--table-stage-center-indicator-size) * 0.38);
+  font-size: calc(var(--table-stage-center-indicator-size) * 0.32);
   font-weight: 700;
   line-height: 0.9;
   margin: 0;
