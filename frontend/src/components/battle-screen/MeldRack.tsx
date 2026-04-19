@@ -83,27 +83,36 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
         {hasMelds
           ? melds.map((meld, meldIndex) => (
               <div key={`${seat}-meld-${meldIndex}`} className="meld-rack__group">
-                {normalizeMeldTiles(meld).map((tile, tileIndex) => (
-                  <span
-                    key={`${seat}-meld-${meldIndex}-${tile.code}-${tileIndex}`}
-                    className={`meld-rack__tile ${
-                      tile.orientation === 'rotated' ? 'meld-rack__tile--rotated' : ''
-                    }`.trim()}
-                  >
-                    <MahjongTile
-                      code={tile.code}
-                      variant="discard"
-                      isFaceDown={tile.orientation === 'face_down'}
-                      className={
-                        tile.orientation === 'rotated'
-                          ? 'meld-rack__tile-face--rotated'
-                          : tile.orientation === 'upside_down'
-                            ? 'meld-rack__tile-face--upside-down'
-                            : undefined
-                      }
-                    />
-                  </span>
-                ))}
+                {normalizeMeldTiles(meld).map((tile, tileIndex) => {
+                  const isRotated = tile.orientation === 'rotated';
+                  const sourceDirection = tileIndex === 0 ? 'left' : tileIndex === 1 ? 'top' : 'right';
+
+                  return (
+                    <span
+                      key={`${seat}-meld-${meldIndex}-${tile.code}-${tileIndex}`}
+                      className={`meld-rack__tile ${isRotated ? 'meld-rack__tile--sourced' : ''}`.trim()}
+                    >
+                      {isRotated && (
+                        <span
+                          className={`meld-rack__source-indicator meld-rack__source-indicator--${sourceDirection}`}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <MahjongTile
+                        code={tile.code}
+                        variant="discard"
+                        isFaceDown={tile.orientation === 'face_down'}
+                        className={
+                          isRotated
+                            ? 'meld-rack__tile-face--sourced'
+                            : tile.orientation === 'upside_down'
+                              ? 'meld-rack__tile-face--upside-down'
+                              : undefined
+                        }
+                      />
+                    </span>
+                  );
+                })}
               </div>
             ))
           : emptyLabel

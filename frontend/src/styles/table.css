@@ -448,10 +448,10 @@
   height: var(--table-stage-meld-tile-height);
 }
 
-.table-stage__melds .meld-rack__tile--rotated {
-  width: var(--table-stage-meld-tile-height);
-  height: var(--table-stage-meld-tile-width);
-  margin-inline: 0.08rem;
+.table-stage__melds .meld-rack__tile--sourced {
+
+
+  margin-inline: 0.04rem;
 }
 
 .table-stage__melds--top,
