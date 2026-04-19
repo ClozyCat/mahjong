@@ -321,7 +321,7 @@ describe('sessionReducer', () => {
     expect(next.toasts.at(-1)?.kind).toBe('presence');
   });
 
-  it('localizes tile_discarded round events into win10 toast copy', () => {
+  it('localizes tile_discarded round events into themed toast copy', () => {
     const next = sessionReducer(
       {
         ...createInitialSessionState(),

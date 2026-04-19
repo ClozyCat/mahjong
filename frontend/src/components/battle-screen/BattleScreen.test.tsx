@@ -2149,7 +2149,6 @@ describe('BattleScreen', () => {
   it('renders the battle screen as a plain full-window table layout', () => {
     const { container } = renderBattleScreen(createBattleViewModel());
 
-    expect(container.querySelector('.win10-window')).toBeNull();
     expect(container.querySelector('.stage-background')).toBeNull();
     expect(container.querySelector('.battle-shell')).not.toBeNull();
     expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();

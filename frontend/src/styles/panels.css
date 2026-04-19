@@ -2,7 +2,7 @@
    Panels, Overlays, Controls & Shared Components
    Merged from all cascade layers.  Includes:
    - connect-gate, player-ring, player-slot
-   - win10-window, top-match-bar, battle-drawer
+   - top-match-bar, battle-drawer
    - result-overlay (settlement), fan-guide, ambient-overlay
    - table-stage sub-elements (action-pointer, table-info,
      lobby-controls, scale-controls, bot-controls)
@@ -12,7 +12,6 @@
    Shared surface tokens
    ============================== */
 
-.win10-window,
 .result-overlay__card,
 .connect-gate__panel,
 .battle-drawer,
@@ -31,7 +30,6 @@
   backdrop-filter: blur(22px) saturate(120%);
 }
 
-.win10-window,
 .battle-drawer,
 .ambient-overlay__panel {
   border: 1px solid color-mix(in srgb, var(--theme-paper) 7%, transparent);
@@ -118,22 +116,9 @@
 }
 
 /* ==============================
-   Win10 window (Fluent glass)
+   Connect gate (Modern Glassmorphism)
    ============================== */
 
-.win10-window {
-  overflow: hidden;
-}
-
-.win10-window__titlebar {
-  padding: 0.78rem 0.92rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-border) 82%, transparent);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, var(--accent-3) 12%, transparent)),
-    var(--theme-panel-head);
-}
-
-.win10-window__titlebar strong,
 .connect-gate__panel h1,
 .result-overlay__card h2,
 .top-match-bar__brand strong,
@@ -142,34 +127,6 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-
-.win10-window__titlebar-buttons span {
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
-  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
-}
-
-.win10-window__titlebar-buttons span:last-child {
-  background: linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-danger) 60%, transparent),
-      color-mix(in srgb, var(--theme-danger) 40%, transparent));
-}
-
-.win10-window__body {
-  padding: 0.9rem;
-  color: var(--text);
-}
-
-.win10-window__status {
-  padding: 0.72rem 1rem 0.85rem;
-  border-top: 1px solid color-mix(in srgb, var(--theme-paper) 5%, transparent);
-  background: color-mix(in srgb, var(--theme-paper) 2%, transparent);
-  color: var(--muted);
-}
-
-/* ==============================
-   Connect gate (Modern Glassmorphism)
-   ============================== */
 
 .connect-gate {
   min-height: 100vh;

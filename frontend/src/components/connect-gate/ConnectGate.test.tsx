@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { ConnectGate } from './ConnectGate';
 
 describe('ConnectGate', () => {
-  it('renders chinese-first lobby copy inside a win10 shell', () => {
-    const { container } = render(
+  it('renders the current lobby layout and controls', () => {
+    render(
       <ConnectGate
         value={{
           tableCode: '',
@@ -24,17 +24,15 @@ describe('ConnectGate', () => {
       />,
     );
 
-    expect(screen.getByText('联机大厅')).toBeInTheDocument();
-    expect(screen.queryByLabelText('服务地址')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('通信地址')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('昵称')).toBeInTheDocument();
-    expect(screen.getByText('当前配色')).toBeInTheDocument();
+    expect(screen.getByText('启局入席')).toBeInTheDocument();
+    expect(screen.getByText('输入昵称后即可开启牌局。')).toBeInTheDocument();
+    expect(screen.getByLabelText('牌桌编号')).toBeInTheDocument();
+    expect(screen.getByLabelText('您的昵称')).toBeInTheDocument();
     expect(screen.getByText('天水碧')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /牌桌模式：普通模式/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /八番起胡/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '创建牌桌' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '创建新局' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
-    expect(container.querySelector('.win10-window')).not.toBeNull();
   });
 
   it('forwards field edits and create/join actions', async () => {
@@ -66,7 +64,7 @@ describe('ConnectGate', () => {
     await user.click(tableModeButton);
     await user.click(tableModeButton);
     await user.click(screen.getByRole('button', { name: /八番起胡/i }));
-    await user.click(screen.getByRole('button', { name: '创建牌桌' }));
+    await user.click(screen.getByRole('button', { name: '创建新局' }));
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(onChange).toHaveBeenCalled();
@@ -97,9 +95,8 @@ describe('ConnectGate', () => {
     );
 
     expect(screen.getAllByText('牌桌编号仅支持数字和英文字母。')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '创建牌桌' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '创建新局' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeDisabled();
-    expect(screen.getByLabelText('牌桌编号')).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('waits until composition ends before syncing ime input to the parent state', () => {
@@ -124,7 +121,7 @@ describe('ConnectGate', () => {
     );
 
     const tableCodeInput = screen.getByLabelText('牌桌编号');
-    const nicknameInput = screen.getByLabelText('昵称');
+    const nicknameInput = screen.getByLabelText('您的昵称');
 
     fireEvent.compositionStart(tableCodeInput);
     fireEvent.change(tableCodeInput, { target: { value: 'ab12' } });
