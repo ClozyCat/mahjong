@@ -382,7 +382,7 @@ export interface PlayerView {
 
 export interface DisplayMeldTileView {
   code: string;
-  orientation: 'normal' | 'rotated' | 'face_down';
+  orientation: 'normal' | 'rotated' | 'upside_down' | 'face_down';
 }
 
 export interface DisplayMeldView {

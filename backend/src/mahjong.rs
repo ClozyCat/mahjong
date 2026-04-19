@@ -1302,7 +1302,7 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["players"][2]["display_melds"][0]["tiles"],
             json!([
-                {"code": "w3", "orientation": "rotated"},
+                {"code": "w3", "orientation": "upside_down"},
                 {"code": "w3", "orientation": "normal"},
                 {"code": "w3", "orientation": "normal"},
                 {"code": "w3", "orientation": "normal"}

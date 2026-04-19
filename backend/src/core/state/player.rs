@@ -51,6 +51,7 @@ impl PlayerRoundState {
 pub enum DisplayMeldOrientation {
     Normal,
     Rotated,
+    UpsideDown,
     FaceDown,
 }
 

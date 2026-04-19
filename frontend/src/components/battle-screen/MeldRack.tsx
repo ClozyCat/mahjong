@@ -94,7 +94,13 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
                       code={tile.code}
                       variant="discard"
                       isFaceDown={tile.orientation === 'face_down'}
-                      className={tile.orientation === 'rotated' ? 'meld-rack__tile-face--rotated' : undefined}
+                      className={
+                        tile.orientation === 'rotated'
+                          ? 'meld-rack__tile-face--rotated'
+                          : tile.orientation === 'upside_down'
+                            ? 'meld-rack__tile-face--upside-down'
+                            : undefined
+                      }
                     />
                   </span>
                 ))}

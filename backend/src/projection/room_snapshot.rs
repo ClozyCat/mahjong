@@ -366,6 +366,7 @@ fn project_display_melds(display_melds: &[DisplayMeldState]) -> Vec<DisplayMeldV
                     orientation: match tile.orientation {
                         DisplayMeldOrientation::Normal => "normal",
                         DisplayMeldOrientation::Rotated => "rotated",
+                        DisplayMeldOrientation::UpsideDown => "upside_down",
                         DisplayMeldOrientation::FaceDown => "face_down",
                     },
                 })

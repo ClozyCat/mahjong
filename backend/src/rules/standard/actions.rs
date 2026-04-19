@@ -189,16 +189,21 @@ fn create_claim_display_meld(
     if action_type == "pung" || action_type == "kong" {
         let relative_source_seat = (source_seat + MAX_SEATS - actor_seat) % MAX_SEATS;
         let claimed_index = if relative_source_seat == 1 && meld.len() > 1 {
-            1
+            meld.len() - 1
         } else {
             0
+        };
+        let claimed_orientation = if relative_source_seat == 2 {
+            DisplayMeldOrientation::UpsideDown
+        } else {
+            DisplayMeldOrientation::Rotated
         };
 
         return create_repeated_display_meld(
             claim_tile_key,
             meld.len(),
             claimed_index,
-            DisplayMeldOrientation::Rotated,
+            claimed_orientation,
         );
     }
 
@@ -2412,6 +2417,49 @@ mod tests {
             timeout.deadline_at = None;
         }
         room
+    }
+
+    #[test]
+    fn claim_display_meld_marks_opposite_pung_tile_as_upside_down() {
+        let display_meld = create_claim_display_meld(
+            "pung",
+            0,
+            2,
+            &["w3".to_string(), "w3".to_string(), "w3".to_string()],
+            "w3",
+        );
+
+        assert_eq!(display_meld.tiles[0].code, "w3");
+        assert_eq!(
+            display_meld.tiles[0].orientation,
+            DisplayMeldOrientation::UpsideDown
+        );
+    }
+
+    #[test]
+    fn claim_display_meld_places_right_source_kong_tile_in_last_slot() {
+        let display_meld = create_claim_display_meld(
+            "kong",
+            0,
+            1,
+            &[
+                "w3".to_string(),
+                "w3".to_string(),
+                "w3".to_string(),
+                "w3".to_string(),
+            ],
+            "w3",
+        );
+
+        assert_eq!(display_meld.tiles[3].code, "w3");
+        assert_eq!(display_meld.tiles[3].orientation, DisplayMeldOrientation::Rotated);
+        assert!(
+            display_meld
+                .tiles
+                .iter()
+                .take(3)
+                .all(|tile| tile.orientation == DisplayMeldOrientation::Normal)
+        );
     }
 
     #[test]

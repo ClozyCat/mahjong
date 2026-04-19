@@ -232,6 +232,11 @@
   transform-origin: center;
 }
 
+.meld-rack__tile-face--upside-down {
+  transform: rotate(180deg);
+  transform-origin: center;
+}
+
 .meld-rack__tile-face--rotated .mahjong-tile__shell {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--theme-warning) 28%, transparent),
