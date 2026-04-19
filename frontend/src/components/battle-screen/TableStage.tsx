@@ -407,24 +407,12 @@ export function TableStage({
               </button>
             ) : null}
           </div>
-          <div className="table-stage__center-meta">
-            <strong>{centerPrimaryText}</strong>
-            {deadlineAt && (
-              <div className="table-stage__center-countdown" aria-hidden="true">
-                <div
-                  className="table-stage__center-countdown-bar"
-                  style={{ width: `${countdownPercent * 100}%` }}
-                />
-              </div>
-            )}
-            {promptText ? <em>{promptText}</em> : null}
-          </div>
-          {actionIndicatorSeat ? (
-            <div
-              className={`table-stage__action-pointer table-stage__action-pointer--${actionIndicatorSeat}`}
-              aria-label={`${ACTION_POINTER_COPY[actionIndicatorSeat]}正在行动`}
-            />
-          ) : null}
+          <CenterIndicator
+            remainingCount={remainingTileCount}
+            actionSeat={actionIndicatorSeat}
+            countdownPercent={countdownPercent}
+            isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
+          />
           {shouldShowPreMatchActions || shouldShowBotControls ? (
             <div className="table-stage__lobby-controls">
               {shouldShowPreMatchActions ? (
@@ -706,10 +694,10 @@ const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
   left: 320,
 };
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string }> = {
-  top: { left: '50%', top: '41%' },
-  bottom: { left: '50%', top: '41%' },
-  left: { left: '50%', top: '41%' },
-  right: { left: '50%', top: '41%' },
+  top: { left: '50%', top: 'calc(41% - var(--table-stage-spotlight-offset))' },
+  bottom: { left: '50%', top: 'calc(41% + var(--table-stage-spotlight-offset))' },
+  left: { left: 'calc(50% - var(--table-stage-spotlight-offset))', top: '41%' },
+  right: { left: 'calc(50% + var(--table-stage-spotlight-offset))', top: '41%' },
 };
 
 type ActionCallout = {
@@ -795,6 +783,63 @@ function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
       style={getSettlementCalloutStyle(callout.seat)}
     >
       <span className="table-stage__action-callout-glyph">{callout.label}</span>
+    </div>
+  );
+}
+
+interface CenterIndicatorProps {
+  remainingCount: number | null;
+  actionSeat: Seat | null;
+  countdownPercent: number;
+  isAmbiguous?: boolean;
+}
+
+function CenterIndicator({
+  remainingCount,
+  actionSeat,
+  countdownPercent,
+  isAmbiguous = false,
+}: CenterIndicatorProps) {
+  const radius = 34; // Smaller radius to fit pointer outside
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - countdownPercent * circumference;
+
+  // Rotation angles for pointer (0 is bottom)
+  const rotationMap: Record<Seat, number> = {
+    bottom: 0,
+    right: 90,
+    top: 180,
+    left: 270,
+  };
+
+  const pointerRotation = actionSeat ? rotationMap[actionSeat] : 0;
+
+  return (
+    <div className="table-stage__center-indicator" aria-label="游戏进度指示器">
+      {isAmbiguous && <div className="table-stage__center-indicator-breathing" />}
+      <svg className="table-stage__center-indicator-ring" viewBox="0 0 100 100">
+        <circle className="table-stage__center-indicator-base" cx="50" cy="50" r="38" />
+        <circle
+          className="table-stage__center-indicator-countdown"
+          cx="50"
+          cy="50"
+          r={radius}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+        {actionSeat && (
+          <path
+            className="table-stage__center-indicator-pointer"
+            d="M44 90 L56 90 L50 98 Z"
+            transform={`rotate(${pointerRotation} 50 50)`}
+          />
+        )}
+      </svg>
+      <div className="table-stage__center-indicator-remaining">
+        <strong className="table-stage__center-indicator-count">
+          {remainingCount ?? 0}
+        </strong>
+      </div>
     </div>
   );
 }

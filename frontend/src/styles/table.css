@@ -27,18 +27,19 @@
   --table-stage-seat-panel-padding-inline: clamp(0.3rem, 0.65vw, 0.46rem);
   --table-stage-horizontal-river-reference-rows: 2;
   --table-stage-horizontal-river-reference-height: calc((var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) + (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1)));
-  --table-stage-action-pointer-size: 1.42rem;
-  --table-stage-action-pointer-offset-y: 4.35rem;
-  --table-stage-action-pointer-offset-x: calc(var(--table-stage-action-pointer-offset-y) * 2);
+  --table-stage-action-pointer-size: 1.4rem;
+  --table-stage-center-indicator-size: clamp(4.2rem, 10vw, 5.8rem);
+  --table-stage-spotlight-offset: calc(var(--table-stage-center-indicator-size) * 1.1);
   --table-player-accent: color-mix(in srgb, var(--accent) 62%, var(--theme-paper));
   --table-player-accent-strong: color-mix(in srgb, var(--accent) 54%, var(--theme-paper));
   --table-player-accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
   --table-player-accent-surface: color-mix(in srgb, var(--accent) 12%, transparent);
   --table-player-accent-shadow: color-mix(in srgb, var(--accent) 26%, transparent);
-  --table-stage-action-pointer-core: color-mix(in srgb, var(--accent-2) 70%, var(--theme-paper));
-  --table-stage-action-pointer-edge: color-mix(in srgb, var(--theme-paper) 90%, var(--accent-2));
-  --table-stage-action-pointer-shadow: color-mix(in srgb, var(--accent) 24%, transparent);
-  --table-stage-action-pointer-ring: color-mix(in srgb, var(--accent-2) 18%, transparent);
+  --table-center-ring-bg: color-mix(in srgb, var(--theme-panel-bg-strong) 92%, black);
+  --table-center-ring-border: color-mix(in srgb, var(--theme-paper) 24%, var(--accent-2));
+  --table-center-ring-ink: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-2));
+  --table-center-countdown-color: var(--accent);
+  --table-center-breathing-color: var(--theme-success);
   position: relative;
   width: 100%;
   height: 100%;
@@ -80,47 +81,98 @@
 /* ------- Urgent table state ------- */
 
 
-/* ------- Center meta ------- */
+/* ------- Center indicator (unified) ------- */
 
-.table-stage__center-meta {
-  gap: 0.25rem;
-  padding: 0.8rem 1rem;
-  color: color-mix(in srgb, var(--theme-paper) 56%, transparent);
+.table-stage__center-indicator {
+  position: absolute;
+  left: 50%;
+  top: 41%;
+  width: var(--table-stage-center-indicator-size);
+  height: var(--table-stage-center-indicator-size);
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
-
-.table-stage__center-meta strong {
-  font-size: clamp(0.86rem, 1.1vw, 1.05rem);
-  color: color-mix(in srgb, var(--theme-paper) 88%, var(--accent-2));
-}
-
-.table-stage__center-meta,
-.table-stage__center-meta span {
-  color: color-mix(in srgb, var(--theme-paper) 56%, transparent);
-}
-
-.table-stage__center-meta em {
-  font-size: clamp(0.62rem, 0.8vw, 0.72rem);
-  color: color-mix(in srgb, var(--theme-paper) 78%, transparent);
-}
-
-/* ------- Center countdown ------- */
-
-.table-stage__center-countdown {
-  width: 12rem;
-  height: 3px;
-  background: color-mix(in srgb, var(--theme-paper) 12%, transparent);
-  border-radius: 99px;
-  overflow: hidden;
-  margin: 0.4rem 0;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.table-stage__center-countdown-bar {
+.table-stage__center-indicator-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  box-shadow: 0 0 8px var(--accent);
-  transition: width 0.1s linear;
+}
+
+.table-stage__center-indicator-base {
+  fill: var(--table-center-ring-bg);
+  stroke: var(--table-center-ring-border);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+}
+
+.table-stage__center-indicator-countdown {
+  fill: none;
+  stroke: var(--table-center-countdown-color);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 0.1s linear;
+  filter: drop-shadow(0 0 6px var(--table-center-countdown-color));
+}
+
+.table-stage__center-indicator-pointer {
+  fill: var(--accent-2);
+  filter: drop-shadow(0 0 8px var(--accent-2));
+  transition: transform 0.4s var(--ease-spring);
+}
+
+.table-stage__center-indicator-breathing {
+  position: absolute;
+  inset: -8%;
+  border-radius: 50%;
+  border: 2px solid var(--table-center-breathing-color);
+  opacity: 0;
+  pointer-events: none;
+  animation: center-indicator-breathing 2s ease-in-out infinite;
+}
+
+.table-stage__center-indicator-remaining {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  color: var(--table-center-ring-ink);
+  font-family: 'SimSun', 'STKaiti', 'KaiTi', serif;
+}
+
+.table-stage__center-indicator-count {
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.table-stage__center-indicator-label {
+  font-size: clamp(0.6rem, 1.2vw, 0.75rem);
+  opacity: 0.7;
+  letter-spacing: 0.1em;
+}
+
+@keyframes center-indicator-breathing {
+  0%, 100% {
+    transform: scale(0.98);
+    opacity: 0.1;
+    filter: blur(2px);
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.4;
+    filter: blur(4px);
+  }
 }
 
 
@@ -841,26 +893,22 @@
 /* Seat-specific spotlight & callout positioning (higher specificity) */
 .table-stage__spotlight.table-stage__spotlight--top,
 .table-stage__action-callout.table-stage__spotlight--top {
-  top: calc(41% - var(--table-stage-action-pointer-offset-y));
-  transform: translate(-50%, -50%) rotate(180deg);
+  top: calc(41% - var(--table-stage-spotlight-offset));
 }
 
 .table-stage__spotlight.table-stage__spotlight--bottom,
 .table-stage__action-callout.table-stage__spotlight--bottom {
-  top: calc(41% + var(--table-stage-action-pointer-offset-y));
-  transform: translate(-50%, -50%);
+  top: calc(41% + var(--table-stage-spotlight-offset));
 }
 
 .table-stage__spotlight.table-stage__spotlight--left,
 .table-stage__action-callout.table-stage__spotlight--left {
-  left: calc(50% - var(--table-stage-action-pointer-offset-x));
-  transform: translate(-50%, -50%) rotate(90deg);
+  left: calc(50% - var(--table-stage-spotlight-offset));
 }
 
 .table-stage__spotlight.table-stage__spotlight--right,
 .table-stage__action-callout.table-stage__spotlight--right {
-  left: calc(50% + var(--table-stage-action-pointer-offset-x));
-  transform: translate(-50%, -50%) rotate(-90deg);
+  left: calc(50% + var(--table-stage-spotlight-offset));
 }
 
 .table-stage__action-callout--draw {
