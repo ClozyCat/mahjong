@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { TableMode } from '../../types/match';
-import { WindowFrame } from '../win10/WindowFrame';
 
 export interface ConnectGateValue {
   tableCode: string;
@@ -35,11 +34,11 @@ const CONNECT_GATE_QUOTES = [
 const TABLE_MODE_COPY: Record<TableMode, { label: string; description: string }> = {
   normal: {
     label: '普通模式',
-    description: '手动准备开局',
+    description: '手动准备',
   },
   test: {
     label: '测试模式',
-    description: '自动补满机器人',
+    description: '自动补位',
   },
 };
 
@@ -65,11 +64,11 @@ export function ConnectGate({
   const tableCodeComposingRef = useRef(false);
   const nicknameComposingRef = useRef(false);
   const disabled = status === 'connecting';
-  const helperText = tableCodeError ?? '支持 1-12 位数字或英文字母；留空创建时将自动分配。';
+  const helperText = tableCodeError ?? '留空创建时将自动分配。';
   const statusText =
     message ??
     tableCodeError ??
-    (disabled ? '正在连接牌桌，请稍候。' : '输入昵称后即可创建牌桌，或填写编号加入现有牌局。');
+    (disabled ? '正在建立连接...' : '输入昵称后即可开启牌局。');
 
   useEffect(() => {
     if (!tableCodeComposingRef.current) {
@@ -110,56 +109,47 @@ export function ConnectGate({
         aria-label={`牌桌模式：${currentMode.label}`}
         title={`点击切换为${nextModeLabel}`}
       >
-        <span>牌桌模式</span>
-        <strong>{`${currentMode.label} · ${currentMode.description}`}</strong>
+        <span>模式</span>
+        <strong>{currentMode.label}</strong>
       </button>
     );
   }
 
   return (
-    <section className="connect-gate" aria-label="Room connection setup">
-      <WindowFrame title="四风麻将客户端" status={statusText} className="connect-gate__window">
-        <div className="connect-gate__panel">
-          <div className="connect-gate__shell">
-            <div className="connect-gate__hero">
-              <p className="connect-gate__eyebrow">联机大厅</p>
-              <h1>启局入席</h1>
-              <p className="connect-gate__lead">
-                大厅会在每次开启时随机取用一套中国色。保留当前牌桌内的沉浸感，也让每次入局都有一点新鲜气息。
-              </p>
-
-              <div className="connect-gate__meta">
-                <article className="connect-gate__meta-card connect-gate__meta-card--palette">
-                  <div className="connect-gate__meta-heading">
-                    <span>当前配色</span>
-                    <em>入厅时随机换新</em>
-                  </div>
-                  <strong>{themeLabel}</strong>
-                  <div className="connect-gate__palette-preview" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </article>
-              </div>
+    <main className="connect-gate" aria-label="Lobby">
+      <div className="connect-gate__backdrop" aria-hidden="true" />
+      
+      <div className="connect-gate__card">
+        <header className="connect-gate__header">
+          <div className="connect-gate__brand">
+            <span className="connect-gate__eyebrow">Online Lobby</span>
+            <h1>启局入席</h1>
+            <div className="connect-gate__status" role="status">
+              <span className={`connect-gate__status-dot connect-gate__status-dot--${status}`} />
+              {statusText}
             </div>
+          </div>
+          
+          <div className="connect-gate__theme-badge">
+            <span>{themeLabel}</span>
+          </div>
+        </header>
 
-            <div className="connect-gate__form">
-              <label className="connect-gate__field">
-                <span>牌桌编号</span>
+        <section className="connect-gate__body">
+          <div className="connect-gate__inputs">
+            <div className="connect-gate__field">
+              <label htmlFor="table-code">牌桌编号</label>
+              <div className="connect-gate__input-wrapper">
                 <input
+                  id="table-code"
                   value={tableCodeDraft}
+                  placeholder="AUTO"
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setTableCodeDraft(nextValue);
-
-                    if (!tableCodeComposingRef.current) {
-                      commitTableCode(nextValue);
-                    }
+                    if (!tableCodeComposingRef.current) commitTableCode(nextValue);
                   }}
-                  onCompositionStart={() => {
-                    tableCodeComposingRef.current = true;
-                  }}
+                  onCompositionStart={() => { tableCodeComposingRef.current = true; }}
                   onCompositionEnd={(event) => {
                     tableCodeComposingRef.current = false;
                     commitTableCode(event.currentTarget.value);
@@ -168,70 +158,72 @@ export function ConnectGate({
                   maxLength={12}
                   autoCapitalize="characters"
                   spellCheck={false}
-                  aria-label="牌桌编号"
-                  aria-invalid={tableCodeError ? 'true' : 'false'}
-                  aria-describedby="connect-gate-table-code-hint"
                 />
-                <small
-                  id="connect-gate-table-code-hint"
-                  className={tableCodeError ? 'connect-gate__hint connect-gate__hint--error' : 'connect-gate__hint'}
-                >
-                  {helperText}
-                </small>
-              </label>
+                <small className={tableCodeError ? 'error' : ''}>{helperText}</small>
+              </div>
+            </div>
 
-              <label className="connect-gate__field">
-                <span>昵称</span>
+            <div className="connect-gate__field">
+              <label htmlFor="nickname">您的昵称</label>
+              <div className="connect-gate__input-wrapper">
                 <input
+                  id="nickname"
                   value={nicknameDraft}
+                  placeholder="请输入..."
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setNicknameDraft(nextValue);
-
-                    if (!nicknameComposingRef.current) {
-                      commitNickname(nextValue);
-                    }
+                    if (!nicknameComposingRef.current) commitNickname(nextValue);
                   }}
-                  onCompositionStart={() => {
-                    nicknameComposingRef.current = true;
-                  }}
+                  onCompositionStart={() => { nicknameComposingRef.current = true; }}
                   onCompositionEnd={(event) => {
                     nicknameComposingRef.current = false;
                     commitNickname(event.currentTarget.value);
                   }}
                   disabled={disabled}
-                  aria-label="昵称"
                 />
-              </label>
-
-              <div className="connect-gate__actions connect-gate__actions--toggles">
-                {renderTableModeToggle()}
-                <button
-                  type="button"
-                  className="connect-gate__toggle"
-                  onClick={() => onChange({ enforceMinimumEightFan: !value.enforceMinimumEightFan })}
-                  disabled={disabled}
-                  aria-pressed={value.enforceMinimumEightFan}
-                >
-                  <span>八番起胡</span>
-                  <strong>{value.enforceMinimumEightFan ? '限制中' : '已放宽'}</strong>
-                </button>
               </div>
-
-              <div className="connect-gate__actions connect-gate__actions--primary">
-                <button type="button" className="connect-gate__button connect-gate__button--primary" onClick={onCreate} disabled={!canCreate}>
-                  创建牌桌
-                </button>
-                <button type="button" className="connect-gate__button connect-gate__button--secondary" onClick={onJoin} disabled={!canJoin}>
-                  加入牌桌
-                </button>
-              </div>
-
-              <p className="connect-gate__footnote">{footnoteQuote}</p>
             </div>
           </div>
-        </div>
-      </WindowFrame>
-    </section>
+
+          <div className="connect-gate__settings">
+            {renderTableModeToggle()}
+            <button
+              type="button"
+              className="connect-gate__toggle"
+              onClick={() => onChange({ enforceMinimumEightFan: !value.enforceMinimumEightFan })}
+              disabled={disabled}
+              aria-pressed={value.enforceMinimumEightFan}
+            >
+              <span>限制</span>
+              <strong>{value.enforceMinimumEightFan ? '八番起胡' : '自由模式'}</strong>
+            </button>
+          </div>
+
+          <div className="connect-gate__actions">
+            <button 
+              type="button" 
+              className="connect-gate__btn connect-gate__btn--primary" 
+              onClick={onCreate} 
+              disabled={!canCreate}
+            >
+              创建新局
+            </button>
+            <button 
+              type="button" 
+              className="connect-gate__btn connect-gate__btn--secondary" 
+              onClick={onJoin} 
+              disabled={!canJoin}
+            >
+              加入牌桌
+            </button>
+          </div>
+        </section>
+
+        <footer className="connect-gate__footer">
+          <p className="connect-gate__quote">{footnoteQuote}</p>
+        </footer>
+      </div>
+    </main>
   );
 }

@@ -739,7 +739,7 @@
   top: var(--spotlight-top, 41%);
   z-index: 2;
   pointer-events: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--spotlight-rotation, 0deg));
 }
 
 
