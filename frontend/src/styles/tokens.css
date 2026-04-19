@@ -85,6 +85,10 @@ html {
   html { font-size: 13px; }
 }
 
+html[data-small-screen='true'] {
+  font-size: 14px;
+}
+
 body {
   margin: 0;
   color: var(--text);

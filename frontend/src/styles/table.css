@@ -1085,6 +1085,36 @@
   }
 }
 
+:root[data-small-screen='true'] .table-stage__seat-panel--left,
+:root[data-small-screen='true'] .table-stage__seat-panel--right,
+:root[data-small-screen='true'] .table-stage__seat-panel--top,
+:root[data-small-screen='true'] .table-stage__seat-panel--bottom {
+  transform: none;
+}
+
+:root[data-small-screen='true'] .table-stage__player-info {
+  gap: 0.12rem;
+  width: 100%;
+  padding: 0.42rem;
+}
+
+:root[data-small-screen='true'] .table-stage__player-info-cluster--top,
+:root[data-small-screen='true'] .table-stage__player-info-cluster--bottom,
+:root[data-small-screen='true'] .table-stage__player-info-cluster--left,
+:root[data-small-screen='true'] .table-stage__player-info-cluster--right {
+  width: 4.6rem;
+}
+
+:root[data-small-screen='true'] .table-stage__player-info-name {
+  font-size: 0.64rem;
+}
+
+:root[data-small-screen='true'] .table-stage__player-info-eyebrow,
+:root[data-small-screen='true'] .table-stage__player-info-meta,
+:root[data-small-screen='true'] .table-stage__player-info-detail {
+  font-size: 0.4rem;
+}
+
 /* ---- Landscape mobile ---- */
 @media (orientation: landscape) and (max-height: 500px) {
   .table-stage {

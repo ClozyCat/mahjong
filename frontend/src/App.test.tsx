@@ -162,7 +162,7 @@ async function joinTable(user: ReturnType<typeof userEvent.setup>) {
   render(<App />);
 
   await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
-  await user.type(screen.getByLabelText('昵称'), 'Player A');
+  await user.type(screen.getByLabelText(/昵称/), 'Player A');
   await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
   const socket = MockWebSocket.instances[0];
@@ -190,6 +190,51 @@ describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    delete document.documentElement.dataset.smallScreen;
+  });
+
+  it('requests landscape orientation when a mobile user joins a table', async () => {
+    const user = userEvent.setup();
+    const lock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+    });
+    Object.defineProperty(window.screen, 'orientation', {
+      configurable: true,
+      value: { lock },
+    });
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
+    await user.type(screen.getByLabelText(/昵称/), 'Player A');
+    await user.click(screen.getByRole('button', { name: '加入牌桌' }));
+
+    expect(lock).toHaveBeenCalledWith('landscape');
+  });
+
+  it('forces mobile battle sessions into small-screen mode even after joining', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+    });
+    Object.defineProperty(window.screen, 'orientation', {
+      configurable: true,
+      value: { lock: vi.fn().mockResolvedValue(undefined) },
+    });
+
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    expect(document.documentElement.dataset.smallScreen).toBe('true');
   });
 
   it('picks a random zhongguose theme when the lobby opens', async () => {

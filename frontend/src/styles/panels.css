@@ -573,6 +573,11 @@
   }
 }
 
+:root[data-small-screen='true'] .battle-drawer {
+  top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
+  width: min(11.8rem, calc(100vw - 0.8rem));
+}
+
 /* ==============================
    Ambient overlay
    ============================== */
@@ -1504,6 +1509,38 @@
   .result-overlay__actions button {
     flex: 1;
   }
+}
+
+:root[data-small-screen='true'] .result-overlay__columns {
+  gap: 0.75rem;
+}
+
+:root[data-small-screen='true'] .result-overlay__card {
+  border-radius: 1.2rem;
+  padding: 0.75rem 0.9rem 0.8rem;
+}
+
+:root[data-small-screen='true'] .result-overlay__score-pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+:root[data-small-screen='true'] .result-overlay__seat-row--inactive {
+  display: none;
+}
+
+:root[data-small-screen='true'] .result-overlay__score-hint {
+  display: none;
+}
+
+:root[data-small-screen='true'] .result-overlay__actions {
+  flex-direction: row;
+  width: 100%;
+}
+
+:root[data-small-screen='true'] .result-overlay__actions button {
+  flex: 1;
 }
 
 @media (max-height: 500px) {

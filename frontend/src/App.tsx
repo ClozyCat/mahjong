@@ -36,6 +36,7 @@ import {
   saveStoredSession,
   saveStoredThemeId,
 } from './lib/storage';
+import { isMobileDevice, requestLandscapeOrientation } from './lib/device';
 import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
 import type { BackendActionType, BattleActionId, ClaimActionId, QuickChatEmoji, SessionState } from './types/match';
@@ -190,6 +191,7 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
 
 export default function App() {
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
+  const isMobileClient = useMemo(() => isMobileDevice(), []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
     const nextThemeId = isThemeId(storedThemeId) ? getRandomThemeId(storedThemeId) : getRandomThemeId();
@@ -500,6 +502,20 @@ export default function App() {
     hasNickname &&
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
+  const shouldForceSmallScreen = isMobileClient && state.roomSnapshot !== null;
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    if (shouldForceSmallScreen) {
+      document.documentElement.dataset.smallScreen = 'true';
+      return;
+    }
+
+    delete document.documentElement.dataset.smallScreen;
+  }, [shouldForceSmallScreen]);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
@@ -555,6 +571,7 @@ export default function App() {
     }
 
     try {
+      requestLandscapeOrientation();
       setStatusMessage('正在创建牌桌...');
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       const requestedTableCode = normalizedRequestedTableCode;
@@ -609,6 +626,7 @@ export default function App() {
       return;
     }
 
+    requestLandscapeOrientation();
     setStatusMessage('正在加入牌桌...');
     dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
     openRoomSocket({
