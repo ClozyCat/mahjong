@@ -973,6 +973,12 @@
     max-width: calc(100vw - 1.4rem);
     padding: 0.44rem 0.46rem 0.48rem;
   }
+
+  .action-dock__info-rail {
+    left: auto;
+    right: 0.2rem;
+    padding-left: 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1118,6 +1124,12 @@
   transform: translateX(-50%);
 }
 
+:root[data-small-screen='true'] .action-dock__info-rail {
+  left: auto;
+  right: 0.25rem;
+  padding-left: 0;
+}
+
 /* ---- Landscape mobile ---- */
 @media (orientation: landscape) and (max-height: 500px) {
   .action-dock {
@@ -1160,6 +1172,8 @@
   }
 
   .action-dock__info-rail {
+    left: auto;
+    right: 0.2rem;
     padding-left: 0.5rem;
     gap: 0.3rem;
   }
