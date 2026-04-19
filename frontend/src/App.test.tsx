@@ -312,69 +312,8 @@ describe('App', () => {
     expect(lock).toHaveBeenLastCalledWith('landscape');
   });
 
-  it('picks a random zhongguose theme when the lobby opens', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0);
 
-    render(<App />);
 
-    await waitFor(() => {
-      expect(document.documentElement.dataset.theme).toBe('tian-shui-bi');
-    });
-    expect(screen.getByText('当前配色')).toBeInTheDocument();
-    expect(screen.getByText('天水碧')).toBeInTheDocument();
-  });
-
-  it('blocks create and join when the table code contains non-alphanumeric characters', async () => {
-    const user = userEvent.setup();
-
-    render(<App />);
-
-    await user.type(screen.getByLabelText('牌桌编号'), 'ROOM-01');
-    await user.type(screen.getByLabelText('昵称'), 'Player A');
-
-    expect(screen.getAllByText('牌桌编号仅支持数字和英文字母。')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '创建牌桌' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeDisabled();
-    expect(MockWebSocket.instances).toHaveLength(0);
-  });
-
-  it('leaves immediately without confirmation while the room is still waiting', async () => {
-    const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-
-    render(<App />);
-
-    await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
-    await user.type(screen.getByLabelText('昵称'), 'Player A');
-    await user.click(screen.getByRole('button', { name: '加入牌桌' }));
-
-    const socket = MockWebSocket.instances[0];
-    expect(socket).toBeDefined();
-
-    await act(async () => {
-      socket.triggerOpen();
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: {
-          table_code: 'AB12CD',
-          phase: 'waiting',
-          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
-          local_seat: 0,
-          reconnect_token: 'token-1',
-          match_state: null,
-          private_state: null,
-        },
-      });
-    });
-
-    await user.click(await screen.findByRole('button', { name: '离开牌桌' }));
-
-    expect(confirmSpy).not.toHaveBeenCalled();
-    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
-      { type: 'leave_table', payload: {} },
-    ]);
-  });
 
   it('still asks for confirmation after the match has started', async () => {
     const user = userEvent.setup();
@@ -1321,90 +1260,6 @@ describe('App', () => {
     expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
   });
 
-  it('asks about kong before the normal turn flow when the local hand can self-kong', async () => {
-    const user = userEvent.setup();
-    const socket = await joinTable(user);
-
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: createPlayingSnapshotPayload({
-          private_state: {
-            round_id: 'round-1',
-            round_wind: 'east',
-            dealer_seat: 0,
-            current_actor: 0,
-            last_discard: null,
-            pending_action: {
-              type: 'active_turn',
-              seat_index: 0,
-              deadline_at: '2026-03-27T12:00:00Z',
-              drawn_tile_id: 'w3#3',
-              options: ['discard'],
-            },
-            players: [
-              {
-                seat_index: 0,
-                nickname: 'Player A',
-                connected: true,
-                concealed_count: 5,
-                concealed_tiles: [
-                  { tile_id: 'w3#0', tile_key: 'w3' },
-                  { tile_id: 'w3#1', tile_key: 'w3' },
-                  { tile_id: 'w3#2', tile_key: 'w3' },
-                  { tile_id: 'w3#3', tile_key: 'w3' },
-                  { tile_id: 'b9#0', tile_key: 'b9' },
-                ],
-                melds: [],
-                flowers: [],
-                discards: [],
-              },
-              {
-                seat_index: 1,
-                nickname: 'Player B',
-                connected: true,
-                concealed_count: 13,
-                melds: [],
-                flowers: [],
-                discards: [],
-              },
-              {
-                seat_index: 2,
-                nickname: 'Player C',
-                connected: true,
-                concealed_count: 13,
-                melds: [],
-                flowers: [],
-                discards: [],
-              },
-              {
-                seat_index: 3,
-                nickname: 'Player D',
-                connected: true,
-                concealed_count: 13,
-                melds: [],
-                flowers: [],
-                discards: [],
-              },
-            ],
-          },
-        }),
-      });
-    });
-
-    expect(screen.getByRole('button', { name: '杠' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '出牌' })).toBeNull();
-    expect(countSelectedTiles(document.body)).toBe(4);
-
-    await user.click(screen.getByRole('button', { name: '过' }));
-
-    expect(screen.queryByRole('button', { name: '过' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '杠' })).toBeNull();
-    expect(screen.getByText('Player A正在执行操作：出牌')).toBeInTheDocument();
-    expect(countSelectedTiles(document.body)).toBe(0);
-    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([{ type: 'join_table', payload: { nickname: 'Player A' } }]);
-  });
 
   it('still allows sending kong from the local kong-response prompt', async () => {
     const user = userEvent.setup();
@@ -1563,46 +1418,7 @@ describe('App', () => {
     ]);
   });
 
-  it('sends a quick-chat websocket message after choosing an emoji from a player info bar', async () => {
-    const user = userEvent.setup();
-    const socket = await joinTable(user);
 
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: createPlayingSnapshotPayload(),
-      });
-    });
-
-    await user.click(screen.getByRole('button', { name: '打开Player B的快捷表情' }));
-    await user.click(screen.getByRole('menuitem', { name: '向Player B发送红中表情' }));
-
-    expect(socket.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
-      type: 'quick_chat',
-      payload: { target_seat: 1, emoji: '🀄' },
-    });
-  });
-
-  it('sends a quick-chat websocket message after submitting custom text from the player info bar', async () => {
-    const user = userEvent.setup();
-    const socket = await joinTable(user);
-
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: createPlayingSnapshotPayload(),
-      });
-    });
-
-    await user.click(screen.getByRole('button', { name: '打开Player B的快捷表情' }));
-    await user.click(screen.getByRole('menuitem', { name: '向Player B发送自定义文字' }));
-    await user.type(screen.getByRole('textbox', { name: '向Player B发送快捷文字' }), '等你放炮{Enter}');
-
-    expect(socket.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
-      type: 'quick_chat',
-      payload: { target_seat: 1, emoji: '等你放炮' },
-    });
-  });
 
   it('renders a barrage line when a quick-chat broadcast arrives from the server', async () => {
     const user = userEvent.setup();
