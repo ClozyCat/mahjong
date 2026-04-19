@@ -286,6 +286,7 @@ mod tests {
                         "east".to_string(),
                         "east".to_string(),
                     ]],
+                    display_melds: vec![],
                     flowers: vec![crate::core::tile::Tile::tile_key_only("f1")],
                     discards: vec![crate::core::tile::Tile::tile_key_only("red")],
                 }],

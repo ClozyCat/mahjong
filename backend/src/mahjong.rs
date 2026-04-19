@@ -1117,6 +1117,14 @@ mod tests {
             json!(["w2", "w3", "w4"])
         );
         assert_eq!(
+            snapshot["payload"]["private_state"]["players"][1]["display_melds"][0]["tiles"],
+            json!([
+                {"code": "w2", "orientation": "normal"},
+                {"code": "w3", "orientation": "rotated"},
+                {"code": "w4", "orientation": "normal"}
+            ])
+        );
+        assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["restricted_discard_tile_ids"],
             json!(["w3#1extra"])
         );
@@ -1289,6 +1297,17 @@ mod tests {
                 .map(|entries| entries.len()),
             Some(1)
         );
+
+        let snapshot = room_snapshot(&room, 2);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["players"][2]["display_melds"][0]["tiles"],
+            json!([
+                {"code": "w3", "orientation": "rotated"},
+                {"code": "w3", "orientation": "normal"},
+                {"code": "w3", "orientation": "normal"},
+                {"code": "w3", "orientation": "normal"}
+            ])
+        );
     }
 
     #[test]
@@ -1325,6 +1344,17 @@ mod tests {
                 .as_array()
                 .map(|entries| entries.len()),
             Some(1)
+        );
+
+        let snapshot = room_snapshot(&room, 0);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["players"][0]["display_melds"][0]["tiles"],
+            json!([
+                {"code": "t5", "orientation": "face_down"},
+                {"code": "t5", "orientation": "normal"},
+                {"code": "t5", "orientation": "normal"},
+                {"code": "t5", "orientation": "normal"}
+            ])
         );
     }
 
@@ -1368,6 +1398,17 @@ mod tests {
         );
         assert_eq!(room["pending_timeout"]["kind"], "active_turn");
         assert_eq!(room["pending_timeout"]["seat_index"], 0);
+
+        let snapshot = room_snapshot(&room, 0);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["players"][0]["display_melds"][0]["tiles"],
+            json!([
+                {"code": "w3", "orientation": "face_down"},
+                {"code": "w3", "orientation": "normal"},
+                {"code": "w3", "orientation": "normal"},
+                {"code": "w3", "orientation": "normal"}
+            ])
+        );
     }
 
     #[test]

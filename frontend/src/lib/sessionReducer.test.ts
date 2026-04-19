@@ -167,7 +167,7 @@ describe('sessionReducer', () => {
     expect(next.latestRoundEvent).toEqual(roundEventMessage);
   });
 
-  it('tracks claimed meld tiles so the UI can preserve their source orientation', () => {
+  it('does not synthesize local display meld state from round events anymore', () => {
     const afterClaim = sessionReducer(createInitialSessionState(), {
       type: 'ws_message',
       message: {
@@ -185,15 +185,7 @@ describe('sessionReducer', () => {
       },
     });
 
-    expect(afterClaim.displayMeldsBySeat?.['1']).toEqual([
-      {
-        tiles: [
-          { code: 'w3', source: 'claim' },
-          { code: 'w3', source: 'hand' },
-          { code: 'w3', source: 'hand' },
-        ],
-      },
-    ]);
+    expect((afterClaim as { displayMeldsBySeat?: unknown }).displayMeldsBySeat).toBeUndefined();
 
     const afterSnapshot = sessionReducer(afterClaim, {
       type: 'ws_message',
@@ -232,8 +224,29 @@ describe('sessionReducer', () => {
                 concealed_count: 10,
                 concealed_tiles: [],
                 melds: [['w3', 'w3', 'w3']],
+                display_melds: [
+                  {
+                    tiles: [
+                      { code: 'w3', orientation: 'rotated' },
+                      { code: 'w3', orientation: 'normal' },
+                      { code: 'w3', orientation: 'normal' },
+                    ],
+                  },
+                ],
                 flowers: [],
                 discards: [],
+              } as {
+                seat_index: number;
+                nickname: string;
+                connected: boolean;
+                concealed_count: number;
+                concealed_tiles: [];
+                melds: string[][];
+                display_melds: Array<{
+                  tiles: Array<{ code: string; orientation: 'normal' | 'rotated' | 'face_down' }>;
+                }>;
+                flowers: string[];
+                discards: string[];
               },
             ],
           },
@@ -241,7 +254,17 @@ describe('sessionReducer', () => {
       },
     });
 
-    expect(afterSnapshot.displayMeldsBySeat?.['1']).toEqual(afterClaim.displayMeldsBySeat?.['1']);
+    expect(afterSnapshot.roomSnapshot?.payload.private_state?.players[1]).toMatchObject({
+      display_melds: [
+        {
+          tiles: [
+            { code: 'w3', orientation: 'rotated' },
+            { code: 'w3', orientation: 'normal' },
+            { code: 'w3', orientation: 'normal' },
+          ],
+        },
+      ],
+    });
   });
 
   it('keeps a hu round_event active when settlement_ready arrives immediately after it', () => {

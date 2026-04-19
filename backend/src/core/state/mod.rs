@@ -11,7 +11,9 @@ pub use pending::{
     ClaimResponse, ClaimWindowAction, ContinueActionState, LastActionContext, OpeningFlowersAction,
     PendingAction, PendingTimeout, RobKongWindowAction,
 };
-pub use player::{PlayerRoundState, SeatState};
+pub use player::{
+    DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, PlayerRoundState, SeatState,
+};
 pub use room::RoomState;
 pub use round::{KongTrackerEntry, RoundScoreTrackers, RoundState, RuleRuntimeState};
 pub use settlement::{

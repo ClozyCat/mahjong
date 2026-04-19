@@ -4,7 +4,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
-use crate::core::state::{MatchState, PendingAction, RoomState, SettlementKongScoreDetailEntry};
+use crate::core::state::{
+    DisplayMeldOrientation, DisplayMeldState, MatchState, PendingAction, RoomState,
+    SettlementKongScoreDetailEntry,
+};
 use crate::projection::SeatProjectionSupport;
 
 #[derive(Debug, Clone, Serialize)]
@@ -58,8 +61,20 @@ struct PlayerSeatView {
     concealed_count: usize,
     concealed_tiles: Option<Vec<PrivateTileView>>,
     melds: Vec<Vec<String>>,
+    display_melds: Vec<DisplayMeldView>,
     flowers: Vec<String>,
     discards: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DisplayMeldView {
+    tiles: Vec<DisplayMeldTileView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DisplayMeldTileView {
+    code: String,
+    orientation: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -308,6 +323,7 @@ fn private_round_state(
                 concealed_count: player.concealed_tiles.len(),
                 concealed_tiles,
                 melds: player.melds.clone(),
+                display_melds: project_display_melds(&player.display_melds),
                 flowers: player
                     .flowers
                     .iter()
@@ -336,6 +352,26 @@ fn private_round_state(
         score_state: score_state_view(state),
         players: private_players,
     })
+}
+
+fn project_display_melds(display_melds: &[DisplayMeldState]) -> Vec<DisplayMeldView> {
+    display_melds
+        .iter()
+        .map(|meld| DisplayMeldView {
+            tiles: meld
+                .tiles
+                .iter()
+                .map(|tile| DisplayMeldTileView {
+                    code: tile.code.clone(),
+                    orientation: match tile.orientation {
+                        DisplayMeldOrientation::Normal => "normal",
+                        DisplayMeldOrientation::Rotated => "rotated",
+                        DisplayMeldOrientation::FaceDown => "face_down",
+                    },
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 fn score_state_view(state: &RoomState) -> ScoreStateView {

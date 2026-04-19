@@ -89,6 +89,7 @@ export interface PrivatePlayerState {
   concealed_count: number;
   concealed_tiles?: ConcealedTile[] | null;
   melds: string[][];
+  display_melds?: DisplayMeldView[];
   flowers: string[];
   discards: string[];
 }
@@ -341,7 +342,6 @@ export interface SessionState {
   selectionMode: 'single' | 'kong' | 'chow' | 'pung' | null;
   toasts: ToastMessage[];
   matchStatistics?: MatchStatisticsState | null;
-  displayMeldsBySeat?: Record<string, DisplayMeldView[]>;
 }
 
 export type BattleActionId =
@@ -382,7 +382,7 @@ export interface PlayerView {
 
 export interface DisplayMeldTileView {
   code: string;
-  source: 'hand' | 'claim';
+  orientation: 'normal' | 'rotated' | 'face_down';
 }
 
 export interface DisplayMeldView {

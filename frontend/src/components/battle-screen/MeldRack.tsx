@@ -86,12 +86,15 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
                 {normalizeMeldTiles(meld).map((tile, tileIndex) => (
                   <span
                     key={`${seat}-meld-${meldIndex}-${tile.code}-${tileIndex}`}
-                    className={`meld-rack__tile ${tile.source === 'claim' ? 'meld-rack__tile--claim' : ''}`.trim()}
+                    className={`meld-rack__tile ${
+                      tile.orientation === 'rotated' ? 'meld-rack__tile--rotated' : ''
+                    }`.trim()}
                   >
                     <MahjongTile
                       code={tile.code}
                       variant="discard"
-                      className={tile.source === 'claim' ? 'meld-rack__tile-face--claim' : undefined}
+                      isFaceDown={tile.orientation === 'face_down'}
+                      className={tile.orientation === 'rotated' ? 'meld-rack__tile-face--rotated' : undefined}
                     />
                   </span>
                 ))}
@@ -119,7 +122,7 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
 
 function normalizeMeldTiles(meld: PlayerMeldView): DisplayMeldView['tiles'] {
   if (Array.isArray(meld)) {
-    return meld.map((code) => ({ code, source: 'hand' as const }));
+    return meld.map((code) => ({ code, orientation: 'normal' as const }));
   }
 
   return meld.tiles;

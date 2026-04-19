@@ -169,6 +169,7 @@ mod tests {
                         "east".to_string(),
                         "east".to_string(),
                     ]],
+                    display_melds: vec![],
                     flowers: vec![tile("f1#shown", "f1", "flower")],
                     discards: vec![tile("red#0", "red", "dragon")],
                 }],

@@ -8,6 +8,7 @@ interface MahjongTileProps {
   isDrawn?: boolean;
   isLastDiscard?: boolean;
   isDisabled?: boolean;
+  isFaceDown?: boolean;
   className?: string;
 }
 
@@ -18,10 +19,11 @@ export function MahjongTile({
   isDrawn = false,
   isLastDiscard = false,
   isDisabled = false,
+  isFaceDown = false,
   className,
 }: MahjongTileProps) {
-  const asset = getTileAsset(code);
-  const tileName = formatTileName(code, code);
+  const asset = isFaceDown ? { kind: 'blank' as const } : getTileAsset(code);
+  const tileName = isFaceDown ? '牌背' : formatTileName(code, code);
   const classes = [
     'mahjong-tile',
     'mahjong-tile--retro',

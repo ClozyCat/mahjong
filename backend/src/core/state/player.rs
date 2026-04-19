@@ -35,6 +35,7 @@ pub struct PlayerRoundState {
     pub seat: Seat,
     pub concealed_tiles: Vec<Tile>,
     pub melds: Vec<Vec<TileKey>>,
+    pub display_melds: Vec<DisplayMeldState>,
     pub flowers: Vec<Tile>,
     pub discards: Vec<Tile>,
 }
@@ -43,4 +44,31 @@ impl PlayerRoundState {
     pub(crate) fn from_value(value: &Value) -> Result<Self, EngineError> {
         serde_json::from_value(value.clone()).map_err(Into::into)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DisplayMeldOrientation {
+    Normal,
+    Rotated,
+    FaceDown,
+}
+
+impl Default for DisplayMeldOrientation {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct DisplayMeldTileState {
+    pub code: TileKey,
+    pub orientation: DisplayMeldOrientation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct DisplayMeldState {
+    pub tiles: Vec<DisplayMeldTileState>,
 }

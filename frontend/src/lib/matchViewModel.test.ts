@@ -1220,9 +1220,9 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([
       {
         tiles: [
-          { code: 'w8', source: 'hand' },
-          { code: 'w6', source: 'hand' },
-          { code: 'w7', source: 'hand' },
+          { code: 'w8', orientation: 'normal' },
+          { code: 'w6', orientation: 'normal' },
+          { code: 'w7', orientation: 'normal' },
         ],
       },
     ]);
@@ -1254,36 +1254,55 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([
       {
         tiles: [
-          { code: 'w8', source: 'hand' },
-          { code: 'w6', source: 'hand' },
-          { code: 'w7', source: 'hand' },
+          { code: 'w8', orientation: 'normal' },
+          { code: 'w6', orientation: 'normal' },
+          { code: 'w7', orientation: 'normal' },
         ],
       },
     ]);
   });
 
-  it('prefers session display meld metadata so claimed tiles keep their source marker', () => {
-    const base = createPlayingSessionState({
-      displayMeldsBySeat: {
-        '1': [
-          {
-            tiles: [
-              { code: 'w3', source: 'claim' },
-              { code: 'w3', source: 'hand' },
-              { code: 'w3', source: 'hand' },
-            ],
+  it('prefers backend display meld metadata so refreshes keep the claimed-tile orientation', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 1
+                ? ({
+                    ...player,
+                    display_melds: [
+                      {
+                        tiles: [
+                          { code: 'w3', orientation: 'rotated' },
+                          { code: 'w3', orientation: 'normal' },
+                          { code: 'w3', orientation: 'normal' },
+                        ],
+                      },
+                    ],
+                  } as typeof player & {
+                    display_melds: Array<{
+                      tiles: Array<{ code: string; orientation: 'normal' | 'rotated' | 'face_down' }>;
+                    }>;
+                  })
+                : player,
+            ),
           },
-        ],
+        },
       },
     });
-    const viewModel = createMatchViewModel(base);
 
     expect(viewModel.players.find((item) => item.name === 'Player B')?.melds).toEqual([
       {
         tiles: [
-          { code: 'w3', source: 'claim' },
-          { code: 'w3', source: 'hand' },
-          { code: 'w3', source: 'hand' },
+          { code: 'w3', orientation: 'rotated' },
+          { code: 'w3', orientation: 'normal' },
+          { code: 'w3', orientation: 'normal' },
         ],
       },
     ]);

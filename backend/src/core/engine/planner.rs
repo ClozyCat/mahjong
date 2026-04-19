@@ -100,6 +100,7 @@ pub fn plan_round_start_payload(
             seat,
             concealed_tiles,
             melds: Vec::new(),
+            display_melds: Vec::new(),
             flowers: Vec::new(),
             discards: Vec::new(),
         });

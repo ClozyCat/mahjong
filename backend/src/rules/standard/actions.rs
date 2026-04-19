@@ -8,8 +8,9 @@ use crate::core::engine::planner::{
 };
 use crate::core::event::GameEvent;
 use crate::core::state::{
-    ClaimResponse, KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction,
-    RoomState, RoundState,
+    ClaimResponse, DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState,
+    KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction, RoomState,
+    RoundState,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -140,6 +141,111 @@ fn claim_made_message(
             "meld": meld,
         }),
     )
+}
+
+fn create_normal_display_tile(code: &str) -> DisplayMeldTileState {
+    DisplayMeldTileState {
+        code: code.to_string(),
+        orientation: DisplayMeldOrientation::Normal,
+    }
+}
+
+fn create_display_meld_from_codes(codes: &[String]) -> DisplayMeldState {
+    DisplayMeldState {
+        tiles: codes
+            .iter()
+            .map(|code| create_normal_display_tile(code))
+            .collect(),
+    }
+}
+
+fn create_repeated_display_meld(
+    code: &str,
+    count: usize,
+    special_index: usize,
+    orientation: DisplayMeldOrientation,
+) -> DisplayMeldState {
+    DisplayMeldState {
+        tiles: (0..count)
+            .map(|index| DisplayMeldTileState {
+                code: code.to_string(),
+                orientation: if index == special_index {
+                    orientation.clone()
+                } else {
+                    DisplayMeldOrientation::Normal
+                },
+            })
+            .collect(),
+    }
+}
+
+fn create_claim_display_meld(
+    action_type: &str,
+    actor_seat: usize,
+    source_seat: usize,
+    meld: &[String],
+    claim_tile_key: &str,
+) -> DisplayMeldState {
+    if action_type == "pung" || action_type == "kong" {
+        let relative_source_seat = (source_seat + MAX_SEATS - actor_seat) % MAX_SEATS;
+        let claimed_index = if relative_source_seat == 1 && meld.len() > 1 {
+            1
+        } else {
+            0
+        };
+
+        return create_repeated_display_meld(
+            claim_tile_key,
+            meld.len(),
+            claimed_index,
+            DisplayMeldOrientation::Rotated,
+        );
+    }
+
+    let mut display_meld = create_display_meld_from_codes(meld);
+    if let Some(claimed_index) = meld.iter().position(|code| code == claim_tile_key) {
+        if let Some(tile) = display_meld.tiles.get_mut(claimed_index) {
+            tile.orientation = DisplayMeldOrientation::Rotated;
+        }
+    }
+    display_meld
+}
+
+fn create_concealed_kong_display_meld(tile_key: &str) -> DisplayMeldState {
+    create_repeated_display_meld(tile_key, 4, 0, DisplayMeldOrientation::FaceDown)
+}
+
+fn upgrade_add_kong_display_meld(
+    existing_display_meld: Option<&DisplayMeldState>,
+    existing_meld: Option<&Vec<String>>,
+    tile_key: &str,
+) -> DisplayMeldState {
+    let base_tiles = existing_display_meld
+        .map(|meld| meld.tiles.clone())
+        .or_else(|| {
+            existing_meld.map(|meld| {
+                create_display_meld_from_codes(meld)
+                    .tiles
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            })
+        })
+        .unwrap_or_else(|| {
+            vec![
+                create_normal_display_tile(tile_key),
+                create_normal_display_tile(tile_key),
+                create_normal_display_tile(tile_key),
+            ]
+        });
+
+    let mut tiles = Vec::with_capacity(base_tiles.len() + 1);
+    tiles.push(DisplayMeldTileState {
+        code: tile_key.to_string(),
+        orientation: DisplayMeldOrientation::FaceDown,
+    });
+    tiles.extend(base_tiles);
+
+    DisplayMeldState { tiles }
 }
 
 fn round_state_mut(state: &mut RoomState) -> Result<&mut RoundState, String> {
@@ -1003,6 +1109,7 @@ fn start_rob_kong_window_output_in_room_state(
 struct SelfKongPlan {
     removed_tile_ids: Vec<String>,
     meld_update: SelfKongMeldUpdate,
+    display_meld_update: SelfKongDisplayMeldUpdate,
     replacement_tile: Tile,
     kong_entry: KongTrackerEntry,
     last_action_context: LastActionContext,
@@ -1013,6 +1120,11 @@ struct SelfKongPlan {
 enum SelfKongMeldUpdate {
     Push(Vec<String>),
     Append { meld_index: usize, tile_key: String },
+}
+
+enum SelfKongDisplayMeldUpdate {
+    Push(DisplayMeldState),
+    AppendFaceDown { meld_index: usize, tile_key: String },
 }
 
 #[cfg(test)]
@@ -1036,6 +1148,19 @@ fn plan_self_kong_completion(
             selection.tile_key.clone(),
         ]),
         SelfKongKind::Add => SelfKongMeldUpdate::Append {
+            meld_index: selection
+                .meld_index
+                .ok_or_else(|| "invalid_action".to_string())?,
+            tile_key: selection.tile_key.clone(),
+        },
+    };
+    let display_meld_update = match selection.kind {
+        SelfKongKind::Concealed => {
+            SelfKongDisplayMeldUpdate::Push(create_concealed_kong_display_meld(
+                &selection.tile_key,
+            ))
+        }
+        SelfKongKind::Add => SelfKongDisplayMeldUpdate::AppendFaceDown {
             meld_index: selection
                 .meld_index
                 .ok_or_else(|| "invalid_action".to_string())?,
@@ -1066,6 +1191,7 @@ fn plan_self_kong_completion(
     Ok(SelfKongPlan {
         removed_tile_ids: selection.tile_ids.clone(),
         meld_update,
+        display_meld_update,
         replacement_tile: replacement_tile.clone(),
         kong_entry,
         last_action_context,
@@ -1124,6 +1250,19 @@ fn plan_self_kong_completion_in_room_state(
             tile_key: selection.tile_key.clone(),
         },
     };
+    let display_meld_update = match selection.kind {
+        SelfKongKind::Concealed => {
+            SelfKongDisplayMeldUpdate::Push(create_concealed_kong_display_meld(
+                &selection.tile_key,
+            ))
+        }
+        SelfKongKind::Add => SelfKongDisplayMeldUpdate::AppendFaceDown {
+            meld_index: selection
+                .meld_index
+                .ok_or_else(|| "invalid_action".to_string())?,
+            tile_key: selection.tile_key.clone(),
+        },
+    };
 
     let kong_entry = KongTrackerEntry {
         kong_type: match selection.kind {
@@ -1148,6 +1287,7 @@ fn plan_self_kong_completion_in_room_state(
     Ok(SelfKongPlan {
         removed_tile_ids: selection.tile_ids.clone(),
         meld_update,
+        display_meld_update,
         replacement_tile: replacement_tile.clone(),
         kong_entry,
         last_action_context,
@@ -1177,6 +1317,20 @@ fn apply_self_kong_plan_to_round(
     }
     {
         let player = round_player_mut(round, seat_index)?;
+        let append_display_meld = match &plan.display_meld_update {
+            SelfKongDisplayMeldUpdate::AppendFaceDown {
+                meld_index,
+                tile_key,
+            } => Some((
+                *meld_index,
+                upgrade_add_kong_display_meld(
+                    player.display_melds.get(*meld_index),
+                    player.melds.get(*meld_index),
+                    tile_key,
+                ),
+            )),
+            SelfKongDisplayMeldUpdate::Push(_) => None,
+        };
         match &plan.meld_update {
             SelfKongMeldUpdate::Push(meld) => player.melds.push(meld.clone()),
             SelfKongMeldUpdate::Append {
@@ -1188,6 +1342,34 @@ fn apply_self_kong_plan_to_round(
                     .get_mut(*meld_index)
                     .ok_or_else(|| "invalid_action".to_string())?;
                 meld.push(tile_key.clone());
+            }
+        }
+        match &plan.display_meld_update {
+            SelfKongDisplayMeldUpdate::Push(display_meld) => {
+                player.display_melds.push(display_meld.clone());
+            }
+            SelfKongDisplayMeldUpdate::AppendFaceDown {
+                meld_index,
+                ..
+            } => {
+                let updated_display_meld = append_display_meld
+                    .as_ref()
+                    .map(|(_, meld)| meld.clone())
+                    .ok_or_else(|| "invalid_action".to_string())?;
+                if let Some(display_meld) = player.display_melds.get_mut(*meld_index) {
+                    *display_meld = updated_display_meld;
+                } else {
+                    while player.display_melds.len() < *meld_index {
+                        let fallback_index = player.display_melds.len();
+                        let fallback_display_meld = player
+                            .melds
+                            .get(fallback_index)
+                            .map(|meld| create_display_meld_from_codes(meld))
+                            .unwrap_or_default();
+                        player.display_melds.push(fallback_display_meld);
+                    }
+                    player.display_melds.push(updated_display_meld);
+                }
             }
         }
         player.concealed_tiles.push(plan.replacement_tile.clone());
@@ -1536,6 +1718,7 @@ fn apply_selected_claim_in_room_state(
 struct SelectedClaimPlan {
     discarder_seat: usize,
     meld: Vec<String>,
+    display_meld: DisplayMeldState,
     replacement_tile: Option<Tile>,
     consumed_tile_ids: Vec<String>,
     restricted_tile_key: Option<String>,
@@ -1572,6 +1755,13 @@ fn plan_selected_claim(
     }
     let claimed_tiles = selected_player_tiles(round, seat_index, tile_ids)?;
     let meld = claim_meld_value(action_type, &last_discard_tile, &claimed_tiles);
+    let display_meld = create_claim_display_meld(
+        action_type,
+        seat_index,
+        discarder_seat,
+        &meld,
+        &last_discard_tile.tile_key,
+    );
 
     let mut emitted_messages = vec![claim_made_message(
         seat_index,
@@ -1609,6 +1799,7 @@ fn plan_selected_claim(
     Ok(SelectedClaimPlan {
         discarder_seat,
         meld,
+        display_meld,
         replacement_tile: replacement_tile_for_output,
         consumed_tile_ids: tile_ids.to_vec(),
         restricted_tile_key,
@@ -1644,6 +1835,13 @@ fn plan_selected_claim_in_room_state(
     }
     let claimed_tiles = selected_player_tiles(round, seat_index, tile_ids)?;
     let meld = claim_meld_value(action_type, &last_discard_tile, &claimed_tiles);
+    let display_meld = create_claim_display_meld(
+        action_type,
+        seat_index,
+        discarder_seat,
+        &meld,
+        &last_discard_tile.tile_key,
+    );
 
     let mut emitted_messages = vec![claim_made_message(
         seat_index,
@@ -1680,6 +1878,7 @@ fn plan_selected_claim_in_room_state(
     Ok(SelectedClaimPlan {
         discarder_seat,
         meld,
+        display_meld,
         replacement_tile: replacement_tile_for_output,
         consumed_tile_ids: tile_ids.to_vec(),
         restricted_tile_key,
@@ -1701,6 +1900,7 @@ fn apply_selected_claim_plan_to_round(
     {
         let player = round_player_mut(round, seat_index)?;
         player.melds.push(plan.meld.clone());
+        player.display_melds.push(plan.display_meld.clone());
         if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
             player.concealed_tiles.push(replacement_tile.clone());
         }
@@ -2150,6 +2350,7 @@ mod tests {
                             suit("w2", "w2#0"),
                         ],
                         melds: vec![],
+                        display_melds: vec![],
                         flowers: vec![],
                         discards: vec![],
                     },
@@ -2157,6 +2358,7 @@ mod tests {
                         seat: 1,
                         concealed_tiles: vec![suit("t1", "t1#1"), suit("t2", "t2#1")],
                         melds: vec![],
+                        display_melds: vec![],
                         flowers: vec![],
                         discards: vec![],
                     },
@@ -2164,6 +2366,7 @@ mod tests {
                         seat: 2,
                         concealed_tiles: vec![suit("b1", "b1#2"), suit("b2", "b2#2")],
                         melds: vec![],
+                        display_melds: vec![],
                         flowers: vec![],
                         discards: vec![],
                     },
@@ -2171,6 +2374,7 @@ mod tests {
                         seat: 3,
                         concealed_tiles: vec![suit("w5", "w5#3"), suit("w6", "w6#3")],
                         melds: vec![],
+                        display_melds: vec![],
                         flowers: vec![],
                         discards: vec![],
                     },

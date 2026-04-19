@@ -70,16 +70,16 @@ describe('MeldRack', () => {
     expect(shell.querySelector('.meld-rack--collapsed')).toBeNull();
   });
 
-  it('renders the claimed tile in a dedicated sideways slot', () => {
+  it('renders rotated meld tiles and face-down meld tiles from backend orientation metadata', () => {
     render(
       <MeldRack
         seat="right"
         melds={[
           {
             tiles: [
-              { code: 'w3', source: 'hand' },
-              { code: 'w3', source: 'claim' },
-              { code: 'w3', source: 'hand' },
+              { code: 'w3', orientation: 'normal' },
+              { code: 'w3', orientation: 'rotated' },
+              { code: 'w3', orientation: 'face_down' },
             ],
           },
         ]}
@@ -87,7 +87,8 @@ describe('MeldRack', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile--claim')).not.toBeNull();
-    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile-face--claim')).not.toBeNull();
+    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile--rotated')).not.toBeNull();
+    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile-face--rotated')).not.toBeNull();
+    expect(screen.getByLabelText('Claim melds').querySelector('.mahjong-tile__face-blank')).not.toBeNull();
   });
 });
