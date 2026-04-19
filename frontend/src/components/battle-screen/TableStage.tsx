@@ -531,8 +531,8 @@ export function TableStage({
                     {player && hasMelds ? (
                       <div
                         className={`table-stage__melds table-stage__melds--${seat} ${shouldPinDenseMeldRack(seat, player.melds.length)
-                            ? 'table-stage__melds--dense'
-                            : ''
+                          ? 'table-stage__melds--dense'
+                          : ''
                           }`}
                       >
                         <MeldRack
@@ -675,8 +675,6 @@ const ACTION_CALLOUT_COPY = {
 
 const ACTION_CALLOUT_LINGER_MS = SETTLEMENT_CALLOUT_LINGER_MS;
 const QUICK_CHAT_BARRAGE_LINGER_MS = 9000;
-const QUICK_CHAT_ARC_SWEEP_DEGREES = 150;
-const QUICK_CHAT_ITEM_RADIUS_REM = 5.1;
 const QUICK_CHAT_TEXT_LIMIT = 50;
 const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '😄', label: '笑' },
@@ -688,12 +686,6 @@ const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '👍', label: '赞' },
   { emoji: '🍵', label: '喝茶' },
 ];
-const QUICK_CHAT_ARC_CENTER_DEGREES: Record<Seat, number> = {
-  top: 135,
-  right: 220,
-  bottom: 225,
-  left: 320,
-};
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotation: string }> = {
   top: { left: '50%', top: 'calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset))', rotation: '180deg' },
   bottom: { left: '50%', top: 'calc(var(--table-stage-center-v) + var(--table-stage-spotlight-offset))', rotation: '0deg' },
@@ -890,23 +882,6 @@ function QuickChatMenu({ seat, playerName, isLocalTarget = false, onSelect }: Qu
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
-      {QUICK_CHAT_ITEMS.map((item, index) => (
-        <button
-          key={`${seat}-${item.label}`}
-          type="button"
-          className="table-stage__quick-chat-item"
-          role="menuitem"
-          aria-label={`发送${item.label}表情`}
-          title={`发送${item.label}表情`}
-          style={getQuickChatItemStyle(seat, index)}
-          onClick={(event) => {
-            event.stopPropagation();
-            onSelect(item.emoji);
-          }}
-        >
-          <span aria-hidden="true">{item.emoji}</span>
-        </button>
-      ))}
       <button
         type="button"
         className={`table-stage__quick-chat-item ${isComposerOpen ? 'table-stage__quick-chat-item--active' : ''
@@ -914,7 +889,7 @@ function QuickChatMenu({ seat, playerName, isLocalTarget = false, onSelect }: Qu
         role="menuitem"
         aria-label="发送自定义文字"
         title="发送自定义文字"
-        style={getQuickChatItemStyle(seat, QUICK_CHAT_ITEMS.length)}
+        style={getQuickChatItemStyle(seat, 0)}
         onClick={(event) => {
           event.stopPropagation();
           setIsComposerOpen((current) => !current);
@@ -923,6 +898,23 @@ function QuickChatMenu({ seat, playerName, isLocalTarget = false, onSelect }: Qu
       >
         <span aria-hidden="true">+</span>
       </button>
+      {QUICK_CHAT_ITEMS.map((item, index) => (
+        <button
+          key={`${seat}-${item.label}`}
+          type="button"
+          className="table-stage__quick-chat-item"
+          role="menuitem"
+          aria-label={`发送${item.label}表情`}
+          title={`发送${item.label}表情`}
+          style={getQuickChatItemStyle(seat, index + 1)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(item.emoji);
+          }}
+        >
+          <span aria-hidden="true">{item.emoji}</span>
+        </button>
+      ))}
       {isComposerOpen ? (
         <form
           className="table-stage__quick-chat-composer"
@@ -1020,41 +1012,17 @@ function buildTableSummary(roundLabel: string, phaseLabel: string) {
   return roundLabel || phaseLabel || null;
 }
 
-function getQuickChatItemStyle(seat: Seat, index: number): CSSProperties {
-  const angles = getQuickChatAngles(seat);
-  const angle = angles[index] ?? getQuickChatArcCenterDegrees(seat);
-  const radians = (angle * Math.PI) / 180;
+function getQuickChatItemStyle(_seat: Seat, index: number): CSSProperties {
+  const itemHeightRem = 2.8;
+  const gapRem = 0.4;
+  const offsetRem = (index + 1) * (itemHeightRem + gapRem);
 
   return {
-    '--quick-chat-x': `${Math.cos(radians) * QUICK_CHAT_ITEM_RADIUS_REM}rem`,
-    '--quick-chat-y': `${Math.sin(radians) * QUICK_CHAT_ITEM_RADIUS_REM}rem`,
+    '--quick-chat-x': '0rem',
+    '--quick-chat-y': `-${offsetRem}rem`,
   } as CSSProperties;
 }
 
-function getQuickChatAngles(seat: Seat): number[] {
-  if (seat === 'left') {
-    return getQuickChatAngles('right').map((angle) => mirrorAngleHorizontally(angle));
-  }
-
-  const center = getQuickChatArcCenterDegrees(seat);
-  const itemCount = QUICK_CHAT_ITEMS.length + 1;
-  const step = itemCount > 1 ? QUICK_CHAT_ARC_SWEEP_DEGREES / (itemCount - 1) : 0;
-  const start = center - QUICK_CHAT_ARC_SWEEP_DEGREES / 2;
-
-  return Array.from({ length: itemCount }, (_, index) => start + step * index);
-}
-
-function getQuickChatArcCenterDegrees(seat: Seat) {
-  if (seat === 'left') {
-    return mirrorAngleHorizontally(QUICK_CHAT_ARC_CENTER_DEGREES.right);
-  }
-
-  return QUICK_CHAT_ARC_CENTER_DEGREES[seat];
-}
-
-function mirrorAngleHorizontally(angle: number) {
-  return (180 - angle + 360) % 360;
-}
 
 function getRandomBarrageTopPercent() {
   return 18 + Math.round(Math.random() * 60);
