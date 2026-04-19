@@ -70,17 +70,39 @@ describe('MeldRack', () => {
     expect(shell.querySelector('.meld-rack--collapsed')).toBeNull();
   });
 
-  it('renders rotated, upside-down, and face-down meld tiles from backend orientation metadata', () => {
+  it('marks sourced meld tiles with centered source indicators that encode triangle direction', () => {
     render(
       <MeldRack
         seat="right"
         melds={[
           {
             tiles: [
+              { code: 'w1', orientation: 'rotated' },
+              { code: 'w1', orientation: 'normal' },
+              { code: 'w1', orientation: 'normal' },
+            ],
+          },
+          {
+            tiles: [
+              { code: 'w2', orientation: 'normal' },
+              { code: 'w2', orientation: 'rotated' },
+              { code: 'w2', orientation: 'normal' },
+            ],
+          },
+          {
+            tiles: [
+              { code: 'w3', orientation: 'normal' },
+              { code: 'w3', orientation: 'normal' },
               { code: 'w3', orientation: 'normal' },
               { code: 'w3', orientation: 'rotated' },
-              { code: 'w3', orientation: 'upside_down' as const },
-              { code: 'w3', orientation: 'face_down' },
+            ],
+          },
+          {
+            tiles: [
+              { code: 'w4', orientation: 'normal' },
+              { code: 'w4', orientation: 'normal' },
+              { code: 'w4', orientation: 'upside_down' as const },
+              { code: 'w4', orientation: 'face_down' },
             ],
           },
         ]}
@@ -88,9 +110,49 @@ describe('MeldRack', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile--rotated')).not.toBeNull();
-    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile-face--rotated')).not.toBeNull();
-    expect(screen.getByLabelText('Claim melds').querySelector('.meld-rack__tile-face--upside-down')).not.toBeNull();
-    expect(screen.getByLabelText('Claim melds').querySelector('.mahjong-tile__face-blank')).not.toBeNull();
+    const rack = screen.getByLabelText('Claim melds');
+    const sourceIndicators = rack.querySelectorAll<HTMLElement>('.meld-rack__source-indicator');
+
+    expect(rack.querySelectorAll('.meld-rack__tile--sourced')).toHaveLength(4);
+    expect(sourceIndicators).toHaveLength(4);
+    expect(sourceIndicators[0]).toHaveAttribute('data-claim-source', 'left-player');
+    expect(sourceIndicators[0]).toHaveAttribute('data-triangle-direction', 'point-left');
+    expect(sourceIndicators[0].style.getPropertyValue('--meld-rack-triangle-angle')).toBe('-90deg');
+    expect(sourceIndicators[1]).toHaveAttribute('data-claim-source', 'across-player');
+    expect(sourceIndicators[1]).toHaveAttribute('data-triangle-direction', 'point-up');
+    expect(sourceIndicators[1].style.getPropertyValue('--meld-rack-triangle-angle')).toBe('0deg');
+    expect(sourceIndicators[2]).toHaveAttribute('data-claim-source', 'right-player');
+    expect(sourceIndicators[2]).toHaveAttribute('data-triangle-direction', 'point-right');
+    expect(sourceIndicators[2].style.getPropertyValue('--meld-rack-triangle-angle')).toBe('90deg');
+    expect(sourceIndicators[3]).toHaveAttribute('data-claim-source', 'across-player');
+    expect(sourceIndicators[3]).toHaveAttribute('data-triangle-direction', 'point-up');
+    expect(sourceIndicators[3].style.getPropertyValue('--meld-rack-triangle-angle')).toBe('0deg');
+    expect(rack.querySelector('.mahjong-tile__face-blank')).not.toBeNull();
+  });
+
+  it('keeps chow source markers pointing to the left player even when the claimed tile is the middle tile', () => {
+    render(
+      <MeldRack
+        seat="right"
+        melds={[
+          {
+            tiles: [
+              { code: 'w2', orientation: 'normal' },
+              { code: 'w3', orientation: 'rotated' },
+              { code: 'w4', orientation: 'normal' },
+            ],
+          },
+        ]}
+        ariaLabel="Chow melds"
+      />,
+    );
+
+    const sourceIndicator = screen
+      .getByLabelText('Chow melds')
+      .querySelector<HTMLElement>('.meld-rack__source-indicator');
+
+    expect(sourceIndicator).toHaveAttribute('data-claim-source', 'left-player');
+    expect(sourceIndicator).toHaveAttribute('data-triangle-direction', 'point-left');
+    expect(sourceIndicator?.style.getPropertyValue('--meld-rack-triangle-angle')).toBe('-90deg');
   });
 });

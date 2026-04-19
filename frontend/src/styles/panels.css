@@ -1564,7 +1564,11 @@
   z-index: 42;
   display: grid;
   place-items: center;
-  padding: 1rem;
+  padding:
+    max(0.75rem, env(safe-area-inset-top))
+    max(0.75rem, env(safe-area-inset-right))
+    max(0.75rem, env(safe-area-inset-bottom))
+    max(0.75rem, env(safe-area-inset-left));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-veil) 62%, transparent), color-mix(in srgb, var(--theme-veil) 88%, transparent)),
     rgba(5, 10, 15, 0.34);
@@ -1573,7 +1577,7 @@
 
 .fan-guide__dialog {
   width: min(68rem, calc(100vw - 2rem));
-  max-height: min(34rem, calc(100vh - 2.5rem));
+  max-height: min(42rem, calc(100dvh - 1.5rem));
   display: flex;
   flex-direction: column;
   padding: 1.15rem;
@@ -1590,12 +1594,12 @@
     0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.fan-guide__header,
-.fan-guide__pagination {
+.fan-guide__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
+  flex: 0 0 auto;
 }
 
 .fan-guide__title-block {
@@ -1610,12 +1614,31 @@
   letter-spacing: 0.12em;
 }
 
-.fan-guide__grid {
+.fan-guide__hint {
+  margin: 0;
+  color: color-mix(in srgb, var(--theme-paper) 60%, var(--accent-3));
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.fan-guide__content {
+  flex: 1 1 auto;
+  min-height: 0;
   margin-top: 0.8rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.2rem;
+}
+
+.fan-guide__content:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 46%, transparent);
+  outline-offset: 0.2rem;
+}
+
+.fan-guide__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
-  overflow: visible;
 }
 
 .fan-guide__card {
@@ -1676,26 +1699,7 @@
   font-size: 0.82rem;
 }
 
-.fan-guide__pagination {
-  margin-top: 1rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid color-mix(in srgb, var(--accent-2) 14%, var(--theme-border));
-}
-
-.fan-guide__pagination-status {
-  color: color-mix(in srgb, var(--theme-paper) 62%, var(--accent-3));
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.fan-guide__pagination-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.fan-guide__close,
-.fan-guide__pagination-button {
+.fan-guide__close {
   min-height: 2.2rem;
   padding: 0.38rem 0.84rem;
   border: 1px solid color-mix(in srgb, var(--accent-2) 24%, var(--theme-border));
@@ -1707,20 +1711,6 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
     0 8px 16px color-mix(in srgb, var(--theme-shadow-soft) 84%, transparent);
-}
-
-.fan-guide__pagination-button:disabled {
-  color: color-mix(in srgb, var(--theme-paper) 34%, transparent);
-  border-color: color-mix(in srgb, var(--theme-border) 58%, transparent);
-  background:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-paper) 3%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
-    color-mix(in srgb, var(--panel) 86%, black);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 4%, transparent),
-    0 5px 10px color-mix(in srgb, var(--theme-shadow-soft) 66%, transparent);
-  cursor: default;
 }
 
 /* ==============================
@@ -1775,13 +1765,69 @@
   }
 
   .fan-guide__dialog {
-    max-height: calc(100vh - 1.5rem);
+    max-height: calc(100dvh - 1rem);
     padding: 0.8rem;
     border-radius: 1rem;
+  }
+
+  .fan-guide__content {
+    margin-top: 0.65rem;
   }
 
   .fan-guide__grid {
     grid-template-columns: 1fr;
     gap: 0.5rem;
   }
+}
+
+@media (max-width: 760px) {
+  .fan-guide__dialog {
+    width: min(100%, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
+    padding: 0.9rem;
+    border-radius: 1.05rem;
+  }
+
+  .fan-guide__header {
+    align-items: flex-start;
+  }
+
+  .fan-guide__hint {
+    font-size: 0.76rem;
+  }
+
+  .fan-guide__content {
+    margin-top: 0.7rem;
+    padding-right: 0.1rem;
+  }
+
+  .fan-guide__grid {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+}
+
+:root[data-small-screen='true'] .fan-guide__dialog {
+  width: min(100%, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  padding: 0.9rem;
+  border-radius: 1.05rem;
+}
+
+:root[data-small-screen='true'] .fan-guide__header {
+  align-items: flex-start;
+}
+
+:root[data-small-screen='true'] .fan-guide__hint {
+  font-size: 0.76rem;
+}
+
+:root[data-small-screen='true'] .fan-guide__content {
+  margin-top: 0.7rem;
+  padding-right: 0.1rem;
+}
+
+:root[data-small-screen='true'] .fan-guide__grid {
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
 }

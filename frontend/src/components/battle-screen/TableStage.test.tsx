@@ -601,7 +601,7 @@ describe('TableStage', () => {
     expect(onCycleTheme).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the fan guide dialog from the corner help button and paginates low-fan entries first', () => {
+  it('opens the fan guide dialog from the corner help button and shows all fan guide entries in one scrollable list', () => {
     render(
       <TableStage
         discards={{
@@ -634,14 +634,11 @@ describe('TableStage', () => {
 
     expect(within(dialog).getByText('自摸')).toBeInTheDocument();
     expect(within(dialog).getByText('一般高')).toBeInTheDocument();
-    expect(within(dialog).queryByText('大三元')).toBeNull();
-    expect(within(dialog).getByText('第 1 / 14 页')).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: '下一页' }));
-
     expect(within(dialog).getByText('无字')).toBeInTheDocument();
-    expect(within(dialog).queryByText('自摸')).toBeNull();
-    expect(within(dialog).getByText('第 2 / 14 页')).toBeInTheDocument();
+    expect(within(dialog).getByText('大三元')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('group', { name: '番种说明分页' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: '下一页' })).toBeNull();
+    expect(dialog.querySelector('.fan-guide__content')).not.toBeNull();
 
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭番种说明' }));
 

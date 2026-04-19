@@ -4,6 +4,9 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { DisplayMeldView, PlayerMeldView, Seat } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
 
+type MeldClaimSource = 'left-player' | 'across-player' | 'right-player';
+type TriangleDirection = 'point-left' | 'point-up' | 'point-right';
+
 interface MeldRackProps {
   seat: Seat | 'local';
   melds: PlayerMeldView[];
@@ -83,18 +86,22 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
         {hasMelds
           ? melds.map((meld, meldIndex) => (
               <div key={`${seat}-meld-${meldIndex}`} className="meld-rack__group">
-                {normalizeMeldTiles(meld).map((tile, tileIndex) => {
-                  const isRotated = tile.orientation === 'rotated';
-                  const sourceDirection = tileIndex === 0 ? 'left' : tileIndex === 1 ? 'top' : 'right';
+                {normalizeMeldTiles(meld).map((tile, tileIndex, tiles) => {
+                  const isSourcedTile = tile.orientation === 'rotated' || tile.orientation === 'upside_down';
+                  const claimSource = getClaimSource(tile, tileIndex, tiles);
+                  const triangleDirection = getTriangleDirection(claimSource);
 
                   return (
                     <span
                       key={`${seat}-meld-${meldIndex}-${tile.code}-${tileIndex}`}
-                      className={`meld-rack__tile ${isRotated ? 'meld-rack__tile--sourced' : ''}`.trim()}
+                      className={`meld-rack__tile ${isSourcedTile ? 'meld-rack__tile--sourced' : ''}`.trim()}
                     >
-                      {isRotated && (
+                      {isSourcedTile && (
                         <span
-                          className={`meld-rack__source-indicator meld-rack__source-indicator--${sourceDirection}`}
+                          className="meld-rack__source-indicator"
+                          data-claim-source={claimSource}
+                          data-triangle-direction={triangleDirection}
+                          style={getSourceIndicatorStyle(triangleDirection)}
                           aria-hidden="true"
                         />
                       )}
@@ -103,11 +110,9 @@ export function MeldRack({ seat, melds, ariaLabel, emptyLabel = null, collapsibl
                         variant="discard"
                         isFaceDown={tile.orientation === 'face_down'}
                         className={
-                          isRotated
+                          isSourcedTile
                             ? 'meld-rack__tile-face--sourced'
-                            : tile.orientation === 'upside_down'
-                              ? 'meld-rack__tile-face--upside-down'
-                              : undefined
+                            : undefined
                         }
                       />
                     </span>
@@ -141,4 +146,115 @@ function normalizeMeldTiles(meld: PlayerMeldView): DisplayMeldView['tiles'] {
   }
 
   return meld.tiles;
+}
+
+function getClaimSource(
+  tile: DisplayMeldView['tiles'][number],
+  tileIndex: number,
+  tiles: DisplayMeldView['tiles'],
+): MeldClaimSource {
+  if (tile.orientation === 'upside_down') {
+    return 'across-player';
+  }
+
+  if (isChowTileRun(tiles)) {
+    return 'left-player';
+  }
+
+  const tileCount = tiles.length;
+  if (tileIndex <= 0) {
+    return 'left-player';
+  }
+
+  if (tileIndex >= tileCount - 1) {
+    return 'right-player';
+  }
+
+  return 'across-player';
+}
+
+function isChowTileRun(tiles: DisplayMeldView['tiles'] | undefined) {
+  if (!tiles || tiles.length !== 3) {
+    return false;
+  }
+
+  const parsedTiles = tiles.map((tile) => parseSuitedTile(tile.code));
+  if (parsedTiles.some((tile) => tile === null)) {
+    return false;
+  }
+
+  const [firstTile, ...restTiles] = parsedTiles as Array<{ suit: string; rank: number }>;
+  if (restTiles.some((tile) => tile.suit !== firstTile.suit)) {
+    return false;
+  }
+
+  const sortedRanks = parsedTiles
+    .map((tile) => (tile as { suit: string; rank: number }).rank)
+    .slice()
+    .sort((left, right) => left - right);
+
+  return sortedRanks[0] + 1 === sortedRanks[1] && sortedRanks[1] + 1 === sortedRanks[2];
+}
+
+function parseSuitedTile(code: string) {
+  const match = /^([a-z])([1-9])$/i.exec(code.trim());
+  if (!match) {
+    return null;
+  }
+
+  const normalizedSuit = normalizeSuitedTileFamily(match[1].toLowerCase());
+  if (!normalizedSuit) {
+    return null;
+  }
+
+  return {
+    suit: normalizedSuit,
+    rank: Number(match[2]),
+  };
+}
+
+function normalizeSuitedTileFamily(suit: string) {
+  if (suit === 'w' || suit === 'm') {
+    return 'wan';
+  }
+
+  if (suit === 'b' || suit === 'p') {
+    return 'tong';
+  }
+
+  if (suit === 'c' || suit === 't') {
+    return 'tiao';
+  }
+
+  return null;
+}
+
+function getTriangleDirection(source: MeldClaimSource): TriangleDirection {
+  if (source === 'left-player') {
+    return 'point-left';
+  }
+
+  if (source === 'right-player') {
+    return 'point-right';
+  }
+
+  return 'point-up';
+}
+
+function getSourceIndicatorStyle(direction: TriangleDirection): CSSProperties {
+  return {
+    '--meld-rack-triangle-angle': getTriangleAngle(direction),
+  } as CSSProperties;
+}
+
+function getTriangleAngle(direction: TriangleDirection) {
+  if (direction === 'point-left') {
+    return '-90deg';
+  }
+
+  if (direction === 'point-right') {
+    return '90deg';
+  }
+
+  return '0deg';
 }
