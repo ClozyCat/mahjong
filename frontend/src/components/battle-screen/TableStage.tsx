@@ -800,9 +800,9 @@ function CenterIndicator({
   // Rotation angles for pointer (0 is bottom)
   const rotationMap: Record<Seat, number> = {
     bottom: 0,
-    right: 90,
+    right: -90,
     top: 180,
-    left: 270,
+    left: 90,
   };
 
   const pointerRotation = actionSeat ? rotationMap[actionSeat] : 0;

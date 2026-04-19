@@ -285,6 +285,30 @@ describe('TableStage', () => {
     expect(screen.queryByLabelText(/正在行动/)).toBeNull();
   });
 
+  it.each([
+    { seat: 'left', expectedTransform: 'rotate(90 50 50)' },
+    { seat: 'right', expectedTransform: 'rotate(-90 50 50)' },
+  ] as const)('rotates the center indicator pointer toward the $seat seat', ({ seat, expectedTransform }) => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        actionIndicatorSeat={seat}
+        lastDiscard={null}
+        promptText={null}
+      />,
+    );
+
+    const pointer = container.querySelector('.table-stage__center-indicator-pointer');
+    expect(pointer).not.toBeNull();
+    expect(pointer?.getAttribute('transform')).toBe(expectedTransform);
+  });
+
   it('renders player info bars on the table and reuses the same accent on the spotlight seat', () => {
     const { container } = render(
       <TableStage

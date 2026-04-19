@@ -2297,8 +2297,11 @@ describe('BattleScreen', () => {
       { onLeaveTable },
     );
 
-    expect(screen.getByRole('button', { name: '快捷离开牌桌' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '离开牌桌' }));
+    const quickLeaveButton = screen.getByRole('button', { name: '快捷离开牌桌' });
+
+    expect(quickLeaveButton).toBeInTheDocument();
+    expect(screen.queryByText('等待牌手')).toBeNull();
+    await user.click(quickLeaveButton);
 
     expect(onLeaveTable).toHaveBeenCalledTimes(1);
   });
