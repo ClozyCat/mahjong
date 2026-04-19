@@ -28,10 +28,11 @@
   --table-stage-horizontal-river-reference-rows: 2;
   --table-stage-horizontal-river-reference-height: calc((var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) + (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1)));
   --table-stage-action-pointer-size: 1.4rem;
-  --table-stage-center-indicator-size: clamp(4.2rem, 10vw, 5.8rem);
-  --table-stage-spotlight-offset: calc(var(--table-stage-center-indicator-size) * 1.1);
+  --table-stage-center-indicator-size: clamp(1rem, 9vw, 5.5rem);
+  --table-stage-spotlight-offset: clamp(1.2rem, 10vw, 6rem);
   --table-stage-center-v: 41%;
-  --table-stage-seat-top-v: clamp(3rem, 10%, 6rem);
+  --table-stage-seat-top-v: clamp(0.4rem, 1.2vw, 0.82rem);
+  --table-stage-side-gap: clamp(0.6rem, 11vw, 8rem);
   --table-player-accent: color-mix(in srgb, var(--accent) 62%, var(--theme-paper));
   --table-player-accent-strong: color-mix(in srgb, var(--accent) 54%, var(--theme-paper));
   --table-player-accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
@@ -152,24 +153,27 @@
 }
 
 .table-stage__center-indicator-count {
-  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-size: calc(var(--table-stage-center-indicator-size) * 0.36);
   font-weight: 700;
   line-height: 1;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .table-stage__center-indicator-label {
-  font-size: clamp(0.6rem, 1.2vw, 0.75rem);
+  font-size: calc(var(--table-stage-center-indicator-size) * 0.13);
   opacity: 0.7;
   letter-spacing: 0.1em;
 }
 
 @keyframes center-indicator-breathing {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(0.98);
     opacity: 0.1;
     filter: blur(2px);
   }
+
   50% {
     transform: scale(1.05);
     opacity: 0.4;
@@ -203,13 +207,13 @@
 }
 
 .table-stage__seat-zone--left {
-  left: clamp(4rem, 12%, 8rem);
+  left: var(--table-stage-side-gap);
   top: var(--table-stage-center-v);
   transform: translateY(-50%);
 }
 
 .table-stage__seat-zone--right {
-  right: clamp(4rem, 12%, 8rem);
+  right: var(--table-stage-side-gap);
   top: var(--table-stage-center-v);
   transform: translateY(-50%);
 }
@@ -253,8 +257,10 @@
 
 .table-stage__seat-group {
   position: relative;
-  display: block;
-  /* Back to block to let children position themselves */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.4rem, 1.2vw, 0.72rem);
   width: max-content;
   margin: 0 auto;
   z-index: 2;
@@ -520,7 +526,6 @@
 }
 
 .table-stage__player-edge-info {
-  position: absolute;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -533,39 +538,42 @@
 }
 
 .table-stage__player-edge-info--bottom {
-  bottom: -3.6rem;
-  left: 50%;
-  transform: translateX(-50%);
   align-items: center;
 }
 
 .table-stage__player-edge-info--top {
-  top: -3.6rem;
-  left: 50%;
-  transform: translateX(-50%);
   align-items: center;
+  transform: rotate(180deg);
 }
 
 .table-stage__player-edge-info--left {
-  left: -4.8rem;
-  top: 50%;
-  transform: translateY(-50%) rotate(90deg);
-  transform-origin: center;
   align-items: center;
 }
 
 .table-stage__player-edge-info--right {
-  right: -4.8rem;
-  top: 50%;
-  transform: translateY(-50%) rotate(-90deg);
-  transform-origin: center;
   align-items: center;
 }
 
+.table-stage__player-edge-info--bottom,
+.table-stage__player-edge-info--top {
+  flex-direction: row;
+  align-items: baseline;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
 .table-stage__player-edge-info b {
   font-weight: 700;
   font-size: 0.94rem;
   color: var(--accent-2);
+}
+
+.table-stage__player-edge-info--top b::after,
+.table-stage__player-edge-info--bottom b::after {
+  content: "·";
+  margin-inline: 0.4rem;
+  color: var(--theme-paper-strong);
+  opacity: 0.5;
+  font-weight: normal;
 }
 
 .table-stage__player-edge-info span {
@@ -1075,7 +1083,8 @@
 /* ---- Landscape mobile ---- */
 @media (orientation: landscape) and (max-height: 500px) {
   .table-stage {
-    --table-stage-center-indicator-size: clamp(3.2rem, 8vw, 4.5rem);
+    --table-stage-center-indicator-size: clamp(1rem, 6vw, 3.2rem);
+    --table-stage-spotlight-offset: clamp(1.2rem, 7vw, 3.6rem);
     --table-stage-river-columns: 7;
   }
 

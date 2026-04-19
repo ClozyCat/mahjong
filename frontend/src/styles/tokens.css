@@ -57,6 +57,32 @@ body,
 
 html {
   background: var(--desktop);
+  /* Global responsive font size system */
+  font-size: 16px;
+}
+
+@media (max-width: 1440px) {
+  html { font-size: 15.5px; }
+}
+
+@media (max-width: 1280px) {
+  html { font-size: 15px; }
+}
+
+@media (max-width: 1024px) {
+  html { font-size: 14.5px; }
+}
+
+@media (max-width: 768px) {
+  html { font-size: 14px; }
+}
+
+@media (max-width: 480px) {
+  html { font-size: 13.5px; }
+}
+
+@media (max-width: 360px) {
+  html { font-size: 13px; }
 }
 
 body {
@@ -189,6 +215,10 @@ input {
 
 /* ---- Landscape mobile overrides ---- */
 @media (orientation: landscape) and (max-height: 500px) {
+  html {
+    font-size: 13.5px;
+  }
+
   :root {
     --battle-shell-gap: clamp(0.3rem, 0.8vw, 0.6rem);
     --battle-shell-top-gap: clamp(0.1rem, 0.2vh, 0.2rem);

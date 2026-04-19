@@ -542,6 +542,16 @@ export function TableStage({
                         />
                       </div>
                     ) : null}
+
+                    {player ? (
+                      <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
+                        <b>{player.name}</b>
+                        <span>
+                          分数 {player.score?.toLocaleString() ?? 0} · 花 {player.flowerCount ?? 0} · 手牌{' '}
+                          {player.concealedCount ?? 0}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {finalHandTiles.length > 0 && settlementHandLabel ? (
@@ -574,15 +584,6 @@ export function TableStage({
                   <div className={`table-stage__seat-watermark table-stage__seat-watermark--${seat}`} aria-hidden="true">
                     {player?.wind ? WIND_NAME_TO_CHAR[player.wind] : WIND_COPY[seat]}
                   </div>
-                  {player ? (
-                    <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
-                      <b>{player.name}</b>
-                      <span>
-                        分数 {player.score?.toLocaleString() ?? 0} · 花 {player.flowerCount ?? 0} · 手牌{' '}
-                        {player.concealedCount ?? 0}
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               </Fragment>
             );

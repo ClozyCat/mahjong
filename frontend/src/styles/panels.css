@@ -107,7 +107,7 @@
 }
 
 .player-ring__content strong {
-  font-size: 0.8rem;
+  font-size: clamp(0.7rem, 0.6rem + 0.5vw, 0.82rem);
   letter-spacing: 0.04em;
 }
 
@@ -115,7 +115,7 @@
 .player-ring__meta,
 .player-ring__detail {
   color: var(--muted);
-  font-size: 0.56rem;
+  font-size: clamp(0.48rem, 0.4rem + 0.4vw, 0.58rem);
   letter-spacing: 0.05em;
 }
 
@@ -223,7 +223,7 @@
 .connect-gate__brand h1 {
   margin: 0.2rem 0 0.5rem;
   font-family: 'Noto Sans SC', sans-serif;
-  font-size: clamp(2rem, 3vw, 2.75rem);
+  font-size: clamp(1.65rem, 6vw, 2.75rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--theme-paper-strong);
@@ -533,13 +533,13 @@
 }
 
 .battle-drawer__players .player-ring__content strong {
-  font-size: 0.74rem;
+  font-size: clamp(0.66rem, 0.55rem + 0.4vw, 0.76rem);
 }
 
 .battle-drawer__players .player-ring__eyebrow,
 .battle-drawer__players .player-ring__meta,
 .battle-drawer__players .player-ring__detail {
-  font-size: 0.52rem;
+  font-size: clamp(0.44rem, 0.38rem + 0.3vw, 0.54rem);
   letter-spacing: 0.06em;
 }
 
@@ -640,7 +640,7 @@
 .table-stage__table-info span {
   display: block;
   color: color-mix(in srgb, var(--theme-paper) 78%, transparent);
-  font-size: 0.68rem;
+  font-size: clamp(0.56rem, 0.45rem + 0.4vw, 0.72rem);
   letter-spacing: 0.04em;
   line-height: 1.15;
 }
@@ -651,7 +651,7 @@
   left: 1.3rem;
   bottom: 1.1rem;
   z-index: 4;
-  font-size: clamp(0.86rem, 1.1vw, 1.05rem);
+  font-size: clamp(0.72rem, 0.65rem + 0.5vw, 1.05rem);
   font-weight: 400;
   letter-spacing: 0.04em;
   line-height: 1.1;
@@ -690,7 +690,7 @@
       color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
     var(--theme-panel-bg);
   color: var(--theme-paper-strong);
-  font-size: 0.78rem;
+  font-size: clamp(0.68rem, 0.6rem + 0.4vw, 0.82rem);
   letter-spacing: 0.05em;
   line-height: 1.1;
   box-shadow:
@@ -884,7 +884,7 @@
 .result-overlay__card h2 {
   margin: 0;
   font-family: 'Noto Sans SC', sans-serif;
-  font-size: clamp(1.15rem, 1rem + 0.8vw, 1.4rem);
+  font-size: clamp(1rem, 0.8rem + 1vw, 1.4rem);
   letter-spacing: 0.04em;
 }
 
