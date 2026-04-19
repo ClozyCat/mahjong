@@ -98,6 +98,17 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  border-radius: 50%;
+  /* Extra depth layer */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -12%;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
+    opacity: 0.6;
+    z-index: -1;
+  }
 }
 
 .table-stage__center-indicator-ring {
@@ -111,34 +122,35 @@
   fill: var(--table-center-ring-bg);
   stroke: var(--table-center-ring-border);
   stroke-width: 1.2;
-  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.38));
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.1));
 }
 
 .table-stage__center-indicator-countdown {
   fill: none;
   stroke: var(--table-center-countdown-color);
-  stroke-width: 2.5;
+  stroke-width: 3;
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: center;
-  transition: stroke-dashoffset 0.12s linear;
-  filter: drop-shadow(0 0 5px var(--table-center-countdown-color));
+  transition: stroke-dashoffset 0.15s linear;
+  filter: drop-shadow(0 0 6px var(--table-center-countdown-color)) drop-shadow(0 0 2px color-mix(in srgb, var(--table-center-countdown-color) 40%, white));
 }
 
 .table-stage__center-indicator-pointer {
   fill: var(--accent-2);
-  filter: drop-shadow(0 0 8px var(--accent-2));
+  filter: drop-shadow(0 0 10px var(--accent-2)) drop-shadow(0 0 2px white);
   transition: transform 0.4s var(--ease-spring);
 }
 
 .table-stage__center-indicator-breathing {
   position: absolute;
-  inset: -6%;
+  inset: -8%;
   border-radius: 50%;
   border: 1.5px solid var(--table-center-breathing-color);
   opacity: 0;
   pointer-events: none;
-  animation: center-indicator-breathing 2.2s ease-in-out infinite;
+  animation: center-indicator-breathing 2.8s var(--ease-lux) infinite;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--table-center-breathing-color) 30%, transparent);
 }
 
 .table-stage__center-indicator-remaining {
@@ -147,16 +159,24 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.1rem;
   color: var(--table-center-ring-ink);
-  font-family: 'SimSun', 'STKaiti', 'KaiTi', serif;
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', 'Noto Sans SC', serif;
+  /* Font metric adjustment: push down slightly */
+  transform: translateY(4%);
 }
 
 .table-stage__center-indicator-count {
-  font-size: calc(var(--table-stage-center-indicator-size) * 0.36);
+  font-size: calc(var(--table-stage-center-indicator-size) * 0.38);
   font-weight: 700;
-  line-height: 1;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  line-height: 0.9;
+  margin: 0;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.45),
+    0 0 12px color-mix(in srgb, var(--accent-2) 24%, transparent);
 }
 
 .table-stage__center-indicator-label {
@@ -166,18 +186,17 @@
 }
 
 @keyframes center-indicator-breathing {
-
-  0%,
-  100% {
-    transform: scale(0.98);
-    opacity: 0.1;
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.05;
     filter: blur(2px);
+    box-shadow: 0 0 10px transparent;
   }
-
   50% {
-    transform: scale(1.05);
-    opacity: 0.4;
+    transform: scale(1.08);
+    opacity: 0.32;
     filter: blur(4px);
+    box-shadow: 0 0 25px color-mix(in srgb, var(--table-center-breathing-color) 40%, transparent);
   }
 }
 
