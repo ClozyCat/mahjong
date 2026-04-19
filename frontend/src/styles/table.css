@@ -486,6 +486,11 @@
   direction: ltr;
 }
 
+/* Dense meld rack (3+ melds) forces 2 rows for top/bottom to save horizontal space */
+.table-stage__melds--dense .meld-rack {
+  grid-template-rows: repeat(2, max-content) !important;
+}
+
 /* ------- Barrage ------- */
 
 .table-stage__barrage-layer {

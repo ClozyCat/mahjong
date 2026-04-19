@@ -66,9 +66,9 @@ export function BattleScreen({
     .map((action) =>
       action.id === 'ready'
         ? {
-            ...action,
-            enabled: action.enabled && !isReadyActionCoolingDown,
-          }
+          ...action,
+          enabled: action.enabled && !isReadyActionCoolingDown,
+        }
         : action,
     );
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));

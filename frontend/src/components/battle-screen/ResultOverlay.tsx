@@ -16,6 +16,7 @@ interface ResultOverlayProps {
 export function ResultOverlay({ result, settlementHands, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeResultPageIndex, setActiveResultPageIndex] = useState(0);
+  const [activeScorePageIndex, setActiveScorePageIndex] = useState(0);
   const [fanPanelHeight, setFanPanelHeight] = useState<number | null>(null);
   const [continueActionRemainingSeconds, setContinueActionRemainingSeconds] = useState<number | null>(null);
   const [activeFanGuide, setActiveFanGuide] = useState<{
@@ -421,52 +422,50 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
   const fanGuidePopover =
     activeFanGuide && typeof document !== 'undefined'
       ? createPortal(
-          <div
-            ref={fanGuidePopoverRef}
-            role="tooltip"
-            aria-label={`${activeFanGuide.entry.label}番型说明`}
-            className={`result-overlay__fan-tooltip result-overlay__fan-tooltip--${
-              fanGuidePopoverPosition?.placement ?? 'right'
+        <div
+          ref={fanGuidePopoverRef}
+          role="tooltip"
+          aria-label={`${activeFanGuide.entry.label}番型说明`}
+          className={`result-overlay__fan-tooltip result-overlay__fan-tooltip--${fanGuidePopoverPosition?.placement ?? 'right'
             }`.trim()}
-            style={getOverlayPopoverStyle(fanGuidePopoverPosition, '--result-overlay-fan-tooltip-arrow-top')}
-            onMouseEnter={() => {
-              if (closeFanGuideTimerRef.current !== null) {
-                window.clearTimeout(closeFanGuideTimerRef.current);
-                closeFanGuideTimerRef.current = null;
-              }
-            }}
-            onMouseLeave={() => {
-              scheduleFanGuideClose();
-            }}
-          >
-            <FanGuideCard entry={activeFanGuide.entry} className="result-overlay__fan-tooltip-card" />
-          </div>,
-          document.body,
-        )
+          style={getOverlayPopoverStyle(fanGuidePopoverPosition, '--result-overlay-fan-tooltip-arrow-top')}
+          onMouseEnter={() => {
+            if (closeFanGuideTimerRef.current !== null) {
+              window.clearTimeout(closeFanGuideTimerRef.current);
+              closeFanGuideTimerRef.current = null;
+            }
+          }}
+          onMouseLeave={() => {
+            scheduleFanGuideClose();
+          }}
+        >
+          <FanGuideCard entry={activeFanGuide.entry} className="result-overlay__fan-tooltip-card" />
+        </div>,
+        document.body,
+      )
       : null;
 
   const seatStatsPopover =
     activeSeatStats?.seat.stats && typeof document !== 'undefined'
       ? createPortal(
-          <div
-            ref={seatStatsPopoverRef}
-            role="tooltip"
-            aria-label={`${activeSeatStats.seat.name} 战绩统计`}
-            className={`result-overlay__seat-tooltip result-overlay__seat-tooltip--${
-              seatStatsPopoverPosition?.placement ?? 'right'
+        <div
+          ref={seatStatsPopoverRef}
+          role="tooltip"
+          aria-label={`${activeSeatStats.seat.name} 战绩统计`}
+          className={`result-overlay__seat-tooltip result-overlay__seat-tooltip--${seatStatsPopoverPosition?.placement ?? 'right'
             }`.trim()}
-            style={getOverlayPopoverStyle(seatStatsPopoverPosition, '--result-overlay-seat-tooltip-arrow-top')}
-            onMouseEnter={() => {
-              clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
-            }}
-            onMouseLeave={() => {
-              scheduleSeatStatsClose();
-            }}
-          >
-            <SeatStatsTooltip seat={activeSeatStats.seat} />
-          </div>,
-          document.body,
-        )
+          style={getOverlayPopoverStyle(seatStatsPopoverPosition, '--result-overlay-seat-tooltip-arrow-top')}
+          onMouseEnter={() => {
+            clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+          }}
+          onMouseLeave={() => {
+            scheduleSeatStatsClose();
+          }}
+        >
+          <SeatStatsTooltip seat={activeSeatStats.seat} />
+        </div>,
+        document.body,
+      )
       : null;
 
   return (
@@ -477,21 +476,9 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
         style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
       >
         <div ref={cardRef} className="result-overlay__card">
-          <div className="result-overlay__header">
-            <div className="result-overlay__heading">
-              <span className="result-overlay__eyebrow">结算面板</span>
-              <h2>{result.title}</h2>
-            </div>
-            <button
-              type="button"
-              className="result-overlay__collapse"
-              onClick={() => setIsCollapsed(true)}
-              aria-expanded="true"
-            >
-              收起结算面板
-            </button>
+          <div className="result-overlay__header result-overlay__header--empty">
+            {/* Header is kept but emptied to maintain layout if needed, or we can just remove titles */}
           </div>
-          <p className="result-overlay__summary">{result.summary}</p>
 
           <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
             {hasFanPanel ? (
@@ -548,9 +535,8 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
                         return (
                           <div
                             key={rowKey}
-                            className={`result-overlay__row ${
-                              hasGuideEntry ? 'result-overlay__row--interactive' : ''
-                            }`.trim()}
+                            className={`result-overlay__row ${hasGuideEntry ? 'result-overlay__row--interactive' : ''
+                              }`.trim()}
                             onMouseEnter={(event) =>
                               scheduleFanGuideOpen(rowKey, item.fanKey, event.currentTarget as HTMLDivElement)
                             }
@@ -583,10 +569,39 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
             >
               <div className="result-overlay__section-head">
                 <span className="result-overlay__section-label">玩家分数</span>
+                <div className="result-overlay__score-pagination" role="group" aria-label="玩家分数分页">
+                  <button
+                    type="button"
+                    className="result-overlay__pagination-button"
+                    onClick={() =>
+                      setActiveScorePageIndex((currentIndex) =>
+                        currentIndex === 0 ? result.seats.length - 1 : currentIndex - 1,
+                      )
+                    }
+                    aria-label="上一个玩家"
+                  >
+                    上一个
+                  </button>
+                  <span className="result-overlay__pagination-status">
+                    {activeScorePageIndex + 1} / {result.seats.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="result-overlay__pagination-button"
+                    onClick={() =>
+                      setActiveScorePageIndex((currentIndex) =>
+                        currentIndex === result.seats.length - 1 ? 0 : currentIndex + 1,
+                      )
+                    }
+                    aria-label="下一个玩家"
+                  >
+                    下一个
+                  </button>
+                </div>
                 <span className="result-overlay__score-hint">本局结算后总分</span>
               </div>
               <div className="result-overlay__seat-list">
-                {result.seats.map((seat) => {
+                {result.seats.map((seat, index) => {
                   const deltaClassName =
                     seat.delta === null
                       ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
@@ -608,7 +623,9 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
                   return (
                     <div
                       key={rowKey}
-                      className={`${rowClassName}${hasSeatStats ? ' result-overlay__seat-row--interactive' : ''}`}
+                      className={`${rowClassName}${hasSeatStats ? ' result-overlay__seat-row--interactive' : ''} ${
+                        index === activeScorePageIndex ? 'result-overlay__seat-row--active' : 'result-overlay__seat-row--inactive'
+                      }`}
                       tabIndex={hasSeatStats ? 0 : undefined}
                       onMouseEnter={(event) => {
                         if (!hasSeatStats) {
@@ -677,10 +694,18 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
             </div>
           </div>
 
-          {result.continueAction ? (
-            <div className="result-overlay__actions">
+          <div className="result-overlay__actions">
+            <button
+              type="button"
+              className="result-overlay__collapse-btn"
+              onClick={() => setIsCollapsed(true)}
+            >
+              收起结算面板
+            </button>
+            {result.continueAction ? (
               <button
                 type="button"
+                className="result-overlay__primary-btn"
                 disabled={!result.continueAction.enabled}
                 onClick={() => onAction(result.continueAction!.id)}
               >
@@ -688,8 +713,8 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
                   ? `${continueActionRemainingSeconds}s后自动推进`
                   : result.continueAction.label}
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </section>
       {fanGuidePopover}
@@ -843,7 +868,7 @@ function ScoreTrendChart({ history, seatName }: { history: number[]; seatName: s
       paddingTop +
       innerHeight -
       ((score - minScore + (range === 0 ? normalizedRange / 2 : 0)) / (range === 0 ? normalizedRange * 2 : normalizedRange)) *
-        innerHeight;
+      innerHeight;
 
     return {
       x,
@@ -853,11 +878,11 @@ function ScoreTrendChart({ history, seatName }: { history: number[]; seatName: s
   const polylinePoints = points.map((point) => `${point.x},${point.y}`).join(' ');
   const areaPath = points.length > 0
     ? [
-        `M ${points[0].x} ${height - paddingBottom}`,
-        ...points.map((point) => `L ${point.x} ${point.y}`),
-        `L ${points.at(-1)?.x ?? paddingLeft} ${height - paddingBottom}`,
-        'Z',
-      ].join(' ')
+      `M ${points[0].x} ${height - paddingBottom}`,
+      ...points.map((point) => `L ${point.x} ${point.y}`),
+      `L ${points.at(-1)?.x ?? paddingLeft} ${height - paddingBottom}`,
+      'Z',
+    ].join(' ')
     : '';
 
   return (
