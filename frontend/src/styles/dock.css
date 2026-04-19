@@ -210,20 +210,20 @@
 
 .action-dock__side-panel {
   display: grid;
-  gap: 0.48rem;
+  gap: 0.44rem;
   align-content: start;
   align-self: stretch;
-  padding: 0.52rem 0.58rem 0.6rem;
-  border: 2px solid #bdb7ab;
-  border-right-color: #555;
-  border-bottom-color: #555;
+  padding: 0.48rem 0.52rem 0.54rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  border-radius: 0.88rem;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(201, 196, 185, 0) 26%),
-    repeating-linear-gradient(180deg, rgba(49, 72, 67, 0.08), rgba(49, 72, 67, 0.08) 1px, transparent 1px, transparent 6px),
-    #c9c4b9;
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--theme-paper) 8%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
+    var(--theme-panel-bg);
   box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.72),
-    inset -1px -1px 0 rgba(72, 72, 72, 0.22);
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent),
+    var(--shadow-md);
 }
 
 /* ------- Actions ------- */
@@ -1007,5 +1007,52 @@
   .action-dock__action--response {
     min-width: 0;
     padding-inline: 0.7rem;
+  }
+}
+
+/* ---- Landscape mobile ---- */
+@media (orientation: landscape) and (max-height: 500px) {
+  .action-dock {
+    bottom: clamp(0.4rem, 2vh, 1rem);
+    --action-dock-tile-gap: clamp(0.08rem, 0.35vw, 0.24rem);
+  }
+
+  .action-dock__response-stack {
+    gap: 0.32rem;
+  }
+
+  .action-dock__actions {
+    gap: 0.42rem;
+  }
+
+  .action-dock__action--response {
+    min-height: 1.8rem;
+    padding: 0.26rem 0.72rem;
+    font-size: 0.74rem;
+  }
+
+  .action-dock__claim-candidate {
+    min-height: 2.6rem;
+    padding: 0.24rem 0.36rem 0.24rem 0.3rem;
+    gap: 0.3rem;
+  }
+
+  .action-dock__claim-candidate-badge {
+    min-width: 1.4rem;
+    min-height: 1.8rem;
+    font-size: 0.68rem;
+    padding: 0.1rem 0.2rem;
+  }
+
+  .action-dock__claim-preview-tile {
+    width: 1.1rem;
+    height: calc(1.1rem * 1.36);
+    min-width: 1.1rem;
+    min-height: calc(1.1rem * 1.36);
+  }
+
+  .action-dock__info-rail {
+    padding-left: 0.5rem;
+    gap: 0.3rem;
   }
 }

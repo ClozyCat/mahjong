@@ -1,39 +1,44 @@
 /* =================================================
    Design Tokens & Global Base Styles
-   Merged from all cascade layers into final values.
+   Zhongguose-inspired premium aesthetic.
+   Clean rewrite — no override debt.
    ================================================= */
 
 :root {
-  font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+  font-family: 'Noto Sans SC', 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
 
-  /* Shadow system */
-  --shadow-xl: 0 28px 70px rgba(0, 0, 0, 0.38);
-  --shadow-lg: 0 18px 38px rgba(0, 8, 20, 0.34);
-  --shadow-premium-soft: 0 2px 8px -2px rgba(0, 0, 0, 0.12), 0 12px 32px -4px rgba(0, 0, 0, 0.25);
-  --shadow-premium-hard: 0 4px 12px rgba(0, 0, 0, 0.2), 0 24px 64px rgba(0, 0, 0, 0.4);
+  /* ---- Shadow system (soft, multi-layered) ---- */
+  --shadow-sm: 0 2px 6px -1px rgba(0, 0, 0, 0.12), 0 1px 2px -1px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 6px 16px -3px rgba(0, 0, 0, 0.18), 0 2px 6px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 14px 32px -6px rgba(0, 8, 20, 0.26), 0 4px 10px -3px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 24px 56px -8px rgba(0, 0, 0, 0.32), 0 8px 20px -4px rgba(0, 0, 0, 0.14);
+  --shadow-premium-soft: 0 2px 8px -2px rgba(0, 0, 0, 0.1), 0 10px 28px -6px rgba(0, 0, 0, 0.2);
+  --shadow-premium-hard: 0 4px 12px rgba(0, 0, 0, 0.16), 0 20px 48px -8px rgba(0, 0, 0, 0.32);
 
-  /* Easing curves */
+  /* ---- Easing curves ---- */
   --ease-lux: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  --ease-spring: cubic-bezier(0.22, 0.68, 0, 1.2);
+  --ease-spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-snap: cubic-bezier(0.2, 1, 0.2, 1);
+  --ease-lux-slow: cubic-bezier(0.4, 0, 0, 1);
 
-  /* Battle layout system */
-  --battle-shell-gap: clamp(0.6rem, 1.2vw, 1.25rem);
-  --battle-shell-top-gap: clamp(0.25rem, 0.45vh, 0.5rem);
-  --battle-shell-bottom-gap: clamp(0.25rem, 0.45vh, 0.5rem);
-  --battle-top-clearance: clamp(0.1rem, 0.2vh, 0.25rem);
+  /* ---- Battle layout system (responsive) ---- */
+  --battle-shell-gap: clamp(0.5rem, 1.1vw, 1.2rem);
+  --battle-shell-top-gap: clamp(0.2rem, 0.4vh, 0.45rem);
+  --battle-shell-bottom-gap: clamp(0.2rem, 0.4vh, 0.45rem);
+  --battle-top-clearance: clamp(0.08rem, 0.18vh, 0.22rem);
   --battle-stage-size-trim: 0rem;
-  --battle-hand-tile-width-base: clamp(1.38rem, 4.8vw, 3.25rem);
+  --battle-hand-tile-width-base: clamp(1.32rem, 4.6vw, 3.15rem);
   --battle-hand-tile-width: calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1));
   --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
-  --battle-meld-tile-width-base: clamp(1.2rem, 4vw, 2.8rem);
+  --battle-meld-tile-width-base: clamp(1.15rem, 3.8vw, 2.7rem);
   --battle-meld-tile-width: calc(var(--battle-meld-tile-width-base) * var(--table-stage-tile-scale, 1));
-  --battle-bottom-clearance: clamp(0.6rem, 1vh, 0.85rem);
-  --battle-stage-bottom-reserve: clamp(1.2rem, 2.8vh, 2rem);
-  --battle-dock-bottom-gap: 0.15rem;
-  --battle-drawer-top-offset: clamp(0.35rem, 0.8vh, 0.75rem);
+  --battle-bottom-clearance: clamp(0.5rem, 0.9vh, 0.8rem);
+  --battle-stage-bottom-reserve: clamp(1.1rem, 2.6vh, 1.9rem);
+  --battle-dock-bottom-gap: 0.12rem;
+  --battle-drawer-top-offset: clamp(0.3rem, 0.7vh, 0.7rem);
 
-  /* Halo Timer System */
+  /* ---- Halo Timer ---- */
   --halo-size: 100%;
   --halo-thickness: 2px;
   --halo-offset: -4px;
@@ -58,11 +63,16 @@ body {
   margin: 0;
   color: var(--text);
   background:
-    radial-gradient(circle at 16% 18%, var(--theme-glow-a), transparent 24%),
-    radial-gradient(circle at 82% 16%, var(--theme-glow-b), transparent 26%),
-    radial-gradient(circle at 52% 84%, var(--theme-glow-c), transparent 26%),
-    linear-gradient(145deg, color-mix(in srgb, var(--desktop) 92%, black) 0%, var(--desktop) 44%, color-mix(in srgb, var(--desktop) 82%, var(--table)) 100%);
+    radial-gradient(ellipse at 14% 16%, var(--theme-glow-a), transparent 28%),
+    radial-gradient(ellipse at 84% 14%, var(--theme-glow-b), transparent 30%),
+    radial-gradient(ellipse at 50% 86%, var(--theme-glow-c), transparent 30%),
+    linear-gradient(152deg,
+      color-mix(in srgb, var(--desktop) 94%, black) 0%,
+      var(--desktop) 42%,
+      color-mix(in srgb, var(--desktop) 84%, var(--table)) 100%);
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body::before,
@@ -76,17 +86,23 @@ body::after {
 
 body::before {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--theme-paper) 16%, transparent) 1px, transparent 1px),
-    linear-gradient(color-mix(in srgb, var(--theme-paper) 16%, transparent) 1px, transparent 1px);
-  background-size: 72px 72px;
-  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.86), transparent 88%);
-  opacity: 0.18;
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-paper) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--theme-paper) 10%, transparent) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.7), transparent 85%);
+  opacity: 0.12;
 }
 
 body::after {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 12%, transparent), transparent 18%, transparent 84%, color-mix(in srgb, var(--theme-paper) 7%, transparent)),
-    radial-gradient(circle at center, color-mix(in srgb, var(--theme-paper) 10%, transparent), transparent 60%);
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--theme-paper) 8%, transparent),
+      transparent 16%,
+      transparent 86%,
+      color-mix(in srgb, var(--theme-paper) 5%, transparent)),
+    radial-gradient(circle at center,
+      color-mix(in srgb, var(--theme-paper) 6%, transparent),
+      transparent 56%);
   opacity: 1;
 }
 
@@ -101,55 +117,56 @@ input {
 button {
   position: relative;
   border: 1px solid var(--theme-border);
-  border-radius: 14px;
+  border-radius: 0.88rem;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-sheen) 88%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 92%, transparent)),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--theme-sheen) 72%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-soft) 88%, transparent)),
     var(--panel);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
-    0 10px 24px var(--theme-shadow-soft);
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
+    var(--shadow-md);
   transition:
-    transform 0.15s var(--ease-snap),
-    border-color 0.15s var(--ease-lux),
-    background-color 0.15s var(--ease-lux),
-    box-shadow 0.2s var(--ease-lux),
-    opacity 0.15s var(--ease-lux);
+    transform 0.18s var(--ease-snap),
+    border-color 0.18s var(--ease-lux),
+    background-color 0.18s var(--ease-lux),
+    box-shadow 0.22s var(--ease-lux),
+    opacity 0.18s var(--ease-lux);
 }
 
 button:hover:not(:disabled) {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 56%, var(--theme-border-strong));
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--theme-border-strong));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 25%, transparent),
-    0 16px 32px var(--theme-shadow-soft),
-    0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 18%, transparent),
+    var(--shadow-lg),
+    0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 button:active:not(:disabled) {
-  border-color: #404040;
-  border-right-color: #d4d0c8;
-  border-bottom-color: #d4d0c8;
-  transform: translateY(0);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 6%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 96%, transparent)),
-    color-mix(in srgb, var(--panel-strong) 92%, black);
+  transform: translateY(0) scale(0.98);
+  box-shadow:
+    inset 0 2px 4px color-mix(in srgb, var(--theme-shadow) 20%, transparent),
+    var(--shadow-sm);
 }
 
 button:focus-visible,
 input:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 72%, white),
-    0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--accent) 64%, white),
+    0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 input {
   border: 1px solid var(--theme-border);
-  border-radius: 14px;
+  border-radius: 0.88rem;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 6%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 86%, transparent)),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--theme-paper) 5%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-soft) 82%, transparent)),
     color-mix(in srgb, var(--panel) 92%, black);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent);
 }
 
 /* ------- Cross-component base ------- */
@@ -165,7 +182,22 @@ input {
 .result-overlay__card h2,
 .top-match-bar__brand strong,
 .top-match-bar__meta span:first-child {
-  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', 'Noto Sans SC', sans-serif;
-  letter-spacing: 0.08em;
+  font-family: 'Noto Sans SC', 'Bahnschrift', 'Segoe UI Variable Display', sans-serif;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* ---- Landscape mobile overrides ---- */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --battle-shell-gap: clamp(0.3rem, 0.8vw, 0.6rem);
+    --battle-shell-top-gap: clamp(0.1rem, 0.2vh, 0.2rem);
+    --battle-shell-bottom-gap: clamp(0.1rem, 0.2vh, 0.2rem);
+    --battle-top-clearance: clamp(0.04rem, 0.1vh, 0.1rem);
+    --battle-hand-tile-width-base: clamp(1.1rem, 4.2vw, 2.4rem);
+    --battle-bottom-clearance: clamp(0.3rem, 0.6vh, 0.5rem);
+    --battle-stage-bottom-reserve: clamp(0.8rem, 2vh, 1.4rem);
+    --battle-dock-bottom-gap: 0.06rem;
+    --battle-drawer-top-offset: clamp(0.15rem, 0.35vh, 0.35rem);
+  }
 }
