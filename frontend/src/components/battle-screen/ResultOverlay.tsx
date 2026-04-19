@@ -306,8 +306,8 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
     };
   }, []);
 
-  if (isCollapsed) {
-    return (
+  function renderOverlayContent() {
+    return isCollapsed ? (
       <section
         className="result-overlay result-overlay--collapsed"
         aria-label="Match settlement result"
@@ -322,6 +322,258 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
           展开结算面板
         </button>
       </section>
+    ) : (
+      <>
+        <section
+          className="result-overlay"
+          aria-label="Match settlement result"
+          style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
+        >
+          <div ref={cardRef} className="result-overlay__card">
+            <div className="result-overlay__header result-overlay__header--empty">
+              {/* Header is kept but emptied to maintain layout if needed, or we can just remove titles */}
+            </div>
+
+            <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
+              {hasFanPanel ? (
+                <div
+                  className="result-overlay__fan-panel"
+                  style={fanPanelHeight ? { maxHeight: `${fanPanelHeight}px` } : undefined}
+                >
+                  <div className="result-overlay__section-head">
+                    <span className="result-overlay__section-label">番型明细</span>
+                    {activeResultPage?.fanTotal !== null ? (
+                      <strong className="result-overlay__fan-total">{activeResultPage.fanTotal} 番</strong>
+                    ) : null}
+                  </div>
+                  {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
+                  {resultPages.length > 1 ? (
+                    <div className="result-overlay__pagination" role="group" aria-label="番型明细分页">
+                      <button
+                        type="button"
+                        className="result-overlay__pagination-button"
+                        onClick={() =>
+                          setActiveResultPageIndex((currentIndex) =>
+                            currentIndex === 0 ? resultPages.length - 1 : currentIndex - 1,
+                          )
+                        }
+                        aria-label="查看上一位和牌者"
+                      >
+                        上一位
+                      </button>
+                      <span className="result-overlay__pagination-status">
+                        {activeResultPageIndex + 1} / {resultPages.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="result-overlay__pagination-button"
+                        onClick={() =>
+                          setActiveResultPageIndex((currentIndex) =>
+                            currentIndex === resultPages.length - 1 ? 0 : currentIndex + 1,
+                          )
+                        }
+                        aria-label="查看下一位和牌者"
+                      >
+                        下一位
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {(activeResultPage?.fanBreakdown.length ?? 0) > 0 ? (
+                    <div className="result-overlay__fan-list-viewport">
+                      <div className="result-overlay__fan-list" aria-label="番型明细列表">
+                        {activeResultPage?.fanBreakdown.map((item, index) => {
+                          const rowKey = `${activeResultPageIndex}-${item.fanKey}-${index}`;
+                          const hasGuideEntry = Boolean(getFanGuideEntry(item.fanKey));
+
+                          return (
+                            <div
+                              key={rowKey}
+                              className={`result-overlay__row ${hasGuideEntry ? 'result-overlay__row--interactive' : ''
+                                }`.trim()}
+                              onMouseEnter={(event) =>
+                                scheduleFanGuideOpen(rowKey, item.fanKey, event.currentTarget as HTMLDivElement)
+                              }
+                              onMouseLeave={() => {
+                                if (activeFanGuide?.rowKey === rowKey) {
+                                  scheduleFanGuideClose();
+                                  return;
+                                }
+
+                                if (openFanGuideTimerRef.current !== null) {
+                                  window.clearTimeout(openFanGuideTimerRef.current);
+                                  openFanGuideTimerRef.current = null;
+                                }
+                              }}
+                            >
+                              <span>{getFanLabel(item.fanKey)}</span>
+                              <strong>{item.fanValue}</strong>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div
+                ref={scorePanelRef}
+                className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}
+              >
+                <div className="result-overlay__section-head">
+                  <span className="result-overlay__section-label">玩家分数</span>
+                  <div className="result-overlay__score-pagination" role="group" aria-label="玩家分数分页">
+                    <button
+                      type="button"
+                      className="result-overlay__pagination-button"
+                      onClick={() =>
+                        setActiveScorePageIndex((currentIndex) =>
+                          currentIndex === 0 ? result.seats.length - 1 : currentIndex - 1,
+                        )
+                      }
+                      aria-label="上一个玩家"
+                    >
+                      上一个
+                    </button>
+                    <span className="result-overlay__pagination-status">
+                      {activeScorePageIndex + 1} / {result.seats.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="result-overlay__pagination-button"
+                      onClick={() =>
+                        setActiveScorePageIndex((currentIndex) =>
+                          currentIndex === result.seats.length - 1 ? 0 : currentIndex + 1,
+                        )
+                      }
+                      aria-label="下一个玩家"
+                    >
+                      下一个
+                    </button>
+                  </div>
+                  <span className="result-overlay__score-hint">本局结算后总分</span>
+                </div>
+                <div className="result-overlay__seat-list">
+                  {result.seats.map((seat, index) => {
+                    const deltaClassName =
+                      seat.delta === null
+                        ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
+                        : seat.delta > 0
+                          ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
+                          : seat.delta < 0
+                            ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
+                            : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
+
+                    const rowClassName =
+                      seat.delta !== null && seat.delta > 0
+                        ? 'result-overlay__seat-row result-overlay__seat-row--positive'
+                        : seat.delta !== null && seat.delta < 0
+                          ? 'result-overlay__seat-row result-overlay__seat-row--negative'
+                          : 'result-overlay__seat-row result-overlay__seat-row--neutral';
+                    const rowKey = `${seat.seat}-${seat.name}`;
+                    const hasSeatStats = Boolean(seat.stats && seat.stats.scoreHistory.length > 0);
+
+                    return (
+                      <div
+                        key={rowKey}
+                        className={`${rowClassName}${hasSeatStats ? ' result-overlay__seat-row--interactive' : ''} ${
+                          index === activeScorePageIndex ? 'result-overlay__seat-row--active' : 'result-overlay__seat-row--inactive'
+                        }`}
+                        tabIndex={hasSeatStats ? 0 : undefined}
+                        onMouseEnter={(event) => {
+                          if (!hasSeatStats) {
+                            return;
+                          }
+                          scheduleSeatStatsOpen(rowKey, seat, event.currentTarget as HTMLDivElement);
+                        }}
+                        onMouseLeave={() => {
+                          if (!hasSeatStats) {
+                            return;
+                          }
+                          scheduleSeatStatsClose();
+                        }}
+                        onFocus={(event) => {
+                          if (!hasSeatStats) {
+                            return;
+                          }
+                          if (openSeatStatsTimerRef.current !== null) {
+                            window.clearTimeout(openSeatStatsTimerRef.current);
+                            openSeatStatsTimerRef.current = null;
+                          }
+                          clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
+                          showSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
+                        }}
+                        onBlur={() => {
+                          if (!hasSeatStats) {
+                            return;
+                          }
+                          scheduleSeatStatsClose();
+                        }}
+                      >
+                        <div className="result-overlay__seat-main">
+                          <div className="result-overlay__seat-info">
+                            <span className="result-overlay__seat-name">{seat.name}</span>
+                            <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+                          </div>
+                          <strong className="result-overlay__seat-score">{seat.score}</strong>
+                          <span className={deltaClassName}>
+                            {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
+                          </span>
+                        </div>
+                        {settlementHands?.[seat.seat] && (
+                          <div className="result-overlay__seat-hand">
+                            {settlementHands[seat.seat]!.map((tile, index) => {
+                              const isWinningTile =
+                                result.winType === 'discard' &&
+                                result.winnerSeat === seat.seat &&
+                                index === settlementHands[seat.seat]!.length - 1;
+
+                              return (
+                                <MahjongTile
+                                  key={`${seat.seat}-hand-${index}-${tile}`}
+                                  code={tile}
+                                  variant="discard"
+                                  isLastDiscard={isWinningTile}
+                                  className="result-overlay__seat-hand-tile"
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="result-overlay__actions">
+              <button
+                type="button"
+                className="result-overlay__collapse-btn"
+                onClick={() => setIsCollapsed(true)}
+              >
+                收起结算面板
+              </button>
+              {result.continueAction ? (
+                <button
+                  type="button"
+                  className="result-overlay__primary-btn"
+                  disabled={!result.continueAction.enabled}
+                  onClick={() => onAction(result.continueAction!.id)}
+                >
+                  {continueActionRemainingSeconds !== null
+                    ? `${continueActionRemainingSeconds}s后自动推进`
+                    : result.continueAction.label}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+        {fanGuidePopover}
+        {seatStatsPopover}
+      </>
     );
   }
 
@@ -468,259 +720,13 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
       )
       : null;
 
-  return (
-    <>
-      <section
-        className="result-overlay"
-        aria-label="Match settlement result"
-        style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
-      >
-        <div ref={cardRef} className="result-overlay__card">
-          <div className="result-overlay__header result-overlay__header--empty">
-            {/* Header is kept but emptied to maintain layout if needed, or we can just remove titles */}
-          </div>
+  const overlayContent = renderOverlayContent();
 
-          <div className={`result-overlay__columns${hasFanPanel ? '' : ' result-overlay__columns--score-only'}`}>
-            {hasFanPanel ? (
-              <div
-                className="result-overlay__fan-panel"
-                style={fanPanelHeight ? { maxHeight: `${fanPanelHeight}px` } : undefined}
-              >
-                <div className="result-overlay__section-head">
-                  <span className="result-overlay__section-label">番型明细</span>
-                  {activeResultPage?.fanTotal !== null ? (
-                    <strong className="result-overlay__fan-total">{activeResultPage.fanTotal} 番</strong>
-                  ) : null}
-                </div>
-                {fanMeta ? <p className="result-overlay__fan-meta">{fanMeta}</p> : null}
-                {resultPages.length > 1 ? (
-                  <div className="result-overlay__pagination" role="group" aria-label="番型明细分页">
-                    <button
-                      type="button"
-                      className="result-overlay__pagination-button"
-                      onClick={() =>
-                        setActiveResultPageIndex((currentIndex) =>
-                          currentIndex === 0 ? resultPages.length - 1 : currentIndex - 1,
-                        )
-                      }
-                      aria-label="查看上一位和牌者"
-                    >
-                      上一位
-                    </button>
-                    <span className="result-overlay__pagination-status">
-                      {activeResultPageIndex + 1} / {resultPages.length}
-                    </span>
-                    <button
-                      type="button"
-                      className="result-overlay__pagination-button"
-                      onClick={() =>
-                        setActiveResultPageIndex((currentIndex) =>
-                          currentIndex === resultPages.length - 1 ? 0 : currentIndex + 1,
-                        )
-                      }
-                      aria-label="查看下一位和牌者"
-                    >
-                      下一位
-                    </button>
-                  </div>
-                ) : null}
+  if (typeof document === 'undefined') {
+    return overlayContent;
+  }
 
-                {(activeResultPage?.fanBreakdown.length ?? 0) > 0 ? (
-                  <div className="result-overlay__fan-list-viewport">
-                    <div className="result-overlay__fan-list" aria-label="番型明细列表">
-                      {activeResultPage?.fanBreakdown.map((item, index) => {
-                        const rowKey = `${activeResultPageIndex}-${item.fanKey}-${index}`;
-                        const hasGuideEntry = Boolean(getFanGuideEntry(item.fanKey));
-
-                        return (
-                          <div
-                            key={rowKey}
-                            className={`result-overlay__row ${hasGuideEntry ? 'result-overlay__row--interactive' : ''
-                              }`.trim()}
-                            onMouseEnter={(event) =>
-                              scheduleFanGuideOpen(rowKey, item.fanKey, event.currentTarget as HTMLDivElement)
-                            }
-                            onMouseLeave={() => {
-                              if (activeFanGuide?.rowKey === rowKey) {
-                                scheduleFanGuideClose();
-                                return;
-                              }
-
-                              if (openFanGuideTimerRef.current !== null) {
-                                window.clearTimeout(openFanGuideTimerRef.current);
-                                openFanGuideTimerRef.current = null;
-                              }
-                            }}
-                          >
-                            <span>{getFanLabel(item.fanKey)}</span>
-                            <strong>{item.fanValue}</strong>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div
-              ref={scorePanelRef}
-              className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}
-            >
-              <div className="result-overlay__section-head">
-                <span className="result-overlay__section-label">玩家分数</span>
-                <div className="result-overlay__score-pagination" role="group" aria-label="玩家分数分页">
-                  <button
-                    type="button"
-                    className="result-overlay__pagination-button"
-                    onClick={() =>
-                      setActiveScorePageIndex((currentIndex) =>
-                        currentIndex === 0 ? result.seats.length - 1 : currentIndex - 1,
-                      )
-                    }
-                    aria-label="上一个玩家"
-                  >
-                    上一个
-                  </button>
-                  <span className="result-overlay__pagination-status">
-                    {activeScorePageIndex + 1} / {result.seats.length}
-                  </span>
-                  <button
-                    type="button"
-                    className="result-overlay__pagination-button"
-                    onClick={() =>
-                      setActiveScorePageIndex((currentIndex) =>
-                        currentIndex === result.seats.length - 1 ? 0 : currentIndex + 1,
-                      )
-                    }
-                    aria-label="下一个玩家"
-                  >
-                    下一个
-                  </button>
-                </div>
-                <span className="result-overlay__score-hint">本局结算后总分</span>
-              </div>
-              <div className="result-overlay__seat-list">
-                {result.seats.map((seat, index) => {
-                  const deltaClassName =
-                    seat.delta === null
-                      ? 'result-overlay__seat-delta result-overlay__seat-delta--neutral'
-                      : seat.delta > 0
-                        ? 'result-overlay__seat-delta result-overlay__seat-delta--positive'
-                        : seat.delta < 0
-                          ? 'result-overlay__seat-delta result-overlay__seat-delta--negative'
-                          : 'result-overlay__seat-delta result-overlay__seat-delta--neutral';
-
-                  const rowClassName =
-                    seat.delta !== null && seat.delta > 0
-                      ? 'result-overlay__seat-row result-overlay__seat-row--positive'
-                      : seat.delta !== null && seat.delta < 0
-                        ? 'result-overlay__seat-row result-overlay__seat-row--negative'
-                        : 'result-overlay__seat-row result-overlay__seat-row--neutral';
-                  const rowKey = `${seat.seat}-${seat.name}`;
-                  const hasSeatStats = Boolean(seat.stats && seat.stats.scoreHistory.length > 0);
-
-                  return (
-                    <div
-                      key={rowKey}
-                      className={`${rowClassName}${hasSeatStats ? ' result-overlay__seat-row--interactive' : ''} ${
-                        index === activeScorePageIndex ? 'result-overlay__seat-row--active' : 'result-overlay__seat-row--inactive'
-                      }`}
-                      tabIndex={hasSeatStats ? 0 : undefined}
-                      onMouseEnter={(event) => {
-                        if (!hasSeatStats) {
-                          return;
-                        }
-                        scheduleSeatStatsOpen(rowKey, seat, event.currentTarget as HTMLDivElement);
-                      }}
-                      onMouseLeave={() => {
-                        if (!hasSeatStats) {
-                          return;
-                        }
-                        scheduleSeatStatsClose();
-                      }}
-                      onFocus={(event) => {
-                        if (!hasSeatStats) {
-                          return;
-                        }
-                        if (openSeatStatsTimerRef.current !== null) {
-                          window.clearTimeout(openSeatStatsTimerRef.current);
-                          openSeatStatsTimerRef.current = null;
-                        }
-                        clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef);
-                        showSeatStatsPopover(rowKey, seat, event.currentTarget as HTMLDivElement);
-                      }}
-                      onBlur={() => {
-                        if (!hasSeatStats) {
-                          return;
-                        }
-                        scheduleSeatStatsClose();
-                      }}
-                    >
-                      <div className="result-overlay__seat-main">
-                        <div className="result-overlay__seat-info">
-                          <span className="result-overlay__seat-name">{seat.name}</span>
-                          <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
-                        </div>
-                        <strong className="result-overlay__seat-score">{seat.score}</strong>
-                        <span className={deltaClassName}>
-                          {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
-                        </span>
-                      </div>
-                      {settlementHands?.[seat.seat] && (
-                        <div className="result-overlay__seat-hand">
-                          {settlementHands[seat.seat]!.map((tile, index) => {
-                            const isWinningTile =
-                              result.winType === 'discard' &&
-                              result.winnerSeat === seat.seat &&
-                              index === settlementHands[seat.seat]!.length - 1;
-
-                            return (
-                              <MahjongTile
-                                key={`${seat.seat}-hand-${index}-${tile}`}
-                                code={tile}
-                                variant="discard"
-                                isLastDiscard={isWinningTile}
-                                className="result-overlay__seat-hand-tile"
-                              />
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="result-overlay__actions">
-            <button
-              type="button"
-              className="result-overlay__collapse-btn"
-              onClick={() => setIsCollapsed(true)}
-            >
-              收起结算面板
-            </button>
-            {result.continueAction ? (
-              <button
-                type="button"
-                className="result-overlay__primary-btn"
-                disabled={!result.continueAction.enabled}
-                onClick={() => onAction(result.continueAction!.id)}
-              >
-                {continueActionRemainingSeconds !== null
-                  ? `${continueActionRemainingSeconds}s后自动推进`
-                  : result.continueAction.label}
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </section>
-      {fanGuidePopover}
-      {seatStatsPopover}
-    </>
-  );
+  return createPortal(overlayContent, document.body);
 }
 
 const WIN_TYPE_LABELS: Record<string, string> = {

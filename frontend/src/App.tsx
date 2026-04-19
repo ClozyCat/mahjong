@@ -36,7 +36,12 @@ import {
   saveStoredSession,
   saveStoredThemeId,
 } from './lib/storage';
-import { isMobileDevice, requestLandscapeOrientation } from './lib/device';
+import {
+  exitFullscreenMode,
+  isMobileDevice,
+  requestFullscreenMode,
+  requestLandscapeOrientation,
+} from './lib/device';
 import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
 import type { BackendActionType, BattleActionId, ClaimActionId, QuickChatEmoji, SessionState } from './types/match';
@@ -516,6 +521,20 @@ export default function App() {
 
     delete document.documentElement.dataset.smallScreen;
   }, [shouldForceSmallScreen]);
+
+  useEffect(() => {
+    if (!isMobileClient) {
+      return;
+    }
+
+    if (shouldForceSmallScreen) {
+      requestLandscapeOrientation();
+      requestFullscreenMode();
+      return;
+    }
+
+    exitFullscreenMode();
+  }, [isMobileClient, shouldForceSmallScreen]);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;

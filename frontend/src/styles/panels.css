@@ -797,11 +797,11 @@
    ============================== */
 
 .result-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  z-index: 4;
+  z-index: 24;
   pointer-events: none;
 }
 

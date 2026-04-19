@@ -158,6 +158,40 @@ function createPlayingSnapshotPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function mockMobileBattleImmersiveApis() {
+  const lock = vi.fn().mockResolvedValue(undefined);
+  const requestFullscreen = vi.fn().mockImplementation(async () => {
+    fullscreenElement = document.documentElement;
+  });
+  const exitFullscreen = vi.fn().mockImplementation(async () => {
+    fullscreenElement = null;
+  });
+  let fullscreenElement: Element | null = null;
+
+  Object.defineProperty(window.navigator, 'userAgent', {
+    configurable: true,
+    value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+  });
+  Object.defineProperty(window.screen, 'orientation', {
+    configurable: true,
+    value: { lock },
+  });
+  Object.defineProperty(document, 'fullscreenElement', {
+    configurable: true,
+    get: () => fullscreenElement,
+  });
+  Object.defineProperty(document.documentElement, 'requestFullscreen', {
+    configurable: true,
+    value: requestFullscreen,
+  });
+  Object.defineProperty(document, 'exitFullscreen', {
+    configurable: true,
+    value: exitFullscreen,
+  });
+
+  return { lock, requestFullscreen, exitFullscreen };
+}
+
 async function joinTable(user: ReturnType<typeof userEvent.setup>) {
   render(<App />);
 
@@ -195,15 +229,7 @@ describe('App', () => {
 
   it('requests landscape orientation when a mobile user joins a table', async () => {
     const user = userEvent.setup();
-    const lock = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(window.navigator, 'userAgent', {
-      configurable: true,
-      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
-    });
-    Object.defineProperty(window.screen, 'orientation', {
-      configurable: true,
-      value: { lock },
-    });
+    const { lock } = mockMobileBattleImmersiveApis();
 
     render(<App />);
 
@@ -216,14 +242,7 @@ describe('App', () => {
 
   it('forces mobile battle sessions into small-screen mode even after joining', async () => {
     const user = userEvent.setup();
-    Object.defineProperty(window.navigator, 'userAgent', {
-      configurable: true,
-      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
-    });
-    Object.defineProperty(window.screen, 'orientation', {
-      configurable: true,
-      value: { lock: vi.fn().mockResolvedValue(undefined) },
-    });
+    mockMobileBattleImmersiveApis();
 
     const socket = await joinTable(user);
 
@@ -235,6 +254,38 @@ describe('App', () => {
     });
 
     expect(document.documentElement.dataset.smallScreen).toBe('true');
+  });
+
+  it('requests fullscreen when a mobile user enters the battle screen and exits on leave', async () => {
+    const user = userEvent.setup();
+    const { requestFullscreen, exitFullscreen } = mockMobileBattleImmersiveApis();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    expect(requestFullscreen).toHaveBeenCalled();
+    expect(document.documentElement.dataset.smallScreen).toBe('true');
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'leave_table_accepted',
+        payload: {
+          table_code: 'AB12CD',
+          seat_index: 0,
+        },
+      });
+    });
+
+    expect(exitFullscreen).toHaveBeenCalled();
+    expect(document.documentElement.dataset.smallScreen).toBeUndefined();
   });
 
   it('picks a random zhongguose theme when the lobby opens', async () => {

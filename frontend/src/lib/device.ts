@@ -5,11 +5,29 @@ type NavigatorWithUserAgentData = Navigator & {
 };
 
 type ScreenOrientationWithLock = {
-  lock?: (orientation: 'landscape') => Promise<void>;
+  lock?: (orientation: 'landscape') => Promise<void> | void;
+};
+
+type ElementWithFullscreen = HTMLElement & {
+  requestFullscreen?: () => Promise<void> | void;
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+type DocumentWithFullscreen = Document & {
+  fullscreenElement?: Element | null;
+  exitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
 };
 
 const MOBILE_USER_AGENT_PATTERN =
   /Android|iPhone|iPad|iPod|Mobile|BlackBerry|IEMobile|Opera Mini/i;
+
+function swallowAsyncResult(result: Promise<void> | void) {
+  if (result && typeof (result as Promise<void>).catch === 'function') {
+    void (result as Promise<void>).catch(() => undefined);
+  }
+}
 
 export function isMobileDevice() {
   if (typeof navigator === 'undefined') {
@@ -34,5 +52,45 @@ export function requestLandscapeOrientation() {
     return;
   }
 
-  void orientation.lock('landscape').catch(() => undefined);
+  swallowAsyncResult(orientation.lock('landscape'));
+}
+
+export function requestFullscreenMode() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const fullscreenDocument = document as DocumentWithFullscreen;
+  const rootElement = document.documentElement as ElementWithFullscreen;
+  if (
+    fullscreenDocument.fullscreenElement === document.documentElement ||
+    fullscreenDocument.webkitFullscreenElement === document.documentElement
+  ) {
+    return;
+  }
+
+  const requestFullscreen = rootElement.requestFullscreen ?? rootElement.webkitRequestFullscreen;
+  if (typeof requestFullscreen !== 'function') {
+    return;
+  }
+
+  swallowAsyncResult(requestFullscreen.call(rootElement));
+}
+
+export function exitFullscreenMode() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const fullscreenDocument = document as DocumentWithFullscreen;
+  if (!fullscreenDocument.fullscreenElement && !fullscreenDocument.webkitFullscreenElement) {
+    return;
+  }
+
+  const exitFullscreen = fullscreenDocument.exitFullscreen ?? fullscreenDocument.webkitExitFullscreen;
+  if (typeof exitFullscreen !== 'function') {
+    return;
+  }
+
+  swallowAsyncResult(exitFullscreen.call(fullscreenDocument));
 }

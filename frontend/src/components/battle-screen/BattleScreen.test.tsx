@@ -286,6 +286,42 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
   });
 
+  it('renders the settlement overlay through a top-layer portal', () => {
+    const { container } = renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          discarderSeat: 'left',
+          winType: 'discard',
+          winTypeLabel: '荣和',
+          provisional: true,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          scoreDeltaBySeat: {
+            bottom: 0,
+            left: -8,
+            right: 8,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
+            { seat: 'left', name: 'Player Left', score: 24992, delta: -8 },
+            { seat: 'top', name: 'Player Top', score: 25000, delta: 0 },
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+          ],
+          continueAction: null,
+        },
+      }),
+    );
+
+    expect(container.querySelector('.result-overlay')).toBeNull();
+    expect(document.body.querySelector('.result-overlay')).not.toBeNull();
+  });
+
   it('allows paging between multiple winning hands in the settlement overlay', () => {
     renderBattleScreen(
       createBattleViewModel({
