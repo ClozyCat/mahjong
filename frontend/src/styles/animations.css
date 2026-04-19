@@ -249,6 +249,24 @@
   100% { opacity: 0; transform: translateX(140%); }
 }
 
+@keyframes selected-tile-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.18rem);
+  }
+}
+
+@keyframes selected-tile-halo {
+  0%, 100% {
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+}
+
 @keyframes action-dock-flower-bloom-petals {
   0% {
     opacity: 0.76;

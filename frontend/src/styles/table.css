@@ -286,12 +286,24 @@
 
 /* ------- Rivers ------- */
 
-.table-stage__river {
+.table-stage__river { /* Tray */
   position: relative;
   display: flex;
   justify-content: center;
   width: max-content;
-  border-radius: 0.82rem;
+  border-radius: 0.94rem;
+  padding: 0.36rem;
+  background: 
+    linear-gradient(180deg, 
+      color-mix(in srgb, var(--table-2) 15%, transparent),
+      color-mix(in srgb, var(--table) 10%, transparent)
+    ),
+    color-mix(in srgb, var(--table-2) 40%, black);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  box-shadow: 
+    inset 0 2px 8px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.22);
   z-index: 1;
 }
 
