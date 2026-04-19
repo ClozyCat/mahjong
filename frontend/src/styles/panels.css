@@ -17,7 +17,6 @@
 .connect-gate__panel,
 .battle-drawer,
 .table-stage__settlement-hand-grid,
-.table-stage__melds,
 .ambient-overlay__panel {
   border-color: var(--theme-border);
   background:
@@ -34,7 +33,6 @@
 
 .win10-window,
 .battle-drawer,
-.table-stage__melds,
 .ambient-overlay__panel {
   border: 1px solid color-mix(in srgb, var(--theme-paper) 7%, transparent);
   box-shadow: var(--shadow-premium-hard);
