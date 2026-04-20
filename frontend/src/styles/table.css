@@ -454,7 +454,7 @@
 
 .table-stage__river-track .mahjong-tile__shell,
 .table-stage__melds .mahjong-tile__shell {
-  padding: 0.08rem;
+  /* Removed hardcoded padding to use the unified relative scale from tiles.css */
 }
 
 /* ------- Melds ------- */
