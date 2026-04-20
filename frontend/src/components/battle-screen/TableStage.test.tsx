@@ -255,7 +255,7 @@ describe('TableStage', () => {
     expect(pointer?.getAttribute('transform')).toBe('rotate(-180 50 50)');
   });
 
-  it('resets the center countdown when the active seat changes without a new deadline string', () => {
+  it('keeps the center countdown progress when the active seat changes without a new deadline string', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
 
@@ -286,7 +286,8 @@ describe('TableStage', () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(readCountdownOffset(container)).toBeGreaterThan(0);
+    const countdownBefore = readCountdownOffset(container);
+    expect(countdownBefore).toBeGreaterThan(0);
 
     rerender(
       <TableStage
@@ -299,10 +300,10 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(readCountdownOffset(container)).toBe(0);
+    expect(readCountdownOffset(container)).toBeCloseTo(countdownBefore, 1);
   });
 
-  it('resets the center countdown when the response indicator seat changes without a new deadline string', () => {
+  it('keeps the center countdown progress when the response indicator seat changes without a new deadline string', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
 
@@ -333,7 +334,8 @@ describe('TableStage', () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(readCountdownOffset(container)).toBeGreaterThan(0);
+    const countdownBefore = readCountdownOffset(container);
+    expect(countdownBefore).toBeGreaterThan(0);
 
     rerender(
       <TableStage
@@ -346,7 +348,40 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(readCountdownOffset(container)).toBe(0);
+    expect(readCountdownOffset(container)).toBeCloseTo(countdownBefore, 1);
+  });
+
+  it('renders a partial countdown immediately when the page mounts mid-turn', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
+
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+    const readCountdownOffset = (container: HTMLElement) =>
+      Number.parseFloat(
+        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
+      );
+
+    const { container } = render(
+      <TableStage
+        discards={discards}
+        activeSeat="top"
+        actionIndicatorSeat="top"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt="2026-04-20T12:00:10Z"
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(readCountdownOffset(container)).toBeGreaterThan(0);
   });
 
   it('stops the previous countdown loop after the center timer is cleared', () => {

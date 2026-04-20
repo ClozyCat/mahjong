@@ -256,7 +256,7 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
       const actorSeat =
         getPendingActionSeatIndex(pendingAction) ?? getCurrentActorSeatIndex(state.roomSnapshot?.payload.private_state);
       const options = getPendingActionOptions(pendingAction as { options?: unknown });
-      return createActorPrompt(getSeatName(state, actorSeat), options);
+      return createActorPrompt(getSeatName(state, actorSeat), options.length > 0 ? options : ['discard']);
     }
     if (pendingAction.type === 'claim_window') {
       const claimLabels = getPendingActionOptions(pendingAction as { options?: unknown });

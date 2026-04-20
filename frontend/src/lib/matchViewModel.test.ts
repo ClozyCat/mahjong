@@ -815,6 +815,35 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((player) => player.name === 'Player A')?.isActive).toBe(true);
   });
 
+  it('shows the acting player countdown and public discard prompt for an observed active turn', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            current_actor: 0,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-26T06:01:00Z',
+              options: [],
+            },
+          },
+        },
+      },
+      latestActionPrompt: null,
+    });
+
+    expect(viewModel.promptText).toBe('Player A正在执行操作：出牌');
+    expect(viewModel.deadlineAt).toBe('2026-03-26T06:01:00Z');
+    expect(viewModel.actionIndicatorSeat).toBe('top');
+    expect(viewModel.actions.find((action) => action.id === 'discard')?.enabled).toBe(false);
+  });
+
   it('marks bot-controlled players as offline with bot copy instead of online in-match copy', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({

@@ -18,6 +18,8 @@ import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from '.
 export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
   Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>>;
 
+const PENDING_ACTION_DURATION_MS = 30_000;
+
 interface TableStageProps {
   discards: Record<Seat, string[]>;
   selectedTileCode?: string | null;
@@ -121,7 +123,6 @@ export function TableStage({
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const [isQuickChatOpen, setIsQuickChatOpen] = useState(false);
-  const [countdownPercent, setCountdownPercent] = useState(1);
   const [riverColumnsH, setRiverColumnsH] = useState(8);
   const [riverColumnsV, setRiverColumnsV] = useState(8);
   const [meldRowsH, setMeldRowsH] = useState(2);
@@ -196,54 +197,6 @@ export function TableStage({
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [isQuickChatOpen]);
-
-  useEffect(() => {
-    let frameId: number | null = null;
-    let disposed = false;
-
-    if (!deadlineAt) {
-      setCountdownPercent(1);
-      return;
-    }
-
-    const start = Date.now();
-    const end = new Date(deadlineAt).getTime();
-    const total = end - start;
-
-    if (total <= 0) {
-      setCountdownPercent(0);
-      return;
-    }
-
-    // 每次轮到新玩家或切入新的响应阶段时，都从满格重新启动本轮倒计时。
-    setCountdownPercent(1);
-
-    const update = () => {
-      if (disposed) {
-        return;
-      }
-
-      const now = Date.now();
-      const remaining = end - now;
-      const nextPercent = Math.max(0, remaining / total);
-      setCountdownPercent(nextPercent);
-
-      if (nextPercent > 0) {
-        frameId = requestAnimationFrame(update);
-      } else {
-        frameId = null;
-      }
-    };
-
-    frameId = requestAnimationFrame(update);
-
-    return () => {
-      disposed = true;
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId);
-      }
-    };
-  }, [deadlineAt, activeSeat, actionIndicatorSeat, promptCue?.kind]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -430,7 +383,7 @@ export function TableStage({
           <CenterIndicator
             remainingCount={remainingTileCount}
             actionSeat={actionIndicatorSeat}
-            countdownPercent={countdownPercent}
+            deadlineAt={deadlineAt}
             isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
           />
           {shouldShowPreMatchActions || shouldShowBotControls ? (
@@ -810,7 +763,7 @@ function ActionCalloutMarker({ callout, phase }: ActionCalloutMarkerProps) {
 interface CenterIndicatorProps {
   remainingCount: number | null;
   actionSeat: Seat | null;
-  countdownPercent: number;
+  deadlineAt: string | null;
   isAmbiguous?: boolean;
 }
 
@@ -835,14 +788,28 @@ function resolveShortestPointerRotation(previousRotation: number, actionSeat: Se
   return nextRotation;
 }
 
+function getCountdownPercent(deadlineAt: string | null) {
+  if (!deadlineAt) {
+    return 1;
+  }
+
+  const deadlineTime = new Date(deadlineAt).getTime();
+  if (Number.isNaN(deadlineTime)) {
+    return 1;
+  }
+
+  return Math.max(0, Math.min(1, (deadlineTime - Date.now()) / PENDING_ACTION_DURATION_MS));
+}
+
 function CenterIndicator({
   remainingCount,
   actionSeat,
-  countdownPercent,
+  deadlineAt,
   isAmbiguous = false,
 }: CenterIndicatorProps) {
   const radius = 34; // Smaller radius to fit pointer outside
   const circumference = 2 * Math.PI * radius;
+  const [countdownPercent, setCountdownPercent] = useState(() => getCountdownPercent(deadlineAt));
   const offset = circumference - countdownPercent * circumference;
   const [pointerRotation, setPointerRotation] = useState(() => (actionSeat ? POINTER_ROTATION_BY_SEAT[actionSeat] : 0));
 
@@ -853,6 +820,41 @@ function CenterIndicator({
 
     setPointerRotation((previousRotation) => resolveShortestPointerRotation(previousRotation, actionSeat));
   }, [actionSeat]);
+
+  useEffect(() => {
+    let frameId: number | null = null;
+    let disposed = false;
+
+    if (!deadlineAt) {
+      setCountdownPercent(1);
+      return;
+    }
+
+    const update = () => {
+      if (disposed) {
+        return;
+      }
+
+      const nextPercent = getCountdownPercent(deadlineAt);
+      setCountdownPercent(nextPercent);
+
+      if (nextPercent > 0) {
+        frameId = requestAnimationFrame(update);
+      } else {
+        frameId = null;
+      }
+    };
+
+    setCountdownPercent(getCountdownPercent(deadlineAt));
+    frameId = requestAnimationFrame(update);
+
+    return () => {
+      disposed = true;
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+    };
+  }, [deadlineAt]);
 
   return (
     <div className="table-stage__center-indicator" aria-label="游戏进度指示器">

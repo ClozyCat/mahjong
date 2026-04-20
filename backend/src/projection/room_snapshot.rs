@@ -179,24 +179,34 @@ pub fn build_pending_action_view(
 
     match pending_timeout.kind.as_str() {
         "active_turn" => {
-            if round.current_actor != local_seat {
-                return None;
+            let is_local_turn = pending_timeout.seat_index == local_seat;
+            let mut options = Vec::new();
+            if is_local_turn {
+                options.push("discard".to_string());
+                if support.has_concealed_flower {
+                    options.push("flower".to_string());
+                }
+                if support.has_self_kong {
+                    options.push("kong".to_string());
+                }
+                if support.can_hu {
+                    options.push("hu".to_string());
+                }
             }
-            let mut options = vec!["discard".to_string()];
-            if support.has_concealed_flower {
-                options.push("flower".to_string());
-            }
-            if support.has_self_kong {
-                options.push("kong".to_string());
-            }
-            if support.can_hu {
-                options.push("hu".to_string());
-            }
+
             Some(PendingActionView::ActiveTurn {
-                seat_index: local_seat,
+                seat_index: pending_timeout.seat_index,
                 deadline_at,
-                drawn_tile_id: pending_timeout.drawn_tile_id.clone(),
-                restricted_discard_tile_ids: support.restricted_discard_tile_ids.clone(),
+                drawn_tile_id: if is_local_turn {
+                    pending_timeout.drawn_tile_id.clone()
+                } else {
+                    None
+                },
+                restricted_discard_tile_ids: if is_local_turn {
+                    support.restricted_discard_tile_ids.clone()
+                } else {
+                    Vec::new()
+                },
                 options,
             })
         }
@@ -444,7 +454,8 @@ fn continue_action_snapshot(state: &RoomState) -> Option<ContinueActionView> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::room_snapshot_message;
+    use super::{build_pending_action_view, room_snapshot_message};
+    use crate::core::state::PendingTimeout;
     use crate::core::state::{
         MatchState, PlayerRoundState, RoomState, RoundSettlement, RoundState, SeatState,
         SettlementKongScoreDetailEntry, SettlementScoreDelta,
@@ -517,6 +528,53 @@ mod tests {
         assert_eq!(score_state["current_round_delta_by_seat"]["0"], -9);
         assert_eq!(score_state["projected_cumulative_scores"]["0"], -9);
         assert_eq!(score_state["projected_cumulative_scores"]["1"], 9);
+    }
+
+    #[test]
+    fn active_turn_projection_keeps_deadline_visible_for_observers() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            test_mode: false,
+            enforce_minimum_eight_fan: true,
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: players(),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "active_turn".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: Some("w3#1".to_string()),
+            }),
+            continue_action: None,
+        };
+
+        let pending_action =
+            build_pending_action_view(&state, 0, &SeatProjectionSupport::default()).expect("observer should see active turn");
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(snapshot["payload"]["private_state"]["pending_action"]["type"], "active_turn");
+        assert_eq!(snapshot["payload"]["private_state"]["pending_action"]["seat_index"], 1);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["deadline_at"],
+            "2026-04-20T12:00:30.000Z"
+        );
+        assert_eq!(snapshot["payload"]["private_state"]["pending_action"]["options"], serde_json::json!([]));
+        assert!(snapshot["payload"]["private_state"]["pending_action"]["drawn_tile_id"].is_null());
+        assert!(snapshot["payload"]["private_state"]["pending_action"]["restricted_discard_tile_ids"]
+            .as_array()
+            .is_some_and(|items| items.is_empty()));
+        assert_eq!(pending_action.seat_index(), Some(1));
+        assert_eq!(pending_action.deadline_at().as_deref(), Some("2026-04-20T12:00:30.000Z"));
     }
 
     fn seats() -> Vec<SeatState> {
