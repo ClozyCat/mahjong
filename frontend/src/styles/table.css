@@ -302,11 +302,15 @@
 }
 
 .table-stage__seat-group--left {
-  transform: rotate(90deg);
+  inline-size: var(--table-stage-horizontal-river-reference-height);
+  transform: translateY(-50%) translateX(-50%) rotate(90deg);
+  transform-origin: center bottom;
 }
 
 .table-stage__seat-group--right {
-  transform: rotate(-90deg);
+  inline-size: var(--table-stage-horizontal-river-reference-height);
+  transform: translateY(-50%) translateX(50%) rotate(-90deg);
+  transform-origin: center bottom;
 }
 
 .table-stage__seat-group>* {
