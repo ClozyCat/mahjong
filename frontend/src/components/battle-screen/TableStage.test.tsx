@@ -88,6 +88,49 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__seat-zone--bottom .table-stage__melds--bottom')).not.toBeNull();
   });
 
+  it('uses seat-specific meld anchors so side racks do not reuse the river overlap position', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: ['b1'],
+          right: ['c1'],
+          bottom: ['d1'],
+        }}
+        activeSeat="bottom"
+        lastDiscard="d1"
+        lastDiscardSeat="bottom"
+        promptText={null}
+        players={[
+          { seat: 'top', name: 'Player Top', melds: [['w3', 'w4', 'w5']] },
+          { seat: 'left', name: 'Player Left', melds: [['b3', 'b4', 'b5']] },
+          { seat: 'right', name: 'Player Right', melds: [['c3', 'c4', 'c5']] },
+          { seat: 'bottom', name: 'Player Bottom', melds: [['d3', 'd4', 'd5']] },
+        ]}
+      />,
+    );
+
+    const topMelds = container.querySelector('.table-stage__melds--top') as HTMLDivElement | null;
+    const leftMelds = container.querySelector('.table-stage__melds--left') as HTMLDivElement | null;
+    const rightMelds = container.querySelector('.table-stage__melds--right') as HTMLDivElement | null;
+
+    expect(topMelds).not.toBeNull();
+    expect(leftMelds).not.toBeNull();
+    expect(rightMelds).not.toBeNull();
+    expect(topMelds?.style.left).toContain('calc(');
+    expect(topMelds?.style.top).toBe('50%');
+    expect(topMelds?.style.bottom).toBe('auto');
+    expect(topMelds?.style.transform).toBe('translateY(-50%)');
+    expect(leftMelds?.style.left).toBe('50%');
+    expect(leftMelds?.style.bottom).toContain('calc(');
+    expect(leftMelds?.style.top).toBe('auto');
+    expect(leftMelds?.style.transform).toBe('translateX(-50%)');
+    expect(rightMelds?.style.left).toBe('50%');
+    expect(rightMelds?.style.bottom).toContain('calc(');
+    expect(rightMelds?.style.top).toBe('auto');
+    expect(rightMelds?.style.transform).toBe('translateX(-50%)');
+  });
+
   it('does not force top and bottom rivers into a two-row container when melds are present', () => {
     const { container } = render(
       <TableStage
@@ -400,6 +443,34 @@ describe('TableStage', () => {
         lastDiscard={null}
         promptText={null}
         deadlineAt={null}
+      />,
+    );
+
+    const countdownRing = container.querySelector('.table-stage__center-indicator-countdown');
+
+    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
+    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
+  });
+
+  it('renders a closed center ring when only a small amount of countdown time has elapsed', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
+
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+
+    const { container } = render(
+      <TableStage
+        discards={discards}
+        activeSeat="bottom"
+        actionIndicatorSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt="2026-04-20T12:00:29.800Z"
       />,
     );
 

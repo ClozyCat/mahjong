@@ -222,6 +222,28 @@ function createPublicTurnPrompt(state: SessionState) {
   return createActorPrompt(getSeatName(state, actorSeat), ['discard']);
 }
 
+function createCenterDeadlineAt(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  const pendingAction = snapshot?.private_state?.pending_action;
+
+  if (pendingAction && 'deadline_at' in pendingAction) {
+    return String(pendingAction.deadline_at);
+  }
+
+  if (!state.latestActionPrompt) {
+    return null;
+  }
+
+  const currentActor = getCurrentActorSeatIndex(snapshot?.private_state);
+  const promptSeat = state.latestActionPrompt.payload.seat_index;
+
+  if (typeof currentActor !== 'number' || currentActor === promptSeat) {
+    return state.latestActionPrompt.payload.deadline_at;
+  }
+
+  return createPublicTurnPrompt(state) ? null : state.latestActionPrompt.payload.deadline_at;
+}
+
 interface MatchViewModelOptions {
   showLocalTurnKongPrompt?: boolean;
 }
@@ -1619,10 +1641,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
   const activePlayerSeatIndex = getCurrentActorSeatIndex(snapshot?.private_state);
   const activePlayerSeat =
     typeof activePlayerSeatIndex === 'number' ? toRelativeSeat(localSeat, activePlayerSeatIndex) : 'bottom';
-  const deadlineAt =
-    snapshot?.private_state?.pending_action && 'deadline_at' in snapshot.private_state.pending_action
-      ? String(snapshot.private_state.pending_action.deadline_at)
-      : state.latestActionPrompt?.payload.deadline_at ?? null;
+  const deadlineAt = createCenterDeadlineAt(state);
   const promptCue = createPromptCue(state, options);
   const actionIndicatorSeat = createActionIndicatorSeat(state);
   const mode = !snapshot

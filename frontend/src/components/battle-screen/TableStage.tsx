@@ -19,6 +19,7 @@ export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
   Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>>;
 
 const PENDING_ACTION_DURATION_MS = 30_000;
+const COUNTDOWN_RING_STROKE_WIDTH = 3;
 
 interface TableStageProps {
   discards: Record<Seat, string[]>;
@@ -521,6 +522,7 @@ export function TableStage({
                           ? 'table-stage__melds--dense'
                           : ''
                           }`}
+                        style={getMeldRackPositionStyle(seat)}
                       >
                         <MeldRack
                           seat={seat}
@@ -811,7 +813,7 @@ function CenterIndicator({
   const circumference = 2 * Math.PI * radius;
   const [countdownPercent, setCountdownPercent] = useState(() => getCountdownPercent(deadlineAt));
   const offset = circumference - countdownPercent * circumference;
-  const isCountdownFull = countdownPercent >= 0.999;
+  const isCountdownFull = offset <= COUNTDOWN_RING_STROKE_WIDTH;
   const countdownStrokeProps = isCountdownFull
     ? {}
     : {
@@ -873,6 +875,7 @@ function CenterIndicator({
           cx="50"
           cy="50"
           r={radius}
+          strokeWidth={COUNTDOWN_RING_STROKE_WIDTH}
           {...countdownStrokeProps}
         />
         {actionSeat && (
@@ -1134,4 +1137,26 @@ function findLastDiscardPosition(
 
 function shouldPinDenseMeldRack(seat: Seat, meldCount: number) {
   return (seat === 'top' || seat === 'bottom') && meldCount >= 3;
+}
+
+function getMeldRackPositionStyle(seat: Seat): CSSProperties {
+  const offset = 'calc(100% + clamp(0.4rem, 1vw, 0.8rem))';
+
+  if (seat === 'left' || seat === 'right') {
+    return {
+      left: '50%',
+      right: 'auto',
+      top: 'auto',
+      bottom: offset,
+      transform: 'translateX(-50%)',
+    };
+  }
+
+  return {
+    left: offset,
+    right: 'auto',
+    top: '50%',
+    bottom: 'auto',
+    transform: 'translateY(-50%)',
+  };
 }

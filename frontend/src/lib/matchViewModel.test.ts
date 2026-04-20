@@ -812,6 +812,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.promptText).toBe('Player A正在执行操作：出牌');
     expect(viewModel.activePlayerSeat).toBe('top');
     expect(viewModel.actionIndicatorSeat).toBe('top');
+    expect(viewModel.deadlineAt).toBeNull();
     expect(viewModel.players.find((player) => player.name === 'Player A')?.isActive).toBe(true);
   });
 

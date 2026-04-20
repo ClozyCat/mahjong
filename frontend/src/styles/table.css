@@ -128,7 +128,6 @@
 .table-stage__center-indicator-countdown {
   fill: none;
   stroke: var(--table-center-countdown-color);
-  stroke-width: 3;
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: center;
