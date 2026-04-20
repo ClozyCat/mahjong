@@ -255,6 +255,152 @@ describe('TableStage', () => {
     expect(pointer?.getAttribute('transform')).toBe('rotate(-180 50 50)');
   });
 
+  it('resets the center countdown when the active seat changes without a new deadline string', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
+
+    const deadlineAt = '2026-04-20T12:00:05Z';
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+    const readCountdownOffset = (container: HTMLElement) =>
+      Number.parseFloat(
+        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
+      );
+
+    const { container, rerender } = render(
+      <TableStage
+        discards={discards}
+        activeSeat="bottom"
+        actionIndicatorSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt={deadlineAt}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(readCountdownOffset(container)).toBeGreaterThan(0);
+
+    rerender(
+      <TableStage
+        discards={discards}
+        activeSeat="right"
+        actionIndicatorSeat="right"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt={deadlineAt}
+      />,
+    );
+
+    expect(readCountdownOffset(container)).toBe(0);
+  });
+
+  it('resets the center countdown when the response indicator seat changes without a new deadline string', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
+
+    const deadlineAt = '2026-04-20T12:00:05Z';
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+    const readCountdownOffset = (container: HTMLElement) =>
+      Number.parseFloat(
+        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
+      );
+
+    const { container, rerender } = render(
+      <TableStage
+        discards={discards}
+        activeSeat="bottom"
+        actionIndicatorSeat="left"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt={deadlineAt}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(readCountdownOffset(container)).toBeGreaterThan(0);
+
+    rerender(
+      <TableStage
+        discards={discards}
+        activeSeat="bottom"
+        actionIndicatorSeat="top"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt={deadlineAt}
+      />,
+    );
+
+    expect(readCountdownOffset(container)).toBe(0);
+  });
+
+  it('stops the previous countdown loop after the center timer is cleared', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
+
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+    const readCountdownOffset = (container: HTMLElement) =>
+      Number.parseFloat(
+        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
+      );
+
+    const { container, rerender } = render(
+      <TableStage
+        discards={discards}
+        activeSeat="bottom"
+        actionIndicatorSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt="2026-04-20T12:00:05Z"
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(readCountdownOffset(container)).toBeGreaterThan(0);
+
+    rerender(
+      <TableStage
+        discards={discards}
+        activeSeat="right"
+        actionIndicatorSeat={null}
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt={null}
+      />,
+    );
+
+    expect(readCountdownOffset(container)).toBe(0);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(readCountdownOffset(container)).toBe(0);
+  });
+
   it('does not apply a separate dealer style modifier to the spotlight', () => {
     const { container } = render(
       <TableStage

@@ -198,6 +198,9 @@ export function TableStage({
   }, [isQuickChatOpen]);
 
   useEffect(() => {
+    let frameId: number | null = null;
+    let disposed = false;
+
     if (!deadlineAt) {
       setCountdownPercent(1);
       return;
@@ -212,20 +215,35 @@ export function TableStage({
       return;
     }
 
+    // 每次轮到新玩家或切入新的响应阶段时，都从满格重新启动本轮倒计时。
+    setCountdownPercent(1);
+
     const update = () => {
+      if (disposed) {
+        return;
+      }
+
       const now = Date.now();
       const remaining = end - now;
       const nextPercent = Math.max(0, remaining / total);
       setCountdownPercent(nextPercent);
 
       if (nextPercent > 0) {
-        requestAnimationFrame(update);
+        frameId = requestAnimationFrame(update);
+      } else {
+        frameId = null;
       }
     };
 
-    const frameId = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(frameId);
-  }, [deadlineAt]);
+    frameId = requestAnimationFrame(update);
+
+    return () => {
+      disposed = true;
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+    };
+  }, [deadlineAt, activeSeat, actionIndicatorSeat, promptCue?.kind]);
 
   useEffect(() => {
     const handleResize = () => {
