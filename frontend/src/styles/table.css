@@ -211,30 +211,42 @@
 .table-stage__seat-zone {
   position: absolute;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: clamp(0.4rem, 1.2vw, 0.72rem);
+  pointer-events: none;
+}
+
+.table-stage__seat-zone > * {
+  pointer-events: auto;
 }
 
 .table-stage__seat-zone--top {
   left: 50%;
   top: var(--table-stage-seat-top-v);
   transform: translateX(-50%);
+  flex-direction: column-reverse;
 }
 
 .table-stage__seat-zone--bottom {
   left: 50%;
   bottom: calc(100% - (var(--table-stage-center-v) + (var(--table-stage-center-v) - var(--table-stage-seat-top-v))));
   transform: translateX(-50%);
+  flex-direction: column;
 }
 
 .table-stage__seat-zone--left {
-  left: var(--table-stage-side-gap);
+  left: clamp(0.4rem, 1.2vw, 0.82rem);
   top: var(--table-stage-center-v);
   transform: translateY(-50%);
+  flex-direction: row-reverse;
 }
 
 .table-stage__seat-zone--right {
-  right: var(--table-stage-side-gap);
+  right: clamp(0.4rem, 1.2vw, 0.82rem);
   top: var(--table-stage-center-v);
   transform: translateY(-50%);
+  flex-direction: row;
 }
 
 /* ------- Seat watermarks ------- */
@@ -579,15 +591,14 @@
 
 .table-stage__player-edge-info--top {
   align-items: center;
-  transform: rotate(180deg);
 }
 
 .table-stage__player-edge-info--left {
-  align-items: center;
+  align-items: flex-start;
 }
 
 .table-stage__player-edge-info--right {
-  align-items: center;
+  align-items: flex-end;
 }
 
 .table-stage__player-edge-info--bottom,
@@ -612,7 +623,31 @@
   font-weight: normal;
 }
 
-.table-stage__player-edge-info span {
+.table-stage__player-stats {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.table-stage__player-edge-info--left .table-stage__player-stats,
+.table-stage__player-edge-info--right .table-stage__player-stats {
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.table-stage__player-edge-info--left .table-stage__player-stats {
+  align-items: flex-start;
+}
+
+.table-stage__player-edge-info--right .table-stage__player-stats {
+  align-items: flex-end;
+}
+
+.table-stage__stat-sep {
+  opacity: 0.5;
+}
+
+.table-stage__player-edge-info span,
+.table-stage__stat-item {
   opacity: 0.85;
 }
 

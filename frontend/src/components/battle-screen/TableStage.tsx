@@ -546,17 +546,20 @@ export function TableStage({
                         />
                       </div>
                     ) : null}
-
-                    {player ? (
-                      <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
-                        <b>{player.name}</b>
-                        <span>
-                          分数 {player.score?.toLocaleString() ?? 0} · 花 {player.flowerCount ?? 0} · 手牌{' '}
-                          {player.concealedCount ?? 0}
-                        </span>
-                      </div>
-                    ) : null}
                   </div>
+
+                  {player ? (
+                    <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
+                      <b className="table-stage__player-name">{player.name}</b>
+                      <div className="table-stage__player-stats">
+                        <span className="table-stage__stat-item">分数 {player.score?.toLocaleString() ?? 0}</span>
+                        {(seat === 'bottom' || seat === 'top') && <span className="table-stage__stat-sep">·</span>}
+                        <span className="table-stage__stat-item">花 {player.flowerCount ?? 0}</span>
+                        {(seat === 'bottom' || seat === 'top') && <span className="table-stage__stat-sep">·</span>}
+                        <span className="table-stage__stat-item">手牌 {player.concealedCount ?? 0}</span>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {finalHandTiles.length > 0 && settlementHandLabel ? (
                     <div

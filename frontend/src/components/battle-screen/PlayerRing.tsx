@@ -26,10 +26,14 @@ export function PlayerRing({ player }: PlayerRingProps) {
           </div>
           <div className="player-ring__row player-ring__row--secondary">
             <span className="player-ring__meta">
-              {player.score.toLocaleString()} · {player.statusText ?? '待命'}
+              {player.score.toLocaleString()}
+              {player.seat === 'left' || player.seat === 'right' ? <br /> : ' · '}
+              {player.statusText ?? '待命'}
             </span>
             <span className="player-ring__detail">
-              手牌 {player.concealedCount} · 花 {player.flowerCount}
+              手牌 {player.concealedCount}
+              {player.seat === 'left' || player.seat === 'right' ? <br /> : ' · '}
+              花 {player.flowerCount}
             </span>
           </div>
         </div>
