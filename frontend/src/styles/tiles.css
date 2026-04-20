@@ -35,87 +35,73 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: max(0.22rem, calc(var(--tile-w, 2rem) * 0.14));
-  border: max(1px, calc(var(--tile-w, 2rem) * 0.032)) solid color-mix(in srgb, var(--theme-paper-edge) 70%, var(--theme-paper-line) 30%);
+  border-radius: max(0.24rem, calc(var(--tile-w, 2rem) * 0.15));
+  /* Crisp outer edge */
+  border: 1px solid color-mix(in srgb, var(--theme-paper-edge) 85%, var(--theme-paper-line) 15%);
   box-shadow:
-    /* Top dome highlight — simulates rounded top surface */
-    inset 0 2.2px 1.8px -0.6px color-mix(in srgb, white 58%, var(--theme-paper-strong)),
-    /* Side bevel highlights/shadows for 3D body */
-    inset 1.4px 0 1.4px -0.9px color-mix(in srgb, white 42%, transparent),
-    inset -1.4px 0 1.4px -0.9px color-mix(in srgb, black 12%, transparent),
-    /* Inner bottom shadow — body depth */
-    inset 0 -2px 2.4px -1px rgba(0, 0, 0, 0.14),
-    /* Layered side walls — simulate tile thickness */
-    0 1.4px 0 0 color-mix(in srgb, var(--theme-paper) 55%, var(--theme-paper-edge)),
-    0 2.6px 0 0 color-mix(in srgb, var(--theme-paper-edge) 65%, var(--theme-paper-line)),
-    0 3.6px 0 0 color-mix(in srgb, var(--theme-paper-line) 80%, var(--theme-paper-line-strong)),
-    0 4.4px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 85%, black),
-    /* Cast shadow on the surface below */
-    0 5.2px 5px rgba(0, 0, 0, 0.3),
-    0 7.5px 10px rgba(0, 0, 0, 0.18);
+    /* Top sharp highlight */
+    inset 0 1.2px 0.8px color-mix(in srgb, white 45%, transparent),
+    /* Subtle side lighting for tangibility */
+    inset 0.8px 0 0.6px color-mix(in srgb, white 25%, transparent),
+    inset -0.8px 0 0.6px color-mix(in srgb, black 6%, transparent),
+    /* Main body mass - single crisp step for thickness */
+    0 1.2px 0 0 color-mix(in srgb, var(--theme-paper) 60%, var(--theme-paper-edge)),
+    0 2.4px 0 0 color-mix(in srgb, var(--theme-paper-edge) 75%, var(--theme-paper-line)),
+    0 3.2px 4px -0.5px rgba(0, 0, 0, 0.18),
+    /* Distant soft shadow for presence */
+    0 5px 12px -2px rgba(0, 0, 0, 0.14);
+  
   background:
-    /* Subtle surface grain */
-    repeating-linear-gradient(
-      45deg,
-      rgba(0, 0, 0, 0.003) 0,
-      rgba(0, 0, 0, 0.003) 1px,
-      transparent 1px,
-      transparent 4px
-    ),
-    /* Dome-shaped radial gradient for rounded-top look (ivory/bone) */
-    radial-gradient(
-      ellipse at 38% 22%,
-      color-mix(in srgb, white 52%, var(--theme-paper-strong)) 0%,
-      color-mix(in srgb, var(--theme-paper-strong) 80%, white) 20%,
-      var(--theme-paper) 52%,
-      color-mix(in srgb, var(--theme-paper) 84%, var(--theme-paper-edge)) 84%,
-      color-mix(in srgb, var(--theme-paper-edge) 55%, var(--theme-paper)) 100%
+    /* Fine silk-like vertical texture */
+    linear-gradient(90deg, 
+      transparent 0, 
+      rgba(0, 0, 0, 0.005) 1px, 
+      transparent 2px
+    ) 0 0 / 4px 100%,
+    /* Satin ivory gradient — more sophisticated than the old dome */
+    linear-gradient(175deg,
+      color-mix(in srgb, white 42%, var(--theme-paper-strong)) 0%,
+      var(--theme-paper) 35%,
+      color-mix(in srgb, var(--theme-paper) 80%, var(--theme-paper-edge)) 100%
     );
+    
   transition:
-    transform 0.14s var(--ease-lux),
-    box-shadow 0.14s var(--ease-lux),
-    border-color 0.14s var(--ease-lux);
+    transform 0.2s var(--ease-lux),
+    box-shadow 0.2s var(--ease-lux),
+    border-color 0.2s var(--ease-lux);
 }
 
 /* ------- Tile face ------- */
 
 .mahjong-tile__face-area {
   position: absolute;
-  inset: max(0.14rem, calc(var(--tile-w, 2rem) * 0.085));
+  /* Slightly more precise margin */
+  inset: max(0.12rem, calc(var(--tile-w, 2rem) * 0.075));
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: max(0.1rem, calc(var(--tile-w, 2rem) * 0.075));
+  border-radius: max(0.08rem, calc(var(--tile-w, 2rem) * 0.065));
   background:
     radial-gradient(
-      ellipse at 50% 38%,
-      color-mix(in srgb, var(--theme-paper-strong) 52%, white) 0%,
-      var(--theme-paper) 48%,
-      color-mix(in srgb, var(--theme-paper) 88%, var(--theme-paper-edge)) 100%
+      ellipse at 50% 30%,
+      color-mix(in srgb, var(--theme-paper-strong) 48%, white) 0%,
+      var(--theme-paper) 52%,
+      color-mix(in srgb, var(--theme-paper) 92%, var(--theme-paper-edge)) 100%
     );
-  /* Deep inset — face sits recessed inside the tile body (carved look) */
+  /* Sharper, shallower inset shadow for "precision carved" look */
   box-shadow:
-    inset 0 2px 2.8px rgba(0, 0, 0, 0.16),
-    inset 0 -0.8px 1px rgba(255, 255, 255, 0.5),
-    inset 1.2px 0 1.8px rgba(0, 0, 0, 0.06),
-    inset -1.2px 0 1.8px rgba(255, 255, 255, 0.28);
+    inset -0.5px -0.5px 1px rgba(255, 255, 255, 0.6),
+    inset 0.8px 1.2px 2px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 
 .mahjong-tile--related-highlight .mahjong-tile__shell {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--theme-paper-edge));
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--theme-paper-edge));
   box-shadow:
-    inset 0 2.2px 1.8px -0.6px color-mix(in srgb, white 58%, var(--theme-paper-strong)),
-    inset 1.4px 0 1.4px -0.9px color-mix(in srgb, white 42%, transparent),
-    inset -1.4px 0 1.4px -0.9px color-mix(in srgb, black 12%, transparent),
-    inset 0 -2px 2.4px -1px rgba(0, 0, 0, 0.14),
-    0 1.4px 0 0 color-mix(in srgb, var(--accent) 24%, var(--theme-paper-edge)),
-    0 2.6px 0 0 color-mix(in srgb, var(--accent) 18%, var(--theme-paper-line)),
-    0 3.6px 0 0 color-mix(in srgb, var(--theme-paper-line) 80%, var(--theme-paper-line-strong)),
-    0 4.4px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 85%, black),
-    0 5.2px 5px rgba(0, 0, 0, 0.3),
-    0 7.5px 10px rgba(0, 0, 0, 0.18),
-    0 0 14px color-mix(in srgb, var(--accent) 24%, transparent);
+    inset 0 1.2px 0.8px color-mix(in srgb, white 45%, transparent),
+    0 1.2px 0 0 color-mix(in srgb, var(--accent) 32%, var(--theme-paper-edge)),
+    0 2.4px 0 0 color-mix(in srgb, var(--accent) 24%, var(--theme-paper-line)),
+    0 0 12px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .mahjong-tile--related-highlight .mahjong-tile__face-area::after {
@@ -126,15 +112,11 @@
   background:
     radial-gradient(
       circle at 50% 40%,
-      color-mix(in srgb, white 34%, var(--accent)) 0%,
-      color-mix(in srgb, var(--accent) 76%, transparent) 60%,
-      color-mix(in srgb, var(--accent) 28%, transparent) 100%
+      color-mix(in srgb, white 28%, var(--accent)) 0%,
+      color-mix(in srgb, var(--accent) 64%, transparent) 75%,
+      color-mix(in srgb, var(--accent) 18%, transparent) 100%
     );
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent),
-    inset 0 0 18px color-mix(in srgb, var(--accent) 20%, transparent),
-    0 0 16px color-mix(in srgb, var(--accent) 22%, transparent);
-  opacity: 0.72;
+  opacity: 0.6;
   pointer-events: none;
 }
 
@@ -188,17 +170,12 @@
   border-color: var(--accent);
   transform: translateY(-0.6rem);
   box-shadow:
-    inset 0 2.2px 1.8px -0.6px color-mix(in srgb, white 58%, var(--theme-paper-strong)),
-    inset 1.4px 0 1.4px -0.9px color-mix(in srgb, white 42%, transparent),
-    inset -1.4px 0 1.4px -0.9px color-mix(in srgb, black 12%, transparent),
-    inset 0 -2px 2.4px -1px rgba(0, 0, 0, 0.14),
-    0 1.4px 0 0 color-mix(in srgb, var(--accent) 32%, var(--theme-paper-edge)),
-    0 2.6px 0 0 color-mix(in srgb, var(--accent) 26%, var(--theme-paper-line)),
-    0 3.6px 0 0 color-mix(in srgb, var(--theme-paper-line) 80%, var(--theme-paper-line-strong)),
-    0 4.4px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 85%, black),
-    0 8px 8px rgba(0, 0, 0, 0.3),
-    0 13px 18px rgba(0, 0, 0, 0.2),
-    0 0 0 2.5px color-mix(in srgb, var(--accent) 42%, transparent);
+    inset 0 1.2px 0.8px color-mix(in srgb, white 45%, transparent),
+    /* Selected "lift" shadows */
+    0 2px 0 0 color-mix(in srgb, var(--accent) 36%, var(--theme-paper-edge)),
+    0 4px 0 0 color-mix(in srgb, var(--accent) 24%, var(--theme-paper-line)),
+    0 12px 16px -2px rgba(0, 0, 0, 0.28),
+    0 0 0 2px color-mix(in srgb, var(--accent) 36%, transparent);
   animation: selected-tile-halo 1.8s var(--ease-lux) infinite;
 }
 
@@ -219,17 +196,11 @@
 .mahjong-tile--last-discard .mahjong-tile__shell {
   border-color: color-mix(in srgb, var(--accent) 76%, var(--theme-paper-edge));
   box-shadow:
-    inset 0 2.2px 1.8px -0.6px color-mix(in srgb, white 58%, var(--theme-paper-strong)),
-    inset 1.4px 0 1.4px -0.9px color-mix(in srgb, white 42%, transparent),
-    inset -1.4px 0 1.4px -0.9px color-mix(in srgb, black 12%, transparent),
-    inset 0 -2px 2.4px -1px rgba(0, 0, 0, 0.14),
-    0 1.4px 0 0 color-mix(in srgb, var(--accent) 40%, var(--theme-paper-edge)),
-    0 2.6px 0 0 color-mix(in srgb, var(--accent) 28%, var(--theme-paper-line)),
-    0 3.6px 0 0 color-mix(in srgb, var(--theme-paper-line) 80%, var(--theme-paper-line-strong)),
-    0 4.4px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 85%, black),
-    0 5.6px 5.4px rgba(0, 0, 0, 0.3),
-    0 8px 11px rgba(0, 0, 0, 0.18),
-    0 0 14px 2.5px color-mix(in srgb, var(--accent) 26%, transparent);
+    inset 0 1.2px 0.8px color-mix(in srgb, white 45%, transparent),
+    0 1.2px 0 0 color-mix(in srgb, var(--accent) 42%, var(--theme-paper-edge)),
+    0 2.4px 0 0 color-mix(in srgb, var(--accent) 32%, var(--theme-paper-line)),
+    0 6px 14px rgba(0, 0, 0, 0.22),
+    0 0 12px 2px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 /* ------- Hand tile special sizing ------- */
@@ -242,47 +213,30 @@
 .battle-screen .mahjong-tile--hand:hover .mahjong-tile__shell {
   transform: translateY(-0.28rem) scale(1.04);
   box-shadow:
-    inset 0 2.4px 2px -0.6px color-mix(in srgb, white 62%, var(--theme-paper-strong)),
-    inset 1.6px 0 1.6px -0.9px color-mix(in srgb, white 46%, transparent),
-    inset -1.6px 0 1.6px -0.9px color-mix(in srgb, black 14%, transparent),
-    inset 0 -2.2px 2.8px -1px rgba(0, 0, 0, 0.16),
-    0 1.6px 0 0 color-mix(in srgb, var(--theme-paper) 50%, var(--theme-paper-edge)),
-    0 3px 0 0 color-mix(in srgb, var(--theme-paper-edge) 60%, var(--theme-paper-line)),
-    0 4.2px 0 0 color-mix(in srgb, var(--theme-paper-line) 78%, var(--theme-paper-line-strong)),
-    0 5.2px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 82%, black),
-    0 7px 7px rgba(0, 0, 0, 0.28),
-    0 10px 14px rgba(0, 0, 0, 0.2);
+    inset 0 1.4px 1px color-mix(in srgb, white 52%, transparent),
+    0 1.4px 0 0 color-mix(in srgb, var(--theme-paper) 55%, var(--theme-paper-edge)),
+    0 2.8px 0 0 color-mix(in srgb, var(--theme-paper-edge) 70%, var(--theme-paper-line)),
+    0 8px 14px -2px rgba(0, 0, 0, 0.22);
 }
 
 .battle-screen .mahjong-tile--hand:active .mahjong-tile__shell {
   transform: translateY(-0.04rem) scale(0.98);
   box-shadow:
-    inset 0 1.6px 1.4px -0.5px color-mix(in srgb, white 48%, var(--theme-paper-strong)),
-    inset 1px 0 1px -0.8px color-mix(in srgb, white 30%, transparent),
-    inset -1px 0 1px -0.8px color-mix(in srgb, black 10%, transparent),
-    inset 0 -1.4px 1.8px -1px rgba(0, 0, 0, 0.12),
-    0 0.8px 0 0 color-mix(in srgb, var(--theme-paper) 55%, var(--theme-paper-edge)),
-    0 1.6px 0 0 color-mix(in srgb, var(--theme-paper-edge) 65%, var(--theme-paper-line)),
-    0 2.4px 0 0 color-mix(in srgb, var(--theme-paper-line) 80%, var(--theme-paper-line-strong)),
-    0 3px 2.6px rgba(0, 0, 0, 0.24);
+    inset 0 1.2px 1px rgba(0, 0, 0, 0.1),
+    0 0.8px 0 0 color-mix(in srgb, var(--theme-paper-edge) 80%, black),
+    0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .battle-screen .mahjong-tile--hand.mahjong-tile--selected .mahjong-tile__shell,
 .battle-screen .mahjong-tile--hand.mahjong-tile--selected:hover .mahjong-tile__shell {
   transform: translateY(-0.6rem) scale(1.04);
   box-shadow:
-    inset 0 2.4px 2px -0.6px color-mix(in srgb, white 62%, var(--theme-paper-strong)),
-    inset 1.6px 0 1.6px -0.9px color-mix(in srgb, white 46%, transparent),
-    inset -1.6px 0 1.6px -0.9px color-mix(in srgb, black 14%, transparent),
-    inset 0 -2.2px 2.8px -1px rgba(0, 0, 0, 0.16),
-    0 1.6px 0 0 color-mix(in srgb, var(--accent) 34%, var(--theme-paper-edge)),
-    0 3px 0 0 color-mix(in srgb, var(--accent) 28%, var(--theme-paper-line)),
-    0 4.2px 0 0 color-mix(in srgb, var(--theme-paper-line) 78%, var(--theme-paper-line-strong)),
-    0 5.2px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 82%, black),
-    0 8px 8px rgba(0, 0, 0, 0.3),
-    0 12px 16px rgba(0, 0, 0, 0.22),
-    0 0 0 2.5px color-mix(in srgb, var(--accent) 42%, transparent),
-    0 0 16px color-mix(in srgb, var(--accent) 18%, transparent);
+    inset 0 1.4px 1px color-mix(in srgb, white 52%, transparent),
+    0 1.6px 0 0 color-mix(in srgb, var(--accent) 38%, var(--theme-paper-edge)),
+    0 3.2px 0 0 color-mix(in srgb, var(--accent) 28%, var(--theme-paper-line)),
+    0 10px 18px -2px rgba(0, 0, 0, 0.26),
+    0 0 0 2px color-mix(in srgb, var(--accent) 36%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .battle-screen .mahjong-tile--hand.mahjong-tile--selected:active .mahjong-tile__shell {
@@ -352,15 +306,9 @@
 
 .meld-rack__tile-face--sourced .mahjong-tile__shell {
   box-shadow:
-    inset 0 2.2px 1.8px -0.6px color-mix(in srgb, white 58%, var(--theme-paper-strong)),
-    inset 1.4px 0 1.4px -0.9px color-mix(in srgb, white 42%, transparent),
-    inset -1.4px 0 1.4px -0.9px color-mix(in srgb, black 12%, transparent),
-    inset 0 -2px 2.4px -1px rgba(0, 0, 0, 0.14),
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent),
-    0 1.4px 0 0 color-mix(in srgb, var(--accent) 20%, var(--theme-paper-edge)),
-    0 2.6px 0 0 color-mix(in srgb, var(--accent) 16%, var(--theme-paper-line)),
-    0 3.6px 0 0 color-mix(in srgb, var(--theme-paper-line) 80%, var(--theme-paper-line-strong)),
-    0 4.4px 0 0 color-mix(in srgb, var(--theme-paper-line-strong) 85%, black),
-    0 5.2px 4.6px rgba(0, 0, 0, 0.28),
-    0 0 10px color-mix(in srgb, var(--accent) 14%, transparent);
+    inset 0 1.2px 0.8px color-mix(in srgb, white 45%, transparent),
+    0 1.2px 0 0 color-mix(in srgb, var(--accent) 28%, var(--theme-paper-edge)),
+    0 2.4px 0 0 color-mix(in srgb, var(--accent) 20%, var(--theme-paper-line)),
+    0 4px 10px -1px rgba(0, 0, 0, 0.18),
+    0 0 8px color-mix(in srgb, var(--accent) 18%, transparent);
 }
