@@ -686,30 +686,77 @@
 
 .table-stage__player-stats {
   display: flex;
-  gap: 0.15rem;
+  gap: 0.35rem;
 }
 
 .table-stage__player-edge-info--left .table-stage__player-stats,
 .table-stage__player-edge-info--right .table-stage__player-stats {
   flex-direction: column;
-  gap: 0.05rem;
+  gap: 0.25rem;
 }
 
-.table-stage__player-edge-info--left .table-stage__player-stats {
-  align-items: flex-start;
+.table-stage__stat-plate {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 38%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 6%, transparent);
+  box-shadow: 
+    0 4px 12px var(--theme-shadow-soft),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 4%, transparent);
+  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux);
+  pointer-events: auto;
 }
 
-.table-stage__player-edge-info--right .table-stage__player-stats {
-  align-items: flex-end;
+.table-stage__stat-plate:hover {
+  transform: translateY(-1px) scale(1.02);
+  border-color: color-mix(in srgb, var(--accent-2) 24%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 52%, transparent);
 }
 
-.table-stage__stat-sep {
-  opacity: 0.5;
+.table-stage__stat-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.2));
 }
 
-.table-stage__player-edge-info span,
-.table-stage__stat-item {
-  opacity: 0.85;
+.table-stage__stat-value {
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', 'Noto Sans SC', sans-serif;
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--theme-paper-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Specific item colors */
+.table-stage__stat-plate--score {
+  --stat-accent: #ffcc33; /* Amber Gold */
+}
+.table-stage__stat-plate--flower {
+  --stat-accent: #ff8cbf; /* Lotus Pink */
+}
+.table-stage__stat-plate--hand {
+  --stat-accent: #f0f0f0; /* Ivory White */
+}
+
+.table-stage__stat-plate--score .table-stage__stat-icon { color: var(--stat-accent); }
+.table-stage__stat-plate--flower .table-stage__stat-icon { color: var(--stat-accent); }
+.table-stage__stat-plate--hand .table-stage__stat-icon { color: var(--stat-accent); }
+
+.table-stage__stat-plate--score {
+  border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
+}
+.table-stage__stat-plate--flower {
+  border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
+}
+.table-stage__stat-plate--hand {
+  border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
 }
 
 /* Global emoji trigger */

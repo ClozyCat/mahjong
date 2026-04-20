@@ -476,11 +476,18 @@ export function TableStage({
                     <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
                       <b className="table-stage__player-name">{player.name}</b>
                       <div className="table-stage__player-stats">
-                        <span className="table-stage__stat-item">分数 {player.score?.toLocaleString() ?? 0}</span>
-                        {(seat === 'bottom' || seat === 'top') && <span className="table-stage__stat-sep">·</span>}
-                        <span className="table-stage__stat-item">花 {player.flowerCount ?? 0}</span>
-                        {(seat === 'bottom' || seat === 'top') && <span className="table-stage__stat-sep">·</span>}
-                        <span className="table-stage__stat-item">手牌 {player.concealedCount ?? 0}</span>
+                        <div className="table-stage__stat-plate table-stage__stat-plate--score" title="分数">
+                          <IngotIcon className="table-stage__stat-icon" />
+                          <span className="table-stage__stat-value">{player.score?.toLocaleString() ?? 0}</span>
+                        </div>
+                        <div className="table-stage__stat-plate table-stage__stat-plate--flower" title="花牌数量">
+                          <LotusIcon className="table-stage__stat-icon" />
+                          <span className="table-stage__stat-value">{player.flowerCount ?? 0}</span>
+                        </div>
+                        <div className="table-stage__stat-plate table-stage__stat-plate--hand" title="手牌数量">
+                          <TileStackIcon className="table-stage__stat-icon" />
+                          <span className="table-stage__stat-value">{player.concealedCount ?? 0}</span>
+                        </div>
                       </div>
                     </div>
                   ) : null}
@@ -1159,4 +1166,33 @@ function getMeldRackPositionStyle(seat: Seat): CSSProperties {
     bottom: 'auto',
     transform: 'translateY(-50%)',
   };
+}
+function IngotIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} fill="currentColor">
+      <path d="M2 18C2 11 8 8 16 8S30 11 30 18C30 25 24 28 16 28S2 25 2 18Z" opacity="0.3" />
+      <path d="M8 14C8 10 12 8 16 8S24 10 24 14V16C24 20 20 22 16 22S8 20 8 16V14Z" />
+      <path d="M16 8C20 8 24 10 24 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M16 8C12 8 8 10 8 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LotusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} fill="currentColor">
+      <path d="M16 28C16 28 8 22 8 14C8 8 16 4 16 4S24 8 24 14C24 22 16 28 16 28Z" opacity="0.4" />
+      <path d="M16 28C10 24 6 18 6 12C6 8 10 10 16 16C22 10 26 8 26 12C26 18 22 24 16 28Z" />
+    </svg>
+  );
+}
+
+function TileStackIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} fill="currentColor">
+      <rect x="6" y="10" width="12" height="16" rx="2" opacity="0.3" />
+      <rect x="10" y="6" width="12" height="16" rx="2" opacity="0.6" />
+      <rect x="14" y="2" width="12" height="16" rx="2" />
+    </svg>
+  );
 }
