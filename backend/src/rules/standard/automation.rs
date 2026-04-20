@@ -48,10 +48,16 @@ pub fn try_process_due_timeout_in_room_state(
         "active_turn" => {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(room);
+            let restricted_tile_key = room
+                .round_state
+                .as_ref()
+                .and_then(|round| round.restricted_discard_tile_key.as_deref());
             let tile_id = pending_timeout
                 .drawn_tile_id
                 .clone()
-                .or_else(|| last_concealed_tile_id_from_cache(&cache, seat_index))
+                .or_else(|| {
+                    last_legal_concealed_tile_id_from_cache(&cache, restricted_tile_key, seat_index)
+                })
                 .ok_or_else(|| "invalid_action".to_string())?;
             extract_emitted_messages(try_handle_player_action_in_room_state(
                 room,
@@ -82,10 +88,13 @@ pub fn try_process_due_timeout(room: &mut Value) -> Option<Vec<Value>> {
         "active_turn" => {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(&state);
-            let tile_id = pending_timeout
-                .drawn_tile_id
-                .clone()
-                .or_else(|| last_concealed_tile_id_from_cache(&cache, seat_index))?;
+            let restricted_tile_key = state
+                .round_state
+                .as_ref()
+                .and_then(|round| round.restricted_discard_tile_key.as_deref());
+            let tile_id = pending_timeout.drawn_tile_id.clone().or_else(|| {
+                last_legal_concealed_tile_id_from_cache(&cache, restricted_tile_key, seat_index)
+            })?;
             if !can_resolve_discard_locally(room, seat_index, &tile_id) {
                 return None;
             }
@@ -129,14 +138,17 @@ fn player_first_flower_tile_id_from_cache(
         .map(|tile| tile.tile_id.clone())
 }
 
-fn last_concealed_tile_id_from_cache(
+fn last_legal_concealed_tile_id_from_cache(
     cache: &RoomScoringCache,
+    restricted_tile_key: Option<&str>,
     seat_index: usize,
 ) -> Option<String> {
     cache
         .player(seat_index)?
         .concealed_tiles
-        .last()
+        .iter()
+        .rev()
+        .find(|tile| Some(tile.tile_key.as_str()) != restricted_tile_key)
         .map(|tile| tile.tile_id.clone())
 }
 
@@ -769,6 +781,88 @@ mod tests {
                 .as_ref()
                 .map(|timeout| timeout.kind.as_str()),
             Some("active_turn")
+        );
+    }
+
+    #[test]
+    fn active_turn_timeout_after_chow_claim_skips_restricted_tile() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(1))
+            .expect("seat 1 should exist")
+            .concealed_tiles = vec![
+            crate::core::tile::Tile::from_value(&suit("w2", "w2#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w4", "w4#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t1", "t1#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t2", "t2#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t3", "t3#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b1", "b1#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b2", "b2#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b3", "b3#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w5", "w5#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w6", "w6#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t6", "t6#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b6", "b6#1"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#1extra"), "tile").expect("tile"),
+        ];
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled")
+        .expect("chow should succeed");
+        let claim_timeout_result = try_process_due_timeout_in_room_state(&mut room)
+            .expect("claim timeout should advance to the chow seat");
+        assert!(claim_timeout_result.is_some());
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.kind.as_str()),
+            Some("active_turn")
+        );
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .and_then(|timeout| timeout.drawn_tile_id.as_deref()),
+            None
+        );
+
+        let result = try_process_due_timeout_in_room_state(&mut room)
+            .expect("active turn timeout should resolve with a legal fallback discard");
+
+        let emitted = result.expect("timeout should emit discard message");
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(emitted[0]["payload"]["event"]["tile_id"], "b6#1");
+        assert_eq!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.players.get(1))
+                .map(|player| { player.discards.last().map(|tile| tile.tile_id.as_str()) }),
+            Some(Some("b6#1"))
+        );
+        assert_eq!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.players.get(1))
+                .map(|player| {
+                    player
+                        .concealed_tiles
+                        .iter()
+                        .any(|tile| tile.tile_id == "w3#1extra")
+                }),
+            Some(true)
         );
     }
 }
