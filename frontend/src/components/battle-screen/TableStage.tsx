@@ -811,6 +811,13 @@ function CenterIndicator({
   const circumference = 2 * Math.PI * radius;
   const [countdownPercent, setCountdownPercent] = useState(() => getCountdownPercent(deadlineAt));
   const offset = circumference - countdownPercent * circumference;
+  const isCountdownFull = countdownPercent >= 0.999;
+  const countdownStrokeProps = isCountdownFull
+    ? {}
+    : {
+      strokeDasharray: circumference,
+      strokeDashoffset: offset,
+    };
   const [pointerRotation, setPointerRotation] = useState(() => (actionSeat ? POINTER_ROTATION_BY_SEAT[actionSeat] : 0));
 
   useEffect(() => {
@@ -866,8 +873,7 @@ function CenterIndicator({
           cx="50"
           cy="50"
           r={radius}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
+          {...countdownStrokeProps}
         />
         {actionSeat && (
           <path

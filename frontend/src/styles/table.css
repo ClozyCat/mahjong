@@ -132,7 +132,6 @@
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: center;
-  transition: stroke-dashoffset 0.15s linear;
   filter: drop-shadow(0 0 6px var(--table-center-countdown-color)) drop-shadow(0 0 2px color-mix(in srgb, var(--table-center-countdown-color) 40%, white));
 }
 

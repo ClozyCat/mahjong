@@ -384,6 +384,31 @@ describe('TableStage', () => {
     expect(readCountdownOffset(container)).toBeGreaterThan(0);
   });
 
+  it('renders a full center ring without dash trimming when there is no countdown deadline', () => {
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+
+    const { container } = render(
+      <TableStage
+        discards={discards}
+        activeSeat="bottom"
+        actionIndicatorSeat={null}
+        lastDiscard={null}
+        promptText={null}
+        deadlineAt={null}
+      />,
+    );
+
+    const countdownRing = container.querySelector('.table-stage__center-indicator-countdown');
+
+    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
+    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
+  });
+
   it('stops the previous countdown loop after the center timer is cleared', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
@@ -416,6 +441,8 @@ describe('TableStage', () => {
 
     expect(readCountdownOffset(container)).toBeGreaterThan(0);
 
+    const countdownRing = container.querySelector('.table-stage__center-indicator-countdown');
+
     rerender(
       <TableStage
         discards={discards}
@@ -427,13 +454,15 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(readCountdownOffset(container)).toBe(0);
+    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
+    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
 
     act(() => {
       vi.advanceTimersByTime(1000);
     });
 
-    expect(readCountdownOffset(container)).toBe(0);
+    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
+    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
   });
 
   it('does not apply a separate dealer style modifier to the spotlight', () => {
