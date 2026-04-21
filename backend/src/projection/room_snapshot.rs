@@ -188,7 +188,11 @@ pub fn build_pending_action_view(
                 if support.can_hu {
                     options.push("hu".to_string());
                 }
-                if !is_local_ready_hand {
+                if is_local_ready_hand {
+                    if support.has_self_kong {
+                        options.push("kong".to_string());
+                    }
+                } else {
                     options.insert(0, "discard".to_string());
                     if support.has_concealed_flower {
                         options.push("flower".to_string());
@@ -229,10 +233,13 @@ pub fn build_pending_action_view(
                 .unwrap_or_default();
             let is_responded = claim.responded_seats.contains(&local_seat);
             let payload_options = if is_local_ready_hand {
-                if is_responded || !options.iter().any(|option| option == "hu") {
+                if is_responded {
                     Vec::new()
                 } else {
-                    vec!["hu".to_string()]
+                    options
+                        .into_iter()
+                        .filter(|option| option == "hu" || option == "kong")
+                        .collect()
                 }
             } else {
                 let mut payload_options = options;
@@ -479,8 +486,9 @@ mod tests {
     use super::{build_pending_action_view, room_snapshot_message};
     use crate::core::state::PendingTimeout;
     use crate::core::state::{
-        MatchState, PlayerRoundState, RoomState, RoundSettlement, RoundState, SeatState,
-        SettlementKongScoreDetailEntry, SettlementScoreDelta,
+        ClaimWindowAction, MatchState, PendingAction, PlayerRoundState, RoomState,
+        RoundSettlement, RoundState, SeatState, SettlementKongScoreDetailEntry,
+        SettlementScoreDelta,
     };
     use crate::projection::SeatProjectionSupport;
 
@@ -607,6 +615,96 @@ mod tests {
         assert_eq!(
             pending_action.deadline_at().as_deref(),
             Some("2026-04-20T12:00:30.000Z")
+        );
+    }
+
+    #[test]
+    fn active_turn_projection_keeps_kong_for_ready_hand_player() {
+        let mut ready_hand_players = players();
+        ready_hand_players[0].is_ready_hand = true;
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: ready_hand_players,
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "active_turn".to_string(),
+                seat_index: 0,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: Some("w3#draw".to_string()),
+            }),
+            continue_action: None,
+        };
+
+        let support = SeatProjectionSupport {
+            can_hu: true,
+            has_self_kong: true,
+            ..Default::default()
+        };
+        let snapshot = room_snapshot_message(&state, 0, &support);
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["hu", "kong"])
+        );
+    }
+
+    #[test]
+    fn claim_window_projection_keeps_kong_for_ready_hand_player() {
+        let mut ready_hand_players = players();
+        ready_hand_players[0].is_ready_hand = true;
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: ready_hand_players,
+                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat: 1,
+                    claim_window: vec![
+                        vec!["kong".to_string(), "hu".to_string()],
+                        vec![],
+                        vec![],
+                        vec![],
+                    ],
+                    responded_seats: vec![],
+                    claim_responses: vec![],
+                })),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "claim_window".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: None,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["kong", "hu"])
         );
     }
 

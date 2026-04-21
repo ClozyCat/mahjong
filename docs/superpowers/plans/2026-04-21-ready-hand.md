@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a formal `ready_hand` action so a player can declare “听”, lock their hand, auto-discard non-winning draws, and receive a `ready_hand_win` fan shown as `听牌成和`.
+**Goal:** Add a formal `ready_hand` action so a player can declare “听”, keep all legal kong options after declaration, auto-discard non-winning draws when no `hu`/`kong` is available, and receive a `ready_hand_win` fan shown as `听牌成和`.
 
-**Architecture:** Backend owns the ready-hand truth. Add a new `ready_hand` player action, persist `is_ready_hand` on each `PlayerRoundState`, expose that state through the existing snapshot projection, and broaden the current bot-action scheduler so it also performs immediate forced actions for ready-hand humans. Scoring gets a dedicated boolean on `EvaluationInput` so `ready_hand_win` stays an explicit fan rule instead of leaking through generic timing flags. Frontend remains projection-driven: it shows the `听` button only when the selected tile can enter ready hand, disables the local hand after declaration, reuses the optimistic discard path for the action request, and renders the `听` callout plus the new fan label.
+**Architecture:** Backend owns the ready-hand truth. Add a new `ready_hand` player action, persist `is_ready_hand` on each `PlayerRoundState`, expose that state through the existing snapshot projection, and broaden the current bot-action scheduler so it also performs immediate forced actions for ready-hand humans. After declaration, backend must still expose all legal `kong` flows while continuing to auto-discard only when the ready-hand player cannot `hu` or `kong`. Scoring gets a dedicated boolean on `EvaluationInput` so `ready_hand_win` stays an explicit fan rule instead of leaking through generic timing flags. Frontend remains projection-driven: it shows the `听` button only when the selected tile can enter ready hand, disables the local hand after declaration, reuses the optimistic discard path for the action request, and renders the `听` callout plus the new fan label.
 
 **Tech Stack:** Rust (`serde`, `tokio`, existing rule engine / scheduler), React 19 + TypeScript, Vite, Vitest
 
@@ -25,7 +25,7 @@
 - Modify: `backend/src/core/engine/command.rs`
   Parse `"ready_hand"` and cover it with parser tests.
 - Modify: `backend/src/core/engine/validation.rs`
-  Classify the new action and block manual `discard` / `flower` / `kong` once a player is already in ready-hand state.
+  Classify the new action, block manual `discard` / `flower` after ready hand, but keep all legal `kong` paths available.
 - Modify: `backend/src/core/engine/flow.rs`
   Route the new action to the standard rules layer.
 - Modify: `backend/src/core/state/player.rs`
@@ -89,7 +89,7 @@
 ### Design constraints to keep explicit during implementation
 
 - Backend ready-hand validation should follow the existing frontend notion of “结构上听牌”. Use structural winning decomposition after a candidate draw; do not call settlement-only minimum-fan gating when deciding whether a discard is eligible for declaration.
-- After a player has declared ready hand, manual `discard` / `flower` / `kong` actions must be rejected by backend validation, even if the frontend is already locking the hand.
+- After a player has declared ready hand, backend validation must still reject manual `discard` / `flower`, but it must preserve legal `kong` actions from active-turn and claim-window flows.
 - `ready_hand_declared` must be emitted after the ordinary `tile_discarded` round event so the river stays correct and the frontend can still use the latest event for the `听` callout.
 
 ### Task 1: Backend Ready-Hand Action, State, and Projection

@@ -115,7 +115,7 @@ fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_ty
         return false;
     }
     if is_ready_hand {
-        return action_type == "hu"
+        return matches!(action_type, "hu" | "kong")
             && allowed_claims
                 .iter()
                 .any(|claim_type| claim_type == action_type);
@@ -142,12 +142,6 @@ fn rob_kong_pass_supported(context: &EngineContext, actor: Seat) -> bool {
 fn self_kong_supported(context: &EngineContext, actor: Seat) -> bool {
     context.room.phase == "playing"
         && context.current_actor() == Some(actor)
-        && !context
-            .room
-            .round_state
-            .as_ref()
-            .and_then(|round| round.players.get(actor))
-            .is_some_and(|player| player.is_ready_hand)
         && context
             .room
             .pending_timeout
@@ -344,6 +338,70 @@ mod tests {
                 }
             ),
             None
+        );
+    }
+
+    #[test]
+    fn allows_claim_window_kong_after_ready_hand_declaration() {
+        let mut room = base_room();
+        room["round_state"]["players"][1]["is_ready_hand"] = json!(true);
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            tile("w3#a", "w3", "suit"),
+            tile("w3#b", "w3", "suit"),
+            tile("w3#c", "w3", "suit")
+        ]);
+        room["round_state"]["pending_action"] = json!({
+            "type": "claim_window",
+            "discarder_seat": 0,
+            "claim_window": [[], ["kong", "hu"], [], []],
+            "responded_seats": [],
+            "claim_responses": []
+        });
+        room["pending_timeout"]["kind"] = json!("claim_window");
+        let context = context(room);
+
+        assert_eq!(
+            classify_local_player_action(
+                &context,
+                1,
+                &PlayerAction::Kong {
+                    tile_ids: vec![
+                        "w3#a".to_string(),
+                        "w3#b".to_string(),
+                        "w3#c".to_string(),
+                    ],
+                }
+            ),
+            Some(LocalPlayerActionKind::ClaimWindow)
+        );
+    }
+
+    #[test]
+    fn allows_self_kong_after_ready_hand_declaration() {
+        let mut room = base_room();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        room["round_state"]["players"][0]["concealed_tiles"] = json!([
+            tile("w3#0", "w3", "suit"),
+            tile("w3#1", "w3", "suit"),
+            tile("w3#2", "w3", "suit"),
+            tile("w3#3", "w3", "suit")
+        ]);
+        let context = context(room);
+
+        assert_eq!(
+            classify_local_player_action(
+                &context,
+                0,
+                &PlayerAction::Kong {
+                    tile_ids: vec![
+                        "w3#0".to_string(),
+                        "w3#1".to_string(),
+                        "w3#2".to_string(),
+                        "w3#3".to_string(),
+                    ],
+                }
+            ),
+            Some(LocalPlayerActionKind::SelfKong)
         );
     }
 }

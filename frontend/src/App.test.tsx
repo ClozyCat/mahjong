@@ -1402,6 +1402,87 @@ describe('App', () => {
     ]);
   });
 
+  it('still allows a ready-hand player to claim kong from the claim window', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 1,
+            last_discard: 'w3',
+            pending_action: {
+              type: 'claim_window',
+              discarder_seat: 1,
+              deadline_at: '2026-03-30T12:00:00Z',
+              responded_seats: [],
+              options: ['kong'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                is_ready_hand: true,
+                concealed_count: 13,
+                concealed_tiles: [
+                  { tile_id: 'w3#1', tile_key: 'w3' },
+                  { tile_id: 'w3#2', tile_key: 'w3' },
+                  { tile_id: 'w3#3', tile_key: 'w3' },
+                  { tile_id: 'b9#0', tile_key: 'b9' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 2,
+                nickname: 'Player C',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                seat_index: 3,
+                nickname: 'Player D',
+                connected: true,
+                concealed_count: 13,
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(countSelectedTiles(document.body)).toBe(3);
+
+    await user.click(screen.getByRole('button', { name: '杠' }));
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'action_request', payload: { action_type: 'kong', tile_ids: ['w3#1', 'w3#2', 'w3#3'] } },
+    ]);
+  });
+
   it('submits the matching claim action immediately when a candidate pane is double-clicked', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

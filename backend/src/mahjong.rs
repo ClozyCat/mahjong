@@ -1404,6 +1404,37 @@ mod tests {
     }
 
     #[test]
+    fn ready_hand_player_can_concealed_self_kong_and_auto_discard_replacement_draw() {
+        let mut room = room_for_local_concealed_self_kong();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        let prompt = action_prompt(&room, 0).expect("prompt should exist");
+        assert_eq!(prompt["payload"]["options"], json!(["kong"]));
+
+        let result = try_handle_action(
+            &mut room,
+            0,
+            "kong",
+            &[
+                String::from("t5#1"),
+                String::from("t5#2"),
+                String::from("t5#3"),
+                String::from("t5#4"),
+            ],
+        )
+        .expect("ready-hand self kong should be handled locally")
+        .expect("ready-hand self kong should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "self_kong_declared");
+        assert_eq!(result[1]["payload"]["event_type"], "replacement_draw");
+
+        let action = next_bot_action(&room).expect("ready-hand player should auto act");
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "discard");
+        assert_eq!(action.tile_ids, vec!["b9#replacement"]);
+    }
+
+    #[test]
     fn next_bot_action_discards_drawn_tile_on_active_turn() {
         let room = room_for_bot_active_turn();
         let action = next_bot_action(&room).expect("bot action should exist");
@@ -1454,6 +1485,57 @@ mod tests {
                 {"code": "w3", "orientation": "normal"}
             ])
         );
+    }
+
+    #[test]
+    fn ready_hand_player_can_add_kong_without_robbers() {
+        let mut room = room_for_local_add_kong_without_robbers();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        let prompt = action_prompt(&room, 0).expect("prompt should exist");
+        assert_eq!(prompt["payload"]["options"], json!(["kong"]));
+
+        let result = try_handle_action(&mut room, 0, "kong", &[String::from("w3#add")])
+            .expect("ready-hand add kong should be handled locally")
+            .expect("ready-hand add kong should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "self_kong_declared");
+        assert_eq!(result[0]["payload"]["event"]["kong_type"], "add_kong");
+        assert_eq!(result[1]["payload"]["event_type"], "replacement_draw");
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 0);
+    }
+
+    #[test]
+    fn ready_hand_player_can_claim_kong_from_discard() {
+        let mut room = room_for_local_kong_claim_window();
+        room["round_state"]["players"][2]["is_ready_hand"] = json!(true);
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        let prompt = action_prompt(&room, 2).expect("claim prompt should exist");
+        assert_eq!(prompt["payload"]["options"], json!(["kong"]));
+
+        let result = try_handle_action(
+            &mut room,
+            2,
+            "kong",
+            &[
+                String::from("w3#2a"),
+                String::from("w3#2b"),
+                String::from("w3#2c"),
+            ],
+        )
+        .expect("ready-hand claim kong should be handled locally")
+        .expect("ready-hand claim kong should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "claim_made");
+        assert_eq!(result[1]["payload"]["event_type"], "replacement_draw");
+        assert_eq!(room["round_state"]["current_actor"], 2);
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 2);
     }
 
     #[test]
