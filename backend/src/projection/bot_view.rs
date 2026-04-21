@@ -51,7 +51,6 @@ pub struct BotContextView {
     pub player: BotPlayerView,
     pub restricted_discard_tile_key: Option<String>,
     pub drawn_tile_id: Option<String>,
-    pub enforce_minimum_eight_fan: bool,
     pub self_kong_candidates: Vec<BotSelfKongCandidate>,
     pub claim_options: Vec<BotClaimOption>,
     pub last_discard_tile_key: Option<String>,
@@ -94,7 +93,6 @@ pub fn build_bot_context_view(
         },
         restricted_discard_tile_key: cache.restricted_discard_tile_key.clone(),
         drawn_tile_id: cache.drawn_tile_id.clone(),
-        enforce_minimum_eight_fan: cache.enforce_minimum_eight_fan,
         self_kong_candidates,
         claim_options,
         last_discard_tile_key: cache.last_discard_tile_key.clone(),
@@ -133,8 +131,6 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: Vec::new(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
@@ -179,9 +175,7 @@ mod tests {
                 version: 1,
                 score_trackers: RoundScoreTrackers::default(),
                 last_action_context: LastActionContext::default(),
-                rule_state: RuleRuntimeState {
-                    enforce_minimum_eight_fan: true,
-                },
+                rule_state: RuleRuntimeState {},
                 restricted_discard_tile_key: Some("w3".to_string()),
             }),
             pending_timeout: Some(PendingTimeout {
@@ -245,5 +239,4 @@ mod tests {
             vec![vec!["w2#0".to_string(), "w4#0".to_string()]]
         );
     }
-
 }

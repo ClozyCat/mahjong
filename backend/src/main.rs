@@ -22,7 +22,6 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use anyhow::Result;
-    use chrono::Utc;
     use rand::{SeedableRng, rngs::StdRng};
     use serde_json::{Value, json};
     use tokio::sync::{Notify, mpsc};
@@ -33,10 +32,9 @@ mod tests {
         restore_persisted_rooms, room_handle, room_has_only_bots,
     };
     use crate::app::{
-        AppContext, ConnectionHandle, Settings, add_bot_to_waiting_room, initial_room_state,
-        maybe_start_test_match, now_iso, occupied_seats, parse_datetime,
-        random_open_seat_index_with_rng, remove_bot_from_waiting_room, room_has_round_state,
-        seat_matches_reconnect_credentials, send_outbound,
+        AppContext, ConnectionHandle, add_bot_to_waiting_room, initial_room_state, now_iso,
+        occupied_seats, parse_datetime, random_open_seat_index_with_rng,
+        remove_bot_from_waiting_room, seat_matches_reconnect_credentials, send_outbound,
     };
     use crate::core::state::{RoomState, SeatState};
 
@@ -45,16 +43,7 @@ mod tests {
     }
 
     fn test_app_context(db: DbWorker) -> AppContext {
-        AppContext::new(
-            Settings {
-                bind_addr: "127.0.0.1:0".to_string(),
-                database_path: ":memory:".to_string(),
-                default_test_mode: false,
-                cors_origins: vec![],
-                frontend_dir: None,
-            },
-            db,
-        )
+        AppContext::new(db)
     }
 
     fn test_connection_handle(capacity: usize) -> (ConnectionHandle, mpsc::Receiver<String>) {
@@ -68,89 +57,6 @@ mod tests {
             },
             receiver,
         )
-    }
-
-    #[test]
-    fn maybe_start_test_match_starts_when_round_state_is_null() {
-        let mut room = room_state(json!({
-            "table_code": "ROOM42",
-            "phase": "waiting",
-            "mode": "test",
-            "test_mode": true,
-            "enforce_minimum_eight_fan": true,
-            "continue_action": null,
-            "seats": [{
-            "seat_index": 0,
-            "nickname": "Solo",
-            "reconnect_token": "token-1",
-            "player_session_id": 1,
-            "connected": true,
-            "ready": false,
-            "is_bot": false,
-            "seat_type": "human",
-            "bot_persona": Value::Null,
-            "bot_aggression": Value::Null,
-            "disconnect_deadline_at": Value::Null,
-        }],
-            "match_state": null,
-            "round_state": null,
-            "pending_timeout": null
-        }));
-
-        maybe_start_test_match(&mut room);
-
-        assert_eq!(room.phase, "playing");
-        assert_eq!(room.mode, "test");
-        assert_eq!(room.seats.len(), 4);
-        assert!(room_has_round_state(&room));
-        assert_eq!(
-            room.match_state.as_ref().map(|state| state.dealer_seat),
-            Some(0)
-        );
-    }
-
-    #[test]
-    fn maybe_start_test_match_keeps_human_seat_and_future_timeout() {
-        let mut room = room_state(json!({
-            "table_code": "ROOM43",
-            "phase": "waiting",
-            "mode": "test",
-            "test_mode": true,
-            "enforce_minimum_eight_fan": true,
-            "continue_action": null,
-            "seats": [{
-                "seat_index": 0,
-                "nickname": "Solo",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
-                "connected": true,
-                "ready": false,
-                "is_bot": false,
-                "seat_type": "human",
-                "bot_persona": Value::Null,
-                "bot_aggression": Value::Null,
-                "disconnect_deadline_at": Value::Null
-            }],
-            "match_state": null,
-            "round_state": null,
-            "pending_timeout": null
-        }));
-
-        maybe_start_test_match(&mut room);
-
-        assert!(
-            room.seats
-                .iter()
-                .find(|seat| seat.seat_index == 0)
-                .is_some_and(|seat| !seat.is_bot)
-        );
-        let deadline = room
-            .pending_timeout
-            .as_ref()
-            .and_then(|timeout| timeout.deadline_at.as_deref())
-            .and_then(parse_datetime)
-            .expect("test match should schedule a timeout");
-        assert!(deadline > Utc::now());
     }
 
     #[test]
@@ -174,7 +80,7 @@ mod tests {
             close_requested: Arc::new(AtomicBool::new(false)),
             close_notify: Arc::new(Notify::new()),
         };
-        let mut runtime = RoomRuntime::new(now_iso(), initial_room_state("ROOM42", "normal", true));
+        let mut runtime = RoomRuntime::new(now_iso(), initial_room_state("ROOM42"));
         runtime.connections = HashMap::from([(0, previous.clone())]);
 
         replace_connection(&mut runtime, 0, &replacement);
@@ -354,7 +260,7 @@ mod tests {
 
     #[test]
     fn room_has_only_bots_requires_non_empty_bot_only_room() {
-        let mut empty_room = initial_room_state("ROOM42", "normal", true);
+        let mut empty_room = initial_room_state("ROOM42");
         assert!(!room_has_only_bots(&empty_room));
 
         empty_room = room_state(json!({
@@ -532,7 +438,7 @@ mod tests {
         let worker = DbWorker::start(db)?;
         let state = test_app_context(worker.clone());
 
-        let mut room = initial_room_state("ROOM42", "normal", true);
+        let mut room = initial_room_state("ROOM42");
         room.seats.push(SeatState {
             seat_index: 0,
             nickname: Some("Alice".to_string()),
@@ -578,7 +484,7 @@ mod tests {
         let worker = DbWorker::start(db)?;
         let state = test_app_context(worker.clone());
 
-        let mut room = initial_room_state("ROOMBOT", "normal", true);
+        let mut room = initial_room_state("ROOMBOT");
         room.seats.push(SeatState {
             seat_index: 0,
             nickname: Some("Bot 1".to_string()),

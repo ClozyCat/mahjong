@@ -975,12 +975,10 @@ impl SearchEngine {
                 discard_tile_index,
             ) * safety_weight
                 / 100;
-            let deal_in_cost = self.deal_in_ev_cost(
-                context,
-                concealed_counts_before_discard,
-                discard_tile_index,
-            ) * safety_weight
-                / 160;
+            let deal_in_cost =
+                self.deal_in_ev_cost(context, concealed_counts_before_discard, discard_tile_index)
+                    * safety_weight
+                    / 160;
             let total_score = base_score + preference_score - safety_penalty - deal_in_cost;
             let replace = best
                 .as_ref()
@@ -1323,12 +1321,7 @@ impl SearchEngine {
             incoming_tile: Some(incoming_tile.to_string()),
             decompositions,
         });
-        let score = if context.enforce_minimum_eight_fan && result.minimum_qualifying_fan_total < 8
-        {
-            None
-        } else {
-            Some(result.fan_total.max(result.minimum_qualifying_fan_total))
-        };
+        let score = Some(result.fan_total.max(result.minimum_qualifying_fan_total));
         self.winning_fan_cache.insert(key, score);
         score
     }
@@ -1913,7 +1906,8 @@ fn opponent_threat_profile(context: &BotContext, seat: usize) -> OpponentThreat 
     if threat.edge_wait_bias {
         threat.pressure += 8;
     }
-    threat.hand_value = estimate_threat_hand_value(&threat, meld_count, dominant_suit.1, dragon_melds);
+    threat.hand_value =
+        estimate_threat_hand_value(&threat, meld_count, dominant_suit.1, dragon_melds);
     threat
 }
 
@@ -2257,7 +2251,10 @@ fn draw_completes_hand_precheck(
     counts_after_draw[draw_tile_index] = counts_after_draw[draw_tile_index].saturating_add(1);
     standard_shanten_with_open_melds(&counts_after_draw, open_meld_count)
         .min(seven_pairs_shanten(&counts_after_draw, open_meld_count))
-        .min(thirteen_orphans_shanten(&counts_after_draw, open_meld_count))
+        .min(thirteen_orphans_shanten(
+            &counts_after_draw,
+            open_meld_count,
+        ))
         <= -1
 }
 
@@ -2576,10 +2573,6 @@ pub(crate) fn strategic_signals(
         fan_estimate * 8
     };
 
-    if context.enforce_minimum_eight_fan && open_meld_count > 0 && fan_estimate < 8 {
-        route_score -= 280 + (8 - fan_estimate) * 70;
-    }
-
     StrategicSignals {
         route_score,
         fan_estimate,
@@ -2587,8 +2580,7 @@ pub(crate) fn strategic_signals(
         sequence_route_score: pure_straight_progress.route_bonus
             + mixed_triple_chow_progress.route_bonus
             + pure_one_suit_route.max(mixed_one_suit_route) / 3,
-        triplet_route_score: all_pungs_route
-            .max(terminal_honor_progress.route_bonus)
+        triplet_route_score: all_pungs_route.max(terminal_honor_progress.route_bonus)
             + value_honor_route_bonus,
     }
 }
@@ -2688,7 +2680,10 @@ fn mixed_triple_chow_progress(full_counts: &TileCounts) -> RoutePatternProgress 
     best
 }
 
-fn thirteen_orphans_progress(full_counts: &TileCounts, open_meld_count: usize) -> RoutePatternProgress {
+fn thirteen_orphans_progress(
+    full_counts: &TileCounts,
+    open_meld_count: usize,
+) -> RoutePatternProgress {
     if open_meld_count > 0 {
         return RoutePatternProgress::default();
     }
@@ -2697,9 +2692,7 @@ fn thirteen_orphans_progress(full_counts: &TileCounts, open_meld_count: usize) -
         .iter()
         .filter(|index| full_counts[**index] > 0)
         .count() as i64;
-    let orphan_pair = ORPHAN_INDICES
-        .iter()
-        .any(|index| full_counts[*index] >= 2) as i64;
+    let orphan_pair = ORPHAN_INDICES.iter().any(|index| full_counts[*index] >= 2) as i64;
     let non_orphan_tiles = full_counts
         .iter()
         .enumerate()
@@ -2919,10 +2912,7 @@ pub(crate) fn claim_action_bonus(
     let route_gain = next_signals.route_score - previous_signals.route_score;
     bonus += route_gain / 4;
 
-    if action_type == "chow"
-        && meld_has_single_suit(claim_meld)
-        && next_signals.fan_estimate >= 6
-    {
+    if action_type == "chow" && meld_has_single_suit(claim_meld) && next_signals.fan_estimate >= 6 {
         bonus += 56;
     }
 
@@ -2930,7 +2920,8 @@ pub(crate) fn claim_action_bonus(
         bonus += 96;
     }
     if previous_signals.closed_route_score > next_signals.closed_route_score {
-        let closed_route_loss = previous_signals.closed_route_score - next_signals.closed_route_score;
+        let closed_route_loss =
+            previous_signals.closed_route_score - next_signals.closed_route_score;
         bonus -= closed_route_loss / 2;
     }
     if action_type == "chow" {
@@ -2947,14 +2938,6 @@ pub(crate) fn claim_action_bonus(
     }
     if previous_signals.fan_estimate > next_signals.fan_estimate {
         bonus -= (previous_signals.fan_estimate - next_signals.fan_estimate) * 32;
-    }
-
-    if context.enforce_minimum_eight_fan && next_signals.fan_estimate < 8 {
-        bonus -= match action_type {
-            "chow" => 220,
-            "pung" => 120,
-            _ => 0,
-        };
     }
 
     bonus
@@ -3171,7 +3154,6 @@ mod tests {
             },
             restricted_discard_tile_key: None,
             drawn_tile_id: None,
-            enforce_minimum_eight_fan: true,
             self_kong_candidates: Vec::new(),
             claim_options: Vec::new(),
             last_discard_tile_key: None,
@@ -3650,7 +3632,13 @@ mod tests {
         };
 
         assert_eq!(
-            engine.hypothetical_self_draw_fan_total(&context, &concealed_counts, &[], &[], draw_tile_index),
+            engine.hypothetical_self_draw_fan_total(
+                &context,
+                &concealed_counts,
+                &[],
+                &[],
+                draw_tile_index
+            ),
             None
         );
         assert!(engine.winning_fan_cache.contains_key(&key));
@@ -3701,8 +3689,7 @@ mod tests {
         ];
         let concealed_counts = tile_counts34(
             [
-                "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "green",
-                "w9",
+                "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "green", "w9",
             ]
             .into_iter(),
         );
@@ -3719,8 +3706,7 @@ mod tests {
         let context = base_context();
         let concealed_counts = tile_counts34(
             [
-                "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b7", "b8", "east",
-                "east",
+                "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b7", "b8", "east", "east",
             ]
             .into_iter(),
         );
@@ -3733,7 +3719,8 @@ mod tests {
             restricted_discard_tile_index: None,
         };
 
-        let best = best_shanten_after_draw(&mut engine, &concealed_counts, draw_tile_index, 0, None);
+        let best =
+            best_shanten_after_draw(&mut engine, &concealed_counts, draw_tile_index, 0, None);
         assert_eq!(engine.shanten_after_draw_cache.get(&key), Some(&best));
     }
 
@@ -3766,7 +3753,7 @@ mod tests {
     }
 
     #[test]
-    fn avoids_low_value_chow_that_breaks_eight_fan_progress() {
+    fn takes_chow_when_it_improves_the_best_route() {
         let mut context = base_context();
         let concealed_tiles = tiles(&[
             "w2", "w3", "t2", "t3", "t4", "b3", "b4", "b5", "w7", "w8", "red", "green", "white",
@@ -3784,11 +3771,11 @@ mod tests {
         context.last_discard_tile_key = Some("w1".to_string());
 
         let action = crate::bot::choose_claim_action(&context).expect("claim action");
-        assert_eq!(action.action_type, "pass");
+        assert_eq!(action.action_type, "chow");
     }
 
     #[test]
-    fn takes_value_honor_pung_when_it_forms_an_eight_fan_route() {
+    fn takes_value_honor_pung_when_it_improves_the_hand() {
         let mut context = base_context();
         let concealed_tiles = tiles(&[
             "red", "red", "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w8", "east", "east",
@@ -3813,8 +3800,8 @@ mod tests {
     fn thirteen_orphans_route_gets_high_fan_estimate_near_completion() {
         let context = base_context();
         let concealed_tiles = tiles(&[
-            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red",
-            "green", "white", "white",
+            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red", "green",
+            "white", "white",
         ]);
         let concealed_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
@@ -3827,8 +3814,7 @@ mod tests {
     fn terminal_triplet_route_exceeds_plain_all_pungs_value() {
         let context = base_context();
         let concealed_tiles = tiles(&[
-            "w1", "w1", "w1", "w9", "w9", "w9", "t1", "t1", "t1", "t9", "t9", "t9", "east",
-            "east",
+            "w1", "w1", "w1", "w9", "w9", "w9", "t1", "t1", "t1", "t9", "t9", "t9", "east", "east",
         ]);
         let concealed_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
@@ -3977,4 +3963,3 @@ mod tests {
         assert!(white_score > green_score);
     }
 }
-

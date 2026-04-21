@@ -32,7 +32,7 @@ describe('api helpers', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ mode: 'normal', enforce_minimum_eight_fan: true }),
+      body: JSON.stringify({}),
     });
     expect(result.table_code).toBe('AB12CD');
   });
@@ -55,14 +55,14 @@ describe('api helpers', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createTable('http://localhost:8080', 'ROOM42', 'normal', false);
+    await createTable('http://localhost:8080', 'ROOM42');
 
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/tables', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ table_code: 'ROOM42', mode: 'normal', enforce_minimum_eight_fan: false }),
+      body: JSON.stringify({ table_code: 'ROOM42' }),
     });
   });
 
@@ -105,7 +105,7 @@ describe('api helpers', () => {
       ),
     );
 
-    await expect(createTable('http://localhost:8080', 'ROOM42', 'normal')).rejects.toMatchObject({
+    await expect(createTable('http://localhost:8080', 'ROOM42')).rejects.toMatchObject({
       status: 409,
       detail: { detail: 'table_code_exists' },
     });

@@ -62,9 +62,7 @@ impl RoundScoreTrackers {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        Self {
-            kong_entries,
-        }
+        Self { kong_entries }
     }
 }
 
@@ -98,6 +96,4 @@ impl KongTrackerEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct RuleRuntimeState {
-    pub enforce_minimum_eight_fan: bool,
-}
+pub struct RuleRuntimeState {}

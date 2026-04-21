@@ -78,11 +78,9 @@ fn try_handle_player_action_command(
                 .ok()
                 .flatten()
         }
-        (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pass) => {
-            Some(apply_claim_window_action_in_room_state(
-                room, seat_index, "pass", &[],
-            ))
-        }
+        (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pass) => Some(
+            apply_claim_window_action_in_room_state(room, seat_index, "pass", &[]),
+        ),
         (LocalPlayerActionKind::RobKongPass, PlayerAction::Pass) => {
             Some(apply_rob_kong_pass_in_room_state(room, seat_index))
         }

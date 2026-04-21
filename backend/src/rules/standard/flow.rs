@@ -97,13 +97,11 @@ pub fn start_match_in_room_state(
     };
     match_state.sync_statistics_to_cumulative_scores();
     room.match_state = Some(match_state);
-    let enforce_minimum_eight_fan = room.enforce_minimum_eight_fan;
     start_round_in_room_state(
         room,
         dealer_seat,
         "east",
         format!("east-1-dealer-{dealer_seat}-{seed}"),
-        enforce_minimum_eight_fan,
         seed,
     );
     Ok(())
@@ -161,16 +159,11 @@ pub fn reconcile_continue_action_state_in_room_state(room: &mut RoomState) -> Re
 #[cfg(test)]
 #[allow(dead_code)]
 pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
-    let enforce_minimum_eight_fan = room
-        .get("enforce_minimum_eight_fan")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
     start_round(
         room,
         dealer_seat,
         "east",
         format!("east-1-dealer-{dealer_seat}-{seed}"),
-        enforce_minimum_eight_fan,
         seed,
     );
 
@@ -412,16 +405,10 @@ fn start_round(
     dealer_seat: usize,
     round_wind: &str,
     round_id: String,
-    enforce_minimum_eight_fan: bool,
     seed: u64,
 ) {
-    let (round_state, pending_timeout) = plan_round_start_payload(
-        dealer_seat,
-        round_wind,
-        round_id,
-        enforce_minimum_eight_fan,
-        seed,
-    );
+    let (round_state, pending_timeout) =
+        plan_round_start_payload(dealer_seat, round_wind, round_id, seed);
     let _ = update_room_state(room, |state| {
         state.phase = "playing".to_string();
         state.round_state = Some(round_state);
@@ -436,16 +423,10 @@ fn start_round_in_room_state(
     dealer_seat: usize,
     round_wind: &str,
     round_id: String,
-    enforce_minimum_eight_fan: bool,
     seed: u64,
 ) {
-    let (round_state, pending_timeout) = plan_round_start_payload(
-        dealer_seat,
-        round_wind,
-        round_id,
-        enforce_minimum_eight_fan,
-        seed,
-    );
+    let (round_state, pending_timeout) =
+        plan_round_start_payload(dealer_seat, round_wind, round_id, seed);
     room.phase = "playing".to_string();
     room.round_state = Some(round_state);
     room.pending_timeout = Some(pending_timeout);
@@ -797,10 +778,6 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
         return Ok(());
     }
 
-    let enforce = room
-        .get("enforce_minimum_eight_fan")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
     let round_id = format!(
         "{next_wind}-{next_hand_number}-dealer-{next_dealer}-{}",
         rand::random::<u64>()
@@ -810,7 +787,6 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
         next_dealer,
         &next_wind,
         round_id,
-        enforce,
         rand::random::<u64>(),
     );
     Ok(())
@@ -876,7 +852,6 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         next_dealer,
         &next_wind,
         round_id,
-        room.enforce_minimum_eight_fan,
         rand::random::<u64>(),
     );
     Ok(())
@@ -965,8 +940,6 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1024,9 +997,7 @@ mod tests {
                 version: 1,
                 score_trackers: RoundScoreTrackers::default(),
                 last_action_context: LastActionContext::default(),
-                rule_state: RuleRuntimeState {
-                    enforce_minimum_eight_fan: true,
-                },
+                rule_state: RuleRuntimeState {},
                 restricted_discard_tile_key: None,
             }),
             pending_timeout: Some(PendingTimeout {
@@ -1103,4 +1074,3 @@ mod tests {
         assert!(action.auto_advance_deadline_at.is_none());
     }
 }
-

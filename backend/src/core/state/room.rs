@@ -13,8 +13,6 @@ pub struct RoomState {
     pub table_code: TableCode,
     pub phase: String,
     pub mode: String,
-    pub test_mode: bool,
-    pub enforce_minimum_eight_fan: bool,
     pub seats: Vec<SeatState>,
     pub match_state: Option<MatchState>,
     pub round_state: Option<RoundState>,
@@ -314,8 +312,6 @@ mod tests {
             table_code: "DONE".to_string(),
             phase: "settlement".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),

@@ -468,8 +468,6 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "settlement".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: seats(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
@@ -536,8 +534,6 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -559,22 +555,37 @@ mod tests {
         };
 
         let pending_action =
-            build_pending_action_view(&state, 0, &SeatProjectionSupport::default()).expect("observer should see active turn");
+            build_pending_action_view(&state, 0, &SeatProjectionSupport::default())
+                .expect("observer should see active turn");
         let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
 
-        assert_eq!(snapshot["payload"]["private_state"]["pending_action"]["type"], "active_turn");
-        assert_eq!(snapshot["payload"]["private_state"]["pending_action"]["seat_index"], 1);
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["type"],
+            "active_turn"
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["seat_index"],
+            1
+        );
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["deadline_at"],
             "2026-04-20T12:00:30.000Z"
         );
-        assert_eq!(snapshot["payload"]["private_state"]["pending_action"]["options"], serde_json::json!([]));
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!([])
+        );
         assert!(snapshot["payload"]["private_state"]["pending_action"]["drawn_tile_id"].is_null());
-        assert!(snapshot["payload"]["private_state"]["pending_action"]["restricted_discard_tile_ids"]
-            .as_array()
-            .is_some_and(|items| items.is_empty()));
+        assert!(
+            snapshot["payload"]["private_state"]["pending_action"]["restricted_discard_tile_ids"]
+                .as_array()
+                .is_some_and(|items| items.is_empty())
+        );
         assert_eq!(pending_action.seat_index(), Some(1));
-        assert_eq!(pending_action.deadline_at().as_deref(), Some("2026-04-20T12:00:30.000Z"));
+        assert_eq!(
+            pending_action.deadline_at().as_deref(),
+            Some("2026-04-20T12:00:30.000Z")
+        );
     }
 
     fn seats() -> Vec<SeatState> {

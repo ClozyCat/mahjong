@@ -73,7 +73,6 @@ pub fn plan_round_start_payload(
     dealer_seat: usize,
     round_wind: &str,
     round_id: String,
-    enforce_minimum_eight_fan: bool,
     seed: u64,
 ) -> (RoundState, PendingTimeout) {
     let mut wall_tiles = full_tile_set();
@@ -140,9 +139,7 @@ pub fn plan_round_start_payload(
             kong_entries: Vec::new(),
         },
         last_action_context,
-        rule_state: RuleRuntimeState {
-            enforce_minimum_eight_fan,
-        },
+        rule_state: RuleRuntimeState {},
         restricted_discard_tile_key: None,
     };
 
@@ -515,7 +512,10 @@ pub fn resolve_claims(
     candidates.into_iter().next()
 }
 
-pub fn resolve_hu_claims(claim_requests: &[ClaimResponse], discarder_seat: usize) -> Vec<ClaimResponse> {
+pub fn resolve_hu_claims(
+    claim_requests: &[ClaimResponse],
+    discarder_seat: usize,
+) -> Vec<ClaimResponse> {
     let mut candidates = claim_requests
         .iter()
         .filter(|request| request.action_type == "hu")
@@ -727,7 +727,7 @@ mod tests {
     fn round_start_payload_starts_directly_in_active_turn() {
         for seed in 0..64 {
             let (round, timeout) =
-                plan_round_start_payload(2, "east", format!("round-{seed}"), true, seed);
+                plan_round_start_payload(2, "east", format!("round-{seed}"), seed);
 
             assert_eq!(round.dealer_seat, 2);
             assert_eq!(round.current_actor, 2);
@@ -738,14 +738,16 @@ mod tests {
             assert!(timeout.deadline_at.is_some());
             assert!(round.pending_action.is_none(), "seed {seed}");
             assert_eq!(timeout.kind, "active_turn", "seed {seed}");
-            assert_eq!(round.last_action_context.tile_id, timeout.drawn_tile_id, "seed {seed}");
+            assert_eq!(
+                round.last_action_context.tile_id, timeout.drawn_tile_id,
+                "seed {seed}"
+            );
         }
     }
 
     #[test]
     fn round_start_payload_sets_future_timeout_deadline() {
-        let (_round, timeout) =
-            plan_round_start_payload(2, "east", "round-future".to_string(), true, 13);
+        let (_round, timeout) = plan_round_start_payload(2, "east", "round-future".to_string(), 13);
 
         let deadline = timeout
             .deadline_at
@@ -760,15 +762,12 @@ mod tests {
 
     #[test]
     fn compute_pending_timeout_uses_typed_room_state() {
-        let (mut round, _timeout) =
-            plan_round_start_payload(0, "east", "round-2".to_string(), true, 11);
+        let (mut round, _timeout) = plan_round_start_payload(0, "east", "round-2".to_string(), 11);
         round.pending_action = None;
         let state = RoomState {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: Vec::new(),
             match_state: Some(crate::core::state::MatchState {
                 prevailing_wind: "east".to_string(),
@@ -1326,4 +1325,3 @@ mod tests {
         assert!(!plan.continuation.last_action_context.was_last_live_tile);
     }
 }
-

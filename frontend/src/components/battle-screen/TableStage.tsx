@@ -697,7 +697,7 @@ type ActionCallout = {
   seat: Seat;
   tone: keyof typeof ACTION_CALLOUT_COPY;
   label: (typeof ACTION_CALLOUT_COPY)[keyof typeof ACTION_CALLOUT_COPY];
-  huVariant: 'discard' | 'self-draw' | 'low-fan' | null;
+  huVariant: 'discard' | 'self-draw' | null;
 };
 
 type BarrageMessage = {
@@ -1066,10 +1066,6 @@ function createActionCallout(
 function getHuCalloutVariant(settlementWinType: string | null, settlementWinTypeLabel: string | null) {
   if (settlementWinType === 'self_draw') {
     return 'self-draw';
-  }
-
-  if (settlementWinTypeLabel === '屁和') {
-    return 'low-fan';
   }
 
   if (settlementWinType === 'discard') {

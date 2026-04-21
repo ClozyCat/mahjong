@@ -44,14 +44,16 @@ pub fn action_prompt_message(
 impl PendingActionView {
     pub fn options(&self) -> Vec<String> {
         match self {
-            Self::ActiveTurn { options, .. } | Self::ClaimWindow { options, .. }
+            Self::ActiveTurn { options, .. }
+            | Self::ClaimWindow { options, .. }
             | Self::RobKongWindow { options, .. } => options.clone(),
         }
     }
 
     pub fn deadline_at(&self) -> Option<String> {
         match self {
-            Self::ActiveTurn { deadline_at, .. } | Self::ClaimWindow { deadline_at, .. }
+            Self::ActiveTurn { deadline_at, .. }
+            | Self::ClaimWindow { deadline_at, .. }
             | Self::RobKongWindow { deadline_at, .. } => deadline_at.clone(),
         }
     }

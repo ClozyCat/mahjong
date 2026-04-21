@@ -206,8 +206,6 @@ export default function App() {
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
-    tableMode: 'normal',
-    enforceMinimumEightFan: true,
   });
   const [statusMessage, setStatusMessage] = useState<string | null>(
     storedSession ? `检测到牌桌 ${storedSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
@@ -589,8 +587,6 @@ export default function App() {
       const table = await createTable(
         defaults.apiBaseUrl,
         requestedTableCode || undefined,
-        connectValue.tableMode,
-        connectValue.enforceMinimumEightFan,
       );
       startTransition(() => {
         setConnectValue((current) => ({

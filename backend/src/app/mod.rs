@@ -26,22 +26,16 @@ use crate::projection::match_result::match_result_message;
 use crate::projection::prompt::action_prompt_message;
 use crate::projection::room_snapshot::room_snapshot_message;
 use crate::projection::support::build_seat_projection_support_for_state;
-use crate::rules::standard::flow::{
-    add_bot_seats_for_test as add_standard_test_bots,
-    start_match_in_room_state as start_standard_match,
-};
 
 pub(crate) const MAX_SEATS: usize = 4;
 pub(crate) const DISCONNECT_GRACE_SECONDS: i64 = 120;
-pub(crate) const BOT_ACTION_DELAY_TEST_MS: u64 = 0;
-pub(crate) const BOT_ACTION_DELAY_NORMAL_MS: u64 = 600;
+pub(crate) const BOT_ACTION_DELAY_MS: u64 = 0;
 pub(crate) const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 pub(crate) struct Settings {
     pub(crate) bind_addr: String,
     pub(crate) database_path: String,
-    pub(crate) default_test_mode: bool,
     pub(crate) cors_origins: Vec<String>,
     pub(crate) frontend_dir: Option<String>,
 }
@@ -54,7 +48,6 @@ impl Settings {
                 &env::var("MAHJONG_DATABASE_URL")
                     .unwrap_or_else(|_| "sqlite+pysqlite:////data/mahjong.db".to_string()),
             ),
-            default_test_mode: parse_bool_env("MAHJONG_TEST_MODE"),
             cors_origins: dev_cors_origins(),
             frontend_dir: optional_env_value("MAHJONG_FRONTEND_DIR"),
         })
@@ -63,7 +56,6 @@ impl Settings {
 
 #[derive(Clone)]
 pub(crate) struct AppContext {
-    pub(crate) settings: Settings,
     pub(crate) next_connection_id: Arc<AtomicU64>,
     pub(crate) inner: Arc<AppState>,
 }
@@ -74,9 +66,8 @@ pub(crate) struct AppState {
 }
 
 impl AppContext {
-    pub(crate) fn new(settings: Settings, db: DbWorker) -> Self {
+    pub(crate) fn new(db: DbWorker) -> Self {
         Self {
-            settings,
             next_connection_id: Arc::new(AtomicU64::new(1)),
             inner: Arc::new(AppState {
                 db,
@@ -127,16 +118,6 @@ pub(crate) struct OutboundMessage {
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreateTableRequest {
     pub(crate) table_code: Option<String>,
-    pub(crate) mode: Option<String>,
-    pub(crate) test_mode: Option<bool>,
-    pub(crate) enforce_minimum_eight_fan: Option<bool>,
-}
-
-pub(crate) fn parse_bool_env(key: &str) -> bool {
-    matches!(
-        env::var(key).ok().as_deref(),
-        Some("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
-    )
 }
 
 pub(crate) fn optional_env_value(key: &str) -> Option<String> {
@@ -195,17 +176,11 @@ pub(crate) fn serialize_payload<T: Serialize>(payload: &T) -> String {
     })
 }
 
-pub(crate) fn initial_room_state(
-    table_code: &str,
-    mode: &str,
-    enforce_minimum_eight_fan: bool,
-) -> RoomState {
+pub(crate) fn initial_room_state(table_code: &str) -> RoomState {
     RoomState {
         table_code: table_code.to_string(),
         phase: "waiting".to_string(),
-        mode: mode.to_string(),
-        test_mode: mode == "test",
-        enforce_minimum_eight_fan,
+        mode: "normal".to_string(),
         seats: Vec::new(),
         match_state: None,
         round_state: None,
@@ -224,10 +199,6 @@ pub(crate) fn is_valid_table_code(table_code: &str) -> bool {
         && table_code
             .chars()
             .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
-}
-
-pub(crate) fn room_mode(room: &RoomState) -> String {
-    room.mode.clone()
 }
 
 pub(crate) fn room_phase(room: &RoomState) -> String {
@@ -579,15 +550,6 @@ pub(crate) fn send_outbound(outbound: Vec<OutboundMessage>) {
             }
         }
     }
-}
-
-pub(crate) fn maybe_start_test_match(room: &mut RoomState) {
-    if room_mode(room) != "test" || room_has_round_state(room) {
-        return;
-    }
-
-    add_standard_test_bots(room);
-    let _ = start_standard_match(room, 0, rand::random::<u64>());
 }
 
 #[cfg(test)]

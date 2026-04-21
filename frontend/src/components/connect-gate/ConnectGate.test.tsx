@@ -11,8 +11,6 @@ describe('ConnectGate', () => {
         value={{
           tableCode: '',
           nickname: '',
-          tableMode: 'normal',
-          enforceMinimumEightFan: true,
         }}
         status="idle"
         themeLabel="天水碧"
@@ -29,8 +27,6 @@ describe('ConnectGate', () => {
     expect(screen.getByLabelText('牌桌编号')).toBeInTheDocument();
     expect(screen.getByLabelText('您的昵称')).toBeInTheDocument();
     expect(screen.getByText('天水碧')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /牌桌模式：普通模式/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /八番起胡/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '创建新局' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
   });
@@ -46,8 +42,6 @@ describe('ConnectGate', () => {
         value={{
           tableCode: 'AB12CD',
           nickname: 'Player A',
-          tableMode: 'normal',
-          enforceMinimumEightFan: true,
         }}
         status="idle"
         themeLabel="秋香"
@@ -60,16 +54,10 @@ describe('ConnectGate', () => {
     );
 
     await user.type(screen.getByLabelText(/牌桌编号/i), 'Z');
-    const tableModeButton = screen.getByRole('button', { name: /牌桌模式：普通模式/i });
-    await user.click(tableModeButton);
-    await user.click(tableModeButton);
-    await user.click(screen.getByRole('button', { name: /八番起胡/i }));
     await user.click(screen.getByRole('button', { name: '创建新局' }));
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(onChange).toHaveBeenCalled();
-    expect(onChange).toHaveBeenCalledWith({ tableMode: 'test' });
-    expect(onChange).toHaveBeenCalledWith({ enforceMinimumEightFan: false });
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);
   });
@@ -80,8 +68,6 @@ describe('ConnectGate', () => {
         value={{
           tableCode: '房间-01',
           nickname: 'Player A',
-          tableMode: 'normal',
-          enforceMinimumEightFan: true,
         }}
         status="idle"
         themeLabel="月白"
@@ -107,8 +93,6 @@ describe('ConnectGate', () => {
         value={{
           tableCode: '',
           nickname: '',
-          tableMode: 'normal',
-          enforceMinimumEightFan: true,
         }}
         status="idle"
         themeLabel="月白"

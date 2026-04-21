@@ -861,12 +861,6 @@ describe('TableStage', () => {
       settlementWinTypeLabel: '自摸',
       className: '.table-stage__action-callout--hu-self-draw',
     },
-    {
-      name: '屁和',
-      settlementWinType: 'discard',
-      settlementWinTypeLabel: '屁和',
-      className: '.table-stage__action-callout--hu-low-fan',
-    },
   ])('renders the $name hu callout variant with the matching themed class', ({ settlementWinType, settlementWinTypeLabel, className }) => {
     const { container } = render(
       <TableStage

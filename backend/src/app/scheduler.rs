@@ -7,10 +7,10 @@ use crate::app::room_runtime::{
     should_terminate_unattended, snapshot_connections, unregister_room_handle,
 };
 use crate::app::{
-    AppContext, BOT_ACTION_DELAY_NORMAL_MS, BOT_ACTION_DELAY_TEST_MS, broadcast_to_handles,
+    AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
     convert_seat_to_bot, disconnect_deadline_for_seat, next_disconnect_deadline,
-    pending_timeout_deadline, remove_seat_from_room, room_has_round_state, room_mode, room_seats,
+    pending_timeout_deadline, remove_seat_from_room, room_has_round_state, room_seats,
     send_outbound, serialize_room, sleep_until,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
@@ -342,13 +342,8 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.bot_nonce;
-        let delay_ms = if room_mode(&runtime.room) == "test" {
-            BOT_ACTION_DELAY_TEST_MS
-        } else {
-            BOT_ACTION_DELAY_NORMAL_MS
-        };
         runtime.bot_task = Some(tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            tokio::time::sleep(Duration::from_millis(BOT_ACTION_DELAY_MS)).await;
             process_due_bot_action(state_clone, table_clone, nonce).await;
         }));
     }

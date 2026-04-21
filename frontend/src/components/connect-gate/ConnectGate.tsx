@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { TableMode } from '../../types/match';
-
 export interface ConnectGateValue {
   tableCode: string;
   nickname: string;
-  tableMode: TableMode;
-  enforceMinimumEightFan: boolean;
 }
 
 interface ConnectGateProps {
@@ -21,21 +17,6 @@ interface ConnectGateProps {
   onCreate: () => void;
   onJoin: () => void;
 }
-
-
-const TABLE_MODE_COPY: Record<TableMode, { label: string; description: string }> = {
-  normal: {
-    label: '普通模式',
-    description: '手动准备',
-  },
-  test: {
-    label: '测试模式',
-    description: '自动补位',
-  },
-};
-
-const TABLE_MODE_ORDER: TableMode[] = ['normal', 'test'];
-
 export function ConnectGate({
   value,
   status,
@@ -80,28 +61,6 @@ export function ConnectGate({
   function commitNickname(nextValue: string) {
     setNicknameDraft(nextValue);
     onChange({ nickname: nextValue });
-  }
-
-  function renderTableModeToggle() {
-    const currentMode = TABLE_MODE_COPY[value.tableMode];
-    const currentModeIndex = TABLE_MODE_ORDER.indexOf(value.tableMode);
-    const nextMode = TABLE_MODE_ORDER[(currentModeIndex + 1) % TABLE_MODE_ORDER.length] ?? 'normal';
-    const nextModeLabel = TABLE_MODE_COPY[nextMode].label;
-
-    return (
-      <button
-        type="button"
-        className="connect-gate__toggle"
-        onClick={() => onChange({ tableMode: nextMode })}
-        disabled={disabled}
-        aria-pressed={value.tableMode !== 'normal'}
-        aria-label={`牌桌模式：${currentMode.label}`}
-        title={`点击切换为${nextModeLabel}`}
-      >
-        <span>模式</span>
-        <strong>{currentMode.label}</strong>
-      </button>
-    );
   }
 
   return (
@@ -173,20 +132,6 @@ export function ConnectGate({
                 />
               </div>
             </div>
-          </div>
-
-          <div className="connect-gate__settings">
-            {renderTableModeToggle()}
-            <button
-              type="button"
-              className="connect-gate__toggle"
-              onClick={() => onChange({ enforceMinimumEightFan: !value.enforceMinimumEightFan })}
-              disabled={disabled}
-              aria-pressed={value.enforceMinimumEightFan}
-            >
-              <span>限制</span>
-              <strong>{value.enforceMinimumEightFan ? '八番起胡' : '自由模式'}</strong>
-            </button>
           </div>
 
           <div className="connect-gate__actions">

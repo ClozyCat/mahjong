@@ -24,9 +24,8 @@ use super::{
     AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, OutboundMessage,
     add_bot_to_waiting_room, collect_join_outbound_from_snapshot,
     collect_snapshot_and_prompt_outbound_from_snapshot, convert_seat_to_bot,
-    generate_player_session_id, generate_reconnect_token, generate_short_hex,
-    maybe_start_test_match, normalize_table_code, occupied_seats,
-    presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
+    generate_player_session_id, generate_reconnect_token, generate_short_hex, normalize_table_code,
+    occupied_seats, presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
     remove_bot_from_waiting_room, remove_seat_from_room, room_has_round_state, room_phase,
     room_player_session_id, room_seats, seat_exists, seat_matches_reconnect_credentials,
     send_outbound, serialize_room, set_seat_connected,
@@ -412,7 +411,6 @@ async fn handle_join_table(
         disconnect_deadline_at: None,
     });
     runtime.room.seats.sort_by_key(|seat| seat.seat_index);
-    maybe_start_test_match(&mut runtime.room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);

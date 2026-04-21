@@ -1,4 +1,4 @@
-import type { CreateTableResponse, HealthResponse, TableMode } from '../types/match';
+import type { CreateTableResponse, HealthResponse } from '../types/match';
 
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, '');
@@ -44,12 +44,7 @@ export function getHealth(baseUrl: string) {
   return requestJson<HealthResponse>(`${normalizeBaseUrl(baseUrl)}/api/health`);
 }
 
-export function createTable(
-  baseUrl: string,
-  tableCode?: string,
-  mode: TableMode = 'normal',
-  enforceMinimumEightFan = true,
-) {
+export function createTable(baseUrl: string, tableCode?: string) {
   return requestJson<CreateTableResponse>(`${normalizeBaseUrl(baseUrl)}/api/tables`, {
     method: 'POST',
     headers: {
@@ -57,8 +52,6 @@ export function createTable(
     },
     body: JSON.stringify({
       ...(tableCode ? { table_code: tableCode } : {}),
-      mode,
-      enforce_minimum_eight_fan: enforceMinimumEightFan,
     }),
   });
 }

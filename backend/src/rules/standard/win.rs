@@ -25,7 +25,6 @@ use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
-const LOW_FAN_WIN_LABEL: &str = "屁和";
 const MULTI_HU_WIN_LABEL: &str = "一炮多响";
 
 struct PreparedWinEvaluation {
@@ -39,18 +38,6 @@ struct PreparedWinEvaluation {
 
 struct EvaluatedWinResult {
     fan_result: crate::rules::scoring::FanResult,
-    required_minimum_fan_total: i64,
-}
-
-fn low_fan_display_win_label(
-    enforce_minimum_eight_fan: bool,
-    fan_result: &crate::rules::scoring::FanResult,
-) -> Option<String> {
-    if !enforce_minimum_eight_fan && fan_result.minimum_qualifying_fan_total < 8 {
-        return Some(LOW_FAN_WIN_LABEL.to_string());
-    }
-
-    None
 }
 
 fn winning_detail_entry(
@@ -200,8 +187,7 @@ pub fn compute_hu_settlement(
         .get(winner_seat)
         .map(|player| player.flowers.len())
         .unwrap_or(0);
-    let enforce_minimum_eight_fan = round.rule_state.enforce_minimum_eight_fan;
-    let display_win_label = low_fan_display_win_label(enforce_minimum_eight_fan, fan_result);
+    let display_win_label = None;
 
     Ok(RoundSettlement {
         provisional: true,
@@ -385,10 +371,7 @@ pub fn apply_hu_settlement_output(
     });
     let mut emitted_messages = first_events;
     emitted_messages.push(settlement_message);
-    Ok(EngineOutput::new(
-        events,
-        emitted_messages,
-    ))
+    Ok(EngineOutput::new(events, emitted_messages))
 }
 
 pub fn hu_action_hint_in_room_state(room: &RoomState, seat_index: usize) -> Option<&'static str> {
@@ -481,8 +464,7 @@ pub(crate) fn compute_hu_settlement_for_state(
         .get(winner_seat)
         .map(|player| player.flowers.len())
         .unwrap_or(0);
-    let enforce_minimum_eight_fan = round.rule_state.enforce_minimum_eight_fan;
-    let display_win_label = low_fan_display_win_label(enforce_minimum_eight_fan, fan_result);
+    let display_win_label = None;
 
     Ok(RoundSettlement {
         provisional: true,
@@ -638,10 +620,7 @@ pub fn apply_hu_settlement_output_in_room_state(
     });
     let mut emitted_messages = first_events;
     emitted_messages.push(settlement_message);
-    Ok(EngineOutput::new(
-        events,
-        emitted_messages,
-    ))
+    Ok(EngineOutput::new(events, emitted_messages))
 }
 
 #[cfg(test)]
@@ -724,12 +703,7 @@ pub fn can_declare_hu_with_cache_for_state(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat)
-        .map(|evaluated| {
-            evaluated.fan_result.minimum_qualifying_fan_total
-                >= evaluated.required_minimum_fan_total
-        })
-        .unwrap_or(false)
+    fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat).is_ok()
 }
 
 #[cfg(test)]
@@ -796,11 +770,6 @@ fn fan_result_for_win_with_state(
     let player_tile_keys =
         player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
 
-    let enforce_minimum_eight_fan = state
-        .round_state
-        .as_ref()
-        .map(|round| round.rule_state.enforce_minimum_eight_fan)
-        .unwrap_or(state.enforce_minimum_eight_fan);
     let evaluation = ScoringEvaluationInput {
         win_type: win_type.clone(),
         winner_seat: Some(winner_seat),
@@ -822,10 +791,7 @@ fn fan_result_for_win_with_state(
         decompositions,
     };
     let result = scoring_evaluate_fans(evaluation);
-    Ok(EvaluatedWinResult {
-        fan_result: result,
-        required_minimum_fan_total: if enforce_minimum_eight_fan { 8 } else { 0 },
-    })
+    Ok(EvaluatedWinResult { fan_result: result })
 }
 
 fn prepare_win_evaluation(
@@ -874,9 +840,7 @@ fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        can_declare_hu_with_cache_for_state, compute_hu_settlement_for_state,
-    };
+    use super::{can_declare_hu_with_cache_for_state, compute_hu_settlement_for_state};
     use crate::core::state::{
         LastActionContext, MatchState, PlayerRoundState, RoomState, RoundState, SeatState,
     };
@@ -935,20 +899,17 @@ mod tests {
     }
 
     #[test]
-    fn labels_low_fan_wins_as_pi_he_when_eight_fan_requirement_is_disabled() {
+    fn low_fan_self_draw_keeps_standard_label_and_still_settles() {
         let tile_keys = [
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
         ];
-        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
-        state.enforce_minimum_eight_fan = false;
-        let round = state.round_state.as_mut().expect("round state");
-        round.rule_state.enforce_minimum_eight_fan = false;
+        let state = test_room_state_with_concealed_tiles(&tile_keys);
 
         let settlement =
             compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
 
         assert!(settlement.fan_total < 8);
-        assert_eq!(settlement.display_win_label.as_deref(), Some("屁和"));
+        assert_eq!(settlement.display_win_label, None);
     }
 
     fn test_room_state_with_concealed_tiles(tile_keys: &[&str]) -> RoomState {
@@ -956,8 +917,6 @@ mod tests {
             table_code: "ROOM7P".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: (0..4)
                 .map(|seat_index| SeatState {
                     seat_index,

@@ -31,7 +31,7 @@ enum CreateTableError {
 pub(crate) async fn run() -> Result<()> {
     let settings = Settings::from_env()?;
     let db = DbWorker::start(Database::open(&settings.database_path)?)?;
-    let app_state = AppContext::new(settings.clone(), db);
+    let app_state = AppContext::new(db);
     restore_persisted_rooms(&app_state).await;
 
     let app = Router::new()
@@ -96,32 +96,6 @@ async fn create_table(
     payload: Option<Json<CreateTableRequest>>,
 ) -> Response {
     let payload = payload.map(|value| value.0);
-    let requested_mode = if let Some(ref body) = payload {
-        if let Some(mode) = &body.mode {
-            Some(mode.clone())
-        } else {
-            body.test_mode
-                .map(|value| if value { "test" } else { "normal" }.to_string())
-        }
-    } else {
-        None
-    };
-    let resolved_mode = requested_mode.unwrap_or_else(|| {
-        if state.settings.default_test_mode {
-            "test".to_string()
-        } else {
-            "normal".to_string()
-        }
-    });
-
-    if resolved_mode != "normal" && resolved_mode != "test" {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(detail_response("unsupported_mode")),
-        )
-            .into_response();
-    }
-
     let requested_code = match payload
         .as_ref()
         .and_then(|body| body.table_code.clone())
@@ -137,25 +111,14 @@ async fn create_table(
         value => value,
     };
 
-    let enforce_minimum_eight_fan = payload
-        .as_ref()
-        .and_then(|body| body.enforce_minimum_eight_fan)
-        .unwrap_or(true);
-
-    let result = create_or_replace_table(
-        &state,
-        requested_code,
-        &resolved_mode,
-        enforce_minimum_eight_fan,
-    )
-    .await;
+    let result = create_or_replace_table(&state, requested_code).await;
 
     match result {
         Ok((table_code, created_at, room)) => (
             StatusCode::CREATED,
             Json(create_table_response(
                 &table_code,
-                &resolved_mode,
+                "normal",
                 &created_at,
                 room.seats,
             )),
@@ -177,8 +140,6 @@ async fn create_table(
 async fn create_or_replace_table(
     state: &AppContext,
     requested_code: Option<String>,
-    mode: &str,
-    enforce_minimum_eight_fan: bool,
 ) -> std::result::Result<(String, String, RoomState), CreateTableError> {
     let mut rooms = state.inner.rooms.write().await;
     let runtime_codes: HashSet<String> = rooms.keys().cloned().collect();
@@ -215,7 +176,7 @@ async fn create_or_replace_table(
     drop(rooms);
 
     let created_at = now_iso();
-    let room = initial_room_state(&table_code, mode, enforce_minimum_eight_fan);
+    let room = initial_room_state(&table_code);
     let room_json = serialize_room_state(&room).map_err(CreateTableError::Internal)?;
     state
         .inner

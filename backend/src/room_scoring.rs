@@ -34,7 +34,6 @@ pub struct RoomScoringCache {
     pub opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
     pub restricted_discard_tile_key: Option<String>,
     pub drawn_tile_id: Option<String>,
-    pub enforce_minimum_eight_fan: bool,
     pub last_discard_tile_key: Option<String>,
     players: Vec<RoomScoringPlayer>,
 }
@@ -88,7 +87,6 @@ impl RoomScoringCache {
                     .pending_timeout
                     .as_ref()
                     .and_then(|timeout| timeout.drawn_tile_id.clone()),
-                enforce_minimum_eight_fan: state.enforce_minimum_eight_fan,
                 last_discard_tile_key: None,
                 players: Vec::new(),
             };
@@ -156,7 +154,6 @@ impl RoomScoringCache {
                 .pending_timeout
                 .as_ref()
                 .and_then(|timeout| timeout.drawn_tile_id.clone()),
-            enforce_minimum_eight_fan: round.rule_state.enforce_minimum_eight_fan,
             last_discard_tile_key: round
                 .last_discard
                 .as_ref()
@@ -238,8 +235,6 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: Vec::new(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
@@ -303,9 +298,7 @@ mod tests {
                     }],
                 },
                 last_action_context: LastActionContext::default(),
-                rule_state: RuleRuntimeState {
-                    enforce_minimum_eight_fan: true,
-                },
+                rule_state: RuleRuntimeState {},
                 restricted_discard_tile_key: Some("w1".to_string()),
             }),
             pending_timeout: Some(PendingTimeout {

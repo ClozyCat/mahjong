@@ -1,7 +1,7 @@
 use super::context::*;
 use super::search::{
     STAGE_ONE_DEPTH, SearchEngine, claim_action_bonus, claim_meld_tile_keys,
-    meld_is_value_honor_set, simulated_tiles_after_removal,
+    simulated_tiles_after_removal,
 };
 use std::{env, time::Instant};
 
@@ -151,20 +151,13 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 &meld_groups_after,
                 &appended_open_flags,
             );
-            if context.enforce_minimum_eight_fan {
-                let should_skip = match option.action_type.as_str() {
-                    "chow" => signals.fan_estimate < 6,
-                    "pung" => {
-                        signals.fan_estimate < 4 && !meld_is_value_honor_set(context, &claim_meld)
-                    }
-                    _ => false,
-                };
-                if should_skip {
-                    continue;
-                }
-            }
-            let action_bonus =
-                claim_action_bonus(context, &option.action_type, &claim_meld, pass_signals, signals);
+            let action_bonus = claim_action_bonus(
+                context,
+                &option.action_type,
+                &claim_meld,
+                pass_signals,
+                signals,
+            );
             plan.score + action_bonus
         };
 
@@ -279,7 +272,6 @@ mod tests {
             },
             restricted_discard_tile_key: None,
             drawn_tile_id: None,
-            enforce_minimum_eight_fan: true,
             self_kong_candidates: Vec::new(),
             claim_options: Vec::new(),
             last_discard_tile_key: None,
@@ -333,4 +325,3 @@ mod tests {
         assert_eq!(counts[tile_index("red").expect("tile index")], 0);
     }
 }
-

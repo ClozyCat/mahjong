@@ -9,8 +9,7 @@ use crate::core::engine::planner::{
 use crate::core::event::GameEvent;
 use crate::core::state::{
     ClaimResponse, DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState,
-    KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction, RoomState,
-    RoundState,
+    KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction, RoomState, RoundState,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -43,9 +42,7 @@ use super::runtime::{
 #[cfg(test)]
 use super::settlement::settle_exhaustive_draw_output;
 #[cfg(test)]
-use super::win::{
-    apply_hu_settlement_output, compute_hu_settlement,
-};
+use super::win::{apply_hu_settlement_output, compute_hu_settlement};
 #[cfg(test)]
 use crate::core::engine::reducer::update_room_state;
 #[cfg(test)]
@@ -1161,9 +1158,7 @@ fn plan_self_kong_completion(
     };
     let display_meld_update = match selection.kind {
         SelfKongKind::Concealed => {
-            SelfKongDisplayMeldUpdate::Push(create_concealed_kong_display_meld(
-                &selection.tile_key,
-            ))
+            SelfKongDisplayMeldUpdate::Push(create_concealed_kong_display_meld(&selection.tile_key))
         }
         SelfKongKind::Add => SelfKongDisplayMeldUpdate::AppendFaceDown {
             meld_index: selection
@@ -1257,9 +1252,7 @@ fn plan_self_kong_completion_in_room_state(
     };
     let display_meld_update = match selection.kind {
         SelfKongKind::Concealed => {
-            SelfKongDisplayMeldUpdate::Push(create_concealed_kong_display_meld(
-                &selection.tile_key,
-            ))
+            SelfKongDisplayMeldUpdate::Push(create_concealed_kong_display_meld(&selection.tile_key))
         }
         SelfKongKind::Add => SelfKongDisplayMeldUpdate::AppendFaceDown {
             meld_index: selection
@@ -1353,10 +1346,7 @@ fn apply_self_kong_plan_to_round(
             SelfKongDisplayMeldUpdate::Push(display_meld) => {
                 player.display_melds.push(display_meld.clone());
             }
-            SelfKongDisplayMeldUpdate::AppendFaceDown {
-                meld_index,
-                ..
-            } => {
+            SelfKongDisplayMeldUpdate::AppendFaceDown { meld_index, .. } => {
                 let updated_display_meld = append_display_meld
                     .as_ref()
                     .map(|(_, meld)| meld.clone())
@@ -1496,7 +1486,12 @@ fn resolve_recorded_claims_local_output_in_room_state(
 
     if !hu_winners.is_empty() {
         let settlement = compute_multi_hu_settlement_for_state(room, &hu_winners)?;
-        return apply_hu_settlement_output_in_room_state(room, hu_winners[0], "discard", settlement);
+        return apply_hu_settlement_output_in_room_state(
+            room,
+            hu_winners[0],
+            "discard",
+            settlement,
+        );
     }
 
     if let Some(winner) = resolve_claims(&claim_responses, discarder_seat) {
@@ -2191,7 +2186,12 @@ pub fn apply_rob_kong_pass_in_room_state(
         .collect::<Vec<_>>();
     if !winner_seats.is_empty() {
         let settlement = compute_multi_hu_settlement_for_state(room, &winner_seats)?;
-        return apply_hu_settlement_output_in_room_state(room, winner_seats[0], "discard", settlement);
+        return apply_hu_settlement_output_in_room_state(
+            room,
+            winner_seats[0],
+            "discard",
+            settlement,
+        );
     }
     complete_add_kong_after_passes_output_in_room_state(room)
 }
@@ -2271,8 +2271,8 @@ fn self_kong_kind_name(kind: SelfKongKind) -> &'static str {
 mod tests {
     use super::*;
     use crate::core::state::{
-        LastActionContext, PendingTimeout, PlayerRoundState, RoundScoreTrackers,
-        RoundState, RuleRuntimeState, SeatState, WallState,
+        LastActionContext, PendingTimeout, PlayerRoundState, RoundScoreTrackers, RoundState,
+        RuleRuntimeState, SeatState, WallState,
     };
 
     fn suit(tile_key: &str, tile_id: &str) -> Tile {
@@ -2327,8 +2327,6 @@ mod tests {
             table_code: "ROOM99".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
-            test_mode: false,
-            enforce_minimum_eight_fan: true,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {
@@ -2397,9 +2395,7 @@ mod tests {
                     was_last_live_tile: false,
                     was_last_discard: false,
                 },
-                rule_state: RuleRuntimeState {
-                    enforce_minimum_eight_fan: true,
-                },
+                rule_state: RuleRuntimeState {},
                 restricted_discard_tile_key: None,
             }),
             pending_timeout: Some(PendingTimeout {
@@ -2452,7 +2448,10 @@ mod tests {
         );
 
         assert_eq!(display_meld.tiles[3].code, "w3");
-        assert_eq!(display_meld.tiles[3].orientation, DisplayMeldOrientation::Rotated);
+        assert_eq!(
+            display_meld.tiles[3].orientation,
+            DisplayMeldOrientation::Rotated
+        );
         assert!(
             display_meld
                 .tiles
@@ -2514,4 +2513,3 @@ mod tests {
         assert!(room.pending_timeout.is_none());
     }
 }
-
