@@ -10,7 +10,7 @@ interface FanGuideCardProps {
  * Interpolates between three colors (Green -> Yellow -> Red)
  * @param intensity 0 to 1
  */
-function getFanColor(intensity: number): string {
+export function getFanColor(intensity: number): string {
   const green = { r: 30, g: 77, b: 43 };    // #1e4d2b
   const yellow = { r: 184, g: 134, b: 11 }; // #b8860b (Dark Goldenrod for white text contrast)
   const red = { r: 166, g: 27, b: 41 };     // #a61b29
@@ -57,7 +57,7 @@ export function FanGuideCard({ entry, className }: FanGuideCardProps) {
       <div className="fan-guide__card-body">
         <p className="fan-guide__card-copy">{entry.intro}</p>
         <div className="fan-guide__example">
-          <span className="fan-guide__example-label">事例：</span>
+          <span className="fan-guide__example-label">例：</span>
           {entry.example}
         </div>
       </div>

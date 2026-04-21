@@ -475,8 +475,8 @@ export function TableStage({
                   {player ? (
                     <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
                       <div className="table-stage__player-stats">
-                        <div 
-                          className="table-stage__stat-plate table-stage__stat-plate--seat" 
+                        <div
+                          className="table-stage__stat-plate table-stage__stat-plate--seat"
                           data-player-name={player.name}
                         >
                           <FanIcon className="table-stage__stat-icon" />
@@ -597,7 +597,7 @@ export function TableStage({
               aria-expanded={isQuickChatOpen}
               onClick={() => setIsQuickChatOpen(!isQuickChatOpen)}
             >
-              {isQuickChatOpen ? '×' : '😄'}
+              {isQuickChatOpen ? '×' : '🍵'}
             </button>
             {isQuickChatOpen ? (
               <QuickChatMenu
