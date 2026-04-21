@@ -516,6 +516,39 @@
   /* Removed hardcoded padding to use the unified relative scale from tiles.css */
 }
 
+/* ------- River Watermarks ------- */
+
+.table-stage__river-watermark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'SimSun', '宋体', serif;
+  font-size: clamp(3.5rem, 10vw, 8rem);
+  color: color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  pointer-events: none;
+  z-index: 0;
+  user-select: none;
+  opacity: 0.45;
+  white-space: nowrap;
+}
+
+.table-stage__river-track--top .table-stage__river-watermark {
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
+.table-stage__river-track--bottom .table-stage__river-watermark {
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
+.table-stage__river-track--left .table-stage__river-watermark {
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
+.table-stage__river-track--right .table-stage__river-watermark {
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
 /* ------- Melds ------- */
 
 .table-stage__melds {
@@ -669,21 +702,6 @@
   white-space: nowrap;
   flex-wrap: nowrap;
 }
-.table-stage__player-edge-info b {
-  font-weight: 700;
-  font-size: 0.94rem;
-  color: var(--accent-2);
-}
-
-.table-stage__player-edge-info--top b::after,
-.table-stage__player-edge-info--bottom b::after {
-  content: "·";
-  margin-inline: 0.4rem;
-  color: var(--theme-paper-strong);
-  opacity: 0.5;
-  font-weight: normal;
-}
-
 .table-stage__player-stats {
   display: flex;
   gap: 0.35rem;
@@ -696,10 +714,12 @@
 }
 
 .table-stage__stat-plate {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.5rem;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.56rem;
   border-radius: 0.5rem;
   background: color-mix(in srgb, var(--theme-panel-bg-strong) 38%, transparent);
   backdrop-filter: blur(8px);
@@ -707,8 +727,9 @@
   box-shadow: 
     0 4px 12px var(--theme-shadow-soft),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 4%, transparent);
-  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux);
+  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux);
   pointer-events: auto;
+  min-width: 3.8rem;
 }
 
 .table-stage__stat-plate:hover {
@@ -735,6 +756,10 @@
 }
 
 /* Specific item colors */
+.table-stage__stat-plate--seat {
+  --stat-accent: #00ccff; /* Azure Blue for Wind */
+  min-width: 3.2rem;
+}
 .table-stage__stat-plate--score {
   --stat-accent: #ffcc33; /* Amber Gold */
 }
@@ -745,9 +770,78 @@
   --stat-accent: #f0f0f0; /* Ivory White */
 }
 
+.table-stage__stat-plate--seat .table-stage__stat-icon { color: var(--stat-accent); }
 .table-stage__stat-plate--score .table-stage__stat-icon { color: var(--stat-accent); }
 .table-stage__stat-plate--flower .table-stage__stat-icon { color: var(--stat-accent); }
 .table-stage__stat-plate--hand .table-stage__stat-icon { color: var(--stat-accent); }
+
+.table-stage__stat-plate--seat:hover {
+  border-color: var(--stat-accent);
+  background: color-mix(in srgb, var(--stat-accent) 15%, var(--theme-panel-bg-strong));
+}
+
+.table-stage__stat-plate--seat:hover::after {
+  content: attr(data-player-name);
+  position: absolute;
+  left: 50%;
+  bottom: 125%;
+  transform: translateX(-50%);
+  width: max-content;
+  background: var(--table-center-ring-bg);
+  color: var(--theme-paper-strong);
+  padding: 0.24rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 
+    0 10px 28px rgba(0, 0, 0, 0.6),
+    0 0 0 1px color-mix(in srgb, var(--stat-accent) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--stat-accent) 20%, transparent);
+  z-index: 40;
+  pointer-events: none;
+  animation: tooltip-fade-in 0.25s var(--ease-spring);
+}
+
+.table-stage__player-edge-info--top .table-stage__stat-plate--seat:hover::after {
+  bottom: auto;
+  top: 125%;
+  animation-name: tooltip-fade-in-down;
+}
+
+.table-stage__player-edge-info--left .table-stage__stat-plate--seat:hover::after {
+  bottom: 50%;
+  left: 115%;
+  transform: translateY(50%);
+  animation-name: tooltip-fade-in-right;
+}
+
+.table-stage__player-edge-info--right .table-stage__stat-plate--seat:hover::after {
+  bottom: 50%;
+  left: auto;
+  right: 115%;
+  transform: translateY(50%);
+  animation-name: tooltip-fade-in-left;
+}
+
+@keyframes tooltip-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes tooltip-fade-in-down {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes tooltip-fade-in-right {
+  from { opacity: 0; transform: translateY(50%) translateX(-8px); }
+  to { opacity: 1; transform: translateY(50%) translateX(0); }
+}
+
+@keyframes tooltip-fade-in-left {
+  from { opacity: 0; transform: translateY(50%) translateX(8px); }
+  to { opacity: 1; transform: translateY(50%) translateX(0); }
+}
 
 .table-stage__stat-plate--score {
   border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);

@@ -474,8 +474,16 @@ export function TableStage({
                 >
                   {player ? (
                     <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
-                      <b className="table-stage__player-name">{player.name}</b>
                       <div className="table-stage__player-stats">
+                        <div 
+                          className="table-stage__stat-plate table-stage__stat-plate--seat" 
+                          data-player-name={player.name}
+                        >
+                          <FanIcon className="table-stage__stat-icon" />
+                          <span className="table-stage__stat-value">
+                            {player?.wind ? WIND_NAME_TO_CHAR[player.wind] : WIND_COPY[seat]}
+                          </span>
+                        </div>
                         <div className="table-stage__stat-plate table-stage__stat-plate--score" title="分数">
                           <IngotIcon className="table-stage__stat-icon" />
                           <span className="table-stage__stat-value">{player.score?.toLocaleString() ?? 0}</span>
@@ -500,6 +508,11 @@ export function TableStage({
                         data-seat={seat}
                       >
                         <div className={`table-stage__river-track table-stage__river-track--${seat}`}>
+                          {player?.name ? (
+                            <div className="table-stage__river-watermark" aria-hidden="true">
+                              {player.name.charAt(0)}
+                            </div>
+                          ) : null}
                           {discards[seat].map((tile, index) => {
                             const isLastDiscard =
                               lastDiscardSeat === seat && index === discards[seat].length - 1;
@@ -569,9 +582,6 @@ export function TableStage({
                       </div>
                     </div>
                   ) : null}
-                  <div className={`table-stage__seat-watermark table-stage__seat-watermark--${seat}`} aria-hidden="true">
-                    {player?.wind ? WIND_NAME_TO_CHAR[player.wind] : WIND_COPY[seat]}
-                  </div>
                 </div>
               </Fragment>
             );
@@ -1167,13 +1177,24 @@ function getMeldRackPositionStyle(seat: Seat): CSSProperties {
     transform: 'translateY(-50%)',
   };
 }
+function FanIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} fill="currentColor">
+      <path d="M16 26C16 26 6 22 4 14C4 8 8 6 16 6C24 6 28 8 28 14C26 22 16 26 16 26Z" opacity="0.25" />
+      <path d="M16 24L6 14C6 11 10 8 16 8C22 8 26 11 26 14L16 24Z" />
+      <path d="M16 24L16 8" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+      <path d="M16 24L11 10" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+      <path d="M16 24L21 10" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+    </svg>
+  );
+}
+
 function IngotIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} fill="currentColor">
-      <path d="M2 18C2 11 8 8 16 8S30 11 30 18C30 25 24 28 16 28S2 25 2 18Z" opacity="0.3" />
-      <path d="M8 14C8 10 12 8 16 8S24 10 24 14V16C24 20 20 22 16 22S8 20 8 16V14Z" />
-      <path d="M16 8C20 8 24 10 24 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M16 8C12 8 8 10 8 14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M16 6C11 6 7 9 7 13V15C7 19 11 22 16 22C21 22 25 19 25 15V13C25 9 21 6 16 6Z" opacity="0.25" />
+      <path d="M16 8C12.5 8 9.5 10.5 9.5 13.5V14.5C9.5 17.5 12.5 20 16 20C19.5 20 22.5 17.5 22.5 14.5V13.5C22.5 10.5 19.5 8 16 8Z" />
+      <path d="M9.5 13.5C9.5 10.5 12.5 8 16 8C19.5 8 22.5 10.5 22.5 13.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1181,8 +1202,10 @@ function IngotIcon({ className }: { className?: string }) {
 function LotusIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} fill="currentColor">
-      <path d="M16 28C16 28 8 22 8 14C8 8 16 4 16 4S24 8 24 14C24 22 16 28 16 28Z" opacity="0.4" />
-      <path d="M16 28C10 24 6 18 6 12C6 8 10 10 16 16C22 10 26 8 26 12C26 18 22 24 16 28Z" />
+      <path d="M16 26C16 26 8 21 8 14C8 9 12 6 16 6C20 6 24 9 24 14C24 21 16 26 16 26Z" opacity="0.25" />
+      <path d="M16 24C12 20 10 16 10 12C10 10 12 11 16 15C20 11 22 10 22 12C22 16 20 20 16 24Z" />
+      <path d="M10 12C10 10 12 11 16 15L16 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22 12C22 10 20 11 16 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -1190,9 +1213,9 @@ function LotusIcon({ className }: { className?: string }) {
 function TileStackIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} fill="currentColor">
-      <rect x="6" y="10" width="12" height="16" rx="2" opacity="0.3" />
-      <rect x="10" y="6" width="12" height="16" rx="2" opacity="0.6" />
-      <rect x="14" y="2" width="12" height="16" rx="2" />
+      <rect x="6" y="11" width="13" height="17" rx="2" opacity="0.25" />
+      <rect x="13" y="4" width="13" height="17" rx="2" />
+      <rect x="13" y="4" width="13" height="17" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
