@@ -156,7 +156,7 @@
   border: 0;
   background: transparent;
   overflow: visible;
-  transition: transform 0.4s var(--ease-spring);
+  transition: transform 0.22s var(--ease-lux);
 }
 
 .action-dock__tile,
@@ -831,7 +831,7 @@
 }
 
 .action-dock__claim-candidate:hover:not(:disabled) {
-  transform: translateY(-2.4px) scale(1.02);
+  transform: translateY(-2.4px);
   border-color: color-mix(in srgb, var(--claim-candidate-tint) 42%, var(--theme-border-strong));
   box-shadow: 
     var(--shadow-lg),
@@ -839,7 +839,7 @@
 }
 
 .action-dock__claim-candidate--selected { /* Premium Selection */
-  transform: translateY(-3.2px) scale(1.04);
+  transform: translateY(-3.2px);
   border-color: color-mix(in srgb, var(--claim-candidate-tint) 82%, var(--theme-border-strong));
   background:
     linear-gradient(180deg, 
@@ -902,10 +902,10 @@
 
 .action-dock__claim-preview-tile--claim .mahjong-tile__shell,
 .action-dock__claim-candidate--selected .action-dock__claim-preview-tile--claim .mahjong-tile__shell {
+  border-color: color-mix(in srgb, var(--theme-warning) 72%, var(--theme-paper-edge));
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--theme-warning) 52%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--theme-warning) 34%, transparent),
-    0 0 16px color-mix(in srgb, var(--theme-warning) 24%, transparent);
+    inset 0 calc(var(--tile-unit) * 1.5) calc(var(--tile-unit) * 1.5) rgba(255, 255, 255, 0.95),
+    0 calc(var(--tile-unit) * 2) calc(var(--tile-unit) * 10) color-mix(in srgb, var(--theme-warning) 32%, transparent);
 }
 
 /* ------- Disabled tile overlay ------- */
@@ -1178,4 +1178,3 @@
     gap: 0.3rem;
   }
 }
-
