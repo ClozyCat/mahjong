@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { BattleActionId, ResultView, ResultSeatView, Seat, ResultPage } from '../../types/match';
+import type { BattleActionId, ResultView, ResultSeatView, Seat, ResultPageView } from '../../types/match';
 import { getFanGuideEntry, getFanLabel } from './fanGuide';
 import { FanGuideCard, getFanColor } from './FanGuideCard';
 import { MahjongTile } from './MahjongTile';
@@ -391,7 +391,7 @@ const FanBreakdownSection = memo(({
   onLeaveFan
 }: {
   result: ResultView;
-  pages: ResultPage[];
+  pages: ResultPageView[];
   activeIndex: number;
   onPageChange: (index: number | ((curr: number) => number)) => void;
   onHoverFan: (key: string, fanKey: string, el: HTMLDivElement) => void;
@@ -633,7 +633,7 @@ function getRelativeSeatLabel(seat: Seat) {
   return RELATIVE_SEAT_LABELS[seat];
 }
 
-function getResultPages(result: ResultView): ResultPage[] {
+function getResultPages(result: ResultView): ResultPageView[] {
   if (Array.isArray(result.pages) && result.pages.length > 0) return result.pages;
   return [{
     fanTotal: result.fanTotal,

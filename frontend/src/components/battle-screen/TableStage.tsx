@@ -350,7 +350,7 @@ export function TableStage({
               type="button"
               className="table-stage__help-button"
               aria-label="打开国标麻将番种说明"
-              title="国标麻将番种说明"
+              title="番种说明"
               onClick={() => {
                 setIsQuickChatOpen(false);
                 setIsFanGuideOpen(true);

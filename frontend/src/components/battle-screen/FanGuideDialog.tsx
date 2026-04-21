@@ -91,7 +91,7 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
       <section className="fan-guide__dialog" role="dialog" aria-modal="true" aria-label="国标麻将番种说明">
         <header className="fan-guide__header">
           <div className="fan-guide__title-block">
-            <span className="fan-guide__eyebrow">国标麻将番种说明</span>
+            <span className="fan-guide__eyebrow">番种说明</span>
             <p className="fan-guide__hint">按番值分类排列，点击侧边栏可快速跳转。</p>
           </div>
           <button type="button" className="fan-guide__close" aria-label="关闭番种说明" onClick={onClose}>
