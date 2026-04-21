@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState, useMemo } from 'react';
 
 import { FAN_GUIDE_ENTRIES } from './fanGuide';
 import { FanGuideCard } from './FanGuideCard';
@@ -8,7 +9,75 @@ interface FanGuideDialogProps {
   onClose: () => void;
 }
 
+/**
+ * LazySection component to prevent rendering of content that is not yet near the viewport.
+ * This significantly improves the initial opening speed and scrolling performance for long lists.
+ */
+function LazySection({ children, label, value }: { children: React.ReactNode; label: string; value: number }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '300px' },
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <section ref={ref} className="fan-guide__section" id={`fan-section-${value}`}>
+      <h3 className="fan-guide__section-title">
+        <span>{label}</span>
+      </h3>
+      <div className="fan-guide__grid">
+        {isVisible ? children : <div className="fan-guide__loading-placeholder" />}
+      </div>
+    </section>
+  );
+}
+
 export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<number | null>(null);
+
+  // Group entries by fan value
+  const groupedEntries = useMemo(() => {
+    const groups = new Map<number, typeof FAN_GUIDE_ENTRIES>();
+    FAN_GUIDE_ENTRIES.forEach((entry) => {
+      const list = groups.get(entry.fanValue) || [];
+      list.push(entry);
+      groups.set(entry.fanValue, list);
+    });
+    return Array.from(groups.entries())
+      .map(([value, entries]) => ({ value, entries }))
+      .sort((a, b) => a.value - b.value);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && groupedEntries.length > 0) {
+      setActiveTab(groupedEntries[0].value);
+    }
+  }, [isOpen, groupedEntries]);
+
+  const scrollToSection = (value: number) => {
+    const element = document.getElementById(`fan-section-${value}`);
+    if (element && scrollContainerRef.current) {
+      element.scrollIntoView({ behavior: 'smooth' });
+      setActiveTab(value);
+    }
+  };
+
   if (!isOpen) {
     return null;
   }
@@ -18,23 +87,50 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
   }
 
   return createPortal(
-    <div className="fan-guide__backdrop" role="presentation">
+    <div className="fan-guide__backdrop" role="presentation" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <section className="fan-guide__dialog" role="dialog" aria-modal="true" aria-label="国标麻将番种说明">
         <header className="fan-guide__header">
           <div className="fan-guide__title-block">
             <span className="fan-guide__eyebrow">国标麻将番种说明</span>
-            <p className="fan-guide__hint">按番值顺序排列，下滑查看全部番种。</p>
+            <p className="fan-guide__hint">按番值分类排列，点击侧边栏可快速跳转。</p>
           </div>
           <button type="button" className="fan-guide__close" aria-label="关闭番种说明" onClick={onClose}>
             关闭
           </button>
         </header>
 
-        <div className="fan-guide__content" aria-label="番种说明列表" aria-live="polite" tabIndex={0}>
-          <div className="fan-guide__grid">
-            {FAN_GUIDE_ENTRIES.map((entry) => (
-              <FanGuideCard key={entry.fanKey} entry={entry} />
+        <div className="fan-guide__layout">
+          <nav className="fan-guide__sidebar">
+            {groupedEntries.map(({ value }) => (
+              <button
+                key={value}
+                type="button"
+                className={`fan-guide__nav-item ${activeTab === value ? 'fan-guide__nav-item--active' : ''}`}
+                onClick={() => scrollToSection(value)}
+              >
+                <span className="fan-guide__nav-value">{value}</span>
+                <span className="fan-guide__nav-unit">番</span>
+              </button>
             ))}
+          </nav>
+
+          <div
+            className="fan-guide__content"
+            aria-label="番种说明列表"
+            aria-live="polite"
+            tabIndex={0}
+            ref={scrollContainerRef}
+          >
+            {groupedEntries.map(({ value, entries }) => (
+              <LazySection key={value} value={value} label={`${value} 番`}>
+                {entries.map((entry) => (
+                  <FanGuideCard key={entry.fanKey} entry={entry} />
+                ))}
+              </LazySection>
+            ))}
+            <footer className="fan-guide__footer">
+              <p>到底了，祝阁下每局都能和得漂亮！</p>
+            </footer>
           </div>
         </div>
       </section>

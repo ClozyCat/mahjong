@@ -14,10 +14,18 @@ export function FanGuideCard({ entry, className }: FanGuideCardProps) {
         <div className="fan-guide__card-title">
           <strong>{entry.label}</strong>
         </div>
-        <span className="fan-guide__fan-pill">{entry.fanValue} 番</span>
+        <div className="fan-guide__fan-pill" aria-label={`${entry.fanValue}番`}>
+          <span className="fan-guide__pill-value">{entry.fanValue}</span>
+          <span className="fan-guide__pill-unit">番</span>
+        </div>
       </div>
-      <p className="fan-guide__card-copy">{entry.intro}</p>
-      <p className="fan-guide__example">{entry.example}</p>
+      <div className="fan-guide__card-body">
+        <p className="fan-guide__card-copy">{entry.intro}</p>
+        <div className="fan-guide__example">
+          <span className="fan-guide__example-label">事例：</span>
+          {entry.example}
+        </div>
+      </div>
     </article>
   );
 }
