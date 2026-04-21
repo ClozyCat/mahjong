@@ -507,7 +507,10 @@ export function TableStage({
                           }`}
                         data-seat={seat}
                       >
-                        <div className={`table-stage__river-track table-stage__river-track--${seat}`}>
+                        <div
+                          className={`table-stage__river-track table-stage__river-track--${seat}`}
+                          style={getRiverTrackStyle(seat)}
+                        >
                           {player?.name ? (
                             <div className="table-stage__river-watermark" aria-hidden="true">
                               {player.name.charAt(0)}
@@ -1095,6 +1098,15 @@ function getQuickChatItemStyle(_seat: Seat, index: number): CSSProperties {
   } as CSSProperties;
 }
 
+function getRiverTrackStyle(seat: Seat): CSSProperties | undefined {
+  if (seat !== 'right') {
+    return undefined;
+  }
+
+  return {
+    direction: 'ltr',
+  };
+}
 
 function getRandomBarrageTopPercent() {
   return 18 + Math.round(Math.random() * 60);

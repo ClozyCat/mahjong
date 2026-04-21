@@ -1126,7 +1126,7 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('shows reconnecting overlay copy when disconnected_or_waiting has no waiting controls', () => {
+  it('does not render the deprecated reconnecting overlay when disconnected_or_waiting has no waiting controls', () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
@@ -1136,8 +1136,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByText(/正在重连/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/trying to restore your seat/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/正在重连/i)).toBeNull();
   });
 
 

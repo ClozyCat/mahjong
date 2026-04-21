@@ -491,10 +491,6 @@
   grid-auto-rows: var(--table-stage-river-tile-height);
 }
 
-.table-stage__river-track--right {
-  direction: rtl;
-}
-
 .table-stage__river-track .mahjong-tile--discard {
   width: var(--table-stage-river-tile-width);
   height: var(--table-stage-river-tile-height);

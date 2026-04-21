@@ -56,6 +56,27 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__river-track--bottom')).not.toBeNull();
   });
 
+  it('keeps the right-side river in left-to-right order so discards start from the left edge', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: ['c1', 'c2', 'c3'],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+      />,
+    );
+
+    const rightTrack = container.querySelector('.table-stage__river-track--right');
+
+    expect(rightTrack).not.toBeNull();
+    expect(rightTrack).toHaveStyle({ direction: 'ltr' });
+  });
+
   it('renders each players melds beside the matching river when player data is provided', () => {
     const { container } = render(
       <TableStage

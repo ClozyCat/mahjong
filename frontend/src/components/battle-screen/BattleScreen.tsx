@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
-import { AmbientOverlay } from './AmbientOverlay';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
@@ -300,15 +299,6 @@ export function BattleScreen({
             onClaimCandidateSelect={onClaimCandidateSelect}
             onClaimCandidateActivate={onClaimCandidateActivate}
             onAction={handleAction}
-          />
-          <AmbientOverlay
-            mode={viewModel.mode}
-            promptText={viewModel.promptText}
-            waitingControls={viewModel.waitingControls}
-            canLeaveTable={viewModel.canLeaveTable}
-            onAddBot={onAddBot}
-            onRemoveBot={onRemoveBot}
-            onLeaveTable={onLeaveTable}
           />
           {visibleResult ? (
             <ResultOverlay
