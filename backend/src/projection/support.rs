@@ -1,5 +1,6 @@
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::standard::meld::available_self_kongs_from_cache;
+use crate::rules::standard::ready_hand::has_ready_hand_discard_in_room_state;
 use crate::rules::standard::win::can_declare_hu_with_cache_for_state;
 
 use super::SeatProjectionSupport;
@@ -22,6 +23,7 @@ pub fn build_seat_projection_support_for_state(
         }),
         has_self_kong: !available_self_kongs_from_cache(&cache, local_seat).is_empty(),
         can_hu: can_declare_hu_with_cache_for_state(state, &cache, local_seat, None, None),
+        can_ready_hand: has_ready_hand_discard_in_room_state(state, local_seat),
         restricted_discard_tile_ids: player
             .map(|player| {
                 player

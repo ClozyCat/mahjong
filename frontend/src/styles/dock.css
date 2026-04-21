@@ -603,6 +603,12 @@
   --action-button-accent: color-mix(in srgb, var(--accent) 74%, var(--accent-3));
 }
 
+.action-dock__action--themed-ready-hand {
+  --action-button-accent: color-mix(in srgb, var(--accent-2) 82%, var(--accent));
+  --action-button-accent-soft: color-mix(in srgb, var(--accent-2) 28%, transparent);
+  --action-button-ink: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--accent-2));
+}
+
 .action-dock__action--themed-kong {
   --action-button-accent: #D4AF37; /* Royal Gold */
 }

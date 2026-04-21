@@ -92,6 +92,12 @@ const FAN_GUIDE_DEFINITIONS: Array<Omit<FanGuideEntry, 'label'>> = [
     example: '例：全部由 2 到 8 的数牌组成。',
   },
   {
+    fanKey: 'ready_hand_win',
+    fanValue: 2,
+    intro: '和牌前已经正式宣告听牌，最终以该局听牌状态完成和牌。',
+    example: '例：点击“听”后锁手，之后自摸或荣和完成本局和牌。',
+  },
+  {
     fanKey: 'seat_wind',
     fanValue: 2,
     intro: '有一副与自己门风相同的风牌刻子。',
@@ -510,6 +516,7 @@ export const FAN_LABELS: Record<string, string> = {
   single_wait: '单钓将',
   flower_tiles: '花牌',
   all_simples: '断幺',
+  ready_hand_win: '听牌成和',
   seat_wind: '门风刻',
   prevalent_wind: '圈风刻',
   dragon_pung: '箭刻',

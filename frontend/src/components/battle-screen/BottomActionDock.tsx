@@ -275,7 +275,8 @@ const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {
   chow: 3,
   flower: 4,
   discard: 5,
-  pass: 6,
+  ready_hand: 6,
+  pass: 7,
 };
 
 function isResponsePrompt(promptCue: BattlePromptView | null) {
@@ -299,6 +300,7 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
     pung: 'action-dock__action--themed action-dock__action--themed-pung',
     kong: 'action-dock__action--themed action-dock__action--themed-kong',
     discard: 'action-dock__action--themed action-dock__action--themed-discard',
+    ready_hand: 'action-dock__action--themed action-dock__action--themed-ready-hand',
     pass: 'action-dock__action--themed action-dock__action--themed-pass',
   };
 

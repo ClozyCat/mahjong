@@ -956,6 +956,7 @@ mod tests {
                 players: vec![
                     PlayerRoundState {
                         seat: 0,
+                        is_ready_hand: false,
                         concealed_tiles: vec![
                             flower("f1", "f1#0"),
                             suit("w1", "w1#0"),
@@ -968,6 +969,7 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 1,
+                        is_ready_hand: false,
                         concealed_tiles: vec![suit("t1", "t1#1")],
                         melds: vec![],
                         display_melds: vec![],
@@ -976,6 +978,7 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 2,
+                        is_ready_hand: false,
                         concealed_tiles: vec![suit("b1", "b1#2")],
                         melds: vec![],
                         display_melds: vec![],
@@ -984,6 +987,7 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 3,
+                        is_ready_hand: false,
                         concealed_tiles: vec![suit("w5", "w5#3")],
                         melds: vec![],
                         display_melds: vec![],

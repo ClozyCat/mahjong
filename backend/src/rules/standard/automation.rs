@@ -14,6 +14,7 @@ use super::actions::{
     can_resolve_rob_kong_timeout_locally, claim_window_supported_locally,
     resolve_claim_window_timeout, resolve_rob_kong_timeout, rob_kong_window_supported_locally,
 };
+use super::actions::apply_discard_action_output_in_room_state;
 #[cfg(test)]
 use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
@@ -22,6 +23,7 @@ use super::meld::{
 };
 #[cfg(test)]
 use super::runtime::project_room_state;
+use super::win::apply_hu_action_output_in_room_state;
 use super::win::can_declare_hu_with_cache_for_state;
 #[cfg(test)]
 use super::win::claim_window_offers_claim;
@@ -48,6 +50,29 @@ pub fn try_process_due_timeout_in_room_state(
         "active_turn" => {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(room);
+            if player_is_ready_hand(room, seat_index) {
+                if can_declare_hu_with_cache_for_state(room, &cache, seat_index, None, None) {
+                    return apply_hu_action_output_in_room_state(room, seat_index)
+                        .map(|output| Some(output.emitted_messages));
+                }
+                let restricted_tile_key = room
+                    .round_state
+                    .as_ref()
+                    .and_then(|round| round.restricted_discard_tile_key.as_deref());
+                let tile_id = pending_timeout
+                    .drawn_tile_id
+                    .clone()
+                    .or_else(|| {
+                        last_legal_concealed_tile_id_from_cache(
+                            &cache,
+                            restricted_tile_key,
+                            seat_index,
+                        )
+                    })
+                    .ok_or_else(|| "invalid_action".to_string())?;
+                return apply_discard_action_output_in_room_state(room, seat_index, &tile_id)
+                    .map(|output| Some(output.emitted_messages));
+            }
             let restricted_tile_key = room
                 .round_state
                 .as_ref()
@@ -124,6 +149,14 @@ fn seat_is_bot(state: &RoomState, seat_index: usize) -> bool {
         .find(|seat| seat.seat_index == seat_index)
         .map(|seat| seat.is_bot)
         .unwrap_or(false)
+}
+
+fn player_is_ready_hand(state: &RoomState, seat_index: usize) -> bool {
+    state
+        .round_state
+        .as_ref()
+        .and_then(|round| round.players.get(seat_index))
+        .is_some_and(|player| player.is_ready_hand)
 }
 
 fn player_first_flower_tile_id_from_cache(
@@ -295,6 +328,37 @@ fn choose_bot_claim_action_with_cache_for_state(
     bot::choose_claim_action(&bot_context)
 }
 
+fn next_ready_hand_action_for_state(
+    state: &RoomState,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> Option<BotAction> {
+    if can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None) {
+        return Some(BotAction {
+            seat_index,
+            action_type: "hu".to_string(),
+            tile_ids: vec![],
+        });
+    }
+
+    let tile_id = state
+        .pending_timeout
+        .as_ref()
+        .and_then(|timeout| timeout.drawn_tile_id.clone())
+        .or_else(|| {
+            let restricted_tile_key = state
+                .round_state
+                .as_ref()
+                .and_then(|round| round.restricted_discard_tile_key.as_deref());
+            last_legal_concealed_tile_id_from_cache(cache, restricted_tile_key, seat_index)
+        })?;
+    Some(BotAction {
+        seat_index,
+        action_type: "discard".to_string(),
+        tile_ids: vec![tile_id],
+    })
+}
+
 fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
     if state.phase != "playing" {
         return None;
@@ -304,10 +368,13 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
     match pending_timeout.kind.as_str() {
         "active_turn" => {
             let seat_index = round.current_actor;
+            let cache = RoomScoringCache::from_state(state);
+            if player_is_ready_hand(state, seat_index) {
+                return next_ready_hand_action_for_state(state, &cache, seat_index);
+            }
             if !seat_is_bot(state, seat_index) {
                 return None;
             }
-            let cache = RoomScoringCache::from_state(state);
             if can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None) {
                 return Some(BotAction {
                     seat_index,
@@ -864,5 +931,133 @@ mod tests {
                 }),
             Some(true)
         );
+    }
+
+    fn ready_hand_auto_room_state(drawn_tile_key: &str, drawn_tile_id: &str) -> RoomState {
+        RoomState::from_room_value(&json!({
+            "table_code": "READY1",
+            "phase": "playing",
+            "mode": "normal",
+            "continue_action": null,
+            "seats": [
+                {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "P1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "reconnect_token": "t2", "player_session_id": 3, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "reconnect_token": "t3", "player_session_id": 4, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+            ],
+            "match_state": {
+                "prevailing_wind": "east",
+                "hand_number": 1,
+                "dealer_seat": 0,
+                "cumulative_scores": {"0": 0, "1": 0, "2": 0, "3": 0},
+                "match_finished": false,
+                "last_completed_round_id": null
+            },
+            "round_state": {
+                "round_id": "east-1-dealer-0-ready-auto",
+                "dealer_seat": 0,
+                "current_actor": 0,
+                "wall": {
+                    "tiles": [],
+                    "head_index": 0,
+                    "tail_index": 0
+                },
+                "players": [
+                    {
+                        "seat": 0,
+                        "is_ready_hand": true,
+                        "concealed_tiles": [
+                            suit("w1", "w1#0"),
+                            suit("w2", "w2#1"),
+                            suit("w3", "w3#2"),
+                            suit("w4", "w4#3"),
+                            suit("w5", "w5#4"),
+                            suit("w6", "w6#5"),
+                            suit("w7", "w7#6"),
+                            suit("w8", "w8#7"),
+                            suit("w9", "w9#8"),
+                            suit("t1", "t1#9"),
+                            suit("t2", "t2#10"),
+                            suit("t3", "t3#11"),
+                            suit("t4", "t4#12"),
+                            suit(drawn_tile_key, drawn_tile_id)
+                        ],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": [suit("b9", "b9#discard")]
+                    },
+                    {
+                        "seat": 1,
+                        "concealed_tiles": [suit("b1", "b1#1")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 2,
+                        "concealed_tiles": [suit("b2", "b2#2")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 3,
+                        "concealed_tiles": [suit("b3", "b3#3")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    }
+                ],
+                "last_discard": null,
+                "pending_action": null,
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {"kong_entries": []},
+                "last_action_context": {
+                    "kind": "draw",
+                    "seat": 0,
+                    "tile_id": drawn_tile_id,
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": {
+                "kind": "active_turn",
+                "seat_index": 0,
+                "deadline_at": "2026-04-21T12:00:30Z",
+                "drawn_tile_id": drawn_tile_id
+            }
+        }))
+        .expect("room should parse")
+    }
+
+    #[test]
+    fn ready_hand_human_discards_drawn_tile_as_next_auto_action() {
+        let room = ready_hand_auto_room_state("b9", "b9#draw");
+
+        let action = next_bot_action_in_room_state(&room)
+            .expect("ready-hand lookup should succeed")
+            .expect("ready-hand player should auto discard");
+
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "discard");
+        assert_eq!(action.tile_ids, vec!["b9#draw".to_string()]);
+    }
+
+    #[test]
+    fn ready_hand_human_keeps_hu_when_draw_is_winning_tile() {
+        let room = ready_hand_auto_room_state("t4", "t4#draw");
+
+        let action = next_bot_action_in_room_state(&room)
+            .expect("ready-hand lookup should succeed")
+            .expect("winning draw should keep hu");
+
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "hu");
+        assert!(action.tile_ids.is_empty());
     }
 }

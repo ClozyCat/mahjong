@@ -848,6 +848,34 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__action-callout--pung')).not.toBeNull();
   });
 
+  it('renders the ready_hand callout with the matching themed class', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'ready-hand-1',
+          label: '听',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'ready_hand',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('听')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout--ready_hand')).not.toBeNull();
+  });
+
   it.each([
     {
       name: '荣和',

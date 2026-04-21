@@ -29,6 +29,19 @@ describe('getRoundEventCopy', () => {
     ).toBe('小李已点和');
   });
 
+  it('maps ready_hand_declared to a Chinese ready-hand announcement copy', () => {
+    expect(
+      getRoundEventCopy(
+        'ready_hand_declared',
+        {
+          seat: 0,
+          tile_id: 't5#p0-3',
+        },
+        [{ seat_index: 0, nickname: '小李', connected: true, ready: true }],
+      ),
+    ).toBe('小李宣布听牌');
+  });
+
   it('falls back to a generic Chinese system message for unknown events', () => {
     expect(getRoundEventCopy('mystery_event')).toBe('牌局状态已更新');
   });

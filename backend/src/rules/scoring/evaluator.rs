@@ -96,6 +96,7 @@ pub struct EvaluationInput {
     pub win_type: String,
     pub winner_seat: Option<usize>,
     pub discarder_seat: Option<usize>,
+    pub ready_hand_declared: bool,
     pub flower_count: usize,
     pub seat_count: usize,
     pub features: HandFeatures,
@@ -154,6 +155,7 @@ struct FanContext {
     win_type: String,
     winner_seat: Option<usize>,
     discarder_seat: Option<usize>,
+    ready_hand_declared: bool,
     flower_count: usize,
     seat_count: usize,
     features: HandFeatures,
@@ -177,6 +179,7 @@ impl FanContext {
             win_type,
             winner_seat,
             discarder_seat,
+            ready_hand_declared,
             flower_count,
             seat_count,
             features,
@@ -217,6 +220,7 @@ impl FanContext {
             win_type,
             winner_seat,
             discarder_seat,
+            ready_hand_declared,
             flower_count,
             seat_count: seat_count.max(1),
             features,
@@ -1228,6 +1232,14 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             forbidden_with: &[],
         },
         FanRule {
+            fan_key: "ready_hand_win",
+            fan_value: 2,
+            matcher: match_ready_hand_win,
+            value_resolver: None,
+            excludes: &[],
+            forbidden_with: &[],
+        },
+        FanRule {
             fan_key: "out_with_replacement_tile",
             fan_value: 8,
             matcher: match_out_with_replacement_tile,
@@ -1930,6 +1942,9 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
 }
 fn match_self_drawn(context: &FanContext) -> usize {
     usize::from(context.win_type == "self_draw")
+}
+fn match_ready_hand_win(context: &FanContext) -> usize {
+    usize::from(context.ready_hand_declared)
 }
 fn match_out_with_replacement_tile(context: &FanContext) -> usize {
     usize::from(context.timing.gang_shang_hua)
@@ -3522,6 +3537,7 @@ mod tests {
             win_type: "discard".to_string(),
             winner_seat: Some(0),
             discarder_seat: Some(1),
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features,
@@ -3561,6 +3577,7 @@ mod tests {
             win_type: "self_draw".to_string(),
             winner_seat: Some(0),
             discarder_seat: None,
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features,
@@ -3601,6 +3618,7 @@ mod tests {
             win_type: "discard".to_string(),
             winner_seat: Some(0),
             discarder_seat: Some(1),
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features: HandFeatures::default(),
@@ -3616,6 +3634,80 @@ mod tests {
         });
 
         assert!(result.fan_keys.iter().any(|fan| fan == "chicken_hand"));
+    }
+
+    #[test]
+    fn scores_ready_hand_win_as_two_fan() {
+        let tile_keys = vec![
+            "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+                vec!["w4".to_string(), "w5".to_string(), "w6".to_string()],
+                vec!["t1".to_string(), "t2".to_string(), "t3".to_string()],
+                vec!["b1".to_string(), "b2".to_string(), "b3".to_string()],
+            ],
+            ..Default::default()
+        }];
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+
+        let base_result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features: features.clone(),
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys: tile_keys.clone(),
+            visible_tile_keys: vec![],
+            concealed_tile_keys: tile_keys.clone(),
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions: decompositions.clone(),
+        });
+        let ready_hand_result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            ready_hand_declared: true,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys: tile_keys.clone(),
+            visible_tile_keys: vec![],
+            concealed_tile_keys: tile_keys,
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions,
+        });
+
+        assert!(!base_result.fan_keys.iter().any(|fan| fan == "ready_hand_win"));
+        assert!(ready_hand_result
+            .fan_keys
+            .iter()
+            .any(|fan| fan == "ready_hand_win"));
+        assert_eq!(ready_hand_result.fan_total, base_result.fan_total + 2);
     }
 
     #[test]
@@ -3656,6 +3748,7 @@ mod tests {
             win_type: "discard".to_string(),
             winner_seat: Some(0),
             discarder_seat: Some(1),
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features: first_features,
@@ -3717,6 +3810,7 @@ mod tests {
             win_type: "discard".to_string(),
             winner_seat: Some(0),
             discarder_seat: Some(1),
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features: ordered_features,
@@ -3734,6 +3828,7 @@ mod tests {
             win_type: "discard".to_string(),
             winner_seat: Some(0),
             discarder_seat: Some(1),
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features: shuffled_features,
@@ -3790,6 +3885,7 @@ mod tests {
             win_type: "discard".to_string(),
             winner_seat: Some(0),
             discarder_seat: Some(1),
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features: HandFeatures::default(),
@@ -3839,6 +3935,7 @@ mod tests {
             win_type: "self_draw".to_string(),
             winner_seat: Some(0),
             discarder_seat: None,
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features,
@@ -3900,6 +3997,7 @@ mod tests {
             win_type: "self_draw".to_string(),
             winner_seat: Some(0),
             discarder_seat: None,
+            ready_hand_declared: false,
             flower_count: 0,
             seat_count: 4,
             features,

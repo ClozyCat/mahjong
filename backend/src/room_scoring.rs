@@ -258,6 +258,7 @@ mod tests {
                 },
                 players: vec![PlayerRoundState {
                     seat: 0,
+                    is_ready_hand: false,
                     concealed_tiles: vec![
                         crate::core::tile::Tile {
                             tile_id: "w1#0".to_string(),

@@ -1304,6 +1304,7 @@ impl SearchEngine {
             win_type: "self_draw".to_string(),
             winner_seat: Some(context.seat_index),
             discarder_seat: None,
+            ready_hand_declared: false,
             flower_count: context.player.flower_count,
             seat_count: context.seat_count,
             features,

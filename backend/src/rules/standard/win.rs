@@ -774,6 +774,11 @@ fn fan_result_for_win_with_state(
         win_type: win_type.clone(),
         winner_seat: Some(winner_seat),
         discarder_seat,
+        ready_hand_declared: state
+            .round_state
+            .as_ref()
+            .and_then(|round| round.players.get(winner_seat))
+            .is_some_and(|player| player.is_ready_hand),
         flower_count: cache
             .player(winner_seat)
             .map(|player| player.flower_count)
@@ -840,6 +845,8 @@ fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::{can_declare_hu_with_cache_for_state, compute_hu_settlement_for_state};
     use crate::core::state::{
         LastActionContext, MatchState, PlayerRoundState, RoomState, RoundState, SeatState,
@@ -912,6 +919,37 @@ mod tests {
         assert_eq!(settlement.display_win_label, None);
     }
 
+    #[test]
+    fn settlement_includes_ready_hand_win_for_ready_hand_winner() {
+        let tile_keys = [
+            "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
+        ];
+        let base_state = test_room_state_with_concealed_tiles(&tile_keys);
+        let base_settlement =
+            compute_hu_settlement_for_state(&base_state, 0, "self_draw").expect("base settlement");
+
+        let mut ready_hand_room = base_state
+            .to_room_value()
+            .expect("state should serialize");
+        ready_hand_room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        let ready_hand_state =
+            RoomState::from_room_value(&ready_hand_room).expect("room should parse");
+
+        let ready_hand_settlement = compute_hu_settlement_for_state(&ready_hand_state, 0, "self_draw")
+            .expect("ready-hand settlement");
+
+        assert!(
+            ready_hand_settlement
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "ready_hand_win")
+        );
+        assert_eq!(
+            ready_hand_settlement.fan_total,
+            base_settlement.fan_total + 2
+        );
+    }
+
     fn test_room_state_with_concealed_tiles(tile_keys: &[&str]) -> RoomState {
         RoomState {
             table_code: "ROOM7P".to_string(),
@@ -941,6 +979,7 @@ mod tests {
                 players: vec![
                     PlayerRoundState {
                         seat: 0,
+                        is_ready_hand: false,
                         concealed_tiles: tile_keys
                             .iter()
                             .enumerate()
@@ -954,14 +993,17 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 1,
+                        is_ready_hand: false,
                         ..Default::default()
                     },
                     PlayerRoundState {
                         seat: 2,
+                        is_ready_hand: false,
                         ..Default::default()
                     },
                     PlayerRoundState {
                         seat: 3,
+                        is_ready_hand: false,
                         ..Default::default()
                     },
                 ],

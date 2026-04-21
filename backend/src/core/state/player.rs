@@ -33,6 +33,7 @@ impl SeatState {
 #[serde(default)]
 pub struct PlayerRoundState {
     pub seat: Seat,
+    pub is_ready_hand: bool,
     pub concealed_tiles: Vec<Tile>,
     pub melds: Vec<Vec<TileKey>>,
     pub display_melds: Vec<DisplayMeldState>,

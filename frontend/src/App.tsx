@@ -185,6 +185,7 @@ function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
 function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
   return (
     actionId === 'discard' ||
+    actionId === 'ready_hand' ||
     actionId === 'flower' ||
     actionId === 'kong' ||
     actionId === 'hu' ||
@@ -706,6 +707,21 @@ export default function App() {
     }
 
     if (actionId === 'discard') {
+      if (state.selectedTileIds.length !== 1) {
+        return;
+      }
+
+      const discardTileId = state.selectedTileIds[0];
+      if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId, [discardTileId])))) {
+        return;
+      }
+
+      dispatch({ type: 'queue_optimistic_discard', tileId: discardTileId });
+      dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+      return;
+    }
+
+    if (actionId === 'ready_hand') {
       if (state.selectedTileIds.length !== 1) {
         return;
       }

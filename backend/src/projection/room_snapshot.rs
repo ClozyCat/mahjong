@@ -58,6 +58,7 @@ struct PlayerSeatView {
     seat_index: Seat,
     nickname: Option<String>,
     connected: bool,
+    is_ready_hand: bool,
     concealed_count: usize,
     concealed_tiles: Option<Vec<PrivateTileView>>,
     melds: Vec<Vec<String>>,
@@ -176,21 +177,28 @@ pub fn build_pending_action_view(
     let pending_timeout = state.pending_timeout.as_ref()?;
     let round = state.round_state.as_ref()?;
     let deadline_at = pending_timeout.deadline_at.clone();
+    let local_player = round.players.iter().find(|player| player.seat == local_seat);
+    let is_local_ready_hand = local_player.is_some_and(|player| player.is_ready_hand);
 
     match pending_timeout.kind.as_str() {
         "active_turn" => {
             let is_local_turn = pending_timeout.seat_index == local_seat;
             let mut options = Vec::new();
             if is_local_turn {
-                options.push("discard".to_string());
-                if support.has_concealed_flower {
-                    options.push("flower".to_string());
-                }
-                if support.has_self_kong {
-                    options.push("kong".to_string());
-                }
                 if support.can_hu {
                     options.push("hu".to_string());
+                }
+                if !is_local_ready_hand {
+                    options.insert(0, "discard".to_string());
+                    if support.has_concealed_flower {
+                        options.push("flower".to_string());
+                    }
+                    if support.has_self_kong {
+                        options.push("kong".to_string());
+                    }
+                    if support.can_ready_hand {
+                        options.push("ready_hand".to_string());
+                    }
                 }
             }
 
@@ -220,10 +228,19 @@ pub fn build_pending_action_view(
                 .cloned()
                 .unwrap_or_default();
             let is_responded = claim.responded_seats.contains(&local_seat);
-            let mut payload_options = options;
-            if !payload_options.is_empty() && !is_responded {
-                payload_options.push("pass".to_string());
-            }
+            let payload_options = if is_local_ready_hand {
+                if is_responded || !options.iter().any(|option| option == "hu") {
+                    Vec::new()
+                } else {
+                    vec!["hu".to_string()]
+                }
+            } else {
+                let mut payload_options = options;
+                if !payload_options.is_empty() && !is_responded {
+                    payload_options.push("pass".to_string());
+                }
+                payload_options
+            };
             Some(PendingActionView::ClaimWindow {
                 discarder_seat: claim.discarder_seat,
                 deadline_at,
@@ -238,7 +255,11 @@ pub fn build_pending_action_view(
             let offered = rob.offered_hu_seats.contains(&local_seat);
             let is_responded = rob.responded_seats.contains(&local_seat);
             let options = if offered && !is_responded {
-                vec!["hu".to_string(), "pass".to_string()]
+                if is_local_ready_hand {
+                    vec!["hu".to_string()]
+                } else {
+                    vec!["hu".to_string(), "pass".to_string()]
+                }
             } else {
                 Vec::new()
             };
@@ -309,6 +330,7 @@ fn private_round_state(
                 seat_index: player.seat,
                 nickname: seat_info.and_then(|seat| seat.nickname.clone()),
                 connected: seat_info.map(|seat| seat.connected).unwrap_or(false),
+                is_ready_hand: player.is_ready_hand,
                 concealed_count: player.concealed_tiles.len(),
                 concealed_tiles,
                 melds: player.melds.clone(),

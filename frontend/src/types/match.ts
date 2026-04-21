@@ -14,7 +14,7 @@ export type RoomPhase = 'waiting' | 'playing' | 'settlement' | 'finished';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'error';
 
-export type BackendActionType = 'discard' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
+export type BackendActionType = 'discard' | 'ready_hand' | 'flower' | 'kong' | 'hu' | 'chow' | 'pung' | 'pass';
 export type PromptActionType = BackendActionType;
 export type ActionRequestType = BackendActionType;
 export type ClaimActionId = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
@@ -86,6 +86,7 @@ export interface PrivatePlayerState {
   seat_index: number;
   nickname: string;
   connected: boolean;
+  is_ready_hand?: boolean;
   concealed_count: number;
   concealed_tiles?: ConcealedTile[] | null;
   melds: string[][];
@@ -495,7 +496,7 @@ export interface ActionEffectView {
   label: string;
   emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
   seat: Seat | null;
-  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | null;
+  calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'ready_hand' | null;
 }
 
 export interface BattlePromptView {

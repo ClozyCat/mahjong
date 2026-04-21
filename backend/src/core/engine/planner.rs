@@ -89,6 +89,7 @@ pub fn plan_round_start_payload(
         }
         players.push(PlayerRoundState {
             seat,
+            is_ready_hand: false,
             concealed_tiles,
             melds: Vec::new(),
             display_melds: Vec::new(),

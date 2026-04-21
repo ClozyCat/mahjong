@@ -1,6 +1,7 @@
 use crate::core::action::PlayerAction;
 use crate::core::ids::Seat;
 use crate::core::state::PendingAction;
+use crate::rules::standard::ready_hand::can_declare_ready_hand_with_tile_id;
 
 use super::command::EngineContext;
 
@@ -9,6 +10,7 @@ pub enum LocalPlayerActionKind {
     Hu,
     Flower,
     Discard,
+    ReadyHand,
     ClaimWindow,
     SelfKong,
     RobKongPass,
@@ -21,9 +23,12 @@ pub fn classify_local_player_action(
 ) -> Option<LocalPlayerActionKind> {
     match action {
         PlayerAction::Hu => Some(LocalPlayerActionKind::Hu),
-        PlayerAction::Flower { .. } => Some(LocalPlayerActionKind::Flower),
+        PlayerAction::Flower { .. } => flower_supported_locally(context, actor)
+            .then_some(LocalPlayerActionKind::Flower),
         PlayerAction::Discard { tile_id } => discard_supported_locally(context, actor, tile_id)
             .then_some(LocalPlayerActionKind::Discard),
+        PlayerAction::ReadyHand { tile_id } => ready_hand_supported_locally(context, actor, tile_id)
+            .then_some(LocalPlayerActionKind::ReadyHand),
         PlayerAction::Chow { .. } => claim_window_action_supported(context, actor, "chow")
             .then_some(LocalPlayerActionKind::ClaimWindow),
         PlayerAction::Pung { .. } => claim_window_action_supported(context, actor, "pung")
@@ -62,6 +67,9 @@ pub fn discard_supported_locally(context: &EngineContext, actor: Seat, tile_id: 
     let Some(player) = round.players.get(actor) else {
         return false;
     };
+    if player.is_ready_hand {
+        return false;
+    }
     let Some(tile) = player
         .concealed_tiles
         .iter()
@@ -75,6 +83,23 @@ pub fn discard_supported_locally(context: &EngineContext, actor: Seat, tile_id: 
     }
 }
 
+fn ready_hand_supported_locally(context: &EngineContext, actor: Seat, tile_id: &str) -> bool {
+    can_declare_ready_hand_with_tile_id(&context.room, actor, tile_id)
+}
+
+fn flower_supported_locally(context: &EngineContext, actor: Seat) -> bool {
+    if context.room.phase != "playing" {
+        return false;
+    }
+    let Some(round) = context.room.round_state.as_ref() else {
+        return false;
+    };
+    if round.current_actor != actor || round.pending_action.is_some() {
+        return false;
+    }
+    !round.players.get(actor).is_some_and(|player| player.is_ready_hand)
+}
+
 fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_type: &str) -> bool {
     let Some(round) = context.room.round_state.as_ref() else {
         return false;
@@ -82,11 +107,18 @@ fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_ty
     let Some(PendingAction::ClaimWindow(claim)) = round.pending_action.as_ref() else {
         return false;
     };
+    let is_ready_hand = round.players.get(actor).is_some_and(|player| player.is_ready_hand);
     let Some(allowed_claims) = claim.claim_window.get(actor) else {
         return false;
     };
     if allowed_claims.is_empty() || claim.responded_seats.contains(&actor) {
         return false;
+    }
+    if is_ready_hand {
+        return action_type == "hu"
+            && allowed_claims
+                .iter()
+                .any(|claim_type| claim_type == action_type);
     }
     action_type == "pass"
         || allowed_claims
@@ -98,6 +130,9 @@ fn rob_kong_pass_supported(context: &EngineContext, actor: Seat) -> bool {
     let Some(round) = context.room.round_state.as_ref() else {
         return false;
     };
+    if round.players.get(actor).is_some_and(|player| player.is_ready_hand) {
+        return false;
+    }
     let Some(PendingAction::RobKongWindow(rob)) = round.pending_action.as_ref() else {
         return false;
     };
@@ -107,6 +142,12 @@ fn rob_kong_pass_supported(context: &EngineContext, actor: Seat) -> bool {
 fn self_kong_supported(context: &EngineContext, actor: Seat) -> bool {
     context.room.phase == "playing"
         && context.current_actor() == Some(actor)
+        && !context
+            .room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.players.get(actor))
+            .is_some_and(|player| player.is_ready_hand)
         && context
             .room
             .pending_timeout
@@ -235,6 +276,25 @@ mod tests {
         let context = context(room);
 
         assert!(discard_supported_locally(&context, 0, "east#discard"));
+    }
+
+    #[test]
+    fn rejects_manual_discard_after_ready_hand_declaration() {
+        let mut room = base_room();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        let context = context(room);
+
+        assert!(!discard_supported_locally(&context, 0, "east#discard"));
+        assert_eq!(
+            classify_local_player_action(
+                &context,
+                0,
+                &PlayerAction::Discard {
+                    tile_id: "east#discard".to_string(),
+                }
+            ),
+            None
+        );
     }
 
     #[test]

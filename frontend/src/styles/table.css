@@ -1466,6 +1466,11 @@
   --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-success) 34%, transparent);
 }
 
+.table-stage__action-callout--ready_hand {
+  --table-stage-action-callout-ink: color-mix(in srgb, var(--accent-2) 86%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, var(--accent-2) 36%, transparent);
+}
+
 .table-stage__action-callout--hu {
   --table-stage-action-callout-ink: color-mix(in srgb, var(--theme-warning) 86%, var(--theme-paper-strong));
   --table-stage-action-callout-glow: color-mix(in srgb, var(--theme-warning) 36%, transparent);

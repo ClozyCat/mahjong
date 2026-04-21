@@ -91,6 +91,25 @@ fn tile_discarded_message(seat_index: usize, tile: &Tile) -> Value {
     )
 }
 
+fn ready_hand_declared_event(seat_index: usize, tile: &Tile) -> GameEvent {
+    GameEvent::ReadyHandDeclared {
+        seat: seat_index,
+        tile: tile.clone(),
+    }
+}
+
+fn ready_hand_declared_message(seat_index: usize, tile: &Tile) -> Value {
+    round_event_message(
+        "ready_hand_declared",
+        json!({
+            "type": "ready_hand_declared",
+            "seat": seat_index,
+            "tile_id": tile.tile_id,
+            "tile_key": tile.tile_key,
+        }),
+    )
+}
+
 fn replacement_draw_event(seat_index: usize, tile: &Tile) -> GameEvent {
     GameEvent::TileDrawn {
         seat: seat_index,
@@ -649,6 +668,39 @@ pub fn apply_discard_action_output_in_room_state(
         vec![tile_discarded_event(seat_index, &plan.discarded_tile)],
         vec![tile_discarded_message(seat_index, &plan.discarded_tile)],
     ))
+}
+
+pub fn apply_ready_hand_action_output_in_room_state(
+    room: &mut RoomState,
+    seat_index: usize,
+    tile_id: &str,
+) -> Result<EngineOutput, String> {
+    if !crate::rules::standard::ready_hand::can_declare_ready_hand_with_tile_id(
+        room, seat_index, tile_id,
+    ) {
+        return Err("invalid_action".to_string());
+    }
+
+    let discard_output = apply_discard_action_output_in_room_state(room, seat_index, tile_id)?;
+    let discarded_tile = room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.players.get(seat_index))
+        .and_then(|player| player.discards.last())
+        .cloned()
+        .ok_or_else(|| "invalid_action".to_string())?;
+
+    room.round_state
+        .as_mut()
+        .and_then(|round| round.players.get_mut(seat_index))
+        .ok_or_else(|| "invalid_action".to_string())?
+        .is_ready_hand = true;
+
+    let mut events = discard_output.events;
+    events.push(ready_hand_declared_event(seat_index, &discarded_tile));
+    let mut emitted_messages = discard_output.emitted_messages;
+    emitted_messages.push(ready_hand_declared_message(seat_index, &discarded_tile));
+    Ok(EngineOutput::new(events, emitted_messages))
 }
 
 #[cfg(test)]
@@ -2347,6 +2399,7 @@ mod tests {
                 players: vec![
                     PlayerRoundState {
                         seat: 0,
+                        is_ready_hand: false,
                         concealed_tiles: vec![
                             wind("east", "east#discard"),
                             suit("w1", "w1#0"),
@@ -2359,6 +2412,7 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 1,
+                        is_ready_hand: false,
                         concealed_tiles: vec![suit("t1", "t1#1"), suit("t2", "t2#1")],
                         melds: vec![],
                         display_melds: vec![],
@@ -2367,6 +2421,7 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 2,
+                        is_ready_hand: false,
                         concealed_tiles: vec![suit("b1", "b1#2"), suit("b2", "b2#2")],
                         melds: vec![],
                         display_melds: vec![],
@@ -2375,6 +2430,7 @@ mod tests {
                     },
                     PlayerRoundState {
                         seat: 3,
+                        is_ready_hand: false,
                         concealed_tiles: vec![suit("w5", "w5#3"), suit("w6", "w6#3")],
                         melds: vec![],
                         display_melds: vec![],

@@ -37,6 +37,7 @@ const ACTION_ORDER: BattleActionId[] = [
   'start_next_round',
   'restart_match',
   'discard',
+  'ready_hand',
   'flower',
   'kong',
   'hu',
@@ -52,7 +53,8 @@ const PROMPT_ACTION_PRIORITY: Record<BackendActionType, number> = {
   chow: 3,
   flower: 4,
   discard: 5,
-  pass: 6,
+  ready_hand: 6,
+  pass: 7,
 };
 
 const ACTION_LABELS: Record<BattleActionId, string> = {
@@ -61,6 +63,7 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   start_next_round: '下一局',
   restart_match: '再来一局',
   discard: '出牌',
+  ready_hand: '听',
   flower: '补花',
   kong: '杠',
   hu: '和牌',
@@ -72,6 +75,7 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
 function isBackendActionType(value: unknown): value is BackendActionType {
   return (
     value === 'discard' ||
+    value === 'ready_hand' ||
     value === 'flower' ||
     value === 'kong' ||
     value === 'hu' ||
@@ -519,10 +523,21 @@ function createActionViews(
   const flowerCandidateTileIds = getFlowerCandidateTileIds(state);
   const restrictedDiscardTileIdSet = getRestrictedDiscardTileIdSet(state);
   const optimisticDiscardPending = hasOptimisticDiscardPending(state);
+  const localPlayer =
+    typeof snapshot?.local_seat === 'number' ? findPrivatePlayer(state, snapshot.local_seat) : undefined;
+  const localReadyHandLocked = localPlayer?.is_ready_hand === true;
   const hasSelectedFlower =
     state.selectedTileIds.length === 1 && flowerCandidateTileIds.includes(state.selectedTileIds[0]);
   const hasSelectedDiscard =
-    state.selectedTileIds.length === 1 && !restrictedDiscardTileIdSet.has(state.selectedTileIds[0]);
+    !localReadyHandLocked &&
+    state.selectedTileIds.length === 1 &&
+    !restrictedDiscardTileIdSet.has(state.selectedTileIds[0]);
+  const selectedReadyHandTileId = state.selectedTileIds.length === 1 ? state.selectedTileIds[0] : null;
+  const canReadyHandFromSelection =
+    !localReadyHandLocked &&
+    Boolean(selectedReadyHandTileId) &&
+    !restrictedDiscardTileIdSet.has(selectedReadyHandTileId as string) &&
+    getReadyHandWaitsForLocalPlayer(state, selectedReadyHandTileId).length > 0;
   const canContinueRound = snapshot?.phase === 'settlement' && typeof snapshot.local_seat === 'number';
   const canRestartMatch =
     snapshot?.phase === 'finished' &&
@@ -548,6 +563,8 @@ function createActionViews(
       enabled =
         id === 'discard'
           ? hasSelectedDiscard
+          : id === 'ready_hand'
+            ? canReadyHandFromSelection
           : id === 'flower'
             ? hasSelectedFlower
             : id === 'kong'
@@ -561,7 +578,14 @@ function createActionViews(
 
     if (
       optimisticDiscardPending &&
-      (id === 'discard' || id === 'flower' || id === 'kong' || id === 'hu' || id === 'chow' || id === 'pung' || id === 'pass')
+      (id === 'discard' ||
+        id === 'ready_hand' ||
+        id === 'flower' ||
+        id === 'kong' ||
+        id === 'hu' ||
+        id === 'chow' ||
+        id === 'pung' ||
+        id === 'pass')
     ) {
       enabled = false;
     }
@@ -768,6 +792,7 @@ function createSelectedTileCode(state: SessionState) {
 function createLocalHand(state: SessionState) {
   const localSeat = getLocalSeat(state);
   const localPlayer = findPrivatePlayer(state, localSeat);
+  const localReadyHandLocked = localPlayer?.is_ready_hand === true;
   const optimisticDiscard = getOptimisticDiscard(state);
   const optimisticFlowerTileId = getOptimisticFlowerTileId(state);
   const replacementDrawnTileId = state.latestReplacementTileId ?? null;
@@ -787,7 +812,10 @@ function createLocalHand(state: SessionState) {
       isDrawn: tile.tile_id === drawnTileId,
       isReplacementDrawn: tile.tile_id === replacementDrawnTileId,
       isFlower: isFlowerTileKey(tile.tile_key),
-      isDisabled: Boolean(optimisticDiscard) || restrictedDiscardTileIdSet.has(tile.tile_id),
+      isDisabled:
+        Boolean(optimisticDiscard) ||
+        localReadyHandLocked ||
+        restrictedDiscardTileIdSet.has(tile.tile_id),
     }))
     .sort(compareLocalHandTiles);
 
@@ -820,6 +848,22 @@ function createReadyHandInsight(state: SessionState): BattleViewModel['readyHand
   const concealedTiles = localPlayer?.concealed_tiles ?? [];
   if (concealedTiles.length === 0) {
     return null;
+  }
+  if (localPlayer?.is_ready_hand) {
+    const lockedDiscardTileId =
+      privateState.pending_action?.type === 'active_turn' &&
+      typeof privateState.pending_action.drawn_tile_id === 'string'
+        ? privateState.pending_action.drawn_tile_id
+        : null;
+    const waits = getReadyHandWaitsForLocalPlayer(state, lockedDiscardTileId);
+    return waits.length > 0
+      ? {
+          source: 'current',
+          discardTileId: null,
+          discardTileCode: null,
+          waits,
+        }
+      : null;
   }
 
   const selectedDiscardTile =
@@ -1570,6 +1614,16 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
     };
   }
 
+  if (event.event_type === 'ready_hand_declared') {
+    return {
+      key,
+      label: '听',
+      emphasis: 'claim',
+      seat: effectSeat,
+      calloutTone: 'ready_hand',
+    };
+  }
+
   if (event.event_type === 'claim_made') {
     const claimType = String(event.event?.claim_type ?? '');
     return {
@@ -1738,7 +1792,13 @@ const PROMPT_SEAT_COPY: Record<Seat, string> = {
 };
 
 function resolveActionEffectCalloutTone(claimType: string): ActionEffectView['calloutTone'] {
-  if (claimType === 'chow' || claimType === 'pung' || claimType === 'kong' || claimType === 'hu') {
+  if (
+    claimType === 'chow' ||
+    claimType === 'pung' ||
+    claimType === 'kong' ||
+    claimType === 'hu' ||
+    claimType === 'ready_hand'
+  ) {
     return claimType;
   }
 

@@ -154,6 +154,7 @@ mod tests {
                 },
                 players: vec![PlayerRoundState {
                     seat: 0,
+                    is_ready_hand: false,
                     concealed_tiles: vec![
                         tile("w2#0", "w2", "suit"),
                         tile("w3#0", "w3", "suit"),

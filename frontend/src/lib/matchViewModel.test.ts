@@ -420,6 +420,143 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('enables ready_hand only when the selected discard enters ready hand', () => {
+    const base = createPlayingSessionState();
+    const selectedTileId = 'b9#0';
+    const createReadyHandTurnState = (selectedTileIds: string[]) =>
+      createMatchViewModel({
+        ...base,
+        selectedTileIds,
+        roomSnapshot: {
+          type: 'room_snapshot',
+          payload: {
+            ...base.roomSnapshot!.payload,
+            private_state: {
+              ...base.roomSnapshot!.payload.private_state!,
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 2,
+                deadline_at: '2026-03-26T06:01:00Z',
+                drawn_tile_id: selectedTileId,
+                options: ['discard', 'ready_hand'],
+              },
+              players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+                player.seat_index === 2
+                  ? {
+                      ...player,
+                      concealed_count: 14,
+                      concealed_tiles: [
+                        { tile_id: 'w1#0', tile_key: 'w1' },
+                        { tile_id: 'w2#0', tile_key: 'w2' },
+                        { tile_id: 'w3#0', tile_key: 'w3' },
+                        { tile_id: 'w4#0', tile_key: 'w4' },
+                        { tile_id: 'w5#0', tile_key: 'w5' },
+                        { tile_id: 'w6#0', tile_key: 'w6' },
+                        { tile_id: 'w7#0', tile_key: 'w7' },
+                        { tile_id: 'w8#0', tile_key: 'w8' },
+                        { tile_id: 'w9#0', tile_key: 'w9' },
+                        { tile_id: 't1#0', tile_key: 't1' },
+                        { tile_id: 't2#0', tile_key: 't2' },
+                        { tile_id: 't3#0', tile_key: 't3' },
+                        { tile_id: 't4#0', tile_key: 't4' },
+                        { tile_id: selectedTileId, tile_key: 'b9' },
+                      ],
+                      melds: [],
+                      flowers: [],
+                      discards: [],
+                    }
+                  : player,
+              ),
+            },
+          },
+        },
+        latestActionPrompt: {
+          type: 'action_prompt',
+          payload: {
+            seat_index: 2,
+            options: ['discard', 'ready_hand'],
+            deadline_at: '2026-03-26T06:01:00Z',
+          },
+        },
+      });
+
+    const unselectedViewModel = createReadyHandTurnState([]);
+    const selectedViewModel = createReadyHandTurnState([selectedTileId]);
+
+    expect(unselectedViewModel.actions.find((action) => action.id === 'ready_hand')?.enabled).toBe(false);
+    expect(selectedViewModel.actions.find((action) => action.id === 'ready_hand')?.enabled).toBe(true);
+    expect(selectedViewModel.promptCue).toMatchObject({
+      actionIds: ['discard', 'ready_hand'],
+      highlightedActionIds: ['discard', 'ready_hand'],
+    });
+  });
+
+  it('locks the local hand after ready_hand is declared', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      selectedTileIds: ['w1#0'],
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 2,
+              deadline_at: '2026-03-26T06:01:00Z',
+              drawn_tile_id: 'b9#0',
+              options: ['hu'],
+            },
+            players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
+              player.seat_index === 2
+                ? {
+                    ...player,
+                    is_ready_hand: true,
+                    concealed_count: 14,
+                    concealed_tiles: [
+                      { tile_id: 'w1#0', tile_key: 'w1' },
+                      { tile_id: 'w2#0', tile_key: 'w2' },
+                      { tile_id: 'w3#0', tile_key: 'w3' },
+                      { tile_id: 'w4#0', tile_key: 'w4' },
+                      { tile_id: 'w5#0', tile_key: 'w5' },
+                      { tile_id: 'w6#0', tile_key: 'w6' },
+                      { tile_id: 'w7#0', tile_key: 'w7' },
+                      { tile_id: 'w8#0', tile_key: 'w8' },
+                      { tile_id: 'w9#0', tile_key: 'w9' },
+                      { tile_id: 't1#0', tile_key: 't1' },
+                      { tile_id: 't2#0', tile_key: 't2' },
+                      { tile_id: 't3#0', tile_key: 't3' },
+                      { tile_id: 't4#0', tile_key: 't4' },
+                      { tile_id: 'b9#0', tile_key: 'b9' },
+                    ],
+                    melds: [],
+                    flowers: [],
+                    discards: [],
+                  }
+                : player,
+            ),
+          },
+        },
+      },
+      latestActionPrompt: {
+        type: 'action_prompt',
+        payload: {
+          seat_index: 2,
+          options: ['hu'],
+          deadline_at: '2026-03-26T06:01:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.localHand).toHaveLength(14);
+    expect(viewModel.localHand.every((tile) => tile.isDisabled)).toBe(true);
+    expect(viewModel.actions.find((action) => action.id === 'discard')?.enabled).toBe(false);
+    expect(viewModel.actions.find((action) => action.id === 'ready_hand')?.enabled).toBe(false);
+    expect(viewModel.actions.find((action) => action.id === 'hu')?.enabled).toBe(true);
+  });
+
   it('keeps a disconnected waiting player seated but blocks match start until they reconnect', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({
@@ -1209,6 +1346,30 @@ describe('createMatchViewModel', () => {
       emphasis: 'claim',
       seat: 'bottom',
       calloutTone: 'hu',
+    });
+  });
+
+  it('maps ready_hand_declared into a ting action effect', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'ready_hand_declared',
+          event: {
+            seat: 2,
+            tile_id: 'b9#discard',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '听',
+      emphasis: 'claim',
+      seat: 'bottom',
+      calloutTone: 'ready_hand',
     });
   });
 

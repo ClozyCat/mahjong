@@ -45,6 +45,10 @@ export function getRoundEventCopy(
     return `${seatName}打出${tileName}`;
   }
 
+  if (eventType === 'ready_hand_declared') {
+    return `${getSeatName(event.seat, seats)}宣布听牌`;
+  }
+
   if (eventType === 'claim_made') {
     const claimType = CLAIM_TYPE_NAMES[String(event.claim_type)] ?? '响应';
     const tileName = getTileName(getTileCodeFromTileId(event.tile_id));

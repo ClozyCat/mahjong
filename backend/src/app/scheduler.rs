@@ -14,6 +14,7 @@ use crate::app::{
     send_outbound, serialize_room, sleep_until,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
+use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
 use crate::rules::standard::automation::{
     next_bot_action_in_room_state as standard_next_bot_action,
     try_process_due_timeout_in_room_state as standard_try_process_due_timeout,
@@ -22,6 +23,14 @@ use crate::rules::standard::flow::{
     process_due_continue_action_in_room_state as standard_process_due_continue_action,
     reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
 };
+use crate::rules::standard::win::apply_hu_action_output_in_room_state;
+
+fn player_is_ready_hand(room: &crate::core::state::RoomState, seat_index: usize) -> bool {
+    room.round_state
+        .as_ref()
+        .and_then(|round| round.players.get(seat_index))
+        .is_some_and(|player| player.is_ready_hand)
+}
 
 async fn process_due_pending_timeout(state: AppContext, table_code: String, expected_nonce: u64) {
     let Some(room_handle) = room_handle(&state, &table_code).await else {
@@ -232,14 +241,43 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         return;
     };
 
-    let action_result = match try_handle_player_action_in_room_state(
-        &mut runtime.room,
-        action.seat_index,
-        &action.action_type,
-        &action.tile_ids,
-    ) {
-        Ok(result) => result,
-        Err(_) => return,
+    let action_result = if player_is_ready_hand(&runtime.room, action.seat_index) {
+        match action.action_type.as_str() {
+            "discard" => action
+                .tile_ids
+                .first()
+                .and_then(|tile_id| {
+                    apply_discard_action_output_in_room_state(
+                        &mut runtime.room,
+                        action.seat_index,
+                        tile_id,
+                    )
+                    .ok()
+                })
+                .map(Ok),
+            "hu" => apply_hu_action_output_in_room_state(&mut runtime.room, action.seat_index)
+                .ok()
+                .map(Ok),
+            _ => match try_handle_player_action_in_room_state(
+                &mut runtime.room,
+                action.seat_index,
+                &action.action_type,
+                &action.tile_ids,
+            ) {
+                Ok(result) => result,
+                Err(_) => return,
+            },
+        }
+    } else {
+        match try_handle_player_action_in_room_state(
+            &mut runtime.room,
+            action.seat_index,
+            &action.action_type,
+            &action.tile_ids,
+        ) {
+            Ok(result) => result,
+            Err(_) => return,
+        }
     };
     let messages = match action_result {
         Some(Ok(output)) => output.emitted_messages,

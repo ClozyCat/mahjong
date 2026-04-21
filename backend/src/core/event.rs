@@ -21,6 +21,10 @@ pub enum GameEvent {
         seat: Seat,
         tile: Tile,
     },
+    ReadyHandDeclared {
+        seat: Seat,
+        tile: Tile,
+    },
     MeldClaimed {
         seat: Seat,
         meld: Vec<String>,

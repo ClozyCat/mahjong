@@ -33,6 +33,7 @@ pub enum ContinueActionKind {
 pub enum PlayerAction {
     Flower { tile_ids: Vec<TileId> },
     Discard { tile_id: TileId },
+    ReadyHand { tile_id: TileId },
     Chow { tile_ids: Vec<TileId> },
     Pung { tile_ids: Vec<TileId> },
     Kong { tile_ids: Vec<TileId> },

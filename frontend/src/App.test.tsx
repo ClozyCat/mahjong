@@ -582,6 +582,68 @@ describe('App', () => {
     });
   });
 
+  it('sends ready_hand with the selected tile and applies the optimistic discard state', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+    const selectedTileId = 'b9#0';
+    const baseSnapshot = createPlayingSnapshotPayload();
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            ...baseSnapshot.private_state,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: selectedTileId,
+              options: ['discard', 'ready_hand'],
+            },
+            players: [
+              {
+                ...baseSnapshot.private_state.players[0],
+                concealed_count: 14,
+                concealed_tiles: [
+                  { tile_id: 'w1#0', tile_key: 'w1' },
+                  { tile_id: 'w2#0', tile_key: 'w2' },
+                  { tile_id: 'w3#0', tile_key: 'w3' },
+                  { tile_id: 'w4#0', tile_key: 'w4' },
+                  { tile_id: 'w5#0', tile_key: 'w5' },
+                  { tile_id: 'w6#0', tile_key: 'w6' },
+                  { tile_id: 'w7#0', tile_key: 'w7' },
+                  { tile_id: 'w8#0', tile_key: 'w8' },
+                  { tile_id: 'w9#0', tile_key: 'w9' },
+                  { tile_id: 't1#0', tile_key: 't1' },
+                  { tile_id: 't2#0', tile_key: 't2' },
+                  { tile_id: 't3#0', tile_key: 't3' },
+                  { tile_id: 't4#0', tile_key: 't4' },
+                  { tile_id: selectedTileId, tile_key: 'b9' },
+                ],
+              },
+              ...baseSnapshot.private_state.players.slice(1),
+            ],
+          },
+        }),
+      });
+    });
+
+    await user.click(getLocalHandButtons().at(-1)!);
+    expect(screen.getByRole('button', { name: '听' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '听' }));
+
+    await waitFor(() => {
+      expect(getLocalHandButtons()).toHaveLength(13);
+      expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+      expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+        { type: 'join_table', payload: { nickname: 'Player A' } },
+        { type: 'action_request', payload: { action_type: 'ready_hand', tile_ids: [selectedTileId] } },
+      ]);
+    });
+  });
+
   it('clears preselected claim tiles after the claim window times out and play resumes', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

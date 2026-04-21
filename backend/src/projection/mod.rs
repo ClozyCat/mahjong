@@ -11,5 +11,6 @@ pub struct SeatProjectionSupport {
     pub has_concealed_flower: bool,
     pub has_self_kong: bool,
     pub can_hu: bool,
+    pub can_ready_hand: bool,
     pub restricted_discard_tile_ids: Vec<String>,
 }

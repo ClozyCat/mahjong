@@ -45,8 +45,6 @@
 
 - Modify: `backend/src/rules/standard/automation.rs`
   Reuse the existing `BotAction` envelope for ready-hand humans so the scheduler can run the same action pipe.
-- Modify: `backend/src/app/scheduler.rs`
-  Keep the existing bot delay for real bots, but dispatch ready-hand human auto-actions with `0ms`.
 - Modify: `backend/src/rules/standard/win.rs`
   Feed the winner’s `is_ready_hand` flag into scoring.
 - Modify: `backend/src/rules/scoring/evaluator.rs`
@@ -71,7 +69,7 @@
 - Modify: `frontend/src/lib/roundEventCopy.ts`
   Give `ready_hand_declared` a Chinese toast string instead of the generic fallback.
 - Modify: `frontend/src/components/battle-screen/fanGuide.ts`
-  Add `ready_hand_win` => `听牌成和` with a 1-fan explanation.
+  Add `ready_hand_win` => `听牌成和` with a 2-fan explanation.
 
 ### Test files
 
@@ -90,7 +88,7 @@
 
 ### Design constraints to keep explicit during implementation
 
-- Backend ready-hand validation should follow the existing frontend notion of “结构上听牌”, not the eight-fan settlement gate. Use structural winning decomposition after a candidate draw; do not call the minimum-fan `can_declare_hu_with_cache_for_state` helper when deciding whether a discard is eligible for declaration.
+- Backend ready-hand validation should follow the existing frontend notion of “结构上听牌”. Use structural winning decomposition after a candidate draw; do not call settlement-only minimum-fan gating when deciding whether a discard is eligible for declaration.
 - After a player has declared ready hand, manual `discard` / `flower` / `kong` actions must be rejected by backend validation, even if the frontend is already locking the hand.
 - `ready_hand_declared` must be emitted after the ordinary `tile_discarded` round event so the river stays correct and the frontend can still use the latest event for the `听` callout.
 
@@ -1006,7 +1004,7 @@ git commit -m "feat(backend): 支持听牌后自动出牌"
 ```rust
 // backend/src/rules/scoring/evaluator.rs
 #[test]
-fn scores_ready_hand_win_as_one_fan() {
+fn scores_ready_hand_win_as_two_fan() {
     let tile_keys = vec![
         "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
     ]
@@ -1074,7 +1072,7 @@ fn scores_ready_hand_win_as_one_fan() {
 
     assert!(!base_result.fan_keys.iter().any(|fan| fan == "ready_hand_win"));
     assert!(ready_hand_result.fan_keys.iter().any(|fan| fan == "ready_hand_win"));
-    assert_eq!(ready_hand_result.fan_total, base_result.fan_total + 1);
+    assert_eq!(ready_hand_result.fan_total, base_result.fan_total + 2);
 }
 ```
 
@@ -1104,7 +1102,7 @@ fn settlement_includes_ready_hand_win_for_ready_hand_winner() {
 
 ```bash
 cd backend
-cargo test scores_ready_hand_win_as_one_fan -- --exact
+cargo test scores_ready_hand_win_as_two_fan -- --exact
 cargo test settlement_includes_ready_hand_win_for_ready_hand_winner -- --exact
 ```
 
@@ -1258,7 +1256,7 @@ let evaluation = ScoringEvaluationInput {
 
 ```bash
 cd backend
-cargo test scores_ready_hand_win_as_one_fan -- --exact
+cargo test scores_ready_hand_win_as_two_fan -- --exact
 cargo test settlement_includes_ready_hand_win_for_ready_hand_winner -- --exact
 ```
 
@@ -1987,7 +1985,7 @@ describe('fanGuide ready_hand_win', () => {
     expect(getFanLabel('ready_hand_win')).toBe('听牌成和');
     expect(getFanGuideEntry('ready_hand_win')).toMatchObject({
       fanKey: 'ready_hand_win',
-      fanValue: 1,
+      fanValue: 2,
       label: '听牌成和',
     });
   });
@@ -2058,8 +2056,8 @@ if (eventType === 'ready_hand_declared') {
 // frontend/src/components/battle-screen/fanGuide.ts
 FAN_GUIDE_DEFINITIONS.unshift({
   fanKey: 'ready_hand_win',
-  fanValue: 1,
-  intro: '和牌前已经成功宣告听牌，本次成和额外计 1 番。',
+  fanValue: 2,
+  intro: '和牌前已经成功宣告听牌，本次成和额外计 2 番。',
   example: '例：先点击“听”锁定手牌，随后自摸或荣和完成和牌。',
 });
 
@@ -2102,7 +2100,7 @@ cargo test active_turn_projection_includes_ready_hand_for_local_readyable_hand -
 cargo test local_ready_hand_sets_flag_and_emits_ready_hand_event -- --exact
 cargo test ready_hand_human_discards_drawn_tile_as_next_auto_action -- --exact
 cargo test ready_hand_human_keeps_hu_when_draw_is_winning_tile -- --exact
-cargo test scores_ready_hand_win_as_one_fan -- --exact
+cargo test scores_ready_hand_win_as_two_fan -- --exact
 cargo test settlement_includes_ready_hand_win_for_ready_hand_winner -- --exact
 ```
 
@@ -2149,7 +2147,7 @@ Expected:
 4. Advance to the next draw for the same player and verify:
    - a non-winning draw is auto-discarded without waiting for the timeout
    - a winning draw leaves only 和牌 available
-5. Finish the hand and verify the result fan list contains 听牌成和 = 1.
+5. Finish the hand and verify the result fan list contains 听牌成和 = 2.
 ```
 
 Expected:

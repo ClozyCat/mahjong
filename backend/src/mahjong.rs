@@ -804,6 +804,51 @@ mod tests {
         );
     }
 
+    fn room_for_local_ready_hand() -> Value {
+        let mut room = room_for_local_discard();
+        room["round_state"]["players"][0]["concealed_tiles"] = json!([
+            suit("w1", "w1#0"),
+            suit("w2", "w2#1"),
+            suit("w3", "w3#2"),
+            suit("w4", "w4#3"),
+            suit("w5", "w5#4"),
+            suit("w6", "w6#5"),
+            suit("w7", "w7#6"),
+            suit("w8", "w8#7"),
+            suit("w9", "w9#8"),
+            suit("t1", "t1#9"),
+            suit("t2", "t2#10"),
+            suit("t3", "t3#11"),
+            suit("t4", "t4#12"),
+            suit("b9", "b9#discard")
+        ]);
+        room["round_state"]["last_action_context"]["tile_id"] = json!("b9#discard");
+        room["pending_timeout"]["drawn_tile_id"] = json!("b9#discard");
+        room
+    }
+
+    #[test]
+    fn local_ready_hand_sets_flag_and_emits_ready_hand_event() {
+        let mut room = room_for_local_ready_hand();
+
+        let result = try_handle_action(&mut room, 0, "ready_hand", &[String::from("b9#discard")])
+            .expect("ready hand should be handled locally")
+            .expect("ready hand should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(result[1]["payload"]["event_type"], "ready_hand_declared");
+        assert_eq!(room["round_state"]["players"][0]["is_ready_hand"], true);
+        assert_eq!(
+            room["round_state"]["players"][0]["discards"]
+                .as_array()
+                .and_then(|discards| discards.last())
+                .and_then(|tile| tile.get("tile_id"))
+                .and_then(Value::as_str),
+            Some("b9#discard")
+        );
+    }
+
     #[test]
     fn local_discard_after_last_live_tile_drawn_settles_exhaustive_draw() {
         let mut room = room_for_last_live_tile_active_turn();

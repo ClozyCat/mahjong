@@ -93,6 +93,46 @@ describe('BottomActionDock', () => {
     );
   });
 
+  it('keeps the ready_hand button to the right of discard with the themed outline style', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[
+          { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
+          { id: 'ready_hand', label: '听', enabled: true, emphasis: 'medium' },
+        ]}
+        isElevated
+        promptCue={{
+          kind: 'turn',
+          tone: 'info',
+          title: '当前可选择出牌或听牌',
+          detail: '你可以 出牌 / 听',
+          actionIds: ['discard', 'ready_hand'],
+          highlightedActionIds: ['discard', 'ready_hand'],
+          sourceSeat: null,
+          isUrgent: false,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const actionLabels = screen
+      .getByLabelText('即时操作按钮')
+      .querySelectorAll('.action-dock__action-label');
+
+    expect(Array.from(actionLabels, (node) => node.textContent)).toEqual(['出牌', '听']);
+    expect(screen.getByRole('button', { name: '听' })).toHaveClass(
+      'action-dock__action--themed',
+      'action-dock__action--themed-ready-hand',
+    );
+  });
+
   it('hides the dock countdown when only other players are responding', () => {
     render(
       <BottomActionDock

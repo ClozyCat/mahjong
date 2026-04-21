@@ -62,6 +62,15 @@ pub fn parse_player_command(
                 })
             }
         }
+        "ready_hand" => {
+            if tile_ids.len() != 1 {
+                Err("select_tile_first".to_string())
+            } else {
+                Ok(PlayerAction::ReadyHand {
+                    tile_id: tile_ids[0].clone(),
+                })
+            }
+        }
         "chow" => Ok(PlayerAction::Chow {
             tile_ids: tile_ids.to_vec(),
         }),
@@ -100,6 +109,14 @@ fn extract_event_from_message(message: &Value) -> Option<GameEvent> {
 
     match event_type.as_str() {
         "tile_discarded" => Some(GameEvent::TileDiscarded {
+            seat: event
+                .get("seat")
+                .and_then(Value::as_u64)
+                .map(|value| value as Seat)
+                .unwrap_or(0),
+            tile: event_tile(&event),
+        }),
+        "ready_hand_declared" => Some(GameEvent::ReadyHandDeclared {
             seat: event
                 .get("seat")
                 .and_then(Value::as_u64)
@@ -272,6 +289,18 @@ mod tests {
         let command =
             parse_player_command(0, "discard", &[]).expect("discard should be recognized");
         assert_eq!(command, Err("select_tile_first".to_string()));
+    }
+
+    #[test]
+    fn parses_ready_hand_command() {
+        let command = parse_player_command(2, "ready_hand", &[String::from("b9#discard")])
+            .expect("ready_hand should be recognized")
+            .expect("ready_hand should parse");
+
+        assert!(matches!(
+            command,
+            GameCommand::PlayerAction { actor: 2, .. }
+        ));
     }
 
     #[test]
