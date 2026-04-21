@@ -54,6 +54,7 @@ export function BattleScreen({
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
+  const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
   const isReadyActionCoolingDownRef = useRef(false);
   const readyActionCooldownTimerRef = useRef<number | null>(null);
@@ -210,15 +211,20 @@ export function BattleScreen({
   useLayoutEffect(() => {
     if (!viewModel.result) {
       hasObservedNoResultRef.current = true;
+      previousSettlementPageCountRef.current = 0;
       setIsSettlementPanelReady(true);
       return undefined;
     }
 
+    const settlementPageCount = getSettlementPageCount(viewModel.result);
     const settlementPanelDelayMs = getSettlementPanelDelayMs(
       viewModel.result.winType,
       hasObservedNoResultRef.current,
+      settlementPageCount,
+      settlementPageCount > previousSettlementPageCountRef.current,
     );
     hasObservedNoResultRef.current = false;
+    previousSettlementPageCountRef.current = settlementPageCount;
 
     if (settlementPanelDelayMs <= 0) {
       setIsSettlementPanelReady(true);
@@ -326,12 +332,29 @@ function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
   return `${viewModel.lastDiscardSeat}:${viewModel.lastDiscard}:${discardCount}`;
 }
 
-function getSettlementPanelDelayMs(winType: string | null, hasObservedNoResult: boolean) {
+function getSettlementPanelDelayMs(
+  winType: string | null,
+  hasObservedNoResult: boolean,
+  settlementPageCount: number,
+  hasNewSettlementPages: boolean,
+) {
   if (winType === 'draw' || winType === 'discard' || winType === 'self_draw') {
+    if (winType === 'discard' && hasNewSettlementPages && settlementPageCount > 1) {
+      return settlementPageCount * SETTLEMENT_CALLOUT_LINGER_MS;
+    }
+
     return hasObservedNoResult ? SETTLEMENT_CALLOUT_LINGER_MS : 0;
   }
 
   return 0;
+}
+
+function getSettlementPageCount(result: BattleViewModel['result']) {
+  if (!result) {
+    return 0;
+  }
+
+  return Array.isArray(result.pages) && result.pages.length > 0 ? result.pages.length : 1;
 }
 
 function shouldReturnDiscardImmediatelyForNextAction(

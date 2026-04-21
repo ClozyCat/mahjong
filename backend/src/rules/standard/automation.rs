@@ -791,6 +791,40 @@ mod tests {
     }
 
     #[test]
+    fn claim_timeout_still_advances_when_next_player_is_ready_hand() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(1))
+            .expect("seat 1 should exist")
+            .is_ready_hand = true;
+
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+
+        let result = try_process_due_timeout_in_room_state(&mut room);
+
+        assert!(result.is_ok(), "claim timeout should not fail for ready-hand seats");
+        assert!(result.expect("claim timeout should work").is_some());
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.current_actor),
+            Some(1)
+        );
+        assert!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref())
+                .is_none()
+        );
+    }
+
+    #[test]
     fn claim_timeout_can_finish_after_recorded_chow_response() {
         let mut room = claim_window_room_state();
         room.round_state

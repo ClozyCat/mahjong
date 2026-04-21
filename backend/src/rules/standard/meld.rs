@@ -139,6 +139,23 @@ pub fn seats_with_hu_candidate_for_tile_in_room_state(
 }
 
 #[cfg(test)]
+fn player_is_ready_hand(room: &Value, seat_index: usize) -> bool {
+    room.get("round_state")
+        .and_then(|round| round.get("players"))
+        .and_then(|players| players.get(seat_index))
+        .and_then(|player| player.get("is_ready_hand"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn player_is_ready_hand_in_room_state(room: &RoomState, seat_index: usize) -> bool {
+    room.round_state
+        .as_ref()
+        .and_then(|round| round.players.get(seat_index))
+        .is_some_and(|player| player.is_ready_hand)
+}
+
+#[cfg(test)]
 pub fn claim_window_options_after_discard(
     room: &Value,
     discarder_seat: usize,
@@ -154,6 +171,7 @@ pub fn claim_window_options_after_discard(
                 return Vec::new();
             }
 
+            let is_ready_hand = player_is_ready_hand(room, seat_index);
             let counts = scoring_cache
                 .player(seat_index)
                 .map(|player| player.concealed_tile_counts)
@@ -163,13 +181,13 @@ pub fn claim_window_options_after_discard(
                 let same_tile_count = tile_index(discarded_tile_key)
                     .map(|tile_index| counts[tile_index])
                     .unwrap_or(0);
-                if same_tile_count >= 2 {
+                if !is_ready_hand && same_tile_count >= 2 {
                     claims.push("pung".to_string());
                 }
                 if same_tile_count >= 3 {
                     claims.push("kong".to_string());
                 }
-                if seat_index == next_player && can_chow(discarded_tile_key, &counts) {
+                if !is_ready_hand && seat_index == next_player && can_chow(discarded_tile_key, &counts) {
                     claims.push("chow".to_string());
                 }
             }
@@ -202,6 +220,7 @@ pub fn claim_window_options_after_discard_in_room_state(
                 return Vec::new();
             }
 
+            let is_ready_hand = player_is_ready_hand_in_room_state(room, seat_index);
             let counts = scoring_cache
                 .player(seat_index)
                 .map(|player| player.concealed_tile_counts)
@@ -211,13 +230,13 @@ pub fn claim_window_options_after_discard_in_room_state(
                 let same_tile_count = tile_index(discarded_tile_key)
                     .map(|tile_index| counts[tile_index])
                     .unwrap_or(0);
-                if same_tile_count >= 2 {
+                if !is_ready_hand && same_tile_count >= 2 {
                     claims.push("pung".to_string());
                 }
                 if same_tile_count >= 3 {
                     claims.push("kong".to_string());
                 }
-                if seat_index == next_player && can_chow(discarded_tile_key, &counts) {
+                if !is_ready_hand && seat_index == next_player && can_chow(discarded_tile_key, &counts) {
                     claims.push("chow".to_string());
                 }
             }

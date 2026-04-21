@@ -323,6 +323,8 @@ describe('BattleScreen', () => {
   });
 
   it('allows paging between multiple winning hands in the settlement overlay', () => {
+    vi.useFakeTimers();
+
     renderBattleScreen(
       createBattleViewModel({
         mode: 'resolving',
@@ -378,18 +380,132 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByRole('group', { name: '番型明细分页' })).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+
+    expect(screen.getByRole('button', { name: '上一位' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '下一位' })).toBeInTheDocument();
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
     expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
     expect(screen.getByText('平胡')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '查看下一位和牌者' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一位' }));
 
     expect(screen.getByText('2 / 2')).toBeInTheDocument();
     expect(screen.getByText(/胜者 Player Top（对家）/)).toBeInTheDocument();
     expect(screen.getByText(/花牌 1/)).toBeInTheDocument();
     expect(screen.getByText('清一色')).toBeInTheDocument();
     expect(screen.queryByText('平胡')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('waits for all multi-winner hu callouts before opening the settlement overlay', () => {
+    vi.useFakeTimers();
+
+    const { container, rerender } = renderBattleScreen(
+      createBattleViewModel({
+        actionEffect: {
+          key: 'hu-1',
+          label: '和',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'hu',
+        },
+        result: null,
+      }),
+    );
+
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          actionEffect: {
+            key: 'hu-2',
+            label: '和',
+            emphasis: 'claim',
+            seat: 'top',
+            calloutTone: 'hu',
+          },
+          result: {
+            title: '本局结算',
+            summary: '2 家同时和牌，等待下一局',
+            fanTotal: 8,
+            winnerSeat: 'right',
+            discarderSeat: 'left',
+            winType: 'discard',
+            winTypeLabel: '荣和',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            pages: [
+              {
+                fanTotal: 8,
+                winnerSeat: 'right',
+                discarderSeat: 'left',
+                winType: 'discard',
+                winTypeLabel: '荣和',
+                flowerCount: 0,
+                fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+              },
+              {
+                fanTotal: 16,
+                winnerSeat: 'top',
+                discarderSeat: 'left',
+                winType: 'discard',
+                winTypeLabel: '荣和',
+                flowerCount: 1,
+                fanBreakdown: [{ fanKey: 'full_flush', fanValue: 16 }],
+              },
+            ],
+            scoreDeltaBySeat: {
+              left: -24,
+              top: 16,
+              right: 8,
+            },
+            seats: [
+              { seat: 'top', name: 'Player Top', score: 26816, delta: 16 },
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24268, delta: -24 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(document.body.querySelector('.result-overlay')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).not.toBeNull();
+    expect(document.body.querySelector('.result-overlay')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(document.body.querySelector('.result-overlay')).not.toBeNull();
+    vi.useRealTimers();
   });
 
   it('shows the matching fan guide tooltip after hovering a settlement fan row for 0.5s', () => {

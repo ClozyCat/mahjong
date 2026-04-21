@@ -122,6 +122,7 @@ export function TableStage({
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
   const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
+  const [pendingActionCallouts, setPendingActionCallouts] = useState<ActionCallout[]>([]);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
   const [isQuickChatOpen, setIsQuickChatOpen] = useState(false);
   const [riverColumnsH, setRiverColumnsH] = useState(8);
@@ -131,6 +132,7 @@ export function TableStage({
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
+  const pendingActionCalloutsRef = useRef<ActionCallout[]>([]);
   const activeActionCalloutTimerRef = useRef<number | null>(null);
   const exitingActionCalloutTimerRef = useRef<number | null>(null);
   const trackedSpotlightKeyRef = useRef<string | null>(null);
@@ -168,6 +170,10 @@ export function TableStage({
   useEffect(() => {
     activeActionCalloutRef.current = activeActionCallout;
   }, [activeActionCallout]);
+
+  useEffect(() => {
+    pendingActionCalloutsRef.current = pendingActionCallouts;
+  }, [pendingActionCallouts]);
 
   useEffect(() => {
     return () => {
@@ -208,12 +214,12 @@ export function TableStage({
       if (ratio > 1.6) {
         setRiverColumnsH(12);
         setRiverColumnsV(6);
-        setMeldRowsH(1);
+        setMeldRowsH(2);
         setMeldColsV(1);
       } else if (ratio > 1.3) {
         setRiverColumnsH(10);
         setRiverColumnsV(6);
-        setMeldRowsH(1);
+        setMeldRowsH(2);
         setMeldColsV(1);
       } else if (ratio < 0.8) {
         setRiverColumnsH(6);
@@ -262,24 +268,45 @@ export function TableStage({
       return;
     }
 
-    if (currentActionCallout) {
+    if (pendingActionCalloutsRef.current.some((callout) => callout.key === actionCalloutKey)) {
       return;
     }
 
-    if (activeActionCalloutTimerRef.current !== null) {
-      window.clearTimeout(activeActionCalloutTimerRef.current);
-      activeActionCalloutTimerRef.current = null;
-    }
+    const showActionCallout = (callout: ActionCallout) => {
+      if (activeActionCalloutTimerRef.current !== null) {
+        window.clearTimeout(activeActionCalloutTimerRef.current);
+        activeActionCalloutTimerRef.current = null;
+      }
+
+      setActiveActionCallout(callout);
+      activeActionCalloutTimerRef.current = window.setTimeout(() => {
+        activeActionCalloutTimerRef.current = null;
+        const [nextCallout, ...remainingCallouts] = pendingActionCalloutsRef.current;
+        pendingActionCalloutsRef.current = remainingCallouts;
+        setPendingActionCallouts(remainingCallouts);
+
+        if (activeActionCalloutRef.current?.key !== callout.key) {
+          return;
+        }
+
+        if (nextCallout) {
+          showActionCallout(nextCallout);
+          return;
+        }
+
+        setActiveActionCallout(null);
+      }, ACTION_CALLOUT_LINGER_MS);
+    };
 
     consumedActionCalloutKeyRef.current = actionCalloutKey;
-    setActiveActionCallout(nextActionCallout);
-
-    if (nextActionCallout) {
-      activeActionCalloutTimerRef.current = window.setTimeout(() => {
-        setActiveActionCallout((current) => (current?.key === nextActionCallout.key ? null : current));
-        activeActionCalloutTimerRef.current = null;
-      }, ACTION_CALLOUT_LINGER_MS);
+    if (currentActionCallout) {
+      const nextPendingCallouts = [...pendingActionCalloutsRef.current, nextActionCallout];
+      pendingActionCalloutsRef.current = nextPendingCallouts;
+      setPendingActionCallouts(nextPendingCallouts);
+      return;
     }
+
+    showActionCallout(nextActionCallout);
   }, [actionEffect, settlementWinnerSeat, settlementWinType, settlementWinTypeLabel]);
 
   useEffect(() => {
@@ -299,6 +326,8 @@ export function TableStage({
       activeActionCalloutTimerRef.current = null;
     }
 
+    pendingActionCalloutsRef.current = [];
+    setPendingActionCallouts([]);
     setActiveActionCallout(null);
     if (exitingActionCalloutTimerRef.current !== null) {
       window.clearTimeout(exitingActionCalloutTimerRef.current);

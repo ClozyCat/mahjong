@@ -223,6 +223,57 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__melds--right.table-stage__melds--dense')).toBeNull();
   });
 
+  it('keeps top and bottom meld racks in two-row mode on wide screens so the third meld starts a new column', () => {
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1920 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+
+    const { container, unmount } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          {
+            seat: 'top',
+            name: 'Player Top',
+            melds: [
+              ['w1', 'w2', 'w3'],
+              ['w4', 'w5', 'w6'],
+              ['w7', 'w8', 'w9'],
+            ],
+          },
+          { seat: 'left', name: 'Player Left', melds: [] },
+          { seat: 'right', name: 'Player Right', melds: [] },
+          {
+            seat: 'bottom',
+            name: 'Player Bottom',
+            melds: [
+              ['b1', 'b2', 'b3'],
+              ['b4', 'b5', 'b6'],
+              ['b7', 'b8', 'b9'],
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage')?.style.getPropertyValue('--table-stage-meld-rows-h')).toBe('2');
+    expect(container.querySelector('.table-stage')?.style.getPropertyValue('--table-stage-meld-cols-v')).toBe('1');
+
+    unmount();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight });
+  });
+
   it('shows the current latest discard in a larger spotlight near the discarding seat', () => {
     const { container } = render(
       <TableStage
@@ -939,6 +990,68 @@ describe('TableStage', () => {
     expect(screen.getByText('和')).toBeInTheDocument();
     expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
     expect(container.querySelector(className)).not.toBeNull();
+  });
+
+  it('queues multiple hu callouts and shows them one by one', () => {
+    vi.useFakeTimers();
+
+    const props = {
+      discards: {
+        top: [],
+        left: ['b1'],
+        right: [],
+        bottom: [],
+      },
+      activeSeat: 'bottom' as const,
+      lastDiscard: 'b1',
+      lastDiscardSeat: 'left' as const,
+      promptText: null,
+    };
+
+    const { container, rerender } = render(
+      <TableStage
+        {...props}
+        actionEffect={{
+          key: 'hu-1',
+          label: '胡牌',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'hu',
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+
+    rerender(
+      <TableStage
+        {...props}
+        actionEffect={{
+          key: 'hu-2',
+          label: '胡牌',
+          emphasis: 'claim',
+          seat: 'top',
+          calloutTone: 'hu',
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).toBeNull();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(container.querySelector('.table-stage__action-callout')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('fades the action callout after three seconds', () => {
