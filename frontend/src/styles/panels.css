@@ -303,19 +303,6 @@
   cursor: not-allowed;
 }
 
-.connect-gate__footer {
-  text-align: center;
-  border-top: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
-  padding-top: 1.5rem;
-}
-
-.connect-gate__quote {
-  font-family: 'Noto Sans SC', serif;
-  font-size: 0.9rem;
-  font-style: italic;
-  color: var(--muted);
-  opacity: 0.7;
-}
 
 @keyframes pulse-glow {
 
@@ -385,11 +372,10 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, 
-    transparent, 
-    color-mix(in srgb, var(--accent) 40%, transparent), 
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      color-mix(in srgb, var(--accent) 40%, transparent),
+      transparent);
   pointer-events: none;
 }
 
@@ -735,11 +721,10 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, 
-    transparent, 
-    color-mix(in srgb, var(--accent) 50%, transparent), 
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      color-mix(in srgb, var(--accent) 50%, transparent),
+      transparent);
   pointer-events: none;
   z-index: 2;
 }
@@ -1096,8 +1081,8 @@
 .result-overlay__seat-row--interactive:hover,
 .result-overlay__seat-row--interactive:focus-visible {
   transform: translateY(-1px);
-  box-shadow: 
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent), 
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
     0 14px 22px var(--theme-shadow-soft);
   border-color: color-mix(in srgb, var(--accent) 24%, var(--theme-border));
 }
@@ -1243,7 +1228,7 @@
 
 .result-overlay__primary-btn:hover:not(:disabled) {
   transform: translateY(-2px) scale(1.02);
-  box-shadow: 
+  box-shadow:
     0 10px 24px color-mix(in srgb, var(--accent) 34%, transparent),
     0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
 }
@@ -1478,10 +1463,7 @@
   display: grid;
   place-items: center;
   padding:
-    max(0.75rem, env(safe-area-inset-top))
-    max(0.75rem, env(safe-area-inset-right))
-    max(0.75rem, env(safe-area-inset-bottom))
-    max(0.75rem, env(safe-area-inset-left));
+    max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-veil) 62%, transparent), color-mix(in srgb, var(--theme-veil) 88%, transparent)),
     rgba(5, 10, 15, 0.48);

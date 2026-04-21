@@ -22,14 +22,6 @@ interface ConnectGateProps {
   onJoin: () => void;
 }
 
-const CONNECT_GATE_QUOTES = [
-  '牌局未开，先定心气。',
-  '落子无悔，起手有光。',
-  '风起四座，静待良局。',
-  '牌有千变，心守一线。',
-  '好局不怕晚，妙手自会来。',
-  '入席先安神，出手见真章。',
-];
 
 const TABLE_MODE_COPY: Record<TableMode, { label: string; description: string }> = {
   normal: {
@@ -56,9 +48,6 @@ export function ConnectGate({
   onCreate,
   onJoin,
 }: ConnectGateProps) {
-  const [footnoteQuote] = useState(
-    () => CONNECT_GATE_QUOTES[Math.floor(Math.random() * CONNECT_GATE_QUOTES.length)],
-  );
   const [tableCodeDraft, setTableCodeDraft] = useState(value.tableCode);
   const [nicknameDraft, setNicknameDraft] = useState(value.nickname);
   const tableCodeComposingRef = useRef(false);
@@ -220,9 +209,6 @@ export function ConnectGate({
           </div>
         </section>
 
-        <footer className="connect-gate__footer">
-          <p className="connect-gate__quote">{footnoteQuote}</p>
-        </footer>
       </div>
     </main>
   );
