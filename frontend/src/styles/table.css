@@ -395,22 +395,7 @@
   width: auto;
 }
 
-.table-stage__river--active {
-  filter: none;
-}
 
-.table-stage__river--active::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  /* Ethereal gilded highlight */
-  border: 1.2px solid color-mix(in srgb, var(--accent-2) 42%, transparent);
-  box-shadow: 
-    0 0 18px color-mix(in srgb, var(--accent-2) 32%, transparent),
-    inset 0 0 6px color-mix(in srgb, var(--accent-2) 14%, transparent);
-  mask-image: radial-gradient(circle at center, black 85%, transparent 100%);
-}
 
 /* ------- Seat panels ------- */
 
