@@ -266,8 +266,10 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(container.querySelector('.table-stage')?.style.getPropertyValue('--table-stage-meld-rows-h')).toBe('2');
-    expect(container.querySelector('.table-stage')?.style.getPropertyValue('--table-stage-meld-cols-v')).toBe('1');
+    const tableStage = container.querySelector('.table-stage') as HTMLElement | null;
+
+    expect(tableStage?.style.getPropertyValue('--table-stage-meld-rows-h')).toBe('2');
+    expect(tableStage?.style.getPropertyValue('--table-stage-meld-cols-v')).toBe('1');
 
     unmount();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
