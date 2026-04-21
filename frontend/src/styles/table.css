@@ -409,7 +409,6 @@
   box-shadow: 
     0 0 18px color-mix(in srgb, var(--accent-2) 32%, transparent),
     inset 0 0 6px color-mix(in srgb, var(--accent-2) 14%, transparent);
-  animation: frame-pulse 2.4s var(--ease-lux) infinite;
   mask-image: radial-gradient(circle at center, black 85%, transparent 100%);
 }
 
