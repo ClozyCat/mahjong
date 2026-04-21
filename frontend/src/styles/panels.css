@@ -1,8 +1,7 @@
 /* =================================================
    Panels, Overlays, Controls & Shared Components
    Merged from all cascade layers.  Includes:
-   - connect-gate, player-ring, player-slot
-   - top-match-bar, battle-drawer
+   - connect-gate, top-match-bar
    - result-overlay (settlement), fan-guide, ambient-overlay
    - table-stage sub-elements (action-pointer, table-info,
      lobby-controls, scale-controls, bot-controls)
@@ -14,7 +13,6 @@
 
 .result-overlay__card,
 .connect-gate__panel,
-.battle-drawer,
 .table-stage__settlement-hand-grid,
 .ambient-overlay__panel,
 .fan-guide__dialog {
@@ -28,11 +26,11 @@
   box-shadow:
     var(--shadow-premium-hard),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
-    0 0 32px color-mix(in srgb, var(--accent) 10%, transparent);
-  backdrop-filter: blur(28px) saturate(140%);
+    0 0 18px color-mix(in srgb, var(--accent) 8%, transparent);
+  backdrop-filter: blur(20px) saturate(130%);
+  isolation: isolate;
 }
 
-.battle-drawer,
 .ambient-overlay__panel {
   border: 1px solid color-mix(in srgb, var(--theme-paper) 7%, transparent);
   box-shadow: var(--shadow-premium-hard);
@@ -51,70 +49,6 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent),
     var(--shadow-md);
-}
-
-/* ==============================
-   Player ring & slot
-   ============================== */
-
-.player-slot {
-  z-index: 2;
-  display: grid;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.player-ring {
-  position: relative;
-  display: grid;
-  gap: 0.34rem;
-  padding: 0.72rem 0.82rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  border-radius: 1.2rem;
-  background:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-paper) 8%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
-    var(--theme-panel-bg);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent),
-    var(--shadow-md);
-  backdrop-filter: blur(18px);
-  transition: border-color 0.2s var(--ease-lux), box-shadow 0.3s var(--ease-lux);
-}
-
-.player-ring--active {
-  border-color: color-mix(in srgb, var(--accent) 36%, var(--theme-border-strong));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
-    var(--shadow-lg),
-    0 0 18px color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.player-ring--local {
-  background:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--accent) 10%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
-    color-mix(in srgb, var(--theme-panel-bg) 92%, var(--accent));
-}
-
-.player-ring__content {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.player-ring__content strong {
-  font-size: clamp(0.7rem, 0.6rem + 0.5vw, 0.82rem);
-  letter-spacing: 0.04em;
-}
-
-.player-ring__eyebrow,
-.player-ring__meta,
-.player-ring__detail {
-  color: var(--muted);
-  font-size: clamp(0.48rem, 0.4rem + 0.4vw, 0.58rem);
-  letter-spacing: 0.05em;
 }
 
 /* ==============================
@@ -148,7 +82,7 @@
   background:
     radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 40%),
     radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--accent-2) 15%, transparent), transparent 40%);
-  filter: blur(60px);
+  filter: blur(40px);
 }
 
 .connect-gate__card {
@@ -161,9 +95,9 @@
     linear-gradient(135deg,
       color-mix(in srgb, var(--theme-sheen) 8%, transparent),
       color-mix(in srgb, var(--theme-panel-bg-soft) 34%, transparent));
-  backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(130%);
   box-shadow:
-    0 24px 52px color-mix(in srgb, var(--theme-shadow) 28%, transparent),
+    0 18px 36px color-mix(in srgb, var(--theme-shadow) 24%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent);
   display: grid;
   gap: 2.2rem;
@@ -504,73 +438,6 @@
 }
 
 /* ==============================
-   Battle drawer
-   ============================== */
-
-.battle-drawer {
-  position: fixed;
-  top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-  right: calc(var(--battle-shell-gap) + max(0.1rem, env(safe-area-inset-right)));
-  z-index: 8;
-  width: min(clamp(10.8rem, 14vw, 12.6rem), calc(100vw - 1.6rem));
-  display: grid;
-  grid-template-rows: auto auto;
-  max-height: calc(100dvh - var(--battle-shell-top-gap) - var(--battle-shell-bottom-gap) - 1rem);
-  overflow: hidden;
-  border-radius: 1.5rem;
-  color: var(--text);
-}
-
-.battle-drawer__players .player-slot {
-  gap: 0;
-}
-
-.battle-drawer__players .player-ring {
-  width: 100%;
-  padding: 0.34rem 0.48rem;
-  border-radius: 0.9rem;
-}
-
-.battle-drawer__players .player-ring__content strong {
-  font-size: clamp(0.66rem, 0.55rem + 0.4vw, 0.76rem);
-}
-
-.battle-drawer__players .player-ring__eyebrow,
-.battle-drawer__players .player-ring__meta,
-.battle-drawer__players .player-ring__detail {
-  font-size: clamp(0.44rem, 0.38rem + 0.3vw, 0.54rem);
-  letter-spacing: 0.06em;
-}
-
-@media (max-width: 900px) {
-  .battle-drawer {
-    width: min(12.4rem, calc(100vw - 1.2rem));
-  }
-}
-
-@media (max-height: 860px) {
-  .battle-drawer {
-    width: min(clamp(10.4rem, 13vw, 12rem), calc(100vw - 1.4rem));
-  }
-
-  .battle-drawer__players .player-ring {
-    padding: 0.3rem 0.42rem;
-  }
-}
-
-@media (max-width: 680px) {
-  .battle-drawer {
-    top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-    width: min(11.8rem, calc(100vw - 0.8rem));
-  }
-}
-
-:root[data-small-screen='true'] .battle-drawer {
-  top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-  width: min(11.8rem, calc(100vw - 0.8rem));
-}
-
-/* ==============================
    Ambient overlay
    ============================== */
 
@@ -578,7 +445,7 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-veil) 56%, transparent), color-mix(in srgb, var(--theme-veil) 92%, transparent)),
     color-mix(in srgb, black 18%, transparent);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(6px);
 }
 
 .ambient-overlay__panel {
@@ -858,7 +725,7 @@
   transform: scale(var(--result-overlay-dynamic-scale, 1));
   transform-origin: center center;
   animation: overlay-fade-in-up 0.5s var(--ease-lux) forwards;
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 .result-overlay__card::after {
@@ -1618,7 +1485,7 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--theme-veil) 62%, transparent), color-mix(in srgb, var(--theme-veil) 88%, transparent)),
     rgba(5, 10, 15, 0.48);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
   animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
 
@@ -1637,7 +1504,7 @@
     color-mix(in srgb, var(--theme-panel-bg-strong) 92%, black);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
-    0 32px 80px color-mix(in srgb, var(--theme-shadow) 92%, transparent),
+    0 24px 56px color-mix(in srgb, var(--theme-shadow) 82%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
   animation: modal-scale-in 0.45s var(--ease-lux), overlay-fade-in-up 0.45s var(--ease-lux);
 }
@@ -1820,15 +1687,6 @@
 
   .result-overlay__columns {
     gap: 0.6rem;
-  }
-
-  .battle-drawer {
-    border-radius: 1.1rem;
-  }
-
-  .player-ring {
-    padding: 0.4rem 0.5rem;
-    border-radius: 0.8rem;
   }
 
   .fan-guide__dialog {

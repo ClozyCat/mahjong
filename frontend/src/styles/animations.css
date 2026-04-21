@@ -7,16 +7,13 @@
   0% {
     transform: translateY(-2.8rem) scale(1.12) rotateX(18deg);
     opacity: 0;
-    filter: drop-shadow(0 20px 14px rgba(0, 0, 0, 0.35));
   }
   55% {
     transform: translateY(0.12rem) scale(0.97) rotateX(-1.5deg);
     opacity: 1;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
   }
   100% {
     transform: translateY(0) scale(1);
-    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.25));
   }
 }
 
@@ -75,15 +72,12 @@
 @keyframes action-trail-fade {
   0% {
     opacity: 0;
-    filter: drop-shadow(0 0 0 rgba(95, 199, 255, 0));
   }
   16%, 52% {
     opacity: 0.9;
-    filter: drop-shadow(0 0 16px rgba(95, 199, 255, 0.24));
   }
   100% {
     opacity: 0;
-    filter: drop-shadow(0 0 5px rgba(95, 199, 255, 0.06));
   }
 }
 
@@ -129,13 +123,11 @@
 @keyframes table-stage-action-callout-fade {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.7);
-    filter: blur(3px);
+    transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1.55);
   }
   14% {
     opacity: 1;
     transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(0.96);
-    filter: blur(0);
   }
   24% {
     transform: translate(-50%, -50%) translate(var(--spotlight-offset-x), var(--spotlight-offset-y)) scale(1);
@@ -195,8 +187,8 @@
 }
 
 @keyframes action-dock-acrylic-breathe {
-  0%, 100% { opacity: 0.44; filter: saturate(100%) blur(0px); }
-  50% { opacity: 0.78; filter: saturate(108%) blur(0.2px); }
+  0%, 100% { opacity: 0.44; }
+  50% { opacity: 0.72; }
 }
 
 @keyframes action-dock-countdown-alert {
@@ -299,24 +291,22 @@
 @keyframes premium-breathe {
   0%, 100% {
     opacity: 0.76;
-    box-shadow: 0 0 18px color-mix(in srgb, var(--response-button-shadow) 44%, transparent);
+    transform: scale(0.985);
   }
   50% {
     opacity: 1;
-    box-shadow: 0 0 36px color-mix(in srgb, var(--response-button-shadow) 82%, transparent);
+    transform: scale(1.015);
   }
 }
 
 @keyframes overlay-fade-in-up {
   0% {
     opacity: 0;
-    transform: translateY(0.8rem) scale(0.985);
-    filter: blur(4px);
+    transform: translateY(0.75rem) scale(0.99);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
-    filter: blur(0);
   }
 }
 
@@ -324,12 +314,10 @@
   0%, 100% {
     transform: scale(0.97);
     opacity: 0.08;
-    filter: blur(2px);
   }
   50% {
     transform: scale(1.04);
     opacity: 0.36;
-    filter: blur(3px);
   }
 }
 
@@ -351,7 +339,6 @@
   .stage-background__mesh,
   .battle-stage__halo,
   .table-stage__river--active::after,
-  .player-ring--active::after,
   .action-dock__action--response-glow::before,
   .action-dock__action--response-glow::after,
   .table-stage__center-indicator-breathing {

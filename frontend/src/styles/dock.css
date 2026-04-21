@@ -289,7 +289,7 @@
   line-height: 1;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
-    0 8px 18px color-mix(in srgb, var(--theme-shadow-soft) 82%, transparent),
+    0 6px 12px color-mix(in srgb, var(--theme-shadow-soft) 78%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent-2) 8%, transparent);
 }
 
@@ -302,7 +302,7 @@
   border-color: color-mix(in srgb, var(--accent-2) 36%, var(--theme-border-strong));
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent),
-    0 10px 20px color-mix(in srgb, var(--theme-shadow-soft) 88%, transparent),
+    0 8px 14px color-mix(in srgb, var(--theme-shadow-soft) 84%, transparent),
     0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent);
 }
 
@@ -324,8 +324,8 @@
   box-shadow:
     var(--shadow-premium-hard),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
-    0 0 24px color-mix(in srgb, var(--accent-2) 8%, transparent);
-  backdrop-filter: blur(28px) saturate(140%);
+    0 0 14px color-mix(in srgb, var(--accent-2) 8%, transparent);
+  backdrop-filter: blur(18px) saturate(130%);
   animation: overlay-fade-in-up 0.3s var(--ease-lux) forwards;
 }
 
@@ -463,17 +463,24 @@
     color-mix(in srgb, var(--panel-strong) 94%, black);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--response-button-core) 34%, transparent),
-    0 0 18px color-mix(in srgb, var(--response-button-shadow) 84%, transparent),
-    0 0 34px color-mix(in srgb, var(--response-button-shadow) 62%, transparent);
+    0 0 14px color-mix(in srgb, var(--response-button-shadow) 76%, transparent),
+    0 0 24px color-mix(in srgb, var(--response-button-shadow) 54%, transparent);
 }
 
 .action-dock__action--response-glow::before,
-.action-dock__action--response-glow::after {
+.action-dock__action--response-glow::after,
+.action-dock__action--themed::before,
+.action-dock__action--themed::after,
+.action-dock__action--flower-bloom::before,
+.action-dock__action--flower-bloom::after,
+.action-dock__action--hu-burn::before,
+.action-dock__action--hu-burn::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
+  will-change: transform, opacity;
 }
 
 .action-dock__action--response-glow::before {
@@ -492,8 +499,8 @@
       color-mix(in srgb, var(--response-button-stream) 68%, var(--theme-paper-strong)) 344deg,
       transparent 360deg
     );
-  filter: blur(0.5rem);
-  opacity: 0.98;
+  filter: blur(0.34rem);
+  opacity: 0.9;
   animation: action-dock-response-flow 1.15s linear infinite;
 }
 
@@ -503,8 +510,8 @@
   border: 1px solid color-mix(in srgb, var(--response-button-core) 82%, rgba(255, 255, 255, 0.42));
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--response-button-core) 28%, transparent),
-    0 0 16px color-mix(in srgb, var(--response-button-shadow) 90%, transparent),
-    0 0 32px color-mix(in srgb, var(--response-button-shadow) 76%, transparent);
+    0 0 12px color-mix(in srgb, var(--response-button-shadow) 82%, transparent),
+    0 0 20px color-mix(in srgb, var(--response-button-shadow) 68%, transparent);
   animation: premium-breathe 2.5s ease-in-out infinite;
 }
 
@@ -512,8 +519,8 @@
   box-shadow:
     0 12px 24px rgba(0, 0, 0, 0.2),
     0 0 0 1px color-mix(in srgb, var(--response-button-core) 40%, transparent),
-    0 0 18px var(--response-button-shadow),
-    0 0 34px color-mix(in srgb, var(--response-button-shadow) 74%, transparent);
+    0 0 14px var(--response-button-shadow),
+    0 0 24px color-mix(in srgb, var(--response-button-shadow) 66%, transparent);
 }
 
 /* ------- Themed action button ------- */
@@ -534,9 +541,9 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--action-button-accent) 14%, transparent),
-    0 10px 18px color-mix(in srgb, var(--theme-shadow-soft) 82%, transparent),
+    0 8px 14px color-mix(in srgb, var(--theme-shadow-soft) 76%, transparent),
     0 0 0 1px color-mix(in srgb, var(--action-button-accent) 8%, transparent),
-    0 0 14px color-mix(in srgb, var(--action-button-accent-soft) 56%, transparent);
+    0 0 10px color-mix(in srgb, var(--action-button-accent-soft) 48%, transparent);
 }
 
 .action-dock__action--themed::before,
@@ -553,7 +560,7 @@
   height: 85%;
   background:
     radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--action-button-accent) 18%, transparent), transparent 66%);
-  filter: blur(0.5rem);
+  filter: blur(0.32rem);
   opacity: 0.62;
   animation: action-dock-themed-breathe 2200ms ease-in-out infinite;
 }
@@ -587,9 +594,9 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--action-button-accent) 18%, transparent),
-    0 12px 22px color-mix(in srgb, var(--theme-shadow-soft) 86%, transparent),
+    0 10px 18px color-mix(in srgb, var(--theme-shadow-soft) 82%, transparent),
     0 0 0 1px color-mix(in srgb, var(--action-button-accent) 12%, transparent),
-    0 0 16px color-mix(in srgb, var(--action-button-accent-soft) 68%, transparent);
+    0 0 12px color-mix(in srgb, var(--action-button-accent-soft) 60%, transparent);
 }
 
 .action-dock__action--themed-discard {
@@ -653,12 +660,12 @@
   background:
     radial-gradient(ellipse 18% 28% at 50% 14%, color-mix(in srgb, var(--flower-bloom-petal) 94%, transparent), transparent 70%),
     radial-gradient(ellipse 16% 24% at 21% 38%, color-mix(in srgb, var(--flower-bloom-petal) 90%, transparent), transparent 72%),
-    radial-gradient(ellipse 16% 24% at 79% 38%, color-mix(in srgb, var(--flower-bloom-petal) 90%, transparent), transparent 72%),
-    radial-gradient(ellipse 16% 24% at 33% 82%, color-mix(in srgb, var(--flower-bloom-core) 86%, transparent), transparent 72%),
-    radial-gradient(ellipse 16% 24% at 67% 82%, color-mix(in srgb, var(--flower-bloom-core) 86%, transparent), transparent 72%),
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--flower-bloom-gold) 72%, transparent), transparent 20%);
-  filter: blur(0.3rem);
-  opacity: 0.92;
+      radial-gradient(ellipse 16% 24% at 79% 38%, color-mix(in srgb, var(--flower-bloom-petal) 90%, transparent), transparent 72%),
+      radial-gradient(ellipse 16% 24% at 33% 82%, color-mix(in srgb, var(--flower-bloom-core) 86%, transparent), transparent 72%),
+      radial-gradient(ellipse 16% 24% at 67% 82%, color-mix(in srgb, var(--flower-bloom-core) 86%, transparent), transparent 72%),
+      radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--flower-bloom-gold) 72%, transparent), transparent 20%);
+  filter: blur(0.2rem);
+  opacity: 0.88;
   transform-origin: 50% 50%;
   animation: action-dock-flower-bloom-petals 1820ms ease-in-out infinite;
 }
@@ -672,7 +679,7 @@
     radial-gradient(circle at 50% 92%, color-mix(in srgb, var(--flower-bloom-petal) 96%, transparent) 0 6%, transparent 7%),
     radial-gradient(circle at 66% 66%, color-mix(in srgb, var(--flower-bloom-core) 82%, transparent) 0 5%, transparent 6%),
     radial-gradient(circle at 82% 84%, color-mix(in srgb, var(--flower-bloom-petal) 88%, transparent) 0 6%, transparent 7%);
-  filter: blur(0.08rem);
+  filter: blur(0.04rem);
   opacity: 0.78;
   animation: action-dock-flower-bloom-drift 2080ms linear infinite;
 }
@@ -735,9 +742,9 @@
     radial-gradient(circle at 50% 102%, color-mix(in srgb, var(--hu-burn-hot) 96%, transparent), transparent 34%),
     radial-gradient(circle at 66% 108%, color-mix(in srgb, var(--hu-burn-core) 92%, transparent), transparent 36%),
     radial-gradient(circle at 84% 108%, color-mix(in srgb, var(--hu-burn-hot) 78%, transparent), transparent 34%);
-  filter: blur(0.42rem);
+  filter: blur(0.28rem);
   mix-blend-mode: screen;
-  opacity: 0.94;
+  opacity: 0.88;
   transform-origin: 50% 100%;
   animation: action-dock-hu-burn-flame 1320ms ease-in-out infinite alternate;
 }
@@ -751,7 +758,7 @@
     radial-gradient(circle at 48% 96%, color-mix(in srgb, var(--hu-burn-hot) 96%, transparent) 0 13%, transparent 14%),
     radial-gradient(circle at 66% 82%, color-mix(in srgb, var(--hu-burn-core) 80%, transparent) 0 12%, transparent 13%),
     radial-gradient(circle at 84% 94%, color-mix(in srgb, var(--hu-burn-hot) 76%, transparent) 0 11%, transparent 12%);
-  filter: blur(0.12rem);
+  filter: blur(0.06rem);
   opacity: 0.82;
   animation: action-dock-hu-burn-embers 1680ms linear infinite;
 }
@@ -788,10 +795,10 @@
       color-mix(in srgb, var(--panel-strong) 2%, transparent)
     ),
     rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(6px);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   box-shadow: 
-    inset 0 2px 10px rgba(0, 0, 0, 0.32),
+    inset 0 2px 8px rgba(0, 0, 0, 0.28),
     var(--shadow-lg);
   width: max-content;
   max-width: min(100%, 45rem);
@@ -828,7 +835,7 @@
   border-color: color-mix(in srgb, var(--claim-candidate-tint) 42%, var(--theme-border-strong));
   box-shadow: 
     var(--shadow-lg),
-    0 0 24px color-mix(in srgb, var(--claim-candidate-tint) 14%, transparent);
+    0 0 16px color-mix(in srgb, var(--claim-candidate-tint) 12%, transparent);
 }
 
 .action-dock__claim-candidate--selected { /* Premium Selection */
@@ -843,7 +850,7 @@
   box-shadow:
     var(--shadow-xl),
     0 0 0 1.5px color-mix(in srgb, var(--claim-candidate-tint) 56%, transparent),
-    0 0 32px color-mix(in srgb, var(--claim-candidate-tint) 42%, transparent);
+    0 0 20px color-mix(in srgb, var(--claim-candidate-tint) 34%, transparent);
 }
 
 .action-dock__claim-candidate--selected .action-dock__claim-candidate-badge {

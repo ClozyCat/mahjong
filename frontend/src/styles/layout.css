@@ -1,7 +1,7 @@
 /* =================================================
    Battle Layout System
    Full-window layout: battle-screen, battle-shell,
-   battle-stage, battle-drawer, stage-background.
+   battle-stage, stage-background.
    Clean rewrite — unified responsive approach.
    ================================================= */
 
@@ -18,12 +18,14 @@
 .stage-background {
   pointer-events: none;
   opacity: 1;
+  contain: paint;
 }
 
 .stage-background__mesh {
-  filter: blur(48px);
-  opacity: 0.82;
+  filter: blur(36px);
+  opacity: 0.74;
   animation: background-float 22s ease-in-out infinite alternate;
+  will-change: transform, opacity;
 }
 
 .stage-background__mesh--left {
@@ -52,7 +54,7 @@
     linear-gradient(90deg, color-mix(in srgb, var(--theme-paper) 5%, transparent) 1px, transparent 1px);
   background-size: 64px 64px;
   mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.7) 20%, rgba(0, 0, 0, 0.85) 100%);
-  opacity: 0.36;
+  opacity: 0.3;
 }
 
 .stage-background__grain {
@@ -62,7 +64,7 @@
     radial-gradient(circle at 68% 62%, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 100%);
   background-size: 14px 14px, 17px 17px;
   mix-blend-mode: screen;
-  opacity: 0.08;
+  opacity: 0.06;
 }
 
 /* ------- Battle screen ------- */
@@ -133,60 +135,11 @@
   overflow: visible;
 }
 
-/* ------- Battle drawer ------- */
-
-.battle-drawer {
-  position: fixed;
-  top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-  right: calc(var(--battle-shell-gap) + max(0.1rem, env(safe-area-inset-right)));
-  z-index: 8;
-  width: min(clamp(10.4rem, 13.5vw, 12.2rem), calc(100vw - 1.6rem));
-  display: grid;
-  grid-template-rows: auto auto;
-  max-height: calc(100dvh - var(--battle-shell-top-gap) - var(--battle-shell-bottom-gap) - 1rem);
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 7%, transparent);
-  border-radius: 1.5rem;
-  background:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-sheen) 80%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-soft) 86%, transparent)),
-    var(--panel);
-  box-shadow: var(--shadow-premium-hard);
-  backdrop-filter: blur(20px) saturate(120%);
-  color: var(--text);
-}
-
-.battle-drawer__players .player-slot {
-  gap: 0;
-}
-
-.battle-drawer__players .player-ring {
-  width: 100%;
-  padding: 0.32rem 0.44rem;
-  border-radius: 0.85rem;
-}
-
-.battle-drawer__players .player-ring__content strong {
-  font-size: 0.72rem;
-}
-
-.battle-drawer__players .player-ring__eyebrow,
-.battle-drawer__players .player-ring__meta,
-.battle-drawer__players .player-ring__detail {
-  font-size: 0.5rem;
-  letter-spacing: 0.05em;
-}
-
 /* ------- Responsive breakpoints ------- */
 
 @media (max-width: 900px) {
   .battle-screen {
     --battle-stage-max-width: calc(100vw - 2rem - var(--battle-stage-size-trim));
-  }
-
-  .battle-drawer {
-    width: min(12rem, calc(100vw - 1.2rem));
   }
 }
 
@@ -203,12 +156,6 @@
     --battle-bottom-clearance: clamp(0.5rem, 0.85vh, 0.7rem);
     --battle-stage-bottom-reserve: clamp(1rem, 2.2vh, 1.7rem);
     --battle-dock-bottom-gap: clamp(0.03rem, 0.08vh, 0.08rem);
-    --battle-drawer-top-offset: clamp(0.35rem, 0.7vh, 0.6rem);
-  }
-
-  .battle-drawer {
-    top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-    width: min(11.4rem, calc(100vw - 0.8rem));
   }
 }
 
@@ -224,16 +171,10 @@
   --battle-bottom-clearance: clamp(0.5rem, 0.85vh, 0.7rem);
   --battle-stage-bottom-reserve: clamp(1rem, 2.2vh, 1.7rem);
   --battle-dock-bottom-gap: clamp(0.03rem, 0.08vh, 0.08rem);
-  --battle-drawer-top-offset: clamp(0.35rem, 0.7vh, 0.6rem);
 }
 
 :root[data-small-screen='true'] .battle-screen {
   --battle-stage-max-width: calc(100vw - 2rem - var(--battle-stage-size-trim));
-}
-
-:root[data-small-screen='true'] .battle-drawer {
-  top: calc(var(--battle-shell-top-gap) + var(--battle-drawer-top-offset));
-  width: min(11.4rem, calc(100vw - 0.8rem));
 }
 
 @media (max-height: 860px) {
@@ -244,37 +185,5 @@
     --battle-bottom-clearance: clamp(0.6rem, 1.1vh, 0.9rem);
     --battle-stage-bottom-reserve: clamp(1.4rem, 3.4vh, 2.2rem);
     --battle-dock-bottom-gap: clamp(0.04rem, 0.1vh, 0.1rem);
-    --battle-drawer-top-offset: clamp(0.2rem, 0.5vh, 0.45rem);
-  }
-
-  .battle-drawer {
-    width: min(clamp(10rem, 12.5vw, 11.6rem), calc(100vw - 1.4rem));
-  }
-
-  .battle-drawer__players .player-ring {
-    padding: 0.28rem 0.4rem;
-  }
-}
-
-/* ---- Landscape mobile tightening ---- */
-@media (orientation: landscape) and (max-height: 500px) {
-  .battle-drawer {
-    width: min(9.6rem, calc(100vw - 1rem));
-    border-radius: 1.1rem;
-  }
-
-  .battle-drawer__players .player-ring {
-    padding: 0.22rem 0.34rem;
-    border-radius: 0.7rem;
-  }
-
-  .battle-drawer__players .player-ring__content strong {
-    font-size: 0.62rem;
-  }
-
-  .battle-drawer__players .player-ring__eyebrow,
-  .battle-drawer__players .player-ring__meta,
-  .battle-drawer__players .player-ring__detail {
-    font-size: 0.44rem;
   }
 }
