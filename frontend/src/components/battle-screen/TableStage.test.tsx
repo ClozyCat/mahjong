@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -982,6 +983,35 @@ describe('TableStage', () => {
     expect(screen.getByText('听')).toBeInTheDocument();
     expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
     expect(container.querySelector('.table-stage__action-callout--ready_hand')).not.toBeNull();
+  });
+
+  it('keeps the incoming ready_hand discard hidden on the initial render frame', () => {
+    const markup = renderToStaticMarkup(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'ready-hand-initial-frame-1',
+          label: '听',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'ready_hand',
+        }}
+      />,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = markup;
+
+    expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
+    expect(container.querySelector('.table-stage__river-track--left')?.querySelector('.mahjong-tile')).toBeNull();
   });
 
   it('delays showing the latest discard until the ready_hand callout disappears', () => {

@@ -15,6 +15,7 @@ use super::actions::{
     can_resolve_rob_kong_timeout_locally, claim_window_supported_locally,
     resolve_claim_window_timeout, resolve_rob_kong_timeout, rob_kong_window_supported_locally,
 };
+use super::flow::apply_flower_action_output_in_room_state;
 #[cfg(test)]
 use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
@@ -51,6 +52,10 @@ pub fn try_process_due_timeout_in_room_state(
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(room);
             if player_is_ready_hand(room, seat_index) {
+                if let Some(tile_id) = player_first_flower_tile_id_from_cache(&cache, seat_index) {
+                    return apply_flower_action_output_in_room_state(room, seat_index, &[tile_id])
+                        .map(|output| Some(output.emitted_messages));
+                }
                 if can_declare_hu_with_cache_for_state(room, &cache, seat_index, None, None) {
                     return apply_hu_action_output_in_room_state(room, seat_index)
                         .map(|output| Some(output.emitted_messages));
@@ -343,6 +348,14 @@ fn next_ready_hand_action_for_state(
     cache: &RoomScoringCache,
     seat_index: usize,
 ) -> Option<BotAction> {
+    if let Some(tile_id) = player_first_flower_tile_id_from_cache(cache, seat_index) {
+        return Some(BotAction {
+            seat_index,
+            action_type: "flower".to_string(),
+            tile_ids: vec![tile_id],
+        });
+    }
+
     if can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None) {
         return Some(BotAction {
             seat_index,
@@ -525,6 +538,17 @@ mod tests {
             "tile_id": tile_id,
             "tile_key": tile_key,
             "kind": "wind",
+            "suit": null,
+            "rank": null,
+            "name": tile_key,
+        })
+    }
+
+    fn flower(tile_key: &str, tile_id: &str) -> serde_json::Value {
+        json!({
+            "tile_id": tile_id,
+            "tile_key": tile_key,
+            "kind": "flower",
             "suit": null,
             "rank": null,
             "name": tile_key,
@@ -984,6 +1008,11 @@ mod tests {
     }
 
     fn ready_hand_auto_room_state(drawn_tile_key: &str, drawn_tile_id: &str) -> RoomState {
+        let drawn_tile = if drawn_tile_key.starts_with('f') {
+            flower(drawn_tile_key, drawn_tile_id)
+        } else {
+            suit(drawn_tile_key, drawn_tile_id)
+        };
         RoomState::from_room_value(&json!({
             "table_code": "READY1",
             "phase": "playing",
@@ -1008,7 +1037,7 @@ mod tests {
                 "dealer_seat": 0,
                 "current_actor": 0,
                 "wall": {
-                    "tiles": [],
+                    "tiles": [suit("b9", "b9#tail")],
                     "head_index": 0,
                     "tail_index": 0
                 },
@@ -1030,7 +1059,7 @@ mod tests {
                             suit("t2", "t2#10"),
                             suit("t3", "t3#11"),
                             suit("t4", "t4#12"),
-                            suit(drawn_tile_key, drawn_tile_id)
+                            drawn_tile
                         ],
                         "melds": [],
                         "flowers": [],
@@ -1099,6 +1128,19 @@ mod tests {
     }
 
     #[test]
+    fn ready_hand_human_exposes_drawn_flower_as_next_auto_action() {
+        let room = ready_hand_auto_room_state("f1", "f1#draw");
+
+        let action = next_bot_action_in_room_state(&room)
+            .expect("ready-hand lookup should succeed")
+            .expect("ready-hand player should auto expose flower");
+
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "flower");
+        assert_eq!(action.tile_ids, vec!["f1#draw".to_string()]);
+    }
+
+    #[test]
     fn ready_hand_human_waits_for_manual_hu_when_draw_is_winning_tile() {
         let room = ready_hand_auto_room_state("t4", "t4#draw");
 
@@ -1125,8 +1167,23 @@ mod tests {
         let emitted = result.expect("timeout should emit hu message");
         assert_eq!(emitted[0]["payload"]["event_type"], "self_hu_declared");
         assert_eq!(
-            room.pending_timeout.as_ref().map(|timeout| timeout.kind.as_str()),
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.kind.as_str()),
             None
         );
+    }
+
+    #[test]
+    fn ready_hand_human_timeout_auto_exposes_drawn_flower() {
+        let mut room = ready_hand_auto_room_state("f1", "f1#draw");
+
+        let emitted = try_process_due_timeout_in_room_state(&mut room)
+            .expect("ready-hand timeout should not fail")
+            .expect("timeout should auto expose flower");
+
+        assert_eq!(emitted[0]["payload"]["event_type"], "flower_exposed");
+        assert_eq!(emitted[0]["payload"]["event"]["tile_id"], "f1#draw");
+        assert_eq!(emitted[1]["payload"]["event_type"], "replacement_draw");
     }
 }

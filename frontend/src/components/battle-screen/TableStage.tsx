@@ -121,6 +121,12 @@ export function TableStage({
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
   const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
+  const incomingActionCallout = createActionCallout(
+    actionEffect,
+    settlementWinnerSeat,
+    settlementWinType,
+    settlementWinTypeLabel,
+  );
   const [activeActionCallout, setActiveActionCallout] = useState<ActionCallout | null>(null);
   const [pendingActionCallouts, setPendingActionCallouts] = useState<ActionCallout[]>([]);
   const [exitingActionCallout, setExitingActionCallout] = useState<ActionCallout | null>(null);
@@ -149,9 +155,14 @@ export function TableStage({
       ? `${spotlightSeat}:${lastDiscardPosition.index}:${spotlightTile}`
       : null;
   const hasSpotlightDiscard = !hasSettlementHands && spotlightSeat !== null && spotlightTile !== null;
+  const shouldDelaySpotlightForIncomingReadyHand =
+    incomingActionCallout?.tone === 'ready_hand' &&
+    incomingActionCallout.seat === spotlightSeat &&
+    consumedActionCalloutKeyRef.current !== incomingActionCallout.key;
   const shouldDelaySpotlightForReadyHand =
     hasSpotlightDiscard &&
-    ((activeActionCallout?.tone === 'ready_hand' && activeActionCallout.seat === spotlightSeat) ||
+    (shouldDelaySpotlightForIncomingReadyHand ||
+      (activeActionCallout?.tone === 'ready_hand' && activeActionCallout.seat === spotlightSeat) ||
       (exitingActionCallout?.tone === 'ready_hand' && exitingActionCallout.seat === spotlightSeat));
   const spotlightScale = Math.round(tileScale * 125) / 100;
   const tableSummary = buildTableSummary(roundLabel, phaseLabel);
@@ -249,12 +260,7 @@ export function TableStage({
       return;
     }
 
-    const nextActionCallout = createActionCallout(
-      actionEffect,
-      settlementWinnerSeat,
-      settlementWinType,
-      settlementWinTypeLabel,
-    );
+    const nextActionCallout = incomingActionCallout;
     const actionCalloutKey = nextActionCallout?.key ?? actionEffect?.key;
     const currentActionCallout = activeActionCalloutRef.current;
     if (!actionCalloutKey) {
