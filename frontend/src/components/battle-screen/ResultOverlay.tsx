@@ -733,9 +733,23 @@ function ScoreTrendChart({ history, seatName }: { history: number[]; seatName: s
         </defs>
         <line x1={padding.l} y1={height - padding.b} x2={width - padding.r} y2={height - padding.b} className="result-overlay__seat-tooltip-axis" />
         {areaPath && <path d={areaPath} fill={`url(#${chartId}-fill)`} />}
-        <polyline fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" points={polylinePoints} />
+        <polyline 
+          fill="none" 
+          stroke="var(--accent)" 
+          strokeWidth="2" 
+          strokeLinejoin="round" 
+          strokeLinecap="round" 
+          points={polylinePoints} 
+          className="result-overlay__seat-tooltip-trend"
+        />
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 3 : 2} className="result-overlay__seat-tooltip-point" />
+          <circle 
+            key={i} 
+            cx={p.x} 
+            cy={p.y} 
+            r={i === points.length - 1 ? 3.5 : 2.5} 
+            className={`result-overlay__seat-tooltip-point ${i === points.length - 1 ? 'result-overlay__seat-tooltip-point--last' : ''}`.trim()} 
+          />
         ))}
       </svg>
       <div className="result-overlay__seat-tooltip-axis-labels">
