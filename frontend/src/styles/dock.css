@@ -278,25 +278,40 @@
   width: 1.5rem;
   height: 1.5rem;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 20%, transparent);
+  border-radius: 50%;
+  background: rgba(14, 14, 14, 0.75);
   color: var(--theme-paper-strong);
-  font-size: 0.75rem;
+  font-family: 'Bahnschrift', sans-serif;
+  font-size: 0.82rem;
   font-weight: 700;
   line-height: 1;
-  transition: all 0.25s var(--ease-lux);
+  backdrop-filter: blur(24px) saturate(140%);
+  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
+  box-shadow: 
+    0 8px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  cursor: pointer;
 }
 
 .action-dock__ready-hand-trigger--open {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--accent-2) 24%, rgba(14, 14, 14, 0.85));
+  border-color: var(--accent-2);
 }
 
-.action-dock__ready-hand-trigger--open,
 .action-dock__ready-hand-trigger:hover {
-  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
-  border-color: color-mix(in srgb, var(--accent-2) 40%, transparent);
-  transform: translateY(-1px);
+  transform: scale(1.1) translateY(-2px);
+  background: rgba(14, 14, 14, 0.85);
+  border-color: var(--accent-2);
+  box-shadow: 
+    0 12px 24px rgba(0, 0, 0, 0.4),
+    0 0 12px color-mix(in srgb, var(--accent-2) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
+}
+
+.action-dock__ready-hand-trigger:active {
+  transform: scale(0.95);
 }
 
 .action-dock__ready-hand-popover {
