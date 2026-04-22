@@ -25,7 +25,6 @@ const KNITTED_PATTERNS: [[&str; 9]; 6] = [
     ["b1", "b4", "b7", "w2", "w5", "w8", "t3", "t6", "t9"],
     ["b1", "b4", "b7", "t2", "t5", "t8", "w3", "w6", "w9"],
 ];
-const MCR_BASE_POINTS: i64 = 8;
 const TILE_KIND_COUNT: usize = 34;
 const HONOR_TILE_START: usize = 27;
 const THIRTEEN_ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
@@ -560,7 +559,7 @@ fn evaluate_fans_uncached(input: EvaluationInput) -> FanResult {
         score_delta: ScoreDelta {
             provisional: true,
             basic_points: best_result.fan_total,
-            base_points: MCR_BASE_POINTS,
+            base_points: 0,
             fan_total: best_result.fan_total,
             minimum_qualifying_fan_total: best_result.minimum_qualifying_fan_total,
             fan_delta_by_seat,
@@ -1044,31 +1043,21 @@ fn fan_delta_by_seat(
     }
 
     if win_type == "self_draw" {
-        let payment = fan_total + MCR_BASE_POINTS;
-        let mut winner_gain = 0_i64;
         for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {
             if seat == winner_seat {
                 continue;
             }
-            *delta -= payment;
-            winner_gain += payment;
+            *delta -= fan_total;
         }
-        deltas[winner_seat] += winner_gain;
+        deltas[winner_seat] += fan_total * seat_count.saturating_sub(1) as i64;
         return deltas;
     }
 
     if let Some(discarder_seat) = discarder_seat {
-        deltas[winner_seat] +=
-            fan_total + (MCR_BASE_POINTS * (seat_count.saturating_sub(1) as i64));
-        for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {
-            if seat == winner_seat {
-                continue;
-            }
-            if seat == discarder_seat {
-                *delta -= fan_total + MCR_BASE_POINTS;
-            } else {
-                *delta -= MCR_BASE_POINTS;
-            }
+        if discarder_seat < seat_count && discarder_seat != winner_seat {
+            let payment = (fan_total * 3 + 1) / 2;
+            deltas[winner_seat] += payment;
+            deltas[discarder_seat] -= payment;
         }
     }
     deltas
@@ -3708,6 +3697,107 @@ mod tests {
             .iter()
             .any(|fan| fan == "ready_hand_win"));
         assert_eq!(ready_hand_result.fan_total, base_result.fan_total + 2);
+    }
+
+    #[test]
+    fn self_draw_score_delta_charges_each_other_player_the_fan_total() {
+        let tile_keys = vec![
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+                vec!["t4".to_string(), "t5".to_string(), "t6".to_string()],
+                vec!["b3".to_string(), "b4".to_string(), "b5".to_string()],
+                vec!["w6".to_string(), "w7".to_string(), "w8".to_string()],
+            ],
+            ..Default::default()
+        }];
+
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features: HandFeatures::default(),
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions,
+        });
+
+        assert_eq!(
+            result.score_delta.fan_delta_by_seat,
+            vec![
+                result.fan_total * 3,
+                -result.fan_total,
+                -result.fan_total,
+                -result.fan_total,
+            ]
+        );
+    }
+
+    #[test]
+    fn discard_score_delta_charges_the_discarder_one_and_a_half_fan_total_rounded() {
+        let tile_keys = vec![
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+                vec!["t4".to_string(), "t5".to_string(), "t6".to_string()],
+                vec!["b3".to_string(), "b4".to_string(), "b5".to_string()],
+                vec!["w6".to_string(), "w7".to_string(), "w8".to_string()],
+            ],
+            ..Default::default()
+        }];
+
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(2),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features: HandFeatures::default(),
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            decompositions,
+        });
+
+        let payment = (result.fan_total * 3 + 1) / 2;
+        assert_eq!(result.score_delta.fan_delta_by_seat, vec![0, -payment, payment, 0]);
+    }
+
+    #[test]
+    fn discard_score_delta_rounds_half_up_for_odd_fan_total() {
+        assert_eq!(
+            fan_delta_by_seat("discard", Some(2), Some(1), 3, 4),
+            vec![0, -5, 5, 0]
+        );
     }
 
     #[test]
