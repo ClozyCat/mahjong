@@ -1047,15 +1047,15 @@ fn fan_delta_by_seat(
             if seat == winner_seat {
                 continue;
             }
-            *delta -= fan_total;
+            *delta -= fan_total * 2;
         }
-        deltas[winner_seat] += fan_total * seat_count.saturating_sub(1) as i64;
+        deltas[winner_seat] += fan_total * 2 * seat_count.saturating_sub(1) as i64;
         return deltas;
     }
 
     if let Some(discarder_seat) = discarder_seat {
         if discarder_seat < seat_count && discarder_seat != winner_seat {
-            let payment = (fan_total * 3 + 1) / 2;
+            let payment = fan_total * 3;
             deltas[winner_seat] += payment;
             deltas[discarder_seat] -= payment;
         }
@@ -3741,16 +3741,16 @@ mod tests {
         assert_eq!(
             result.score_delta.fan_delta_by_seat,
             vec![
-                result.fan_total * 3,
-                -result.fan_total,
-                -result.fan_total,
-                -result.fan_total,
+                result.fan_total * 6,
+                -(result.fan_total * 2),
+                -(result.fan_total * 2),
+                -(result.fan_total * 2),
             ]
         );
     }
 
     #[test]
-    fn discard_score_delta_charges_the_discarder_one_and_a_half_fan_total_rounded() {
+    fn discard_score_delta_charges_the_discarder_three_times_fan_total() {
         let tile_keys = vec![
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
         ]
@@ -3788,15 +3788,15 @@ mod tests {
             decompositions,
         });
 
-        let payment = (result.fan_total * 3 + 1) / 2;
+        let payment = result.fan_total * 3;
         assert_eq!(result.score_delta.fan_delta_by_seat, vec![0, -payment, payment, 0]);
     }
 
     #[test]
-    fn discard_score_delta_rounds_half_up_for_odd_fan_total() {
+    fn discard_score_delta_uses_exact_triple_fan_total_for_odd_fan_total() {
         assert_eq!(
             fan_delta_by_seat("discard", Some(2), Some(1), 3, 4),
-            vec![0, -5, 5, 0]
+            vec![0, -9, 9, 0]
         );
     }
 
