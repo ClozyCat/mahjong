@@ -508,6 +508,72 @@ describe('sessionReducer', () => {
     expect(confirmed.optimisticDiscard).toBeNull();
   });
 
+  it('clears the local replacement draw marker after the turn passes to another seat', () => {
+    const next = sessionReducer(
+      {
+        ...createInitialSessionState(),
+        latestReplacementTileId: 'w9#0',
+      },
+      {
+        type: 'ws_message',
+        message: {
+          type: 'room_snapshot',
+          payload: {
+            table_code: 'AB12CD',
+            phase: 'playing',
+            seats: [
+              { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
+              { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+            ],
+            local_seat: 0,
+            reconnect_token: 'token-1',
+            private_state: {
+              round_id: 'round-1',
+              round_wind: 'east',
+              dealer_seat: 0,
+              current_actor: 1,
+              last_discard: 'w1',
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 1,
+                deadline_at: '2026-03-26T06:01:05Z',
+                drawn_tile_id: 'b3#1',
+                options: ['discard'],
+              },
+              players: [
+                {
+                  seat_index: 0,
+                  nickname: 'Player A',
+                  connected: true,
+                  concealed_count: 13,
+                  concealed_tiles: [
+                    { tile_id: 'w2#0', tile_key: 'w2' },
+                    { tile_id: 'w9#0', tile_key: 'w9' },
+                  ],
+                  melds: [],
+                  flowers: [],
+                  discards: ['w1'],
+                },
+                {
+                  seat_index: 1,
+                  nickname: 'Player B',
+                  connected: true,
+                  concealed_count: 14,
+                  concealed_tiles: [{ tile_id: 'b3#1', tile_key: 'b3' }],
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.latestReplacementTileId).toBeNull();
+  });
+
   it('rolls back an optimistic discard when the server rejects the action', () => {
     const queued = sessionReducer(
       {

@@ -233,6 +233,30 @@ function reconcileOptimisticFlowerWithSnapshot(
   return stillInHand ? optimisticFlower : null;
 }
 
+function reconcileLatestReplacementTileIdWithSnapshot(
+  latestReplacementTileId: SessionState['latestReplacementTileId'],
+  snapshot: RoomSnapshotMessage,
+) {
+  if (!latestReplacementTileId || snapshot.payload.phase !== 'playing') {
+    return null;
+  }
+
+  const localSeat = snapshot.payload.local_seat;
+  const pendingAction = snapshot.payload.private_state?.pending_action;
+  if (
+    typeof localSeat !== 'number' ||
+    pendingAction?.type !== 'active_turn' ||
+    pendingAction.seat_index !== localSeat ||
+    pendingAction.drawn_tile_id !== latestReplacementTileId
+  ) {
+    return null;
+  }
+
+  const localPlayer = findSnapshotPlayer(snapshot.payload, localSeat);
+  const stillInHand = localPlayer?.concealed_tiles?.some((tile) => tile.tile_id === latestReplacementTileId) ?? false;
+  return stillInHand ? latestReplacementTileId : null;
+}
+
 export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
@@ -279,9 +303,12 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
           ? []
           : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
       const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
-      const keepLatestReplacement = message.payload.private_state?.pending_action?.type === 'active_turn';
       const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(state.optimisticDiscard ?? null, message);
       const nextOptimisticFlower = reconcileOptimisticFlowerWithSnapshot(state.optimisticFlower ?? null, message);
+      const nextLatestReplacementTileId = reconcileLatestReplacementTileIdWithSnapshot(
+        state.latestReplacementTileId ?? null,
+        message,
+      );
 
       return {
         ...state,
@@ -296,7 +323,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         selectedTileIds: nextSelectedTileIds,
         selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
         matchStatistics: createMatchStatisticsFromSnapshot(message),
-        latestReplacementTileId: keepLatestReplacement ? state.latestReplacementTileId : null,
+        latestReplacementTileId: nextLatestReplacementTileId,
       };
     }
     case 'action_prompt':
