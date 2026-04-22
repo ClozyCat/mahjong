@@ -100,10 +100,7 @@ fn flower_supported_locally(context: &EngineContext, actor: Seat) -> bool {
     if round.current_actor != actor || round.pending_action.is_some() {
         return false;
     }
-    !round
-        .players
-        .get(actor)
-        .is_some_and(|player| player.is_ready_hand)
+    round.players.get(actor).is_some()
 }
 
 fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_type: &str) -> bool {
@@ -301,6 +298,29 @@ mod tests {
                 }
             ),
             None
+        );
+    }
+
+    #[test]
+    fn allows_flower_action_after_ready_hand_declaration() {
+        let mut room = base_room();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        room["round_state"]["players"][0]["concealed_tiles"] = json!([
+            tile("f1#0", "f1", "flower"),
+            tile("w3#0", "w3", "suit")
+        ]);
+        room["pending_timeout"]["drawn_tile_id"] = json!("f1#0");
+        let context = context(room);
+
+        assert_eq!(
+            classify_local_player_action(
+                &context,
+                0,
+                &PlayerAction::Flower {
+                    tile_ids: vec!["f1#0".to_string()],
+                }
+            ),
+            Some(LocalPlayerActionKind::Flower)
         );
     }
 
