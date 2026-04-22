@@ -984,6 +984,92 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__action-callout--ready_hand')).not.toBeNull();
   });
 
+  it('delays showing the latest discard until the ready_hand callout disappears', () => {
+    vi.useFakeTimers();
+
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'ready-hand-delay-1',
+          label: '听',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'ready_hand',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('听')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
+    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+
+    act(() => {
+      vi.advanceTimersByTime(1499);
+    });
+
+    expect(screen.getByText('听')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByText('听')).toBeNull();
+    expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('keeps non-ready_hand callouts at the existing three-second duration', () => {
+    vi.useFakeTimers();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        promptText={null}
+        actionEffect={{
+          key: 'pung-duration-1',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'pung',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('碰')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2999);
+    });
+
+    expect(screen.getByText('碰')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByText('碰')).toBeNull();
+    vi.useRealTimers();
+  });
+
   it.each([
     {
       name: '荣和',

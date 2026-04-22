@@ -148,6 +148,11 @@ export function TableStage({
     spotlightSeat !== null && spotlightTile !== null && lastDiscardPosition !== null
       ? `${spotlightSeat}:${lastDiscardPosition.index}:${spotlightTile}`
       : null;
+  const hasSpotlightDiscard = !hasSettlementHands && spotlightSeat !== null && spotlightTile !== null;
+  const shouldDelaySpotlightForReadyHand =
+    hasSpotlightDiscard &&
+    ((activeActionCallout?.tone === 'ready_hand' && activeActionCallout.seat === spotlightSeat) ||
+      (exitingActionCallout?.tone === 'ready_hand' && exitingActionCallout.seat === spotlightSeat));
   const spotlightScale = Math.round(tileScale * 125) / 100;
   const tableSummary = buildTableSummary(roundLabel, phaseLabel);
   const shouldShowScaleControls = Boolean(onDecreaseTileScale || onIncreaseTileScale);
@@ -295,7 +300,7 @@ export function TableStage({
         }
 
         setActiveActionCallout(null);
-      }, ACTION_CALLOUT_LINGER_MS);
+      }, getActionCalloutLingerMs(callout));
     };
 
     consumedActionCalloutKeyRef.current = actionCalloutKey;
@@ -550,7 +555,7 @@ export function TableStage({
                               lastDiscardSeat === seat && index === discards[seat].length - 1;
 
                             // HIDE: Don't show in river while spotlighted in focus area
-                            if (isLastDiscard && spotlightSeat && spotlightTile && !hasSettlementHands) {
+                            if (isLastDiscard && hasSpotlightDiscard) {
                               return null;
                             }
 
@@ -643,7 +648,7 @@ export function TableStage({
               />
             ) : null}
           </div>
-          {!hasSettlementHands && spotlightSeat && spotlightTile ? (
+          {hasSpotlightDiscard && !shouldDelaySpotlightForReadyHand ? (
             <div
               className={`table-stage__spotlight table-stage__spotlight--${spotlightSeat} ${promptCue?.isUrgent && promptCue.sourceSeat === spotlightSeat ? 'table-stage__spotlight--urgent' : ''
                 }`}
@@ -706,6 +711,7 @@ const ACTION_CALLOUT_COPY = {
 } as const;
 
 const ACTION_CALLOUT_LINGER_MS = SETTLEMENT_CALLOUT_LINGER_MS;
+const READY_HAND_CALLOUT_LINGER_MS = 1500;
 const QUICK_CHAT_BARRAGE_LINGER_MS = 9000;
 const QUICK_CHAT_TEXT_LIMIT = 50;
 const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
@@ -738,6 +744,14 @@ type BarrageMessage = {
   text: string;
   topPercent: number;
 };
+
+function getActionCalloutLingerMs(callout: ActionCallout) {
+  if (callout.tone === 'ready_hand') {
+    return READY_HAND_CALLOUT_LINGER_MS;
+  }
+
+  return ACTION_CALLOUT_LINGER_MS;
+}
 
 type SettlementHandCell =
   | {
