@@ -29,6 +29,7 @@ const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
+const READY_HAND_CALLOUT_LINGER_MS = 1000;
 const READY_ACTION_COOLDOWN_MS = 3000;
 
 export function BattleScreen({
@@ -53,6 +54,7 @@ export function BattleScreen({
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
+  const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
@@ -120,9 +122,23 @@ export function BattleScreen({
   }
 
   useEffect(() => {
+    consumedActionEffectRef.current = consumedActionEffect;
+  }, [consumedActionEffect]);
+
+  useEffect(() => {
     const nextActionEffect = viewModel.actionEffect;
     if (!nextActionEffect?.key) {
       setConsumedActionEffect(null);
+      return;
+    }
+
+    const currentActionEffect = consumedActionEffectRef.current;
+    if (
+      currentActionEffect?.calloutTone === 'ready_hand' &&
+      currentActionEffect.key.startsWith('optimistic-ready_hand:') &&
+      nextActionEffect.calloutTone === 'ready_hand' &&
+      nextActionEffect.seat === currentActionEffect.seat
+    ) {
       return;
     }
 
@@ -171,7 +187,11 @@ export function BattleScreen({
     }
 
     const elapsedMs = Math.max(0, Date.now() - trackedLastDiscardStartedAtRef.current);
-    const remainingMs = Math.max(0, LAST_DISCARD_SPOTLIGHT_LINGER_MS - elapsedMs);
+    const spotlightLingerMs =
+      viewModel.actionEffect?.calloutTone === 'ready_hand'
+        ? LAST_DISCARD_SPOTLIGHT_LINGER_MS + READY_HAND_CALLOUT_LINGER_MS
+        : LAST_DISCARD_SPOTLIGHT_LINGER_MS;
+    const remainingMs = Math.max(0, spotlightLingerMs - elapsedMs);
 
     if (remainingMs === 0) {
       setReturnedLastDiscardKey(lastDiscardSpotlightKey);
@@ -194,6 +214,7 @@ export function BattleScreen({
   }, [
     lastDiscardSpotlightKey,
     shouldReturnLastDiscardToRiver,
+    viewModel.actionEffect?.calloutTone,
     viewModel.actionEffect?.key,
     viewModel.shouldAutoReturnLastDiscardToRiver,
   ]);

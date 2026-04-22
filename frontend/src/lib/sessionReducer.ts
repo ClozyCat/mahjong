@@ -191,9 +191,51 @@ function createOptimisticDiscard(
   };
 }
 
+function isOptimisticDiscardConfirmedBySnapshot(
+  optimisticDiscard: SessionState['optimisticDiscard'],
+  snapshot: RoomSnapshotMessage,
+) {
+  if (!optimisticDiscard || snapshot.payload.phase !== 'playing') {
+    return false;
+  }
+
+  const localPlayer = findSnapshotPlayer(snapshot.payload, optimisticDiscard.seatIndex);
+  const stillInHand = localPlayer?.concealed_tiles?.some((tile) => tile.tile_id === optimisticDiscard.tileId) ?? false;
+  if (stillInHand) {
+    return false;
+  }
+
+  if (optimisticDiscard.actionType === 'ready_hand') {
+    return localPlayer?.is_ready_hand === true;
+  }
+
+  return true;
+}
+
+function isOptimisticDiscardConfirmedByRoundEvent(
+  optimisticDiscard: SessionState['optimisticDiscard'],
+  message: Extract<ServerMessage, { type: 'round_event' }> | null,
+) {
+  if (!optimisticDiscard || !message) {
+    return false;
+  }
+
+  const eventSeat = message.payload.event?.seat;
+  if (typeof eventSeat !== 'number' || eventSeat !== optimisticDiscard.seatIndex) {
+    return false;
+  }
+
+  if (optimisticDiscard.actionType === 'ready_hand') {
+    return message.payload.event_type === 'ready_hand_declared';
+  }
+
+  return message.payload.event_type === 'tile_discarded';
+}
+
 function reconcileOptimisticDiscardWithSnapshot(
   optimisticDiscard: SessionState['optimisticDiscard'],
   snapshot: RoomSnapshotMessage,
+  latestRoundEvent: SessionState['latestRoundEvent'],
 ) {
   if (!optimisticDiscard) {
     return null;
@@ -203,14 +245,15 @@ function reconcileOptimisticDiscardWithSnapshot(
     return null;
   }
 
-  const localPlayer = findSnapshotPlayer(snapshot.payload, optimisticDiscard.seatIndex);
-  const stillInHand = localPlayer?.concealed_tiles?.some((tile) => tile.tile_id === optimisticDiscard.tileId) ?? false;
-
-  if (stillInHand) {
+  const snapshotConfirmed = isOptimisticDiscardConfirmedBySnapshot(optimisticDiscard, snapshot);
+  if (!snapshotConfirmed) {
     return optimisticDiscard;
   }
 
-  if (optimisticDiscard.actionType === 'ready_hand' && localPlayer?.is_ready_hand === true) {
+  if (
+    optimisticDiscard.actionType === 'ready_hand' &&
+    !isOptimisticDiscardConfirmedByRoundEvent(optimisticDiscard, latestRoundEvent)
+  ) {
     return optimisticDiscard;
   }
 
@@ -220,24 +263,20 @@ function reconcileOptimisticDiscardWithSnapshot(
 function reconcileOptimisticDiscardWithRoundEvent(
   optimisticDiscard: SessionState['optimisticDiscard'],
   message: Extract<ServerMessage, { type: 'round_event' }>,
+  snapshot: SessionState['roomSnapshot'],
 ) {
   if (!optimisticDiscard) {
     return null;
   }
 
-  const eventSeat = message.payload.event?.seat;
-  if (typeof eventSeat !== 'number' || eventSeat !== optimisticDiscard.seatIndex) {
+  if (!isOptimisticDiscardConfirmedByRoundEvent(optimisticDiscard, message)) {
     return optimisticDiscard;
   }
 
   if (
-    optimisticDiscard.actionType === 'ready_hand' &&
-    message.payload.event_type === 'ready_hand_declared'
+    snapshot &&
+    isOptimisticDiscardConfirmedBySnapshot(optimisticDiscard, snapshot)
   ) {
-    return null;
-  }
-
-  if (optimisticDiscard.actionType === 'discard' && message.payload.event_type === 'tile_discarded') {
     return null;
   }
 
@@ -344,7 +383,11 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
           ? []
           : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
       const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
-      const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(state.optimisticDiscard ?? null, message);
+      const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(
+        state.optimisticDiscard ?? null,
+        message,
+        state.latestRoundEvent ?? null,
+      );
       const nextOptimisticFlower = reconcileOptimisticFlowerWithSnapshot(state.optimisticFlower ?? null, message);
       const nextLatestReplacementTileId = reconcileLatestReplacementTileIdWithSnapshot(
         state.latestReplacementTileId ?? null,
@@ -393,7 +436,11 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
       return {
         ...state,
         latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
-        optimisticDiscard: reconcileOptimisticDiscardWithRoundEvent(state.optimisticDiscard ?? null, message),
+        optimisticDiscard: reconcileOptimisticDiscardWithRoundEvent(
+          state.optimisticDiscard ?? null,
+          message,
+          state.roomSnapshot,
+        ),
         latestReplacementTileId: nextReplacementTileId,
         toasts: appendToast(state, 'event', text),
       };

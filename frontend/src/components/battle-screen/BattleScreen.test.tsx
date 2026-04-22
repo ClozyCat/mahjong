@@ -1241,6 +1241,167 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
+  it('does not replay the ready_hand callout when the optimistic action settles into the confirmed event', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        shouldAutoReturnLastDiscardToRiver: false,
+        actionEffect: {
+          key: 'optimistic-ready_hand:b4#0',
+          label: '听',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'ready_hand',
+        },
+      }),
+    );
+
+    expect(screen.getByText('听')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          shouldAutoReturnLastDiscardToRiver: true,
+          actionEffect: {
+            key: 'ready_hand_declared-1',
+            label: '听',
+            emphasis: 'claim',
+            seat: 'left',
+            calloutTone: 'ready_hand',
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+
+    expect(screen.getByText('听')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByText('听')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('keeps the discard visible for 1.5 seconds after the ready_hand callout completes', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        discards: {
+          bottom: ['w1'],
+          left: ['b4'],
+          top: [],
+          right: [],
+        },
+        lastDiscard: 'b4',
+        lastDiscardSeat: 'left',
+        shouldAutoReturnLastDiscardToRiver: false,
+        actionEffect: {
+          key: 'optimistic-ready_hand:b4#0',
+          label: '听',
+          emphasis: 'claim',
+          seat: 'left',
+          calloutTone: 'ready_hand',
+        },
+      }),
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          shouldAutoReturnLastDiscardToRiver: true,
+          actionEffect: {
+            key: 'ready_hand_declared-1',
+            label: '听',
+            emphasis: 'claim',
+            seat: 'left',
+            calloutTone: 'ready_hand',
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.queryByText('听')).toBeNull();
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+
+    act(() => {
+      vi.advanceTimersByTime(1499);
+    });
+
+    expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
   it('does not render the deprecated reconnecting overlay when disconnected_or_waiting has no waiting controls', () => {
     renderBattleScreen(
       createBattleViewModel({
