@@ -400,7 +400,7 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('waits for all multi-winner hu callouts before opening the settlement overlay', () => {
+  it('shows all multi-winner hu callouts together before opening the settlement overlay', () => {
     vi.useFakeTimers();
 
     const { container, rerender } = renderBattleScreen(
@@ -492,18 +492,15 @@ describe('BattleScreen', () => {
     );
 
     expect(document.body.querySelector('.result-overlay')).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(3000);
-    });
-
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
     expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).not.toBeNull();
-    expect(document.body.querySelector('.result-overlay')).toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(3000);
     });
 
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).toBeNull();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).toBeNull();
     expect(document.body.querySelector('.result-overlay')).not.toBeNull();
     vi.useRealTimers();
   });

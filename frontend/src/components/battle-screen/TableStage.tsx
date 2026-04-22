@@ -29,6 +29,7 @@ interface TableStageProps {
   lastDiscard: string | null;
   lastDiscardSeat?: Seat | null;
   settlementWinnerSeat?: Seat | null;
+  settlementWinnerSeats?: Seat[];
   settlementWinType?: string | null;
   settlementWinTypeLabel?: string | null;
   centerStatusText?: string | null;
@@ -82,6 +83,7 @@ export function TableStage({
   lastDiscard,
   lastDiscardSeat = null,
   settlementWinnerSeat = null,
+  settlementWinnerSeats = [],
   settlementWinType = null,
   settlementWinTypeLabel = null,
   centerStatusText = null,
@@ -121,6 +123,17 @@ export function TableStage({
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
   const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
+  const settlementWinningSeats = getUniqueSeats([
+    settlementWinnerSeat,
+    ...settlementWinnerSeats,
+  ]);
+  const simultaneousSettlementHuCallouts =
+    settlementWinType === 'discard' && settlementWinningSeats.length > 1
+      ? settlementWinningSeats.map((seat) =>
+          createSettlementHuCallout(seat, settlementWinType, settlementWinTypeLabel),
+        )
+      : [];
+  const shouldShowSimultaneousSettlementHuCallouts = simultaneousSettlementHuCallouts.length > 0;
   const incomingActionCallout = createActionCallout(
     actionEffect,
     settlementWinnerSeat,
@@ -321,6 +334,40 @@ export function TableStage({
   }, [actionEffect, settlementWinnerSeat, settlementWinType, settlementWinTypeLabel]);
 
   useEffect(() => {
+    if (!shouldShowSimultaneousSettlementHuCallouts) {
+      return;
+    }
+
+    if (activeActionCalloutTimerRef.current !== null && activeActionCalloutRef.current?.tone === 'hu') {
+      window.clearTimeout(activeActionCalloutTimerRef.current);
+      activeActionCalloutTimerRef.current = null;
+    }
+
+    const nextPendingCallouts = pendingActionCalloutsRef.current.filter((callout) => callout.tone !== 'hu');
+    if (nextPendingCallouts.length !== pendingActionCalloutsRef.current.length) {
+      pendingActionCalloutsRef.current = nextPendingCallouts;
+      setPendingActionCallouts(nextPendingCallouts);
+    }
+
+    if (activeActionCalloutRef.current?.tone === 'hu') {
+      activeActionCalloutRef.current = null;
+      setActiveActionCallout(null);
+    }
+
+    if (exitingActionCallout?.tone === 'hu') {
+      if (exitingActionCalloutTimerRef.current !== null) {
+        window.clearTimeout(exitingActionCalloutTimerRef.current);
+        exitingActionCalloutTimerRef.current = null;
+      }
+      setExitingActionCallout(null);
+    }
+  }, [
+    shouldShowSimultaneousSettlementHuCallouts,
+    exitingActionCallout,
+    pendingActionCallouts,
+  ]);
+
+  useEffect(() => {
     if (spotlightKey === trackedSpotlightKeyRef.current) {
       return;
     }
@@ -493,7 +540,7 @@ export function TableStage({
             const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
             const settlementWinningTileIndex =
               settlementWinType === 'discard' &&
-                settlementWinnerSeat === seat &&
+                settlementWinningSeats.includes(seat) &&
                 lastDiscard !== null &&
                 finalHandTiles.at(-1) === lastDiscard
                 ? finalHandTiles.length - 1
@@ -671,8 +718,15 @@ export function TableStage({
             </div>
           ) : null}
           {settlementCenterCalloutLabel ? <SettlementCenterCallout label={settlementCenterCalloutLabel} /> : null}
-          {exitingActionCallout ? <ActionCalloutMarker callout={exitingActionCallout} phase="exit" /> : null}
-          {activeActionCallout ? <ActionCalloutMarker callout={activeActionCallout} phase="active" /> : null}
+          {simultaneousSettlementHuCallouts.map((callout) => (
+            <ActionCalloutMarker key={callout.key} callout={callout} phase="active" />
+          ))}
+          {exitingActionCallout && (!shouldShowSimultaneousSettlementHuCallouts || exitingActionCallout.tone !== 'hu')
+            ? <ActionCalloutMarker callout={exitingActionCallout} phase="exit" />
+            : null}
+          {activeActionCallout && (!shouldShowSimultaneousSettlementHuCallouts || activeActionCallout.tone !== 'hu')
+            ? <ActionCalloutMarker callout={activeActionCallout} phase="active" />
+            : null}
         </div>
       </div>
       <FanGuideDialog isOpen={isFanGuideOpen} onClose={() => setIsFanGuideOpen(false)} />
@@ -1116,6 +1170,20 @@ function createActionCallout(
   };
 }
 
+function createSettlementHuCallout(
+  seat: Seat,
+  settlementWinType: string | null,
+  settlementWinTypeLabel: string | null,
+): ActionCallout {
+  return {
+    key: `settlement-hu:${seat}`,
+    seat,
+    tone: 'hu',
+    label: ACTION_CALLOUT_COPY.hu,
+    huVariant: getHuCalloutVariant(settlementWinType, settlementWinTypeLabel),
+  };
+}
+
 function getHuCalloutVariant(settlementWinType: string | null, settlementWinTypeLabel: string | null) {
   if (settlementWinType === 'self_draw') {
     return 'self-draw';
@@ -1167,6 +1235,10 @@ function clampQuickChatText(value: string) {
 
 function normalizeQuickChatText(value: string) {
   return clampQuickChatText(value).trim();
+}
+
+function getUniqueSeats(seats: Array<Seat | null | undefined>) {
+  return Array.from(new Set(seats.filter((seat): seat is Seat => seat !== null && seat !== undefined)));
 }
 
 function getSettlementCalloutStyle(seat: Seat | null = null): CSSProperties {

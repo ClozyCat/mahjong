@@ -90,6 +90,10 @@ export function BattleScreen({
   const visibleResult = isSettlementPanelReady ? viewModel.result : null;
   const visibleSettlementCenterCalloutLabel =
     !isSettlementPanelReady && viewModel.result?.winType === 'draw' ? '流局' : null;
+  const visibleSettlementWinnerSeats =
+    !isSettlementPanelReady && viewModel.result?.winType === 'discard'
+      ? getSettlementWinnerSeats(viewModel.result)
+      : [];
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
 
   function adjustTableTileScale(offset: number) {
@@ -274,6 +278,7 @@ export function BattleScreen({
               lastDiscard={visibleLastDiscard}
               lastDiscardSeat={visibleLastDiscardSeat}
               settlementWinnerSeat={viewModel.result?.winnerSeat ?? null}
+              settlementWinnerSeats={visibleSettlementWinnerSeats}
               settlementWinType={viewModel.result?.winType ?? null}
               settlementWinTypeLabel={viewModel.result?.winTypeLabel ?? null}
               centerStatusText={viewModel.centerStatusText}
@@ -361,7 +366,7 @@ function getSettlementPanelDelayMs(
 ) {
   if (winType === 'draw' || winType === 'discard' || winType === 'self_draw') {
     if (winType === 'discard' && hasNewSettlementPages && settlementPageCount > 1) {
-      return settlementPageCount * SETTLEMENT_CALLOUT_LINGER_MS;
+      return SETTLEMENT_CALLOUT_LINGER_MS;
     }
 
     return hasObservedNoResult ? SETTLEMENT_CALLOUT_LINGER_MS : 0;
@@ -376,6 +381,24 @@ function getSettlementPageCount(result: BattleViewModel['result']) {
   }
 
   return Array.isArray(result.pages) && result.pages.length > 0 ? result.pages.length : 1;
+}
+
+function getSettlementWinnerSeats(result: BattleViewModel['result']) {
+  if (!result) {
+    return [];
+  }
+
+  if (Array.isArray(result.pages) && result.pages.length > 0) {
+    return Array.from(
+      new Set(
+        result.pages
+          .map((page) => page.winnerSeat)
+          .filter((seat): seat is NonNullable<typeof result.winnerSeat> => seat !== null),
+      ),
+    );
+  }
+
+  return result.winnerSeat ? [result.winnerSeat] : [];
 }
 
 function shouldReturnDiscardImmediatelyForNextAction(

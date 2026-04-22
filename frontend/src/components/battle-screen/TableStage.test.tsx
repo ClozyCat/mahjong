@@ -1144,6 +1144,39 @@ describe('TableStage', () => {
     expect(container.querySelector(className)).not.toBeNull();
   });
 
+  it('renders all discard hu callouts together when settlement has multiple winners', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard="b1"
+        lastDiscardSeat="left"
+        settlementWinnerSeat="right"
+        settlementWinnerSeats={['right', 'top']}
+        settlementWinType="discard"
+        settlementWinTypeLabel="荣和"
+        promptText={null}
+        actionEffect={{
+          key: 'hu-2',
+          label: '胡牌',
+          emphasis: 'claim',
+          seat: 'top',
+          calloutTone: 'hu',
+        }}
+      />,
+    );
+
+    expect(container.querySelectorAll('.table-stage__action-callout--hu')).toHaveLength(2);
+    expect(container.querySelectorAll('.table-stage__action-callout--hu-discard')).toHaveLength(2);
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).not.toBeNull();
+  });
+
   it('queues multiple hu callouts and shows them one by one', () => {
     vi.useFakeTimers();
 
@@ -1392,4 +1425,3 @@ describe('TableStage', () => {
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
 });
-
