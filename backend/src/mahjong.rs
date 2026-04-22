@@ -1356,10 +1356,13 @@ mod tests {
     }
 
     #[test]
-    fn local_concealed_self_kong_draws_replacement_and_exposes_option() {
+    fn local_concealed_self_kong_draws_replacement_and_keeps_ready_hand_option() {
         let mut room = room_for_local_concealed_self_kong();
         let prompt = action_prompt(&room, 0).expect("prompt should exist");
-        assert_eq!(prompt["payload"]["options"], json!(["discard", "kong"]));
+        assert_eq!(
+            prompt["payload"]["options"],
+            json!(["discard", "kong", "ready_hand"])
+        );
 
         let result = try_handle_action(
             &mut room,
