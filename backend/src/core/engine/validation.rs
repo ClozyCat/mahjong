@@ -23,12 +23,15 @@ pub fn classify_local_player_action(
 ) -> Option<LocalPlayerActionKind> {
     match action {
         PlayerAction::Hu => Some(LocalPlayerActionKind::Hu),
-        PlayerAction::Flower { .. } => flower_supported_locally(context, actor)
-            .then_some(LocalPlayerActionKind::Flower),
+        PlayerAction::Flower { .. } => {
+            flower_supported_locally(context, actor).then_some(LocalPlayerActionKind::Flower)
+        }
         PlayerAction::Discard { tile_id } => discard_supported_locally(context, actor, tile_id)
             .then_some(LocalPlayerActionKind::Discard),
-        PlayerAction::ReadyHand { tile_id } => ready_hand_supported_locally(context, actor, tile_id)
-            .then_some(LocalPlayerActionKind::ReadyHand),
+        PlayerAction::ReadyHand { tile_id } => {
+            ready_hand_supported_locally(context, actor, tile_id)
+                .then_some(LocalPlayerActionKind::ReadyHand)
+        }
         PlayerAction::Chow { .. } => claim_window_action_supported(context, actor, "chow")
             .then_some(LocalPlayerActionKind::ClaimWindow),
         PlayerAction::Pung { .. } => claim_window_action_supported(context, actor, "pung")
@@ -97,7 +100,10 @@ fn flower_supported_locally(context: &EngineContext, actor: Seat) -> bool {
     if round.current_actor != actor || round.pending_action.is_some() {
         return false;
     }
-    !round.players.get(actor).is_some_and(|player| player.is_ready_hand)
+    !round
+        .players
+        .get(actor)
+        .is_some_and(|player| player.is_ready_hand)
 }
 
 fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_type: &str) -> bool {
@@ -107,7 +113,10 @@ fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_ty
     let Some(PendingAction::ClaimWindow(claim)) = round.pending_action.as_ref() else {
         return false;
     };
-    let is_ready_hand = round.players.get(actor).is_some_and(|player| player.is_ready_hand);
+    let is_ready_hand = round
+        .players
+        .get(actor)
+        .is_some_and(|player| player.is_ready_hand);
     let Some(allowed_claims) = claim.claim_window.get(actor) else {
         return false;
     };
@@ -130,7 +139,11 @@ fn rob_kong_pass_supported(context: &EngineContext, actor: Seat) -> bool {
     let Some(round) = context.room.round_state.as_ref() else {
         return false;
     };
-    if round.players.get(actor).is_some_and(|player| player.is_ready_hand) {
+    if round
+        .players
+        .get(actor)
+        .is_some_and(|player| player.is_ready_hand)
+    {
         return false;
     }
     let Some(PendingAction::RobKongWindow(rob)) = round.pending_action.as_ref() else {
@@ -365,11 +378,7 @@ mod tests {
                 &context,
                 1,
                 &PlayerAction::Kong {
-                    tile_ids: vec![
-                        "w3#a".to_string(),
-                        "w3#b".to_string(),
-                        "w3#c".to_string(),
-                    ],
+                    tile_ids: vec!["w3#a".to_string(), "w3#b".to_string(), "w3#c".to_string(),],
                 }
             ),
             Some(LocalPlayerActionKind::ClaimWindow)

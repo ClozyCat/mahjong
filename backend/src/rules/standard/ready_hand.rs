@@ -3,24 +3,21 @@ use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::decompose_winning_hand_with_melds;
 
 const READY_HAND_TILE_KEYS: [&str; 34] = [
-    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
-    "t7", "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south",
-    "west", "north", "red", "green", "white",
+    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+    "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
+    "north", "red", "green", "white",
 ];
 
 pub fn has_ready_hand_discard_in_room_state(state: &RoomState, seat_index: usize) -> bool {
     let Some(round) = state.round_state.as_ref() else {
         return false;
     };
-    round
-        .players
-        .get(seat_index)
-        .is_some_and(|player| {
-            player
-                .concealed_tiles
-                .iter()
-                .any(|tile| can_declare_ready_hand_with_tile_id(state, seat_index, &tile.tile_id))
-        })
+    round.players.get(seat_index).is_some_and(|player| {
+        player
+            .concealed_tiles
+            .iter()
+            .any(|tile| can_declare_ready_hand_with_tile_id(state, seat_index, &tile.tile_id))
+    })
 }
 
 pub fn can_declare_ready_hand_with_tile_id(

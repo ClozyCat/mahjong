@@ -4,8 +4,7 @@ use crate::rules::standard::{
     actions::{
         apply_claim_window_action_in_room_state, apply_discard_action_output_in_room_state,
         apply_ready_hand_action_output_in_room_state, apply_rob_kong_hu_in_room_state,
-        apply_rob_kong_pass_in_room_state,
-        try_handle_self_kong_action_output_in_room_state,
+        apply_rob_kong_pass_in_room_state, try_handle_self_kong_action_output_in_room_state,
     },
     flow::apply_flower_action_output_in_room_state,
     win::apply_hu_action_output_in_room_state,

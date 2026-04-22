@@ -8,13 +8,13 @@ use crate::core::state::{PendingAction, RoomState};
 use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
 use crate::room_scoring::RoomScoringCache;
 
+use super::actions::apply_discard_action_output_in_room_state;
 #[cfg(test)]
 use super::actions::{
     apply_discard_action, can_resolve_claim_window_timeout_locally, can_resolve_discard_locally,
     can_resolve_rob_kong_timeout_locally, claim_window_supported_locally,
     resolve_claim_window_timeout, resolve_rob_kong_timeout, rob_kong_window_supported_locally,
 };
-use super::actions::apply_discard_action_output_in_room_state;
 #[cfg(test)]
 use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
@@ -157,6 +157,16 @@ fn player_is_ready_hand(state: &RoomState, seat_index: usize) -> bool {
         .as_ref()
         .and_then(|round| round.players.get(seat_index))
         .is_some_and(|player| player.is_ready_hand)
+}
+
+fn ready_hand_human_waits_for_manual_hu(
+    state: &RoomState,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> bool {
+    player_is_ready_hand(state, seat_index)
+        && !seat_is_bot(state, seat_index)
+        && can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
 }
 
 fn player_first_flower_tile_id_from_cache(
@@ -370,6 +380,9 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(state);
             if player_is_ready_hand(state, seat_index) {
+                if ready_hand_human_waits_for_manual_hu(state, &cache, seat_index) {
+                    return None;
+                }
                 return next_ready_hand_action_for_state(state, &cache, seat_index);
             }
             if !seat_is_bot(state, seat_index) {
@@ -810,7 +823,10 @@ mod tests {
 
         let result = try_process_due_timeout_in_room_state(&mut room);
 
-        assert!(result.is_ok(), "claim timeout should not fail for ready-hand seats");
+        assert!(
+            result.is_ok(),
+            "claim timeout should not fail for ready-hand seats"
+        );
         assert!(result.expect("claim timeout should work").is_some());
         assert_eq!(
             room.round_state.as_ref().map(|round| round.current_actor),
@@ -1083,15 +1099,34 @@ mod tests {
     }
 
     #[test]
-    fn ready_hand_human_keeps_hu_when_draw_is_winning_tile() {
+    fn ready_hand_human_waits_for_manual_hu_when_draw_is_winning_tile() {
         let room = ready_hand_auto_room_state("t4", "t4#draw");
 
-        let action = next_bot_action_in_room_state(&room)
-            .expect("ready-hand lookup should succeed")
-            .expect("winning draw should keep hu");
+        let action =
+            next_bot_action_in_room_state(&room).expect("ready-hand lookup should succeed");
 
-        assert_eq!(action.seat_index, 0);
-        assert_eq!(action.action_type, "hu");
-        assert!(action.tile_ids.is_empty());
+        assert!(
+            action.is_none(),
+            "winning draw should wait for the human player to click hu"
+        );
+    }
+
+    #[test]
+    fn ready_hand_human_timeout_auto_hu_when_draw_is_winning_tile() {
+        let mut room = ready_hand_auto_room_state("t4", "t4#draw");
+
+        let result = try_process_due_timeout_in_room_state(&mut room)
+            .expect("ready-hand timeout should not fail");
+
+        assert!(
+            result.is_some(),
+            "timeout should auto hu for a human ready-hand self draw"
+        );
+        let emitted = result.expect("timeout should emit hu message");
+        assert_eq!(emitted[0]["payload"]["event_type"], "self_hu_declared");
+        assert_eq!(
+            room.pending_timeout.as_ref().map(|timeout| timeout.kind.as_str()),
+            None
+        );
     }
 }

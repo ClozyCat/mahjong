@@ -3691,11 +3691,18 @@ mod tests {
             decompositions,
         });
 
-        assert!(!base_result.fan_keys.iter().any(|fan| fan == "ready_hand_win"));
-        assert!(ready_hand_result
-            .fan_keys
-            .iter()
-            .any(|fan| fan == "ready_hand_win"));
+        assert!(
+            !base_result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "ready_hand_win")
+        );
+        assert!(
+            ready_hand_result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "ready_hand_win")
+        );
         assert_eq!(ready_hand_result.fan_total, base_result.fan_total + 2);
     }
 
@@ -3789,7 +3796,10 @@ mod tests {
         });
 
         let payment = result.fan_total * 3;
-        assert_eq!(result.score_delta.fan_delta_by_seat, vec![0, -payment, payment, 0]);
+        assert_eq!(
+            result.score_delta.fan_delta_by_seat,
+            vec![0, -payment, payment, 0]
+        );
     }
 
     #[test]

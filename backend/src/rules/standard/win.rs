@@ -928,15 +928,14 @@ mod tests {
         let base_settlement =
             compute_hu_settlement_for_state(&base_state, 0, "self_draw").expect("base settlement");
 
-        let mut ready_hand_room = base_state
-            .to_room_value()
-            .expect("state should serialize");
+        let mut ready_hand_room = base_state.to_room_value().expect("state should serialize");
         ready_hand_room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
         let ready_hand_state =
             RoomState::from_room_value(&ready_hand_room).expect("room should parse");
 
-        let ready_hand_settlement = compute_hu_settlement_for_state(&ready_hand_state, 0, "self_draw")
-            .expect("ready-hand settlement");
+        let ready_hand_settlement =
+            compute_hu_settlement_for_state(&ready_hand_state, 0, "self_draw")
+                .expect("ready-hand settlement");
 
         assert!(
             ready_hand_settlement

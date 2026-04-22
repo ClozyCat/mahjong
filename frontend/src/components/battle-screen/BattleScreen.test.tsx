@@ -394,7 +394,7 @@ describe('BattleScreen', () => {
 
     expect(screen.getByText('2 / 2')).toBeInTheDocument();
     expect(screen.getByText(/胜者 Player Top（对家）/)).toBeInTheDocument();
-    expect(screen.getByText(/花牌 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/花牌 1/)).not.toBeInTheDocument();
     expect(screen.getByText('清一色')).toBeInTheDocument();
     expect(screen.queryByText('平胡')).toBeNull();
     vi.useRealTimers();
@@ -849,7 +849,6 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
     expect(screen.queryByRole('button', { name: '收起番种' })).toBeNull();
   });
-
 
   it('updates the scrollable fan list without reintroducing pagination when a new settlement result arrives', async () => {
     const { rerender } = renderBattleScreen(

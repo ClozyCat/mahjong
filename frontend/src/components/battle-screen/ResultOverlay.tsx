@@ -404,7 +404,6 @@ const FanBreakdownSection = memo(({
     winTypeLabel,
     activePage?.winnerSeat ? `胜者 ${formatResultActor(activePage.winnerSeat, result.seats)}` : null,
     activePage?.discarderSeat ? `放铳 ${formatResultActor(activePage.discarderSeat, result.seats)}` : null,
-    activePage && activePage.flowerCount > 0 ? `花牌 ${activePage.flowerCount}` : null,
   ].filter(Boolean);
 
   return (

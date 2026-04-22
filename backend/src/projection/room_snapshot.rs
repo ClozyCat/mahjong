@@ -177,7 +177,10 @@ pub fn build_pending_action_view(
     let pending_timeout = state.pending_timeout.as_ref()?;
     let round = state.round_state.as_ref()?;
     let deadline_at = pending_timeout.deadline_at.clone();
-    let local_player = round.players.iter().find(|player| player.seat == local_seat);
+    let local_player = round
+        .players
+        .iter()
+        .find(|player| player.seat == local_seat);
     let is_local_ready_hand = local_player.is_some_and(|player| player.is_ready_hand);
 
     match pending_timeout.kind.as_str() {
@@ -486,9 +489,8 @@ mod tests {
     use super::{build_pending_action_view, room_snapshot_message};
     use crate::core::state::PendingTimeout;
     use crate::core::state::{
-        ClaimWindowAction, MatchState, PendingAction, PlayerRoundState, RoomState,
-        RoundSettlement, RoundState, SeatState, SettlementKongScoreDetailEntry,
-        SettlementScoreDelta,
+        ClaimWindowAction, MatchState, PendingAction, PlayerRoundState, RoomState, RoundSettlement,
+        RoundState, SeatState, SettlementKongScoreDetailEntry, SettlementScoreDelta,
     };
     use crate::projection::SeatProjectionSupport;
 

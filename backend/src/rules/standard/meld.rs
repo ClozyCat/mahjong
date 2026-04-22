@@ -187,7 +187,10 @@ pub fn claim_window_options_after_discard(
                 if same_tile_count >= 3 {
                     claims.push("kong".to_string());
                 }
-                if !is_ready_hand && seat_index == next_player && can_chow(discarded_tile_key, &counts) {
+                if !is_ready_hand
+                    && seat_index == next_player
+                    && can_chow(discarded_tile_key, &counts)
+                {
                     claims.push("chow".to_string());
                 }
             }
@@ -236,7 +239,10 @@ pub fn claim_window_options_after_discard_in_room_state(
                 if same_tile_count >= 3 {
                     claims.push("kong".to_string());
                 }
-                if !is_ready_hand && seat_index == next_player && can_chow(discarded_tile_key, &counts) {
+                if !is_ready_hand
+                    && seat_index == next_player
+                    && can_chow(discarded_tile_key, &counts)
+                {
                     claims.push("chow".to_string());
                 }
             }
