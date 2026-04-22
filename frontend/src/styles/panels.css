@@ -1574,8 +1574,8 @@
 }
 
 .fan-guide__nav-item--active {
-  background: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--nav-active-bg, var(--accent));
+  border-color: color-mix(in srgb, var(--nav-active-bg, var(--accent)) 40%, transparent);
   color: var(--theme-paper-strong);
 }
 

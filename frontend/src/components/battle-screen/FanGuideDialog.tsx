@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, useMemo } from 'react';
 
 import { FAN_GUIDE_ENTRIES } from './fanGuide';
-import { FanGuideCard } from './FanGuideCard';
+import { FanGuideCard, getFanColor } from './FanGuideCard';
 
 interface FanGuideDialogProps {
   isOpen: boolean;
@@ -49,6 +49,7 @@ function LazySection({ children, label, value }: { children: React.ReactNode; la
 
 export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const [activeTab, setActiveTab] = useState<number | null>(null);
 
   // Group entries by fan value
@@ -102,6 +103,15 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
     return () => observer.disconnect();
   }, [isOpen, groupedEntries]);
 
+  // Scroll active sidebar item into view
+  useEffect(() => {
+    if (activeTab === null || !sidebarRef.current) return;
+    const activeItem = sidebarRef.current.querySelector('.fan-guide__nav-item--active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [activeTab]);
+
   const scrollToSection = (value: number) => {
     const element = document.getElementById(`fan-section-${value}`);
     if (element && scrollContainerRef.current) {
@@ -132,12 +142,13 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
         </header>
 
         <div className="fan-guide__layout">
-          <nav className="fan-guide__sidebar">
+          <nav className="fan-guide__sidebar" ref={sidebarRef}>
             {groupedEntries.map(({ value }) => (
               <button
                 key={value}
                 type="button"
                 className={`fan-guide__nav-item ${activeTab === value ? 'fan-guide__nav-item--active' : ''}`}
+                style={activeTab === value ? { '--nav-active-bg': getFanColor(value) } as any : {}}
                 onClick={() => scrollToSection(value)}
               >
                 <span className="fan-guide__nav-value">{value}</span>
