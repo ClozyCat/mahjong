@@ -1793,6 +1793,7 @@ describe('createMatchViewModel', () => {
         tileId: 'w2#p0-1',
         tileCode: 'w2',
         seatIndex: 2,
+        actionType: 'discard',
         actionEffectKey: 'optimistic-discard:w2#p0-1',
         requestedAt: '2026-03-26T06:01:00Z',
       },
@@ -1811,6 +1812,30 @@ describe('createMatchViewModel', () => {
     expect(viewModel.readyHandInsight).toBeNull();
     expect(viewModel.shouldAutoReturnLastDiscardToRiver).toBe(false);
     expect(viewModel.actionIndicatorSeat).toBeNull();
+  });
+
+  it('projects an optimistic ready_hand as a ting callout instead of a normal discard effect', () => {
+    const base = createPlayingSessionState({
+      selectedTileIds: ['w2#p0-1'],
+      optimisticDiscard: {
+        tileId: 'w2#p0-1',
+        tileCode: 'w2',
+        seatIndex: 2,
+        actionType: 'ready_hand',
+        actionEffectKey: 'optimistic-ready_hand:w2#p0-1',
+        requestedAt: '2026-03-26T06:01:00Z',
+      },
+    });
+    const viewModel = createMatchViewModel(base);
+
+    expect(viewModel.promptText).toBe('你已听牌，等待服务器确认...');
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '听',
+      emphasis: 'claim',
+      seat: 'bottom',
+      calloutTone: 'ready_hand',
+    });
+    expect(viewModel.shouldAutoReturnLastDiscardToRiver).toBe(false);
   });
 
 });

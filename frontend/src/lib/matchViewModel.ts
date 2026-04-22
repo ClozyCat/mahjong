@@ -253,8 +253,11 @@ interface MatchViewModelOptions {
 }
 
 function createPromptText(state: SessionState, options: MatchViewModelOptions = {}): string | null {
-  if (hasOptimisticDiscardPending(state)) {
-    return '你已出牌，等待服务器确认...';
+  const optimisticDiscard = getOptimisticDiscard(state);
+  if (optimisticDiscard) {
+    return optimisticDiscard.actionType === 'ready_hand'
+      ? '你已听牌，等待服务器确认...'
+      : '你已出牌，等待服务器确认...';
   }
 
   const snapshot = state.roomSnapshot?.payload;
@@ -1555,10 +1558,10 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
   if (optimisticDiscard) {
     return {
       key: optimisticDiscard.actionEffectKey,
-      label: '出牌',
-      emphasis: 'discard',
+      label: optimisticDiscard.actionType === 'ready_hand' ? '听' : '出牌',
+      emphasis: optimisticDiscard.actionType === 'ready_hand' ? 'claim' : 'discard',
       seat: toRelativeSeat(getLocalSeat(state), optimisticDiscard.seatIndex),
-      calloutTone: null,
+      calloutTone: optimisticDiscard.actionType === 'ready_hand' ? 'ready_hand' : null,
     };
   }
 

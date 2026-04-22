@@ -582,7 +582,7 @@ describe('App', () => {
     });
   });
 
-  it('sends ready_hand with the selected tile and applies the optimistic discard state', async () => {
+  it('sends ready_hand with the selected tile and immediately shows the ting callout instead of a normal discard spotlight', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
     const selectedTileId = 'b9#0';
@@ -636,7 +636,8 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(getLocalHandButtons()).toHaveLength(13);
-      expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
+      expect(screen.getByText('听')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
       expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
         { type: 'join_table', payload: { nickname: 'Player A' } },
         { type: 'action_request', payload: { action_type: 'ready_hand', tile_ids: [selectedTileId] } },

@@ -456,6 +456,7 @@ describe('sessionReducer', () => {
       {
         type: 'queue_optimistic_discard',
         tileId: 'w2#0',
+        actionType: 'discard',
       },
     );
 
@@ -463,6 +464,7 @@ describe('sessionReducer', () => {
       tileId: 'w2#0',
       tileCode: 'w2',
       seatIndex: 0,
+      actionType: 'discard',
     });
 
     const confirmed = sessionReducer(queued, {
@@ -617,6 +619,7 @@ describe('sessionReducer', () => {
       {
         type: 'queue_optimistic_discard',
         tileId: 'w1#0',
+        actionType: 'discard',
       },
     );
 
@@ -632,6 +635,132 @@ describe('sessionReducer', () => {
 
     expect(rolledBack.optimisticDiscard).toBeNull();
     expect(rolledBack.lastRejectedAction?.payload.reason).toBe('invalid_action');
+  });
+
+  it('keeps optimistic ready_hand until the ready_hand_declared round event arrives', () => {
+    const queued = sessionReducer(
+      createInitialSessionState(),
+      {
+        type: 'ws_message',
+        message: {
+          type: 'room_snapshot',
+          payload: {
+            table_code: 'AB12CD',
+            phase: 'playing',
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            local_seat: 0,
+            reconnect_token: 'token-1',
+            private_state: {
+              round_id: 'round-1',
+              round_wind: 'east',
+              dealer_seat: 0,
+              current_actor: 0,
+              last_discard: null,
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 0,
+                deadline_at: '2026-03-26T06:01:00Z',
+                drawn_tile_id: 'w2#0',
+                options: ['discard', 'ready_hand'],
+              },
+              players: [
+                {
+                  seat_index: 0,
+                  nickname: 'Player A',
+                  connected: true,
+                  concealed_count: 2,
+                  concealed_tiles: [
+                    { tile_id: 'w1#0', tile_key: 'w1' },
+                    { tile_id: 'w2#0', tile_key: 'w2' },
+                  ],
+                  melds: [],
+                  flowers: [],
+                  discards: [],
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    const optimistic = sessionReducer(queued, {
+      type: 'queue_optimistic_discard',
+      tileId: 'w2#0',
+      actionType: 'ready_hand',
+    });
+
+    const confirmedBySnapshot = sessionReducer(optimistic, {
+      type: 'ws_message',
+      message: {
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'playing',
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          private_state: {
+            round_id: 'round-1',
+            round_wind: 'east',
+            dealer_seat: 0,
+            current_actor: 1,
+            last_discard: 'w2',
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 1,
+              deadline_at: '2026-03-26T06:01:05Z',
+              drawn_tile_id: 'b3#1',
+              options: ['discard'],
+            },
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 1,
+                concealed_tiles: [{ tile_id: 'w1#0', tile_key: 'w1' }],
+                melds: [],
+                flowers: [],
+                discards: ['w2'],
+                is_ready_hand: true,
+              },
+              {
+                seat_index: 1,
+                nickname: 'Player B',
+                connected: true,
+                concealed_count: 13,
+                concealed_tiles: [],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(confirmedBySnapshot.optimisticDiscard).toMatchObject({
+      tileId: 'w2#0',
+      actionType: 'ready_hand',
+    });
+
+    const confirmedByEvent = sessionReducer(confirmedBySnapshot, {
+      type: 'ws_message',
+      message: {
+        type: 'round_event',
+        payload: {
+          event_type: 'ready_hand_declared',
+          event: {
+            seat: 0,
+            tile_id: 'w2#discard',
+          },
+        },
+      },
+    });
+
+    expect(confirmedByEvent.optimisticDiscard).toBeNull();
   });
 
   it('hydrates match statistics from room_snapshot and keeps match_result read-only for chart data', () => {

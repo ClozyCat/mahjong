@@ -716,7 +716,11 @@ export default function App() {
         return;
       }
 
-      dispatch({ type: 'queue_optimistic_discard', tileId: discardTileId });
+      dispatch({
+        type: 'queue_optimistic_discard',
+        tileId: discardTileId,
+        actionType: 'discard',
+      });
       dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
       return;
     }
@@ -731,7 +735,11 @@ export default function App() {
         return;
       }
 
-      dispatch({ type: 'queue_optimistic_discard', tileId: discardTileId });
+      dispatch({
+        type: 'queue_optimistic_discard',
+        tileId: discardTileId,
+        actionType: 'ready_hand',
+      });
       dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
       return;
     }
@@ -835,7 +843,11 @@ export default function App() {
       return;
     }
 
-    dispatch({ type: 'queue_optimistic_discard', tileId });
+    dispatch({
+      type: 'queue_optimistic_discard',
+      tileId,
+      actionType: 'discard',
+    });
     dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
   }
 

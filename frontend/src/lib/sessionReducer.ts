@@ -1,5 +1,6 @@
 import type {
   ActionRejectedMessage,
+  BackendActionType,
   MatchStatisticsState,
   OptimisticDiscardState,
   OptimisticFlowerState,
@@ -15,7 +16,7 @@ export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
   | { type: 'set_credentials'; tableCode?: string; nickname?: string }
   | { type: 'set_connection_status'; status: SessionState['connectionStatus'] }
-  | { type: 'queue_optimistic_discard'; tileId: string }
+  | { type: 'queue_optimistic_discard'; tileId: string; actionType: Extract<BackendActionType, 'discard' | 'ready_hand'> }
   | { type: 'queue_optimistic_flower'; tileId: string }
   | { type: 'set_selected_tiles'; tileIds: string[]; mode: SessionState['selectionMode'] }
   | { type: 'reset_transient_feedback' }
@@ -145,7 +146,11 @@ function findSnapshotPlayer(snapshot: RoomSnapshotMessage['payload'] | null | un
   return snapshot.private_state?.players.find((player) => player.seat_index === seatIndex) ?? null;
 }
 
-function createOptimisticDiscard(state: SessionState, tileId: string): OptimisticDiscardState | null {
+function createOptimisticDiscard(
+  state: SessionState,
+  tileId: string,
+  actionType: Extract<BackendActionType, 'discard' | 'ready_hand'>,
+): OptimisticDiscardState | null {
   if (state.optimisticDiscard) {
     return state.optimisticDiscard;
   }
@@ -180,7 +185,8 @@ function createOptimisticDiscard(state: SessionState, tileId: string): Optimisti
     tileId,
     tileCode: tile.tile_key,
     seatIndex: localSeat,
-    actionEffectKey: `optimistic-discard:${tileId}:${Date.now()}`,
+    actionType,
+    actionEffectKey: `optimistic-${actionType}:${tileId}:${Date.now()}`,
     requestedAt: new Date().toISOString(),
   };
 }
@@ -200,7 +206,42 @@ function reconcileOptimisticDiscardWithSnapshot(
   const localPlayer = findSnapshotPlayer(snapshot.payload, optimisticDiscard.seatIndex);
   const stillInHand = localPlayer?.concealed_tiles?.some((tile) => tile.tile_id === optimisticDiscard.tileId) ?? false;
 
-  return stillInHand ? optimisticDiscard : null;
+  if (stillInHand) {
+    return optimisticDiscard;
+  }
+
+  if (optimisticDiscard.actionType === 'ready_hand' && localPlayer?.is_ready_hand === true) {
+    return optimisticDiscard;
+  }
+
+  return null;
+}
+
+function reconcileOptimisticDiscardWithRoundEvent(
+  optimisticDiscard: SessionState['optimisticDiscard'],
+  message: Extract<ServerMessage, { type: 'round_event' }>,
+) {
+  if (!optimisticDiscard) {
+    return null;
+  }
+
+  const eventSeat = message.payload.event?.seat;
+  if (typeof eventSeat !== 'number' || eventSeat !== optimisticDiscard.seatIndex) {
+    return optimisticDiscard;
+  }
+
+  if (
+    optimisticDiscard.actionType === 'ready_hand' &&
+    message.payload.event_type === 'ready_hand_declared'
+  ) {
+    return null;
+  }
+
+  if (optimisticDiscard.actionType === 'discard' && message.payload.event_type === 'tile_discarded') {
+    return null;
+  }
+
+  return optimisticDiscard;
 }
 
 function createOptimisticFlower(tileId: string): OptimisticFlowerState {
@@ -352,6 +393,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
       return {
         ...state,
         latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
+        optimisticDiscard: reconcileOptimisticDiscardWithRoundEvent(state.optimisticDiscard ?? null, message),
         latestReplacementTileId: nextReplacementTileId,
         toasts: appendToast(state, 'event', text),
       };
@@ -407,7 +449,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         optimisticFlower: action.status === 'connected' ? state.optimisticFlower ?? null : null,
       };
     case 'queue_optimistic_discard': {
-      const optimisticDiscard = createOptimisticDiscard(state, action.tileId);
+      const optimisticDiscard = createOptimisticDiscard(state, action.tileId, action.actionType);
       if (!optimisticDiscard) {
         return state;
       }

@@ -308,6 +308,7 @@ export interface OptimisticDiscardState {
   tileId: string;
   tileCode: string;
   seatIndex: number;
+  actionType: 'discard' | 'ready_hand';
   actionEffectKey: string;
   requestedAt: string;
 }
