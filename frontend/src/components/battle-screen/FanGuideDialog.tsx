@@ -70,6 +70,38 @@ export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
     }
   }, [isOpen, groupedEntries]);
 
+  // Observer to track which section is currently at the top of the viewport
+  useEffect(() => {
+    if (!isOpen || !scrollContainerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          // If the section is intersecting with our "active zone" (top of the container)
+          if (entry.isIntersecting) {
+            const id = entry.target.id;
+            const value = parseInt(id.replace('fan-section-', ''), 10);
+            if (!isNaN(value)) {
+              setActiveTab(value);
+            }
+          }
+        });
+      },
+      {
+        root: scrollContainerRef.current,
+        // Detect intersection within the top 20% of the viewport container
+        // This ensures the active tab changes as the section header nears the top
+        rootMargin: '0px 0px -80% 0px',
+        threshold: 0,
+      }
+    );
+
+    const sections = scrollContainerRef.current.querySelectorAll('.fan-guide__section');
+    sections.forEach((section) => observer.observe(section));
+
+    return () => observer.disconnect();
+  }, [isOpen, groupedEntries]);
+
   const scrollToSection = (value: number) => {
     const element = document.getElementById(`fan-section-${value}`);
     if (element && scrollContainerRef.current) {

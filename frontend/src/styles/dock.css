@@ -1102,7 +1102,8 @@
 }
 
 :root[data-small-screen='true'] .action-dock__ready-hand-popover {
-  right: -0.1rem;
+  left: -0.1rem;
+  right: auto;
   min-width: 4.6rem;
   max-width: calc(100vw - 1.4rem);
   padding: 0.44rem 0.46rem 0.48rem;
@@ -1130,9 +1131,19 @@
 }
 
 :root[data-small-screen='true'] .action-dock__info-rail {
-  left: auto;
-  right: 0.25rem;
+  left: 0.25rem;
+  right: auto;
+  bottom: 0.12rem;
+  align-items: flex-start;
+  min-width: 0;
+  width: max-content;
   padding-left: 0;
+}
+
+:root[data-small-screen='true'] .action-dock__status-group,
+:root[data-small-screen='true'] .action-dock__status-group-standalone {
+  width: max-content;
+  justify-items: start;
 }
 
 /* ---- Landscape mobile ---- */

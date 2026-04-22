@@ -133,6 +133,46 @@ describe('BottomActionDock', () => {
     );
   });
 
+  it('toggles the ready-hand insight popover from the info trigger', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        selectedTileCode="w2"
+        readyHandInsight={{
+          source: 'current',
+          discardTileId: null,
+          discardTileCode: null,
+          waits: [
+            { code: 'w3', availableCount: 2 },
+            { code: 'b5', availableCount: 1 },
+          ],
+        }}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: '查看当前听牌信息' });
+
+    expect(screen.queryByRole('region', { name: '当前听牌信息' })).toBeNull();
+
+    await user.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('region', { name: '当前听牌信息' })).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
   it('hides the dock countdown when only other players are responding', () => {
     render(
       <BottomActionDock

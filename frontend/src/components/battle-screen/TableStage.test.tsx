@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TableStage } from './TableStage';
@@ -757,6 +758,39 @@ describe('TableStage', () => {
 
     expect(onAddBot).toHaveBeenCalledTimes(1);
     expect(onRemoveBot).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the quick-chat radial menu from the global emoji trigger', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'bottom', name: 'Player A', isLocal: true, absoluteSeat: 0, melds: [] },
+        ]}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: '打开快捷表情' });
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu', { name: 'Player A 快捷表情' })).toBeNull();
+
+    await user.click(trigger);
+
+    const menu = screen.getByRole('menu', { name: 'Player A 快捷表情' });
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(9);
   });
 
   it('renders a theme switch button beside the leave control and forwards clicks', () => {
