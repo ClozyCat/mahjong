@@ -29,7 +29,7 @@ use crate::projection::support::build_seat_projection_support_for_state;
 
 pub(crate) const MAX_SEATS: usize = 4;
 pub(crate) const DISCONNECT_GRACE_SECONDS: i64 = 120;
-pub(crate) const BOT_ACTION_DELAY_MS: u64 = 0;
+pub(crate) const BOT_ACTION_DELAY_MS: u64 = 300;
 pub(crate) const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 #[derive(Clone)]
@@ -554,7 +554,12 @@ pub(crate) fn send_outbound(outbound: Vec<OutboundMessage>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{optional_env_value, resolve_database_path};
+    use super::{BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path};
+
+    #[test]
+    fn bot_action_delay_defaults_to_300ms() {
+        assert_eq!(BOT_ACTION_DELAY_MS, 300);
+    }
 
     #[test]
     fn optional_env_value_trims_whitespace_and_drops_empty_values() {
