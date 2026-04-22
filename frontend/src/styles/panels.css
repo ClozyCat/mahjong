@@ -16,18 +16,18 @@
 .table-stage__settlement-hand-grid,
 .ambient-overlay__panel,
 .fan-guide__dialog {
-  border-color: color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  border-color: rgba(255, 255, 255, 0.12);
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 40%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 15%, transparent), transparent 40%),
     linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-paper) 8%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
-    var(--theme-panel-bg-strong);
+      rgba(255, 255, 255, 0.03),
+      rgba(0, 0, 0, 0.1)),
+    rgba(12, 12, 12, 0.86);
   box-shadow:
-    var(--shadow-premium-hard),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 15%, transparent),
-    0 0 24px color-mix(in srgb, var(--accent) 10%, transparent);
-  backdrop-filter: blur(22px) saturate(140%);
+    0 32px 80px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 24px color-mix(in srgb, var(--accent) 12%, transparent);
+  backdrop-filter: blur(32px) saturate(150%);
   isolation: isolate;
   border-width: 1.5px;
 }
@@ -666,33 +666,30 @@
 }
 
 .result-overlay__card {
-  --result-overlay-ink-soft: color-mix(in srgb, var(--theme-paper) 78%, transparent);
-  --result-overlay-label-ink: color-mix(in srgb, var(--theme-paper) 52%, var(--accent-2));
+  --result-overlay-ink-soft: color-mix(in srgb, var(--theme-paper-strong) 64%, transparent);
+  --result-overlay-label-ink: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent-2));
   --result-overlay-rule:
     linear-gradient(90deg,
-      color-mix(in srgb, var(--accent) 0%, transparent),
+      transparent,
       color-mix(in srgb, var(--accent) 42%, transparent),
       color-mix(in srgb, var(--accent-2) 34%, transparent),
       color-mix(in srgb, var(--accent-3) 28%, transparent),
-      color-mix(in srgb, var(--accent) 0%, transparent));
-  --result-overlay-fan-rim: color-mix(in srgb, var(--accent-2) 26%, var(--theme-border));
-  --result-overlay-score-rim: color-mix(in srgb, var(--accent) 28%, var(--theme-border));
-  --result-overlay-fan-surface:
-    color-mix(in srgb, var(--theme-paper) 3%, transparent);
-  --result-overlay-score-surface:
-    color-mix(in srgb, var(--theme-paper) 4%, transparent);
-  --result-overlay-row-surface:
-    color-mix(in srgb, var(--theme-paper) 3%, transparent);
-  --result-overlay-seat-surface:
-    color-mix(in srgb, var(--theme-paper) 4%, transparent);
-  --result-overlay-positive-rim: color-mix(in srgb, var(--theme-success) 54%, var(--theme-border-strong));
-  --result-overlay-positive-glow: color-mix(in srgb, var(--theme-success) 14%, transparent);
-  --result-overlay-positive-fill: color-mix(in srgb, var(--theme-success) 22%, transparent);
-  --result-overlay-positive-ink: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--theme-success));
-  --result-overlay-negative-rim: color-mix(in srgb, var(--theme-danger) 44%, var(--theme-border));
-  --result-overlay-negative-fill: color-mix(in srgb, var(--theme-danger) 20%, transparent);
-  --result-overlay-negative-ink: color-mix(in srgb, var(--theme-paper-strong) 84%, var(--theme-danger));
-  --result-overlay-neutral-fill: color-mix(in srgb, var(--accent-2) 10%, transparent);
+      transparent);
+  --result-overlay-fan-rim: rgba(255, 255, 255, 0.08);
+  --result-overlay-score-rim: rgba(255, 255, 255, 0.08);
+  --result-overlay-fan-surface: rgba(255, 255, 255, 0.015);
+  --result-overlay-score-surface: rgba(255, 255, 255, 0.02);
+  --result-overlay-row-surface: rgba(255, 255, 255, 0.03);
+  --result-overlay-seat-surface: rgba(255, 255, 255, 0.04);
+  --result-overlay-positive-rim: color-mix(in srgb, var(--theme-success) 64%, transparent);
+  --result-overlay-positive-glow: color-mix(in srgb, var(--theme-success) 12%, transparent);
+  --result-overlay-positive-fill: var(--theme-success);
+  --result-overlay-positive-ink: #fff;
+  --result-overlay-negative-rim: color-mix(in srgb, var(--theme-danger) 54%, transparent);
+  --result-overlay-negative-fill: var(--theme-danger);
+  --result-overlay-negative-ink: #fff;
+  --result-overlay-neutral-fill: rgba(255, 255, 255, 0.05);
+
   pointer-events: auto;
   position: relative;
   width: min(54rem, calc(100vw - 2rem));
@@ -700,14 +697,14 @@
   padding: 1.4rem 1.8rem 1.6rem;
   border-radius: 2.2rem;
   box-shadow: 
-    0 24px 64px rgba(0, 0, 0, 0.15),
-    0 0 0 1px color-mix(in srgb, var(--theme-paper) 12%, transparent);
+    0 24px 64px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
   transform: scale(var(--result-overlay-dynamic-scale, 1));
   transform-origin: center center;
   animation: overlay-fade-in-up 0.5s var(--ease-lux) forwards;
-  backdrop-filter: blur(28px) saturate(130%);
-  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  backdrop-filter: blur(32px) saturate(140%);
+  background: rgba(14, 14, 14, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   will-change: transform, opacity;
 }
 
@@ -807,9 +804,9 @@
   padding: 1.2rem;
   /* Minimalist flat plate */
   border-radius: 1.6rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: none;
-  background: color-mix(in srgb, var(--theme-paper) 2%, transparent);
+  background: rgba(255, 255, 255, 0.02);
   transition: all 0.35s var(--ease-lux);
 }
 
@@ -955,7 +952,7 @@
 
 .result-overlay__fan-pill {
   padding: 0.18rem 0.65rem;
-  background: color-mix(in srgb, var(--fan-bg, #1e4d2b) 12%, transparent);
+  background: var(--fan-bg, #1e4d2b);
   border-radius: 0.4rem;
   color: var(--theme-paper-strong);
   display: flex;
@@ -1017,11 +1014,11 @@
 .result-overlay__fan-tooltip-card {
   margin: 0;
   padding: 1rem 1.05rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
   border-radius: 1.2rem;
-  background: color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  background: rgba(14, 14, 14, 0.92);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   animation: result-overlay-fan-tooltip-enter 160ms ease;
 }
 
@@ -1147,11 +1144,11 @@
   gap: 0.12rem;
   padding: 0.32rem 0.42rem;
   border-radius: 0.72rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 4%, transparent), color-mix(in srgb, var(--theme-panel-bg-softer) 94%, transparent)),
-    rgba(8, 18, 28, 0.45);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.12);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+    rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
 }
 
 .result-overlay__seat-hand-tile {
@@ -1234,11 +1231,11 @@
   display: grid;
   gap: 0.8rem;
   padding: 1.2rem 1.4rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
   border-radius: 1.4rem;
-  background: color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+  background: rgba(14, 14, 14, 0.92);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   animation: result-overlay-fan-tooltip-enter 160ms ease;
 }
 
@@ -1444,13 +1441,13 @@
   display: flex;
   flex-direction: column;
   padding: 1.4rem 1.8rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
   border-radius: 2.2rem;
-  background: color-mix(in srgb, var(--theme-paper) 5%, transparent);
+  background: rgba(12, 12, 12, 0.88);
   backdrop-filter: blur(32px) saturate(120%);
   box-shadow: 
-    0 32px 80px rgba(0, 0, 0, 0.2),
-    0 0 0 1px color-mix(in srgb, var(--theme-paper) 6%, transparent);
+    0 32px 80px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
   animation: modal-scale-in 0.45s var(--ease-lux), overlay-fade-in-up 0.45s var(--ease-lux);
   overflow: hidden;
 }
@@ -1516,8 +1513,8 @@
   justify-content: center;
   padding: 0.6rem 0.3rem;
   border-radius: 0.8rem;
-  background: color-mix(in srgb, var(--theme-paper) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--muted);
   transition: all 0.25s var(--ease-lux);
 }
@@ -1530,7 +1527,7 @@
 }
 
 .fan-guide__nav-item--active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--theme-paper-strong);
 }
@@ -1598,20 +1595,16 @@
 }
 
 .fan-guide__card {
-  padding: 1.1rem 1.4rem;
-  border-radius: 1.4rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
-  background: color-mix(in srgb, var(--theme-paper) 3%, transparent);
+  padding: 1.1rem 1.35rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
   transition: all 0.25s var(--ease-lux);
   display: grid;
   gap: 0.55rem;
 }
 
-.fan-guide__card:hover {
-  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
-  border-color: color-mix(in srgb, var(--theme-paper) 20%, transparent);
-  transform: translateY(-2px);
-}
+/* Removed hover effect for a static list feel */
 
 /* Removed hover effect to keep the list clean and compact */
 
@@ -1632,7 +1625,7 @@
 /* Cinnabar Seal style pill */
 .fan-guide__fan-pill {
   padding: 0.2rem 0.6rem;
-  background: color-mix(in srgb, var(--fan-bg, #1e4d2b) 12%, transparent);
+  background: var(--fan-bg, #1e4d2b);
   border-radius: 0.4rem;
   color: var(--theme-paper-strong);
   display: flex;
@@ -1662,18 +1655,18 @@
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: color-mix(in srgb, var(--theme-paper) 90%, transparent);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .fan-guide__example {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.45;
-  color: color-mix(in srgb, var(--theme-paper) 58%, var(--accent-3));
+  color: color-mix(in srgb, #fff 58%, var(--accent-3));
   padding: 0.45rem 0.7rem;
-  background: color-mix(in srgb, var(--theme-paper) 4%, transparent);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 0.6rem;
-  border-left: 2px solid color-mix(in srgb, var(--accent-2) 20%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--accent-2) 40%, transparent);
 }
 
 .fan-guide__example-label {

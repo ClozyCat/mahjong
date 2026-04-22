@@ -7,37 +7,48 @@ interface FanGuideCardProps {
 }
 
 /**
- * Interpolates between three colors (Green -> Yellow -> Red)
- * @param intensity 0 to 1
+ * Interpolates between five colors with custom value ranges:
+ * 1-4: Green -> Blue
+ * 6-12: Blue -> Purple
+ * 16-32: Purple -> Gold
+ * 48-88: Gold -> Red
+ * @param value Fan value
  */
-export function getFanColor(intensity: number): string {
-  const green = { r: 30, g: 77, b: 43 };    // #1e4d2b
-  const yellow = { r: 184, g: 134, b: 11 }; // #b8860b (Dark Goldenrod for white text contrast)
-  const red = { r: 166, g: 27, b: 41 };     // #a61b29
+export function getFanColor(value: number): string {
+  const stops = [
+    { v: 1, c: { r: 34, g: 84, b: 61 } },    // Green (1 Fan)
+    { v: 4, c: { r: 28, g: 60, b: 118 } },   // Blue (4 Fan)
+    { v: 6, c: { r: 28, g: 60, b: 118 } },   // Blue (6 Fan)
+    { v: 12, c: { r: 91, g: 46, b: 122 } },  // Purple (12 Fan)
+    { v: 16, c: { r: 91, g: 46, b: 122 } },  // Purple (16 Fan)
+    { v: 32, c: { r: 166, g: 124, b: 0 } },  // Gold (32 Fan)
+    { v: 48, c: { r: 166, g: 124, b: 0 } },  // Gold (48 Fan)
+    { v: 88, c: { r: 158, g: 26, b: 47 } },  // Red (88 Fan)
+  ];
 
-  let r, g, b;
+  if (value <= stops[0].v) return `rgb(${stops[0].c.r}, ${stops[0].c.g}, ${stops[0].c.b})`;
+  if (value >= stops[stops.length - 1].v) return `rgb(${stops[stops.length - 1].c.r}, ${stops[stops.length - 1].c.g}, ${stops[stops.length - 1].c.b})`;
 
-  if (intensity <= 0.5) {
-    // Interpolate Green to Yellow
-    const t = intensity * 2;
-    r = Math.round(green.r + (yellow.r - green.r) * t);
-    g = Math.round(green.g + (yellow.g - green.g) * t);
-    b = Math.round(green.b + (yellow.b - green.b) * t);
-  } else {
-    // Interpolate Yellow to Red
-    const t = (intensity - 0.5) * 2;
-    r = Math.round(yellow.r + (red.r - yellow.r) * t);
-    g = Math.round(yellow.g + (red.g - yellow.g) * t);
-    b = Math.round(yellow.b + (red.b - yellow.b) * t);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const s = stops[i];
+    const e = stops[i + 1];
+
+    if (value >= s.v && value <= e.v) {
+      if (s.v === e.v) return `rgb(${s.c.r}, ${s.c.g}, ${s.c.b})`;
+      const t = (value - s.v) / (e.v - s.v);
+      const r = Math.round(s.c.r + (e.c.r - s.c.r) * t);
+      const g = Math.round(s.c.g + (e.c.g - s.c.g) * t);
+      const b = Math.round(s.c.b + (e.c.b - s.c.b) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
   }
 
-  return `rgb(${r}, ${g}, ${b})`;
+  return `rgb(${stops[0].c.r}, ${stops[0].c.g}, ${stops[0].c.b})`;
 }
 
 export function FanGuideCard({ entry, className }: FanGuideCardProps) {
   const resolvedClassName = ['fan-guide__card', className].filter(Boolean).join(' ');
-  const intensity = Math.min(1, entry.fanValue / 88);
-  const fanBg = getFanColor(intensity);
+  const fanBg = getFanColor(entry.fanValue);
 
   return (
     <article className={resolvedClassName}>

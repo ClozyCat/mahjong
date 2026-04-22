@@ -469,8 +469,7 @@ const FanRow = memo(({
   onLeave: () => void;
 }) => {
   const hasGuide = Boolean(getFanGuideEntry(item.fanKey));
-  const intensity = Math.min(1, item.fanValue / 88);
-  const fanBg = getFanColor(intensity);
+  const fanBg = getFanColor(item.fanValue);
 
   return (
     <div
