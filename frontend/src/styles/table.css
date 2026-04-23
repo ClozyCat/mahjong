@@ -857,15 +857,10 @@
   to { opacity: 1; transform: translateY(50%) translateX(0); }
 }
 
-.table-stage__stat-plate--score {
+.table-stage__stat-plate--score,
+.table-stage__stat-plate--flower,
+.table-stage__stat-plate--hand {
   border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
-}
-.table-stage__stat-plate--flower {
-  border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
-}
-.table-stage__stat-plate--hand:hover {
-  border-color: var(--stat-accent);
-  background: color-mix(in srgb, var(--stat-accent) 15%, var(--theme-panel-bg-strong));
 }
 
 .table-stage__stat-plate--tenpai {
@@ -1661,27 +1656,55 @@
   padding: 0;
   border-radius: var(--table-stage-corner-button-radius);
   line-height: 1;
-  backdrop-filter: blur(10px);
+  background: rgba(14, 14, 14, 0.72);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 20%, transparent);
+  backdrop-filter: blur(24px) saturate(140%);
+  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux);
+  box-shadow: 
+    0 8px 20px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  cursor: pointer;
+}
+
+.table-stage__help-button:hover,
+.table-stage__theme-button:hover,
+.table-stage__leave-button:hover {
+  transform: scale(1.1) translateY(-1px);
+  background: rgba(14, 14, 14, 0.82);
+  box-shadow: 
+    0 12px 28px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
+}
+
+.table-stage__help-button:active,
+.table-stage__theme-button:active,
+.table-stage__leave-button:active {
+  transform: scale(0.95);
 }
 
 .table-stage__help-button {
-  border-color: color-mix(in srgb, var(--accent-2) 42%, var(--theme-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 18%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 95%, transparent)),
-    color-mix(in srgb, var(--theme-panel-bg) 92%, black);
-  color: color-mix(in srgb, var(--theme-paper-strong) 86%, var(--accent-2));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 9%, transparent),
-    0 8px 20px var(--theme-shadow-soft);
+  color: var(--accent-2);
+}
+
+.table-stage__help-button:hover {
+  border-color: var(--accent-2);
+  box-shadow: 
+    0 12px 28px rgba(0, 0, 0, 0.4),
+    0 0 14px color-mix(in srgb, var(--accent-2) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
 .table-stage__theme-button {
   overflow: hidden;
   color: var(--theme-paper-strong);
-  border-color: color-mix(in srgb, var(--accent) 44%, var(--theme-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 12%, transparent), color-mix(in srgb, var(--theme-panel-bg-soft) 95%, transparent)),
-    var(--theme-panel-bg);
+}
+
+.table-stage__theme-button:hover {
+  border-color: var(--accent);
+  box-shadow: 
+    0 12px 28px rgba(0, 0, 0, 0.4),
+    0 0 14px color-mix(in srgb, var(--accent) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
 .table-stage__theme-button::after {
@@ -1689,13 +1712,13 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background:
-    conic-gradient(from 180deg,
-      color-mix(in srgb, var(--accent) 90%, transparent),
-      color-mix(in srgb, var(--accent-2) 88%, transparent),
-      color-mix(in srgb, var(--accent-3) 88%, transparent),
-      color-mix(in srgb, var(--accent) 90%, transparent));
-  opacity: 0.3;
+  background: conic-gradient(from 180deg, var(--accent) 0%, var(--accent-2) 33%, var(--accent-3) 66%, var(--accent) 100%);
+  opacity: 0.22;
+  transition: opacity 0.3s var(--ease-lux);
+}
+
+.table-stage__theme-button:hover::after {
+  opacity: 0.35;
 }
 
 .table-stage__help-button span,
@@ -1717,14 +1740,16 @@
 }
 
 .table-stage__leave-button {
-  border-color: color-mix(in srgb, var(--theme-danger) 48%, var(--theme-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--theme-danger) 22%, transparent), color-mix(in srgb, var(--theme-danger) 8%, transparent)),
-    color-mix(in srgb, var(--theme-panel-bg-strong) 94%, black);
-  color: color-mix(in srgb, var(--theme-paper) 80%, var(--theme-danger));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 9%, transparent),
-    0 8px 20px var(--theme-shadow-soft);
+  color: var(--theme-danger);
+}
+
+.table-stage__leave-button:hover {
+  border-color: var(--theme-danger);
+  background: color-mix(in srgb, var(--theme-danger) 12%, rgba(14, 14, 14, 0.82));
+  box-shadow: 
+    0 12px 28px rgba(0, 0, 0, 0.4),
+    0 0 14px color-mix(in srgb, var(--theme-danger) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
 /* ------- Responsive: table ------- */
