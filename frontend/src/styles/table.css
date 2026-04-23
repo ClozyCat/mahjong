@@ -715,7 +715,7 @@
   content: '';
   position: absolute;
   inset: -2rem;
-  background: radial-gradient(circle at center, color-mix(in srgb, #00ffcc 10%, transparent), transparent 75%);
+  background: radial-gradient(circle at center, color-mix(in srgb, #c04851 15%, transparent), transparent 75%);
   z-index: -2;
   pointer-events: none;
   border-radius: 50%;
@@ -869,7 +869,7 @@
 }
 
 .table-stage__stat-plate--tenpai {
-  --stat-accent: #00ffcc; /* Mystic Cyan */
+  --stat-accent: #c04851; /* Chinese Cinnabar Red */
   background: color-mix(in srgb, var(--stat-accent) 25%, var(--theme-panel-bg-strong));
   border-color: color-mix(in srgb, var(--stat-accent) 60%, transparent);
   box-shadow: 
@@ -886,7 +886,7 @@
 
 .table-stage__stat-plate--tenpai .table-stage__stat-value {
   color: #fff;
-  text-shadow: 0 0 8px var(--stat-accent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--stat-accent) 60%, white);
 }
 
 .table-stage__tenpai-glow {
@@ -1547,8 +1547,8 @@
 }
 
 .table-stage__action-callout--ready_hand {
-  --table-stage-action-callout-ink: color-mix(in srgb, var(--accent-2) 86%, var(--theme-paper-strong));
-  --table-stage-action-callout-glow: color-mix(in srgb, var(--accent-2) 36%, transparent);
+  --table-stage-action-callout-ink: color-mix(in srgb, #c04851 92%, var(--theme-paper-strong));
+  --table-stage-action-callout-glow: color-mix(in srgb, #c04851 42%, transparent);
 }
 
 .table-stage__action-callout--hu {
