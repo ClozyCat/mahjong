@@ -371,6 +371,7 @@ export interface PlayerView {
   connected: boolean;
   isBotControlled?: boolean;
   ready: boolean;
+  isReadyHand: boolean;
   concealedCount: number;
   meldCount: number;
   melds: PlayerMeldView[];

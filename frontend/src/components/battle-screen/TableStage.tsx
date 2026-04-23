@@ -560,7 +560,7 @@ export function TableStage({
                   }
                 >
                   {player ? (
-                    <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat}`}>
+                    <div className={`table-stage__player-edge-info table-stage__player-edge-info--${seat} ${player.isReadyHand ? 'table-stage__player-edge-info--tenpai' : ''}`}>
                       <div className="table-stage__player-stats">
                         <div
                           className="table-stage__stat-plate table-stage__stat-plate--seat"
@@ -583,6 +583,13 @@ export function TableStage({
                           <TileStackIcon className="table-stage__stat-icon" />
                           <span className="table-stage__stat-value">{player.concealedCount ?? 0}</span>
                         </div>
+                        {player.isReadyHand && (
+                          <div className="table-stage__stat-plate table-stage__stat-plate--tenpai" title="已听牌">
+                            <ReadyIcon className="table-stage__stat-icon" />
+                            <span className="table-stage__stat-value">听</span>
+                            <div className="table-stage__tenpai-glow" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -1346,6 +1353,16 @@ function TileStackIcon({ className }: { className?: string }) {
       <rect x="6" y="11" width="13" height="17" rx="2" opacity="0.25" />
       <rect x="13" y="4" width="13" height="17" rx="2" />
       <rect x="13" y="4" width="13" height="17" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function ReadyIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} fill="currentColor">
+      <circle cx="16" cy="16" r="10" opacity="0.2" />
+      <path d="M16 8C11.6 8 8 11.6 8 16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16C24 11.6 20.4 8 16 8ZM16 22C12.7 22 10 19.3 10 16C10 12.7 12.7 10 16 10C19.3 10 22 12.7 22 16C22 19.3 19.3 22 16 22Z" />
+      <path d="M16 12C13.8 12 12 13.8 12 16C12 18.2 13.8 20 16 20C18.2 20 20 18.2 20 16C20 13.8 18.2 12 16 12Z" className="table-stage__tenpai-pulse" />
     </svg>
   );
 }

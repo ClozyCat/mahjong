@@ -729,6 +729,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         connected: seat.connected,
         isBotControlled: Boolean(seat.is_bot),
         ready: seat.ready,
+        isReadyHand: Boolean(privatePlayer?.is_ready_hand),
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,
         melds: privatePlayer?.display_melds ?? normalizeDisplayMelds(privatePlayer?.melds),

@@ -707,6 +707,26 @@
   gap: 0.25rem;
 }
 
+.table-stage__player-edge-info--tenpai {
+  position: relative;
+}
+
+.table-stage__player-edge-info--tenpai::after {
+  content: '';
+  position: absolute;
+  inset: -2rem;
+  background: radial-gradient(circle at center, color-mix(in srgb, #00ffcc 10%, transparent), transparent 75%);
+  z-index: -2;
+  pointer-events: none;
+  border-radius: 50%;
+  animation: table-stage-tenpai-aura 4s var(--ease-lux) infinite alternate;
+}
+
+@keyframes table-stage-tenpai-aura {
+  from { transform: scale(0.8); opacity: 0.3; }
+  to { transform: scale(1.3); opacity: 0.8; }
+}
+
 .table-stage__stat-plate {
   position: relative;
   display: flex;
@@ -843,8 +863,66 @@
 .table-stage__stat-plate--flower {
   border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
 }
-.table-stage__stat-plate--hand {
-  border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
+.table-stage__stat-plate--hand:hover {
+  border-color: var(--stat-accent);
+  background: color-mix(in srgb, var(--stat-accent) 15%, var(--theme-panel-bg-strong));
+}
+
+.table-stage__stat-plate--tenpai {
+  --stat-accent: #00ffcc; /* Mystic Cyan */
+  background: color-mix(in srgb, var(--stat-accent) 25%, var(--theme-panel-bg-strong));
+  border-color: color-mix(in srgb, var(--stat-accent) 60%, transparent);
+  box-shadow: 
+    0 0 12px color-mix(in srgb, var(--stat-accent) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  animation: table-stage-tenpai-breathing 2s ease-in-out infinite;
+  overflow: hidden;
+}
+
+.table-stage__stat-plate--tenpai .table-stage__stat-icon {
+  color: var(--stat-accent);
+  filter: drop-shadow(0 0 4px var(--stat-accent));
+}
+
+.table-stage__stat-plate--tenpai .table-stage__stat-value {
+  color: #fff;
+  text-shadow: 0 0 8px var(--stat-accent);
+}
+
+.table-stage__tenpai-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--stat-accent) 40%, transparent), transparent 70%);
+  opacity: 0;
+  animation: table-stage-tenpai-glow-flash 2.5s var(--ease-lux) infinite;
+  pointer-events: none;
+}
+
+.table-stage__tenpai-pulse {
+  transform-origin: center;
+  animation: table-stage-tenpai-icon-pulse 1.8s ease-out infinite;
+}
+
+@keyframes table-stage-tenpai-breathing {
+  0%, 100% { 
+    transform: translateY(0) scale(1); 
+    box-shadow: 0 4px 12px var(--theme-shadow-soft), 0 0 8px color-mix(in srgb, var(--stat-accent) 15%, transparent);
+  }
+  50% { 
+    transform: translateY(-2px) scale(1.04); 
+    box-shadow: 0 8px 20px var(--theme-shadow-md), 0 0 18px color-mix(in srgb, var(--stat-accent) 45%, transparent);
+    border-color: var(--stat-accent);
+  }
+}
+
+@keyframes table-stage-tenpai-glow-flash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes table-stage-tenpai-icon-pulse {
+  0% { transform: scale(0.7); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
 }
 
 /* Global emoji trigger */
