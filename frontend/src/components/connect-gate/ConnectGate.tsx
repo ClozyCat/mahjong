@@ -71,9 +71,9 @@ export function ConnectGate({
         type="button"
         className="connect-gate__admin-link"
         onClick={() => { window.location.href = 'https://49.233.186.248/ca'; }}
-        title="前往管理后台"
+        title="前往谜格"
       >
-        管理后台
+        MIGE
       </button>
 
       <div className="connect-gate__card">
