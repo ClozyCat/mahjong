@@ -337,9 +337,9 @@ mod tests {
                                 "base_points": 8,
                                 "fan_total": 8,
                                 "minimum_qualifying_fan_total": 8,
-                                "fan_delta_by_seat": {"0": -8, "1": 24, "2": -8, "3": -8},
+                                "fan_delta_by_seat": {"0": -16, "1": 32, "2": -8, "3": -8},
                                 "kong_delta_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
-                                "total_delta_by_seat": {"0": -8, "1": 24, "2": -8, "3": -8}
+                                "total_delta_by_seat": {"0": -16, "1": 32, "2": -8, "3": -8}
                             },
                             "flower_count": 0,
                             "draw_type": null,

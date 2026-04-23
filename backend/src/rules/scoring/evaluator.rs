@@ -543,6 +543,7 @@ fn evaluate_fans_uncached(input: EvaluationInput) -> FanResult {
         context.winner_seat,
         context.discarder_seat,
         best_result.fan_total,
+        best_result.minimum_qualifying_fan_total,
         context.seat_count,
     );
     let total_delta_by_seat = fan_delta_by_seat
@@ -1032,6 +1033,7 @@ fn fan_delta_by_seat(
     winner_seat: Option<usize>,
     discarder_seat: Option<usize>,
     fan_total: i64,
+    minimum_qualifying_fan_total: i64,
     seat_count: usize,
 ) -> Vec<i64> {
     let mut deltas = vec![0_i64; seat_count];
@@ -1043,21 +1045,39 @@ fn fan_delta_by_seat(
     }
 
     if win_type == "self_draw" {
+        let payment = if minimum_qualifying_fan_total >= 8 {
+            fan_total + 8
+        } else {
+            fan_total
+        };
         for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {
             if seat == winner_seat {
                 continue;
             }
-            *delta -= fan_total * 2;
+            *delta -= payment;
         }
-        deltas[winner_seat] += fan_total * 2 * seat_count.saturating_sub(1) as i64;
+        deltas[winner_seat] += payment * seat_count.saturating_sub(1) as i64;
         return deltas;
     }
 
     if let Some(discarder_seat) = discarder_seat {
         if discarder_seat < seat_count && discarder_seat != winner_seat {
-            let payment = fan_total * 3;
-            deltas[winner_seat] += payment;
-            deltas[discarder_seat] -= payment;
+            let discarder_payment = if minimum_qualifying_fan_total >= 8 {
+                fan_total + 8
+            } else {
+                fan_total
+            };
+            let side_payment = if minimum_qualifying_fan_total >= 8 { 8 } else { 0 };
+            let mut winner_gain = discarder_payment;
+            deltas[discarder_seat] -= discarder_payment;
+            for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {
+                if seat == winner_seat || seat == discarder_seat {
+                    continue;
+                }
+                *delta -= side_payment;
+                winner_gain += side_payment;
+            }
+            deltas[winner_seat] += winner_gain;
         }
     }
     deltas
@@ -3707,7 +3727,7 @@ mod tests {
     }
 
     #[test]
-    fn self_draw_score_delta_charges_each_other_player_the_fan_total() {
+    fn self_draw_score_delta_matches_payment_rule_for_evaluated_fan_result() {
         let tile_keys = vec![
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
         ]
@@ -3747,17 +3767,19 @@ mod tests {
 
         assert_eq!(
             result.score_delta.fan_delta_by_seat,
-            vec![
-                result.fan_total * 6,
-                -(result.fan_total * 2),
-                -(result.fan_total * 2),
-                -(result.fan_total * 2),
-            ]
+            fan_delta_by_seat(
+                "self_draw",
+                Some(0),
+                None,
+                result.fan_total,
+                result.minimum_qualifying_fan_total,
+                4,
+            )
         );
     }
 
     #[test]
-    fn discard_score_delta_charges_the_discarder_three_times_fan_total() {
+    fn discard_score_delta_matches_payment_rule_for_evaluated_fan_result() {
         let tile_keys = vec![
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
         ]
@@ -3795,18 +3817,56 @@ mod tests {
             decompositions,
         });
 
-        let payment = result.fan_total * 3;
         assert_eq!(
             result.score_delta.fan_delta_by_seat,
-            vec![0, -payment, payment, 0]
+            fan_delta_by_seat(
+                "discard",
+                Some(2),
+                Some(1),
+                result.fan_total,
+                result.minimum_qualifying_fan_total,
+                4,
+            )
         );
     }
 
     #[test]
-    fn discard_score_delta_uses_exact_triple_fan_total_for_odd_fan_total() {
+    fn discard_below_eight_non_flower_fan_uses_exact_fan_total_for_odd_fan_total() {
         assert_eq!(
-            fan_delta_by_seat("discard", Some(2), Some(1), 3, 4),
+            fan_delta_by_seat("discard", Some(2), Some(1), 3, 3, 4),
+            vec![0, -3, 3, 0]
+        );
+    }
+
+    #[test]
+    fn self_draw_below_eight_non_flower_fan_charges_each_other_seat_fan_total_only() {
+        assert_eq!(
+            fan_delta_by_seat("self_draw", Some(0), None, 9, 7, 4),
+            vec![27, -9, -9, -9]
+        );
+    }
+
+    #[test]
+    fn self_draw_at_eight_non_flower_fan_adds_eight_for_each_other_seat() {
+        assert_eq!(
+            fan_delta_by_seat("self_draw", Some(0), None, 10, 8, 4),
+            vec![54, -18, -18, -18]
+        );
+    }
+
+    #[test]
+    fn discard_below_eight_non_flower_fan_charges_only_discarder_fan_total() {
+        assert_eq!(
+            fan_delta_by_seat("discard", Some(2), Some(1), 9, 7, 4),
             vec![0, -9, 9, 0]
+        );
+    }
+
+    #[test]
+    fn discard_at_eight_non_flower_fan_adds_side_payments_and_bonus_to_discarder() {
+        assert_eq!(
+            fan_delta_by_seat("discard", Some(2), Some(1), 10, 8, 4),
+            vec![-8, -18, 34, -8]
         );
     }
 

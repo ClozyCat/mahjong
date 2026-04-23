@@ -766,9 +766,9 @@ mod tests {
                 "base_points": 8,
                 "fan_total": 8,
                 "minimum_qualifying_fan_total": 8,
-                "fan_delta_by_seat": {"0": 24, "1": -8, "2": -8, "3": -8},
+                "fan_delta_by_seat": {"0": 32, "1": -16, "2": -8, "3": -8},
                 "kong_delta_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
-                "total_delta_by_seat": {"0": 24, "1": -8, "2": -8, "3": -8}
+                "total_delta_by_seat": {"0": 32, "1": -16, "2": -8, "3": -8}
             },
             "flower_count": 0,
             "kong_score_detail": []
@@ -1654,9 +1654,9 @@ mod tests {
                 "base_points": 8,
                 "fan_total": 8,
                 "minimum_qualifying_fan_total": 8,
-                "fan_delta_by_seat": {"0": -8, "1": 24, "2": -8, "3": -8},
+                "fan_delta_by_seat": {"0": -16, "1": 32, "2": -8, "3": -8},
                 "kong_delta_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
-                "total_delta_by_seat": {"0": -8, "1": 24, "2": -8, "3": -8}
+                "total_delta_by_seat": {"0": -16, "1": 32, "2": -8, "3": -8}
             },
             "flower_count": 0,
             "kong_score_detail": []
@@ -1674,14 +1674,14 @@ mod tests {
             room["match_state"]["last_completed_round_id"],
             "east-1-dealer-0-hu"
         );
-        assert_eq!(room["match_state"]["cumulative_scores"]["1"], 24);
+        assert_eq!(room["match_state"]["cumulative_scores"]["1"], 32);
         assert_eq!(
             room["match_state"]["statistics"]["completed_round_count"],
             1
         );
         assert_eq!(
             room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["score_history"],
-            json!([0, 24])
+            json!([0, 32])
         );
         assert_eq!(
             room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["win_count"],
@@ -1748,7 +1748,7 @@ mod tests {
         assert_eq!(room["phase"], "playing");
         assert_eq!(room["match_state"]["hand_number"], 2);
         assert_eq!(room["match_state"]["dealer_seat"], 1);
-        assert_eq!(room["match_state"]["cumulative_scores"]["0"], 24);
+        assert_eq!(room["match_state"]["cumulative_scores"]["0"], 32);
         assert!(room["round_state"]["phase"] == "playing");
         assert_eq!(room["continue_action"], Value::Null);
     }
