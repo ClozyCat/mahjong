@@ -66,7 +66,16 @@ export function ConnectGate({
   return (
     <main className="connect-gate" aria-label="Lobby">
       <div className="connect-gate__backdrop" aria-hidden="true" />
-      
+
+      <button
+        type="button"
+        className="connect-gate__admin-link"
+        onClick={() => { window.location.href = 'https://49.233.186.248/ca'; }}
+        title="前往管理后台"
+      >
+        管理后台
+      </button>
+
       <div className="connect-gate__card">
         <header className="connect-gate__header">
           <div className="connect-gate__brand">
@@ -77,7 +86,7 @@ export function ConnectGate({
               {statusText}
             </div>
           </div>
-          
+
           <div className="connect-gate__theme-badge">
             <span>{themeLabel}</span>
           </div>
@@ -135,18 +144,18 @@ export function ConnectGate({
           </div>
 
           <div className="connect-gate__actions">
-            <button 
-              type="button" 
-              className="connect-gate__btn connect-gate__btn--primary" 
-              onClick={onCreate} 
+            <button
+              type="button"
+              className="connect-gate__btn connect-gate__btn--primary"
+              onClick={onCreate}
               disabled={!canCreate}
             >
               创建新局
             </button>
-            <button 
-              type="button" 
-              className="connect-gate__btn connect-gate__btn--secondary" 
-              onClick={onJoin} 
+            <button
+              type="button"
+              className="connect-gate__btn connect-gate__btn--secondary"
+              onClick={onJoin}
               disabled={!canJoin}
             >
               加入牌桌
