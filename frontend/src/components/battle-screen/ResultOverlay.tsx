@@ -668,7 +668,6 @@ function SeatStatsTooltip({ seat }: { seat: ResultSeatView }) {
   if (!seat.stats) return null;
   const completed = seat.stats.completedRoundCount;
   const winRate = `${(Math.round(seat.stats.winRate * 1000) / 10).toFixed(1).replace(/\.0$/, '')}%`;
-  const latestScore = seat.stats.scoreHistory.at(-1) ?? seat.score;
 
   return (
     <article className="result-overlay__seat-tooltip-card">
@@ -687,8 +686,8 @@ function SeatStatsTooltip({ seat }: { seat: ResultSeatView }) {
           <strong>{seat.stats.winCount}/{completed || 0}</strong>
         </div>
         <div className="result-overlay__seat-tooltip-metric">
-          <span>当前总分</span>
-          <strong>{latestScore.toLocaleString()}</strong>
+          <span>放铳次数</span>
+          <strong>{seat.stats.dealInCount}</strong>
         </div>
       </div>
       <ScoreTrendChart history={seat.stats.scoreHistory} seatName={seat.name} />

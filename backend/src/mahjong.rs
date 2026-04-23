@@ -1090,6 +1090,10 @@ mod tests {
             1
         );
         assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["0"]["deal_in_count"],
+            2
+        );
+        assert_eq!(
             room["match_state"]["statistics"]["seat_stats_by_seat"]["2"]["win_count"],
             1
         );
@@ -1685,6 +1689,10 @@ mod tests {
         );
         assert_eq!(
             room["match_state"]["statistics"]["seat_stats_by_seat"]["1"]["win_count"],
+            1
+        );
+        assert_eq!(
+            room["match_state"]["statistics"]["seat_stats_by_seat"]["0"]["deal_in_count"],
             1
         );
     }

@@ -1107,10 +1107,10 @@ describe('createMatchViewModel', () => {
         completedRoundCount: 3,
         lastAppliedRoundId: 'round-123',
         seatStatsBySeat: {
-          '0': { scoreHistory: [0, -8, -4, -8], winCount: 0 },
-          '1': { scoreHistory: [0, 8, 10, 8], winCount: 1 },
-          '2': { scoreHistory: [0, 0, -6, 0], winCount: 1 },
-          '3': { scoreHistory: [0, 0, 0, 0], winCount: 0 },
+          '0': { scoreHistory: [0, -8, -4, -8], winCount: 0, dealInCount: 2 },
+          '1': { scoreHistory: [0, 8, 10, 8], winCount: 1, dealInCount: 0 },
+          '2': { scoreHistory: [0, 0, -6, 0], winCount: 1, dealInCount: 0 },
+          '3': { scoreHistory: [0, 0, 0, 0], winCount: 0, dealInCount: 1 },
         },
       },
     });
@@ -1118,12 +1118,14 @@ describe('createMatchViewModel', () => {
     expect(viewModel.result?.seats.find((seat) => seat.seat === 'left')?.stats).toEqual({
       scoreHistory: [0, 8, 10, 8],
       winCount: 1,
+      dealInCount: 0,
       completedRoundCount: 3,
       winRate: 1 / 3,
     });
     expect(viewModel.result?.seats.find((seat) => seat.seat === 'bottom')?.stats).toEqual({
       scoreHistory: [0, 0, -6, 0],
       winCount: 1,
+      dealInCount: 0,
       completedRoundCount: 3,
       winRate: 1 / 3,
     });

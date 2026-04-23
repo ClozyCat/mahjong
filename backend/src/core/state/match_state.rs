@@ -13,6 +13,7 @@ use super::RoundSettlement;
 pub struct MatchSeatStatistics {
     pub score_history: Vec<i64>,
     pub win_count: u32,
+    pub deal_in_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -85,13 +86,26 @@ impl MatchState {
             seat_stats.score_history.push(score);
         }
 
-        for winner_seat in settlement.winning_seats() {
+        let winning_seats = settlement.winning_seats();
+
+        for &winner_seat in &winning_seats {
             let winner_stats = self
                 .statistics
                 .seat_stats_by_seat
                 .entry(winner_seat)
                 .or_default();
             winner_stats.win_count += 1;
+        }
+
+        if settlement.win_type == "discard" {
+            if let Some(discarder_seat) = settlement.discarder_seat {
+                let discarder_stats = self
+                    .statistics
+                    .seat_stats_by_seat
+                    .entry(discarder_seat)
+                    .or_default();
+                discarder_stats.deal_in_count += winning_seats.len() as u32;
+            }
         }
 
         self.statistics.completed_round_count += 1;

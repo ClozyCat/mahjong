@@ -109,6 +109,7 @@ function createMatchStatisticsFromScores(scores: Record<string, number> | null |
         {
           scoreHistory: [score],
           winCount: 0,
+          dealInCount: 0,
         },
       ]),
     ),
@@ -129,6 +130,7 @@ function createMatchStatisticsFromSnapshot(snapshot: RoomSnapshotMessage): Match
           {
             scoreHistory: Array.isArray(seatStats.score_history) ? [...seatStats.score_history] : [],
             winCount: seatStats.win_count ?? 0,
+            dealInCount: seatStats.deal_in_count ?? 0,
           },
         ]),
       ),

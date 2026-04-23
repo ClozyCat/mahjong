@@ -55,10 +55,10 @@ const playingRoomSnapshotMessage: RoomSnapshotMessage = {
       statistics: {
         completed_round_count: 1,
         seat_stats_by_seat: {
-          '0': { score_history: [0, -8], win_count: 0 },
-          '1': { score_history: [0, 8], win_count: 1 },
-          '2': { score_history: [0, 0], win_count: 0 },
-          '3': { score_history: [0, 0], win_count: 0 },
+          '0': { score_history: [0, -8], win_count: 0, deal_in_count: 1 },
+          '1': { score_history: [0, 8], win_count: 1, deal_in_count: 0 },
+          '2': { score_history: [0, 0], win_count: 0, deal_in_count: 0 },
+          '3': { score_history: [0, 0], win_count: 0, deal_in_count: 0 },
         },
       },
     },
@@ -898,10 +898,10 @@ describe('sessionReducer', () => {
       completedRoundCount: 1,
       lastAppliedRoundId: null,
       seatStatsBySeat: {
-        '0': { scoreHistory: [0, -8], winCount: 0 },
-        '1': { scoreHistory: [0, 8], winCount: 1 },
-        '2': { scoreHistory: [0, 0], winCount: 0 },
-        '3': { scoreHistory: [0, 0], winCount: 0 },
+        '0': { scoreHistory: [0, -8], winCount: 0, dealInCount: 1 },
+        '1': { scoreHistory: [0, 8], winCount: 1, dealInCount: 0 },
+        '2': { scoreHistory: [0, 0], winCount: 0, dealInCount: 0 },
+        '3': { scoreHistory: [0, 0], winCount: 0, dealInCount: 0 },
       },
     });
 

@@ -1254,6 +1254,7 @@ function createResultSeatStats(state: SessionState, seatIndex: number, score: nu
     return {
       scoreHistory: [...seatStats.scoreHistory],
       winCount: seatStats.winCount,
+      dealInCount: seatStats.dealInCount,
       completedRoundCount,
       winRate: completedRoundCount > 0 ? seatStats.winCount / completedRoundCount : 0,
     };
@@ -1262,6 +1263,7 @@ function createResultSeatStats(state: SessionState, seatIndex: number, score: nu
   return {
     scoreHistory: [score],
     winCount: 0,
+    dealInCount: 0,
     completedRoundCount: 0,
     winRate: 0,
   };

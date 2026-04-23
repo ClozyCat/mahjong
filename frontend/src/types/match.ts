@@ -44,6 +44,7 @@ export interface SeatSnapshot {
 export interface BackendMatchSeatStatistics {
   score_history: number[];
   win_count: number;
+  deal_in_count: number;
 }
 
 export interface BackendMatchStatistics {
@@ -296,6 +297,7 @@ export interface ToastMessage {
 export interface MatchSeatStatisticsState {
   scoreHistory: number[];
   winCount: number;
+  dealInCount: number;
 }
 
 export interface MatchStatisticsState {
@@ -441,6 +443,7 @@ export interface ResultSeatView {
   stats?: {
     scoreHistory: number[];
     winCount: number;
+    dealInCount: number;
     completedRoundCount: number;
     winRate: number;
   } | null;

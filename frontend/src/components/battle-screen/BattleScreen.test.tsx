@@ -751,6 +751,7 @@ describe('BattleScreen', () => {
               stats: {
                 scoreHistory: [0, 12, 6, 18, 8],
                 winCount: 2,
+                dealInCount: 3,
                 completedRoundCount: 4,
                 winRate: 0.5,
               },
@@ -787,6 +788,8 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('tooltip', { name: 'Player A 战绩统计' })).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
     expect(screen.getByText('2/4')).toBeInTheDocument();
+    expect(screen.getByText('放铳次数')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Player A 本牌局战绩折线图' })).toBeInTheDocument();
 
     fireEvent.mouseLeave(playerRow!);
