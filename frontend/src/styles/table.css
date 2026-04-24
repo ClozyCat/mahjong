@@ -919,6 +919,29 @@
   border-bottom-color: color-mix(in srgb, var(--stat-accent) 20%, transparent);
 }
 
+.table-stage__stat-plate--muted {
+  --stat-accent: color-mix(in srgb, var(--theme-paper-strong) 38%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 20%, transparent);
+  border-color: color-mix(in srgb, var(--theme-paper) 5%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--theme-paper-strong) 10%, transparent);
+}
+
+.table-stage__stat-plate--muted .table-stage__stat-icon {
+  color: var(--stat-accent);
+  filter: grayscale(1) opacity(0.7);
+}
+
+.table-stage__stat-plate--muted .table-stage__stat-value {
+  color: color-mix(in srgb, var(--theme-paper-strong) 72%, var(--theme-panel-bg));
+  opacity: 0.78;
+}
+
+.table-stage__stat-plate--muted:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--theme-paper) 7%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 24%, transparent);
+}
+
 .table-stage__stat-plate--tenpai {
   --stat-accent: var(--accent);
   background: color-mix(in srgb, var(--stat-accent) 25%, var(--theme-panel-bg-strong));

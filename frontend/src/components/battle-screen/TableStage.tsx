@@ -49,6 +49,7 @@ interface TableStageProps {
   occupiedSeatCount?: number;
   seatCapacity?: number;
   preMatchActions?: BattleActionView[];
+  isWaitingForMatchStart?: boolean;
   botCount?: number;
   canAddBot?: boolean;
   canRemoveBot?: boolean;
@@ -96,6 +97,7 @@ export function TableStage({
   occupiedSeatCount,
   seatCapacity = 4,
   preMatchActions = [],
+  isWaitingForMatchStart = false,
   botCount = 0,
   canAddBot = false,
   canRemoveBot = false,
@@ -544,6 +546,7 @@ export function TableStage({
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
             const hasMelds = (player?.melds.length ?? 0) > 0;
+            const shouldMuteWaitingStats = isWaitingForMatchStart && player?.ready === false;
 
             return (
               <Fragment key={`seat-zone-${seat}`}>
@@ -570,15 +573,24 @@ export function TableStage({
                             {player?.wind ? WIND_NAME_TO_CHAR[player.wind] : WIND_COPY[seat]}
                           </span>
                         </div>
-                        <div className="table-stage__stat-plate table-stage__stat-plate--score" title="分数">
+                        <div
+                          className={`table-stage__stat-plate table-stage__stat-plate--score${shouldMuteWaitingStats ? ' table-stage__stat-plate--muted' : ''}`}
+                          title="分数"
+                        >
                           <IngotIcon className="table-stage__stat-icon" />
                           <span className="table-stage__stat-value">{player.score?.toLocaleString() ?? 0}</span>
                         </div>
-                        <div className="table-stage__stat-plate table-stage__stat-plate--flower" title="花牌数量">
+                        <div
+                          className={`table-stage__stat-plate table-stage__stat-plate--flower${shouldMuteWaitingStats ? ' table-stage__stat-plate--muted' : ''}`}
+                          title="花牌数量"
+                        >
                           <LotusIcon className="table-stage__stat-icon" />
                           <span className="table-stage__stat-value">{player.flowerCount ?? 0}</span>
                         </div>
-                        <div className="table-stage__stat-plate table-stage__stat-plate--hand" title="手牌数量">
+                        <div
+                          className={`table-stage__stat-plate table-stage__stat-plate--hand${shouldMuteWaitingStats ? ' table-stage__stat-plate--muted' : ''}`}
+                          title="手牌数量"
+                        >
                           <TileStackIcon className="table-stage__stat-icon" />
                           <span className="table-stage__stat-value">{player.concealedCount ?? 0}</span>
                         </div>

@@ -310,6 +310,7 @@ export function BattleScreen({
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
               preMatchActions={viewModel.waitingControls ? preMatchActions : []}
+              isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
               botCount={viewModel.waitingControls?.botCount ?? 0}
               canAddBot={viewModel.waitingControls?.canAddBot ?? false}
               canRemoveBot={viewModel.waitingControls?.canRemoveBot ?? false}

@@ -699,6 +699,53 @@ describe('TableStage', () => {
     expect(onRemoveBot).toHaveBeenCalledTimes(1);
   });
 
+  it('mutes score, flower, and hand stat plates for unready players while waiting for match start', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        isWaitingForMatchStart
+        players={[
+          {
+            seat: 'bottom',
+            name: 'Player Bottom',
+            melds: [],
+            ready: false,
+            score: 25000,
+            flowerCount: 1,
+            concealedCount: 13,
+          },
+          {
+            seat: 'top',
+            name: 'Player Top',
+            melds: [],
+            ready: true,
+            score: 25000,
+            flowerCount: 2,
+            concealedCount: 13,
+          },
+        ]}
+      />,
+    );
+
+    const bottomZone = container.querySelector('.table-stage__seat-zone--bottom');
+    const topZone = container.querySelector('.table-stage__seat-zone--top');
+
+    expect(bottomZone?.querySelector('.table-stage__stat-plate--score')).toHaveClass('table-stage__stat-plate--muted');
+    expect(bottomZone?.querySelector('.table-stage__stat-plate--flower')).toHaveClass('table-stage__stat-plate--muted');
+    expect(bottomZone?.querySelector('.table-stage__stat-plate--hand')).toHaveClass('table-stage__stat-plate--muted');
+    expect(topZone?.querySelector('.table-stage__stat-plate--score')).not.toHaveClass('table-stage__stat-plate--muted');
+    expect(topZone?.querySelector('.table-stage__stat-plate--flower')).not.toHaveClass('table-stage__stat-plate--muted');
+    expect(topZone?.querySelector('.table-stage__stat-plate--hand')).not.toHaveClass('table-stage__stat-plate--muted');
+  });
+
   it('opens the quick-chat radial menu from the global emoji trigger', async () => {
     const user = userEvent.setup();
 

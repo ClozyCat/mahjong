@@ -28,6 +28,8 @@ const KNITTED_PATTERNS: [[&str; 9]; 6] = [
 const TILE_KIND_COUNT: usize = 34;
 const HONOR_TILE_START: usize = 27;
 const THIRTEEN_ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
+const BONUS_FAN_THRESHOLD: i64 = 4;
+const BONUS_FAN_VALUE: i64 = 4;
 const DECOMPOSITION_CACHE_LIMIT: usize = 4096;
 const HAND_FEATURE_CACHE_LIMIT: usize = 4096;
 const FAN_RESULT_CACHE_LIMIT: usize = 2048;
@@ -1045,8 +1047,8 @@ fn fan_delta_by_seat(
     }
 
     if win_type == "self_draw" {
-        let payment = if minimum_qualifying_fan_total >= 8 {
-            fan_total + 8
+        let payment = if minimum_qualifying_fan_total >= BONUS_FAN_THRESHOLD {
+            fan_total + BONUS_FAN_VALUE
         } else {
             fan_total
         };
@@ -1062,13 +1064,13 @@ fn fan_delta_by_seat(
 
     if let Some(discarder_seat) = discarder_seat {
         if discarder_seat < seat_count && discarder_seat != winner_seat {
-            let discarder_payment = if minimum_qualifying_fan_total >= 8 {
-                fan_total + 8
+            let discarder_payment = if minimum_qualifying_fan_total >= BONUS_FAN_THRESHOLD {
+                fan_total + BONUS_FAN_VALUE
             } else {
                 fan_total
             };
-            let side_payment = if minimum_qualifying_fan_total >= 8 {
-                8
+            let side_payment = if minimum_qualifying_fan_total >= BONUS_FAN_THRESHOLD {
+                BONUS_FAN_VALUE
             } else {
                 0
             };
@@ -3835,7 +3837,7 @@ mod tests {
     }
 
     #[test]
-    fn discard_below_eight_non_flower_fan_uses_exact_fan_total_for_odd_fan_total() {
+    fn discard_below_four_non_flower_fan_uses_exact_fan_total_for_odd_fan_total() {
         assert_eq!(
             fan_delta_by_seat("discard", Some(2), Some(1), 3, 3, 4),
             vec![0, -3, 3, 0]
@@ -3843,34 +3845,34 @@ mod tests {
     }
 
     #[test]
-    fn self_draw_below_eight_non_flower_fan_charges_each_other_seat_fan_total_only() {
+    fn self_draw_below_four_non_flower_fan_charges_each_other_seat_fan_total_only() {
         assert_eq!(
-            fan_delta_by_seat("self_draw", Some(0), None, 9, 7, 4),
-            vec![27, -9, -9, -9]
+            fan_delta_by_seat("self_draw", Some(0), None, 5, 3, 4),
+            vec![15, -5, -5, -5]
         );
     }
 
     #[test]
-    fn self_draw_at_eight_non_flower_fan_adds_eight_for_each_other_seat() {
+    fn self_draw_at_four_non_flower_fan_adds_four_for_each_other_seat() {
         assert_eq!(
-            fan_delta_by_seat("self_draw", Some(0), None, 10, 8, 4),
-            vec![54, -18, -18, -18]
+            fan_delta_by_seat("self_draw", Some(0), None, 6, 4, 4),
+            vec![30, -10, -10, -10]
         );
     }
 
     #[test]
-    fn discard_below_eight_non_flower_fan_charges_only_discarder_fan_total() {
+    fn discard_below_four_non_flower_fan_charges_only_discarder_fan_total() {
         assert_eq!(
-            fan_delta_by_seat("discard", Some(2), Some(1), 9, 7, 4),
-            vec![0, -9, 9, 0]
+            fan_delta_by_seat("discard", Some(2), Some(1), 5, 3, 4),
+            vec![0, -5, 5, 0]
         );
     }
 
     #[test]
-    fn discard_at_eight_non_flower_fan_adds_side_payments_and_bonus_to_discarder() {
+    fn discard_at_four_non_flower_fan_adds_side_payments_and_bonus_to_discarder() {
         assert_eq!(
-            fan_delta_by_seat("discard", Some(2), Some(1), 10, 8, 4),
-            vec![-8, -18, 34, -8]
+            fan_delta_by_seat("discard", Some(2), Some(1), 6, 4, 4),
+            vec![-4, -10, 18, -4]
         );
     }
 
