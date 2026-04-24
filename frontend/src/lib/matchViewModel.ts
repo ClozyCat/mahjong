@@ -1,6 +1,7 @@
 import type {
   ActionEffectView,
   BackendActionType,
+  BackendHandInsight,
   BattleActionId,
   BattlePromptView,
   BattleActionView,
@@ -18,6 +19,7 @@ import type {
   ResultSeatView,
   Seat,
   SessionState,
+  HandInsightView,
   WaitingControls,
 } from '../types/match';
 import {
@@ -27,7 +29,6 @@ import {
   getLocalTurnKongCandidateGroups,
   isFlowerTileKey,
 } from './kongSelection';
-import { getReadyHandWaits } from './readyHand';
 
 const RELATIVE_SEATS: Seat[] = ['bottom', 'right', 'top', 'left'];
 const WINDS: PlayerView['wind'][] = ['East', 'South', 'West', 'North'];
@@ -537,11 +538,13 @@ function createActionViews(
     state.selectedTileIds.length === 1 &&
     !restrictedDiscardTileIdSet.has(state.selectedTileIds[0]);
   const selectedReadyHandTileId = state.selectedTileIds.length === 1 ? state.selectedTileIds[0] : null;
+  const selectedReadyHandPreview =
+    selectedReadyHandTileId && !restrictedDiscardTileIdSet.has(selectedReadyHandTileId)
+      ? state.roomSnapshot?.payload.private_state?.hand_insights?.by_discard_tile_id[selectedReadyHandTileId] ?? null
+      : null;
   const canReadyHandFromSelection =
     !localReadyHandLocked &&
-    Boolean(selectedReadyHandTileId) &&
-    !restrictedDiscardTileIdSet.has(selectedReadyHandTileId as string) &&
-    getReadyHandWaitsForLocalPlayer(state, selectedReadyHandTileId).length > 0;
+    Boolean(selectedReadyHandPreview?.is_tenpai);
   const canContinueRound = snapshot?.phase === 'settlement' && typeof snapshot.local_seat === 'number';
   const canRestartMatchFromSettlement = canContinueRound && settlementContinueActionId === 'restart_match';
   const canRestartMatch =
@@ -842,127 +845,46 @@ function createLocalHand(state: SessionState) {
   return [...sortedHand, drawnTile];
 }
 
-function createReadyHandInsight(state: SessionState): BattleViewModel['readyHandInsight'] {
+function mapBackendHandInsight(
+  insight: BackendHandInsight,
+  source: HandInsightView['source'],
+): HandInsightView {
+  return {
+    source,
+    discardTileId: insight.discard_tile_id,
+    discardTileCode: insight.discard_tile_code,
+    isTenpai: insight.is_tenpai,
+    waits: insight.waits.map((wait) => ({
+      code: wait.code,
+      availableCount: wait.available_count,
+    })),
+    recommendations: insight.recommendations.map((item) => ({
+      fanKey: item.fan_key,
+      fanValue: item.fan_value,
+      similarityPercent: item.similarity_percent,
+    })),
+  };
+}
+
+function createHandInsight(state: SessionState): BattleViewModel['handInsight'] {
   if (hasOptimisticDiscardPending(state)) {
     return null;
   }
 
-  const snapshot = state.roomSnapshot?.payload;
-  const privateState = snapshot?.private_state;
-  const localSeat = snapshot?.local_seat;
-  if (!privateState || typeof localSeat !== 'number') {
+  const handInsights = state.roomSnapshot?.payload.private_state?.hand_insights;
+  if (!handInsights) {
     return null;
   }
 
-  const localPlayer = findPrivatePlayer(state, localSeat);
-  const concealedTiles = localPlayer?.concealed_tiles ?? [];
-  if (concealedTiles.length === 0) {
-    return null;
-  }
-  if (localPlayer?.is_ready_hand) {
-    const lockedDiscardTileId =
-      privateState.pending_action?.type === 'active_turn' &&
-      typeof privateState.pending_action.drawn_tile_id === 'string'
-        ? privateState.pending_action.drawn_tile_id
-        : null;
-    const waits = getReadyHandWaitsForLocalPlayer(state, lockedDiscardTileId);
-    return waits.length > 0
-      ? {
-          source: 'current',
-          discardTileId: null,
-          discardTileCode: null,
-          waits,
-        }
-      : null;
-  }
-
-  const selectedDiscardTile =
-    state.selectedTileIds.length === 1
-      ? concealedTiles.find((tile) => tile.tile_id === state.selectedTileIds[0]) ?? null
-      : null;
-
-  if (
-    selectedDiscardTile &&
-    !getRestrictedDiscardTileIdSet(state).has(selectedDiscardTile.tile_id) &&
-    !isFlowerTileKey(selectedDiscardTile.tile_key)
-  ) {
-    const waits = getReadyHandWaitsForLocalPlayer(state, selectedDiscardTile.tile_id);
-    return waits.length > 0
-      ? {
-          source: 'selected_discard',
-          discardTileId: selectedDiscardTile.tile_id,
-          discardTileCode: selectedDiscardTile.tile_key,
-          waits,
-        }
-      : null;
-  }
-
-  const waits = getReadyHandWaitsForLocalPlayer(state, null);
-  return waits.length > 0
-    ? {
-        source: 'current',
-        discardTileId: null,
-        discardTileCode: null,
-        waits,
-      }
-    : null;
-}
-
-function getReadyHandWaitsForLocalPlayer(state: SessionState, discardTileId: string | null) {
-  const snapshot = state.roomSnapshot?.payload;
-  const privateState = snapshot?.private_state;
-  const localSeat = snapshot?.local_seat;
-  if (!privateState || typeof localSeat !== 'number') {
-    return [];
-  }
-
-  const localPlayer = findPrivatePlayer(state, localSeat);
-  const concealedTiles = localPlayer?.concealed_tiles ?? [];
-  const concealedTileKeys = concealedTiles
-    .filter((tile) => tile.tile_id !== discardTileId)
-    .map((tile) => tile.tile_key);
-  const knownTileKeys = collectKnownTileKeys(state, concealedTileKeys, discardTileId);
-
-  if (discardTileId) {
-    const discardedTile = concealedTiles.find((tile) => tile.tile_id === discardTileId);
-    if (discardedTile) {
-      knownTileKeys.push(discardedTile.tile_key);
+  const selectedTileId = state.selectedTileIds.length === 1 ? state.selectedTileIds[0] : null;
+  if (selectedTileId) {
+    const preview = handInsights.by_discard_tile_id[selectedTileId];
+    if (preview) {
+      return mapBackendHandInsight(preview, 'selected_discard');
     }
   }
 
-  return getReadyHandWaits({
-    concealedTileKeys,
-    meldTileKeyGroups: localPlayer?.melds ?? [],
-    knownTileKeys,
-  });
-}
-
-function collectKnownTileKeys(
-  state: SessionState,
-  localConcealedTileKeys: string[],
-  discardedTileId: string | null,
-) {
-  const snapshot = state.roomSnapshot?.payload;
-  const privateState = snapshot?.private_state;
-  const localSeat = snapshot?.local_seat;
-  if (!privateState || typeof localSeat !== 'number') {
-    return [];
-  }
-
-  const knownTileKeys = [...localConcealedTileKeys];
-  for (const player of privateState.players) {
-    knownTileKeys.push(...player.discards);
-    knownTileKeys.push(...player.flowers);
-    for (const meld of player.melds) {
-      knownTileKeys.push(...meld);
-    }
-  }
-
-  if (!discardedTileId) {
-    return knownTileKeys;
-  }
-
-  return knownTileKeys;
+  return handInsights.current ? mapBackendHandInsight(handInsights.current, 'current') : null;
 }
 
 function hasMatchingTileSelection(selectedTileIds: string[], candidateTileIds: string[]) {
@@ -1757,7 +1679,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     discards: createDiscards(state),
     selectedTileCode: createSelectedTileCode(state),
     localHand: createLocalHand(state),
-    readyHandInsight: createReadyHandInsight(state),
+    handInsight: createHandInsight(state),
     claimCandidates: createClaimCandidates(state),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),

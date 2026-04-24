@@ -1071,6 +1071,14 @@ fn classify_meld_groups(
     (open_meld_tile_key_groups, meld_open_flags)
 }
 
+pub(crate) fn classify_meld_groups_for_projection(
+    seat_index: usize,
+    meld_tile_key_groups: &[Vec<String>],
+    kong_entries: &[ScoringKongEntry],
+) -> (Vec<Vec<String>>, Vec<bool>) {
+    classify_meld_groups(seat_index, meld_tile_key_groups, kong_entries)
+}
+
 fn meld_is_open_with_entries(
     seat_index: usize,
     meld: &[String],

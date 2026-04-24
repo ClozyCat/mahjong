@@ -294,6 +294,20 @@
   cursor: pointer;
 }
 
+.action-dock__ready-hand-trigger--plain {
+  background: rgba(14, 14, 14, 0.58);
+  border-color: rgba(14, 14, 14, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.action-dock__ready-hand-trigger--tenpai {
+  background: rgba(14, 14, 14, 0.85);
+  border-color: color-mix(in srgb, var(--accent-2) 42%, rgba(255, 255, 255, 0.2));
+}
+
 .action-dock__ready-hand-trigger--open {
   transform: translateY(-2px);
   background: color-mix(in srgb, var(--accent-2) 24%, rgba(14, 14, 14, 0.85));
@@ -331,6 +345,23 @@
     0 24px 64px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   animation: overlay-fade-in-up 0.3s var(--ease-lux) forwards;
+}
+
+.action-dock__hand-insight-section {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.action-dock__hand-insight-section + .action-dock__hand-insight-section {
+  padding-top: 0.52rem;
+  border-top: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+.action-dock__hand-insight-title {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--theme-paper) 78%, transparent);
 }
 
 
@@ -381,6 +412,41 @@
   height: calc(1.28rem * 1.36);
   min-width: 1.28rem;
   min-height: calc(1.28rem * 1.36);
+}
+
+.action-dock__hand-insight-recommendations {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.action-dock__hand-insight-recommendation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.14rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-paper) 7%, transparent);
+}
+
+.action-dock__hand-insight-recommendation:last-child {
+  border-bottom: 0;
+}
+
+.action-dock__hand-insight-recommendation span {
+  min-width: 0;
+}
+
+.action-dock__hand-insight-recommendation strong {
+  font-size: 0.82rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--accent-2) 70%, var(--theme-paper-strong));
+}
+
+.action-dock__hand-insight-empty {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--theme-paper) 58%, transparent);
 }
 
 /* ------- Countdown ------- */

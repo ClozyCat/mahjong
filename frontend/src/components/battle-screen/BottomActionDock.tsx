@@ -9,11 +9,12 @@ import type {
   ClaimActionId,
 } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
+import { getFanLabel } from './fanGuide';
 
 interface BottomActionDockProps {
   hand: BattleViewModel['localHand'];
   selectedTileCode?: string | null;
-  readyHandInsight?: BattleViewModel['readyHandInsight'];
+  handInsight?: BattleViewModel['handInsight'];
   claimCandidates: BattleViewModel['claimCandidates'];
   actions: BattleActionView[];
   isElevated: boolean;
@@ -30,7 +31,7 @@ interface BottomActionDockProps {
 export function BottomActionDock({
   hand,
   selectedTileCode = null,
-  readyHandInsight = null,
+  handInsight = null,
   claimCandidates,
   actions,
   isElevated,
@@ -43,9 +44,9 @@ export function BottomActionDock({
   onClaimCandidateActivate,
   onAction,
 }: BottomActionDockProps) {
-  const [isReadyHandPopoverHovered, setIsReadyHandPopoverHovered] = useState(false);
-  const [isReadyHandPopoverPinned, setIsReadyHandPopoverPinned] = useState(false);
-  const readyHandPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [isHandInsightPopoverHovered, setIsHandInsightPopoverHovered] = useState(false);
+  const [isHandInsightPopoverPinned, setIsHandInsightPopoverPinned] = useState(false);
+  const handInsightPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
   const hasDrawnTile = hand.some((tile) => tile.isDrawn || tile.isReplacementDrawn);
   const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
@@ -75,67 +76,93 @@ export function BottomActionDock({
         (ACTION_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER),
     );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
-  const isReadyHandPopoverOpen =
-    Boolean(readyHandInsight) && (isReadyHandPopoverHovered || isReadyHandPopoverPinned);
+  const isHandInsightPopoverOpen =
+    Boolean(handInsight) && (isHandInsightPopoverHovered || isHandInsightPopoverPinned);
 
   useEffect(() => {
-    if (!isReadyHandPopoverPinned) {
+    if (!isHandInsightPopoverPinned) {
       return undefined;
     }
 
     function handlePointerDown(event: PointerEvent) {
-      if (!readyHandPopoverRef.current?.contains(event.target as Node)) {
-        setIsReadyHandPopoverPinned(false);
+      if (!handInsightPopoverRef.current?.contains(event.target as Node)) {
+        setIsHandInsightPopoverPinned(false);
       }
     }
 
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [isReadyHandPopoverPinned]);
+  }, [isHandInsightPopoverPinned]);
 
   useEffect(() => {
-    if (readyHandInsight) {
+    if (handInsight) {
       return;
     }
 
-    setIsReadyHandPopoverHovered(false);
-    setIsReadyHandPopoverPinned(false);
-  }, [readyHandInsight]);
+    setIsHandInsightPopoverHovered(false);
+    setIsHandInsightPopoverPinned(false);
+  }, [handInsight]);
 
-  const readyHandControl = readyHandInsight ? (
+  const handInsightControl = handInsight ? (
     <div
-      ref={readyHandPopoverRef}
+      ref={handInsightPopoverRef}
       className="action-dock__ready-hand-anchor"
-      onMouseEnter={() => setIsReadyHandPopoverHovered(true)}
-      onMouseLeave={() => setIsReadyHandPopoverHovered(false)}
+      onMouseEnter={() => setIsHandInsightPopoverHovered(true)}
+      onMouseLeave={() => setIsHandInsightPopoverHovered(false)}
     >
       <button
         type="button"
-        className={`action-dock__ready-hand-trigger ${
-          isReadyHandPopoverOpen ? 'action-dock__ready-hand-trigger--open' : ''
-        }`.trim()}
-        aria-label={getReadyHandTriggerLabel(readyHandInsight)}
-        aria-expanded={isReadyHandPopoverOpen}
-        onClick={() => setIsReadyHandPopoverPinned((currentValue) => !currentValue)}
+        className={[
+          'action-dock__ready-hand-trigger',
+          handInsight.isTenpai ? 'action-dock__ready-hand-trigger--tenpai' : 'action-dock__ready-hand-trigger--plain',
+          isHandInsightPopoverOpen ? 'action-dock__ready-hand-trigger--open' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        aria-label={getHandInsightTriggerLabel(handInsight)}
+        aria-expanded={isHandInsightPopoverOpen}
+        onClick={() => setIsHandInsightPopoverPinned((currentValue) => !currentValue)}
       >
         i
       </button>
-      {isReadyHandPopoverOpen ? (
-        <section className="action-dock__ready-hand-popover" aria-label={getReadyHandPopoverLabel(readyHandInsight)}>
-          <div className="action-dock__ready-hand-list" role="list">
-            {readyHandInsight.waits.map((wait) => (
-              <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
-                <div className="action-dock__ready-hand-tile">
-                  <MahjongTile
-                    code={wait.code}
-                    variant="discard"
-                    relatedTileCode={selectedTileCode}
-                    className="action-dock__ready-hand-preview-tile"
-                  />
-                </div>
-                <strong>{wait.availableCount}</strong>
+      {isHandInsightPopoverOpen ? (
+        <section className="action-dock__ready-hand-popover" aria-label={getHandInsightPopoverLabel(handInsight)}>
+          {handInsight.isTenpai ? (
+            <div className="action-dock__hand-insight-section">
+              <strong className="action-dock__hand-insight-title">
+                {handInsight.source === 'selected_discard' ? '打出后将听' : '正在听'}
+              </strong>
+              <div className="action-dock__ready-hand-list" role="list">
+                {handInsight.waits.map((wait) => (
+                  <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
+                    <div className="action-dock__ready-hand-tile">
+                      <MahjongTile
+                        code={wait.code}
+                        variant="discard"
+                        relatedTileCode={selectedTileCode}
+                        className="action-dock__ready-hand-preview-tile"
+                      />
+                    </div>
+                    <strong>{wait.availableCount}</strong>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          ) : null}
+          <div className="action-dock__hand-insight-section">
+            <strong className="action-dock__hand-insight-title">推荐番型</strong>
+            {handInsight.recommendations.length > 0 ? (
+              <div className="action-dock__hand-insight-recommendations" role="list">
+                {handInsight.recommendations.map((item) => (
+                  <div key={item.fanKey} className="action-dock__hand-insight-recommendation" role="listitem">
+                    <span>{getFanLabel(item.fanKey)}</span>
+                    <strong>{item.similarityPercent}%</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="action-dock__hand-insight-empty">暂无高番推荐</div>
+            )}
           </div>
         </section>
       ) : null}
@@ -252,9 +279,9 @@ export function BottomActionDock({
             <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>
           )}
           <div className="action-dock__info-rail">
-            {readyHandControl ? (
+            {handInsightControl ? (
               <div className="action-dock__status-group">
-                <div className="action-dock__status-group-standalone">{readyHandControl}</div>
+                <div className="action-dock__status-group-standalone">{handInsightControl}</div>
               </div>
             ) : null}
           </div>
@@ -283,14 +310,15 @@ function isResponsePrompt(promptCue: BattlePromptView | null) {
   return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong' || promptCue?.kind === 'turn_kong';
 }
 
-function getReadyHandTriggerLabel(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
-  return readyHandInsight.source === 'selected_discard'
-    ? '查看打出当前选中牌后的听牌信息'
-    : '查看当前听牌信息';
+function getHandInsightTriggerLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
+  if (handInsight.source === 'selected_discard') {
+    return '查看打出当前选中牌后的手牌洞察';
+  }
+  return handInsight.isTenpai ? '查看当前听牌信息与推荐番型' : '查看当前推荐番型';
 }
 
-function getReadyHandPopoverLabel(readyHandInsight: NonNullable<BottomActionDockProps['readyHandInsight']>) {
-  return readyHandInsight.source === 'selected_discard' ? '打出后听牌信息' : '当前听牌信息';
+function getHandInsightPopoverLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
+  return handInsight.source === 'selected_discard' ? '打出后手牌洞察' : '当前手牌洞察';
 }
 
 function getActionEffectClass(actionId: BattleActionView['id']) {

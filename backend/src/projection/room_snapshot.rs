@@ -8,6 +8,7 @@ use crate::core::state::{
     DisplayMeldOrientation, DisplayMeldState, MatchState, PendingAction, RoomState,
     SettlementKongScoreDetailEntry,
 };
+use crate::projection::hand_insight::{HandInsightsView, build_hand_insights_view};
 use crate::projection::SeatProjectionSupport;
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,6 +50,7 @@ struct PlayerRoundView {
     wall_tiles_remaining: usize,
     last_discard: Option<String>,
     pending_action: Option<PendingActionView>,
+    hand_insights: Option<HandInsightsView>,
     score_state: ScoreStateView,
     players: Vec<PlayerSeatView>,
 }
@@ -370,6 +372,7 @@ fn private_round_state(
             .as_ref()
             .map(|tile| tile.tile_key.clone()),
         pending_action: build_pending_action_view(state, local_seat, support),
+        hand_insights: build_hand_insights_view(state, local_seat, support),
         score_state: score_state_view(state),
         players: private_players,
     })

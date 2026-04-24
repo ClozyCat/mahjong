@@ -294,7 +294,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actions.find((action) => action.id === 'ready')?.label).toBe('取消准备');
   });
 
-  it('derives current ready-hand waits when the local hand is already in tenpai', () => {
+  it('projects the current hand insight directly from backend snapshot data', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -306,6 +306,21 @@ describe('createMatchViewModel', () => {
             ...base.roomSnapshot!.payload.private_state!,
             current_actor: 1,
             pending_action: null,
+            hand_insights: {
+              current: {
+                discard_tile_id: null,
+                discard_tile_code: null,
+                is_tenpai: true,
+                waits: [
+                  { code: 't1', available_count: 2 },
+                  { code: 't4', available_count: 3 },
+                ],
+                recommendations: [
+                  { fan_key: 'full_flush', fan_value: 24, similarity_percent: 79 },
+                ],
+              },
+              by_discard_tile_id: {},
+            },
             players: base.roomSnapshot!.payload.private_state!.players.map((player) =>
               player.seat_index === 2
                 ? {
@@ -339,18 +354,20 @@ describe('createMatchViewModel', () => {
       selectedTileIds: [],
     });
 
-    expect(viewModel.readyHandInsight).toEqual({
+    expect(viewModel.handInsight).toEqual({
       source: 'current',
       discardTileId: null,
       discardTileCode: null,
+      isTenpai: true,
       waits: [
         { code: 't1', availableCount: 2 },
         { code: 't4', availableCount: 3 },
       ],
+      recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 79 }],
     });
   });
 
-  it('switches to the waits produced by the currently selected discard', () => {
+  it('switches to the selected-discard hand insight from backend snapshot data', () => {
     const base = createPlayingSessionState();
     const selectedTileId = 'b9#0';
     const viewModel = createMatchViewModel({
@@ -362,6 +379,28 @@ describe('createMatchViewModel', () => {
           ...base.roomSnapshot!.payload,
           private_state: {
             ...base.roomSnapshot!.payload.private_state!,
+            hand_insights: {
+              current: {
+                discard_tile_id: null,
+                discard_tile_code: null,
+                is_tenpai: false,
+                waits: [],
+                recommendations: [
+                  { fan_key: 'half_flush', fan_value: 6, similarity_percent: 51 },
+                ],
+              },
+              by_discard_tile_id: {
+                [selectedTileId]: {
+                  discard_tile_id: selectedTileId,
+                  discard_tile_code: 'b9',
+                  is_tenpai: true,
+                  waits: [{ code: 't4', available_count: 3 }],
+                  recommendations: [
+                    { fan_key: 'full_flush', fan_value: 24, similarity_percent: 83 },
+                  ],
+                },
+              },
+            },
             pending_action: {
               type: 'active_turn',
               seat_index: 2,
@@ -399,28 +438,19 @@ describe('createMatchViewModel', () => {
           },
         },
       },
-      latestActionPrompt: {
-        type: 'action_prompt',
-        payload: {
-          seat_index: 2,
-          options: ['discard'],
-          deadline_at: '2026-03-26T06:01:00Z',
-        },
-      },
     });
 
-    expect(viewModel.readyHandInsight).toEqual({
+    expect(viewModel.handInsight).toEqual({
       source: 'selected_discard',
       discardTileId: selectedTileId,
       discardTileCode: 'b9',
-      waits: [
-        { code: 't1', availableCount: 2 },
-        { code: 't4', availableCount: 3 },
-      ],
+      isTenpai: true,
+      waits: [{ code: 't4', availableCount: 3 }],
+      recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 83 }],
     });
   });
 
-  it('enables ready_hand only when the selected discard enters ready hand', () => {
+  it('enables ready_hand only when the selected discard preview is tenpai', () => {
     const base = createPlayingSessionState();
     const selectedTileId = 'b9#0';
     const createReadyHandTurnState = (selectedTileIds: string[]) =>
@@ -433,6 +463,20 @@ describe('createMatchViewModel', () => {
             ...base.roomSnapshot!.payload,
             private_state: {
               ...base.roomSnapshot!.payload.private_state!,
+              hand_insights: {
+                current: null,
+                by_discard_tile_id: {
+                  [selectedTileId]: {
+                    discard_tile_id: selectedTileId,
+                    discard_tile_code: 'b9',
+                    is_tenpai: true,
+                    waits: [{ code: 't4', available_count: 3 }],
+                    recommendations: [
+                      { fan_key: 'full_flush', fan_value: 24, similarity_percent: 83 },
+                    ],
+                  },
+                },
+              },
               pending_action: {
                 type: 'active_turn',
                 seat_index: 2,
@@ -1811,7 +1855,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.promptText).toBe('你已出牌，等待服务器确认...');
     expect(viewModel.promptCue).toBeNull();
     expect(viewModel.actions.find((action) => action.id === 'discard')?.enabled).toBe(false);
-    expect(viewModel.readyHandInsight).toBeNull();
+    expect(viewModel.handInsight).toBeNull();
     expect(viewModel.shouldAutoReturnLastDiscardToRiver).toBe(false);
     expect(viewModel.actionIndicatorSeat).toBeNull();
   });

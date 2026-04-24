@@ -133,20 +133,22 @@ describe('BottomActionDock', () => {
     );
   });
 
-  it('toggles the ready-hand insight popover from the info trigger', async () => {
+  it('renders recommendations without waits for a non-tenpai insight', async () => {
     const user = userEvent.setup();
 
     render(
       <BottomActionDock
         hand={localHand}
         selectedTileCode="w2"
-        readyHandInsight={{
+        handInsight={{
           source: 'current',
           discardTileId: null,
           discardTileCode: null,
-          waits: [
-            { code: 'w3', availableCount: 2 },
-            { code: 'b5', availableCount: 1 },
+          isTenpai: false,
+          waits: [],
+          recommendations: [
+            { fanKey: 'full_flush', fanValue: 24, similarityPercent: 79 },
+            { fanKey: 'all_pungs', fanValue: 6, similarityPercent: 56 },
           ],
         }}
         claimCandidates={[]}
@@ -162,15 +164,51 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    const trigger = screen.getByRole('button', { name: '查看当前听牌信息' });
+    const trigger = screen.getByRole('button', { name: '查看当前推荐番型' });
 
-    expect(screen.queryByRole('region', { name: '当前听牌信息' })).toBeNull();
+    expect(screen.queryByText('正在听')).toBeNull();
 
     await user.click(trigger);
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('region', { name: '当前听牌信息' })).toBeInTheDocument();
-    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText('清一色')).toBeInTheDocument();
+    expect(screen.getByText('79%')).toBeInTheDocument();
+    expect(screen.queryByText('正在听')).toBeNull();
+  });
+
+  it('renders waits and recommendations for a selected-discard tenpai preview', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        selectedTileCode="w2"
+        handInsight={{
+          source: 'selected_discard',
+          discardTileId: 'w2#2',
+          discardTileCode: 'w2',
+          isTenpai: true,
+          waits: [{ code: 'w3', availableCount: 2 }],
+          recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 83 }],
+        }}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '查看打出当前选中牌后的手牌洞察' }));
+
+    expect(screen.getByText('打出后将听')).toBeInTheDocument();
+    expect(screen.getByText('推荐番型')).toBeInTheDocument();
+    expect(screen.getByText('清一色')).toBeInTheDocument();
   });
 
   it('hides the dock countdown when only other players are responding', () => {

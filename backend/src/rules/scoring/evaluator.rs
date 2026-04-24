@@ -270,6 +270,16 @@ pub(crate) struct FanRule {
     forbidden_with: &'static [&'static str],
 }
 
+impl FanRule {
+    pub(crate) fn fan_key(&self) -> &'static str {
+        self.fan_key
+    }
+
+    pub(crate) fn fan_value(&self) -> i64 {
+        self.fan_value
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FanCandidate {
     fan_key: &'static str,
@@ -1954,6 +1964,14 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
         },
     ];
     FAN_RULES
+}
+
+pub(crate) fn recommendable_fan_rules(min_value: i64) -> Vec<(&'static str, i64)> {
+    registered_fan_rules()
+        .iter()
+        .filter(|rule| rule.fan_value() >= min_value && rule.fan_key() != "chicken_hand")
+        .map(|rule| (rule.fan_key(), rule.fan_value()))
+        .collect()
 }
 fn match_self_drawn(context: &FanContext) -> usize {
     usize::from(context.win_type == "self_draw")

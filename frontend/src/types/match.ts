@@ -130,6 +130,7 @@ export interface PrivateState {
   wall_tiles_remaining?: number;
   last_discard?: string | null;
   pending_action?: PendingAction | null;
+  hand_insights?: BackendHandInsights | null;
   score_state?: ScoreState | null;
   players: PrivatePlayerState[];
 }
@@ -424,16 +425,48 @@ export interface ClaimCandidateView {
   isSelected: boolean;
 }
 
-export interface ReadyHandWaitView {
+export interface BackendHandInsightWait {
+  code: string;
+  available_count: number;
+}
+
+export interface BackendHandInsightRecommendation {
+  fan_key: string;
+  fan_value: number;
+  similarity_percent: number;
+}
+
+export interface BackendHandInsight {
+  discard_tile_id: string | null;
+  discard_tile_code: string | null;
+  is_tenpai: boolean;
+  waits: BackendHandInsightWait[];
+  recommendations: BackendHandInsightRecommendation[];
+}
+
+export interface BackendHandInsights {
+  current: BackendHandInsight | null;
+  by_discard_tile_id: Record<string, BackendHandInsight>;
+}
+
+export interface HandInsightWaitView {
   code: string;
   availableCount: number;
 }
 
-export interface ReadyHandInsightView {
+export interface HandInsightRecommendationView {
+  fanKey: string;
+  fanValue: number;
+  similarityPercent: number;
+}
+
+export interface HandInsightView {
   source: 'current' | 'selected_discard';
   discardTileId: string | null;
   discardTileCode: string | null;
-  waits: ReadyHandWaitView[];
+  isTenpai: boolean;
+  waits: HandInsightWaitView[];
+  recommendations: HandInsightRecommendationView[];
 }
 
 export interface ResultSeatView {
@@ -544,7 +577,7 @@ export interface BattleViewModel {
   discards: Record<Seat, string[]>;
   selectedTileCode?: string | null;
   localHand: LocalTileView[];
-  readyHandInsight: ReadyHandInsightView | null;
+  handInsight: HandInsightView | null;
   claimCandidates: ClaimCandidateView[];
   drawnTileId: string | null;
   centerBanner: string | null;

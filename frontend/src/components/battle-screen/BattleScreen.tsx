@@ -333,7 +333,7 @@ export function BattleScreen({
           <BottomActionDock
             hand={viewModel.localHand}
             selectedTileCode={viewModel.selectedTileCode}
-            readyHandInsight={viewModel.readyHandInsight}
+            handInsight={viewModel.handInsight}
             claimCandidates={viewModel.claimCandidates}
             actions={battleActions}
             isElevated={viewModel.isActionDockElevated}
