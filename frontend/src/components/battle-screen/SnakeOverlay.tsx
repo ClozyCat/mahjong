@@ -20,9 +20,10 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
   const [direction, setDirection] = useState<Point>({ x: 1, y: 0 });
   const [nextDirection, setNextDirection] = useState<Point>({ x: 1, y: 0 });
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   
   const moveSnake = useCallback(() => {
-    if (isGameOver) return;
+    if (isGameOver || isPaused) return;
 
     setSnake((prevSnake) => {
       const head = prevSnake[0];
@@ -60,11 +61,12 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
 
       return newSnake;
     });
-  }, [nextDirection, food, isGameOver, onGameOver]);
+  }, [nextDirection, food, isGameOver, isPaused, onGameOver]);
 
   const generateFood = (currentSnake: Point[]) => {
-    if (!containerRef.current) return;
-    const { width, height } = containerRef.current.getBoundingClientRect();
+    const container = containerRef.current;
+    if (!container) return;
+    const { width, height } = container.getBoundingClientRect();
     const cols = Math.floor(width / GRID_SIZE);
     const rows = Math.floor(height / GRID_SIZE);
 
@@ -81,14 +83,26 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      if (['w', 'a', 's', 'd'].includes(key)) {
+        setIsPaused(false);
+      }
+
       if (key === 'w' && direction.y === 0) setNextDirection({ x: 0, y: -1 });
       else if (key === 's' && direction.y === 0) setNextDirection({ x: 0, y: 1 });
       else if (key === 'a' && direction.x === 0) setNextDirection({ x: -1, y: 0 });
       else if (key === 'd' && direction.x === 0) setNextDirection({ x: 1, y: 0 });
     };
 
+    const handlePointerDown = () => {
+      setIsPaused(true);
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('pointerdown', handlePointerDown);
+    };
   }, [direction]);
 
   useEffect(() => {
@@ -127,7 +141,11 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
 
       // Draw snake
       snake.forEach((segment, index) => {
-        ctx.fillStyle = index === 0 ? snakeColor : `color-mix(in srgb, ${snakeColor} ${100 - index * 2}%, transparent)`;
+        const baseOpacity = 100 - index * 2;
+        ctx.fillStyle = index === 0 
+          ? snakeColor
+          : `color-mix(in srgb, ${snakeColor} ${baseOpacity}%, transparent)`;
+        
         ctx.beginPath();
         const padding = index === 0 ? 1 : 2;
         ctx.roundRect(
@@ -139,7 +157,7 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
         );
         ctx.fill();
 
-        // Optional: Head eye
+        // Head eye
         if (index === 0) {
           ctx.fillStyle = 'rgba(0,0,0,0.3)';
           const eyeSize = 3;
@@ -163,9 +181,14 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
         ctx.fillStyle = '#ff4d4f';
         ctx.font = 'bold 32px sans-serif';
         ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         ctx.fillText('Game Over', width / 2, height / 2);
       }
     };
+
+    const animId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(animId);
+  }, [snake, food, isGameOver, isPaused, direction]);
 
     const animId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animId);

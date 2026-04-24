@@ -6,6 +6,7 @@ import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 import { TableStage } from './TableStage';
+import { SnakeOverlay } from './SnakeOverlay';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
@@ -53,6 +54,7 @@ export function BattleScreen({
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
+  const [isSnakeActive, setIsSnakeActive] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
@@ -233,6 +235,18 @@ export function BattleScreen({
     };
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        setIsSnakeActive((prev) => !prev);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   useLayoutEffect(() => {
     if (!viewModel.result) {
       hasObservedNoResultRef.current = true;
@@ -332,6 +346,7 @@ export function BattleScreen({
             onClaimCandidateActivate={onClaimCandidateActivate}
             onAction={handleAction}
           />
+          {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (
             <ResultOverlay
               result={visibleResult}
