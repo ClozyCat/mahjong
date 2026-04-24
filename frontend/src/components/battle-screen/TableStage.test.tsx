@@ -632,68 +632,6 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__spotlight--bottom')).not.toHaveClass('table-stage__spotlight--dealer');
   });
 
-  it('renders settlement hands beside each seat when the round has ended', () => {
-    render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        promptText={null}
-        players={[
-          { seat: 'top', name: 'Player Top', melds: [] },
-          { seat: 'left', name: 'Player Left', melds: [] },
-          { seat: 'right', name: 'Player Right', melds: [] },
-          { seat: 'bottom', name: 'Player Bottom', melds: [] },
-        ]}
-        settlementHands={{
-          top: ['w1', 'w2'],
-          left: ['b1', 'b2', 'b3', 'b4'],
-          right: ['c1'],
-          bottom: ['d1', 'd2'],
-        }}
-        lastDiscard="b4"
-        lastDiscardSeat="top"
-        settlementWinnerSeat="left"
-        settlementWinType="discard"
-      />,
-    );
-
-    expect(screen.getByLabelText('对家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(2);
-    expect(screen.getByLabelText('左家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(4);
-    expect(screen.getByLabelText('右家手牌').querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
-    expect(screen.getByLabelText('左家手牌').querySelectorAll('.mahjong-tile--last-discard')).toHaveLength(1);
-    expect(document.querySelector('.table-stage__spotlight')).toBeNull();
-    expect(screen.queryByLabelText('本家手牌')).toBeNull();
-  });
-
-  it('right-aligns a short right-side settlement hand within the final row', () => {
-    const { container } = render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        players={[{ seat: 'right', name: 'Player Right', melds: [] }]}
-        settlementHands={{
-          right: ['c1'],
-        }}
-      />,
-    );
-
-    const rightSettlementGrid = container.querySelector('.table-stage__settlement-hand-grid--right');
-    expect(rightSettlementGrid?.querySelectorAll('.table-stage__settlement-hand-placeholder')).toHaveLength(3);
-    expect(rightSettlementGrid?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
-  });
-
   it('uses the provided discard seat to avoid spotlighting the same tile in another river', () => {
     const { container } = render(
       <TableStage

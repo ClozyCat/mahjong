@@ -42,7 +42,6 @@ interface TableStageProps {
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
   players?: TableStagePlayer[];
-  settlementHands?: Partial<Record<Seat, string[]>> | null;
   settlementCenterCalloutLabel?: string | null;
   tableCode?: string;
   roundLabel?: string;
@@ -70,12 +69,6 @@ interface TableStageProps {
 }
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
-const SETTLEMENT_HAND_COLUMN_COUNT: Record<Seat, number> = {
-  top: 7,
-  left: 4,
-  right: 4,
-  bottom: 7,
-};
 
 export function TableStage({
   discards,
@@ -96,7 +89,6 @@ export function TableStage({
   actionEffect = null,
   quickChatEvent = null,
   players = [],
-  settlementHands = null,
   settlementCenterCalloutLabel = null,
   tableCode = '',
   roundLabel = '',
@@ -124,7 +116,6 @@ export function TableStage({
 }: TableStageProps) {
   const lastDiscardPosition = findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat);
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
-  const hasSettlementHands = Object.values(settlementHands ?? {}).some((tiles) => tiles.length > 0);
   const settlementWinningSeats = getUniqueSeats([
     settlementWinnerSeat,
     ...settlementWinnerSeats,
@@ -174,7 +165,7 @@ export function TableStage({
     spotlightSeat !== null && spotlightTile !== null && lastDiscardPosition !== null
       ? `${spotlightSeat}:${lastDiscardPosition.index}:${spotlightTile}`
       : null;
-  const hasSpotlightDiscard = !hasSettlementHands && spotlightSeat !== null && spotlightTile !== null;
+  const hasSpotlightDiscard = spotlightSeat !== null && spotlightTile !== null;
   const shouldDelaySpotlightForIncomingReadyHand =
     incomingActionCallout?.tone === 'ready_hand' &&
     incomingActionCallout.seat === spotlightSeat &&
@@ -553,15 +544,6 @@ export function TableStage({
           {SEATS.map((seat) => {
             const player = playerBySeat.get(seat);
             const hasMelds = (player?.melds.length ?? 0) > 0;
-            const finalHandTiles = settlementHands?.[seat] ?? [];
-            const settlementHandLabel = SETTLEMENT_HAND_COPY[seat];
-            const settlementWinningTileIndex =
-              settlementWinType === 'discard' &&
-                settlementWinningSeats.includes(seat) &&
-                lastDiscard !== null &&
-                finalHandTiles.at(-1) === lastDiscard
-                ? finalHandTiles.length - 1
-                : -1;
 
             return (
               <Fragment key={`seat-zone-${seat}`}>
@@ -668,34 +650,6 @@ export function TableStage({
                     ) : null}
                   </div>
 
-                  {finalHandTiles.length > 0 && settlementHandLabel ? (
-                    <div
-                      className={`table-stage__settlement-hand table-stage__settlement-hand--${seat}`}
-                      aria-label={settlementHandLabel}
-                    >
-                      <span className="table-stage__settlement-hand-eyebrow">{settlementHandLabel}</span>
-                      <div className={`table-stage__settlement-hand-grid table-stage__settlement-hand-grid--${seat}`}>
-                        {buildSettlementHandCells(seat, finalHandTiles).map((cell) =>
-                          cell.kind === 'placeholder' ? (
-                            <span
-                              key={cell.key}
-                              className="table-stage__settlement-hand-placeholder"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <MahjongTile
-                              key={cell.key}
-                              code={cell.tile}
-                              variant="discard"
-                              isLastDiscard={cell.index === settlementWinningTileIndex}
-                              relatedTileCode={selectedTileCode}
-                              className="table-stage__settlement-hand-tile"
-                            />
-                          ),
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </Fragment>
             );
@@ -769,13 +723,6 @@ export function TableStage({
     </section>
   );
 }
-
-
-const SETTLEMENT_HAND_COPY: Partial<Record<Seat, string>> = {
-  top: '对家手牌',
-  left: '左家手牌',
-  right: '右家手牌',
-};
 
 const ACTION_POINTER_COPY: Record<Seat, string> = {
   top: '对家',
@@ -938,53 +885,6 @@ function getActionCalloutLingerMs(callout: ActionCallout) {
 
   return ACTION_CALLOUT_LINGER_MS;
 }
-
-type SettlementHandCell =
-  | {
-    kind: 'placeholder';
-    key: string;
-  }
-  | {
-    kind: 'tile';
-    key: string;
-    tile: string;
-    index: number;
-  };
-
-function buildSettlementHandCells(seat: Seat, tiles: string[]): SettlementHandCell[] {
-  const tileCells = tiles.map(
-    (tile, index): SettlementHandCell => ({
-      kind: 'tile',
-      key: `${seat}-settlement-${tile}-${index}`,
-      tile,
-      index,
-    }),
-  );
-
-  if (seat !== 'right') {
-    return tileCells;
-  }
-
-  const columnCount = SETTLEMENT_HAND_COLUMN_COUNT[seat];
-  const remainder = tiles.length % columnCount;
-
-  if (remainder === 0) {
-    return tileCells;
-  }
-
-  const lastRowStartIndex = tiles.length - remainder;
-  const placeholderCount = columnCount - remainder;
-
-  return [
-    ...tileCells.slice(0, lastRowStartIndex),
-    ...Array.from({ length: placeholderCount }, (_, index): SettlementHandCell => ({
-      kind: 'placeholder',
-      key: `${seat}-settlement-placeholder-${tiles.length}-${index}`,
-    })),
-    ...tileCells.slice(lastRowStartIndex),
-  ];
-}
-
 
 interface ActionCalloutMarkerProps {
   callout: ActionCallout;

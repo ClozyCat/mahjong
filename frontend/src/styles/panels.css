@@ -13,7 +13,6 @@
 
 .result-overlay__card,
 .connect-gate__panel,
-.table-stage__settlement-hand-grid,
 .ambient-overlay__panel,
 .fan-guide__dialog {
   border-color: color-mix(in srgb, var(--theme-paper) 12%, transparent);
@@ -545,8 +544,8 @@
 /* --- Table info --- */
 .table-stage__table-info {
   position: absolute;
-  top: 1.15rem;
-  left: 1.25rem;
+  top: clamp(0.7rem, 2vw, 1.15rem);
+  left: clamp(0.8rem, 2.2vw, 1.25rem);
   z-index: 4;
   display: grid;
   justify-items: start;
@@ -558,7 +557,7 @@
 .table-stage__table-info span {
   display: block;
   color: color-mix(in srgb, var(--theme-paper) 78%, transparent);
-  font-size: clamp(0.56rem, 0.45rem + 0.4vw, 0.72rem);
+  font-size: clamp(0.5rem, 0.45rem + 0.4vw, 0.72rem);
   letter-spacing: 0.04em;
   line-height: 1.15;
 }

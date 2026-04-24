@@ -303,7 +303,6 @@ export function BattleScreen({
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
               players={viewModel.players}
-              settlementHands={null}
               settlementCenterCalloutLabel={visibleSettlementCenterCalloutLabel}
               tableCode={viewModel.tableCode}
               roundLabel={viewModel.roundLabel}
