@@ -4,6 +4,8 @@ import type { CSSProperties } from 'react';
 interface FanGuideCardProps {
   entry: FanGuideEntry;
   className?: string;
+  isPinned?: boolean;
+  onPin?: () => void;
 }
 
 /**
@@ -46,7 +48,7 @@ export function getFanColor(value: number): string {
   return `rgb(${stops[0].c.r}, ${stops[0].c.g}, ${stops[0].c.b})`;
 }
 
-export function FanGuideCard({ entry, className }: FanGuideCardProps) {
+export function FanGuideCard({ entry, className, isPinned, onPin }: FanGuideCardProps) {
   const resolvedClassName = ['fan-guide__card', className].filter(Boolean).join(' ');
   const fanBg = getFanColor(entry.fanValue);
 
@@ -64,6 +66,20 @@ export function FanGuideCard({ entry, className }: FanGuideCardProps) {
           <span className="fan-guide__pill-value">{entry.fanValue}</span>
           <span className="fan-guide__pill-unit">番</span>
         </div>
+        {onPin && (
+          <button
+            type="button"
+            className={`fan-guide__pin-btn ${isPinned ? 'fan-guide__pin-btn--active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPin();
+            }}
+            title={isPinned ? '取消固定' : '固定到界面'}
+            aria-label={isPinned ? '取消固定' : '固定在此番种'}
+          >
+            <PinIcon />
+          </button>
+        )}
       </div>
       <div className="fan-guide__card-body">
         <p className="fan-guide__card-copy">{entry.intro}</p>
@@ -73,5 +89,14 @@ export function FanGuideCard({ entry, className }: FanGuideCardProps) {
         </div>
       </div>
     </article>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="17" x2="12" y2="22"></line>
+      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+    </svg>
   );
 }

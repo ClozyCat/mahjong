@@ -2007,3 +2007,134 @@
   width: 100%;
   height: 100%;
 }
+/* --- Pinned Fan Overlay --- */
+.pinned-fan-overlay {
+  position: fixed;
+  z-index: 100;
+  width: 14rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 1.25rem;
+  background: rgba(14, 14, 14, 0.85);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  color: var(--theme-paper-strong);
+  cursor: grab;
+  user-select: none;
+  animation: overlay-fade-in-up 0.5s var(--ease-lux);
+  transition: border-color 0.3s var(--ease-lux), box-shadow 0.3s var(--ease-lux);
+}
+
+.pinned-fan-overlay:hover {
+  border-color: color-mix(in srgb, var(--accent-2) 30%, transparent);
+  box-shadow: 
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 0 16px color-mix(in srgb, var(--accent-2) 15%, transparent);
+}
+
+.pinned-fan-overlay--dragging {
+  cursor: grabbing;
+  transform: scale(1.02);
+  z-index: 101;
+  opacity: 0.9;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.pinned-fan-overlay__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+.pinned-fan-overlay__title {
+  font-size: 0.95rem;
+  font-family: 'Noto Sans SC', sans-serif;
+  letter-spacing: 0.02em;
+  color: var(--theme-paper-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinned-fan-overlay__fan-value {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  color: var(--accent-2);
+}
+
+.pinned-fan-overlay__fan-value span {
+  font-family: 'Bahnschrift', sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.pinned-fan-overlay__fan-value small {
+  font-size: 0.65rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.pinned-fan-overlay__close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  transition: color 0.15s var(--ease-lux);
+  display: flex;
+}
+
+.pinned-fan-overlay__close:hover {
+  color: var(--theme-danger);
+}
+
+.pinned-fan-overlay__body {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--theme-paper) 85%, transparent);
+}
+
+.pinned-fan-overlay__body p {
+  margin: 0 0 0.5rem;
+}
+
+.pinned-fan-overlay__example {
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--theme-paper) 60%, var(--accent-3));
+  border-left: 2px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
+}
+
+.pinned-fan-overlay__example span {
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+.pinned-fan-overlay__drag-handle {
+  position: absolute;
+  bottom: 0.4rem;
+  right: 0.5rem;
+  color: color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .pinned-fan-overlay {
+    display: none !important;
+  }
+}
+:root[data-small-screen='true'] .pinned-fan-overlay {
+  display: none !important;
+}
+

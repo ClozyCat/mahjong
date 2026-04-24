@@ -1876,6 +1876,34 @@
   flex: 0 0 auto;
 }
 
+.fan-guide__pin-btn {
+  margin-left: 0.5rem;
+  padding: 0.35rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s var(--ease-lux);
+  cursor: pointer;
+}
+
+.fan-guide__pin-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: color-mix(in srgb, var(--accent-2) 60%, transparent);
+  color: var(--theme-paper-strong);
+  transform: translateY(-1px);
+}
+
+.fan-guide__pin-btn--active {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: white;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-2) 40%, transparent);
+}
+
 .fan-guide__pill-value {
   font-family: 'Bahnschrift', sans-serif;
   font-weight: 700;

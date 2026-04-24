@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { ThemeId } from '../../lib/themes';
 import type {
@@ -10,7 +10,9 @@ import type {
   QuickChatEventView,
   Seat,
 } from '../../types/match';
+import { FAN_GUIDE_ENTRIES, type FanGuideEntry } from './fanGuide';
 import { FanGuideDialog } from './FanGuideDialog';
+
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
 import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
@@ -149,6 +151,11 @@ export function TableStage({
   const [meldRowsH, setMeldRowsH] = useState(2);
   const [meldColsV, setMeldColsV] = useState(1);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
+  const [pinnedFanKey, setPinnedFanKey] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('mahjong_pinned_fan');
+  });
+
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const pendingActionCalloutsRef = useRef<ActionCallout[]>([]);
@@ -205,6 +212,15 @@ export function TableStage({
   }, [pendingActionCallouts]);
 
   useEffect(() => {
+    if (pinnedFanKey) {
+      localStorage.setItem('mahjong_pinned_fan', pinnedFanKey);
+    } else {
+      localStorage.removeItem('mahjong_pinned_fan');
+    }
+  }, [pinnedFanKey]);
+
+  useEffect(() => {
+
     return () => {
       if (activeActionCalloutTimerRef.current !== null) {
         window.clearTimeout(activeActionCalloutTimerRef.current);
@@ -737,7 +753,19 @@ export function TableStage({
             : null}
         </div>
       </div>
-      <FanGuideDialog isOpen={isFanGuideOpen} onClose={() => setIsFanGuideOpen(false)} />
+      <FanGuideDialog 
+        isOpen={isFanGuideOpen} 
+        onClose={() => setIsFanGuideOpen(false)} 
+        pinnedFanKey={pinnedFanKey}
+        onPinFan={(key) => setPinnedFanKey(prev => prev === key ? null : key)}
+      />
+      {pinnedFanKey && (
+        <PinnedFanOverlay 
+          entry={FAN_GUIDE_ENTRIES.find(e => e.fanKey === pinnedFanKey) ?? null} 
+          onClose={() => setPinnedFanKey(null)}
+        />
+      )}
+
     </section>
   );
 }
@@ -792,7 +820,97 @@ const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '👍', label: '赞' },
   { emoji: '🍵', label: '喝茶' },
 ];
+
+function PinnedFanOverlay({ entry, onClose }: { entry: FanGuideEntry | null; onClose: () => void }) {
+  const [position, setPosition] = useState(() => {
+    if (typeof window === 'undefined') return { x: 20, y: 80 };
+    const stored = localStorage.getItem('mahjong_pinned_fan_pos');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return { x: 20, y: 80 };
+      }
+    }
+    return { x: 20, y: 80 };
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('mahjong_pinned_fan_pos', JSON.stringify(position));
+  }, [position]);
+
+  if (!entry) return null;
+
+  const handlePointerDown = (e: ReactPointerEvent) => {
+    if ((e.target as HTMLElement).closest('.pinned-fan-overlay__close')) return;
+    setIsDragging(true);
+    dragStartPos.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: ReactPointerEvent) => {
+    if (!isDragging) return;
+    const nextX = e.clientX - dragStartPos.current.x;
+    const nextY = e.clientY - dragStartPos.current.y;
+    
+    // Simple boundary check
+    const x = Math.max(0, Math.min(window.innerWidth - 200, nextX));
+    const y = Math.max(0, Math.min(window.innerHeight - 100, nextY));
+    
+    setPosition({ x, y });
+  };
+
+  const handlePointerUp = (e: ReactPointerEvent) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  return (
+    <div 
+      ref={overlayRef}
+      className={`pinned-fan-overlay ${isDragging ? 'pinned-fan-overlay--dragging' : ''}`}
+      style={{ left: position.x, top: position.y } as CSSProperties}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
+      <div className="pinned-fan-overlay__header">
+        <strong className="pinned-fan-overlay__title">{entry.label}</strong>
+        <div className="pinned-fan-overlay__fan-value">
+          <span>{entry.fanValue}</span>
+          <small>番</small>
+        </div>
+        <button 
+          type="button" 
+          className="pinned-fan-overlay__close" 
+          onClick={onClose}
+          aria-label="取消固定"
+        >
+          ×
+        </button>
+      </div>
+      <div className="pinned-fan-overlay__body">
+        <p>{entry.intro}</p>
+        <div className="pinned-fan-overlay__example">
+          <span>例：</span>
+          {entry.example}
+        </div>
+      </div>
+      <div className="pinned-fan-overlay__drag-handle">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <line x1="8" y1="9" x2="16" y2="9"></line>
+          <line x1="8" y1="15" x2="16" y2="15"></line>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotation: string }> = {
+
   top: { left: '50%', top: 'calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset))', rotation: '180deg' },
   bottom: { left: '50%', top: 'calc(var(--table-stage-center-v) + var(--table-stage-spotlight-offset))', rotation: '0deg' },
   left: { left: 'calc(50% - var(--table-stage-spotlight-offset))', top: 'var(--table-stage-center-v)', rotation: '90deg' },
