@@ -144,9 +144,17 @@ export function TableStage({
   const [meldRowsH, setMeldRowsH] = useState(2);
   const [meldColsV, setMeldColsV] = useState(1);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
-  const [pinnedFanKey, setPinnedFanKey] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('mahjong_pinned_fan');
+  const [pinnedFanKeys, setPinnedFanKeys] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const stored = localStorage.getItem('mahjong_pinned_fans');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
   });
 
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
@@ -205,12 +213,12 @@ export function TableStage({
   }, [pendingActionCallouts]);
 
   useEffect(() => {
-    if (pinnedFanKey) {
-      localStorage.setItem('mahjong_pinned_fan', pinnedFanKey);
+    if (pinnedFanKeys.length > 0) {
+      localStorage.setItem('mahjong_pinned_fans', JSON.stringify(pinnedFanKeys));
     } else {
-      localStorage.removeItem('mahjong_pinned_fan');
+      localStorage.removeItem('mahjong_pinned_fans');
     }
-  }, [pinnedFanKey]);
+  }, [pinnedFanKeys]);
 
   useEffect(() => {
 
@@ -722,13 +730,15 @@ export function TableStage({
       <FanGuideDialog 
         isOpen={isFanGuideOpen} 
         onClose={() => setIsFanGuideOpen(false)} 
-        pinnedFanKey={pinnedFanKey}
-        onPinFan={(key) => setPinnedFanKey(prev => prev === key ? null : key)}
+        pinnedFanKeys={pinnedFanKeys}
+        onPinFan={(key) => setPinnedFanKeys(prev => 
+          prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+        )}
       />
-      {pinnedFanKey && (
+      {pinnedFanKeys.length > 0 && (
         <PinnedFanOverlay 
-          entry={FAN_GUIDE_ENTRIES.find(e => e.fanKey === pinnedFanKey) ?? null} 
-          onClose={() => setPinnedFanKey(null)}
+          entries={pinnedFanKeys.map(key => FAN_GUIDE_ENTRIES.find(e => e.fanKey === key)).filter((e): e is FanGuideEntry => !!e)} 
+          onRemove={(key) => setPinnedFanKeys(prev => prev.filter(k => k !== key))}
         />
       )}
 
@@ -780,7 +790,7 @@ const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '🍵', label: '喝茶' },
 ];
 
-function PinnedFanOverlay({ entry, onClose }: { entry: FanGuideEntry | null; onClose: () => void }) {
+function PinnedFanOverlay({ entries, onRemove }: { entries: FanGuideEntry[]; onRemove: (key: string) => void }) {
   const [position, setPosition] = useState(() => {
     if (typeof window === 'undefined') return { x: 20, y: 80 };
     const stored = localStorage.getItem('mahjong_pinned_fan_pos');
@@ -801,8 +811,6 @@ function PinnedFanOverlay({ entry, onClose }: { entry: FanGuideEntry | null; onC
     localStorage.setItem('mahjong_pinned_fan_pos', JSON.stringify(position));
   }, [position]);
 
-  if (!entry) return null;
-
   const handlePointerDown = (e: ReactPointerEvent) => {
     if ((e.target as HTMLElement).closest('.pinned-fan-overlay__close')) return;
     setIsDragging(true);
@@ -815,8 +823,7 @@ function PinnedFanOverlay({ entry, onClose }: { entry: FanGuideEntry | null; onC
     const nextX = e.clientX - dragStartPos.current.x;
     const nextY = e.clientY - dragStartPos.current.y;
     
-    // Simple boundary check
-    const x = Math.max(0, Math.min(window.innerWidth - 200, nextX));
+    const x = Math.max(0, Math.min(window.innerWidth - 100, nextX));
     const y = Math.max(0, Math.min(window.innerHeight - 100, nextY));
     
     setPosition({ x, y });
@@ -830,39 +837,41 @@ function PinnedFanOverlay({ entry, onClose }: { entry: FanGuideEntry | null; onC
   return (
     <div 
       ref={overlayRef}
-      className={`pinned-fan-overlay ${isDragging ? 'pinned-fan-overlay--dragging' : ''}`}
+      className={`pinned-fan-list ${isDragging ? 'pinned-fan-list--dragging' : ''}`}
       style={{ left: position.x, top: position.y } as CSSProperties}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      <div className="pinned-fan-overlay__header">
-        <strong className="pinned-fan-overlay__title">{entry.label}</strong>
-        <div className="pinned-fan-overlay__fan-value">
-          <span>{entry.fanValue}</span>
-          <small>番</small>
-        </div>
-        <button 
-          type="button" 
-          className="pinned-fan-overlay__close" 
-          onClick={onClose}
-          aria-label="取消固定"
-        >
-          ×
-        </button>
-      </div>
-      <div className="pinned-fan-overlay__body">
-        <p>{entry.intro}</p>
-        <div className="pinned-fan-overlay__example">
-          <span>例：</span>
-          {entry.example}
-        </div>
-      </div>
-      <div className="pinned-fan-overlay__drag-handle">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+      <div className="pinned-fan-list__handle">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
           <line x1="8" y1="9" x2="16" y2="9"></line>
           <line x1="8" y1="15" x2="16" y2="15"></line>
         </svg>
+      </div>
+      <div className="pinned-fan-list__items">
+        {entries.map(entry => (
+          <div key={entry.fanKey} className="pinned-fan-overlay">
+            <div className="pinned-fan-overlay__header">
+              <strong className="pinned-fan-overlay__title">{entry.label}</strong>
+              <div className="pinned-fan-overlay__fan-value">
+                <span>{entry.fanValue}</span>
+                <small>番</small>
+              </div>
+              <button 
+                type="button" 
+                className="pinned-fan-overlay__close" 
+                onClick={() => onRemove(entry.fanKey)}
+                aria-label="取消固定"
+              >
+                ×
+              </button>
+            </div>
+            <div className="pinned-fan-overlay__body">
+              <p>{entry.intro}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
