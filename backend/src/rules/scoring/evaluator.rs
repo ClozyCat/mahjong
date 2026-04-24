@@ -1067,7 +1067,11 @@ fn fan_delta_by_seat(
             } else {
                 fan_total
             };
-            let side_payment = if minimum_qualifying_fan_total >= 8 { 8 } else { 0 };
+            let side_payment = if minimum_qualifying_fan_total >= 8 {
+                8
+            } else {
+                0
+            };
             let mut winner_gain = discarder_payment;
             deltas[discarder_seat] -= discarder_payment;
             for (seat, delta) in deltas.iter_mut().enumerate().take(seat_count) {

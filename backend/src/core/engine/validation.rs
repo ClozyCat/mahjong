@@ -305,10 +305,8 @@ mod tests {
     fn allows_flower_action_after_ready_hand_declaration() {
         let mut room = base_room();
         room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
-        room["round_state"]["players"][0]["concealed_tiles"] = json!([
-            tile("f1#0", "f1", "flower"),
-            tile("w3#0", "w3", "suit")
-        ]);
+        room["round_state"]["players"][0]["concealed_tiles"] =
+            json!([tile("f1#0", "f1", "flower"), tile("w3#0", "w3", "suit")]);
         room["pending_timeout"]["drawn_tile_id"] = json!("f1#0");
         let context = context(room);
 

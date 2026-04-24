@@ -163,14 +163,15 @@ fn player_is_ready_hand(state: &RoomState, seat_index: usize) -> bool {
         .is_some_and(|player| player.is_ready_hand)
 }
 
-fn ready_hand_human_waits_for_manual_hu(
+fn ready_hand_human_waits_for_manual_action(
     state: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
 ) -> bool {
     player_is_ready_hand(state, seat_index)
         && !seat_is_bot(state, seat_index)
-        && can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
+        && (can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
+            || !available_self_kongs_from_cache(cache, seat_index).is_empty())
 }
 
 fn player_first_flower_tile_id_from_cache(
@@ -387,6 +388,14 @@ fn next_ready_hand_action_for_state(
         });
     }
 
+    if seat_is_bot(state, seat_index) {
+        if let Some(action) =
+            choose_bot_active_turn_action_with_cache_for_state(state, cache, seat_index)
+        {
+            return Some(action);
+        }
+    }
+
     let tile_id = state
         .pending_timeout
         .as_ref()
@@ -416,7 +425,7 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(state);
             if player_is_ready_hand(state, seat_index) {
-                if ready_hand_human_waits_for_manual_hu(state, &cache, seat_index) {
+                if ready_hand_human_waits_for_manual_action(state, &cache, seat_index) {
                     return None;
                 }
                 return next_ready_hand_action_for_state(state, &cache, seat_index);
@@ -1411,6 +1420,39 @@ mod tests {
         assert!(
             action.is_none(),
             "winning draw should wait for the human player to click hu"
+        );
+    }
+
+    #[test]
+    fn ready_hand_human_waits_for_manual_add_kong_before_auto_discard() {
+        let mut room = ready_hand_auto_room_state("w3", "w3#add");
+        let round = room.round_state.as_mut().expect("round should exist");
+        let player = round.players.get_mut(0).expect("player should exist");
+        player.concealed_tiles = serde_json::from_value(json!([
+            suit("w3", "w3#add"),
+            suit("w2", "w2#a"),
+            suit("w3", "w3#a"),
+            suit("w4", "w4#a"),
+            suit("t2", "t2#a"),
+            suit("t3", "t3#a"),
+            suit("t4", "t4#a"),
+            suit("b2", "b2#a"),
+            suit("b3", "b3#a"),
+            suit("b4", "b4#a"),
+            suit("w6", "w6#a"),
+            suit("w7", "w7#a"),
+            suit("w8", "w8#a"),
+            suit("b7", "b7#a")
+        ]))
+        .expect("tiles should parse");
+        player.melds = vec![vec!["w3".to_string(), "w3".to_string(), "w3".to_string()]];
+
+        let action =
+            next_bot_action_in_room_state(&room).expect("ready-hand lookup should succeed");
+
+        assert!(
+            action.is_none(),
+            "ready-hand human should wait for manual add kong instead of auto discarding"
         );
     }
 
