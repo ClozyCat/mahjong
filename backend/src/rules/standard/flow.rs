@@ -435,9 +435,45 @@ fn start_round_in_room_state(
 
 #[cfg(test)]
 #[allow(dead_code)]
+fn settlement_uses_restart_match(room: &Value) -> bool {
+    room.get("phase").and_then(Value::as_str) == Some("settlement")
+        && room
+            .get("match_state")
+            .and_then(Value::as_object)
+            .map(|match_state| {
+                match_state
+                    .get("prevailing_wind")
+                    .and_then(Value::as_str)
+                    == Some("north")
+                    && match_state
+                        .get("hand_number")
+                        .and_then(Value::as_u64)
+                        .unwrap_or_default()
+                        >= 4
+            })
+            .unwrap_or(false)
+}
+
+fn settlement_uses_restart_match_in_room_state(room: &RoomState) -> bool {
+    room.phase == "settlement"
+        && room
+            .match_state
+            .as_ref()
+            .map(|match_state| {
+                match_state.prevailing_wind == "north" && match_state.hand_number >= 4
+            })
+            .unwrap_or(false)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
 fn current_continue_action_id(room: &Value) -> Option<&'static str> {
     match room.get("phase").and_then(Value::as_str) {
-        Some("settlement") => Some("start_next_round"),
+        Some("settlement") => Some(if settlement_uses_restart_match(room) {
+            "restart_match"
+        } else {
+            "start_next_round"
+        }),
         Some("finished") => Some("restart_match"),
         _ => None,
     }
@@ -445,7 +481,11 @@ fn current_continue_action_id(room: &Value) -> Option<&'static str> {
 
 fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static str> {
     match room.phase.as_str() {
-        "settlement" => Some("start_next_round"),
+        "settlement" => Some(if settlement_uses_restart_match_in_room_state(room) {
+            "restart_match"
+        } else {
+            "start_next_round"
+        }),
         "finished" => Some("restart_match"),
         _ => None,
     }
@@ -687,14 +727,11 @@ fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), Str
     match action_id {
         "start_next_round" => complete_start_next_round(room),
         "restart_match" => {
-            let occupied = continue_all_occupied_seats(room);
-            if occupied.is_empty() {
-                return Err("invalid_action".to_string());
+            if room.get("phase").and_then(Value::as_str) == Some("settlement") {
+                complete_restart_match_from_settlement(room)
+            } else {
+                complete_restart_match(room)
             }
-            let mut rng = rand::rng();
-            let dealer_index = rng.random_range(0..occupied.len());
-            start_match(room, occupied[dealer_index], rand::random::<u64>());
-            Ok(())
         }
         _ => Err("invalid_action".to_string()),
     }
@@ -708,16 +745,51 @@ fn complete_continue_action_in_room_state(
     match action_id {
         "start_next_round" => complete_start_next_round_in_room_state(room),
         "restart_match" => {
-            let occupied = continue_all_occupied_seats_in_room_state(room);
-            if occupied.is_empty() {
-                return Err("invalid_action".to_string());
+            if room.phase == "settlement" {
+                complete_restart_match_from_settlement_in_room_state(room)
+            } else {
+                complete_restart_match_in_room_state(room)
             }
-            let mut rng = rand::rng();
-            let dealer_index = rng.random_range(0..occupied.len());
-            start_match_in_room_state(room, occupied[dealer_index], rand::random::<u64>())
         }
         _ => Err("invalid_action".to_string()),
     }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn complete_restart_match(room: &mut Value) -> Result<(), String> {
+    let occupied = continue_all_occupied_seats(room);
+    if occupied.is_empty() {
+        return Err("invalid_action".to_string());
+    }
+    let mut rng = rand::rng();
+    let dealer_index = rng.random_range(0..occupied.len());
+    start_match(room, occupied[dealer_index], rand::random::<u64>());
+    Ok(())
+}
+
+fn complete_restart_match_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    let occupied = continue_all_occupied_seats_in_room_state(room);
+    if occupied.is_empty() {
+        return Err("invalid_action".to_string());
+    }
+    let mut rng = rand::rng();
+    let dealer_index = rng.random_range(0..occupied.len());
+    start_match_in_room_state(room, occupied[dealer_index], rand::random::<u64>())
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn complete_restart_match_from_settlement(room: &mut Value) -> Result<(), String> {
+    apply_settlement_to_match(room);
+    complete_restart_match(room)
+}
+
+fn complete_restart_match_from_settlement_in_room_state(
+    room: &mut RoomState,
+) -> Result<(), String> {
+    apply_settlement_to_match_in_room_state(room);
+    complete_restart_match_in_room_state(room)
 }
 
 #[cfg(test)]

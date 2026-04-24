@@ -1798,4 +1798,30 @@ mod tests {
             json!([0])
         );
     }
+
+    #[test]
+    fn local_final_settlement_restart_match_skips_finished_panel_and_restarts_playing() {
+        let mut room = room_for_local_continue_action();
+        room["match_state"]["prevailing_wind"] = json!("north");
+        room["match_state"]["hand_number"] = json!(4);
+        room["round_state"]["round_wind"] = json!("north");
+
+        reconcile_continue_action_state(&mut room).expect("continue action should reconcile");
+        assert_eq!(room["continue_action"]["action_id"], "restart_match");
+
+        record_continue_action(&mut room, 0, "restart_match").expect("restart should succeed");
+
+        assert_eq!(room["phase"], "playing");
+        assert_eq!(room["match_state"]["prevailing_wind"], "east");
+        assert_eq!(room["match_state"]["hand_number"], 1);
+        assert_eq!(
+            room["match_state"]["cumulative_scores"],
+            json!({"0": 0, "1": 0, "2": 0, "3": 0})
+        );
+        assert_eq!(
+            room["match_state"]["statistics"]["completed_round_count"],
+            0
+        );
+        assert_eq!(room["continue_action"], Value::Null);
+    }
 }

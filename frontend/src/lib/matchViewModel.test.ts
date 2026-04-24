@@ -1203,10 +1203,10 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.actions.find((action) => action.id === 'start_next_round')?.label).toBe('查看最终得分');
+    expect(viewModel.actions.find((action) => action.id === 'restart_match')?.label).toBe('再来一局');
     expect(viewModel.result?.continueAction).toMatchObject({
-      id: 'start_next_round',
-      label: '查看最终得分',
+      id: 'restart_match',
+      label: '再来一局',
       enabled: true,
     });
   });

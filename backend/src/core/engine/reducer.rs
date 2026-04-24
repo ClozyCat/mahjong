@@ -47,9 +47,24 @@ fn ensure_continue_action<'a>(
     action
 }
 
+fn settlement_uses_restart_match(room: &RoomState) -> bool {
+    room.phase == "settlement"
+        && room
+            .match_state
+            .as_ref()
+            .map(|match_state| {
+                match_state.prevailing_wind == "north" && match_state.hand_number >= 4
+            })
+            .unwrap_or(false)
+}
+
 fn refresh_continue_action_state(room: &mut RoomState) {
     let action_id = match room.phase.as_str() {
-        "settlement" => Some("start_next_round"),
+        "settlement" => Some(if settlement_uses_restart_match(room) {
+            "restart_match"
+        } else {
+            "start_next_round"
+        }),
         "finished" => Some("restart_match"),
         _ => None,
     };

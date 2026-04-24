@@ -516,6 +516,7 @@ function createActionViews(
   const snapshot = state.roomSnapshot?.payload;
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
+  const settlementContinueActionId = getSettlementContinueActionId(state);
   const promptOptions = new Set<BackendActionType>(getPromptOptions(state));
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const kongCandidateGroups = options.showLocalTurnKongPrompt
@@ -542,10 +543,12 @@ function createActionViews(
     !restrictedDiscardTileIdSet.has(selectedReadyHandTileId as string) &&
     getReadyHandWaitsForLocalPlayer(state, selectedReadyHandTileId).length > 0;
   const canContinueRound = snapshot?.phase === 'settlement' && typeof snapshot.local_seat === 'number';
+  const canRestartMatchFromSettlement = canContinueRound && settlementContinueActionId === 'restart_match';
   const canRestartMatch =
-    snapshot?.phase === 'finished' &&
-    snapshot.match_state?.match_finished === true &&
-    typeof snapshot.local_seat === 'number';
+    canRestartMatchFromSettlement ||
+    (snapshot?.phase === 'finished' &&
+      snapshot.match_state?.match_finished === true &&
+      typeof snapshot.local_seat === 'number');
 
   return ACTION_ORDER.map((id) => {
     let enabled = false;
@@ -555,7 +558,10 @@ function createActionViews(
     } else if (id === 'start_match') {
       enabled = waitingControls?.canStart ?? false;
     } else if (id === 'start_next_round') {
-      enabled = canContinueRound && !nextRoundConfirmation?.isLocalConfirmed;
+      enabled =
+        canContinueRound &&
+        settlementContinueActionId === 'start_next_round' &&
+        !nextRoundConfirmation?.isLocalConfirmed;
     } else if (id === 'restart_match') {
       enabled = canRestartMatch && !restartMatchConfirmation?.isLocalConfirmed;
     } else if (options.showLocalTurnKongPrompt && id === 'kong') {
@@ -1306,6 +1312,9 @@ function createResult(state: SessionState): BattleViewModel['result'] {
 
   if (snapshot.phase === 'settlement' && state.latestMatchResult) {
     const result = state.latestMatchResult.payload;
+    const continueActionId = getSettlementContinueActionId(state);
+    const continueActionConfirmation =
+      continueActionId === 'restart_match' ? restartMatchConfirmation : nextRoundConfirmation;
     const pages = createResultPages(result, localSeat);
     const primaryPage = pages[0] ?? null;
     const scoreDeltaBySeat: Partial<Record<Seat, number>> = {};
@@ -1337,23 +1346,25 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       scoreDeltaBySeat,
       seats: createResultSeats(state, result.score_delta.total_delta_by_seat),
       continueAction: {
-        id: 'start_next_round',
+        id: continueActionId,
         label: !isConnectionInteractive
           ? '重连中...'
-          : nextRoundConfirmation?.countdownDeadlineAt
-            ? formatContinueActionCountdownLabel(nextRoundConfirmation.countdownDeadlineAt)
-            : nextRoundConfirmation?.isLocalConfirmed
+          : continueActionConfirmation?.countdownDeadlineAt
+            ? formatContinueActionCountdownLabel(continueActionConfirmation.countdownDeadlineAt)
+            : continueActionConfirmation?.isLocalConfirmed
               ? formatContinueActionConfirmedLabel(
-                  nextRoundConfirmation.confirmedCount,
-                  nextRoundConfirmation.requiredCount,
+                  continueActionConfirmation.confirmedCount,
+                  continueActionConfirmation.requiredCount,
                 )
-              : getStartNextRoundLabel(state),
+              : continueActionId === 'restart_match'
+                ? ACTION_LABELS.restart_match
+                : getStartNextRoundLabel(state),
         enabled:
           isConnectionInteractive &&
           typeof snapshot.local_seat === 'number' &&
-          !nextRoundConfirmation?.isLocalConfirmed,
-        countdownDeadlineAt: nextRoundConfirmation?.countdownDeadlineAt ?? undefined,
-        confirmation: nextRoundConfirmation ?? undefined,
+          !continueActionConfirmation?.isLocalConfirmed,
+        countdownDeadlineAt: continueActionConfirmation?.countdownDeadlineAt ?? undefined,
+        confirmation: continueActionConfirmation ?? undefined,
       },
     };
   }
@@ -1874,16 +1885,30 @@ function createContinueActionConfirmation(
   };
 }
 
-function getStartNextRoundLabel(state: SessionState) {
-  const snapshot = state.roomSnapshot?.payload;
-  const roundWind = snapshot?.private_state?.round_wind ?? snapshot?.match_state?.prevailing_wind;
-  const handNumber = snapshot?.match_state?.hand_number;
+function getStartNextRoundLabel(_state: SessionState) {
+  return ACTION_LABELS.start_next_round;
+}
 
-  if (roundWind === 'north' && handNumber === 4) {
-    return '查看最终得分';
+function getSettlementContinueActionId(
+  state: SessionState,
+): Extract<BattleActionId, 'start_next_round' | 'restart_match'> {
+  const advertisedActionId = state.roomSnapshot?.payload.continue_action?.action_id;
+  if (advertisedActionId === 'start_next_round' || advertisedActionId === 'restart_match') {
+    return advertisedActionId;
   }
 
-  return ACTION_LABELS.start_next_round;
+  return isFinalSettlement(state) ? 'restart_match' : 'start_next_round';
+}
+
+function isFinalSettlement(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  if (snapshot?.phase !== 'settlement') {
+    return false;
+  }
+
+  const roundWind = snapshot.private_state?.round_wind ?? snapshot.match_state?.prevailing_wind;
+  const handNumber = snapshot.match_state?.hand_number;
+  return roundWind === 'north' && handNumber === 4;
 }
 
 function formatContinueActionConfirmedLabel(confirmedCount: number, requiredCount: number) {
