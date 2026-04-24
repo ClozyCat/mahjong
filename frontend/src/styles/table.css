@@ -1896,3 +1896,18 @@
     transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
   }
 }
+
+/* ------- Snake Overlay ------- */
+
+.snake-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.snake-overlay canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

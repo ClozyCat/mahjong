@@ -13,6 +13,7 @@ import type {
 import { FanGuideDialog } from './FanGuideDialog';
 import { MahjongTile } from './MahjongTile';
 import { MeldRack } from './MeldRack';
+import { SnakeOverlay } from './SnakeOverlay';
 import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 
 export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
@@ -149,6 +150,7 @@ export function TableStage({
   const [meldRowsH, setMeldRowsH] = useState(2);
   const [meldColsV, setMeldColsV] = useState(1);
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
+  const [isSnakeActive, setIsSnakeActive] = useState(false);
   const [barrageMessages, setBarrageMessages] = useState<BarrageMessage[]>([]);
   const activeActionCalloutRef = useRef<ActionCallout | null>(null);
   const pendingActionCalloutsRef = useRef<ActionCallout[]>([]);
@@ -233,6 +235,18 @@ export function TableStage({
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [isQuickChatOpen]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        setIsSnakeActive((prev) => !prev);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -468,6 +482,7 @@ export function TableStage({
               </button>
             ) : null}
           </div>
+          {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           <CenterIndicator
             remainingCount={remainingTileCount}
             actionSeat={actionIndicatorSeat}
