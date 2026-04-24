@@ -64,17 +64,13 @@ pub fn try_process_due_timeout_in_room_state(
                     .round_state
                     .as_ref()
                     .and_then(|round| round.restricted_discard_tile_key.as_deref());
-                let tile_id = pending_timeout
-                    .drawn_tile_id
-                    .clone()
-                    .or_else(|| {
-                        last_legal_concealed_tile_id_from_cache(
-                            &cache,
-                            restricted_tile_key,
-                            seat_index,
-                        )
-                    })
-                    .ok_or_else(|| "invalid_action".to_string())?;
+                let tile_id = timeout_discard_tile_id_from_cache(
+                    &cache,
+                    pending_timeout.drawn_tile_id.as_deref(),
+                    restricted_tile_key,
+                    seat_index,
+                )
+                .ok_or_else(|| "invalid_action".to_string())?;
                 return apply_discard_action_output_in_room_state(room, seat_index, &tile_id)
                     .map(|output| Some(output.emitted_messages));
             }
@@ -82,13 +78,13 @@ pub fn try_process_due_timeout_in_room_state(
                 .round_state
                 .as_ref()
                 .and_then(|round| round.restricted_discard_tile_key.as_deref());
-            let tile_id = pending_timeout
-                .drawn_tile_id
-                .clone()
-                .or_else(|| {
-                    last_legal_concealed_tile_id_from_cache(&cache, restricted_tile_key, seat_index)
-                })
-                .ok_or_else(|| "invalid_action".to_string())?;
+            let tile_id = timeout_discard_tile_id_from_cache(
+                &cache,
+                pending_timeout.drawn_tile_id.as_deref(),
+                restricted_tile_key,
+                seat_index,
+            )
+            .ok_or_else(|| "invalid_action".to_string())?;
             extract_emitted_messages(try_handle_player_action_in_room_state(
                 room,
                 seat_index,
@@ -122,9 +118,12 @@ pub fn try_process_due_timeout(room: &mut Value) -> Option<Vec<Value>> {
                 .round_state
                 .as_ref()
                 .and_then(|round| round.restricted_discard_tile_key.as_deref());
-            let tile_id = pending_timeout.drawn_tile_id.clone().or_else(|| {
-                last_legal_concealed_tile_id_from_cache(&cache, restricted_tile_key, seat_index)
-            })?;
+            let tile_id = timeout_discard_tile_id_from_cache(
+                &cache,
+                pending_timeout.drawn_tile_id.as_deref(),
+                restricted_tile_key,
+                seat_index,
+            )?;
             if !can_resolve_discard_locally(room, seat_index, &tile_id) {
                 return None;
             }
@@ -198,6 +197,30 @@ fn last_legal_concealed_tile_id_from_cache(
         .rev()
         .find(|tile| Some(tile.tile_key.as_str()) != restricted_tile_key)
         .map(|tile| tile.tile_id.clone())
+}
+
+fn timeout_discard_tile_id_from_cache(
+    cache: &RoomScoringCache,
+    pending_drawn_tile_id: Option<&str>,
+    restricted_tile_key: Option<&str>,
+    seat_index: usize,
+) -> Option<String> {
+    let player = cache.player(seat_index)?;
+
+    if let Some(tile_id) = pending_drawn_tile_id {
+        let valid_drawn_tile = player
+            .concealed_tiles
+            .iter()
+            .find(|tile| {
+                tile.tile_id == tile_id && Some(tile.tile_key.as_str()) != restricted_tile_key
+            })
+            .map(|tile| tile.tile_id.clone());
+        if valid_drawn_tile.is_some() {
+            return valid_drawn_tile;
+        }
+    }
+
+    last_legal_concealed_tile_id_from_cache(cache, restricted_tile_key, seat_index)
 }
 
 #[allow(dead_code)]
@@ -1005,6 +1028,244 @@ mod tests {
                 }),
             Some(true)
         );
+    }
+
+    #[test]
+    fn active_turn_timeout_after_pung_claim_skips_restricted_tile() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(2))
+            .expect("seat 2 should exist")
+            .concealed_tiles = vec![
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2a"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2b"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t1", "t1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t4", "t4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t7", "t7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b1", "b1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b4", "b4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b7", "b7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w9", "w9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t9", "t9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b9", "b9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&wind("south", "south#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2extra"), "tile").expect("tile"),
+        ];
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            2,
+            "pung",
+            &[String::from("w3#2a"), String::from("w3#2b")],
+        )
+        .expect("pung should be handled")
+        .expect("pung should succeed");
+
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.kind.as_str()),
+            Some("active_turn")
+        );
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.current_actor),
+            Some(2)
+        );
+
+        let emitted = try_process_due_timeout_in_room_state(&mut room)
+            .expect("active turn timeout should resolve after pung claim")
+            .expect("timeout should emit discard message");
+
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0]["payload"]["event_type"], "tile_discarded");
+        assert_ne!(emitted[0]["payload"]["event"]["tile_key"], "w3");
+        assert_eq!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.players.get(2))
+                .map(|player| {
+                    player
+                        .concealed_tiles
+                        .iter()
+                        .any(|tile| tile.tile_id == "w3#2extra")
+                }),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn active_turn_timeout_after_claim_kong_discards_replacement_tile() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(2))
+            .expect("seat 2 should exist")
+            .concealed_tiles = vec![
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2a"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2b"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2c"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t1", "t1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t4", "t4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t7", "t7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b1", "b1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b4", "b4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b7", "b7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w9", "w9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t9", "t9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b9", "b9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&wind("south", "south#2"), "tile").expect("tile"),
+        ];
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            2,
+            "kong",
+            &[
+                String::from("w3#2a"),
+                String::from("w3#2b"),
+                String::from("w3#2c"),
+            ],
+        )
+        .expect("kong should be handled")
+        .expect("kong should succeed");
+
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .and_then(|timeout| timeout.drawn_tile_id.as_deref()),
+            Some("w9#draw")
+        );
+
+        let emitted = try_process_due_timeout_in_room_state(&mut room)
+            .expect("active turn timeout should resolve after claim kong")
+            .expect("timeout should emit discard message");
+
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(emitted[0]["payload"]["event"]["tile_id"], "w9#draw");
+    }
+
+    #[test]
+    fn active_turn_timeout_after_pung_claim_ignores_stale_drawn_tile_id() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(2))
+            .expect("seat 2 should exist")
+            .concealed_tiles = vec![
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2a"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2b"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t1", "t1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t4", "t4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t7", "t7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b1", "b1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b4", "b4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b7", "b7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w9", "w9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t9", "t9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b9", "b9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&wind("south", "south#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2extra"), "tile").expect("tile"),
+        ];
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            2,
+            "pung",
+            &[String::from("w3#2a"), String::from("w3#2b")],
+        )
+        .expect("pung should be handled")
+        .expect("pung should succeed");
+        room.pending_timeout
+            .as_mut()
+            .expect("timeout should exist")
+            .drawn_tile_id = Some("w3#discard".to_string());
+
+        let emitted = try_process_due_timeout_in_room_state(&mut room)
+            .expect("active turn timeout should recover from stale drawn tile")
+            .expect("timeout should still emit discard message");
+
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0]["payload"]["event_type"], "tile_discarded");
+        assert_ne!(emitted[0]["payload"]["event"]["tile_key"], "w3");
+    }
+
+    #[test]
+    fn active_turn_timeout_after_claim_kong_ignores_missing_drawn_tile_id() {
+        let mut room = claim_window_room_state();
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(2))
+            .expect("seat 2 should exist")
+            .concealed_tiles = vec![
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2a"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2b"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w3", "w3#2c"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t1", "t1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t4", "t4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t7", "t7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b1", "b1#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b4", "b4#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b7", "b7#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("w9", "w9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("t9", "t9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&suit("b9", "b9#2"), "tile").expect("tile"),
+            crate::core::tile::Tile::from_value(&wind("south", "south#2"), "tile").expect("tile"),
+        ];
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            0,
+            "discard",
+            &[String::from("w3#discard")],
+        )
+        .expect("discard should be handled")
+        .expect("discard should succeed");
+        let _ = try_handle_player_action_in_room_state(
+            &mut room,
+            2,
+            "kong",
+            &[
+                String::from("w3#2a"),
+                String::from("w3#2b"),
+                String::from("w3#2c"),
+            ],
+        )
+        .expect("kong should be handled")
+        .expect("kong should succeed");
+        room.pending_timeout
+            .as_mut()
+            .expect("timeout should exist")
+            .drawn_tile_id = Some("missing#tile".to_string());
+
+        let emitted = try_process_due_timeout_in_room_state(&mut room)
+            .expect("active turn timeout should recover from missing drawn tile")
+            .expect("timeout should still emit discard message");
+
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(emitted[0]["payload"]["event"]["tile_id"], "w9#draw");
     }
 
     fn ready_hand_auto_room_state(drawn_tile_key: &str, drawn_tile_id: &str) -> RoomState {
