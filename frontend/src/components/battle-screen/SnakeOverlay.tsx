@@ -190,10 +190,6 @@ export function SnakeOverlay({ onGameOver }: SnakeOverlayProps) {
     return () => cancelAnimationFrame(animId);
   }, [snake, food, isGameOver, isPaused, direction]);
 
-    const animId = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(animId);
-  }, [snake, food, isGameOver, direction]);
-
   return (
     <div ref={containerRef} className="snake-overlay">
       <canvas ref={canvasRef} />
