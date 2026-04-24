@@ -65,7 +65,7 @@ export function getRoundEventCopy(
   }
 
   if (eventType === 'claim_auto_passed') {
-    return `吃碰杠胡响应超时，系统已自动过牌`;
+    return `吃碰杠和响应超时，系统已自动过牌`;
   }
 
   if (eventType === 'rob_kong_auto_passed') {
@@ -87,7 +87,7 @@ const CLAIM_TYPE_NAMES: Record<string, string> = {
   chow: '吃',
   pung: '碰',
   kong: '明杠',
-  hu: '胡',
+  hu: '和',
 };
 
 const KONG_TYPE_NAMES: Record<string, string> = {

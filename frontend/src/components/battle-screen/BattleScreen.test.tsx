@@ -278,7 +278,7 @@ describe('BattleScreen', () => {
     expect(screen.getByText('8 番')).toBeInTheDocument();
     const visibleFanList = getVisibleFanList();
 
-    expect(visibleFanList.getByText('平胡')).toBeInTheDocument();
+    expect(visibleFanList.getByText('平和')).toBeInTheDocument();
     expect(visibleFanList.getByText('清一色')).toBeInTheDocument();
     expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
     expect(screen.getByText(/放铳 Player Left（左家）/)).toBeInTheDocument();
@@ -392,7 +392,7 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('button', { name: '下一位' })).toBeInTheDocument();
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
     expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
-    expect(screen.getByText('平胡')).toBeInTheDocument();
+    expect(screen.getByText('平和')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '下一位' }));
 
@@ -400,7 +400,7 @@ describe('BattleScreen', () => {
     expect(screen.getByText(/胜者 Player Top（对家）/)).toBeInTheDocument();
     expect(screen.queryByText(/花牌 1/)).not.toBeInTheDocument();
     expect(screen.getByText('清一色')).toBeInTheDocument();
-    expect(screen.queryByText('平胡')).toBeNull();
+    expect(screen.queryByText('平和')).toBeNull();
     vi.useRealTimers();
   });
 
@@ -549,7 +549,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    const pingHuRow = screen.getByText('平胡').closest('.result-overlay__row');
+    const pingHuRow = screen.getByText('平和').closest('.result-overlay__row');
     expect(pingHuRow).not.toBeNull();
 
     fireEvent.mouseEnter(pingHuRow!);
@@ -962,7 +962,7 @@ describe('BattleScreen', () => {
     expect(updatedFanList.getByText('连六')).toBeInTheDocument();
     expect(updatedFanList.getByText('双同刻')).toBeInTheDocument();
     expect(updatedFanList.getByText('箭刻')).toBeInTheDocument();
-    expect(updatedFanList.queryByText('平胡')).toBeNull();
+    expect(updatedFanList.queryByText('平和')).toBeNull();
     expect(screen.queryByRole('group', { name: '番型明细分页' })).toBeNull();
   });
 
@@ -1449,7 +1449,7 @@ describe('BattleScreen', () => {
         mode: 'resolving',
         actionEffect: {
           key: 'claim-hu-1',
-          label: '胡牌',
+          label: '和牌',
           emphasis: 'claim',
           seat: null,
           calloutTone: 'hu',

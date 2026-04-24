@@ -1782,7 +1782,7 @@ const ACTION_EFFECT_LABELS: Record<string, string> = {
   chow: '吃',
   pung: '碰',
   kong: '明杠',
-  hu: '胡牌',
+  hu: '和牌',
 };
 
 const KONG_EFFECT_LABELS: Record<string, string> = {

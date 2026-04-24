@@ -1131,7 +1131,7 @@ describe('TableStage', () => {
         promptText={null}
         actionEffect={{
           key: `hu-${settlementWinTypeLabel}`,
-          label: '胡牌',
+          label: '和牌',
           emphasis: 'claim',
           seat: null,
           calloutTone: 'hu',
@@ -1163,7 +1163,7 @@ describe('TableStage', () => {
         promptText={null}
         actionEffect={{
           key: 'hu-2',
-          label: '胡牌',
+          label: '和牌',
           emphasis: 'claim',
           seat: 'top',
           calloutTone: 'hu',
@@ -1198,7 +1198,7 @@ describe('TableStage', () => {
         {...props}
         actionEffect={{
           key: 'hu-1',
-          label: '胡牌',
+          label: '和牌',
           emphasis: 'claim',
           seat: 'right',
           calloutTone: 'hu',
@@ -1213,7 +1213,7 @@ describe('TableStage', () => {
         {...props}
         actionEffect={{
           key: 'hu-2',
-          label: '胡牌',
+          label: '和牌',
           emphasis: 'claim',
           seat: 'top',
           calloutTone: 'hu',
