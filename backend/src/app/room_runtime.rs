@@ -15,6 +15,9 @@ use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state 
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
 
+#[cfg(feature = "spectator")]
+pub(crate) type SpectatorConnections = Vec<(u64, ConnectionHandle)>;
+
 pub(crate) struct RoomHandle {
     closed: AtomicBool,
     pub(crate) persist: Mutex<()>,
@@ -27,6 +30,8 @@ pub(crate) struct RoomRuntime {
     pub(crate) created_at: String,
     pub(crate) room: RoomState,
     pub(crate) connections: HashMap<usize, ConnectionHandle>,
+    #[cfg(feature = "spectator")]
+    pub(crate) spectator_connections: HashMap<u64, ConnectionHandle>,
     pub(crate) timeout_nonce: u64,
     pub(crate) continue_nonce: u64,
     pub(crate) disconnect_nonce: u64,
@@ -43,6 +48,8 @@ impl RoomRuntime {
             created_at,
             room,
             connections: HashMap::new(),
+            #[cfg(feature = "spectator")]
+            spectator_connections: HashMap::new(),
             timeout_nonce: 0,
             continue_nonce: 0,
             disconnect_nonce: 0,
@@ -91,6 +98,13 @@ pub(crate) fn close_runtime(runtime: &mut RoomRuntime) {
         connection.request_close();
     }
     runtime.connections.clear();
+    #[cfg(feature = "spectator")]
+    {
+        for connection in runtime.spectator_connections.values() {
+            connection.request_close();
+        }
+        runtime.spectator_connections.clear();
+    }
     abort_room_tasks(runtime);
 }
 
@@ -210,6 +224,46 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
         .iter()
         .map(|(seat, handle)| (*seat, handle.clone()))
         .collect()
+}
+
+#[cfg(feature = "spectator")]
+pub(crate) fn replace_spectator_connection(
+    runtime: &mut RoomRuntime,
+    spectator_id: u64,
+    connection: &ConnectionHandle,
+) {
+    if let Some(previous) = runtime
+        .spectator_connections
+        .insert(spectator_id, connection.clone())
+    {
+        if previous.id != connection.id {
+            previous.request_close();
+        }
+    }
+}
+
+#[cfg(feature = "spectator")]
+pub(crate) fn snapshot_spectator_connections(runtime: &RoomRuntime) -> SpectatorConnections {
+    runtime
+        .spectator_connections
+        .iter()
+        .map(|(spectator_id, handle)| (*spectator_id, handle.clone()))
+        .collect()
+}
+
+#[cfg(feature = "spectator")]
+pub(crate) fn remove_spectator_connection(
+    runtime: &mut RoomRuntime,
+    spectator_id: u64,
+    connection_id: u64,
+) {
+    if runtime
+        .spectator_connections
+        .get(&spectator_id)
+        .is_some_and(|handle| handle.id == connection_id)
+    {
+        runtime.spectator_connections.remove(&spectator_id);
+    }
 }
 
 pub(crate) fn room_has_only_bots(room: &RoomState) -> bool {

@@ -24,6 +24,8 @@ use self::room_runtime::RoomHandle;
 use crate::core::state::{RoomState, SeatState};
 use crate::projection::match_result::match_result_message;
 use crate::projection::prompt::action_prompt_message;
+#[cfg(feature = "spectator")]
+use crate::projection::room_snapshot::observer_room_snapshot_message;
 use crate::projection::room_snapshot::room_snapshot_message;
 use crate::projection::support::build_seat_projection_support_for_state;
 
@@ -518,6 +520,32 @@ pub(crate) fn build_room_messages_for_seat(
     payloads
         .into_iter()
         .map(|payload| connection.outbound(payload))
+        .collect()
+}
+
+#[cfg(feature = "spectator")]
+pub(crate) fn build_room_messages_for_observer(
+    room: &RoomState,
+    connection: &ConnectionHandle,
+) -> Vec<OutboundMessage> {
+    let mut payloads = vec![observer_room_snapshot_message(room)];
+    if let Some(result) = match_result_message(room) {
+        payloads.push(result);
+    }
+    payloads
+        .into_iter()
+        .map(|payload| connection.outbound(payload))
+        .collect()
+}
+
+#[cfg(feature = "spectator")]
+pub(crate) fn collect_observer_outbound_from_snapshot(
+    room: &RoomState,
+    connections: &[(u64, ConnectionHandle)],
+) -> Vec<OutboundMessage> {
+    connections
+        .iter()
+        .flat_map(|(_, handle)| build_room_messages_for_observer(room, handle))
         .collect()
 }
 

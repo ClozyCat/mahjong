@@ -171,6 +171,43 @@ pub fn room_snapshot_message(
     })
 }
 
+#[cfg(feature = "spectator")]
+pub fn observer_room_snapshot_message(state: &RoomState) -> Value {
+    let payload = PlayerRoomSnapshot {
+        table_code: state.table_code.clone(),
+        phase: state.phase.clone(),
+        mode: state.mode.clone(),
+        seats: public_seats(state),
+        local_seat: usize::MAX,
+        reconnect_token: None,
+        match_state: state.match_state.clone(),
+        private_state: observer_round_state(state),
+        continue_action: continue_action_snapshot(state),
+    };
+    let mut value = serde_json::to_value(RoomSnapshotMessage {
+        kind: "room_snapshot",
+        payload,
+    })
+    .unwrap_or_else(|_| {
+        json!({
+            "type": "room_snapshot",
+            "payload": {
+                "table_code": state.table_code,
+                "phase": state.phase,
+                "mode": state.mode,
+                "seats": [],
+                "local_seat": Value::Null,
+                "reconnect_token": Value::Null,
+                "match_state": Value::Null,
+                "private_state": Value::Null,
+                "continue_action": Value::Null,
+            }
+        })
+    });
+    value["payload"]["local_seat"] = Value::Null;
+    value
+}
+
 pub fn build_pending_action_view(
     state: &RoomState,
     local_seat: Seat,
@@ -378,6 +415,106 @@ fn private_round_state(
     })
 }
 
+#[cfg(feature = "spectator")]
+fn observer_round_state(state: &RoomState) -> Option<PlayerRoundView> {
+    let round = state.round_state.as_ref()?;
+    let private_players = round
+        .players
+        .iter()
+        .map(|player| {
+            let seat_info = state
+                .seats
+                .iter()
+                .find(|seat| seat.seat_index == player.seat);
+            PlayerSeatView {
+                seat_index: player.seat,
+                nickname: seat_info.and_then(|seat| seat.nickname.clone()),
+                connected: seat_info.map(|seat| seat.connected).unwrap_or(false),
+                is_ready_hand: player.is_ready_hand,
+                concealed_count: player.concealed_tiles.len(),
+                concealed_tiles: Some(
+                    player
+                        .concealed_tiles
+                        .iter()
+                        .map(|tile| PrivateTileView {
+                            tile_id: tile.tile_id.clone(),
+                            tile_key: tile.tile_key.clone(),
+                        })
+                        .collect(),
+                ),
+                melds: player.melds.clone(),
+                display_melds: project_display_melds(&player.display_melds),
+                flowers: player
+                    .flowers
+                    .iter()
+                    .map(|tile| tile.tile_key.clone())
+                    .collect(),
+                discards: player
+                    .discards
+                    .iter()
+                    .map(|tile| tile.tile_key.clone())
+                    .collect(),
+            }
+        })
+        .collect();
+
+    Some(PlayerRoundView {
+        round_id: round.round_id.clone(),
+        round_wind: round.round_wind.clone(),
+        dealer_seat: round.dealer_seat,
+        current_actor: round.current_actor,
+        wall_tiles_remaining: round.wall.live_tiles_remaining(),
+        last_discard: round
+            .last_discard
+            .as_ref()
+            .map(|tile| tile.tile_key.clone()),
+        pending_action: observer_pending_action(state),
+        hand_insights: None,
+        score_state: score_state_view(state),
+        players: private_players,
+    })
+}
+
+#[cfg(feature = "spectator")]
+fn observer_pending_action(state: &RoomState) -> Option<PendingActionView> {
+    let pending_timeout = state.pending_timeout.as_ref()?;
+    match pending_timeout.kind.as_str() {
+        "active_turn" => Some(PendingActionView::ActiveTurn {
+            seat_index: pending_timeout.seat_index,
+            deadline_at: pending_timeout.deadline_at.clone(),
+            drawn_tile_id: None,
+            restricted_discard_tile_ids: Vec::new(),
+            options: Vec::new(),
+        }),
+        "claim_window" => {
+            let round = state.round_state.as_ref()?;
+            let PendingAction::ClaimWindow(claim) = round.pending_action.as_ref()? else {
+                return None;
+            };
+            Some(PendingActionView::ClaimWindow {
+                discarder_seat: claim.discarder_seat,
+                deadline_at: pending_timeout.deadline_at.clone(),
+                responded_seats: claim.responded_seats.clone(),
+                options: Vec::new(),
+            })
+        }
+        "rob_kong_window" => {
+            let round = state.round_state.as_ref()?;
+            let PendingAction::RobKongWindow(rob) = round.pending_action.as_ref()? else {
+                return None;
+            };
+            Some(PendingActionView::RobKongWindow {
+                actor_seat: rob.actor_seat,
+                tile_key: rob.tile_key.clone(),
+                deadline_at: pending_timeout.deadline_at.clone(),
+                responded_seats: rob.responded_seats.clone(),
+                options: Vec::new(),
+            })
+        }
+        _ => None,
+    }
+}
+
 fn project_display_melds(display_melds: &[DisplayMeldState]) -> Vec<DisplayMeldView> {
     display_melds
         .iter()
@@ -490,6 +627,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{build_pending_action_view, room_snapshot_message};
+    #[cfg(feature = "spectator")]
+    use super::observer_room_snapshot_message;
+    #[cfg(feature = "spectator")]
+    use crate::core::tile::Tile;
     use crate::core::state::PendingTimeout;
     use crate::core::state::{
         ClaimWindowAction, MatchState, PendingAction, PlayerRoundState, RoomState, RoundSettlement,
@@ -621,6 +762,61 @@ mod tests {
             pending_action.deadline_at().as_deref(),
             Some("2026-04-20T12:00:30.000Z")
         );
+    }
+
+    #[cfg(feature = "spectator")]
+    #[test]
+    fn observer_snapshot_exposes_all_concealed_tiles_without_prompt_options() {
+        let mut state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: players(),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "active_turn".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: Some("w3#draw".to_string()),
+            }),
+            continue_action: None,
+        };
+
+        let round = state.round_state.as_mut().expect("round exists");
+        for player in &mut round.players {
+            player.concealed_tiles = vec![Tile {
+                tile_id: format!("w{}#{}", player.seat + 1, player.seat),
+                tile_key: format!("w{}", player.seat + 1),
+                kind: "suit".to_string(),
+                ..Default::default()
+            }];
+        }
+
+        let snapshot = observer_room_snapshot_message(&state);
+        let players = snapshot["payload"]["private_state"]["players"]
+            .as_array()
+            .expect("players should serialize");
+
+        assert!(snapshot["payload"]["local_seat"].is_null());
+        assert!(snapshot["payload"]["reconnect_token"].is_null());
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!([])
+        );
+        assert!(players.iter().all(|player| {
+            player["concealed_tiles"]
+                .as_array()
+                .is_some_and(|tiles| tiles.len() == 1)
+        }));
     }
 
     #[test]
