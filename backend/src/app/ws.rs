@@ -11,6 +11,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
+#[cfg(feature = "spectator")]
+use super::collect_observer_outbound_from_snapshot;
 use super::protocol::{
     HeartbeatPayload, action_rejected_message, heartbeat_message, leave_table_accepted_message,
     quick_chat_message,
@@ -18,6 +20,10 @@ use super::protocol::{
 use super::room_runtime::{
     close_runtime, ensure_room_loaded, replace_connection, restore_room_snapshot, room_handle,
     room_has_only_bots, should_terminate_unattended, snapshot_connections, unregister_room_handle,
+};
+#[cfg(feature = "spectator")]
+use super::room_runtime::{
+    remove_spectator_connection, replace_spectator_connection, snapshot_spectator_connections,
 };
 use super::scheduler::schedule_room_tasks_detached;
 use super::{
@@ -42,6 +48,8 @@ use crate::rules::standard::flow::{
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 enum ClientMessage {
+    #[cfg(feature = "spectator")]
+    WatchTable(WatchTableRequest),
     JoinTable(JoinTableRequest),
     Reconnect(ReconnectRequest),
     Ready(ReadyRequest),
@@ -74,6 +82,13 @@ fn parse_client_message(raw: &str) -> Result<ClientMessage, serde_json::Error> {
 
 #[derive(Debug, Default, Deserialize)]
 struct JoinTableRequest {
+    #[serde(default)]
+    nickname: String,
+}
+
+#[cfg(feature = "spectator")]
+#[derive(Debug, Default, Deserialize)]
+struct WatchTableRequest {
     #[serde(default)]
     nickname: String,
 }
@@ -129,9 +144,32 @@ fn default_true() -> bool {
 
 pub(crate) struct MessageOutcome {
     pub(crate) outbound: Vec<OutboundMessage>,
-    pub(crate) owned_seat: Option<usize>,
-    pub(crate) clear_owned_seat: bool,
+    pub(crate) role: Option<ConnectionRole>,
+    pub(crate) clear_role: bool,
     pub(crate) close_socket: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConnectionRole {
+    Unbound,
+    Player {
+        seat_index: usize,
+    },
+    #[cfg(feature = "spectator")]
+    Spectator {
+        spectator_id: u64,
+    },
+}
+
+impl ConnectionRole {
+    fn owned_seat(self) -> Option<usize> {
+        match self {
+            Self::Player { seat_index } => Some(seat_index),
+            Self::Unbound => None,
+            #[cfg(feature = "spectator")]
+            Self::Spectator { .. } => None,
+        }
+    }
 }
 
 pub(crate) async fn websocket_handler(
@@ -178,7 +216,7 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
         let _ = ws_sender.close().await;
     });
 
-    let mut owned_seat: Option<usize> = None;
+    let mut role = ConnectionRole::Unbound;
     let mut close_socket = false;
 
     loop {
@@ -214,13 +252,13 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
         };
 
         let outcome =
-            handle_client_message(state.clone(), &table_code, &handle, owned_seat, message).await;
+            handle_client_message(state.clone(), &table_code, &handle, role, message).await;
 
-        if let Some(new_seat) = outcome.owned_seat {
-            owned_seat = Some(new_seat);
+        if let Some(new_role) = outcome.role {
+            role = new_role;
         }
-        if outcome.clear_owned_seat {
-            owned_seat = None;
+        if outcome.clear_role {
+            role = ConnectionRole::Unbound;
         }
         send_outbound(outcome.outbound);
         if handle.should_close() {
@@ -233,7 +271,16 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
     }
 
     if !close_socket {
-        handle_disconnect(state, &table_code, owned_seat, connection_id).await;
+        match role {
+            ConnectionRole::Player { seat_index } => {
+                handle_disconnect(state, &table_code, Some(seat_index), connection_id).await;
+            }
+            #[cfg(feature = "spectator")]
+            ConnectionRole::Spectator { spectator_id } => {
+                handle_spectator_disconnect(state, &table_code, spectator_id, connection_id).await;
+            }
+            ConnectionRole::Unbound => {}
+        }
     }
     handle.request_close();
     drop(outgoing_tx);
@@ -244,25 +291,32 @@ async fn handle_client_message(
     state: AppContext,
     table_code: &str,
     connection: &ConnectionHandle,
-    owned_seat: Option<usize>,
+    role: ConnectionRole,
     message: ClientMessage,
 ) -> MessageOutcome {
     match message {
+        #[cfg(feature = "spectator")]
+        ClientMessage::WatchTable(request) => {
+            if !matches!(role, ConnectionRole::Unbound) {
+                return reject_to(connection, "seat_already_owned");
+            }
+            handle_watch_table(state, table_code, connection, request).await
+        }
         ClientMessage::JoinTable(request) => {
-            if owned_seat.is_some() {
+            if !matches!(role, ConnectionRole::Unbound) {
                 return reject_to(connection, "seat_already_owned");
             }
             handle_join_table(state, table_code, connection, request).await
         }
         ClientMessage::Reconnect(request) => {
-            if owned_seat.is_some() {
+            if !matches!(role, ConnectionRole::Unbound) {
                 return reject_to(connection, "seat_already_owned");
             }
             handle_reconnect(state, table_code, connection, request).await
         }
         ClientMessage::Ready(request) => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -270,7 +324,7 @@ async fn handle_client_message(
         }
         ClientMessage::AdjustBots(request) => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -278,7 +332,7 @@ async fn handle_client_message(
         }
         ClientMessage::StartMatch => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -286,7 +340,7 @@ async fn handle_client_message(
         }
         ClientMessage::StartNextRound => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -301,7 +355,7 @@ async fn handle_client_message(
         }
         ClientMessage::RestartMatch => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -309,7 +363,7 @@ async fn handle_client_message(
         }
         ClientMessage::LeaveTable => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -317,7 +371,7 @@ async fn handle_client_message(
         }
         ClientMessage::ActionRequest(request) => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -325,7 +379,7 @@ async fn handle_client_message(
         }
         ClientMessage::QuickChat(request) => {
             let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, owned_seat).await
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
             else {
                 return reject_to(connection, "seat_not_owned");
             };
@@ -333,8 +387,8 @@ async fn handle_client_message(
         }
         ClientMessage::Heartbeat(payload) => MessageOutcome {
             outbound: vec![connection.outbound(heartbeat_message(payload))],
-            owned_seat: None,
-            clear_owned_seat: false,
+            role: None,
+            clear_role: false,
             close_socket: false,
         },
     }
@@ -357,6 +411,41 @@ async fn assert_active_owned_seat(
         Some(seat_index)
     } else {
         None
+    }
+}
+
+#[cfg(feature = "spectator")]
+async fn handle_watch_table(
+    state: AppContext,
+    table_code: &str,
+    connection: &ConnectionHandle,
+    request: WatchTableRequest,
+) -> MessageOutcome {
+    let _nickname = request.nickname.trim();
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
+        return reject_to(connection, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+
+    let spectator_id = connection.id;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    replace_spectator_connection(&mut runtime, spectator_id, connection);
+    let room = runtime.room.clone();
+    drop(runtime);
+
+    MessageOutcome {
+        outbound: collect_observer_outbound_from_snapshot(
+            &room,
+            &[(spectator_id, connection.clone())],
+        ),
+        role: Some(ConnectionRole::Spectator { spectator_id }),
+        clear_role: false,
+        close_socket: false,
     }
 }
 
@@ -414,6 +503,8 @@ async fn handle_join_table(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
@@ -435,7 +526,7 @@ async fn handle_join_table(
         restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    let outbound = collect_join_outbound_from_snapshot(
+    let mut outbound = collect_join_outbound_from_snapshot(
         &room,
         &connections,
         table_code,
@@ -443,14 +534,19 @@ async fn handle_join_table(
         seat_index,
         true,
     );
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     let mut runtime = room_handle.runtime.lock().await;
     replace_connection(&mut runtime, seat_index, connection);
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
-        owned_seat: Some(seat_index),
-        clear_owned_seat: false,
+        role: Some(ConnectionRole::Player { seat_index }),
+        clear_role: false,
         close_socket: false,
     }
 }
@@ -519,6 +615,8 @@ async fn handle_reconnect(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
@@ -545,7 +643,7 @@ async fn handle_reconnect(
         return internal_error_to(connection, error);
     }
 
-    let outbound = collect_join_outbound_from_snapshot(
+    let mut outbound = collect_join_outbound_from_snapshot(
         &room,
         &connections,
         table_code,
@@ -553,14 +651,21 @@ async fn handle_reconnect(
         token_record.seat_index,
         true,
     );
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     let mut runtime = room_handle.runtime.lock().await;
     replace_connection(&mut runtime, token_record.seat_index, connection);
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
-        owned_seat: Some(token_record.seat_index),
-        clear_owned_seat: false,
+        role: Some(ConnectionRole::Player {
+            seat_index: token_record.seat_index,
+        }),
+        clear_role: false,
         close_socket: false,
     }
 }
@@ -599,12 +704,19 @@ async fn handle_ready(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     if let Err(error) = state
         .inner
         .db
@@ -616,8 +728,8 @@ async fn handle_ready(
     }
     let outcome = MessageOutcome {
         outbound,
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     };
     schedule_room_tasks_detached(state, table_code.to_string());
@@ -660,12 +772,19 @@ async fn handle_adjust_bots(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     if let Err(error) = state
         .inner
         .db
@@ -677,8 +796,8 @@ async fn handle_adjust_bots(
     }
     let outcome = MessageOutcome {
         outbound,
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     };
     schedule_room_tasks_detached(state, table_code.to_string());
@@ -688,8 +807,8 @@ async fn handle_adjust_bots(
 fn reject_to(connection: &ConnectionHandle, reason: &str) -> MessageOutcome {
     MessageOutcome {
         outbound: vec![connection.outbound(action_rejected_message(reason))],
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     }
 }
@@ -737,12 +856,19 @@ async fn handle_start_match(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     if let Err(error) = state
         .inner
         .db
@@ -754,8 +880,8 @@ async fn handle_start_match(
     }
     let outcome = MessageOutcome {
         outbound,
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     };
     schedule_room_tasks_detached(state, table_code.to_string());
@@ -788,12 +914,19 @@ async fn handle_continue_action(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     if let Err(error) = state
         .inner
         .db
@@ -805,8 +938,8 @@ async fn handle_continue_action(
     }
     let outcome = MessageOutcome {
         outbound,
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     };
     schedule_room_tasks_detached(state, table_code.to_string());
@@ -867,12 +1000,26 @@ async fn handle_action_request(
     }
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
-    let broadcast_handles = connections
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
+    let mut broadcast_handles = connections
         .iter()
         .map(|(_, handle)| handle.clone())
         .collect::<Vec<_>>();
-    let snapshot_outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
+    #[cfg(feature = "spectator")]
+    broadcast_handles.extend(
+        spectator_connections
+            .iter()
+            .map(|(_, handle)| handle.clone()),
+    );
+    let room = runtime.room.clone();
+    let mut snapshot_outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    #[cfg(feature = "spectator")]
+    snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     drop(runtime);
     let mut outbound =
         super::broadcast_to_handles(&broadcast_handles, Some(&rust_handled_messages));
@@ -880,8 +1027,8 @@ async fn handle_action_request(
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     }
 }
@@ -931,8 +1078,8 @@ async fn handle_quick_chat(
         .collect();
     MessageOutcome {
         outbound,
-        owned_seat: None,
-        clear_owned_seat: false,
+        role: None,
+        clear_role: false,
         close_socket: false,
     }
 }
@@ -977,8 +1124,8 @@ async fn handle_leave_table(
             schedule_room_tasks_detached(state, table_code.to_string());
             MessageOutcome {
                 outbound,
-                owned_seat: None,
-                clear_owned_seat: true,
+                role: None,
+                clear_role: true,
                 close_socket: true,
             }
         } else {
@@ -987,6 +1134,8 @@ async fn handle_leave_table(
                 .into_iter()
                 .filter(|(other_seat, _)| *other_seat != seat_index)
                 .collect::<Vec<_>>();
+            #[cfg(feature = "spectator")]
+            let spectator_connections = snapshot_spectator_connections(&runtime);
             drop(runtime);
             let room_json = match serialize_room(&room) {
                 Ok(value) => value,
@@ -998,6 +1147,11 @@ async fn handle_leave_table(
                 table_code,
                 seat_index,
                 false,
+            ));
+            #[cfg(feature = "spectator")]
+            outbound.extend(collect_observer_outbound_from_snapshot(
+                &room,
+                &spectator_connections,
             ));
             if let Err(error) = state
                 .inner
@@ -1019,8 +1173,8 @@ async fn handle_leave_table(
             schedule_room_tasks_detached(state, table_code.to_string());
             MessageOutcome {
                 outbound,
-                owned_seat: None,
-                clear_owned_seat: true,
+                role: None,
+                clear_role: true,
                 close_socket: true,
             }
         }
@@ -1033,8 +1187,8 @@ async fn handle_leave_table(
         schedule_room_tasks_detached(state, table_code.to_string());
         MessageOutcome {
             outbound,
-            owned_seat: None,
-            clear_owned_seat: true,
+            role: None,
+            clear_role: true,
             close_socket: true,
         }
     } else {
@@ -1043,6 +1197,8 @@ async fn handle_leave_table(
             .into_iter()
             .filter(|(other_seat, _)| *other_seat != seat_index)
             .collect::<Vec<_>>();
+        #[cfg(feature = "spectator")]
+        let spectator_connections = snapshot_spectator_connections(&runtime);
         drop(runtime);
         let room_json = match serialize_room(&room) {
             Ok(value) => value,
@@ -1051,6 +1207,11 @@ async fn handle_leave_table(
         outbound.extend(collect_snapshot_and_prompt_outbound_from_snapshot(
             &room,
             &connections,
+        ));
+        #[cfg(feature = "spectator")]
+        outbound.extend(collect_observer_outbound_from_snapshot(
+            &room,
+            &spectator_connections,
         ));
         if let Err(error) = state
             .inner
@@ -1067,8 +1228,8 @@ async fn handle_leave_table(
         schedule_room_tasks_detached(state, table_code.to_string());
         MessageOutcome {
             outbound,
-            owned_seat: None,
-            clear_owned_seat: true,
+            role: None,
+            clear_role: true,
             close_socket: true,
         }
     }
@@ -1112,18 +1273,25 @@ async fn handle_disconnect(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let outbound = presence_and_snapshot_for_all_from_snapshot(
+    let mut outbound = presence_and_snapshot_for_all_from_snapshot(
         &room,
         &connections,
         table_code,
         seat_index,
         false,
     );
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
     if state
         .inner
         .db
@@ -1145,6 +1313,23 @@ async fn handle_disconnect(
     drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
+}
+
+#[cfg(feature = "spectator")]
+async fn handle_spectator_disconnect(
+    state: AppContext,
+    table_code: &str,
+    spectator_id: u64,
+    connection_id: u64,
+) {
+    let Some(room_handle) = room_handle(&state, table_code).await else {
+        return;
+    };
+    if room_handle.is_closed() {
+        return;
+    }
+    let mut runtime = room_handle.runtime.lock().await;
+    remove_spectator_connection(&mut runtime, spectator_id, connection_id);
 }
 
 #[cfg(test)]
@@ -1191,6 +1376,23 @@ mod tests {
     #[test]
     fn reject_non_empty_payload_for_payloadless_commands() {
         let result = parse_client_message(r#"{"type":"leave_table","payload":{"force":true}}"#);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "spectator")]
+    #[test]
+    fn parse_watch_table_when_spectator_feature_is_enabled() {
+        let parsed =
+            parse_client_message(r#"{"type":"watch_table","payload":{"nickname":"Viewer"}}"#)
+                .expect("watch_table should parse");
+        assert!(matches!(parsed, ClientMessage::WatchTable(_)));
+    }
+
+    #[cfg(not(feature = "spectator"))]
+    #[test]
+    fn reject_watch_table_when_spectator_feature_is_disabled() {
+        let result =
+            parse_client_message(r#"{"type":"watch_table","payload":{"nickname":"Viewer"}}"#);
         assert!(result.is_err());
     }
 }
