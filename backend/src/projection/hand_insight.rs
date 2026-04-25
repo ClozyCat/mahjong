@@ -908,6 +908,8 @@ impl RouteSummary {
             "mixed_straight" => self.best_mixed_straight_score,
             "pure_shifted_chows" => self.pure_shifted_chows_score(3),
             "four_pure_shifted_chows" => self.pure_shifted_chows_score(4),
+            "pure_terminal_chows" => self.pure_terminal_chows_score(),
+            "three_suited_terminal_chows" => self.three_suited_terminal_chows_score(),
             "pure_shifted_pungs" => self.pure_shifted_pungs_score(3),
             "four_pure_shifted_pungs" => self.pure_shifted_pungs_score(4),
             "melded_hand" => self.melded_hand_score(),
@@ -1096,6 +1098,42 @@ impl RouteSummary {
             .clamp(0, 100)
     }
 
+    fn pure_terminal_chows_score(&self) -> i64 {
+        let mut best = 0_i64;
+        for (suit_index, suit) in [(0_usize, 'w'), (1, 't'), (2, 'b')] {
+            let terminal_low = self.duplicate_sequence_score(suit, 1);
+            let terminal_high = self.duplicate_sequence_score(suit, 7);
+            let pair_five = self.pair_slot_score(suit, 5);
+            let raw = terminal_low * terminal_high * pair_five / 10_000;
+            let invalid_tile_count = self
+                .total_tiles
+                .saturating_sub(self.suit_counts[suit_index]);
+            best = best.max(raw.saturating_sub(invalid_tile_count * 12));
+        }
+        best.clamp(0, 100)
+    }
+
+    fn three_suited_terminal_chows_score(&self) -> i64 {
+        let suits = [(0_usize, 'w'), (1_usize, 't'), (2_usize, 'b')];
+        let mut best = 0_i64;
+        for first_index in 0..suits.len() {
+            for second_index in (first_index + 1)..suits.len() {
+                let first_terminal = self.single_terminal_chow_pair_score(suits[first_index].1);
+                let second_terminal = self.single_terminal_chow_pair_score(suits[second_index].1);
+                let pair_suit = suits
+                    .iter()
+                    .find(|(_, suit)| {
+                        *suit != suits[first_index].1 && *suit != suits[second_index].1
+                    })
+                    .map(|(_, suit)| *suit)
+                    .unwrap_or('w');
+                let pair_five = self.pair_slot_score(pair_suit, 5);
+                best = best.max(first_terminal * second_terminal * pair_five / 10_000);
+            }
+        }
+        best.clamp(0, 100)
+    }
+
     fn closed_only_score(&self) -> i64 {
         if self.open_meld_count > 0 { 0 } else { 86 }
     }
@@ -1200,6 +1238,26 @@ impl RouteSummary {
             .map(|tile_key| i64::from(self.full_counts.get(&tile_key).copied().unwrap_or(0) > 0))
             .sum::<i64>();
         covered_tiles * 100 / 3
+    }
+
+    fn duplicate_sequence_score(&self, suit: char, start: i64) -> i64 {
+        let covered_copies = (0..3)
+            .map(|offset| self.suited_tile_count(suit, start + offset).min(2))
+            .sum::<i64>();
+        covered_copies * 100 / 6
+    }
+
+    fn single_terminal_chow_pair_score(&self, suit: char) -> i64 {
+        self.sequence_segment_score(suit, 1) * self.sequence_segment_score(suit, 7) / 100
+    }
+
+    fn pair_slot_score(&self, suit: char, rank: i64) -> i64 {
+        self.suited_tile_count(suit, rank).min(2) * 100 / 2
+    }
+
+    fn suited_tile_count(&self, suit: char, rank: i64) -> i64 {
+        let tile_key = format!("{suit}{rank}");
+        self.full_counts.get(&tile_key).copied().unwrap_or(0)
     }
 
     fn triplet_slot_score(&self, suit: char, rank: i64) -> i64 {
@@ -1597,6 +1655,38 @@ mod tests {
         ]);
 
         assert!(summary.similarity_for("all_types") < 40);
+    }
+
+    #[test]
+    fn pure_terminal_chows_is_not_scored_like_a_generic_pure_straight() {
+        let summary = route_summary_for_tiles(&[
+            "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t2", "t3", "b4", "red", "red",
+        ]);
+
+        assert!(summary.similarity_for("pure_straight") >= 80);
+        assert!(summary.similarity_for("pure_terminal_chows") < 20);
+    }
+
+    #[test]
+    fn pure_terminal_chows_scores_high_only_when_duplicate_terminal_chows_are_supported() {
+        let summary = route_summary_for_tiles(&[
+            "w1", "w1", "w2", "w2", "w3", "w3", "w7", "w7", "w8", "w8", "w9", "w9", "w5", "w5",
+        ]);
+
+        assert!(summary.similarity_for("pure_terminal_chows") >= 80);
+    }
+
+    #[test]
+    fn three_suited_terminal_chows_needs_terminal_chows_in_two_suits() {
+        let generic_straight_summary = route_summary_for_tiles(&[
+            "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t2", "t3", "b4", "red", "red",
+        ]);
+        let supported_summary = route_summary_for_tiles(&[
+            "w1", "w2", "w3", "w7", "w8", "w9", "t1", "t2", "t3", "t7", "t8", "t9", "b5", "b5",
+        ]);
+
+        assert!(generic_straight_summary.similarity_for("three_suited_terminal_chows") < 20);
+        assert!(supported_summary.similarity_for("three_suited_terminal_chows") >= 70);
     }
 
     fn suit_tile(tile_id: &str, tile_key: &str) -> Tile {
