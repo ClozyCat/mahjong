@@ -10,20 +10,20 @@ use std::hash::{Hash, Hasher};
 
 pub(crate) const STAGE_ONE_DEPTH: u8 = 0;
 const STAGE_TWO_DEPTH: u8 = 1;
-const STAGE_TWO_CANDIDATES: usize = 2;
-const STAGE_TWO_CANDIDATES_PRESSURE: usize = 3;
-const STAGE_ONE_EARLY_RETURN_MARGIN: i64 = 180;
+const STAGE_TWO_CANDIDATES: usize = 3;
+const STAGE_TWO_CANDIDATES_PRESSURE: usize = 4;
+const STAGE_ONE_EARLY_RETURN_MARGIN: i64 = 150;
 const KONG_SCORE_MARGIN: i64 = 80;
 const CLAIM_SCORE_MARGIN: i64 = 100;
 const BASE_DRAW_SCAN_LIMIT: usize = 18;
-const EXPECTIMAX_DRAW_LIMIT: usize = 12;
-const MONTE_CARLO_SAMPLE_COUNT_EARLY: usize = 12;
-const MONTE_CARLO_SAMPLE_COUNT_MID: usize = 8;
-const MONTE_CARLO_SAMPLE_COUNT_LATE: usize = 6;
+const EXPECTIMAX_DRAW_LIMIT: usize = 14;
+const MONTE_CARLO_SAMPLE_COUNT_EARLY: usize = 15;
+const MONTE_CARLO_SAMPLE_COUNT_MID: usize = 10;
+const MONTE_CARLO_SAMPLE_COUNT_LATE: usize = 8;
 const MONTE_CARLO_HORIZON_EARLY: usize = 2;
 const MONTE_CARLO_HORIZON_MID: usize = 1;
 const MONTE_CARLO_HORIZON_LATE: usize = 1;
-const MONTE_CARLO_SCORE_GAP_LIMIT: i64 = 90;
+const MONTE_CARLO_SCORE_GAP_LIMIT: i64 = 110;
 const ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
 
 #[derive(Clone)]
