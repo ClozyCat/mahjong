@@ -119,6 +119,35 @@
   pointer-events: auto;
 }
 
+.action-dock__spectator-switch {
+  position: absolute;
+  right: calc(100% + 0.55rem);
+  bottom: 0.22rem;
+  inline-size: 2.4rem;
+  block-size: 2.4rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 28%, transparent);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--theme-paper) 10%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-softer) 92%, transparent)),
+    color-mix(in srgb, var(--theme-panel-bg) 94%, black);
+  color: var(--theme-paper);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+  box-shadow: var(--shadow-md);
+  transition: border-color 120ms ease, transform 120ms ease;
+  z-index: 16;
+}
+
+.action-dock__spectator-switch:hover {
+  border-color: color-mix(in srgb, var(--theme-paper) 52%, transparent);
+  transform: translateY(-0.05rem);
+}
+
 .action-dock__status-group {
   display: grid;
   justify-items: end;

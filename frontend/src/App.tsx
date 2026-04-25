@@ -183,6 +183,23 @@ function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
   return state.latestActionPrompt?.payload.seat_index === localSeat && state.latestActionPrompt.payload.options.includes('discard');
 }
 
+function getOccupiedSpectatorSeats(snapshot: SessionState['roomSnapshot']) {
+  return snapshot?.payload.seats.map((seat) => seat.seat_index).sort((left, right) => left - right) ?? [];
+}
+
+function resolveSpectatorFocusSeat(state: SessionState) {
+  const seats = getOccupiedSpectatorSeats(state.roomSnapshot);
+  if (seats.length === 0) {
+    return 0;
+  }
+
+  if (typeof state.spectatorFocusSeat === 'number' && seats.includes(state.spectatorFocusSeat)) {
+    return state.spectatorFocusSeat;
+  }
+
+  return seats.includes(0) ? 0 : seats[0];
+}
+
 function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
   return (
     actionId === 'discard' ||
@@ -507,6 +524,12 @@ export default function App() {
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
   const shouldForceSmallScreen = isMobileClient && state.roomSnapshot !== null;
+  const isSpectator = state.clientMode === 'spectator';
+  const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
+  const spectatorFocusName =
+    isSpectator
+      ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === spectatorFocusSeat)?.nickname ?? null
+      : null;
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -581,6 +604,17 @@ export default function App() {
     localTurnKongCandidateGroups,
     localTurnKongPromptSignature,
   ]);
+
+  useEffect(() => {
+    if (!isSpectator || !state.roomSnapshot) {
+      return;
+    }
+
+    const nextSeat = resolveSpectatorFocusSeat(state);
+    if (state.spectatorFocusSeat !== nextSeat) {
+      dispatch({ type: 'set_spectator_focus_seat', seatIndex: nextSeat });
+    }
+  }, [isSpectator, state.roomSnapshot, state.spectatorFocusSeat]);
 
   function sendMessage(message: string) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -691,7 +725,23 @@ export default function App() {
     });
   }
 
+  function handleSwitchSpectatorPerspective() {
+    const seats = getOccupiedSpectatorSeats(state.roomSnapshot);
+    if (seats.length === 0) {
+      return;
+    }
+
+    const current = resolveSpectatorFocusSeat(state);
+    const currentIndex = seats.indexOf(current);
+    const nextSeat = seats[(currentIndex + 1) % seats.length] ?? seats[0];
+    dispatch({ type: 'set_spectator_focus_seat', seatIndex: nextSeat });
+  }
+
   function handleTileSelect(tileId: string) {
+    if (isSpectator) {
+      return;
+    }
+
     if (state.optimisticDiscard) {
       return;
     }
@@ -724,6 +774,10 @@ export default function App() {
   }
 
   function handleAction(actionId: BattleActionId) {
+    if (isSpectator) {
+      return;
+    }
+
     if (state.optimisticDiscard && isActionBlockedByOptimisticDiscard(actionId)) {
       return;
     }
@@ -854,6 +908,10 @@ export default function App() {
   }
 
   function handleClaimCandidateSelect(actionId: ClaimActionId, tileIds: string[]) {
+    if (isSpectator) {
+      return;
+    }
+
     dispatch({
       type: 'set_selected_tiles',
       tileIds,
@@ -862,6 +920,10 @@ export default function App() {
   }
 
   function handleClaimCandidateActivate(actionId: ClaimActionId, tileIds: string[]) {
+    if (isSpectator) {
+      return;
+    }
+
     if (state.optimisticDiscard) {
       return;
     }
@@ -874,14 +936,26 @@ export default function App() {
   }
 
   function handleQuickChat(targetSeat: number, emoji: QuickChatEmoji) {
+    if (isSpectator) {
+      return;
+    }
+
     sendMessage(serializeClientMessage(createQuickChatMessage(targetSeat, emoji)));
   }
 
   function handleAdjustBots(delta: 1 | -1) {
+    if (isSpectator) {
+      return;
+    }
+
     sendMessage(serializeClientMessage(createAdjustBotsMessage(delta)));
   }
 
   function handleTileDoubleClick(tileId: string) {
+    if (isSpectator) {
+      return;
+    }
+
     if (!canQuickDiscard(state, hasLocalTurnKongPrompt)) {
       return;
     }
@@ -929,7 +1003,9 @@ export default function App() {
   }
 
   const viewModel = createMatchViewModel(state, {
-    showLocalTurnKongPrompt: hasLocalTurnKongPrompt,
+    showLocalTurnKongPrompt: !isSpectator && hasLocalTurnKongPrompt,
+    isSpectator,
+    perspectiveSeat: spectatorFocusSeat,
   });
 
   if (!state.roomSnapshot) {
@@ -971,6 +1047,9 @@ export default function App() {
       onAddBot={() => handleAdjustBots(1)}
       onRemoveBot={() => handleAdjustBots(-1)}
       onQuickChat={handleQuickChat}
+      isSpectator={isSpectator}
+      spectatorFocusName={spectatorFocusName}
+      onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}
     />
   );
 }

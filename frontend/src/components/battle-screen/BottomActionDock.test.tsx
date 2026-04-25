@@ -482,6 +482,37 @@ describe('BottomActionDock', () => {
     expect(onTileDoubleClick).toHaveBeenCalledWith('w1#1');
   });
 
+  it('renders spectator perspective switch and disables tile interaction', async () => {
+    const user = userEvent.setup();
+    const onSwitchPerspective = vi.fn();
+    const onTileSelect = vi.fn();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        isSpectator
+        spectatorFocusName="Player B"
+        promptCue={null}
+        deadlineAt={null}
+        onSwitchPerspective={onSwitchPerspective}
+        onTileSelect={onTileSelect}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '切换观战视角，当前 Player B' }));
+    expect(onSwitchPerspective).toHaveBeenCalledTimes(1);
+
+    await user.click(getLocalHandButton(0));
+    expect(onTileSelect).not.toHaveBeenCalled();
+  });
+
   it('renders same-turn restricted tiles as disabled and ignores interaction', () => {
     const onTileSelect = vi.fn();
     const onTileDoubleClick = vi.fn();

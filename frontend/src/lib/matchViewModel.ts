@@ -127,10 +127,6 @@ const HONOR_ORDER = {
   f8: 14,
 } as const;
 
-function getLocalSeat(state: SessionState): number {
-  return state.roomSnapshot?.payload.local_seat ?? 0;
-}
-
 function getOptimisticDiscard(state: SessionState) {
   return state.optimisticDiscard ?? null;
 }
@@ -251,6 +247,20 @@ function createCenterDeadlineAt(state: SessionState) {
 
 interface MatchViewModelOptions {
   showLocalTurnKongPrompt?: boolean;
+  perspectiveSeat?: number | null;
+  isSpectator?: boolean;
+}
+
+function getLocalSeat(state: SessionState): number {
+  return state.roomSnapshot?.payload.local_seat ?? 0;
+}
+
+function getPerspectiveSeat(state: SessionState, options: MatchViewModelOptions = {}): number {
+  if (typeof options.perspectiveSeat === 'number') {
+    return options.perspectiveSeat;
+  }
+
+  return getLocalSeat(state);
 }
 
 function createPromptText(state: SessionState, options: MatchViewModelOptions = {}): string | null {
@@ -354,6 +364,10 @@ function getLocalPromptOptions(state: SessionState): BackendActionType[] {
 }
 
 function createPromptCue(state: SessionState, options: MatchViewModelOptions = {}): BattlePromptView | null {
+  if (options.isSpectator) {
+    return null;
+  }
+
   if (hasOptimisticDiscardPending(state)) {
     return null;
   }
@@ -391,7 +405,7 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
 
   if (pendingAction?.type === 'claim_window' && highlightedActionIds.length > 0) {
     const sourceSeat =
-      typeof pendingAction.discarder_seat === 'number' ? toRelativeSeat(localSeat, pendingAction.discarder_seat) : createLastDiscardSeat(state);
+      typeof pendingAction.discarder_seat === 'number' ? toRelativeSeat(localSeat, pendingAction.discarder_seat) : createLastDiscardSeat(state, options);
 
     return {
       kind: 'claim',
@@ -462,7 +476,11 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
   return null;
 }
 
-function createWaitingControls(state: SessionState): WaitingControls | null {
+function createWaitingControls(state: SessionState, options: MatchViewModelOptions = {}): WaitingControls | null {
+  if (options.isSpectator) {
+    return null;
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot || snapshot.phase !== 'waiting') {
     return null;
@@ -514,6 +532,15 @@ function createActionViews(
   waitingControls: WaitingControls | null,
   options: MatchViewModelOptions = {},
 ): BattleActionView[] {
+  if (options.isSpectator) {
+    return ACTION_ORDER.map((id) => ({
+      id,
+      label: ACTION_LABELS[id],
+      enabled: false,
+      emphasis: 'low',
+    }));
+  }
+
   const snapshot = state.roomSnapshot?.payload;
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
@@ -702,13 +729,14 @@ function normalizeDisplayMelds(melds: string[][] | null | undefined) {
     );
 }
 
-function createPlayers(state: SessionState): PlayerView[] {
+function createPlayers(state: SessionState, options: MatchViewModelOptions = {}): PlayerView[] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
     return [];
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
+  const ownSeat = snapshot.local_seat;
   const currentActor = getCurrentActorSeatIndex(snapshot.private_state);
   const dealerSeat = snapshot.match_state?.dealer_seat ?? snapshot.private_state?.dealer_seat;
   const displayedScores = getDisplayedScores(state);
@@ -734,7 +762,7 @@ function createPlayers(state: SessionState): PlayerView[] {
         wind: getWindForSeat(seat.seat_index, dealerSeat),
         isDealer: dealerSeat === seat.seat_index,
         isActive: currentActor === seat.seat_index,
-        isLocal: seat.seat_index === localSeat,
+        isLocal: !options.isSpectator && typeof ownSeat === 'number' && seat.seat_index === ownSeat,
         connected: seat.connected,
         isBotControlled: Boolean(seat.is_bot),
         ready: seat.ready,
@@ -762,7 +790,7 @@ function createPlayers(state: SessionState): PlayerView[] {
     .sort((left, right) => RELATIVE_SEATS.indexOf(left.seat) - RELATIVE_SEATS.indexOf(right.seat));
 }
 
-function createDiscards(state: SessionState): Record<Seat, string[]> {
+function createDiscards(state: SessionState, options: MatchViewModelOptions = {}): Record<Seat, string[]> {
   const empty: Record<Seat, string[]> = {
     bottom: [],
     left: [],
@@ -775,7 +803,7 @@ function createDiscards(state: SessionState): Record<Seat, string[]> {
     return empty;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   for (const player of snapshot.private_state.players) {
     empty[toRelativeSeat(localSeat, player.seat_index)] = normalizeTileCodeList(player.discards);
   }
@@ -789,12 +817,12 @@ function createDiscards(state: SessionState): Record<Seat, string[]> {
   return empty;
 }
 
-function createSelectedTileCode(state: SessionState) {
+function createSelectedTileCode(state: SessionState, options: MatchViewModelOptions = {}) {
   if (state.selectionMode !== 'single' || state.selectedTileIds.length !== 1) {
     return null;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const localPlayer = findPrivatePlayer(state, localSeat);
   const selectedTileId = state.selectedTileIds[0];
   const selectedTile = (localPlayer?.concealed_tiles ?? []).find((tile) => tile.tile_id === selectedTileId);
@@ -802,8 +830,8 @@ function createSelectedTileCode(state: SessionState) {
   return selectedTile?.tile_key ?? null;
 }
 
-function createLocalHand(state: SessionState) {
-  const localSeat = getLocalSeat(state);
+function createLocalHand(state: SessionState, options: MatchViewModelOptions = {}) {
+  const localSeat = getPerspectiveSeat(state, options);
   const localPlayer = findPrivatePlayer(state, localSeat);
   const localReadyHandLocked = localPlayer?.is_ready_hand === true;
   const optimisticDiscard = getOptimisticDiscard(state);
@@ -826,6 +854,7 @@ function createLocalHand(state: SessionState) {
       isReplacementDrawn: tile.tile_id === replacementDrawnTileId,
       isFlower: isFlowerTileKey(tile.tile_key),
       isDisabled:
+        options.isSpectator ||
         Boolean(optimisticDiscard) ||
         localReadyHandLocked ||
         restrictedDiscardTileIdSet.has(tile.tile_id),
@@ -1008,16 +1037,16 @@ function createDrawnTileId(state: SessionState) {
   return null;
 }
 
-function createSettlementHands(state: SessionState): BattleViewModel['settlementHands'] {
+function createSettlementHands(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel['settlementHands'] {
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
-  const settlementWinningDiscard = getSettlementWinningDiscard(state);
+  const settlementWinningDiscard = getSettlementWinningDiscard(state, options);
 
   if (!snapshot || snapshot.phase !== 'settlement' || !privateState) {
     return null;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const settlementHands: Partial<Record<Seat, string[]>> = {};
 
   for (const player of privateState.players) {
@@ -1040,11 +1069,14 @@ function createSettlementHands(state: SessionState): BattleViewModel['settlement
   return Object.keys(settlementHands).length > 0 ? settlementHands : null;
 }
 
-function getSettlementWinningDiscard(state: SessionState): { winnerSeats: Set<Seat>; tileCode: string } | null {
+function getSettlementWinningDiscard(
+  state: SessionState,
+  options: MatchViewModelOptions = {},
+): { winnerSeats: Set<Seat>; tileCode: string } | null {
   const snapshot = state.roomSnapshot?.payload;
   const privateState = snapshot?.private_state;
   const result = state.latestMatchResult?.payload;
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const winnerSeats = new Set(
     (result?.winning_details ?? [])
       .map((detail) =>
@@ -1197,13 +1229,17 @@ function createResultSeatStats(state: SessionState, seatIndex: number, score: nu
   };
 }
 
-function createResultSeats(state: SessionState, scoreDeltaBySeat: Record<string, number> | null): ResultSeatView[] {
+function createResultSeats(
+  state: SessionState,
+  scoreDeltaBySeat: Record<string, number> | null,
+  options: MatchViewModelOptions = {},
+): ResultSeatView[] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
     return [];
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const scores = getDisplayedScores(state);
 
   return snapshot.seats
@@ -1220,14 +1256,14 @@ function createResultSeats(state: SessionState, scoreDeltaBySeat: Record<string,
     .sort((left, right) => right.score - left.score);
 }
 
-function createResult(state: SessionState): BattleViewModel['result'] {
+function createResult(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel['result'] {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot) {
     return null;
   }
 
-  const isConnectionInteractive = state.connectionStatus === 'connected';
-  const localSeat = getLocalSeat(state);
+  const isConnectionInteractive = state.connectionStatus === 'connected' && !options.isSpectator;
+  const localSeat = getPerspectiveSeat(state, options);
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
 
@@ -1265,7 +1301,7 @@ function createResult(state: SessionState): BattleViewModel['result'] {
         })),
       pages,
       scoreDeltaBySeat,
-      seats: createResultSeats(state, result.score_delta.total_delta_by_seat),
+      seats: createResultSeats(state, result.score_delta.total_delta_by_seat, options),
       continueAction: {
         id: continueActionId,
         label: !isConnectionInteractive
@@ -1303,7 +1339,7 @@ function createResult(state: SessionState): BattleViewModel['result'] {
       flowerCount: 0,
       fanBreakdown: [],
       scoreDeltaBySeat: {},
-      seats: createResultSeats(state, null),
+      seats: createResultSeats(state, null, options),
       continueAction: {
         id: 'restart_match',
         label: !isConnectionInteractive
@@ -1330,10 +1366,10 @@ function createResult(state: SessionState): BattleViewModel['result'] {
   return null;
 }
 
-function createLastDiscardSeat(state: SessionState): Seat | null {
+function createLastDiscardSeat(state: SessionState, options: MatchViewModelOptions = {}): Seat | null {
   const optimisticDiscard = getOptimisticDiscard(state);
   if (optimisticDiscard) {
-    return toRelativeSeat(getLocalSeat(state), optimisticDiscard.seatIndex);
+    return toRelativeSeat(getPerspectiveSeat(state, options), optimisticDiscard.seatIndex);
   }
 
   const snapshot = state.roomSnapshot?.payload;
@@ -1345,7 +1381,7 @@ function createLastDiscardSeat(state: SessionState): Seat | null {
     return null;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
 
   if (
     snapshot.phase === 'settlement' &&
@@ -1406,13 +1442,13 @@ function createRoundLabel(state: SessionState) {
   return snapshot?.private_state?.round_id ?? '等待牌桌';
 }
 
-function createScoreSummaryLabel(state: SessionState) {
+function createScoreSummaryLabel(state: SessionState, options: MatchViewModelOptions = {}) {
   const snapshot = state.roomSnapshot?.payload;
-  const localSeat = snapshot?.local_seat;
-  if (typeof localSeat !== 'number') {
+  if (!snapshot) {
     return '等待分数同步';
   }
 
+  const localSeat = getPerspectiveSeat(state, options);
   const seatKey = String(localSeat);
   const score = getDisplayedScores(state)[seatKey];
   const liveDelta = getLiveDeltaBySeat(state)[seatKey] ?? 0;
@@ -1454,7 +1490,7 @@ function createRemainingTileCount(state: SessionState) {
   return typeof remaining === 'number' ? remaining : null;
 }
 
-function createActionIndicatorSeat(state: SessionState): Seat | null {
+function createActionIndicatorSeat(state: SessionState, options: MatchViewModelOptions = {}): Seat | null {
   if (hasOptimisticDiscardPending(state)) {
     return null;
   }
@@ -1466,7 +1502,7 @@ function createActionIndicatorSeat(state: SessionState): Seat | null {
     return null;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const pendingAction = privateState.pending_action;
 
   if (pendingAction?.type === 'claim_window') {
@@ -1488,14 +1524,14 @@ function createActionIndicatorSeat(state: SessionState): Seat | null {
   return null;
 }
 
-function createActionEffect(state: SessionState): ActionEffectView | null {
+function createActionEffect(state: SessionState, options: MatchViewModelOptions = {}): ActionEffectView | null {
   const optimisticDiscard = getOptimisticDiscard(state);
   if (optimisticDiscard) {
     return {
       key: optimisticDiscard.actionEffectKey,
       label: optimisticDiscard.actionType === 'ready_hand' ? '听' : '出牌',
       emphasis: optimisticDiscard.actionType === 'ready_hand' ? 'claim' : 'discard',
-      seat: toRelativeSeat(getLocalSeat(state), optimisticDiscard.seatIndex),
+      seat: toRelativeSeat(getPerspectiveSeat(state, options), optimisticDiscard.seatIndex),
       calloutTone: optimisticDiscard.actionType === 'ready_hand' ? 'ready_hand' : null,
     };
   }
@@ -1507,7 +1543,7 @@ function createActionEffect(state: SessionState): ActionEffectView | null {
     return null;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const seatValue = event.event?.seat;
   const effectSeat = typeof seatValue === 'number' ? toRelativeSeat(localSeat, seatValue) : null;
   const key = `${event.event_type}-${JSON.stringify(event.event)}`;
@@ -1624,18 +1660,18 @@ function getWinTypeLabel(result: MatchResultPayload) {
 export function createMatchViewModel(state: SessionState, options: MatchViewModelOptions = {}): BattleViewModel {
   const snapshot = state.roomSnapshot?.payload;
   const optimisticDiscard = getOptimisticDiscard(state);
-  const waitingControls = createWaitingControls(state);
+  const waitingControls = createWaitingControls(state, options);
   const isWaiting = snapshot?.phase === 'waiting';
   const isReconnecting = state.connectionStatus === 'reconnecting';
   const isSettlement = snapshot?.phase === 'settlement';
   const isFinished = snapshot?.phase === 'finished';
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const activePlayerSeatIndex = getCurrentActorSeatIndex(snapshot?.private_state);
   const activePlayerSeat =
     typeof activePlayerSeatIndex === 'number' ? toRelativeSeat(localSeat, activePlayerSeatIndex) : 'bottom';
   const deadlineAt = createCenterDeadlineAt(state);
   const promptCue = createPromptCue(state, options);
-  const actionIndicatorSeat = createActionIndicatorSeat(state);
+  const actionIndicatorSeat = createActionIndicatorSeat(state, options);
   const mode = !snapshot
     ? 'loading'
     : isFinished
@@ -1644,6 +1680,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
         ? 'disconnected_or_waiting'
         : isSettlement
           ? 'resolving'
+          : options.isSpectator
+            ? 'watching'
           : optimisticDiscard
             ? 'watching'
           : snapshot.private_state?.pending_action?.type === 'active_turn' &&
@@ -1658,7 +1696,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     canLeaveTable: Boolean(snapshot),
     phaseLabel: snapshot ? PHASE_LABELS[snapshot.phase] : PHASE_LABELS.waiting,
     roundLabel: createRoundLabel(state),
-    scoreSummaryLabel: createScoreSummaryLabel(state),
+    scoreSummaryLabel: createScoreSummaryLabel(state, options),
     deadlineAt,
     topStatusLabel: isReconnecting
       ? '正在重连'
@@ -1672,27 +1710,27 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     activePlayerSeat,
     actionIndicatorSeat,
     isActionDockElevated: mode === 'my_turn' || Boolean(promptCue?.isUrgent),
-    players: createPlayers(state),
+    players: createPlayers(state, options),
     actions: createActionViews(state, waitingControls, options),
     waitingControls,
-    discards: createDiscards(state),
-    selectedTileCode: createSelectedTileCode(state),
-    localHand: createLocalHand(state),
-    handInsight: createHandInsight(state),
-    claimCandidates: createClaimCandidates(state),
+    discards: createDiscards(state, options),
+    selectedTileCode: createSelectedTileCode(state, options),
+    localHand: createLocalHand(state, options),
+    handInsight: options.isSpectator ? null : createHandInsight(state),
+    claimCandidates: options.isSpectator ? [] : createClaimCandidates(state),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
     centerStatusText: createCenterStatusText(state),
     remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state, options),
     promptCue,
-    result: createResult(state),
-    settlementHands: createSettlementHands(state),
+    result: createResult(state, options),
+    settlementHands: createSettlementHands(state, options),
     lastDiscard: optimisticDiscard?.tileCode ?? snapshot?.private_state?.last_discard ?? null,
-    lastDiscardSeat: createLastDiscardSeat(state),
+    lastDiscardSeat: createLastDiscardSeat(state, options),
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
-    actionEffect: createActionEffect(state),
-    quickChatEvent: createQuickChatEvent(state),
+    actionEffect: createActionEffect(state, options),
+    quickChatEvent: createQuickChatEvent(state, options),
     toasts: state.toasts,
   };
 }
@@ -1743,7 +1781,7 @@ function resolveActionEffectCalloutTone(claimType: string): ActionEffectView['ca
   return null;
 }
 
-function createQuickChatEvent(state: SessionState): QuickChatEventView | null {
+function createQuickChatEvent(state: SessionState, options: MatchViewModelOptions = {}): QuickChatEventView | null {
   const snapshot = state.roomSnapshot?.payload;
   const message = state.latestQuickChatMessage;
 
@@ -1751,7 +1789,7 @@ function createQuickChatEvent(state: SessionState): QuickChatEventView | null {
     return null;
   }
 
-  const localSeat = getLocalSeat(state);
+  const localSeat = getPerspectiveSeat(state, options);
   const actorSeat = toRelativeSeat(localSeat, message.payload.actor_seat);
   const targetSeat = toRelativeSeat(localSeat, message.payload.target_seat);
   const actorName = getSeatName(state, message.payload.actor_seat);

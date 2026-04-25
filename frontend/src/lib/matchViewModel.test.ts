@@ -1418,6 +1418,55 @@ describe('createMatchViewModel', () => {
     expect(viewModel.players.find((item) => item.name === 'Player B')?.seat).toBe('left');
   });
 
+  it('uses spectator perspective seat for hand and relative positions', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel(
+      {
+        ...base,
+        clientMode: 'spectator',
+        spectatorFocusSeat: 1,
+        roomSnapshot: {
+          type: 'room_snapshot',
+          payload: {
+            ...base.roomSnapshot!.payload,
+            local_seat: null,
+            reconnect_token: null,
+            private_state: {
+              ...base.roomSnapshot!.payload.private_state!,
+              pending_action: {
+                type: 'active_turn',
+                seat_index: 2,
+                deadline_at: '2026-03-26T06:01:00Z',
+                options: [],
+              },
+              players: base.roomSnapshot!.payload.private_state!.players.map((player) => ({
+                ...player,
+                concealed_tiles: [
+                  { tile_id: `seat-${player.seat_index}#0`, tile_key: `w${player.seat_index + 1}` },
+                ],
+              })),
+            },
+          },
+        },
+        latestActionPrompt: null,
+      },
+      {
+        perspectiveSeat: 1,
+        isSpectator: true,
+      },
+    );
+
+    expect(viewModel.players.find((player) => player.absoluteSeat === 1)).toMatchObject({
+      seat: 'bottom',
+      isLocal: false,
+    });
+    expect(viewModel.players.find((player) => player.absoluteSeat === 2)?.seat).toBe('right');
+    expect(viewModel.localHand.map((tile) => tile.code)).toEqual(['w2']);
+    expect(viewModel.actions.every((action) => action.enabled === false)).toBe(true);
+    expect(viewModel.waitingControls).toBeNull();
+    expect(viewModel.mode).toBe('watching');
+  });
+
   it('preserves meld tile order for display so source orientation is not lost', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({

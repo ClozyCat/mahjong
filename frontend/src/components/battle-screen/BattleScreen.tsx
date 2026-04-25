@@ -23,6 +23,9 @@ interface BattleScreenProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
+  isSpectator?: boolean;
+  spectatorFocusName?: string | null;
+  onSwitchSpectatorPerspective?: () => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.00;
@@ -48,6 +51,9 @@ export function BattleScreen({
   onAddBot,
   onRemoveBot,
   onQuickChat,
+  isSpectator = false,
+  spectatorFocusName = null,
+  onSwitchSpectatorPerspective,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -309,7 +315,7 @@ export function BattleScreen({
               phaseLabel={viewModel.phaseLabel}
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
-              preMatchActions={viewModel.waitingControls ? preMatchActions : []}
+              preMatchActions={!isSpectator && viewModel.waitingControls ? preMatchActions : []}
               isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
               botCount={viewModel.waitingControls?.botCount ?? 0}
               canAddBot={viewModel.waitingControls?.canAddBot ?? false}
@@ -335,11 +341,14 @@ export function BattleScreen({
             selectedTileCode={viewModel.selectedTileCode}
             handInsight={viewModel.handInsight}
             claimCandidates={viewModel.claimCandidates}
-            actions={battleActions}
+            actions={isSpectator ? [] : battleActions}
             isElevated={viewModel.isActionDockElevated}
             isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
+            isSpectator={isSpectator}
+            spectatorFocusName={spectatorFocusName}
             promptCue={viewModel.promptCue}
             deadlineAt={viewModel.deadlineAt}
+            onSwitchPerspective={onSwitchSpectatorPerspective}
             onTileSelect={onTileSelect}
             onTileDoubleClick={onTileDoubleClick}
             onClaimCandidateSelect={onClaimCandidateSelect}

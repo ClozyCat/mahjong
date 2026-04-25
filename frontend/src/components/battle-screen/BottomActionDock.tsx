@@ -19,8 +19,11 @@ interface BottomActionDockProps {
   actions: BattleActionView[];
   isElevated: boolean;
   isWaitingForMatchStart?: boolean;
+  isSpectator?: boolean;
+  spectatorFocusName?: string | null;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
+  onSwitchPerspective?: () => void;
   onTileSelect: (tileId: string) => void;
   onTileDoubleClick: (tileId: string) => void;
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
@@ -36,8 +39,11 @@ export function BottomActionDock({
   actions,
   isElevated,
   isWaitingForMatchStart = false,
+  isSpectator = false,
+  spectatorFocusName = null,
   promptCue,
   deadlineAt,
+  onSwitchPerspective,
   onTileSelect,
   onTileDoubleClick,
   onClaimCandidateSelect,
@@ -249,6 +255,17 @@ export function BottomActionDock({
       ) : null}
       <div className="action-dock__tableau action-dock__tableau--full">
         <div className="action-dock__hand-zone">
+          {isSpectator && onSwitchPerspective ? (
+            <button
+              type="button"
+              className="action-dock__spectator-switch"
+              aria-label={`切换观战视角，当前 ${spectatorFocusName ?? '未知玩家'}`}
+              title="切换观战视角"
+              onClick={onSwitchPerspective}
+            >
+              <span aria-hidden="true">↓</span>
+            </button>
+          ) : null}
           {hand.length > 0 ? (
             <div className="action-dock__hand" aria-label="Local hand">
               {hand.map((tile, index) => (
@@ -260,27 +277,37 @@ export function BottomActionDock({
                     tile.isSelected ? 'action-dock__tile--selected' : '',
                     tile.isDrawn ? 'action-dock__tile--drawn' : '',
                     tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
-                    tile.isDisabled ? 'action-dock__tile--disabled' : '',
+                    tile.isDisabled || isSpectator ? 'action-dock__tile--disabled' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
-                  disabled={tile.isDisabled}
-                  aria-label={tile.isDisabled ? `${tile.code} 当前回合禁止打出` : undefined}
+                  disabled={tile.isDisabled || isSpectator}
+                  aria-label={
+                    isSpectator
+                      ? `${tile.code} 观战模式`
+                      : tile.isDisabled
+                        ? `${tile.code} 当前回合禁止打出`
+                        : undefined
+                  }
                   onClick={(event) => {
-                    if (event.detail > 1) {
+                    if (isSpectator || event.detail > 1) {
                       return;
                     }
 
                     onTileSelect(tile.tileId);
                   }}
-                  onDoubleClick={() => onTileDoubleClick(tile.tileId)}
+                  onDoubleClick={() => {
+                    if (!isSpectator) {
+                      onTileDoubleClick(tile.tileId);
+                    }
+                  }}
                 >
                   <MahjongTile
                     code={tile.code}
                     variant="hand"
                     isSelected={tile.isSelected}
                     isDrawn={tile.isDrawn}
-                    isDisabled={tile.isDisabled}
+                    isDisabled={tile.isDisabled || isSpectator}
                     relatedTileCode={selectedTileCode}
                   />
                 </button>
