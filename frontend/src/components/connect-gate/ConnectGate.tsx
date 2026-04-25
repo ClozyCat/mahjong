@@ -164,16 +164,20 @@ export function ConnectGate({
             >
               加入牌桌
             </button>
-            {__SPECTATOR_ENABLED__ && onWatch && canWatch ? (
+          </div>
+
+          {__SPECTATOR_ENABLED__ && onWatch && (
+            <div className="connect-gate__spectate-action">
               <button
                 type="button"
-                className="connect-gate__btn connect-gate__btn--secondary"
+                className="connect-gate__btn connect-gate__btn--spectate"
                 onClick={onWatch}
+                disabled={!canWatch}
               >
                 观战牌桌
               </button>
-            ) : null}
-          </div>
+            </div>
+          )}
         </section>
 
       </div>
