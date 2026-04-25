@@ -4,8 +4,10 @@ use crate::rules::scoring::{
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
 };
+use crate::rules::standard::win::BOT_MINIMUM_HU_FAN;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
+use std::env;
 use std::hash::{Hash, Hasher};
 
 pub(crate) const STAGE_ONE_DEPTH: u8 = 0;
@@ -25,6 +27,66 @@ const MONTE_CARLO_HORIZON_MID: usize = 1;
 const MONTE_CARLO_HORIZON_LATE: usize = 1;
 const MONTE_CARLO_SCORE_GAP_LIMIT: i64 = 110;
 const ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BotStrength {
+    Normal,
+    Strong,
+}
+
+impl BotStrength {
+    fn from_env() -> Self {
+        env::var("MAHJONG_BOT_STRENGTH")
+            .ok()
+            .and_then(|value| Self::parse(&value))
+            .unwrap_or(Self::Normal)
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "normal" | "default" | "balanced" => Some(Self::Normal),
+            "strong" | "enhanced" => Some(Self::Strong),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BotSearchBudget {
+    strength: BotStrength,
+}
+
+impl BotSearchBudget {
+    fn for_strength(strength: BotStrength) -> Self {
+        Self { strength }
+    }
+
+    fn from_env() -> Self {
+        Self::for_strength(BotStrength::from_env())
+    }
+
+    fn stage_two_candidate_limit(self, critical: bool) -> usize {
+        match (self.strength, critical) {
+            (BotStrength::Strong, true) => 5,
+            (_, true) => STAGE_TWO_CANDIDATES_PRESSURE,
+            _ => STAGE_TWO_CANDIDATES,
+        }
+    }
+
+    fn expectimax_draw_limit(self, critical: bool) -> usize {
+        match (self.strength, critical) {
+            (BotStrength::Strong, true) => 16,
+            _ => EXPECTIMAX_DRAW_LIMIT,
+        }
+    }
+
+    fn monte_carlo_sample_limit(self, base: usize, critical: bool) -> usize {
+        match (self.strength, critical) {
+            (BotStrength::Strong, true) => base + 2,
+            _ => base,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct BotDiscardPlan {
@@ -162,6 +224,7 @@ struct DiscardStateKey {
 
 pub(crate) struct SearchEngine {
     profile: ModeProfile,
+    budget: BotSearchBudget,
     monte_carlo_safety_weight: i64,
     threat_profiles: Vec<OpponentThreat>,
     base_visible_counts: [i32; TILE_KIND_COUNT],
@@ -356,6 +419,10 @@ fn placement_pressure(context: &BotContext) -> (i64, i64) {
     (offense_pressure, defense_pressure)
 }
 
+fn is_budget_critical_state(context: &BotContext, shanten: i32, strongest_threat: i64) -> bool {
+    shanten <= 1 || context.wall_tiles_remaining <= 14 || strongest_threat >= 90
+}
+
 impl SearchEngine {
     pub(crate) fn new(context: &BotContext) -> Self {
         let profile = profile_for_context(context);
@@ -378,6 +445,7 @@ impl SearchEngine {
 
         Self {
             profile,
+            budget: BotSearchBudget::from_env(),
             monte_carlo_safety_weight: monte_carlo_safety_weight_from_threats(
                 context,
                 &threat_profiles,
@@ -648,11 +716,8 @@ impl SearchEngine {
             .strongest_threat_opponent(context)
             .map(|(_, score)| score)
             .unwrap_or(0);
-        if shanten <= 1 || context.wall_tiles_remaining <= 14 || strongest_threat >= 90 {
-            STAGE_TWO_CANDIDATES_PRESSURE
-        } else {
-            STAGE_TWO_CANDIDATES
-        }
+        self.budget
+            .stage_two_candidate_limit(is_budget_critical_state(context, shanten, strongest_threat))
     }
 
     fn should_run_monte_carlo(
@@ -868,7 +933,12 @@ impl SearchEngine {
         let bonus = usize::from(shanten <= 1) * 2
             + usize::from(strongest_threat >= 90)
             + usize::from(context.wall_tiles_remaining <= 14);
-        (base + bonus).min(hidden_tile_count.max(1))
+        self.budget
+            .monte_carlo_sample_limit(
+                base + bonus,
+                is_budget_critical_state(context, shanten, strongest_threat),
+            )
+            .min(hidden_tile_count.max(1))
     }
 
     fn monte_carlo_horizon_for_state(
@@ -1154,10 +1224,21 @@ impl SearchEngine {
 
         let mut weighted_score = 0_i64;
         let mut total_weight = 0_i64;
+        let shanten =
+            self.bot_min_shanten(concealed_counts_before_draw, meld_tile_key_groups.len());
+        let strongest_threat = self
+            .strongest_threat_opponent(context)
+            .map(|(_, score)| score)
+            .unwrap_or(0);
+        let draw_limit = self.budget.expectimax_draw_limit(is_budget_critical_state(
+            context,
+            shanten,
+            strongest_threat,
+        ));
         for (draw_tile_index, remaining) in prioritized_draw_candidates(
             concealed_counts_before_draw,
             &analysis.visible_counts,
-            EXPECTIMAX_DRAW_LIMIT,
+            draw_limit,
         ) {
             if remaining <= 0 {
                 continue;
@@ -1322,7 +1403,8 @@ impl SearchEngine {
             incoming_tile: Some(incoming_tile.to_string()),
             decompositions,
         });
-        let score = Some(result.fan_total.max(result.minimum_qualifying_fan_total));
+        let fan_total = result.fan_total.max(result.minimum_qualifying_fan_total);
+        let score = (fan_total >= BOT_MINIMUM_HU_FAN).then_some(fan_total);
         self.winning_fan_cache.insert(key, score);
         score
     }
@@ -3562,7 +3644,7 @@ mod tests {
         let mut context = base_context();
         context.wall_tiles_remaining = 12;
         let concealed_tiles = tiles(&[
-            "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b7", "b8", "east", "east",
+            "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b2", "b3", "red", "green",
         ]);
         context.player.concealed_tile_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
@@ -3647,11 +3729,33 @@ mod tests {
     }
 
     #[test]
+    fn low_fan_self_draw_is_not_scored_as_bot_win() {
+        let context = base_context();
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red",
+            ]
+            .into_iter(),
+        );
+        let mut engine = SearchEngine::new(&context);
+
+        let fan_total = engine.hypothetical_self_draw_fan_total(
+            &context,
+            &concealed_counts,
+            &[],
+            &[],
+            tile_index("red").expect("tile index"),
+        );
+
+        assert_eq!(fan_total, None);
+    }
+
+    #[test]
     fn records_discard_telemetry_for_close_decision() {
         let mut context = base_context();
         context.wall_tiles_remaining = 12;
         let concealed_tiles = tiles(&[
-            "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b7", "b8", "east", "east",
+            "w1", "w2", "w3", "w4", "w5", "w6", "t2", "t3", "t4", "b2", "b3", "red", "green",
         ]);
         context.player.concealed_tile_counts =
             tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
@@ -3698,7 +3802,48 @@ mod tests {
 
         assert_eq!(
             engine.stage_two_candidate_count(&context, &concealed_counts, &[], 20),
-            3
+            STAGE_TWO_CANDIDATES_PRESSURE
+        );
+    }
+
+    #[test]
+    fn normal_budget_keeps_current_search_limits() {
+        let budget = BotSearchBudget::for_strength(BotStrength::Normal);
+
+        assert_eq!(
+            budget.stage_two_candidate_limit(false),
+            STAGE_TWO_CANDIDATES
+        );
+        assert_eq!(
+            budget.stage_two_candidate_limit(true),
+            STAGE_TWO_CANDIDATES_PRESSURE
+        );
+        assert_eq!(budget.expectimax_draw_limit(false), EXPECTIMAX_DRAW_LIMIT);
+        assert_eq!(budget.expectimax_draw_limit(true), EXPECTIMAX_DRAW_LIMIT);
+        assert_eq!(
+            budget.monte_carlo_sample_limit(MONTE_CARLO_SAMPLE_COUNT_MID, true),
+            MONTE_CARLO_SAMPLE_COUNT_MID
+        );
+    }
+
+    #[test]
+    fn strong_budget_spends_more_only_in_critical_spots() {
+        let budget = BotSearchBudget::for_strength(BotStrength::Strong);
+
+        assert_eq!(
+            budget.stage_two_candidate_limit(false),
+            STAGE_TWO_CANDIDATES
+        );
+        assert_eq!(budget.stage_two_candidate_limit(true), 5);
+        assert_eq!(budget.expectimax_draw_limit(false), EXPECTIMAX_DRAW_LIMIT);
+        assert_eq!(budget.expectimax_draw_limit(true), 16);
+        assert_eq!(
+            budget.monte_carlo_sample_limit(MONTE_CARLO_SAMPLE_COUNT_MID, false),
+            MONTE_CARLO_SAMPLE_COUNT_MID
+        );
+        assert_eq!(
+            budget.monte_carlo_sample_limit(MONTE_CARLO_SAMPLE_COUNT_MID, true),
+            12
         );
     }
 
