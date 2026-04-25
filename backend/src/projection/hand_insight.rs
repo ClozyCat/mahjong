@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use serde::Serialize;
 
@@ -7,8 +7,8 @@ use crate::core::state::{PendingTimeout, PlayerRoundState, RoomState, RoundState
 use crate::projection::SeatProjectionSupport;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::{
-    EvaluationInput, TimingFeatures, decompose_winning_hand_with_melds, evaluate_fans,
-    extract_hand_features, recommendable_fan_rules,
+    EvaluationInput, FanBreakdownEntry, TimingFeatures, decompose_winning_hand_with_melds,
+    evaluate_fans, extract_hand_features, recommendable_fan_rules,
 };
 use crate::rules::standard::win::classify_meld_groups_for_projection;
 
@@ -81,7 +81,6 @@ pub(crate) fn build_hand_insights_view(
     let public_visible_tile_keys = collect_public_visible_tile_keys(round);
     let known_tile_counts = collect_known_tile_counts(local_player, &public_visible_tile_keys);
     let by_discard_tile_id = build_discard_preview_map(
-        state,
         &cache,
         round,
         local_player,
@@ -94,7 +93,6 @@ pub(crate) fn build_hand_insights_view(
     let current_concealed_tile_keys =
         current_concealed_tile_keys(local_player, local_seat, state.pending_timeout.as_ref());
     let current = Some(build_insight(
-        state,
         &cache,
         local_player,
         local_seat,
@@ -112,7 +110,6 @@ pub(crate) fn build_hand_insights_view(
 }
 
 fn build_discard_preview_map(
-    state: &RoomState,
     cache: &RoomScoringCache,
     _round: &RoundState,
     local_player: &PlayerRoundState,
@@ -137,7 +134,6 @@ fn build_discard_preview_map(
             let preview_visible_tile_keys =
                 public_visible_with_extra_discard(public_visible_tile_keys, &tile.tile_key);
             let insight = build_insight(
-                state,
                 cache,
                 local_player,
                 local_seat,
@@ -153,7 +149,6 @@ fn build_discard_preview_map(
 }
 
 fn build_insight(
-    state: &RoomState,
     cache: &RoomScoringCache,
     local_player: &PlayerRoundState,
     local_seat: Seat,
@@ -165,27 +160,14 @@ fn build_insight(
 ) -> HandInsightView {
     let waits = build_waits(&concealed_tile_keys, &local_player.melds, known_tile_counts);
     let recommendations = if !waits.is_empty() {
-        let exact = build_exact_recommendations(
-            state,
+        build_winning_fan_recommendations(
             cache,
             local_player,
             local_seat,
             &concealed_tile_keys,
-            discard_tile,
             &waits,
             public_visible_tile_keys,
-        );
-        if exact.is_empty() {
-            build_heuristic_recommendations(
-                cache,
-                local_player,
-                local_seat,
-                &concealed_tile_keys,
-                public_visible_tile_keys,
-            )
-        } else {
-            exact
-        }
+        )
     } else if discard_tile.is_none() {
         let aggregated = preview_map
             .map(aggregate_preview_recommendations)
@@ -277,90 +259,46 @@ fn build_waits(
     waits
 }
 
-fn build_exact_recommendations(
-    _state: &RoomState,
+fn build_winning_fan_recommendations(
     cache: &RoomScoringCache,
     local_player: &PlayerRoundState,
     local_seat: Seat,
     concealed_tile_keys: &[String],
-    _discard_tile: Option<(&str, &str)>,
     waits: &[HandInsightWaitView],
     public_visible_tile_keys: &[String],
 ) -> Vec<HandInsightRecommendationView> {
-    let total_live_waits = waits
-        .iter()
-        .map(|wait| wait.available_count.max(0))
-        .sum::<i64>();
-    if total_live_waits <= 0 {
-        return Vec::new();
-    }
-
-    let matched_fans_by_wait = waits
-        .iter()
-        .map(|wait| {
-            (
-                wait.code.clone(),
-                evaluate_matched_fans_for_wait(
-                    cache,
-                    local_player,
-                    local_seat,
-                    concealed_tile_keys,
-                    &wait.code,
-                    public_visible_tile_keys,
-                ),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-
-    let mut recommendations = recommendable_fan_rules(4)
-        .into_iter()
-        .filter_map(|(fan_key, fan_value)| {
-            let covered_live_waits = waits
-                .iter()
-                .filter(|wait| {
-                    matched_fans_by_wait
-                        .get(&wait.code)
-                        .is_some_and(|fan_keys| fan_keys.contains(fan_key))
-                })
-                .map(|wait| wait.available_count.max(0))
-                .sum::<i64>();
-            let similarity_percent =
-                ((covered_live_waits * 100) + total_live_waits / 2) / total_live_waits;
-            (similarity_percent >= 20).then(|| HandInsightRecommendationView {
-                fan_key: fan_key.to_string(),
-                fan_value,
-                similarity_percent,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    sort_and_truncate_recommendations(&mut recommendations);
-    recommendations
-}
-
-fn evaluate_matched_fans_for_wait(
-    cache: &RoomScoringCache,
-    local_player: &PlayerRoundState,
-    local_seat: Seat,
-    concealed_tile_keys: &[String],
-    wait_tile_key: &str,
-    public_visible_tile_keys: &[String],
-) -> HashSet<String> {
-    let mut matched = HashSet::new();
-    for self_draw in [false, true] {
-        if let Some(fan_keys) = evaluate_wait_scenario(
-            cache,
-            local_player,
-            local_seat,
-            concealed_tile_keys,
-            wait_tile_key,
-            public_visible_tile_keys,
-            self_draw,
-        ) {
-            matched.extend(fan_keys);
+    let mut fan_value_by_key = BTreeMap::<String, i64>::new();
+    for wait in waits.iter().filter(|wait| wait.available_count > 0) {
+        for self_draw in [false, true] {
+            if let Some(fan_breakdown) = evaluate_wait_scenario(
+                cache,
+                local_player,
+                local_seat,
+                concealed_tile_keys,
+                &wait.code,
+                public_visible_tile_keys,
+                self_draw,
+            ) {
+                for entry in fan_breakdown {
+                    fan_value_by_key
+                        .entry(entry.fan_key)
+                        .and_modify(|fan_value| *fan_value = (*fan_value).max(entry.fan_value))
+                        .or_insert(entry.fan_value);
+                }
+            }
         }
     }
-    matched
+
+    let mut recommendations = fan_value_by_key
+        .into_iter()
+        .map(|(fan_key, fan_value)| HandInsightRecommendationView {
+            fan_key,
+            fan_value,
+            similarity_percent: 100,
+        })
+        .collect::<Vec<_>>();
+    sort_and_truncate_winning_fans(&mut recommendations);
+    recommendations
 }
 
 fn evaluate_wait_scenario(
@@ -371,7 +309,7 @@ fn evaluate_wait_scenario(
     wait_tile_key: &str,
     public_visible_tile_keys: &[String],
     self_draw: bool,
-) -> Option<HashSet<String>> {
+) -> Option<Vec<FanBreakdownEntry>> {
     let concealed_tile_keys = if self_draw {
         let mut next = concealed_tile_keys.to_vec();
         next.push(wait_tile_key.to_string());
@@ -436,7 +374,7 @@ fn evaluate_wait_scenario(
         decompositions,
     });
 
-    Some(fan_result.fan_keys.into_iter().collect())
+    Some(fan_result.fan_breakdown)
 }
 
 fn aggregate_preview_recommendations(
@@ -559,6 +497,16 @@ fn sort_and_truncate_recommendations(recommendations: &mut Vec<HandInsightRecomm
             .similarity_percent
             .cmp(&left.similarity_percent)
             .then_with(|| right.fan_value.cmp(&left.fan_value))
+            .then_with(|| left.fan_key.cmp(&right.fan_key))
+    });
+    recommendations.truncate(6);
+}
+
+fn sort_and_truncate_winning_fans(recommendations: &mut Vec<HandInsightRecommendationView>) {
+    recommendations.sort_by(|left, right| {
+        right
+            .fan_value
+            .cmp(&left.fan_value)
             .then_with(|| left.fan_key.cmp(&right.fan_key))
     });
     recommendations.truncate(6);
@@ -1430,6 +1378,40 @@ mod tests {
     }
 
     #[test]
+    fn current_tenpai_reports_actual_winning_fans_instead_of_route_recommendations() {
+        let mut state = sample_state();
+        state.round_state.as_mut().unwrap().players[0].concealed_tiles =
+            low_fan_all_chows_tenpai_tiles();
+
+        let insights = build_hand_insights_view(&state, 0, &SeatProjectionSupport::default())
+            .expect("insights");
+        let current = insights.current.expect("current insight");
+        let keys = recommendation_keys(&current);
+
+        assert!(current.is_tenpai);
+        assert!(keys.contains(&"all_chows"));
+    }
+
+    #[test]
+    fn selected_discard_tenpai_reports_actual_winning_fans_instead_of_route_recommendations() {
+        let mut state = sample_state();
+        let mut concealed_tiles = low_fan_all_chows_tenpai_tiles();
+        concealed_tiles.push(suit_tile("east#0", "east"));
+        state.round_state.as_mut().unwrap().players[0].concealed_tiles = concealed_tiles;
+
+        let insights = build_hand_insights_view(&state, 0, &SeatProjectionSupport::default())
+            .expect("insights");
+        let preview = insights
+            .by_discard_tile_id
+            .get("east#0")
+            .expect("east discard should leave the hand tenpai");
+        let keys = recommendation_keys(preview);
+
+        assert!(preview.is_tenpai);
+        assert!(keys.contains(&"all_chows"));
+    }
+
+    #[test]
     fn current_recommendations_need_broad_preview_support() {
         let preview_map = BTreeMap::from([
             (
@@ -1653,6 +1635,32 @@ mod tests {
             discard_tile_code: Some(discard_tile_code.to_string()),
             ..preview_with_recommendations(items)
         }
+    }
+
+    fn low_fan_all_chows_tenpai_tiles() -> Vec<Tile> {
+        vec![
+            suit_tile("w1#0", "w1"),
+            suit_tile("w2#0", "w2"),
+            suit_tile("w3#0", "w3"),
+            suit_tile("w4#0", "w4"),
+            suit_tile("w5#0", "w5"),
+            suit_tile("w6#0", "w6"),
+            suit_tile("t2#0", "t2"),
+            suit_tile("t3#0", "t3"),
+            suit_tile("t4#0", "t4"),
+            suit_tile("b2#0", "b2"),
+            suit_tile("b3#0", "b3"),
+            suit_tile("b5#0", "b5"),
+            suit_tile("b5#1", "b5"),
+        ]
+    }
+
+    fn recommendation_keys(insight: &HandInsightView) -> Vec<&str> {
+        insight
+            .recommendations
+            .iter()
+            .map(|entry| entry.fan_key.as_str())
+            .collect()
     }
 
     fn route_summary_for_tiles(tile_keys: &[&str]) -> RouteSummary {
