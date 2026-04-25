@@ -1504,7 +1504,7 @@ mod tests {
                 {"code": "t5", "orientation": "face_down"},
                 {"code": "t5", "orientation": "normal"},
                 {"code": "t5", "orientation": "normal"},
-                {"code": "t5", "orientation": "normal"}
+                {"code": "t5", "orientation": "face_down"}
             ])
         );
     }

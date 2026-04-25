@@ -233,7 +233,18 @@ fn create_claim_display_meld(
 }
 
 fn create_concealed_kong_display_meld(tile_key: &str) -> DisplayMeldState {
-    create_repeated_display_meld(tile_key, 4, 0, DisplayMeldOrientation::FaceDown)
+    DisplayMeldState {
+        tiles: (0..4)
+            .map(|index| DisplayMeldTileState {
+                code: tile_key.to_string(),
+                orientation: if index == 0 || index == 3 {
+                    DisplayMeldOrientation::FaceDown
+                } else {
+                    DisplayMeldOrientation::Normal
+                },
+            })
+            .collect(),
+    }
 }
 
 fn upgrade_add_kong_display_meld(

@@ -130,6 +130,31 @@ describe('MeldRack', () => {
     expect(rack.querySelector('.mahjong-tile__face-blank')).not.toBeNull();
   });
 
+  it('renders a concealed kong redacted from another player as four tile backs', () => {
+    render(
+      <MeldRack
+        seat="top"
+        melds={[
+          {
+            tiles: [
+              { code: '', orientation: 'face_down' },
+              { code: '', orientation: 'face_down' },
+              { code: '', orientation: 'face_down' },
+              { code: '', orientation: 'face_down' },
+            ],
+          },
+        ]}
+        ariaLabel="Redacted melds"
+      />,
+    );
+
+    const rack = screen.getByLabelText('Redacted melds');
+
+    expect(rack.querySelectorAll('.mahjong-tile__face-blank')).toHaveLength(4);
+    expect(rack.querySelectorAll('.meld-rack__tile--sourced')).toHaveLength(0);
+    expect(screen.getAllByLabelText('牌背')).toHaveLength(4);
+  });
+
   it('keeps chow source markers pointing to the left player even when the claimed tile is the middle tile', () => {
     render(
       <MeldRack

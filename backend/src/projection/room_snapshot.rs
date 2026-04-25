@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 
 use crate::core::ids::Seat;
 use crate::core::state::{
-    DisplayMeldOrientation, DisplayMeldState, MatchState, PendingAction, RoomState,
-    SettlementKongScoreDetailEntry,
+    DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, MatchState, PendingAction,
+    RoomState, RoundState, SettlementKongScoreDetailEntry,
 };
 use crate::projection::SeatProjectionSupport;
 use crate::projection::hand_insight::{HandInsightsView, build_hand_insights_view};
@@ -395,8 +395,14 @@ fn private_round_state(
                 is_ready_hand: player.is_ready_hand,
                 concealed_count: player.concealed_tiles.len(),
                 concealed_tiles,
-                melds: player.melds.clone(),
-                display_melds: project_display_melds(&player.display_melds),
+                melds: project_melds(round, player.seat, local_seat, &player.melds),
+                display_melds: project_display_melds(
+                    round,
+                    player.seat,
+                    local_seat,
+                    &player.melds,
+                    &player.display_melds,
+                ),
                 flowers: player
                     .flowers
                     .iter()
@@ -456,7 +462,7 @@ fn observer_round_state(state: &RoomState) -> Option<PlayerRoundView> {
                         .collect(),
                 ),
                 melds: player.melds.clone(),
-                display_melds: project_display_melds(&player.display_melds),
+                display_melds: project_display_melds_for_observer(&player.display_melds),
                 flowers: player
                     .flowers
                     .iter()
@@ -528,23 +534,125 @@ fn observer_pending_action(state: &RoomState) -> Option<PendingActionView> {
     }
 }
 
-fn project_display_melds(display_melds: &[DisplayMeldState]) -> Vec<DisplayMeldView> {
+fn project_melds(
+    round: &RoundState,
+    player_seat: Seat,
+    local_seat: Seat,
+    melds: &[Vec<String>],
+) -> Vec<Vec<String>> {
+    melds
+        .iter()
+        .map(|meld| {
+            if should_hide_concealed_kong(round, player_seat, local_seat, meld) {
+                vec![String::new(); meld.len()]
+            } else {
+                meld.clone()
+            }
+        })
+        .collect()
+}
+
+fn project_display_melds(
+    round: &RoundState,
+    player_seat: Seat,
+    local_seat: Seat,
+    melds: &[Vec<String>],
+    display_melds: &[DisplayMeldState],
+) -> Vec<DisplayMeldView> {
+    display_melds
+        .iter()
+        .enumerate()
+        .map(|(meld_index, display_meld)| {
+            let meld = melds.get(meld_index).map(Vec::as_slice).unwrap_or(&[]);
+            let tiles =
+                project_display_meld_tiles(round, player_seat, local_seat, meld, display_meld);
+            DisplayMeldView {
+                tiles: serialize_display_meld_tiles(&tiles),
+            }
+        })
+        .collect()
+}
+
+#[cfg(feature = "spectator")]
+fn project_display_melds_for_observer(display_melds: &[DisplayMeldState]) -> Vec<DisplayMeldView> {
     display_melds
         .iter()
         .map(|meld| DisplayMeldView {
-            tiles: meld
-                .tiles
-                .iter()
-                .map(|tile| DisplayMeldTileView {
-                    code: tile.code.clone(),
-                    orientation: match tile.orientation {
-                        DisplayMeldOrientation::Normal => "normal",
-                        DisplayMeldOrientation::Rotated => "rotated",
-                        DisplayMeldOrientation::UpsideDown => "upside_down",
-                        DisplayMeldOrientation::FaceDown => "face_down",
-                    },
-                })
-                .collect(),
+            tiles: serialize_display_meld_tiles(&meld.tiles),
+        })
+        .collect()
+}
+
+fn project_display_meld_tiles(
+    round: &RoundState,
+    player_seat: Seat,
+    local_seat: Seat,
+    meld: &[String],
+    display_meld: &DisplayMeldState,
+) -> Vec<DisplayMeldTileState> {
+    if !is_concealed_kong_meld(round, player_seat, meld) {
+        return display_meld.tiles.clone();
+    }
+
+    if round.phase == "settlement" || player_seat == local_seat {
+        return display_meld.tiles.clone();
+    }
+
+    display_meld
+        .tiles
+        .iter()
+        .map(|_| DisplayMeldTileState {
+            code: String::new(),
+            orientation: DisplayMeldOrientation::FaceDown,
+        })
+        .collect()
+}
+
+fn should_hide_concealed_kong(
+    round: &RoundState,
+    player_seat: Seat,
+    local_seat: Seat,
+    meld: &[String],
+) -> bool {
+    round.phase != "settlement"
+        && player_seat != local_seat
+        && is_concealed_kong_meld(round, player_seat, meld)
+}
+
+fn is_concealed_kong_meld(round: &RoundState, player_seat: Seat, meld: &[String]) -> bool {
+    let Some(tile_key) = repeated_kong_tile_key(meld) else {
+        return false;
+    };
+
+    round.score_trackers.kong_entries.iter().any(|entry| {
+        entry.actor_seat == player_seat
+            && entry.kong_type == "concealed_kong"
+            && entry.tile_key.as_deref() == Some(tile_key)
+    })
+}
+
+fn repeated_kong_tile_key(meld: &[String]) -> Option<&str> {
+    if meld.len() != 4 {
+        return None;
+    }
+    let first = meld.first()?.as_str();
+    if first.is_empty() || meld.iter().any(|tile_key| tile_key != first) {
+        return None;
+    }
+    Some(first)
+}
+
+fn serialize_display_meld_tiles(tiles: &[DisplayMeldTileState]) -> Vec<DisplayMeldTileView> {
+    tiles
+        .iter()
+        .map(|tile| DisplayMeldTileView {
+            code: tile.code.clone(),
+            orientation: match tile.orientation {
+                DisplayMeldOrientation::Normal => "normal",
+                DisplayMeldOrientation::Rotated => "rotated",
+                DisplayMeldOrientation::UpsideDown => "upside_down",
+                DisplayMeldOrientation::FaceDown => "face_down",
+            },
         })
         .collect()
 }
@@ -644,12 +752,77 @@ mod tests {
     use super::{build_pending_action_view, room_snapshot_message};
     use crate::core::state::PendingTimeout;
     use crate::core::state::{
-        ClaimWindowAction, MatchState, PendingAction, PlayerRoundState, RoomState, RoundSettlement,
-        RoundState, SeatState, SettlementKongScoreDetailEntry, SettlementScoreDelta,
+        ClaimWindowAction, DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState,
+        KongTrackerEntry, MatchState, PendingAction, PlayerRoundState, RoomState,
+        RoundScoreTrackers, RoundSettlement, RoundState, SeatState, SettlementKongScoreDetailEntry,
+        SettlementScoreDelta,
     };
     #[cfg(feature = "spectator")]
     use crate::core::tile::Tile;
     use crate::projection::SeatProjectionSupport;
+
+    #[test]
+    fn playing_snapshot_hides_other_players_concealed_kong_tile_key() {
+        let state = state_with_concealed_kong("playing");
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+        let remote_player = &snapshot["payload"]["private_state"]["players"][1];
+
+        assert_eq!(
+            remote_player["melds"],
+            serde_json::json!([["", "", "", ""]])
+        );
+        assert_eq!(
+            remote_player["display_melds"][0]["tiles"],
+            serde_json::json!([
+                {"code": "", "orientation": "face_down"},
+                {"code": "", "orientation": "face_down"},
+                {"code": "", "orientation": "face_down"},
+                {"code": "", "orientation": "face_down"}
+            ])
+        );
+    }
+
+    #[test]
+    fn playing_snapshot_keeps_local_concealed_kong_owner_view() {
+        let state = state_with_concealed_kong("playing");
+        let snapshot = room_snapshot_message(&state, 1, &SeatProjectionSupport::default());
+        let local_player = &snapshot["payload"]["private_state"]["players"][1];
+
+        assert_eq!(
+            local_player["melds"],
+            serde_json::json!([["t5", "t5", "t5", "t5"]])
+        );
+        assert_eq!(
+            local_player["display_melds"][0]["tiles"],
+            serde_json::json!([
+                {"code": "t5", "orientation": "face_down"},
+                {"code": "t5", "orientation": "normal"},
+                {"code": "t5", "orientation": "normal"},
+                {"code": "t5", "orientation": "face_down"}
+            ])
+        );
+    }
+
+    #[test]
+    fn settlement_snapshot_reveals_concealed_kong_to_other_players() {
+        let state = state_with_concealed_kong("settlement");
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+        let remote_player = &snapshot["payload"]["private_state"]["players"][1];
+
+        assert_eq!(
+            remote_player["melds"],
+            serde_json::json!([["t5", "t5", "t5", "t5"]])
+        );
+        assert_eq!(
+            remote_player["display_melds"][0]["tiles"],
+            serde_json::json!([
+                {"code": "t5", "orientation": "face_down"},
+                {"code": "t5", "orientation": "normal"},
+                {"code": "t5", "orientation": "normal"},
+                {"code": "t5", "orientation": "face_down"}
+            ])
+        );
+    }
 
     #[test]
     fn score_state_projection_uses_total_settlement_delta_without_double_counting_kongs() {
@@ -1027,5 +1200,58 @@ mod tests {
                 ..Default::default()
             })
             .collect()
+    }
+
+    fn state_with_concealed_kong(phase: &str) -> RoomState {
+        let mut players = players();
+        players[1].melds = vec![vec![
+            "t5".to_string(),
+            "t5".to_string(),
+            "t5".to_string(),
+            "t5".to_string(),
+        ]];
+        players[1].display_melds = vec![concealed_kong_display_meld("t5")];
+
+        RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: phase.to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: phase.to_string(),
+                players,
+                score_trackers: RoundScoreTrackers {
+                    kong_entries: vec![KongTrackerEntry {
+                        kong_type: "concealed_kong".to_string(),
+                        actor_seat: 1,
+                        payer_seats: vec![0, 2, 3],
+                        tile_key: Some("t5".to_string()),
+                    }],
+                },
+                ..Default::default()
+            }),
+            pending_timeout: None,
+            continue_action: None,
+        }
+    }
+
+    fn concealed_kong_display_meld(tile_key: &str) -> DisplayMeldState {
+        DisplayMeldState {
+            tiles: (0..4)
+                .map(|index| DisplayMeldTileState {
+                    code: tile_key.to_string(),
+                    orientation: if index == 0 || index == 3 {
+                        DisplayMeldOrientation::FaceDown
+                    } else {
+                        DisplayMeldOrientation::Normal
+                    },
+                })
+                .collect(),
+        }
     }
 }
