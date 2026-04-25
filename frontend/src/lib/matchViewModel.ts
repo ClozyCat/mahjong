@@ -977,7 +977,11 @@ function createHandInsight(state: SessionState): BattleViewModel['handInsight'] 
     }
   }
 
-  return handInsights.current?.is_tenpai ? mapBackendHandInsight(handInsights.current, 'current') : null;
+  if (handInsights.current?.is_tenpai || handInsights.current?.winning_fans.length) {
+    return mapBackendHandInsight(handInsights.current, 'current');
+  }
+
+  return null;
 }
 
 function hasMatchingTileSelection(selectedTileIds: string[], candidateTileIds: string[]) {

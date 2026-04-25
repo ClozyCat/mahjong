@@ -82,8 +82,9 @@ export function BottomActionDock({
         (ACTION_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER),
     );
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
+  const hasHandInsightContent = Boolean(handInsight?.isTenpai || handInsight?.winningFans.length);
   const isHandInsightPopoverOpen =
-    Boolean(handInsight?.isTenpai) && (isHandInsightPopoverHovered || isHandInsightPopoverPinned);
+    hasHandInsightContent && (isHandInsightPopoverHovered || isHandInsightPopoverPinned);
   const displayedWinningFans = handInsight ? getDisplayedWinningFans(handInsight) : [];
 
   useEffect(() => {
@@ -110,7 +111,7 @@ export function BottomActionDock({
     setIsHandInsightPopoverPinned(false);
   }, [handInsight]);
 
-  const handInsightControl = handInsight?.isTenpai ? (
+  const handInsightControl = hasHandInsightContent && handInsight ? (
     <div
       ref={handInsightPopoverRef}
       className="action-dock__ready-hand-anchor"
@@ -141,26 +142,28 @@ export function BottomActionDock({
           className={`action-dock__ready-hand-popover ${isHandInsightPopoverPinned ? 'action-dock__ready-hand-popover--pinned' : ''}`} 
           aria-label={getHandInsightPopoverLabel(handInsight)}
         >
-          <div className="action-dock__hand-insight-section">
-            <strong className="action-dock__hand-insight-title">
-              {handInsight.source === 'selected_discard' ? '打出后将听' : '正在听'}
-            </strong>
-            <div className="action-dock__ready-hand-list" role="list">
-              {handInsight.waits.map((wait) => (
-                <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
-                  <div className="action-dock__ready-hand-tile">
-                    <MahjongTile
-                      code={wait.code}
-                      variant="discard"
-                      relatedTileCode={selectedTileCode}
-                      className="action-dock__ready-hand-preview-tile"
-                    />
+          {handInsight.waits.length > 0 ? (
+            <div className="action-dock__hand-insight-section">
+              <strong className="action-dock__hand-insight-title">
+                {handInsight.source === 'selected_discard' ? '打出后将听' : '正在听'}
+              </strong>
+              <div className="action-dock__ready-hand-list" role="list">
+                {handInsight.waits.map((wait) => (
+                  <div key={wait.code} className="action-dock__ready-hand-row" role="listitem">
+                    <div className="action-dock__ready-hand-tile">
+                      <MahjongTile
+                        code={wait.code}
+                        variant="discard"
+                        relatedTileCode={selectedTileCode}
+                        className="action-dock__ready-hand-preview-tile"
+                      />
+                    </div>
+                    <strong>{wait.availableCount}</strong>
                   </div>
-                  <strong>{wait.availableCount}</strong>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
           <div className="action-dock__hand-insight-section">
             <strong className="action-dock__hand-insight-title">和牌番型</strong>
             {displayedWinningFans.length > 0 ? (
@@ -390,6 +393,9 @@ function isResponsePrompt(promptCue: BattlePromptView | null) {
 function getHandInsightTriggerLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
   if (handInsight.source === 'selected_discard') {
     return '查看打出当前选中牌后的手牌洞察';
+  }
+  if (!handInsight.isTenpai && handInsight.winningFans.length > 0) {
+    return '查看当前和牌番型';
   }
   return '查看当前听牌信息与和牌番型';
 }

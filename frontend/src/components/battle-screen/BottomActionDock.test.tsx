@@ -226,6 +226,50 @@ describe('BottomActionDock', () => {
     expect(screen.queryByText(/%/)).toBeNull();
   });
 
+  it('keeps the hand insight trigger visible when the hu button is available', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        handInsight={{
+          source: 'current',
+          discardTileId: null,
+          discardTileCode: null,
+          isTenpai: false,
+          waits: [],
+          winningFans: [{ fanKey: 'all_chows', fanValue: 2 }],
+        }}
+        claimCandidates={[]}
+        actions={[{ id: 'hu', label: '和牌', enabled: true, emphasis: 'high' }]}
+        isElevated
+        promptCue={{
+          kind: 'turn',
+          tone: 'critical',
+          title: '当前手牌可直接和牌',
+          detail: '你可以 和牌',
+          actionIds: ['hu'],
+          highlightedActionIds: ['hu'],
+          sourceSeat: null,
+          isUrgent: true,
+        }}
+        deadlineAt="2099-03-30T12:10:40+08:00"
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '和牌' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '查看当前和牌番型' }));
+
+    expect(screen.getByText('和牌番型')).toBeInTheDocument();
+    expect(screen.getByText('平和')).toBeInTheDocument();
+  });
+
   it('hides the dock countdown when only other players are responding', () => {
     render(
       <BottomActionDock

@@ -140,9 +140,7 @@ fn build_insight(
     public_visible_tile_keys: &[String],
 ) -> HandInsightView {
     let waits = build_waits(&concealed_tile_keys, &local_player.melds, known_tile_counts);
-    let winning_fans = if waits.is_empty() {
-        Vec::new()
-    } else {
+    let winning_fans = if !waits.is_empty() {
         build_winning_fans(
             cache,
             local_player,
@@ -151,6 +149,16 @@ fn build_insight(
             &waits,
             public_visible_tile_keys,
         )
+    } else if discard_tile.is_none() {
+        evaluate_current_winning_hand(
+            cache,
+            local_player,
+            local_seat,
+            &concealed_tile_keys,
+            public_visible_tile_keys,
+        )
+    } else {
+        Vec::new()
     };
 
     HandInsightView {
@@ -160,6 +168,60 @@ fn build_insight(
         waits,
         winning_fans,
     }
+}
+
+fn evaluate_current_winning_hand(
+    cache: &RoomScoringCache,
+    local_player: &PlayerRoundState,
+    local_seat: Seat,
+    concealed_tile_keys: &[String],
+    public_visible_tile_keys: &[String],
+) -> Vec<HandInsightWinningFanView> {
+    let decompositions =
+        decompose_winning_hand_with_melds(concealed_tile_keys, &local_player.melds);
+    if decompositions.is_empty() {
+        return Vec::new();
+    }
+
+    let (open_meld_tile_key_groups, meld_open_flags) =
+        classify_meld_groups_for_projection(local_seat, &local_player.melds, &cache.kong_entries);
+    let features = extract_hand_features(
+        concealed_tile_keys,
+        &local_player.melds,
+        Some(&meld_open_flags),
+        None,
+        Some(&seat_wind_key(local_seat, cache.dealer_seat)),
+        cache.round_wind.as_deref(),
+        Some(&decompositions),
+    );
+    let fan_result = evaluate_fans(EvaluationInput {
+        win_type: "self_draw".to_string(),
+        winner_seat: Some(local_seat),
+        discarder_seat: None,
+        ready_hand_declared: local_player.is_ready_hand,
+        flower_count: local_player.flowers.len(),
+        seat_count: cache.seat_count,
+        features,
+        timing: TimingFeatures::default(),
+        kong_entries: cache.kong_entries.clone(),
+        tile_keys: player_tile_keys_from_parts(concealed_tile_keys, &local_player.melds, None),
+        visible_tile_keys: public_visible_tile_keys.to_vec(),
+        concealed_tile_keys: concealed_tile_keys.to_vec(),
+        meld_tile_key_groups: local_player.melds.clone(),
+        open_meld_tile_key_groups,
+        incoming_tile: None,
+        decompositions,
+    });
+    let mut winning_fans = fan_result
+        .fan_breakdown
+        .into_iter()
+        .map(|entry| HandInsightWinningFanView {
+            fan_key: entry.fan_key,
+            fan_value: entry.fan_value,
+        })
+        .collect::<Vec<_>>();
+    sort_winning_fans(&mut winning_fans);
+    winning_fans
 }
 
 fn current_concealed_tile_keys(
@@ -572,6 +634,22 @@ mod tests {
         let keys = winning_fan_keys(&current);
 
         assert!(current.is_tenpai);
+        assert!(keys.contains(&"all_chows"));
+    }
+
+    #[test]
+    fn current_winning_hand_reports_actual_winning_fans() {
+        let mut state = sample_state();
+        let mut concealed_tiles = low_fan_all_chows_tenpai_tiles();
+        concealed_tiles.push(suit_tile("b4#0", "b4"));
+        state.round_state.as_mut().unwrap().players[0].concealed_tiles = concealed_tiles;
+
+        let insights = build_hand_insights_view(&state, 0, &SeatProjectionSupport::default())
+            .expect("insights");
+        let current = insights.current.expect("current insight");
+        let keys = winning_fan_keys(&current);
+
+        assert!(!current.is_tenpai);
         assert!(keys.contains(&"all_chows"));
     }
 
