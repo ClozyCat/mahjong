@@ -913,6 +913,42 @@
   }
 }
 
+@keyframes tooltip-fade-in-right {
+  from {
+    opacity: 0;
+    transform: translateY(50%) translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(50%) translateX(0);
+  }
+}
+
+@keyframes tooltip-fade-in-left-centered {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes tooltip-fade-in-right-centered {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
 .table-stage__stat-plate--score,
 .table-stage__stat-plate--flower,
 .table-stage__stat-plate--hand {

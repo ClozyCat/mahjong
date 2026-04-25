@@ -9,7 +9,7 @@ import type {
   ClaimActionId,
 } from '../../types/match';
 import { MahjongTile } from './MahjongTile';
-import { getFanLabel } from './fanGuide';
+import { getFanLabel, getFanGuideEntry } from './fanGuide';
 
 interface BottomActionDockProps {
   hand: BattleViewModel['localHand'];
@@ -126,12 +126,19 @@ export function BottomActionDock({
           .join(' ')}
         aria-label={getHandInsightTriggerLabel(handInsight)}
         aria-expanded={isHandInsightPopoverOpen}
-        onClick={() => setIsHandInsightPopoverPinned((currentValue) => !currentValue)}
+        onClick={() => setIsHandInsightPopoverPinned((current) => !current)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setIsHandInsightPopoverPinned((current) => !current);
+        }}
       >
         i
       </button>
       {isHandInsightPopoverOpen ? (
-        <section className="action-dock__ready-hand-popover" aria-label={getHandInsightPopoverLabel(handInsight)}>
+        <section 
+          className={`action-dock__ready-hand-popover ${isHandInsightPopoverPinned ? 'action-dock__ready-hand-popover--pinned' : ''}`} 
+          aria-label={getHandInsightPopoverLabel(handInsight)}
+        >
           {handInsight.isTenpai ? (
             <div className="action-dock__hand-insight-section">
               <strong className="action-dock__hand-insight-title">
@@ -163,10 +170,12 @@ export function BottomActionDock({
                 aria-label={handInsightRecommendationListLabel}
               >
                 {displayedHandInsightRecommendations.map((item) => (
-                  <div key={item.fanKey} className="action-dock__hand-insight-recommendation" role="listitem">
-                    <span>{getFanLabel(item.fanKey)}</span>
-                    <strong>{formatHandInsightRecommendationValue(item, handInsight.isTenpai)}</strong>
-                  </div>
+                  <HandInsightRecommendationItem
+                    key={item.fanKey}
+                    item={item}
+                    isTenpai={handInsight.isTenpai}
+                    isPinned={isHandInsightPopoverPinned}
+                  />
                 ))}
               </div>
             ) : (
@@ -300,6 +309,47 @@ export function BottomActionDock({
   );
 
   return content;
+}
+
+function HandInsightRecommendationItem({
+  item,
+  isTenpai,
+  isPinned,
+}: {
+  item: NonNullable<BottomActionDockProps['handInsight']>['recommendations'][number];
+  isTenpai: boolean;
+  isPinned: boolean;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const entry = isPinned ? getFanGuideEntry(item.fanKey) : null;
+
+  return (
+    <div
+      className="action-dock__hand-insight-recommendation"
+      role="listitem"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <span>{getFanLabel(item.fanKey)}</span>
+      <strong>{formatHandInsightRecommendationValue(item, isTenpai)}</strong>
+
+      {isPinned && isHovered && entry && (
+        <div className="action-dock__fan-detail-popover">
+          <div className="action-dock__fan-detail-header">
+            <strong>{entry.label}</strong>
+            <span>{entry.fanValue}番</span>
+          </div>
+          <p>{entry.intro}</p>
+          {entry.example && (
+            <div className="action-dock__fan-detail-example">
+              <small>例：</small>
+              {entry.example}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const WAITING_HAND_PLACEHOLDER_COUNT = 13;

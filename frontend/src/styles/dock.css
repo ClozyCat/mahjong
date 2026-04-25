@@ -445,6 +445,20 @@
   font-weight: 500;
   color: var(--theme-paper-strong);
   opacity: 0.92;
+  transition: color 0.2s, text-decoration-color 0.2s;
+}
+
+.action-dock__ready-hand-popover--pinned .action-dock__hand-insight-recommendation span {
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--accent-2) 35%, transparent);
+  cursor: help;
+}
+
+.action-dock__ready-hand-popover--pinned .action-dock__hand-insight-recommendation:hover span {
+  color: var(--accent-2);
+  text-decoration-color: var(--accent-2);
 }
 
 .action-dock__hand-insight-recommendation strong {
@@ -467,6 +481,90 @@
   font-size: 0.76rem;
   line-height: 1.35;
   color: color-mix(in srgb, var(--theme-paper) 58%, transparent);
+}
+
+/* ------- Fan detail popover ------- */
+
+.action-dock__hand-insight-recommendation {
+  position: relative;
+}
+
+.action-dock__fan-detail-popover {
+  position: absolute;
+  right: calc(100% + 1.2rem);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14rem;
+  padding: 0.85rem 1rem;
+  background: rgba(14, 14, 14, 0.92);
+  backdrop-filter: blur(32px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  border-radius: 1rem;
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 0 16px color-mix(in srgb, var(--accent-2) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  z-index: 110;
+  pointer-events: none;
+  animation: tooltip-fade-in-right-centered 0.25s var(--ease-lux) forwards;
+}
+
+.action-dock__fan-detail-popover::before {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-left-color: color-mix(in srgb, var(--theme-paper) 15%, transparent);
+}
+
+.action-dock__fan-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+.action-dock__fan-detail-header strong {
+  font-size: 0.85rem;
+  color: var(--theme-paper-strong);
+}
+
+.action-dock__fan-detail-header span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  padding: 0.1rem 0.42rem;
+  border-radius: 4px;
+}
+
+.action-dock__fan-detail-popover p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--theme-paper) 80%, transparent);
+  white-space: normal;
+}
+
+.action-dock__fan-detail-example {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--theme-paper) 60%, transparent);
+  font-style: italic;
+  white-space: normal;
+}
+
+.action-dock__fan-detail-example small {
+  color: var(--accent-2);
+  font-weight: 700;
+  font-style: normal;
+  margin-right: 0.2rem;
 }
 
 /* ------- Countdown ------- */
