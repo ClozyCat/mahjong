@@ -28,8 +28,8 @@ const KNITTED_PATTERNS: [[&str; 9]; 6] = [
 const TILE_KIND_COUNT: usize = 34;
 const HONOR_TILE_START: usize = 27;
 const THIRTEEN_ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
-const BONUS_FAN_THRESHOLD: i64 = 6;
-const BONUS_FAN_VALUE: i64 = 6;
+const BONUS_FAN_THRESHOLD: i64 = 8;
+const BONUS_FAN_VALUE: i64 = 8;
 const DECOMPOSITION_CACHE_LIMIT: usize = 4096;
 const HAND_FEATURE_CACHE_LIMIT: usize = 4096;
 const FAN_RESULT_CACHE_LIMIT: usize = 2048;
@@ -3838,42 +3838,42 @@ mod tests {
     }
 
     #[test]
-    fn discard_below_six_non_flower_fan_uses_exact_fan_total_for_odd_fan_total() {
+    fn discard_below_eight_non_flower_fan_uses_exact_fan_total_for_odd_fan_total() {
         assert_eq!(
-            fan_delta_by_seat("discard", Some(2), Some(1), 5, 5, 4),
-            vec![0, -5, 5, 0]
+            fan_delta_by_seat("discard", Some(2), Some(1), 7, 7, 4),
+            vec![0, -7, 7, 0]
         );
     }
 
     #[test]
-    fn self_draw_below_six_non_flower_fan_charges_each_other_seat_fan_total_only() {
+    fn self_draw_below_eight_non_flower_fan_charges_each_other_seat_fan_total_only() {
         assert_eq!(
-            fan_delta_by_seat("self_draw", Some(0), None, 9, 5, 4),
-            vec![27, -9, -9, -9]
+            fan_delta_by_seat("self_draw", Some(0), None, 11, 7, 4),
+            vec![33, -11, -11, -11]
         );
     }
 
     #[test]
-    fn self_draw_at_six_non_flower_fan_adds_six_for_each_other_seat() {
+    fn self_draw_at_eight_non_flower_fan_adds_eight_for_each_other_seat() {
         assert_eq!(
-            fan_delta_by_seat("self_draw", Some(0), None, 8, 6, 4),
-            vec![42, -14, -14, -14]
+            fan_delta_by_seat("self_draw", Some(0), None, 10, 8, 4),
+            vec![54, -18, -18, -18]
         );
     }
 
     #[test]
-    fn discard_below_six_non_flower_fan_charges_only_discarder_fan_total() {
+    fn discard_below_eight_non_flower_fan_charges_only_discarder_fan_total() {
         assert_eq!(
-            fan_delta_by_seat("discard", Some(2), Some(1), 9, 5, 4),
-            vec![0, -9, 9, 0]
+            fan_delta_by_seat("discard", Some(2), Some(1), 11, 7, 4),
+            vec![0, -11, 11, 0]
         );
     }
 
     #[test]
-    fn discard_at_six_non_flower_fan_adds_side_payments_and_bonus_to_discarder() {
+    fn discard_at_eight_non_flower_fan_adds_side_payments_and_bonus_to_discarder() {
         assert_eq!(
-            fan_delta_by_seat("discard", Some(2), Some(1), 8, 6, 4),
-            vec![-6, -14, 26, -6]
+            fan_delta_by_seat("discard", Some(2), Some(1), 10, 8, 4),
+            vec![-8, -18, 34, -8]
         );
     }
 
