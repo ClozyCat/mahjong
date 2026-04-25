@@ -160,7 +160,7 @@
   padding: 0.4rem 0.8rem;
   border-radius: 99px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 8%, transparent));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
   font-size: 0.75rem;
   font-weight: 600;
