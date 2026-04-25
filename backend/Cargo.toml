@@ -3,6 +3,10 @@ name = "backend"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+spectator = []
+
 [dependencies]
 anyhow = "1.0"
 axum = { version = "0.8.8", features = ["ws", "json"] }

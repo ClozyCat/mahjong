@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: backend-runtime
+      args:
+        MAHJONG_ENABLE_SPECTATOR: ${MAHJONG_ENABLE_SPECTATOR:-false}
     restart: unless-stopped
     environment:
       MAHJONG_DATABASE_URL: ${MAHJONG_DATABASE_URL:-sqlite+pysqlite:////data/mahjong.db}
@@ -24,6 +26,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: frontend-runtime
+      args:
+        MAHJONG_ENABLE_SPECTATOR: ${MAHJONG_ENABLE_SPECTATOR:-false}
     restart: unless-stopped
     depends_on:
       backend:

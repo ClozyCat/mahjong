@@ -1,9 +1,12 @@
 services:
   backend:
+    # Prebuilt images must be built with the same MAHJONG_ENABLE_SPECTATOR value.
+    # This runtime variable documents the selected deployment mode; it cannot add compiled-out code.
     image: ${BACKEND_IMAGE:-mahjong-backend:latest}
     restart: unless-stopped
     environment:
       MAHJONG_DATABASE_URL: ${MAHJONG_DATABASE_URL:-sqlite+pysqlite:////data/mahjong.db}
+      MAHJONG_ENABLE_SPECTATOR: ${MAHJONG_ENABLE_SPECTATOR:-false}
     volumes:
       - mahjong-data:/data
     expose:
@@ -17,8 +20,12 @@ services:
       start_period: 20s
 
   frontend:
+    # Prebuilt images must be built with the same MAHJONG_ENABLE_SPECTATOR value.
+    # This runtime variable documents the selected deployment mode; it cannot add compiled-out code.
     image: ${FRONTEND_IMAGE:-mahjong-frontend:latest}
     restart: unless-stopped
+    environment:
+      MAHJONG_ENABLE_SPECTATOR: ${MAHJONG_ENABLE_SPECTATOR:-false}
     depends_on:
       backend:
         condition: service_healthy

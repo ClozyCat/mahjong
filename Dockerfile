@@ -1,5 +1,8 @@
 FROM node:22-bookworm-slim AS frontend-builder
 
+ARG MAHJONG_ENABLE_SPECTATOR=false
+ENV MAHJONG_ENABLE_SPECTATOR=${MAHJONG_ENABLE_SPECTATOR}
+
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -12,6 +15,8 @@ RUN npm run build
 
 FROM rust:1.94-bookworm AS rust-backend-builder
 
+ARG MAHJONG_ENABLE_SPECTATOR=false
+
 WORKDIR /app/backend
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 RUN mkdir -p $CARGO_HOME \
@@ -22,7 +27,11 @@ RUN mkdir -p $CARGO_HOME \
     && echo '[net]' >> $CARGO_HOME/config.toml \
     && echo 'git-fetch-with-cli = true' >> $CARGO_HOME/config.toml
 COPY backend/ ./
-RUN cargo build --release
+RUN if [ "$MAHJONG_ENABLE_SPECTATOR" = "true" ]; then \
+      cargo build --release --features spectator; \
+    else \
+      cargo build --release; \
+    fi
 
 
 FROM debian:bookworm-slim AS backend-runtime
