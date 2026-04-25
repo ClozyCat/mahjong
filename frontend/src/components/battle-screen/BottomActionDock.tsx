@@ -78,6 +78,11 @@ export function BottomActionDock({
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
   const isHandInsightPopoverOpen =
     Boolean(handInsight) && (isHandInsightPopoverHovered || isHandInsightPopoverPinned);
+  const displayedHandInsightRecommendations = handInsight
+    ? getDisplayedHandInsightRecommendations(handInsight)
+    : [];
+  const handInsightRecommendationTitle = handInsight?.isTenpai ? '和牌番型' : '推荐番型';
+  const handInsightRecommendationListLabel = handInsight?.isTenpai ? '和牌番型列表' : '推荐番型列表';
 
   useEffect(() => {
     if (!isHandInsightPopoverPinned) {
@@ -150,13 +155,17 @@ export function BottomActionDock({
             </div>
           ) : null}
           <div className="action-dock__hand-insight-section">
-            <strong className="action-dock__hand-insight-title">推荐番型</strong>
-            {handInsight.recommendations.length > 0 ? (
-              <div className="action-dock__hand-insight-recommendations" role="list">
-                {handInsight.recommendations.map((item) => (
+            <strong className="action-dock__hand-insight-title">{handInsightRecommendationTitle}</strong>
+            {displayedHandInsightRecommendations.length > 0 ? (
+              <div
+                className="action-dock__hand-insight-recommendations"
+                role="list"
+                aria-label={handInsightRecommendationListLabel}
+              >
+                {displayedHandInsightRecommendations.map((item) => (
                   <div key={item.fanKey} className="action-dock__hand-insight-recommendation" role="listitem">
                     <span>{getFanLabel(item.fanKey)}</span>
-                    <strong>{item.similarityPercent}%</strong>
+                    <strong>{formatHandInsightRecommendationValue(item, handInsight.isTenpai)}</strong>
                   </div>
                 ))}
               </div>
@@ -314,7 +323,7 @@ function getHandInsightTriggerLabel(handInsight: NonNullable<BottomActionDockPro
   if (handInsight.source === 'selected_discard') {
     return '查看打出当前选中牌后的手牌洞察';
   }
-  return handInsight.isTenpai ? '查看当前听牌信息与推荐番型' : '查看当前推荐番型';
+  return handInsight.isTenpai ? '查看当前听牌信息与和牌番型' : '查看当前推荐番型';
 }
 
 function getHandInsightPopoverLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
@@ -333,4 +342,23 @@ function getActionEffectClass(actionId: BattleActionView['id']) {
   };
 
   return lookup[actionId] ?? '';
+}
+
+function getDisplayedHandInsightRecommendations(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
+  if (!handInsight.isTenpai) {
+    return handInsight.recommendations;
+  }
+
+  return handInsight.recommendations
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => right.item.fanValue - left.item.fanValue || left.index - right.index)
+    .slice(0, 6)
+    .map(({ item }) => item);
+}
+
+function formatHandInsightRecommendationValue(
+  recommendation: NonNullable<BottomActionDockProps['handInsight']>['recommendations'][number],
+  isTenpai: boolean,
+) {
+  return isTenpai ? `${recommendation.fanValue}番` : `${recommendation.similarityPercent}%`;
 }

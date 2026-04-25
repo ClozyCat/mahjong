@@ -176,7 +176,7 @@ describe('BottomActionDock', () => {
     expect(screen.queryByText('正在听')).toBeNull();
   });
 
-  it('renders waits and recommendations for a selected-discard tenpai preview', async () => {
+  it('renders waits and winning fan list for a selected-discard tenpai preview', async () => {
     const user = userEvent.setup();
 
     render(
@@ -189,7 +189,15 @@ describe('BottomActionDock', () => {
           discardTileCode: 'w2',
           isTenpai: true,
           waits: [{ code: 'w3', availableCount: 2 }],
-          recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 83 }],
+          recommendations: [
+            { fanKey: 'all_pungs', fanValue: 6, similarityPercent: 56 },
+            { fanKey: 'full_flush', fanValue: 24, similarityPercent: 83 },
+            { fanKey: 'mixed_straight', fanValue: 8, similarityPercent: 62 },
+            { fanKey: 'four_kongs', fanValue: 88, similarityPercent: 18 },
+            { fanKey: 'outside_hand', fanValue: 4, similarityPercent: 71 },
+            { fanKey: 'all_chows', fanValue: 2, similarityPercent: 91 },
+            { fanKey: 'self_drawn', fanValue: 1, similarityPercent: 99 },
+          ],
         }}
         claimCandidates={[]}
         actions={[]}
@@ -207,8 +215,58 @@ describe('BottomActionDock', () => {
     await user.click(screen.getByRole('button', { name: '查看打出当前选中牌后的手牌洞察' }));
 
     expect(screen.getByText('打出后将听')).toBeInTheDocument();
-    expect(screen.getByText('推荐番型')).toBeInTheDocument();
-    expect(screen.getByText('清一色')).toBeInTheDocument();
+    expect(screen.getByText('和牌番型')).toBeInTheDocument();
+    expect(screen.queryByText('推荐番型')).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+
+    const rows = screen
+      .getByRole('list', { name: '和牌番型列表' })
+      .querySelectorAll('.action-dock__hand-insight-recommendation');
+
+    expect(Array.from(rows, (row) => row.textContent)).toEqual([
+      '四杠88番',
+      '清一色24番',
+      '花龙8番',
+      '对对和6番',
+      '全带幺4番',
+      '平和2番',
+    ]);
+  });
+
+  it('uses winning fan copy for the current tenpai insight', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        selectedTileCode="w2"
+        handInsight={{
+          source: 'current',
+          discardTileId: null,
+          discardTileCode: null,
+          isTenpai: true,
+          waits: [{ code: 'w3', availableCount: 2 }],
+          recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 83 }],
+        }}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '查看当前听牌信息与和牌番型' }));
+
+    expect(screen.getByText('正在听')).toBeInTheDocument();
+    expect(screen.getByText('和牌番型')).toBeInTheDocument();
+    expect(screen.getByText('24番')).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).toBeNull();
   });
 
   it('hides the dock countdown when only other players are responding', () => {
