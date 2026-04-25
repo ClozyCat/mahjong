@@ -15,6 +15,8 @@ import { getRoundEventCopy } from './roundEventCopy';
 export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
   | { type: 'set_credentials'; tableCode?: string; nickname?: string }
+  | { type: 'set_client_mode'; clientMode: SessionState['clientMode'] }
+  | { type: 'set_spectator_focus_seat'; seatIndex: number | null }
   | { type: 'set_connection_status'; status: SessionState['connectionStatus'] }
   | { type: 'queue_optimistic_discard'; tileId: string; actionType: Extract<BackendActionType, 'discard' | 'ready_hand'> }
   | { type: 'queue_optimistic_flower'; tileId: string }
@@ -343,6 +345,8 @@ export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
     wsBaseUrl: undefined,
+    clientMode: 'player',
+    spectatorFocusSeat: null,
     tableCode: '',
     nickname: '',
     connectionStatus: 'idle',
@@ -400,7 +404,10 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         ...state,
         roomSnapshot: message,
         tableCode: message.payload.table_code,
-        reconnectToken: message.payload.reconnect_token ?? state.reconnectToken,
+        reconnectToken:
+          state.clientMode === 'spectator'
+            ? null
+            : message.payload.reconnect_token ?? state.reconnectToken,
         lastRejectedAction: null,
         optimisticDiscard: nextOptimisticDiscard,
         optimisticFlower: nextOptimisticFlower,
@@ -489,6 +496,19 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         ...state,
         tableCode: action.tableCode ?? state.tableCode,
         nickname: action.nickname ?? state.nickname,
+      };
+    case 'set_client_mode':
+      return {
+        ...state,
+        clientMode: action.clientMode,
+        reconnectToken: action.clientMode === 'spectator' ? null : state.reconnectToken,
+      };
+    case 'set_spectator_focus_seat':
+      return {
+        ...state,
+        spectatorFocusSeat: action.seatIndex,
+        selectedTileIds: [],
+        selectionMode: null,
       };
     case 'set_connection_status':
       return {

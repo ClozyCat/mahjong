@@ -50,6 +50,7 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 const MAX_CACHED_RECONNECT_CLOSES = 3;
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
+type ClientMode = NonNullable<SessionState['clientMode']>;
 
 function getRuntimeDefaultBaseUrls() {
   if (typeof window === 'undefined') {
@@ -256,6 +257,11 @@ export default function App() {
   }, [state.roomSnapshot]);
 
   useEffect(() => {
+    if (state.clientMode === 'spectator') {
+      clearStoredSession();
+      return;
+    }
+
     if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
       saveStoredSession({
         tableCode: state.tableCode,
@@ -267,7 +273,7 @@ export default function App() {
     }
 
     clearStoredSession();
-  }, [connectValue.nickname, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
+  }, [connectValue.nickname, state.clientMode, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
@@ -342,13 +348,15 @@ export default function App() {
       wsBaseUrl: string;
       reconnectToken?: string | null;
       reconnect?: boolean;
+      mode?: ClientMode;
     }) => {
       closeSocket(socketRef, heartbeatTimerRef);
 
-      const { tableCode, nickname, wsBaseUrl, reconnectToken, reconnect } = options;
+      const { tableCode, nickname, wsBaseUrl, reconnectToken, reconnect, mode = 'player' } = options;
       if (!reconnect) {
         reconnectCloseCountRef.current = 0;
       }
+      dispatch({ type: 'set_client_mode', clientMode: mode });
       dispatch({ type: 'set_connection_status', status: reconnect ? 'reconnecting' : 'connecting' });
       dispatch({ type: 'set_credentials', tableCode, nickname });
       dispatch({ type: 'set_config', wsBaseUrl });
@@ -357,17 +365,21 @@ export default function App() {
       socketRef.current = socket;
 
       socket.onopen = () => {
-        const message =
-          reconnect && reconnectToken
-            ? createReconnectMessage(reconnectToken)
-            : createJoinTableMessage(nickname);
-        socket.send(serializeClientMessage(message));
+        void (async () => {
+          const message =
+            __SPECTATOR_ENABLED__ && mode === 'spectator'
+              ? (await import('./features/spectator/socket')).createWatchTableMessage(nickname)
+              : reconnect && reconnectToken
+                ? createReconnectMessage(reconnectToken)
+                : createJoinTableMessage(nickname);
+          socket.send(serializeClientMessage(message));
 
-        heartbeatTimerRef.current = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(serializeClientMessage(createHeartbeatMessage(new Date().toISOString())));
-          }
-        }, HEARTBEAT_INTERVAL_MS);
+          heartbeatTimerRef.current = window.setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(serializeClientMessage(createHeartbeatMessage(new Date().toISOString())));
+            }
+          }, HEARTBEAT_INTERVAL_MS);
+        })();
       };
 
       socket.onmessage = (event) => {
@@ -388,6 +400,10 @@ export default function App() {
         const current = sessionRef.current;
         if (leavingTableRef.current) {
           handleLeaveToLobby(current.tableCode);
+          return;
+        }
+        if (current.clientMode === 'spectator') {
+          handleLeaveToLobby(current.tableCode, '观战连接已断开。');
           return;
         }
         if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {
@@ -482,6 +498,12 @@ export default function App() {
     state.connectionStatus !== 'connecting' &&
     state.connectionStatus !== 'reconnecting' &&
     hasNickname &&
+    normalizedRequestedTableCode.length > 0 &&
+    tableCodeError === null;
+  const canWatch =
+    __SPECTATOR_ENABLED__ &&
+    state.connectionStatus !== 'connecting' &&
+    state.connectionStatus !== 'reconnecting' &&
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
   const shouldForceSmallScreen = isMobileClient && state.roomSnapshot !== null;
@@ -641,6 +663,31 @@ export default function App() {
       tableCode: normalizedRequestedTableCode,
       nickname: connectValue.nickname.trim(),
       wsBaseUrl: defaults.wsBaseUrl,
+    });
+  }
+
+  function handleWatch() {
+    if (!__SPECTATOR_ENABLED__) {
+      return;
+    }
+
+    if (!connectValue.tableCode.trim()) {
+      setStatusMessage('观战前请先填写牌桌编号。');
+      return;
+    }
+
+    if (tableCodeError) {
+      return;
+    }
+
+    requestLandscapeOrientation();
+    setStatusMessage('正在进入观战...');
+    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
+    openRoomSocket({
+      tableCode: normalizedRequestedTableCode,
+      nickname: connectValue.nickname.trim() || '观众',
+      wsBaseUrl: defaults.wsBaseUrl,
+      mode: 'spectator',
     });
   }
 
@@ -895,6 +942,7 @@ export default function App() {
         tableCodeError={tableCodeError}
         canCreate={canCreate}
         canJoin={canJoin}
+        canWatch={canWatch}
         onChange={(patch) => {
           startTransition(() => {
             setConnectValue((current) => ({ ...current, ...patch }));
@@ -902,6 +950,7 @@ export default function App() {
         }}
         onCreate={handleCreate}
         onJoin={handleJoin}
+        onWatch={__SPECTATOR_ENABLED__ ? handleWatch : undefined}
       />
     );
   }

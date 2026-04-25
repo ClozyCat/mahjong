@@ -1,6 +1,7 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
 export type TableMode = 'normal';
 export type SeatType = 'human' | 'bot';
+export type ClientMode = 'player' | 'spectator';
 
 export type MatchPhase =
   | 'loading'
@@ -277,6 +278,7 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: 'join_table'; payload: { nickname: string } }
+  | { type: 'watch_table'; payload: { nickname: string } }
   | { type: 'reconnect'; payload: { reconnect_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
@@ -324,6 +326,8 @@ export interface OptimisticFlowerState {
 export interface SessionState {
   apiBaseUrl?: string;
   wsBaseUrl?: string;
+  clientMode?: ClientMode;
+  spectatorFocusSeat?: number | null;
   tableCode: string;
   nickname: string;
   connectionStatus: ConnectionStatus;

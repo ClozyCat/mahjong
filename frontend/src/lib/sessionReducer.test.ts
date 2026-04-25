@@ -912,4 +912,41 @@ describe('sessionReducer', () => {
 
     expect(afterResult.matchStatistics).toEqual(afterSnapshot.matchStatistics);
   });
+
+  it('keeps spectator sessions free of reconnect tokens and clears selected tiles on focus change', () => {
+    const spectatorState = sessionReducer(createInitialSessionState(), {
+      type: 'set_client_mode',
+      clientMode: 'spectator',
+    });
+    const afterSnapshot = sessionReducer(
+      {
+        ...spectatorState,
+        selectedTileIds: ['w1#0'],
+        selectionMode: 'single',
+      },
+      {
+        type: 'ws_message',
+        message: {
+          type: 'room_snapshot',
+          payload: {
+            table_code: 'AB12CD',
+            phase: 'playing',
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            local_seat: null,
+            reconnect_token: 'token-should-be-ignored',
+          },
+        },
+      },
+    );
+    const afterFocusChange = sessionReducer(afterSnapshot, {
+      type: 'set_spectator_focus_seat',
+      seatIndex: 0,
+    });
+
+    expect(afterSnapshot.clientMode).toBe('spectator');
+    expect(afterSnapshot.reconnectToken).toBeNull();
+    expect(afterFocusChange.spectatorFocusSeat).toBe(0);
+    expect(afterFocusChange.selectedTileIds).toEqual([]);
+    expect(afterFocusChange.selectionMode).toBeNull();
+  });
 });
