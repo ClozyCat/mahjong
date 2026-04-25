@@ -665,6 +665,38 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actionIndicatorSeat).toBe('bottom');
   });
 
+  it('adds pass to a local self-hu prompt when requested', () => {
+    const viewModel = createMatchViewModel(createPlayingSessionState(), {
+      showLocalSelfHuPassOption: true,
+    });
+
+    expect(viewModel.promptText).toBe('Player C正在执行操作：出牌 / 杠 / 和牌');
+    expect(viewModel.promptCue).toMatchObject({
+      kind: 'turn',
+      tone: 'critical',
+      title: '当前手牌可直接和牌',
+      actionIds: ['hu', 'kong', 'discard', 'pass'],
+      highlightedActionIds: ['hu', 'kong', 'discard'],
+    });
+    expect(viewModel.actions.find((item) => item.id === 'pass')?.enabled).toBe(true);
+  });
+
+  it('hides local self-hu after passing while keeping the turn playable', () => {
+    const viewModel = createMatchViewModel(createPlayingSessionState(), {
+      hideLocalSelfHuPrompt: true,
+    });
+
+    expect(viewModel.promptCue).toMatchObject({
+      kind: 'turn',
+      tone: 'info',
+      title: '轮到你操作',
+      actionIds: ['kong', 'discard'],
+      highlightedActionIds: ['kong', 'discard'],
+    });
+    expect(viewModel.actions.find((item) => item.id === 'hu')?.enabled).toBe(false);
+    expect(viewModel.actions.find((item) => item.id === 'discard')?.enabled).toBe(false);
+  });
+
   it('can synthesize a local kong-response prompt before the normal discard flow', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel(

@@ -535,6 +535,40 @@ describe('App', () => {
     ]);
   });
 
+  it('dismisses a local self-hu prompt without sending a pass action', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+    const baseSnapshot = createPlayingSnapshotPayload();
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          private_state: {
+            ...baseSnapshot.private_state,
+            pending_action: {
+              type: 'active_turn',
+              seat_index: 0,
+              deadline_at: '2026-03-27T12:00:00Z',
+              drawn_tile_id: 'w1#1',
+              options: ['discard', 'hu'],
+            },
+          },
+        }),
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '过' }));
+
+    expect(screen.queryByRole('button', { name: '过' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '和牌' })).not.toBeInTheDocument();
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+    ]);
+  });
+
   it('sends a flower action directly from the local active turn', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);

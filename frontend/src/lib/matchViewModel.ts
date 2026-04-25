@@ -247,6 +247,8 @@ function createCenterDeadlineAt(state: SessionState) {
 
 interface MatchViewModelOptions {
   showLocalTurnKongPrompt?: boolean;
+  showLocalSelfHuPassOption?: boolean;
+  hideLocalSelfHuPrompt?: boolean;
   perspectiveSeat?: number | null;
   isSpectator?: boolean;
 }
@@ -274,7 +276,7 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
   const snapshot = state.roomSnapshot?.payload;
   const currentActor = getCurrentActorSeatIndex(snapshot?.private_state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
-  const localPromptOptions = getLocalPromptOptions(state);
+  const localPromptOptions = getLocalPromptOptions(state, options);
 
   if (
     options.showLocalTurnKongPrompt &&
@@ -295,8 +297,11 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
     if (pendingAction.type === 'active_turn') {
       const actorSeat =
         getPendingActionSeatIndex(pendingAction) ?? getCurrentActorSeatIndex(state.roomSnapshot?.payload.private_state);
-      const options = getPendingActionOptions(pendingAction as { options?: unknown });
-      return createActorPrompt(getSeatName(state, actorSeat), options.length > 0 ? options : ['discard']);
+      const promptOptions =
+        actorSeat === getLocalSeat(state)
+          ? localPromptOptions
+          : getPendingActionOptions(pendingAction as { options?: unknown });
+      return createActorPrompt(getSeatName(state, actorSeat), promptOptions.length > 0 ? promptOptions : ['discard']);
     }
     if (pendingAction.type === 'claim_window') {
       const claimLabels = getPendingActionOptions(pendingAction as { options?: unknown });
@@ -345,19 +350,23 @@ function getPromptSourceSeatLabel(seat: Seat | null) {
   return PROMPT_SEAT_COPY[seat];
 }
 
-function getLocalPromptOptions(state: SessionState): BackendActionType[] {
+function getLocalPromptOptions(state: SessionState, viewOptions: MatchViewModelOptions = {}): BackendActionType[] {
   const localSeat = getLocalSeat(state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
 
   if (pendingAction && 'options' in pendingAction) {
-    const options = (pendingAction as { options?: unknown }).options;
-    if (Array.isArray(options)) {
-      return options.filter(isBackendActionType);
+    const rawOptions = (pendingAction as { options?: unknown }).options;
+    if (Array.isArray(rawOptions)) {
+      return normalizeLocalSelfHuPromptOptions(state, rawOptions.filter(isBackendActionType), viewOptions);
     }
   }
 
   if (state.latestActionPrompt?.payload.seat_index === localSeat) {
-    return state.latestActionPrompt.payload.options.filter(isBackendActionType);
+    return normalizeLocalSelfHuPromptOptions(
+      state,
+      state.latestActionPrompt.payload.options.filter(isBackendActionType),
+      viewOptions,
+    );
   }
 
   return [];
@@ -375,7 +384,7 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
   const snapshot = state.roomSnapshot?.payload;
   const pendingAction = snapshot?.private_state?.pending_action;
   const localSeat = getLocalSeat(state);
-  const localPromptOptions = orderPromptActions(getLocalPromptOptions(state));
+  const localPromptOptions = orderPromptActions(getLocalPromptOptions(state, options));
   const highlightedActionIds = orderPromptActions(localPromptOptions.filter((option) => option !== 'pass'));
 
   if (
@@ -505,7 +514,7 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   };
 }
 
-function getPromptOptions(state: SessionState): BackendActionType[] {
+function getRawPromptOptions(state: SessionState): BackendActionType[] {
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
   if (pendingAction && 'options' in pendingAction) {
     const options = (pendingAction as { options?: unknown }).options;
@@ -515,6 +524,62 @@ function getPromptOptions(state: SessionState): BackendActionType[] {
   }
 
   return (state.latestActionPrompt?.payload.options ?? []).filter(isBackendActionType);
+}
+
+function getPromptOptions(state: SessionState, options: MatchViewModelOptions = {}): BackendActionType[] {
+  return normalizeLocalSelfHuPromptOptions(state, getRawPromptOptions(state), options);
+}
+
+function isLocalSelfHuPrompt(state: SessionState) {
+  const snapshot = state.roomSnapshot?.payload;
+  const localSeat = snapshot?.local_seat;
+  const pendingAction = snapshot?.private_state?.pending_action;
+
+  return (
+    typeof localSeat === 'number' &&
+    snapshot?.phase === 'playing' &&
+    pendingAction?.type === 'active_turn' &&
+    pendingAction.seat_index === localSeat &&
+    getRawPromptOptions(state).includes('hu')
+  );
+}
+
+function normalizeLocalSelfHuPromptOptions(
+  state: SessionState,
+  promptOptions: BackendActionType[],
+  options: MatchViewModelOptions = {},
+): BackendActionType[] {
+  if (!isLocalSelfHuPrompt(state)) {
+    return promptOptions;
+  }
+
+  let nextOptions = promptOptions;
+  if (options.hideLocalSelfHuPrompt) {
+    nextOptions = nextOptions.filter((option) => option !== 'hu');
+  }
+
+  if (options.showLocalSelfHuPassOption && nextOptions.includes('hu') && !nextOptions.includes('pass')) {
+    nextOptions = [...nextOptions, 'pass'];
+  }
+
+  return nextOptions;
+}
+
+export function getLocalSelfHuPromptSignature(state: SessionState): string | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const pendingAction = snapshot?.private_state?.pending_action;
+
+  if (!snapshot?.private_state || !isLocalSelfHuPrompt(state) || pendingAction?.type !== 'active_turn') {
+    return null;
+  }
+
+  return [
+    'self-hu',
+    snapshot.private_state.round_id,
+    pendingAction.seat_index,
+    pendingAction.deadline_at,
+    pendingAction.drawn_tile_id ?? '',
+  ].join(':');
 }
 
 function getRestrictedDiscardTileIdSet(state: SessionState) {
@@ -545,7 +610,7 @@ function createActionViews(
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
   const settlementContinueActionId = getSettlementContinueActionId(state);
-  const promptOptions = new Set<BackendActionType>(getPromptOptions(state));
+  const promptOptions = new Set<BackendActionType>(getPromptOptions(state, options));
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const kongCandidateGroups = options.showLocalTurnKongPrompt
     ? localTurnKongCandidateGroups

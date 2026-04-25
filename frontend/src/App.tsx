@@ -10,7 +10,7 @@ import {
   getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
 } from './lib/kongSelection';
-import { createClaimCandidates, createMatchViewModel } from './lib/matchViewModel';
+import { createClaimCandidates, createMatchViewModel, getLocalSelfHuPromptSignature } from './lib/matchViewModel';
 import {
   buildWebSocketUrl,
   createAdjustBotsMessage,
@@ -251,6 +251,7 @@ export default function App() {
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
   const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
+  const [dismissedLocalSelfHuPromptSignature, setDismissedLocalSelfHuPromptSignature] = useState<string | null>(null);
 
   useEffect(() => {
     sessionRef.current = state;
@@ -503,6 +504,10 @@ export default function App() {
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const hasLocalTurnKongPrompt =
     localTurnKongPromptSignature !== null && localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature;
+  const localSelfHuPromptSignature = getLocalSelfHuPromptSignature(state);
+  const isLocalSelfHuPromptDismissed =
+    localSelfHuPromptSignature !== null && localSelfHuPromptSignature === dismissedLocalSelfHuPromptSignature;
+  const hasLocalSelfHuPassOption = localSelfHuPromptSignature !== null && !isLocalSelfHuPromptDismissed;
   const normalizedRequestedTableCode = normalizeTableCode(connectValue.tableCode);
   const tableCodeError = getTableCodeError(connectValue.tableCode);
   const hasNickname = connectValue.nickname.trim().length > 0;
@@ -604,6 +609,14 @@ export default function App() {
     localTurnKongCandidateGroups,
     localTurnKongPromptSignature,
   ]);
+
+  useEffect(() => {
+    if (localSelfHuPromptSignature !== dismissedLocalSelfHuPromptSignature) {
+      setDismissedLocalSelfHuPromptSignature((current) =>
+        current === null || current === localSelfHuPromptSignature ? current : null,
+      );
+    }
+  }, [dismissedLocalSelfHuPromptSignature, localSelfHuPromptSignature]);
 
   useEffect(() => {
     if (!__SPECTATOR_ENABLED__ || !isSpectator || !state.roomSnapshot) {
@@ -893,8 +906,19 @@ export default function App() {
     }
 
     if (actionId === 'pass') {
+      let handledLocalPass = false;
+
       if (hasLocalTurnKongPrompt && localTurnKongPromptSignature) {
         setDismissedLocalTurnKongPromptSignature(localTurnKongPromptSignature);
+        handledLocalPass = true;
+      }
+
+      if (hasLocalSelfHuPassOption && localSelfHuPromptSignature) {
+        setDismissedLocalSelfHuPromptSignature(localSelfHuPromptSignature);
+        handledLocalPass = true;
+      }
+
+      if (handledLocalPass) {
         dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
         return;
       }
@@ -1004,6 +1028,8 @@ export default function App() {
 
   const viewModel = createMatchViewModel(state, {
     showLocalTurnKongPrompt: !isSpectator && hasLocalTurnKongPrompt,
+    showLocalSelfHuPassOption: !isSpectator && hasLocalSelfHuPassOption,
+    hideLocalSelfHuPrompt: !isSpectator && isLocalSelfHuPromptDismissed,
     isSpectator,
     perspectiveSeat: spectatorFocusSeat,
   });
