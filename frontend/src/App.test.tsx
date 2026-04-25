@@ -551,7 +551,7 @@ describe('App', () => {
               seat_index: 0,
               deadline_at: '2026-03-27T12:00:00Z',
               drawn_tile_id: 'w1#1',
-              options: ['discard', 'hu'],
+              options: ['discard', 'hu', 'pass'],
             },
           },
         }),

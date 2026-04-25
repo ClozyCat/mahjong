@@ -246,6 +246,9 @@ pub fn build_pending_action_view(
                         options.push("ready_hand".to_string());
                     }
                 }
+                if support.can_hu {
+                    options.push("pass".to_string());
+                }
             }
 
             Some(PendingActionView::ActiveTurn {
@@ -264,39 +267,53 @@ pub fn build_pending_action_view(
                 options,
             })
         }
-        "claim_window" => {
-            let PendingAction::ClaimWindow(claim) = round.pending_action.as_ref()? else {
-                return None;
-            };
-            let options = claim
-                .claim_window
-                .get(local_seat)
-                .cloned()
-                .unwrap_or_default();
-            let is_responded = claim.responded_seats.contains(&local_seat);
-            let payload_options = if is_local_ready_hand {
-                if is_responded {
-                    Vec::new()
+        "claim_window" => match round.pending_action.as_ref()? {
+            PendingAction::ClaimWindow(claim) => {
+                let options = claim
+                    .claim_window
+                    .get(local_seat)
+                    .cloned()
+                    .unwrap_or_default();
+                let is_responded = claim.responded_seats.contains(&local_seat);
+                let mut payload_options = if is_local_ready_hand {
+                    if is_responded {
+                        Vec::new()
+                    } else {
+                        options
+                            .into_iter()
+                            .filter(|option| option == "hu" || option == "kong")
+                            .collect()
+                    }
                 } else {
                     options
-                        .into_iter()
-                        .filter(|option| option == "hu" || option == "kong")
-                        .collect()
-                }
-            } else {
-                let mut payload_options = options;
+                };
                 if !payload_options.is_empty() && !is_responded {
                     payload_options.push("pass".to_string());
                 }
-                payload_options
-            };
-            Some(PendingActionView::ClaimWindow {
-                discarder_seat: claim.discarder_seat,
-                deadline_at,
-                responded_seats: claim.responded_seats.clone(),
-                options: payload_options,
-            })
-        }
+                Some(PendingActionView::ClaimWindow {
+                    discarder_seat: claim.discarder_seat,
+                    deadline_at,
+                    responded_seats: claim.responded_seats.clone(),
+                    options: payload_options,
+                })
+            }
+            PendingAction::RobKongWindow(rob) => {
+                let offered = rob.offered_hu_seats.contains(&local_seat);
+                let is_responded = rob.responded_seats.contains(&local_seat);
+                let options = if offered && !is_responded {
+                    vec!["hu".to_string(), "pass".to_string()]
+                } else {
+                    Vec::new()
+                };
+                Some(PendingActionView::RobKongWindow {
+                    actor_seat: rob.actor_seat,
+                    tile_key: rob.tile_key.clone(),
+                    deadline_at,
+                    responded_seats: rob.responded_seats.clone(),
+                    options,
+                })
+            }
+        },
         "rob_kong_window" => {
             let PendingAction::RobKongWindow(rob) = round.pending_action.as_ref()? else {
                 return None;
@@ -304,11 +321,7 @@ pub fn build_pending_action_view(
             let offered = rob.offered_hu_seats.contains(&local_seat);
             let is_responded = rob.responded_seats.contains(&local_seat);
             let options = if offered && !is_responded {
-                if is_local_ready_hand {
-                    vec!["hu".to_string()]
-                } else {
-                    vec!["hu".to_string(), "pass".to_string()]
-                }
+                vec!["hu".to_string(), "pass".to_string()]
             } else {
                 Vec::new()
             };
@@ -820,7 +833,45 @@ mod tests {
     }
 
     #[test]
-    fn active_turn_projection_keeps_kong_for_ready_hand_player() {
+    fn active_turn_projection_includes_pass_for_self_hu() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: players(),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "active_turn".to_string(),
+                seat_index: 0,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: Some("w3#draw".to_string()),
+            }),
+            continue_action: None,
+        };
+
+        let support = SeatProjectionSupport {
+            can_hu: true,
+            ..Default::default()
+        };
+        let snapshot = room_snapshot_message(&state, 0, &support);
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["discard", "hu", "pass"])
+        );
+    }
+
+    #[test]
+    fn active_turn_projection_includes_pass_for_ready_hand_self_hu() {
         let mut ready_hand_players = players();
         ready_hand_players[0].is_ready_hand = true;
 
@@ -857,12 +908,12 @@ mod tests {
 
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
-            serde_json::json!(["hu", "kong"])
+            serde_json::json!(["hu", "kong", "pass"])
         );
     }
 
     #[test]
-    fn claim_window_projection_keeps_kong_for_ready_hand_player() {
+    fn claim_window_projection_includes_pass_for_ready_hand_discard_hu() {
         let mut ready_hand_players = players();
         ready_hand_players[0].is_ready_hand = true;
 
@@ -905,7 +956,55 @@ mod tests {
 
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
-            serde_json::json!(["kong", "hu"])
+            serde_json::json!(["kong", "hu", "pass"])
+        );
+    }
+
+    #[test]
+    fn rob_kong_projection_includes_pass_for_ready_hand_hu() {
+        let mut ready_hand_players = players();
+        ready_hand_players[0].is_ready_hand = true;
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: ready_hand_players,
+                pending_action: Some(PendingAction::RobKongWindow(
+                    crate::core::state::RobKongWindowAction {
+                        actor_seat: 1,
+                        tile_id: Some("w3#add".to_string()),
+                        tile_key: Some("w3".to_string()),
+                        meld_index: Some(0),
+                        offered_hu_seats: vec![0],
+                        responded_seats: vec![],
+                        claim_responses: vec![],
+                    },
+                )),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "claim_window".to_string(),
+                seat_index: 0,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: None,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["hu", "pass"])
         );
     }
 

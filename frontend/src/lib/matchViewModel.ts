@@ -555,7 +555,7 @@ function normalizeLocalSelfHuPromptOptions(
 
   let nextOptions = promptOptions;
   if (options.hideLocalSelfHuPrompt) {
-    nextOptions = nextOptions.filter((option) => option !== 'hu');
+    nextOptions = nextOptions.filter((option) => option !== 'hu' && option !== 'pass');
   }
 
   if (options.showLocalSelfHuPassOption && nextOptions.includes('hu') && !nextOptions.includes('pass')) {

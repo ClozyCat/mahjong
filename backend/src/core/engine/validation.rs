@@ -125,29 +125,24 @@ fn claim_window_action_supported(context: &EngineContext, actor: Seat, action_ty
     if allowed_claims.is_empty() || claim.responded_seats.contains(&actor) {
         return false;
     }
+    if action_type == "pass" {
+        return true;
+    }
     if is_ready_hand {
         return matches!(action_type, "hu" | "kong")
             && allowed_claims
                 .iter()
                 .any(|claim_type| claim_type == action_type);
     }
-    action_type == "pass"
-        || allowed_claims
-            .iter()
-            .any(|claim_type| claim_type == action_type)
+    allowed_claims
+        .iter()
+        .any(|claim_type| claim_type == action_type)
 }
 
 fn rob_kong_pass_supported(context: &EngineContext, actor: Seat) -> bool {
     let Some(round) = context.room.round_state.as_ref() else {
         return false;
     };
-    if round
-        .players
-        .get(actor)
-        .is_some_and(|player| player.is_ready_hand)
-    {
-        return false;
-    }
     let Some(PendingAction::RobKongWindow(rob)) = round.pending_action.as_ref() else {
         return false;
     };
@@ -378,6 +373,28 @@ mod tests {
     }
 
     #[test]
+    fn allows_ready_hand_rob_kong_pass_for_offered_seat() {
+        let mut room = base_room();
+        room["round_state"]["players"][1]["is_ready_hand"] = json!(true);
+        room["round_state"]["pending_action"] = json!({
+            "type": "rob_kong_window",
+            "actor_seat": 0,
+            "tile_id": "w3#0",
+            "tile_key": "w3",
+            "meld_index": 0,
+            "offered_hu_seats": [1],
+            "responded_seats": []
+        });
+        room["pending_timeout"]["kind"] = json!("claim_window");
+        let context = context(room);
+
+        assert_eq!(
+            classify_local_player_action(&context, 1, &PlayerAction::Pass),
+            Some(LocalPlayerActionKind::RobKongPass)
+        );
+    }
+
+    #[test]
     fn claim_window_validation_requires_unresponded_offered_action() {
         let mut room = base_room();
         room["round_state"]["pending_action"] = json!({
@@ -399,6 +416,26 @@ mod tests {
                 }
             ),
             None
+        );
+    }
+
+    #[test]
+    fn allows_ready_hand_claim_window_pass() {
+        let mut room = base_room();
+        room["round_state"]["players"][1]["is_ready_hand"] = json!(true);
+        room["round_state"]["pending_action"] = json!({
+            "type": "claim_window",
+            "discarder_seat": 0,
+            "claim_window": [[], ["hu"], [], []],
+            "responded_seats": [],
+            "claim_responses": []
+        });
+        room["pending_timeout"]["kind"] = json!("claim_window");
+        let context = context(room);
+
+        assert_eq!(
+            classify_local_player_action(&context, 1, &PlayerAction::Pass),
+            Some(LocalPlayerActionKind::ClaimWindow)
         );
     }
 

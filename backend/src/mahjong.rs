@@ -504,6 +504,24 @@ mod tests {
         room
     }
 
+    fn set_seat_one_hu_on_w3_discard(room: &mut Value) {
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w1", "w1#1"),
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("t6", "t6#1a"),
+            suit("t6", "t6#1b")
+        ]);
+    }
+
     fn room_for_bot_active_turn() -> Value {
         let mut room = room_for_local_discard();
         room["seats"][0]["is_bot"] = json!(true);
@@ -1056,6 +1074,53 @@ mod tests {
     }
 
     #[test]
+    fn local_discard_hu_pass_records_response() {
+        let mut room = room_for_local_claim_window();
+        set_seat_one_hu_on_w3_discard(&mut room);
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        let prompt = action_prompt(&room, 1).expect("hu claim prompt should exist");
+        assert_eq!(prompt["payload"]["options"], json!(["chow", "hu", "pass"]));
+
+        let result = try_handle_action(&mut room, 1, "pass", &[])
+            .expect("discard hu pass should be handled locally")
+            .expect("discard hu pass should succeed");
+
+        assert!(result.is_empty());
+        assert_eq!(
+            room["round_state"]["pending_action"]["responded_seats"],
+            json!([1])
+        );
+        assert_eq!(room["pending_timeout"]["kind"], "claim_window");
+    }
+
+    #[test]
+    fn ready_hand_discard_hu_pass_records_response() {
+        let mut room = room_for_local_claim_window();
+        set_seat_one_hu_on_w3_discard(&mut room);
+        room["round_state"]["players"][1]["is_ready_hand"] = json!(true);
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        let prompt = action_prompt(&room, 1).expect("ready-hand hu claim prompt should exist");
+        assert_eq!(prompt["payload"]["options"], json!(["hu", "pass"]));
+
+        let result = try_handle_action(&mut room, 1, "pass", &[])
+            .expect("ready-hand discard hu pass should be handled locally")
+            .expect("ready-hand discard hu pass should succeed");
+
+        assert!(result.is_empty());
+        assert_eq!(
+            room["round_state"]["pending_action"]["responded_seats"],
+            json!([1])
+        );
+        assert_eq!(room["pending_timeout"]["kind"], "claim_window");
+    }
+
+    #[test]
     fn local_discard_hu_allows_multiple_winners_before_settlement() {
         let mut room = room_for_local_claim_window();
         room["round_state"]["players"][1]["concealed_tiles"] = json!([
@@ -1556,7 +1621,7 @@ mod tests {
             .expect("discard should succeed");
 
         let prompt = action_prompt(&room, 2).expect("claim prompt should exist");
-        assert_eq!(prompt["payload"]["options"], json!(["kong"]));
+        assert_eq!(prompt["payload"]["options"], json!(["kong", "pass"]));
 
         let result = try_handle_action(
             &mut room,
@@ -1646,6 +1711,29 @@ mod tests {
             room["round_state"]["players"][0]["melds"][0],
             json!(["w3", "w3", "w3", "w3"])
         );
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 0);
+    }
+
+    #[test]
+    fn ready_hand_rob_kong_pass_completes_add_kong() {
+        let mut room = room_for_local_add_kong_with_robber();
+        room["round_state"]["players"][1]["is_ready_hand"] = json!(true);
+        let _ = try_handle_action(&mut room, 0, "kong", &[String::from("w3#add")])
+            .expect("add kong should be handled locally")
+            .expect("add kong should open rob kong window");
+
+        let prompt = action_prompt(&room, 1).expect("ready-hand rob kong prompt should exist");
+        assert_eq!(prompt["payload"]["options"], json!(["hu", "pass"]));
+
+        let result = try_handle_action(&mut room, 1, "pass", &[])
+            .expect("ready-hand rob kong pass should be handled locally")
+            .expect("pass should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "self_kong_declared");
+        assert_eq!(result[1]["payload"]["event_type"], "replacement_draw");
+        assert!(room["round_state"]["pending_action"].is_null());
         assert_eq!(room["pending_timeout"]["kind"], "active_turn");
         assert_eq!(room["pending_timeout"]["seat_index"], 0);
     }
