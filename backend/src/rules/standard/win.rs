@@ -26,6 +26,7 @@ use crate::core::engine::reducer::update_room_state;
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const MULTI_HU_WIN_LABEL: &str = "一炮多响";
+pub(crate) const BOT_MINIMUM_HU_FAN: i64 = 8;
 
 struct PreparedWinEvaluation {
     concealed_tile_keys: Vec<String>,
@@ -403,7 +404,19 @@ pub fn apply_hu_action_output_in_room_state(
         return Err("invalid_action".to_string());
     };
     let settlement = compute_hu_settlement_for_state(room, seat_index, hu_context)?;
+    if seat_is_bot(room, seat_index) && settlement.fan_total < BOT_MINIMUM_HU_FAN {
+        return Err("invalid_action".to_string());
+    }
     apply_hu_settlement_output_in_room_state(room, seat_index, hu_context, settlement)
+}
+
+pub(crate) fn hu_meets_bot_minimum_fan_for_state(
+    state: &RoomState,
+    winner_seat: usize,
+    hu_context: &str,
+) -> bool {
+    compute_hu_settlement_for_state(state, winner_seat, hu_context)
+        .is_ok_and(|settlement| settlement.fan_total >= BOT_MINIMUM_HU_FAN)
 }
 
 pub(crate) fn compute_hu_settlement_for_state(
@@ -665,6 +678,14 @@ fn rob_kong_action_offers_seat(
     pending_action.offered_hu_seats.contains(&seat_index)
 }
 
+fn seat_is_bot(state: &RoomState, seat_index: usize) -> bool {
+    state
+        .seats
+        .iter()
+        .find(|seat| seat.seat_index == seat_index)
+        .is_some_and(|seat| seat.is_bot)
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 pub fn claim_window_offers_claim(
@@ -847,7 +868,10 @@ fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{can_declare_hu_with_cache_for_state, compute_hu_settlement_for_state};
+    use super::{
+        apply_hu_action_output_in_room_state, can_declare_hu_with_cache_for_state,
+        compute_hu_settlement_for_state,
+    };
     use crate::core::state::{
         LastActionContext, MatchState, PlayerRoundState, RoomState, RoundState, SeatState,
     };
@@ -917,6 +941,22 @@ mod tests {
 
         assert!(settlement.fan_total < 8);
         assert_eq!(settlement.display_win_label, None);
+    }
+
+    #[test]
+    fn bot_low_fan_self_draw_is_rejected_at_hu_execution() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        state.seats.get_mut(0).expect("seat should exist").is_bot = true;
+
+        let result = apply_hu_action_output_in_room_state(&mut state, 0);
+
+        assert_eq!(
+            result.expect_err("low fan bot hu should fail"),
+            "invalid_action"
+        );
     }
 
     #[test]

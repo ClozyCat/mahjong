@@ -24,10 +24,12 @@ use super::meld::{
 };
 #[cfg(test)]
 use super::runtime::project_room_state;
-use super::win::apply_hu_action_output_in_room_state;
-use super::win::can_declare_hu_with_cache_for_state;
 #[cfg(test)]
 use super::win::claim_window_offers_claim;
+use super::win::{
+    apply_hu_action_output_in_room_state, can_declare_hu_with_cache_for_state,
+    hu_meets_bot_minimum_fan_for_state,
+};
 
 const MAX_SEATS: usize = 4;
 
@@ -56,7 +58,10 @@ pub fn try_process_due_timeout_in_room_state(
                     return apply_flower_action_output_in_room_state(room, seat_index, &[tile_id])
                         .map(|output| Some(output.emitted_messages));
                 }
-                if can_declare_hu_with_cache_for_state(room, &cache, seat_index, None, None) {
+                if can_declare_hu_with_cache_for_state(room, &cache, seat_index, None, None)
+                    && (!seat_is_bot(room, seat_index)
+                        || hu_meets_bot_minimum_fan_for_state(room, seat_index, "self_draw"))
+                {
                     return apply_hu_action_output_in_room_state(room, seat_index)
                         .map(|output| Some(output.emitted_messages));
                 }
@@ -332,6 +337,7 @@ fn choose_bot_claim_action_with_cache_for_state(
         .claim_window
         .get(seat_index)
         .is_some_and(|claims| claims.iter().any(|claim_type| claim_type == "hu"))
+        && hu_meets_bot_minimum_fan_for_state(room, seat_index, "discard")
     {
         return Some(BotAction {
             seat_index,
@@ -380,7 +386,10 @@ fn next_ready_hand_action_for_state(
         });
     }
 
-    if can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None) {
+    if can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
+        && (!seat_is_bot(state, seat_index)
+            || hu_meets_bot_minimum_fan_for_state(state, seat_index, "self_draw"))
+    {
         return Some(BotAction {
             seat_index,
             action_type: "hu".to_string(),
@@ -433,7 +442,9 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
             if !seat_is_bot(state, seat_index) {
                 return None;
             }
-            if can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None) {
+            if can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None)
+                && hu_meets_bot_minimum_fan_for_state(state, seat_index, "self_draw")
+            {
                 return Some(BotAction {
                     seat_index,
                     action_type: "hu".to_string(),
@@ -453,6 +464,13 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
             PendingAction::RobKongWindow(rob) => {
                 let seat_index =
                     next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
+                if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
+                    return Some(BotAction {
+                        seat_index,
+                        action_type: "pass".to_string(),
+                        tile_ids: vec![],
+                    });
+                }
                 Some(BotAction {
                     seat_index,
                     action_type: "hu".to_string(),
@@ -738,7 +756,15 @@ mod tests {
                     },
                     {
                         "seat": 1,
-                        "concealed_tiles": [suit("w1", "w1#1")],
+                        "concealed_tiles": [
+                            suit("w1", "w1#1a"), suit("w1", "w1#1b"),
+                            suit("w2", "w2#1a"), suit("w2", "w2#1b"),
+                            suit("w3", "w3#1a"),
+                            suit("t4", "t4#1a"), suit("t4", "t4#1b"),
+                            suit("t5", "t5#1a"), suit("t5", "t5#1b"),
+                            suit("b6", "b6#1a"), suit("b6", "b6#1b"),
+                            wind("red", "red#1a"), wind("red", "red#1b")
+                        ],
                         "melds": [],
                         "flowers": [],
                         "discards": []
@@ -816,6 +842,40 @@ mod tests {
             .expect("bot should act after earlier human response");
         assert_eq!(action.seat_index, 1);
         assert_eq!(action.action_type, "hu");
+    }
+
+    #[test]
+    fn claim_window_bot_passes_low_fan_hu() {
+        let mut room = claim_window_priority_room_state();
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.players[1].concealed_tiles = serde_json::from_value(json!([
+            suit("w1", "w1#1"),
+            suit("w2", "w2#1"),
+            suit("t4", "t4#1"),
+            suit("t5", "t5#1"),
+            suit("t6", "t6#1"),
+            suit("b3", "b3#1"),
+            suit("b4", "b4#1"),
+            suit("b5", "b5#1"),
+            suit("w6", "w6#1"),
+            suit("w7", "w7#1"),
+            suit("w8", "w8#1"),
+            wind("red", "red#1a"),
+            wind("red", "red#1b")
+        ]))
+        .expect("tiles should parse");
+        if let Some(claim) = round.pending_action.as_mut() {
+            if let crate::core::state::PendingAction::ClaimWindow(claim) = claim {
+                claim.responded_seats.push(0);
+            }
+        }
+
+        let action = next_bot_action_in_room_state(&room)
+            .expect("bot lookup should succeed")
+            .expect("bot should respond");
+
+        assert_eq!(action.seat_index, 1);
+        assert_eq!(action.action_type, "pass");
     }
 
     #[test]
@@ -1420,6 +1480,45 @@ mod tests {
         assert!(
             action.is_none(),
             "winning draw should wait for the human player to click hu"
+        );
+    }
+
+    #[test]
+    fn ready_hand_bot_discards_low_fan_self_draw() {
+        let mut room = ready_hand_auto_room_state("w3", "w3#draw");
+        room.seats.get_mut(0).expect("seat should exist").is_bot = true;
+        room.round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(0))
+            .expect("player should exist")
+            .concealed_tiles = serde_json::from_value(json!([
+            suit("w1", "w1#0"),
+            suit("w2", "w2#1"),
+            suit("w3", "w3#draw"),
+            suit("t4", "t4#3"),
+            suit("t5", "t5#4"),
+            suit("t6", "t6#5"),
+            suit("b3", "b3#6"),
+            suit("b4", "b4#7"),
+            suit("b5", "b5#8"),
+            suit("w6", "w6#9"),
+            suit("w7", "w7#10"),
+            suit("w8", "w8#11"),
+            wind("red", "red#12"),
+            wind("red", "red#13")
+        ]))
+        .expect("tiles should parse");
+
+        let action =
+            next_bot_action_in_room_state(&room).expect("ready-hand lookup should succeed");
+
+        assert!(
+            action.is_some(),
+            "bot should keep acting after refusing low fan hu"
+        );
+        assert_ne!(
+            action.as_ref().map(|action| action.action_type.as_str()),
+            Some("hu")
         );
     }
 
