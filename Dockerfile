@@ -1,6 +1,6 @@
 FROM node:22-bookworm-slim AS frontend-builder
 
-ARG MAHJONG_ENABLE_SPECTATOR=false
+ARG MAHJONG_ENABLE_SPECTATOR=true
 ENV MAHJONG_ENABLE_SPECTATOR=${MAHJONG_ENABLE_SPECTATOR}
 
 WORKDIR /app/frontend
@@ -15,7 +15,7 @@ RUN npm run build
 
 FROM rust:1.94-bookworm AS rust-backend-builder
 
-ARG MAHJONG_ENABLE_SPECTATOR=false
+ARG MAHJONG_ENABLE_SPECTATOR=true
 
 WORKDIR /app/backend
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse

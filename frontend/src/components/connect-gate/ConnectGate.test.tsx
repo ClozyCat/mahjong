@@ -62,7 +62,7 @@ describe('ConnectGate', () => {
     expect(onJoin).toHaveBeenCalledTimes(1);
   });
 
-  it('renders spectator entry only when enabled by props', async () => {
+  (__SPECTATOR_ENABLED__ ? it : it.skip)('renders spectator entry only when enabled by props', async () => {
     const user = userEvent.setup();
     const onWatch = vi.fn();
 

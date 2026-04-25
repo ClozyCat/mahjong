@@ -29,6 +29,7 @@ export function MahjongTile({
   const isRelatedHighlight = !isFaceDown && variant !== 'hand' && relatedTileCode === code;
   const classes = [
     'mahjong-tile',
+    'mahjong-tile--retro',
     `mahjong-tile--${variant}`,
     isSelected ? 'mahjong-tile--selected' : '',
     isDrawn ? 'mahjong-tile--drawn' : '',

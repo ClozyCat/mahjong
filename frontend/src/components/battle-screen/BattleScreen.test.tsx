@@ -509,7 +509,7 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('shows the matching fan guide tooltip after hovering a settlement fan row for 0.5s', () => {
+  it('shows the matching fan guide tooltip after hovering a settlement fan row for 0.35s', () => {
     vi.useFakeTimers();
 
     renderBattleScreen(
@@ -555,7 +555,7 @@ describe('BattleScreen', () => {
     fireEvent.mouseEnter(pingHuRow!);
 
     act(() => {
-      vi.advanceTimersByTime(499);
+      vi.advanceTimersByTime(349);
     });
 
     expect(screen.queryByRole('tooltip')).toBeNull();
@@ -722,7 +722,7 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '收起其他玩家分数' })).toBeNull();
   });
 
-  it('shows a player statistics tooltip with score trend and win rate when hovering a score row', () => {
+  it('shows a player statistics tooltip with score trend and win rate when hovering a score row after 0.35s', () => {
     vi.useFakeTimers();
 
     renderBattleScreen(
@@ -780,7 +780,7 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
 
     act(() => {
-      vi.advanceTimersByTime(499);
+      vi.advanceTimersByTime(349);
     });
 
     expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
@@ -794,7 +794,7 @@ describe('BattleScreen', () => {
     expect(screen.getByText('2/4')).toBeInTheDocument();
     expect(screen.getByText('放铳次数')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Player A 本牌局战绩折线图' })).toBeInTheDocument();
+    expect(document.body.querySelector('.result-overlay__seat-tooltip-svg')).not.toBeNull();
 
     fireEvent.mouseLeave(playerRow!);
 
@@ -1309,7 +1309,7 @@ describe('BattleScreen', () => {
     );
 
     act(() => {
-      vi.advanceTimersByTime(999);
+      vi.advanceTimersByTime(499);
     });
 
     expect(screen.getByText('听')).toBeInTheDocument();
@@ -1384,7 +1384,7 @@ describe('BattleScreen', () => {
     );
 
     act(() => {
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(500);
     });
 
     expect(screen.queryByText('听')).toBeNull();

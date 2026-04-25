@@ -419,7 +419,7 @@ export default function App() {
           handleLeaveToLobby(current.tableCode);
           return;
         }
-        if (current.clientMode === 'spectator') {
+        if (__SPECTATOR_ENABLED__ && current.clientMode === 'spectator') {
           handleLeaveToLobby(current.tableCode, '观战连接已断开。');
           return;
         }
@@ -524,7 +524,7 @@ export default function App() {
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
   const shouldForceSmallScreen = isMobileClient && state.roomSnapshot !== null;
-  const isSpectator = state.clientMode === 'spectator';
+  const isSpectator = __SPECTATOR_ENABLED__ && state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
     isSpectator
@@ -606,7 +606,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!isSpectator || !state.roomSnapshot) {
+    if (!__SPECTATOR_ENABLED__ || !isSpectator || !state.roomSnapshot) {
       return;
     }
 
@@ -1049,7 +1049,7 @@ export default function App() {
       onQuickChat={handleQuickChat}
       isSpectator={isSpectator}
       spectatorFocusName={spectatorFocusName}
-      onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}
+      onSwitchSpectatorPerspective={__SPECTATOR_ENABLED__ && isSpectator ? handleSwitchSpectatorPerspective : undefined}
     />
   );
 }

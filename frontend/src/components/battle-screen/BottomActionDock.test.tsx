@@ -482,7 +482,7 @@ describe('BottomActionDock', () => {
     expect(onTileDoubleClick).toHaveBeenCalledWith('w1#1');
   });
 
-  it('renders spectator perspective switch and disables tile interaction', async () => {
+  (__SPECTATOR_ENABLED__ ? it : it.skip)('renders spectator perspective switch and disables tile interaction', async () => {
     const user = userEvent.setup();
     const onSwitchPerspective = vi.fn();
     const onTileSelect = vi.fn();

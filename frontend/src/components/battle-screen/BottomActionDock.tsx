@@ -255,7 +255,7 @@ export function BottomActionDock({
       ) : null}
       <div className="action-dock__tableau action-dock__tableau--full">
         <div className="action-dock__hand-zone">
-          {isSpectator && onSwitchPerspective ? (
+          {__SPECTATOR_ENABLED__ && isSpectator && onSwitchPerspective ? (
             <button
               type="button"
               className="action-dock__spectator-switch"

@@ -1029,7 +1029,7 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
 
     act(() => {
-      vi.advanceTimersByTime(1499);
+      vi.advanceTimersByTime(999);
     });
 
     expect(screen.getByText('听')).toBeInTheDocument();

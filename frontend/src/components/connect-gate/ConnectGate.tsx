@@ -164,7 +164,7 @@ export function ConnectGate({
             >
               加入牌桌
             </button>
-            {onWatch && canWatch ? (
+            {__SPECTATOR_ENABLED__ && onWatch && canWatch ? (
               <button
                 type="button"
                 className="connect-gate__btn connect-gate__btn--secondary"

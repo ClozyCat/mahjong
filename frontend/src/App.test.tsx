@@ -601,6 +601,18 @@ describe('App', () => {
               drawn_tile_id: selectedTileId,
               options: ['discard', 'ready_hand'],
             },
+            hand_insights: {
+              current: null,
+              by_discard_tile_id: {
+                [selectedTileId]: {
+                  discard_tile_id: selectedTileId,
+                  discard_tile_code: 'b9',
+                  is_tenpai: true,
+                  waits: [{ code: 't4', available_count: 3 }],
+                  winning_fans: [{ fan_key: 'full_flush', fan_value: 24 }],
+                },
+              },
+            },
             players: [
               {
                 ...baseSnapshot.private_state.players[0],
