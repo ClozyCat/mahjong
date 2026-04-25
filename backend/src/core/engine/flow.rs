@@ -81,6 +81,13 @@ fn try_handle_player_action_command(
                 .ok()
                 .flatten()
         }
+        (LocalPlayerActionKind::SelfHuPass, PlayerAction::Pass) => {
+            let tile_id = self_hu_pass_discard_tile_id(context, seat_index)
+                .ok_or_else(|| "invalid_action".to_string());
+            Some(tile_id.and_then(|tile_id| {
+                apply_discard_action_output_in_room_state(room, seat_index, &tile_id)
+            }))
+        }
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pass) => Some(
             apply_claim_window_action_in_room_state(room, seat_index, "pass", &[]),
         ),
@@ -95,4 +102,34 @@ fn try_handle_player_action_command(
         ),
         _ => None,
     }
+}
+
+fn self_hu_pass_discard_tile_id(context: &EngineContext, seat_index: usize) -> Option<String> {
+    let round = context.room.round_state.as_ref()?;
+    let restricted_tile_key = round.restricted_discard_tile_key.as_deref();
+    let player = round.players.get(seat_index)?;
+
+    if let Some(drawn_tile_id) = context
+        .room
+        .pending_timeout
+        .as_ref()
+        .and_then(|timeout| timeout.drawn_tile_id.as_deref())
+    {
+        let drawn_tile = player
+            .concealed_tiles
+            .iter()
+            .find(|tile| tile.tile_id == drawn_tile_id);
+        if let Some(drawn_tile) = drawn_tile
+            && Some(drawn_tile.tile_key.as_str()) != restricted_tile_key
+        {
+            return Some(drawn_tile.tile_id.clone());
+        }
+    }
+
+    player
+        .concealed_tiles
+        .iter()
+        .rev()
+        .find(|tile| Some(tile.tile_key.as_str()) != restricted_tile_key)
+        .map(|tile| tile.tile_id.clone())
 }

@@ -954,6 +954,40 @@ mod tests {
     }
 
     #[test]
+    fn local_self_hu_pass_discards_drawn_tile_and_advances_turn() {
+        let mut room = room_for_local_self_hu();
+
+        let result = try_handle_action(&mut room, 0, "pass", &[])
+            .expect("self hu pass should be handled locally")
+            .expect("self hu pass should succeed");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(result[0]["payload"]["event"]["tile_id"], "w9#1");
+        assert_eq!(room["round_state"]["current_actor"], 1);
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 1);
+    }
+
+    #[test]
+    fn ready_hand_self_hu_pass_discards_drawn_tile_and_advances_turn() {
+        let mut room = room_for_local_self_hu();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+
+        let result = try_handle_action(&mut room, 0, "pass", &[])
+            .expect("ready-hand self hu pass should be handled locally")
+            .expect("ready-hand self hu pass should succeed");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(result[0]["payload"]["event"]["tile_id"], "w9#1");
+        assert_eq!(room["round_state"]["players"][0]["is_ready_hand"], true);
+        assert_eq!(room["round_state"]["current_actor"], 1);
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 1);
+    }
+
+    #[test]
     fn local_discard_can_open_claim_window_without_hu() {
         let mut room = room_for_local_claim_window();
         assert!(can_resolve_discard_locally(&room, 0, "w3#discard"));

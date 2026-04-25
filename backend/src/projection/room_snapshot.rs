@@ -626,16 +626,16 @@ fn continue_action_snapshot(state: &RoomState) -> Option<ContinueActionView> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{build_pending_action_view, room_snapshot_message};
     #[cfg(feature = "spectator")]
     use super::observer_room_snapshot_message;
-    #[cfg(feature = "spectator")]
-    use crate::core::tile::Tile;
+    use super::{build_pending_action_view, room_snapshot_message};
     use crate::core::state::PendingTimeout;
     use crate::core::state::{
         ClaimWindowAction, MatchState, PendingAction, PlayerRoundState, RoomState, RoundSettlement,
         RoundState, SeatState, SettlementKongScoreDetailEntry, SettlementScoreDelta,
     };
+    #[cfg(feature = "spectator")]
+    use crate::core::tile::Tile;
     use crate::projection::SeatProjectionSupport;
 
     #[test]

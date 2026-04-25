@@ -535,7 +535,7 @@ describe('App', () => {
     ]);
   });
 
-  it('dismisses a local self-hu prompt without sending a pass action', async () => {
+  it('sends pass for a local self-hu prompt so the server can advance the turn', async () => {
     const user = userEvent.setup();
     const socket = await joinTable(user);
     const baseSnapshot = createPlayingSnapshotPayload();
@@ -566,6 +566,7 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '和牌' })).not.toBeInTheDocument();
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'action_request', payload: { action_type: 'pass', tile_ids: [] } },
     ]);
   });
 

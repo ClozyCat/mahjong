@@ -906,15 +906,22 @@ export default function App() {
     }
 
     if (actionId === 'pass') {
+      if (hasLocalSelfHuPassOption && localSelfHuPromptSignature) {
+        if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId)))) {
+          return;
+        }
+        setDismissedLocalSelfHuPromptSignature(localSelfHuPromptSignature);
+        if (hasLocalTurnKongPrompt && localTurnKongPromptSignature) {
+          setDismissedLocalTurnKongPromptSignature(localTurnKongPromptSignature);
+        }
+        dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+        return;
+      }
+
       let handledLocalPass = false;
 
       if (hasLocalTurnKongPrompt && localTurnKongPromptSignature) {
         setDismissedLocalTurnKongPromptSignature(localTurnKongPromptSignature);
-        handledLocalPass = true;
-      }
-
-      if (hasLocalSelfHuPassOption && localSelfHuPromptSignature) {
-        setDismissedLocalSelfHuPromptSignature(localSelfHuPromptSignature);
         handledLocalPass = true;
       }
 

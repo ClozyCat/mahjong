@@ -1,7 +1,9 @@
 use crate::core::action::PlayerAction;
 use crate::core::ids::Seat;
 use crate::core::state::PendingAction;
+use crate::room_scoring::RoomScoringCache;
 use crate::rules::standard::ready_hand::can_declare_ready_hand_with_tile_id;
+use crate::rules::standard::win::can_declare_hu_with_cache_for_state;
 
 use super::command::EngineContext;
 
@@ -13,6 +15,7 @@ pub enum LocalPlayerActionKind {
     ReadyHand,
     ClaimWindow,
     SelfKong,
+    SelfHuPass,
     RobKongPass,
 }
 
@@ -50,6 +53,8 @@ pub fn classify_local_player_action(
                 Some(LocalPlayerActionKind::ClaimWindow)
             } else if rob_kong_pass_supported(context, actor) {
                 Some(LocalPlayerActionKind::RobKongPass)
+            } else if self_hu_pass_supported(context, actor) {
+                Some(LocalPlayerActionKind::SelfHuPass)
             } else {
                 None
             }
@@ -158,6 +163,31 @@ fn self_kong_supported(context: &EngineContext, actor: Seat) -> bool {
             .as_ref()
             .map(|timeout| timeout.kind.as_str())
             == Some("active_turn")
+}
+
+fn self_hu_pass_supported(context: &EngineContext, actor: Seat) -> bool {
+    if context.room.phase != "playing" || context.current_actor() != Some(actor) {
+        return false;
+    }
+    if context
+        .room
+        .pending_timeout
+        .as_ref()
+        .map(|timeout| timeout.kind.as_str())
+        != Some("active_turn")
+    {
+        return false;
+    }
+    if context
+        .room
+        .round_state
+        .as_ref()
+        .is_some_and(|round| round.pending_action.is_some())
+    {
+        return false;
+    }
+    let cache = RoomScoringCache::from_state(&context.room);
+    can_declare_hu_with_cache_for_state(&context.room, &cache, actor, None, None)
 }
 
 #[cfg(test)]
