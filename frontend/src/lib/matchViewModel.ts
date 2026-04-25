@@ -858,10 +858,9 @@ function mapBackendHandInsight(
       code: wait.code,
       availableCount: wait.available_count,
     })),
-    recommendations: insight.recommendations.map((item) => ({
+    winningFans: insight.winning_fans.map((item) => ({
       fanKey: item.fan_key,
       fanValue: item.fan_value,
-      similarityPercent: item.similarity_percent,
     })),
   };
 }
@@ -879,12 +878,12 @@ function createHandInsight(state: SessionState): BattleViewModel['handInsight'] 
   const selectedTileId = state.selectedTileIds.length === 1 ? state.selectedTileIds[0] : null;
   if (selectedTileId) {
     const preview = handInsights.by_discard_tile_id[selectedTileId];
-    if (preview) {
+    if (preview?.is_tenpai) {
       return mapBackendHandInsight(preview, 'selected_discard');
     }
   }
 
-  return handInsights.current ? mapBackendHandInsight(handInsights.current, 'current') : null;
+  return handInsights.current?.is_tenpai ? mapBackendHandInsight(handInsights.current, 'current') : null;
 }
 
 function hasMatchingTileSelection(selectedTileIds: string[], candidateTileIds: string[]) {

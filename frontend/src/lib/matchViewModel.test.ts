@@ -315,9 +315,7 @@ describe('createMatchViewModel', () => {
                   { code: 't1', available_count: 2 },
                   { code: 't4', available_count: 3 },
                 ],
-                recommendations: [
-                  { fan_key: 'full_flush', fan_value: 24, similarity_percent: 79 },
-                ],
+                winning_fans: [{ fan_key: 'full_flush', fan_value: 24 }],
               },
               by_discard_tile_id: {},
             },
@@ -363,7 +361,7 @@ describe('createMatchViewModel', () => {
         { code: 't1', availableCount: 2 },
         { code: 't4', availableCount: 3 },
       ],
-      recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 79 }],
+      winningFans: [{ fanKey: 'full_flush', fanValue: 24 }],
     });
   });
 
@@ -385,9 +383,7 @@ describe('createMatchViewModel', () => {
                 discard_tile_code: null,
                 is_tenpai: false,
                 waits: [],
-                recommendations: [
-                  { fan_key: 'half_flush', fan_value: 6, similarity_percent: 51 },
-                ],
+                winning_fans: [],
               },
               by_discard_tile_id: {
                 [selectedTileId]: {
@@ -395,9 +391,7 @@ describe('createMatchViewModel', () => {
                   discard_tile_code: 'b9',
                   is_tenpai: true,
                   waits: [{ code: 't4', available_count: 3 }],
-                  recommendations: [
-                    { fan_key: 'full_flush', fan_value: 24, similarity_percent: 83 },
-                  ],
+                  winning_fans: [{ fan_key: 'full_flush', fan_value: 24 }],
                 },
               },
             },
@@ -446,7 +440,7 @@ describe('createMatchViewModel', () => {
       discardTileCode: 'b9',
       isTenpai: true,
       waits: [{ code: 't4', availableCount: 3 }],
-      recommendations: [{ fanKey: 'full_flush', fanValue: 24, similarityPercent: 83 }],
+      winningFans: [{ fanKey: 'full_flush', fanValue: 24 }],
     });
   });
 
@@ -471,9 +465,7 @@ describe('createMatchViewModel', () => {
                     discard_tile_code: 'b9',
                     is_tenpai: true,
                     waits: [{ code: 't4', available_count: 3 }],
-                    recommendations: [
-                      { fan_key: 'full_flush', fan_value: 24, similarity_percent: 83 },
-                    ],
+                    winning_fans: [{ fan_key: 'full_flush', fan_value: 24 }],
                   },
                 },
               },

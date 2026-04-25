@@ -2,7 +2,6 @@ pub mod evaluator;
 pub mod fan_table;
 pub mod model;
 
-pub(crate) use evaluator::recommendable_fan_rules;
 #[allow(unused_imports)]
 pub use evaluator::{
     StandardScoreEvaluator, decompose_winning_hand, decompose_winning_hand_with_melds,

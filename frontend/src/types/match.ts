@@ -430,10 +430,9 @@ export interface BackendHandInsightWait {
   available_count: number;
 }
 
-export interface BackendHandInsightRecommendation {
+export interface BackendHandInsightWinningFan {
   fan_key: string;
   fan_value: number;
-  similarity_percent: number;
 }
 
 export interface BackendHandInsight {
@@ -441,7 +440,7 @@ export interface BackendHandInsight {
   discard_tile_code: string | null;
   is_tenpai: boolean;
   waits: BackendHandInsightWait[];
-  recommendations: BackendHandInsightRecommendation[];
+  winning_fans: BackendHandInsightWinningFan[];
 }
 
 export interface BackendHandInsights {
@@ -454,10 +453,9 @@ export interface HandInsightWaitView {
   availableCount: number;
 }
 
-export interface HandInsightRecommendationView {
+export interface HandInsightWinningFanView {
   fanKey: string;
   fanValue: number;
-  similarityPercent: number;
 }
 
 export interface HandInsightView {
@@ -466,7 +464,7 @@ export interface HandInsightView {
   discardTileCode: string | null;
   isTenpai: boolean;
   waits: HandInsightWaitView[];
-  recommendations: HandInsightRecommendationView[];
+  winningFans: HandInsightWinningFanView[];
 }
 
 export interface ResultSeatView {

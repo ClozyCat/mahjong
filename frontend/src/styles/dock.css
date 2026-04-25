@@ -421,12 +421,12 @@
   min-height: calc(1.28rem * 1.36);
 }
 
-.action-dock__hand-insight-recommendations {
+.action-dock__hand-insight-winning-fans {
   display: grid;
   gap: 0.35rem;
 }
 
-.action-dock__hand-insight-recommendation {
+.action-dock__hand-insight-winning-fan {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -436,11 +436,11 @@
   white-space: nowrap;
 }
 
-.action-dock__hand-insight-recommendation:last-child {
+.action-dock__hand-insight-winning-fan:last-child {
   border-bottom: 0;
 }
 
-.action-dock__hand-insight-recommendation span {
+.action-dock__hand-insight-winning-fan span {
   font-size: 0.88rem;
   font-weight: 500;
   color: var(--theme-paper-strong);
@@ -448,7 +448,7 @@
   transition: color 0.2s, text-decoration-color 0.2s;
 }
 
-.action-dock__ready-hand-popover--pinned .action-dock__hand-insight-recommendation span {
+.action-dock__ready-hand-popover--pinned .action-dock__hand-insight-winning-fan span {
   text-decoration: underline;
   text-underline-offset: 0.25rem;
   text-decoration-thickness: 1px;
@@ -456,12 +456,12 @@
   cursor: help;
 }
 
-.action-dock__ready-hand-popover--pinned .action-dock__hand-insight-recommendation:hover span {
+.action-dock__ready-hand-popover--pinned .action-dock__hand-insight-winning-fan:hover span {
   color: var(--accent-2);
   text-decoration-color: var(--accent-2);
 }
 
-.action-dock__hand-insight-recommendation strong {
+.action-dock__hand-insight-winning-fan strong {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -485,7 +485,7 @@
 
 /* ------- Fan detail popover ------- */
 
-.action-dock__hand-insight-recommendation {
+.action-dock__hand-insight-winning-fan {
   position: relative;
 }
 
