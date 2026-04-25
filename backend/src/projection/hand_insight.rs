@@ -13,15 +13,14 @@ use crate::rules::scoring::{
 use crate::rules::standard::win::classify_meld_groups_for_projection;
 
 const STANDARD_TILE_KEYS: [&str; 34] = [
-    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
-    "t7", "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south",
-    "west", "north", "red", "green", "white",
+    "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+    "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
+    "north", "red", "green", "white",
 ];
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const GREEN_TILE_KEYS: [&str; 6] = ["t2", "t3", "t4", "t6", "t8", "green"];
 const ORPHAN_TILE_KEYS: [&str; 13] = [
-    "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red", "green",
-    "white",
+    "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red", "green", "white",
 ];
 const DRAGON_TILE_KEYS: [&str; 3] = ["red", "green", "white"];
 const WIND_TILE_KEYS: [&str; 4] = ["east", "south", "west", "north"];
@@ -60,7 +59,10 @@ pub(crate) fn build_hand_insights_view(
     support: &SeatProjectionSupport,
 ) -> Option<HandInsightsView> {
     let round = state.round_state.as_ref()?;
-    let local_player = round.players.iter().find(|player| player.seat == local_seat)?;
+    let local_player = round
+        .players
+        .iter()
+        .find(|player| player.seat == local_seat)?;
     let live_tiles = non_flower_tiles(local_player);
     if live_tiles.is_empty() {
         return None;
@@ -69,11 +71,19 @@ pub(crate) fn build_hand_insights_view(
     let cache = RoomScoringCache::from_state(state);
     let public_visible_tile_keys = collect_public_visible_tile_keys(round);
     let known_tile_counts = collect_known_tile_counts(local_player, &public_visible_tile_keys);
-    let by_discard_tile_id =
-        build_discard_preview_map(state, &cache, round, local_player, local_seat, support,
-            &known_tile_counts, &public_visible_tile_keys);
+    let by_discard_tile_id = build_discard_preview_map(
+        state,
+        &cache,
+        round,
+        local_player,
+        local_seat,
+        support,
+        &known_tile_counts,
+        &public_visible_tile_keys,
+    );
 
-    let current_concealed_tile_keys = current_concealed_tile_keys(local_player, local_seat, state.pending_timeout.as_ref());
+    let current_concealed_tile_keys =
+        current_concealed_tile_keys(local_player, local_seat, state.pending_timeout.as_ref());
     let current = Some(build_insight(
         state,
         &cache,
@@ -144,11 +154,7 @@ fn build_insight(
     public_visible_tile_keys: &[String],
     preview_map: Option<&BTreeMap<String, HandInsightView>>,
 ) -> HandInsightView {
-    let waits = build_waits(
-        &concealed_tile_keys,
-        &local_player.melds,
-        known_tile_counts,
-    );
+    let waits = build_waits(&concealed_tile_keys, &local_player.melds, known_tile_counts);
     let recommendations = if !waits.is_empty() {
         let exact = build_exact_recommendations(
             state,
@@ -272,7 +278,10 @@ fn build_exact_recommendations(
     waits: &[HandInsightWaitView],
     public_visible_tile_keys: &[String],
 ) -> Vec<HandInsightRecommendationView> {
-    let total_live_waits = waits.iter().map(|wait| wait.available_count.max(0)).sum::<i64>();
+    let total_live_waits = waits
+        .iter()
+        .map(|wait| wait.available_count.max(0))
+        .sum::<i64>();
     if total_live_waits <= 0 {
         return Vec::new();
     }
@@ -379,11 +388,8 @@ fn evaluate_wait_scenario(
         return None;
     }
 
-    let (open_meld_tile_key_groups, meld_open_flags) = classify_meld_groups_for_projection(
-        local_seat,
-        &local_player.melds,
-        &cache.kong_entries,
-    );
+    let (open_meld_tile_key_groups, meld_open_flags) =
+        classify_meld_groups_for_projection(local_seat, &local_player.melds, &cache.kong_entries);
     let features = extract_hand_features(
         &concealed_tile_keys,
         &local_player.melds,
@@ -435,20 +441,43 @@ fn evaluate_wait_scenario(
 fn aggregate_preview_recommendations(
     preview_map: &BTreeMap<String, HandInsightView>,
 ) -> Vec<HandInsightRecommendationView> {
-    let mut aggregated = BTreeMap::<String, (i64, i64)>::new();
+    let total_preview_count = preview_map.len() as i64;
+    if total_preview_count <= 0 {
+        return Vec::new();
+    }
+
+    let mut aggregated = BTreeMap::<String, (i64, Vec<i64>)>::new();
     for preview in preview_map.values() {
         for recommendation in &preview.recommendations {
             let entry = aggregated
                 .entry(recommendation.fan_key.clone())
-                .or_insert((recommendation.fan_value, 0));
+                .or_insert((recommendation.fan_value, Vec::new()));
             entry.0 = entry.0.max(recommendation.fan_value);
-            entry.1 = entry.1.max(recommendation.similarity_percent);
+            entry.1.push(recommendation.similarity_percent);
         }
     }
 
     let mut recommendations = aggregated
         .into_iter()
-        .filter_map(|(fan_key, (fan_value, similarity_percent))| {
+        .filter_map(|(fan_key, (fan_value, mut similarity_scores))| {
+            similarity_scores.sort_by(|left, right| right.cmp(left));
+            let supported_branch_count = similarity_scores.len() as i64;
+            let best_score = similarity_scores.first().copied().unwrap_or(0);
+            let top_sample_count = similarity_scores.len().min(3) as i64;
+            let top_sample_sum = similarity_scores
+                .iter()
+                .take(top_sample_count as usize)
+                .copied()
+                .sum::<i64>();
+            let top_sample_average = if top_sample_count > 0 {
+                (top_sample_sum + top_sample_count / 2) / top_sample_count
+            } else {
+                0
+            };
+            let branch_support_percent =
+                (supported_branch_count * 100 + total_preview_count / 2) / total_preview_count;
+            let blended_score = ((best_score * 60) + (top_sample_average * 40) + 50) / 100;
+            let similarity_percent = ((blended_score * branch_support_percent) + 50) / 100;
             (similarity_percent >= 20).then(|| HandInsightRecommendationView {
                 fan_key,
                 fan_value,
@@ -467,11 +496,8 @@ fn build_heuristic_recommendations(
     concealed_tile_keys: &[String],
     public_visible_tile_keys: &[String],
 ) -> Vec<HandInsightRecommendationView> {
-    let (open_meld_tile_key_groups, meld_open_flags) = classify_meld_groups_for_projection(
-        local_seat,
-        &local_player.melds,
-        &cache.kong_entries,
-    );
+    let (open_meld_tile_key_groups, meld_open_flags) =
+        classify_meld_groups_for_projection(local_seat, &local_player.melds, &cache.kong_entries);
     let route_summary = RouteSummary::from_hand(
         concealed_tile_keys,
         &local_player.melds,
@@ -559,7 +585,10 @@ fn non_flower_tiles(local_player: &PlayerRoundState) -> Vec<&crate::core::tile::
         .collect()
 }
 
-fn tile_counts(concealed_tile_keys: &[String], meld_tile_key_groups: &[Vec<String>]) -> HashMap<String, i64> {
+fn tile_counts(
+    concealed_tile_keys: &[String],
+    meld_tile_key_groups: &[Vec<String>],
+) -> HashMap<String, i64> {
     let mut counts = HashMap::new();
     for tile_key in concealed_tile_keys {
         *counts.entry(tile_key.clone()).or_insert(0) += 1;
@@ -652,10 +681,14 @@ fn parse_suit(tile_key: &str) -> Option<(usize, i64)> {
 
 #[derive(Debug, Clone)]
 struct RouteSummary {
+    full_counts: HashMap<String, i64>,
+    suit_counts: [i64; 3],
     total_tiles: i64,
     dominant_suit_count: i64,
     off_suit_count: i64,
     honor_count: i64,
+    wind_tile_count: i64,
+    dragon_tile_count: i64,
     pair_count: i64,
     triplet_count: i64,
     quad_count: i64,
@@ -675,7 +708,6 @@ struct RouteSummary {
     wind_pair_count: i64,
     wind_triplet_count: i64,
     five_tile_count: i64,
-    category_count: i64,
     unique_orphan_count: i64,
     orphan_pair_count: i64,
     single_suit_only: bool,
@@ -704,6 +736,8 @@ impl RouteSummary {
         let full_counts = tile_counts(concealed_tile_keys, meld_tile_key_groups);
         let mut suit_counts = [0_i64; 3];
         let mut honor_count = 0_i64;
+        let mut wind_tile_count = 0_i64;
+        let mut dragon_tile_count = 0_i64;
         let mut terminal_or_honour_count = 0_i64;
         let mut upper_four_tile_count = 0_i64;
         let mut upper_tile_count = 0_i64;
@@ -712,7 +746,6 @@ impl RouteSummary {
         let mut middle_rank_tile_count = 0_i64;
         let mut non_green_tile_count = 0_i64;
         let mut five_tile_count = 0_i64;
-        let mut category_presence = [false; 5];
         let mut unique_orphans = 0_i64;
         let mut orphan_pair_count = 0_i64;
         let mut dragon_pair_count = 0_i64;
@@ -765,7 +798,6 @@ impl RouteSummary {
 
             if let Some((suit_index, rank)) = parse_suit(tile_key) {
                 suit_counts[suit_index] += *count;
-                category_presence[suit_index] = true;
                 if matches!(rank, 1 | 9) {
                     terminal_or_honour_count += *count;
                 }
@@ -788,10 +820,10 @@ impl RouteSummary {
                 honor_count += *count;
                 terminal_or_honour_count += *count;
                 if WIND_TILE_KEYS.contains(&tile_key.as_str()) {
-                    category_presence[3] = true;
+                    wind_tile_count += *count;
                 }
                 if DRAGON_TILE_KEYS.contains(&tile_key.as_str()) {
-                    category_presence[4] = true;
+                    dragon_tile_count += *count;
                 }
             }
 
@@ -820,7 +852,10 @@ impl RouteSummary {
             .iter()
             .zip(meld_open_flags.iter().copied())
             .filter(|(meld, is_open)| {
-                *is_open && meld.len() == 4 && meld.first().is_some() && meld.iter().all(|tile_key| tile_key == &meld[0])
+                *is_open
+                    && meld.len() == 4
+                    && meld.first().is_some()
+                    && meld.iter().all(|tile_key| tile_key == &meld[0])
             })
             .count() as i64;
         let public_visible_tile_counts = public_visible_tile_keys.iter().fold(
@@ -838,14 +873,22 @@ impl RouteSummary {
             .enumerate()
             .filter(|(seat, _)| *seat != local_seat)
             .flat_map(|(_, melds)| melds.iter())
-            .filter(|meld| meld.len() == 3 && meld.first().is_some() && meld.iter().all(|tile_key| tile_key == &meld[0]))
+            .filter(|meld| {
+                meld.len() == 3
+                    && meld.first().is_some()
+                    && meld.iter().all(|tile_key| tile_key == &meld[0])
+            })
             .count() as i64;
 
         Self {
+            full_counts,
+            suit_counts,
             total_tiles,
             dominant_suit_count,
             off_suit_count,
             honor_count,
+            wind_tile_count,
+            dragon_tile_count,
             pair_count,
             triplet_count,
             quad_count,
@@ -865,7 +908,6 @@ impl RouteSummary {
             wind_pair_count,
             wind_triplet_count,
             five_tile_count,
-            category_count: category_presence.iter().filter(|present| **present).count() as i64,
             unique_orphan_count: unique_orphans,
             orphan_pair_count,
             single_suit_only: suit_counts.iter().filter(|count| **count > 0).count() <= 1,
@@ -890,15 +932,25 @@ impl RouteSummary {
             "pure_straight" => self.best_pure_straight_score,
             "mixed_triple_chow" => self.best_mixed_triple_chow_score,
             "mixed_straight" => self.best_mixed_straight_score,
+            "pure_shifted_chows" => self.pure_shifted_chows_score(3),
+            "four_pure_shifted_chows" => self.pure_shifted_chows_score(4),
+            "pure_shifted_pungs" => self.pure_shifted_pungs_score(3),
+            "four_pure_shifted_pungs" => self.pure_shifted_pungs_score(4),
             "melded_hand" => self.melded_hand_score(),
             "two_melded_kongs" => (self.open_kong_count * 48).min(100),
             "three_kongs" => ((self.quad_count * 28) + (self.open_kong_count * 14)).min(100),
-            "little_three_dragons" => ((self.dragon_triplet_count * 28) + (self.dragon_pair_count * 18)).min(100),
+            "little_three_dragons" => {
+                ((self.dragon_triplet_count * 28) + (self.dragon_pair_count * 18)).min(100)
+            }
             "big_three_dragons" => (self.dragon_triplet_count * 34).min(100),
-            "little_four_winds" => ((self.wind_triplet_count * 22) + (self.wind_pair_count * 16)).min(100),
+            "little_four_winds" => {
+                ((self.wind_triplet_count * 22) + (self.wind_pair_count * 16)).min(100)
+            }
             "big_four_winds" => (self.wind_triplet_count * 26).min(100),
             "all_honours" => self.allowed_ratio_score(self.honor_count, 0),
-            "all_terminals_and_honours" => self.allowed_ratio_score(self.terminal_or_honour_count, 0),
+            "all_terminals_and_honours" => {
+                self.allowed_ratio_score(self.terminal_or_honour_count, 0)
+            }
             "all_terminals" => {
                 if self.honor_count > 0 {
                     0
@@ -906,8 +958,10 @@ impl RouteSummary {
                     self.allowed_ratio_score(self.terminal_or_honour_count, 0)
                 }
             }
-            "all_green" => self.allowed_ratio_score(self.total_tiles - self.non_green_tile_count, 0),
-            "all_types" => (self.category_count * 20).min(100),
+            "all_green" => {
+                self.allowed_ratio_score(self.total_tiles - self.non_green_tile_count, 0)
+            }
+            "all_types" => self.all_types_score(),
             "all_fives" => (self.five_tile_count * 18).min(100),
             "outside_hand" => self.allowed_ratio_score(self.terminal_or_honour_count, 8),
             "upper_four" => {
@@ -957,12 +1011,11 @@ impl RouteSummary {
             "last_tile_draw" | "last_tile_claim" => self.last_round_score(),
             "robbing_the_kong" => self.robbing_the_kong_score(),
             _ if fan_key.contains("chow") || fan_key.contains("straight") => {
-                self.best_pure_straight_score
-                    .max(self.best_mixed_triple_chow_score)
-                    .max(self.best_mixed_straight_score)
-                    .saturating_sub(self.open_chow_count * 6)
+                self.generic_chow_family_score()
             }
-            _ if fan_key.contains("pung") || fan_key.contains("kong") => self.all_pungs_score(),
+            _ if fan_key.contains("pung") || fan_key.contains("kong") => {
+                self.generic_pung_family_score()
+            }
             _ => 0,
         };
         score.clamp(0, 100)
@@ -987,7 +1040,8 @@ impl RouteSummary {
     }
 
     fn all_pungs_score(&self) -> i64 {
-        ((self.triplet_count * 24) + (self.pair_count * 10) - (self.open_chow_count * 20)).clamp(0, 100)
+        ((self.triplet_count * 24) + (self.pair_count * 10) - (self.open_chow_count * 20))
+            .clamp(0, 100)
     }
 
     fn seven_pairs_score(&self) -> i64 {
@@ -1009,6 +1063,63 @@ impl RouteSummary {
             return 0;
         }
         ((self.dominant_suit_count * 8) - (self.off_suit_count * 16)).clamp(0, 100)
+    }
+
+    fn pure_shifted_chows_score(&self, group_size: usize) -> i64 {
+        let mut best_window = 0_i64;
+        for suit in ['w', 't', 'b'] {
+            let max_start = 8_i64.saturating_sub(group_size as i64);
+            for step in [1_i64, 2_i64] {
+                if step == 2 && group_size == 4 {
+                    continue;
+                }
+                let max_step_start = 8_i64.saturating_sub(((group_size as i64) - 1) * step);
+                for start in 1..=max_start.min(max_step_start) {
+                    let window_score = (0..group_size)
+                        .map(|offset| {
+                            self.sequence_segment_score(suit, start + (offset as i64) * step)
+                        })
+                        .sum::<i64>()
+                        / group_size as i64;
+                    best_window = best_window.max(window_score);
+                }
+            }
+        }
+
+        let difficulty_prior = if group_size == 4 { 58 } else { 72 };
+        ((best_window * difficulty_prior) / 100)
+            .saturating_sub(self.off_suit_count * 2)
+            .clamp(0, 100)
+    }
+
+    fn pure_shifted_pungs_score(&self, group_size: usize) -> i64 {
+        let mut best_window = 0_i64;
+        for suit in ['w', 't', 'b'] {
+            let steps = if group_size == 4 {
+                &[1_i64][..]
+            } else {
+                &[1_i64, 2_i64][..]
+            };
+            for step in steps {
+                let max_start = 9_i64.saturating_sub(((group_size as i64) - 1) * *step);
+                for start in 1..=max_start {
+                    let window_score = (0..group_size)
+                        .map(|offset| {
+                            self.triplet_slot_score(suit, start + (offset as i64) * *step)
+                        })
+                        .sum::<i64>()
+                        / group_size as i64;
+                    best_window = best_window.max(window_score);
+                }
+            }
+        }
+
+        let focus_percent = self.dominant_suit_count * 100 / self.total_tiles.max(1);
+        let focus_adjusted = best_window * (55 + focus_percent / 2) / 100;
+        let difficulty_prior = if group_size == 4 { 60 } else { 75 };
+        ((focus_adjusted * difficulty_prior) / 100)
+            .saturating_sub(self.open_chow_count * 18)
+            .clamp(0, 100)
     }
 
     fn closed_only_score(&self) -> i64 {
@@ -1033,7 +1144,12 @@ impl RouteSummary {
     }
 
     fn last_tile_score(&self) -> i64 {
-        let best_seen = self.public_visible_tile_counts.values().copied().max().unwrap_or(0);
+        let best_seen = self
+            .public_visible_tile_counts
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(0);
         if best_seen >= 3 {
             64
         } else if best_seen == 2 {
@@ -1061,10 +1177,75 @@ impl RouteSummary {
         }
     }
 
+    fn all_types_score(&self) -> i64 {
+        let supports = [
+            self.suit_counts[0],
+            self.suit_counts[1],
+            self.suit_counts[2],
+            self.wind_tile_count,
+            self.dragon_tile_count,
+        ];
+        let present_categories = supports.iter().filter(|count| **count > 0).count() as i64;
+        if present_categories < 5 {
+            return (present_categories * 10).min(100);
+        }
+
+        let support_score = supports
+            .into_iter()
+            .map(category_support_score)
+            .sum::<i64>()
+            / 5;
+        let structure_bonus = ((self.pair_count * 3) + (self.triplet_count * 5)).min(15);
+        ((support_score * 55) / 100 + structure_bonus).clamp(0, 100)
+    }
+
+    fn generic_chow_family_score(&self) -> i64 {
+        let base = self
+            .best_pure_straight_score
+            .max(self.best_mixed_triple_chow_score)
+            .max(self.best_mixed_straight_score)
+            .saturating_sub(self.open_chow_count * 6);
+        ((base * 55) / 100).clamp(0, 45)
+    }
+
+    fn generic_pung_family_score(&self) -> i64 {
+        ((self.all_pungs_score() * 50) / 100)
+            .saturating_sub(self.open_chow_count * 10)
+            .clamp(0, 45)
+    }
+
     fn allowed_ratio_score(&self, allowed_tile_count: i64, penalty_per_invalid: i64) -> i64 {
         let invalid = self.total_tiles.saturating_sub(allowed_tile_count);
         ((allowed_tile_count * 100 / self.total_tiles.max(1)) - invalid * penalty_per_invalid)
             .clamp(0, 100)
+    }
+
+    fn sequence_segment_score(&self, suit: char, start: i64) -> i64 {
+        let covered_tiles = (0..3)
+            .map(|offset| format!("{suit}{}", start + offset))
+            .map(|tile_key| i64::from(self.full_counts.get(&tile_key).copied().unwrap_or(0) > 0))
+            .sum::<i64>();
+        covered_tiles * 100 / 3
+    }
+
+    fn triplet_slot_score(&self, suit: char, rank: i64) -> i64 {
+        let tile_key = format!("{suit}{rank}");
+        match self.full_counts.get(&tile_key).copied().unwrap_or(0) {
+            count if count >= 3 => 100,
+            2 => 72,
+            1 => 18,
+            _ => 0,
+        }
+    }
+}
+
+fn category_support_score(tile_count: i64) -> i64 {
+    match tile_count {
+        count if count >= 4 => 82,
+        3 => 68,
+        2 => 42,
+        1 => 18,
+        _ => 0,
     }
 }
 
@@ -1126,14 +1307,17 @@ mod tests {
     use serde_json::json;
 
     use crate::core::state::{
-        MatchState, PendingTimeout, PlayerRoundState, RoomState, RoundState,
-        RoundScoreTrackers, RuleRuntimeState, SeatState, WallState,
+        MatchState, PendingTimeout, PlayerRoundState, RoomState, RoundScoreTrackers, RoundState,
+        RuleRuntimeState, SeatState, WallState,
     };
     use crate::core::tile::Tile;
-    use crate::projection::room_snapshot::room_snapshot_message;
     use crate::projection::SeatProjectionSupport;
+    use crate::projection::room_snapshot::room_snapshot_message;
 
-    use super::build_hand_insights_view;
+    use super::{
+        HandInsightRecommendationView, HandInsightView, RouteSummary,
+        aggregate_preview_recommendations, build_hand_insights_view,
+    };
 
     #[test]
     fn local_snapshot_projects_current_and_discard_preview_hand_insights() {
@@ -1171,7 +1355,10 @@ mod tests {
         let hand_insights = &snapshot["payload"]["private_state"]["hand_insights"];
 
         assert!(hand_insights["current"]["recommendations"].is_array());
-        assert_eq!(hand_insights["by_discard_tile_id"]["b9#0"]["is_tenpai"], json!(true));
+        assert_eq!(
+            hand_insights["by_discard_tile_id"]["b9#0"]["is_tenpai"],
+            json!(true)
+        );
         assert_eq!(
             hand_insights["by_discard_tile_id"]["b9#0"]["waits"],
             json!([
@@ -1197,11 +1384,8 @@ mod tests {
             suit_tile("w8#0", "w8"),
             suit_tile("w9#0", "w9"),
         ];
-        state.round_state.as_mut().unwrap().players[0].melds = vec![vec![
-            "b3".to_string(),
-            "b4".to_string(),
-            "b5".to_string(),
-        ]];
+        state.round_state.as_mut().unwrap().players[0].melds =
+            vec![vec!["b3".to_string(), "b4".to_string(), "b5".to_string()]];
 
         let insights = build_hand_insights_view(&state, 0, &SeatProjectionSupport::default())
             .expect("local player should still receive insights");
@@ -1217,6 +1401,64 @@ mod tests {
         assert!(!keys.iter().any(|key| key == "seven_pairs"));
     }
 
+    #[test]
+    fn current_recommendations_need_broad_preview_support() {
+        let preview_map = BTreeMap::from([
+            (
+                "tile-1".to_string(),
+                preview_with_recommendations(&[("full_flush", 24, 88), ("all_pungs", 6, 54)]),
+            ),
+            (
+                "tile-2".to_string(),
+                preview_with_recommendations(&[("all_pungs", 6, 58), ("mixed_straight", 8, 46)]),
+            ),
+            (
+                "tile-3".to_string(),
+                preview_with_recommendations(&[("all_pungs", 6, 55), ("mixed_straight", 8, 44)]),
+            ),
+            (
+                "tile-4".to_string(),
+                preview_with_recommendations(&[("mixed_straight", 8, 41)]),
+            ),
+        ]);
+
+        let recommendations = aggregate_preview_recommendations(&preview_map);
+        let all_pungs = recommendations
+            .iter()
+            .find(|entry| entry.fan_key == "all_pungs")
+            .expect("all_pungs should survive aggregation");
+        let full_flush = recommendations
+            .iter()
+            .find(|entry| entry.fan_key == "full_flush")
+            .expect("full_flush should still be visible");
+
+        assert!(all_pungs.similarity_percent > full_flush.similarity_percent);
+        assert!(full_flush.similarity_percent < 40);
+    }
+
+    #[test]
+    fn four_pure_shifted_pungs_is_not_scored_like_generic_all_pungs() {
+        let summary = route_summary_for_tiles(&[
+            "w1", "w1", "w1", "w5", "w5", "w5", "w9", "w9", "w9", "t2", "t2", "t2", "red", "red",
+        ]);
+
+        let shifted = summary.similarity_for("four_pure_shifted_pungs");
+        let all_pungs = summary.similarity_for("all_pungs");
+
+        assert!(all_pungs > shifted);
+        assert!(shifted < 40);
+    }
+
+    #[test]
+    fn all_types_needs_more_than_single_tile_presence() {
+        let summary = route_summary_for_tiles(&[
+            "w1", "w2", "w9", "t3", "t4", "t9", "b5", "b6", "b9", "east", "south", "red", "green",
+            "white",
+        ]);
+
+        assert!(summary.similarity_for("all_types") < 40);
+    }
+
     fn suit_tile(tile_id: &str, tile_key: &str) -> Tile {
         Tile {
             tile_id: tile_id.to_string(),
@@ -1226,6 +1468,45 @@ mod tests {
             rank: None,
             name: None,
         }
+    }
+
+    fn preview_with_recommendations(items: &[(&str, i64, i64)]) -> HandInsightView {
+        HandInsightView {
+            discard_tile_id: None,
+            discard_tile_code: None,
+            is_tenpai: false,
+            waits: Vec::new(),
+            recommendations: items
+                .iter()
+                .map(
+                    |(fan_key, fan_value, similarity_percent)| HandInsightRecommendationView {
+                        fan_key: (*fan_key).to_string(),
+                        fan_value: *fan_value,
+                        similarity_percent: *similarity_percent,
+                    },
+                )
+                .collect(),
+        }
+    }
+
+    fn route_summary_for_tiles(tile_keys: &[&str]) -> RouteSummary {
+        let concealed_tile_keys = tile_keys
+            .iter()
+            .map(|tile_key| (*tile_key).to_string())
+            .collect::<Vec<_>>();
+        RouteSummary::from_hand(
+            &concealed_tile_keys,
+            &[],
+            &[],
+            &[],
+            0,
+            0,
+            Some("east"),
+            &[],
+            40,
+            &[Vec::new(), Vec::new(), Vec::new(), Vec::new()],
+            0,
+        )
     }
 
     fn sample_state() -> RoomState {

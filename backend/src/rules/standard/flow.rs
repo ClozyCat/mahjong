@@ -441,10 +441,7 @@ fn settlement_uses_restart_match(room: &Value) -> bool {
             .get("match_state")
             .and_then(Value::as_object)
             .map(|match_state| {
-                match_state
-                    .get("prevailing_wind")
-                    .and_then(Value::as_str)
-                    == Some("north")
+                match_state.get("prevailing_wind").and_then(Value::as_str) == Some("north")
                     && match_state
                         .get("hand_number")
                         .and_then(Value::as_u64)

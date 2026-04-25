@@ -8,8 +8,8 @@ use crate::core::state::{
     DisplayMeldOrientation, DisplayMeldState, MatchState, PendingAction, RoomState,
     SettlementKongScoreDetailEntry,
 };
-use crate::projection::hand_insight::{HandInsightsView, build_hand_insights_view};
 use crate::projection::SeatProjectionSupport;
+use crate::projection::hand_insight::{HandInsightsView, build_hand_insights_view};
 
 #[derive(Debug, Clone, Serialize)]
 struct RoomSnapshotMessage {
