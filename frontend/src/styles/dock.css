@@ -445,6 +445,7 @@
   font-weight: 500;
   color: var(--theme-paper-strong);
   opacity: 0.92;
+  text-decoration-color: color-mix(in srgb, var(--accent-2) 35%, transparent);
   transition: color 0.2s, text-decoration-color 0.2s;
 }
 
