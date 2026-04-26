@@ -37,7 +37,6 @@ export function BottomActionDock({
   handInsight = null,
   claimCandidates,
   actions,
-  isElevated,
   isWaitingForMatchStart = false,
   isSpectator = false,
   spectatorFocusName = null,
@@ -89,7 +88,6 @@ export function BottomActionDock({
         (ACTION_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER),
     ), [actions, promptCue]);
 
-  const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
   const hasHandInsightContent = useMemo(() => 
     Boolean(handInsight?.isTenpai || handInsight?.winningFans.length)
   , [handInsight]);
@@ -205,9 +203,8 @@ export function BottomActionDock({
 
   const content = (
     <section
-      className={`action-dock ${shouldElevateDock ? 'action-dock--elevated' : ''}`}
+      className="action-dock"
       data-testid="action-dock"
-      data-elevated={shouldElevateDock}
       style={dockStyle}
     >
       {visibleActions.length > 0 ? (
@@ -400,10 +397,6 @@ const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {
   ready_hand: 6,
   pass: 7,
 };
-
-function isResponsePrompt(promptCue: BattlePromptView | null) {
-  return promptCue?.kind === 'claim' || promptCue?.kind === 'rob_kong' || promptCue?.kind === 'turn_kong';
-}
 
 function getHandInsightTriggerLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
   if (handInsight.source === 'selected_discard') {

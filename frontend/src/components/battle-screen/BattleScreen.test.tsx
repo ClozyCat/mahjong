@@ -1979,7 +1979,6 @@ describe('BattleScreen', () => {
 
     expect(document.body.querySelector('.battle-shell--response')).toBeNull();
     expect(document.body.querySelector('.battle-shell--response-hu')).toBeNull();
-    expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
     expect(document.body.querySelector('.action-dock--actionable')).toBeNull();
     expect(huButton).toHaveClass('action-dock__action--hu-burn');
     expect(pungButton).not.toHaveClass('action-dock__action--hu-burn');

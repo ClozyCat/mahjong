@@ -82,7 +82,6 @@ describe('BottomActionDock', () => {
       />,
     );
 
-    expect(document.body.querySelector('.action-dock--elevated')).toBeNull();
     expect(screen.getByRole('button', { name: '杠' })).toHaveClass(
       'action-dock__action--themed',
       'action-dock__action--themed-kong',
@@ -385,6 +384,40 @@ describe('BottomActionDock', () => {
       '--action-dock-drawn-gap-count': '1',
       ...stableLayoutStyle,
     });
+  });
+
+  it('keeps the hand insight rail fixed to the hand zone edge', () => {
+    render(
+      <BottomActionDock
+        hand={localHand}
+        handInsight={{
+          isTenpai: false,
+          source: 'current',
+          discardTileId: null,
+          discardTileCode: null,
+          waits: [],
+          winningFans: [{ fanKey: 'all_chows', fanValue: 2 }],
+        }}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const hand = screen.getByLabelText(/local hand/i);
+    const handZone = hand.closest('.action-dock__hand-zone');
+    const infoRail = handZone?.querySelector(':scope > .action-dock__info-rail');
+
+    expect(handZone).not.toBeNull();
+    expect(infoRail).not.toBeNull();
+    expect(infoRail).toContainElement(screen.getByRole('button', { name: '查看当前和牌番型' }));
   });
 
   it('marks the freshly drawn tile button so layout can leave a gap before it', () => {
