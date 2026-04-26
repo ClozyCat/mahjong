@@ -537,19 +537,13 @@ export default function App() {
       return;
     }
 
-    if (isMobileClient) {
-      document.documentElement.dataset.mobile = 'true';
-    } else {
-      delete document.documentElement.dataset.mobile;
-    }
-
     if (shouldForceSmallScreen) {
       document.documentElement.dataset.smallScreen = 'true';
       return;
     }
 
     delete document.documentElement.dataset.smallScreen;
-  }, [isMobileClient, shouldForceSmallScreen]);
+  }, [shouldForceSmallScreen]);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
