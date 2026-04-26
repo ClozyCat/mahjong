@@ -230,8 +230,8 @@ input {
 
 /* ---- Landscape mobile overrides ---- */
 @media (orientation: landscape) and (max-height: 500px) {
-  html {
-    font-size: 13.5px;
+  html, html[data-small-screen='true'] {
+    font-size: 15.5px;
   }
 
   :root {
@@ -239,7 +239,7 @@ input {
     --battle-shell-top-gap: clamp(0.1rem, 0.2vh, 0.2rem);
     --battle-shell-bottom-gap: clamp(0.1rem, 0.2vh, 0.2rem);
     --battle-top-clearance: clamp(0.04rem, 0.1vh, 0.1rem);
-    --battle-hand-tile-width-base: clamp(1.2rem, 6.8vw, 3.9rem);
+    --battle-hand-tile-width-base: clamp(1.2rem, 7.2vw, 4.1rem);
     --battle-bottom-clearance: clamp(0.3rem, 0.6vh, 0.5rem);
     --battle-stage-bottom-reserve: clamp(0.8rem, 2vh, 1.4rem);
     --battle-dock-bottom-gap: 0.06rem;

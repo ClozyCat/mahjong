@@ -162,7 +162,7 @@
   --battle-shell-bottom-gap: 0.5rem;
   --battle-top-clearance: clamp(0.08rem, 0.2vh, 0.18rem);
   --battle-stage-size-trim: clamp(0.6rem, 1.4vw, 1.1rem);
-  --battle-hand-tile-width-narrow-base: min(clamp(1.05rem, 5vw, 1.9rem), calc((100vw - 5rem) / 15));
+  --battle-hand-tile-width-narrow-base: min(clamp(1.1rem, 5.8vw, 2.6rem), calc((100vw - 3rem) / 14.5));
   --battle-hand-tile-width: calc(var(--battle-hand-tile-width-narrow-base) * var(--table-stage-tile-scale, 1));
   --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
   --battle-bottom-clearance: clamp(0.5rem, 0.85vh, 0.7rem);
