@@ -280,62 +280,64 @@ export function BottomActionDock({
               <span aria-hidden="true">↓</span>
             </button>
           ) : null}
-          {hand.length > 0 ? (
-            <div className="action-dock__hand" aria-label="Local hand">
-              {hand.map((tile, index) => (
-                <button
-                  key={`${tile.tileId}-${index}`}
-                  type="button"
-                  className={[
-                    'action-dock__tile',
-                    tile.isSelected ? 'action-dock__tile--selected' : '',
-                    tile.isDrawn ? 'action-dock__tile--drawn' : '',
-                    tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
-                    tile.isDisabled || isSpectator ? 'action-dock__tile--disabled' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  disabled={tile.isDisabled || isSpectator}
-                  aria-label={
-                    isSpectator
-                      ? `${tile.code} 观战模式`
-                      : tile.isDisabled
-                        ? `${tile.code} 当前回合禁止打出`
-                        : undefined
-                  }
-                  onClick={(event) => {
-                    if (isSpectator || event.detail > 1) {
-                      return;
+          <div className="action-dock__hand-cluster">
+            {hand.length > 0 ? (
+              <div className="action-dock__hand" aria-label="Local hand">
+                {hand.map((tile, index) => (
+                  <button
+                    key={`${tile.tileId}-${index}`}
+                    type="button"
+                    className={[
+                      'action-dock__tile',
+                      tile.isSelected ? 'action-dock__tile--selected' : '',
+                      tile.isDrawn ? 'action-dock__tile--drawn' : '',
+                      tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
+                      tile.isDisabled || isSpectator ? 'action-dock__tile--disabled' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    disabled={tile.isDisabled || isSpectator}
+                    aria-label={
+                      isSpectator
+                        ? `${tile.code} 观战模式`
+                        : tile.isDisabled
+                          ? `${tile.code} 当前回合禁止打出`
+                          : undefined
                     }
+                    onClick={(event) => {
+                      if (isSpectator || event.detail > 1) {
+                        return;
+                      }
 
-                    onTileSelect(tile.tileId);
-                  }}
-                  onDoubleClick={() => {
-                    if (!isSpectator) {
-                      onTileDoubleClick(tile.tileId);
-                    }
-                  }}
-                >
-                  <MahjongTile
-                    code={tile.code}
-                    variant="hand"
-                    isSelected={tile.isSelected}
-                    isDrawn={tile.isDrawn}
-                    isDisabled={tile.isDisabled || isSpectator}
-                    relatedTileCode={selectedTileCode}
-                  />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>
-          )}
-          <div className="action-dock__info-rail">
-            {handInsightControl ? (
-              <div className="action-dock__status-group">
-                <div className="action-dock__status-group-standalone">{handInsightControl}</div>
+                      onTileSelect(tile.tileId);
+                    }}
+                    onDoubleClick={() => {
+                      if (!isSpectator) {
+                        onTileDoubleClick(tile.tileId);
+                      }
+                    }}
+                  >
+                    <MahjongTile
+                      code={tile.code}
+                      variant="hand"
+                      isSelected={tile.isSelected}
+                      isDrawn={tile.isDrawn}
+                      isDisabled={tile.isDisabled || isSpectator}
+                      relatedTileCode={selectedTileCode}
+                    />
+                  </button>
+                ))}
               </div>
-            ) : null}
+            ) : (
+              <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>
+            )}
+            <div className="action-dock__info-rail">
+              {handInsightControl ? (
+                <div className="action-dock__status-group">
+                  <div className="action-dock__status-group-standalone">{handInsightControl}</div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

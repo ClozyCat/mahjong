@@ -386,7 +386,7 @@ describe('BottomActionDock', () => {
     });
   });
 
-  it('keeps the hand insight rail fixed to the hand zone edge', () => {
+  it('keeps the hand insight rail fixed to the rendered hand edge', () => {
     render(
       <BottomActionDock
         hand={localHand}
@@ -412,10 +412,14 @@ describe('BottomActionDock', () => {
     );
 
     const hand = screen.getByLabelText(/local hand/i);
-    const handZone = hand.closest('.action-dock__hand-zone');
-    const infoRail = handZone?.querySelector(':scope > .action-dock__info-rail');
+    const handZone = hand.closest('.action-dock__hand-zone') as HTMLElement | null;
+    const handCluster = hand.closest('.action-dock__hand-cluster') as HTMLElement | null;
+    const infoRail = handCluster?.querySelector(':scope > .action-dock__info-rail') as HTMLElement | null;
 
     expect(handZone).not.toBeNull();
+    expect(handZone).toContainElement(handCluster);
+    expect(handCluster).not.toBeNull();
+    expect(handCluster).toContainElement(hand);
     expect(infoRail).not.toBeNull();
     expect(infoRail).toContainElement(screen.getByRole('button', { name: '查看当前和牌番型' }));
   });
