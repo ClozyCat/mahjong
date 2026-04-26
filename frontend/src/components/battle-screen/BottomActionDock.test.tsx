@@ -290,7 +290,7 @@ describe('BottomActionDock', () => {
     expect(screen.queryByLabelText(/剩余 \d+ 秒/)).toBeNull();
   });
 
-  it('derives dock width variables from the current hand count', () => {
+  it('keeps dock layout sizing on a stable active hand capacity', () => {
     render(
       <BottomActionDock
         hand={[
@@ -318,6 +318,72 @@ describe('BottomActionDock', () => {
       '--action-dock-effective-hand-count': '3',
       '--action-dock-gap-count': '2',
       '--action-dock-drawn-gap-count': '0',
+      '--action-dock-layout-hand-count': '14',
+      '--action-dock-effective-layout-hand-count': '14',
+      '--action-dock-layout-gap-count': '13',
+      '--action-dock-layout-drawn-gap-count': '1',
+    });
+  });
+
+  it('does not change dock layout sizing variables when the hand count changes', () => {
+    const hand13 = Array.from({ length: 13 }, (_, index) => ({
+      tileId: `w${(index % 9) + 1}#${index}`,
+      code: `w${(index % 9) + 1}`,
+      isSelected: false,
+      isDrawn: false,
+      isFlower: false,
+    }));
+    const hand14 = [
+      ...hand13,
+      { tileId: 'b1#13', code: 'b1', isSelected: false, isDrawn: true, isFlower: false },
+    ];
+
+    const { rerender } = render(
+      <BottomActionDock
+        hand={hand13}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    const dock = screen.getByTestId('action-dock');
+    const stableLayoutStyle = {
+      '--action-dock-layout-hand-count': '14',
+      '--action-dock-effective-layout-hand-count': '14',
+      '--action-dock-layout-gap-count': '13',
+      '--action-dock-layout-drawn-gap-count': '1',
+    };
+
+    expect(dock).toHaveStyle(stableLayoutStyle);
+
+    rerender(
+      <BottomActionDock
+        hand={hand14}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(dock).toHaveStyle({
+      '--action-dock-hand-count': '14',
+      '--action-dock-drawn-gap-count': '1',
+      ...stableLayoutStyle,
     });
   });
 
@@ -371,7 +437,9 @@ describe('BottomActionDock', () => {
     expect(dock).toHaveStyle({
       '--action-dock-hand-count': '0',
       '--action-dock-layout-hand-count': '13',
+      '--action-dock-effective-layout-hand-count': '13',
       '--action-dock-layout-gap-count': '12',
+      '--action-dock-layout-drawn-gap-count': '0',
     });
     expect(screen.getByText('牌桌进入对局后，手牌和操作按钮会显示在这里。')).toBeInTheDocument();
   });

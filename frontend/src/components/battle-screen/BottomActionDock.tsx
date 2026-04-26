@@ -55,9 +55,10 @@ export function BottomActionDock({
   const handInsightPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
   const hasDrawnTile = hand.some((tile) => tile.isDrawn || tile.isReplacementDrawn);
-  const layoutHandCount = useMemo(() => 
-    handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1
+  const layoutHandCount = useMemo(() =>
+    handCount > 0 ? ACTIVE_HAND_LAYOUT_COUNT : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1
   , [handCount, isWaitingForMatchStart]);
+  const layoutDrawnGapCount = handCount > 0 ? 1 : 0;
 
   const dockStyle = useMemo(() => ({
     '--action-dock-hand-count': `${handCount}`,
@@ -65,8 +66,10 @@ export function BottomActionDock({
     '--action-dock-gap-count': `${Math.max(handCount - 1, 0)}`,
     '--action-dock-drawn-gap-count': hasDrawnTile ? '1' : '0',
     '--action-dock-layout-hand-count': `${layoutHandCount}`,
+    '--action-dock-effective-layout-hand-count': `${Math.max(layoutHandCount, 1)}`,
     '--action-dock-layout-gap-count': `${Math.max(layoutHandCount - 1, 0)}`,
-  }), [handCount, hasDrawnTile, layoutHandCount]) as CSSProperties;
+    '--action-dock-layout-drawn-gap-count': `${layoutDrawnGapCount}`,
+  }), [handCount, hasDrawnTile, layoutDrawnGapCount, layoutHandCount]) as CSSProperties;
 
   const visibleActions = useMemo(() => actions
     .filter((action) => {
@@ -384,6 +387,7 @@ function HandInsightWinningFanItem({
   );
 }
 
+const ACTIVE_HAND_LAYOUT_COUNT = 14;
 const WAITING_HAND_PLACEHOLDER_COUNT = 13;
 
 const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {

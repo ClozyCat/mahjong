@@ -23,16 +23,16 @@
   --action-dock-content-width: calc(
     (var(--action-dock-layout-hand-count, var(--action-dock-hand-count)) * var(--action-dock-tile-width)) +
     (var(--action-dock-layout-gap-count, var(--action-dock-gap-count)) * var(--action-dock-tile-gap)) +
-    (var(--action-dock-drawn-gap-count) * var(--action-dock-drawn-gap-extra)) +
+    (var(--action-dock-layout-drawn-gap-count, var(--action-dock-drawn-gap-count)) * var(--action-dock-drawn-gap-extra)) +
     var(--action-dock-inline-padding)
   );
   --action-dock-fit-tile-width: calc(
     (
       var(--action-dock-max-width) -
       var(--action-dock-inline-padding) -
-      (var(--action-dock-gap-count) * var(--action-dock-tile-gap)) -
-      (var(--action-dock-drawn-gap-count) * var(--action-dock-drawn-gap-extra))
-    ) / var(--action-dock-effective-hand-count)
+      (var(--action-dock-layout-gap-count, var(--action-dock-gap-count)) * var(--action-dock-tile-gap)) -
+      (var(--action-dock-layout-drawn-gap-count, var(--action-dock-drawn-gap-count)) * var(--action-dock-drawn-gap-extra))
+    ) / var(--action-dock-effective-layout-hand-count, var(--action-dock-effective-hand-count))
   );
   --action-dock-info-fit-tile-width: calc(
     (
