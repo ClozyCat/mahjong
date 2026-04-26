@@ -1,6 +1,11 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { ThemeId } from '../../../lib/themes';
+import {
+  exitFullscreenMode,
+  isFullscreenModeActive,
+  requestFullscreenMode,
+} from '../../../lib/device';
 import type { BattleActionView } from '../../../types/match';
 import { FAN_GUIDE_ENTRIES, type FanGuideEntry } from '../fanGuide';
 import { FanGuideDialog } from '../FanGuideDialog';
@@ -60,6 +65,33 @@ export const TableChrome = memo(function TableChrome({
     }
   });
 
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullScreenChange = () => {
+      setIsFullScreen(isFullscreenModeActive());
+    };
+
+    document.addEventListener('fullscreenchange', handleFullScreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullScreenChange);
+
+    // Initial check
+    handleFullScreenChange();
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullScreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullScreenChange);
+    };
+  }, []);
+
+  const handleToggleFullScreen = () => {
+    if (isFullscreenModeActive()) {
+      exitFullscreenMode();
+    } else {
+      requestFullscreenMode();
+    }
+  };
+
   useEffect(() => {
     if (pinnedFanKeys.length > 0) {
       localStorage.setItem('mahjong_pinned_fans', JSON.stringify(pinnedFanKeys));
@@ -84,6 +116,43 @@ export const TableChrome = memo(function TableChrome({
         </div>
       ) : null}
       <div className="table-stage__corner-controls">
+        <button
+          type="button"
+          className="table-stage__fullscreen-button"
+          aria-label={isFullScreen ? '退出全屏' : '全屏显示'}
+          title={isFullScreen ? '退出全屏' : '全屏显示'}
+          onClick={handleToggleFullScreen}
+        >
+          <span aria-hidden="true">
+            {isFullScreen ? (
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 14h6m0 0v6m0-6-7 7m17-7h-6m0 0v6m0-6 7 7M4 10h6m0 0V4m0 6-7-7m17 7h-6m0 0V4m0 6 7-7" />
+              </svg>
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+              </svg>
+            )}
+          </span>
+        </button>
         <button
           type="button"
           className="table-stage__help-button"

@@ -61,31 +61,31 @@ html {
 }
 
 @media (max-width: 1440px) {
-  html { font-size: 15.5px; }
+  html { font-size: clamp(15px, 1vw + 2px, 16px); }
 }
 
 @media (max-width: 1280px) {
-  html { font-size: 15px; }
+  html { font-size: clamp(14.5px, 1.1vw + 2px, 15.5px); }
 }
 
 @media (max-width: 1024px) {
-  html { font-size: 14.5px; }
+  html { font-size: clamp(14px, 1.2vw + 2px, 15px); }
 }
 
 @media (max-width: 768px) {
-  html { font-size: 14px; }
+  html { font-size: clamp(12px, 1.8vmin, 14.5px); }
 }
 
 @media (max-width: 480px) {
-  html { font-size: 13.5px; }
+  html { font-size: clamp(8.5px, 3vmin, 14px); }
 }
 
 @media (max-width: 360px) {
-  html { font-size: 13px; }
+  html { font-size: clamp(8px, 3.2vmin, 13px); }
 }
 
 html[data-small-screen='true'] {
-  font-size: 14px;
+  font-size: clamp(8.5px, 3vmin, 14px);
 }
 
 html[data-small-screen='true'],

@@ -72,9 +72,9 @@
 .battle-screen {
   --battle-stage-height: 100dvh;
   --battle-stage-width: 100vw;
-  --battle-stage-discard-width: clamp(1.15rem, 2.5vw, 2.28rem);
+  --battle-stage-discard-width: clamp(1rem, 3.2vw, 2.28rem);
   --battle-stage-discard-height: calc(var(--battle-stage-discard-width) * 1.36);
-  --battle-stage-gap: clamp(0.05rem, 0.2vw, 0.14rem);
+  --battle-stage-gap: clamp(0.04rem, 0.25vw, 0.14rem);
   position: relative;
   z-index: 1;
   min-height: 100dvh;

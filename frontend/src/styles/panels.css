@@ -86,10 +86,9 @@
 }
 
 .connect-gate__card {
-  width: 100%;
-  max-width: 32rem;
-  padding: clamp(1.5rem, 5vw, 2.8rem);
-  border-radius: 1.8rem;
+  width: min(100%, 32rem);
+  padding: clamp(1rem, 6vw, 2.8rem);
+  border-radius: clamp(1.2rem, 3vw, 1.8rem);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
   background:
     linear-gradient(135deg,
@@ -114,7 +113,7 @@
 .connect-gate__brand h1 {
   margin: 0.2rem 0 0.5rem;
   font-family: 'Noto Sans SC', sans-serif;
-  font-size: clamp(1.65rem, 6vw, 2.75rem);
+  font-size: clamp(1.4rem, 8vw, 2.75rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--theme-paper-strong);
@@ -197,8 +196,8 @@
 
 .connect-gate__field input {
   width: 100%;
-  padding: 1rem 1.25rem;
-  border-radius: 1.25rem;
+  padding: clamp(0.72rem, 3vw, 1rem) clamp(0.88rem, 4vw, 1.25rem);
+  border-radius: clamp(0.85rem, 2.5vw, 1.25rem);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
   background: color-mix(in srgb, var(--theme-panel-bg-strong) 40%, transparent);
   color: var(--theme-paper-strong);
@@ -267,10 +266,10 @@
 }
 
 .connect-gate__btn {
-  padding: 1.1rem;
-  border-radius: 1.25rem;
+  padding: clamp(0.8rem, 3vw, 1.1rem);
+  border-radius: clamp(0.85rem, 2.5vw, 1.25rem);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: clamp(0.85rem, 2.2vw, 1rem);
   transition: all 0.3s var(--ease-spring);
 }
 
@@ -577,7 +576,7 @@
   z-index: 4;
   display: grid;
   justify-items: start;
-  gap: 0.18rem;
+  gap: clamp(0.12rem, 0.4vw, 0.18rem);
   text-align: left;
   pointer-events: none;
 }
@@ -623,9 +622,9 @@
 }
 
 .table-stage__room-action {
-  min-width: 5.8rem;
-  min-height: 2.3rem;
-  padding: 0.45rem 1.1rem;
+  min-width: clamp(4.8rem, 15vw, 5.8rem);
+  min-height: clamp(1.85rem, 6vw, 2.3rem);
+  padding: 0.35rem clamp(0.6rem, 2vw, 1.1rem);
   border-radius: 999px;
   background: rgba(14, 14, 14, 0.45);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
@@ -717,8 +716,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: clamp(1.3rem, 4.5vw, 1.65rem);
+  height: clamp(1.3rem, 4.5vw, 1.65rem);
   border-radius: 50%;
   background: rgba(14, 14, 14, 0.65);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);

@@ -99,7 +99,8 @@ function resolveSeatStyle(
   riverColumns: number,
   maxInlineSizePx: number,
 ): CSSProperties {
-  const computedBottomPx = Math.max(bottomInsetPx, Math.round(seatTopPx + (centerYPx * 0.44)));
+  const bottomMultiplier = centerYPx > 200 ? 0.44 : 0.36;
+  const computedBottomPx = Math.max(bottomInsetPx, Math.round(seatTopPx + (centerYPx * bottomMultiplier)));
 
   if (seat === 'top') {
     return {
@@ -226,13 +227,14 @@ export function buildTableSceneModel({
     layoutProfile.settlementBaseWidth.minPx,
     layoutProfile.settlementBaseWidth.maxPx,
   );
+  const minDimension = Math.min(viewport.width, viewport.height);
   const spotlightOffsetPx = clamp(
-    viewport.width * layoutProfile.spotlightOffset.ratio,
+    minDimension * layoutProfile.spotlightOffset.ratio,
     layoutProfile.spotlightOffset.minPx,
     layoutProfile.spotlightOffset.maxPx,
   );
   const centerIndicatorSizePx = clamp(
-    viewport.width * layoutProfile.centerIndicator.ratio,
+    minDimension * layoutProfile.centerIndicator.ratio,
     layoutProfile.centerIndicator.minPx,
     layoutProfile.centerIndicator.maxPx,
   );
