@@ -28,7 +28,7 @@
   --battle-shell-bottom-gap: clamp(0.2rem, 0.4vh, 0.45rem);
   --battle-top-clearance: clamp(0.08rem, 0.18vh, 0.22rem);
   --battle-stage-size-trim: 0rem;
-  --battle-hand-tile-width-base: clamp(1.32rem, 4.6vw, 3.15rem);
+  --battle-hand-tile-width-base: clamp(1.32rem, 4.6vw, 3.8rem);
   --battle-hand-tile-width: calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1));
   --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
   --battle-meld-tile-width-base: clamp(1.15rem, 3.8vw, 2.7rem);
@@ -243,5 +243,12 @@ input {
     --battle-bottom-clearance: clamp(0.3rem, 0.6vh, 0.5rem);
     --battle-stage-bottom-reserve: clamp(0.8rem, 2vh, 1.4rem);
     --battle-dock-bottom-gap: 0.06rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --battle-hand-tile-width-base: 4.2rem;
+    --battle-stage-bottom-reserve: 2.2rem;
   }
 }
