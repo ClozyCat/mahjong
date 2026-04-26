@@ -1,10 +1,10 @@
 export interface TableLayoutProfile {
   id: 'compact-portrait' | 'balanced' | 'wide';
   centerVPercent: number;
-  seatTopPx: number;
-  safeInsetSidePx: number;
-  safeInsetTopPx: number;
-  safeInsetBottomPx: number;
+  seatTop: { ratio: number; minPx: number; maxPx: number };
+  safeInsetSide: { ratio: number; minPx: number; maxPx: number };
+  safeInsetTop: { ratio: number; minPx: number; maxPx: number };
+  safeInsetBottom: { ratio: number; minPx: number; maxPx: number };
   topBottomSafeWidthRatio: number;
   sideSafeHeightRatio: number;
   spotlightScale: number;
@@ -59,10 +59,10 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
   {
     id: 'wide',
     centerVPercent: 41,
-    seatTopPx: 10,
-    safeInsetSidePx: 14,
-    safeInsetTopPx: 10,
-    safeInsetBottomPx: 14,
+    seatTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
+    safeInsetSide: { ratio: 0.014, minPx: 6, maxPx: 24 },
+    safeInsetTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
+    safeInsetBottom: { ratio: 0.014, minPx: 6, maxPx: 24 },
     topBottomSafeWidthRatio: 0.76,
     sideSafeHeightRatio: 0.58,
     spotlightScale: 1.25,
@@ -81,10 +81,10 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
   {
     id: 'balanced',
     centerVPercent: 42,
-    seatTopPx: 12,
-    safeInsetSidePx: 12,
-    safeInsetTopPx: 12,
-    safeInsetBottomPx: 18,
+    seatTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
+    safeInsetSide: { ratio: 0.012, minPx: 4, maxPx: 16 },
+    safeInsetTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
+    safeInsetBottom: { ratio: 0.02, minPx: 10, maxPx: 32 },
     topBottomSafeWidthRatio: 0.72,
     sideSafeHeightRatio: 0.52,
     spotlightScale: 1.22,
@@ -103,10 +103,10 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
   {
     id: 'compact-portrait',
     centerVPercent: 42,
-    seatTopPx: 12,
-    safeInsetSidePx: 8,
-    safeInsetTopPx: 12,
-    safeInsetBottomPx: 16,
+    seatTop: { ratio: 0.01, minPx: 3, maxPx: 16 },
+    safeInsetSide: { ratio: 0.008, minPx: 2, maxPx: 12 },
+    safeInsetTop: { ratio: 0.01, minPx: 3, maxPx: 16 },
+    safeInsetBottom: { ratio: 0.022, minPx: 8, maxPx: 24 },
     topBottomSafeWidthRatio: 0.66,
     sideSafeHeightRatio: 0.48,
     spotlightScale: 1.14,

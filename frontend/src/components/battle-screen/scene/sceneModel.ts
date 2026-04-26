@@ -179,12 +179,34 @@ export function buildTableSceneModel({
   const playerBySeat = new Map(players.map((player) => [player.seat, player]));
   const resolvedOccupiedSeatCount = occupiedSeatCount ?? players.length;
   const centerYPx = viewport.height * (layoutProfile.centerVPercent / 100);
+
+  const seatTopPx = clamp(
+    viewport.height * layoutProfile.seatTop.ratio,
+    layoutProfile.seatTop.minPx,
+    layoutProfile.seatTop.maxPx,
+  );
+  const sideInsetPx = clamp(
+    viewport.width * layoutProfile.safeInsetSide.ratio,
+    layoutProfile.safeInsetSide.minPx,
+    layoutProfile.safeInsetSide.maxPx,
+  );
+  const topInsetPx = clamp(
+    viewport.height * layoutProfile.safeInsetTop.ratio,
+    layoutProfile.safeInsetTop.minPx,
+    layoutProfile.safeInsetTop.maxPx,
+  );
+  const bottomInsetPx = clamp(
+    viewport.height * layoutProfile.safeInsetBottom.ratio,
+    layoutProfile.safeInsetBottom.minPx,
+    layoutProfile.safeInsetBottom.maxPx,
+  );
+
   const horizontalSafeInlinePx = Math.min(
-    viewport.width - (layoutProfile.safeInsetSidePx * 2),
+    viewport.width - (sideInsetPx * 2),
     viewport.width * layoutProfile.topBottomSafeWidthRatio,
   );
   const verticalSafeInlinePx = Math.min(
-    viewport.height - layoutProfile.safeInsetTopPx - layoutProfile.safeInsetBottomPx,
+    viewport.height - topInsetPx - bottomInsetPx,
     viewport.height * layoutProfile.sideSafeHeightRatio,
   );
   const riverBaseWidthPx = clamp(
@@ -263,7 +285,7 @@ export function buildTableSceneModel({
       '--table-stage-center-indicator-size': `${centerIndicatorSizePx}px`,
       '--table-stage-spotlight-offset': `${spotlightOffsetPx}px`,
       '--table-stage-center-v': `${layoutProfile.centerVPercent}%`,
-      '--table-stage-seat-top-v': `${layoutProfile.seatTopPx}px`,
+      '--table-stage-seat-top-v': `${seatTopPx}px`,
     } as CSSProperties,
     seats: SEATS.map((seat) => {
       const player = playerBySeat.get(seat);
@@ -287,9 +309,9 @@ export function buildTableSceneModel({
         zoneStyle: resolveSeatStyle(
           seat,
           centerYPx,
-          layoutProfile.seatTopPx,
-          layoutProfile.safeInsetSidePx,
-          layoutProfile.safeInsetBottomPx,
+          seatTopPx,
+          sideInsetPx,
+          bottomInsetPx,
           riverColumns,
           safeZoneInlinePx,
         ),
