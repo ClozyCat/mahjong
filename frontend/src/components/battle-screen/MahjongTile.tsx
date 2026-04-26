@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 import { getTileAsset } from '../../lib/tileAssets';
 import { formatTileName } from '../../lib/tileNames';
 
@@ -13,7 +15,7 @@ interface MahjongTileProps {
   className?: string;
 }
 
-export function MahjongTile({
+export const MahjongTile = memo(function MahjongTile({
   code,
   variant,
   isSelected = false,
@@ -63,4 +65,4 @@ export function MahjongTile({
       </span>
     </span>
   );
-}
+});

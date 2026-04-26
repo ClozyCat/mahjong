@@ -238,10 +238,12 @@
 
 @keyframes selected-tile-halo {
   0%, 100% {
-    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 18%, transparent);
+    opacity: 0.18;
+    transform: scale(0.94);
   }
   50% {
-    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 32%, transparent);
+    opacity: 0.42;
+    transform: scale(1.03);
   }
 }
 

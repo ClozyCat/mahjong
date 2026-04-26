@@ -233,7 +233,7 @@ describe('App', () => {
     delete document.documentElement.dataset.smallScreen;
   });
 
-  it('requests landscape orientation when a mobile user joins a table', async () => {
+  it('does not request landscape orientation when a mobile user joins a table', async () => {
     const user = userEvent.setup();
     const { lock } = mockMobileBattleImmersiveApis();
 
@@ -243,7 +243,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText(/昵称/), 'Player A');
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
-    expect(lock).toHaveBeenCalledWith('landscape');
+    expect(lock).not.toHaveBeenCalled();
   });
 
   it('forces mobile battle sessions into small-screen mode even after joining', async () => {
@@ -262,7 +262,7 @@ describe('App', () => {
     expect(document.documentElement.dataset.smallScreen).toBe('true');
   });
 
-  it('requests fullscreen when a mobile user enters the battle screen and exits on leave', async () => {
+  it('does not request fullscreen when a mobile user enters the battle screen or leave it', async () => {
     const user = userEvent.setup();
     const { requestFullscreen, exitFullscreen } = mockMobileBattleImmersiveApis();
     const socket = await joinTable(user);
@@ -274,7 +274,7 @@ describe('App', () => {
       });
     });
 
-    expect(requestFullscreen).toHaveBeenCalled();
+    expect(requestFullscreen).not.toHaveBeenCalled();
     expect(document.documentElement.dataset.smallScreen).toBe('true');
 
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -290,16 +290,16 @@ describe('App', () => {
       });
     });
 
-    expect(exitFullscreen).toHaveBeenCalled();
+    expect(exitFullscreen).not.toHaveBeenCalled();
     expect(document.documentElement.dataset.smallScreen).toBeUndefined();
   });
 
-  it('retries landscape orientation after fullscreen becomes active on mobile battle sessions', async () => {
+  it('keeps mobile battle sessions out of forced landscape retries', async () => {
     const user = userEvent.setup();
     const { lock } = mockMobileBattleImmersiveApis();
     const socket = await joinTable(user);
 
-    expect(lock).toHaveBeenCalledTimes(1);
+    expect(lock).not.toHaveBeenCalled();
 
     await act(async () => {
       socket.triggerMessage({
@@ -308,8 +308,7 @@ describe('App', () => {
       });
     });
 
-    expect(lock.mock.calls.length).toBeGreaterThan(1);
-    expect(lock).toHaveBeenLastCalledWith('landscape');
+    expect(lock).not.toHaveBeenCalled();
   });
 
 

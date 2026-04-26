@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 import type { DisplayMeldView, PlayerMeldView, Seat } from '../../types/match';
@@ -16,7 +16,7 @@ interface MeldRackProps {
   selectedTileCode?: string | null;
 }
 
-export function MeldRack({
+export const MeldRack = memo(function MeldRack({
   seat,
   melds,
   ariaLabel,
@@ -147,7 +147,7 @@ export function MeldRack({
       ) : null}
     </div>
   );
-}
+});
 
 function normalizeMeldTiles(meld: PlayerMeldView): DisplayMeldView['tiles'] {
   if (Array.isArray(meld)) {

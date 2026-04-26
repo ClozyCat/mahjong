@@ -84,6 +84,7 @@
   gap: 0.5rem;
   align-items: end;
   margin-bottom: 0;
+  contain: layout style;
 }
 
 .action-dock__tableau--full {
@@ -196,6 +197,7 @@
   background: transparent;
   overflow: visible;
   transition: transform 0.22s var(--ease-lux);
+  contain: layout style;
 }
 
 .action-dock__tile,
@@ -1367,6 +1369,34 @@
 :root[data-small-screen='true'] .action-dock__status-group-standalone {
   width: max-content;
   justify-items: start;
+}
+
+:root[data-battle-fx='low'] .action-dock__ready-hand-popover,
+:root[data-battle-fx='low'] .action-dock__side-panel {
+  backdrop-filter: none;
+}
+
+:root[data-battle-fx='low'] .action-dock__action--response-glow,
+:root[data-battle-fx='low'] .action-dock__action--themed,
+:root[data-battle-fx='low'] .action-dock__action--flower-bloom,
+:root[data-battle-fx='low'] .action-dock__action--hu-burn {
+  box-shadow:
+    0 10px 20px rgba(0, 0, 0, 0.18),
+    0 0 0 1px color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+:root[data-battle-fx='low'] .action-dock__action--response-glow::before,
+:root[data-battle-fx='low'] .action-dock__action--response-glow::after,
+:root[data-battle-fx='low'] .action-dock__action--themed::before,
+:root[data-battle-fx='low'] .action-dock__action--themed::after,
+:root[data-battle-fx='low'] .action-dock__action--flower-bloom::before,
+:root[data-battle-fx='low'] .action-dock__action--flower-bloom::after,
+:root[data-battle-fx='low'] .action-dock__action--hu-burn::before,
+:root[data-battle-fx='low'] .action-dock__action--hu-burn::after {
+  filter: none;
+  animation: none;
+  opacity: 0.24;
+  transform: none;
 }
 
 /* ---- Landscape mobile ---- */

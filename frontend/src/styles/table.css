@@ -238,44 +238,28 @@
 
 .table-stage__seat-zone {
   position: absolute;
-  z-index: 1;
+  left: var(--table-stage-seat-anchor-left, auto);
+  right: var(--table-stage-seat-anchor-right, auto);
+  top: var(--table-stage-seat-anchor-top, auto);
+  bottom: var(--table-stage-seat-anchor-bottom, auto);
   display: flex;
   align-items: center;
   gap: clamp(0.4rem, 1.2vw, 0.72rem);
   pointer-events: none;
+  flex-direction: var(--table-stage-seat-direction, row);
+  transform: var(--table-stage-seat-anchor-transform, none);
+  z-index: var(--table-stage-seat-z-index, 1);
+  contain: layout style;
 }
 
 .table-stage__seat-zone>* {
   pointer-events: auto;
 }
 
-.table-stage__seat-zone--top {
-  left: 50%;
-  top: var(--table-stage-seat-top-v);
-  transform: translateX(-50%);
-  flex-direction: column;
-}
-
-.table-stage__seat-zone--bottom {
-  left: 50%;
-  bottom: calc(100% - (var(--table-stage-center-v) + (var(--table-stage-center-v) - var(--table-stage-seat-top-v))));
-  transform: translateX(-50%);
-  flex-direction: column-reverse;
-}
-
-.table-stage__seat-zone--left {
-  left: clamp(0.4rem, 1.2vw, 0.82rem);
-  top: var(--table-stage-center-v);
-  transform: translateY(-50%);
-  flex-direction: row;
-}
-
-.table-stage__seat-zone--right {
-  right: clamp(0.4rem, 1.2vw, 0.82rem);
-  top: var(--table-stage-center-v);
-  transform: translateY(-50%);
-  flex-direction: row-reverse;
-}
+.table-stage__seat-zone--top,
+.table-stage__seat-zone--bottom,
+.table-stage__seat-zone--left,
+.table-stage__seat-zone--right {}
 
 /* ------- Seat watermarks ------- */
 
@@ -321,8 +305,10 @@
   align-items: center;
   gap: clamp(0.4rem, 1.2vw, 0.72rem);
   width: max-content;
+  max-inline-size: var(--table-stage-seat-max-inline-size, none);
   z-index: 2;
   pointer-events: none;
+  contain: layout style;
 }
 
 .table-stage__seat-group--top {
@@ -389,6 +375,9 @@
     inset 0 0 14px color-mix(in srgb, var(--theme-paper) 8%, transparent);
   /* Feathered mask only affects the background surface, not the tiles */
   mask-image: radial-gradient(circle at center, black 78%, transparent 100%);
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 /* Softer cloud blobs moved further back */
@@ -405,6 +394,8 @@
   pointer-events: none;
   z-index: -2;
   opacity: 0.5;
+  transform: scale(1);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .table-stage__river--top,
@@ -481,17 +472,20 @@
   justify-content: center;
   align-content: end;
   border-radius: inherit;
+  contain: layout style;
 }
 
 .table-stage__river-track--top,
 .table-stage__river-track--bottom,
 .table-stage__river-track--left,
 .table-stage__river-track--right {
-  grid-template-columns: repeat(var(--table-stage-river-columns), var(--table-stage-river-tile-width));
+  grid-template-columns: repeat(var(--table-stage-seat-river-columns, var(--table-stage-river-columns)), var(--table-stage-river-tile-width));
   grid-auto-rows: var(--table-stage-river-tile-height);
 }
 
 .table-stage__river-track .mahjong-tile--discard {
+  --tile-w: var(--table-stage-river-tile-width);
+  --tile-h: var(--table-stage-river-tile-height);
   width: var(--table-stage-river-tile-width);
   height: var(--table-stage-river-tile-height);
   min-width: var(--table-stage-river-tile-width);
@@ -501,6 +495,8 @@
 }
 
 .table-stage__melds .mahjong-tile--discard {
+  --tile-w: var(--table-stage-meld-tile-width);
+  --tile-h: var(--table-stage-meld-tile-height);
   width: var(--table-stage-meld-tile-width);
   height: var(--table-stage-meld-tile-height);
   min-width: var(--table-stage-meld-tile-width);
@@ -659,6 +655,45 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transform: translateY(-50%);
   animation: table-stage-barrage-sweep 9000ms linear forwards;
+}
+
+.table-stage[data-fx='lowFx'] .table-stage__river::after {
+  backdrop-filter: none;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 10%, transparent),
+    0 6px 18px -10px rgba(0, 0, 0, 0.12);
+  opacity: 0.82;
+  transform: scale(0.99);
+}
+
+.table-stage[data-fx='lowFx'] .table-stage__river::before {
+  filter: none;
+  opacity: 0.18;
+  transform: scale(0.96);
+}
+
+.table-stage[data-fx='lowFx'] .table-stage__seat-panel,
+.table-stage[data-fx='lowFx'] .table-stage__stat-plate,
+.table-stage[data-fx='lowFx'] .table-stage__barrage-message,
+.table-stage[data-fx='lowFx'] .table-stage__quick-chat-item,
+.table-stage[data-fx='lowFx'] .table-stage__quick-chat-composer,
+.table-stage[data-fx='lowFx'] .pinned-fan-overlay,
+.table-stage[data-fx='lowFx'] .pinned-fan-list__handle {
+  backdrop-filter: none;
+}
+
+.table-stage[data-fx='lowFx'] .table-stage__center-indicator-base,
+.table-stage[data-fx='lowFx'] .table-stage__center-indicator-countdown,
+.table-stage[data-fx='lowFx'] .table-stage__center-indicator-pointer,
+.table-stage[data-fx='lowFx'] .table-stage__action-callout,
+.table-stage[data-fx='lowFx'] .pinned-fan-list {
+  filter: none;
+}
+
+.table-stage[data-fx='lowFx'] .table-stage__center-indicator-breathing,
+.table-stage[data-fx='lowFx'] .table-stage__player-edge-info--tenpai::after {
+  animation-duration: 6s;
+  opacity: 0.2;
 }
 
 .table-stage__player-edge-info {
@@ -1396,6 +1431,8 @@
 
 .table-stage__spotlight .mahjong-tile--discard,
 .table-stage__spotlight-tile {
+  --tile-w: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));
+  --tile-h: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale));
   width: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));
   height: calc(var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale));
   min-width: calc(var(--table-stage-river-base-width) * var(--table-stage-spotlight-scale));

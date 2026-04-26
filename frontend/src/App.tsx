@@ -36,11 +36,7 @@ import {
   saveStoredThemeId,
 } from './lib/storage';
 import {
-  exitFullscreenMode,
-  isFullscreenModeActive,
   isMobileDevice,
-  requestFullscreenMode,
-  requestLandscapeOrientation,
 } from './lib/device';
 import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
@@ -550,34 +546,6 @@ export default function App() {
   }, [shouldForceSmallScreen]);
 
   useEffect(() => {
-    if (!isMobileClient || typeof document === 'undefined') {
-      return;
-    }
-
-    if (shouldForceSmallScreen) {
-      const handleFullscreenChange = () => {
-        if (isFullscreenModeActive()) {
-          requestLandscapeOrientation();
-        }
-      };
-
-      document.addEventListener('fullscreenchange', handleFullscreenChange);
-      document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-      requestFullscreenMode();
-      if (isFullscreenModeActive()) {
-        requestLandscapeOrientation();
-      }
-
-      return () => {
-        document.removeEventListener('fullscreenchange', handleFullscreenChange);
-        document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      };
-    }
-
-    exitFullscreenMode();
-  }, [isMobileClient, shouldForceSmallScreen]);
-
-  useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
 
     if (localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature) {
@@ -650,7 +618,6 @@ export default function App() {
     }
 
     try {
-      requestLandscapeOrientation();
       setStatusMessage('正在创建牌桌...');
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       const requestedTableCode = normalizedRequestedTableCode;
@@ -703,7 +670,6 @@ export default function App() {
       return;
     }
 
-    requestLandscapeOrientation();
     setStatusMessage('正在加入牌桌...');
     dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
     openRoomSocket({
@@ -727,7 +693,6 @@ export default function App() {
       return;
     }
 
-    requestLandscapeOrientation();
     setStatusMessage('正在进入观战...');
     dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
     openRoomSocket({

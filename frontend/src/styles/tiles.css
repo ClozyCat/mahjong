@@ -16,6 +16,7 @@
   padding: 0;
   cursor: default;
   flex-shrink: 0;
+  contain: layout style;
 }
 
 .mahjong-tile--hand {
@@ -172,7 +173,23 @@
     inset 0 calc(var(--tile-unit) * 1.5) calc(var(--tile-unit) * 1.5) rgba(255, 255, 255, 0.95),
     /* Selected "lift" shadows - single body refined */
     0 calc(var(--tile-unit) * 8) calc(var(--tile-unit) * 20) calc(var(--tile-unit) * -4) rgba(0, 0, 0, 0.22),
-    0 0 0 calc(var(--tile-unit) * 2) color-mix(in srgb, var(--accent) 32%, transparent);
+    0 0 0 calc(var(--tile-unit) * 2) color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.mahjong-tile--selected::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--tile-unit) * -3);
+  border-radius: calc(var(--tile-w, 2rem) * 0.3);
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--accent) 22%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 12%, transparent) 42%,
+    transparent 74%
+  );
+  pointer-events: none;
+  opacity: 0.22;
+  transform: scale(0.94);
   animation: selected-tile-halo 1.8s var(--ease-lux) infinite;
 }
 
@@ -203,6 +220,7 @@
 .battle-screen .mahjong-tile--hand {
   --tile-w: var(--battle-hand-tile-width);
   --tile-h: var(--battle-hand-tile-height);
+  contain: layout style;
 }
 
 .battle-screen .mahjong-tile--hand:hover .mahjong-tile__shell {
@@ -225,11 +243,17 @@
   box-shadow:
     inset 0 calc(var(--tile-unit) * 1.8) calc(var(--tile-unit) * 1.4) rgba(255, 255, 255, 0.95),
     0 calc(var(--tile-unit) * 10) calc(var(--tile-unit) * 22) calc(var(--tile-unit) * -4) rgba(0, 0, 0, 0.25),
-    0 0 calc(var(--tile-unit) * 12) color-mix(in srgb, var(--accent) 26%, transparent);
+    0 0 calc(var(--tile-unit) * 10) color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .battle-screen .mahjong-tile--hand.mahjong-tile--selected:active .mahjong-tile__shell {
   transform: translateY(-0.52rem) scale(1.02);
+}
+
+:root[data-battle-fx='low'] .mahjong-tile--selected::after {
+  animation: none;
+  opacity: 0.18;
+  transform: scale(0.98);
 }
 
 /* ------- Meld rack ------- */
