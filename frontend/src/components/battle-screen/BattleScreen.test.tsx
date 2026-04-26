@@ -1791,6 +1791,7 @@ describe('BattleScreen', () => {
 
     expect(container.querySelector('.stage-background')).toBeNull();
     expect(container.querySelector('.battle-shell')).not.toBeNull();
+    expect(container.querySelector('.table-stage > .action-dock')).not.toBeNull();
     expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
     expect(screen.getByText('房间座位数：4/4')).toBeInTheDocument();
     expect(screen.getByText('round-123 | playing')).toBeInTheDocument();

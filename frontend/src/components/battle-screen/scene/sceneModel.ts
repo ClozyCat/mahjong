@@ -82,6 +82,12 @@ function calculateColumns(
   return clamp(Math.floor((availablePx + gapPx) / unitWidth), minColumns, maxColumns);
 }
 
+function getBottomSeatAnchorPx(centerYPx: number, seatTopPx: number, bottomInsetPx: number) {
+  const bottomMultiplier = centerYPx > 200 ? 0.44 : 0.36;
+
+  return Math.max(bottomInsetPx, Math.round(seatTopPx + (centerYPx * bottomMultiplier)));
+}
+
 function buildTableSummary(roundLabel: string, phaseLabel: string) {
   if (roundLabel && phaseLabel) {
     return `${roundLabel} | ${phaseLabel}`;
@@ -95,13 +101,10 @@ function resolveSeatStyle(
   centerYPx: number,
   seatTopPx: number,
   sideInsetPx: number,
-  bottomInsetPx: number,
+  bottomSeatAnchorPx: number,
   riverColumns: number,
   maxInlineSizePx: number,
 ): CSSProperties {
-  const bottomMultiplier = centerYPx > 200 ? 0.44 : 0.36;
-  const computedBottomPx = Math.max(bottomInsetPx, Math.round(seatTopPx + (centerYPx * bottomMultiplier)));
-
   if (seat === 'top') {
     return {
       '--table-stage-seat-anchor-left': '50%',
@@ -121,7 +124,7 @@ function resolveSeatStyle(
       '--table-stage-seat-anchor-left': '50%',
       '--table-stage-seat-anchor-right': 'auto',
       '--table-stage-seat-anchor-top': 'auto',
-      '--table-stage-seat-anchor-bottom': `${computedBottomPx}px`,
+      '--table-stage-seat-anchor-bottom': `${bottomSeatAnchorPx}px`,
       '--table-stage-seat-anchor-transform': 'translateX(-50%)',
       '--table-stage-seat-direction': 'column-reverse',
       '--table-stage-seat-river-columns': `${riverColumns}`,
@@ -200,6 +203,7 @@ export function buildTableSceneModel({
     layoutProfile.safeInsetBottom.minPx,
     layoutProfile.safeInsetBottom.maxPx,
   );
+  const bottomSeatAnchorPx = getBottomSeatAnchorPx(centerYPx, seatTopPx, bottomInsetPx);
 
   const horizontalSafeInlinePx = Math.min(
     viewport.width - (sideInsetPx * 2),
@@ -286,6 +290,7 @@ export function buildTableSceneModel({
       '--table-stage-spotlight-offset': `${spotlightOffsetPx}px`,
       '--table-stage-center-v': `${layoutProfile.centerVPercent}%`,
       '--table-stage-seat-top-v': `${seatTopPx}px`,
+      '--table-stage-local-info-guard-bottom': `${playerBySeat.has('bottom') ? bottomSeatAnchorPx : viewport.height}px`,
     } as CSSProperties,
     seats: SEATS.map((seat) => {
       const player = playerBySeat.get(seat);
@@ -311,7 +316,7 @@ export function buildTableSceneModel({
           centerYPx,
           seatTopPx,
           sideInsetPx,
-          bottomInsetPx,
+          bottomSeatAnchorPx,
           riverColumns,
           safeZoneInlinePx,
         ),

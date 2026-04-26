@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import type { ThemeId } from '../../lib/themes';
 import type {
@@ -65,6 +65,7 @@ interface TableStageProps {
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
+  children?: ReactNode;
 }
 
 export function TableStage({
@@ -111,6 +112,7 @@ export function TableStage({
   onQuickChat,
   onDecreaseTileScale: _onDecreaseTileScale,
   onIncreaseTileScale: _onIncreaseTileScale,
+  children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const viewport = useBattleViewport(containerRef);
@@ -196,6 +198,7 @@ export function TableStage({
           />
         </div>
       </div>
+      {children}
     </section>
   );
 }

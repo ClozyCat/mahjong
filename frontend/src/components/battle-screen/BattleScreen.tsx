@@ -337,27 +337,28 @@ export function BattleScreen({
               onQuickChat={onQuickChat}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
-            />
+            >
+              <BottomActionDock
+                hand={viewModel.localHand}
+                selectedTileCode={viewModel.selectedTileCode}
+                handInsight={viewModel.handInsight}
+                claimCandidates={viewModel.claimCandidates}
+                actions={isSpectator ? [] : battleActions}
+                isElevated={viewModel.isActionDockElevated}
+                isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
+                isSpectator={isSpectator}
+                spectatorFocusName={spectatorFocusName}
+                promptCue={viewModel.promptCue}
+                deadlineAt={viewModel.deadlineAt}
+                onSwitchPerspective={onSwitchSpectatorPerspective}
+                onTileSelect={onTileSelect}
+                onTileDoubleClick={onTileDoubleClick}
+                onClaimCandidateSelect={onClaimCandidateSelect}
+                onClaimCandidateActivate={onClaimCandidateActivate}
+                onAction={handleAction}
+              />
+            </TableStage>
           </div>
-          <BottomActionDock
-            hand={viewModel.localHand}
-            selectedTileCode={viewModel.selectedTileCode}
-            handInsight={viewModel.handInsight}
-            claimCandidates={viewModel.claimCandidates}
-            actions={isSpectator ? [] : battleActions}
-            isElevated={viewModel.isActionDockElevated}
-            isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
-            isSpectator={isSpectator}
-            spectatorFocusName={spectatorFocusName}
-            promptCue={viewModel.promptCue}
-            deadlineAt={viewModel.deadlineAt}
-            onSwitchPerspective={onSwitchSpectatorPerspective}
-            onTileSelect={onTileSelect}
-            onTileDoubleClick={onTileDoubleClick}
-            onClaimCandidateSelect={onClaimCandidateSelect}
-            onClaimCandidateActivate={onClaimCandidateActivate}
-            onAction={handleAction}
-          />
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (
             <ResultOverlay

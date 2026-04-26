@@ -9,6 +9,10 @@
   --action-dock-shift: 0rem;
   --action-dock-tile-width: var(--battle-hand-tile-width, 3.18rem);
   --action-dock-tile-gap: clamp(1px, 0.05vw, 0.04rem);
+  --action-dock-bottom-offset: clamp(1.2rem, 8vh, 2.5rem);
+  --action-dock-bottom-padding: 0rem;
+  --action-dock-local-info-clearance: 0rem;
+  --action-dock-min-tile-width: 0.55rem;
   --action-dock-drawn-gap-extra: 0.28rem;
   --action-dock-drawn-gap-count: 0;
   --action-dock-hand-count: 13;
@@ -30,10 +34,24 @@
       (var(--action-dock-drawn-gap-count) * var(--action-dock-drawn-gap-extra))
     ) / var(--action-dock-effective-hand-count)
   );
-  --action-dock-tile-width: min(var(--battle-hand-tile-width, 3.18rem), max(1.08rem, var(--action-dock-fit-tile-width)));
+  --action-dock-info-fit-tile-width: calc(
+    (
+      var(--table-stage-local-info-guard-bottom, 100dvh) -
+      var(--action-dock-bottom-offset) -
+      var(--action-dock-local-info-clearance) -
+      var(--action-dock-bottom-padding)
+    ) / 1.57
+  );
+  --action-dock-tile-width: min(
+    var(--battle-hand-tile-width, 3.18rem),
+    max(
+      var(--action-dock-min-tile-width),
+      min(var(--action-dock-fit-tile-width), var(--action-dock-info-fit-tile-width))
+    )
+  );
   position: absolute;
   left: 50%;
-  bottom: clamp(1.2rem, 8vh, 2.5rem);
+  bottom: var(--action-dock-bottom-offset);
   z-index: 12;
   width: min(var(--action-dock-content-width), var(--action-dock-max-width));
   min-width: min(var(--action-dock-content-width), var(--action-dock-max-width));
@@ -1218,7 +1236,8 @@
   }
 
   .action-dock {
-    bottom: 0.75rem;
+    --action-dock-bottom-offset: 0.75rem;
+    --action-dock-bottom-padding: 0.8rem;
     width: calc(100vw - 1rem);
     max-height: calc(100dvh - 1.5rem);
     padding: 0.7rem 0.75rem 0.8rem;
@@ -1234,6 +1253,7 @@
 
 @media (max-width: 680px) {
   .action-dock {
+    --action-dock-bottom-padding: 0.46rem;
     width: calc(100vw - (var(--battle-shell-gap) * 2));
     min-width: calc(100vw - (var(--battle-shell-gap) * 2));
     max-width: calc(100vw - (var(--battle-shell-gap) * 2));
@@ -1341,7 +1361,8 @@
 }
 
 :root[data-small-screen='true'] .action-dock {
-  bottom: 0.75rem;
+  --action-dock-bottom-offset: 0.75rem;
+  --action-dock-bottom-padding: 0.46rem;
   width: calc(100vw - (var(--battle-shell-gap) * 2));
   min-width: calc(100vw - (var(--battle-shell-gap) * 2));
   max-width: calc(100vw - (var(--battle-shell-gap) * 2));
@@ -1403,7 +1424,7 @@
 /* ---- Landscape mobile ---- */
 @media (orientation: landscape) and (max-height: 500px) {
   .action-dock {
-    bottom: clamp(0.4rem, 2vh, 1rem);
+    --action-dock-bottom-offset: clamp(0.4rem, 2vh, 1rem);
     --action-dock-tile-gap: clamp(1px, 0.05vw, 0.04rem);
   }
 

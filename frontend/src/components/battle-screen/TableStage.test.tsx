@@ -278,6 +278,37 @@ describe('TableStage', () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight });
   });
 
+  it('exports the bottom player info guard for hand dock sizing', () => {
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1920 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+
+    const { container, unmount } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[{ seat: 'bottom', name: 'Player Bottom', melds: [] }]}
+      />,
+    );
+
+    const tableStage = container.querySelector('.table-stage') as HTMLElement | null;
+
+    expect(tableStage?.style.getPropertyValue('--table-stage-local-info-guard-bottom')).toBe('173px');
+
+    unmount();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight });
+  });
+
   it('shows the current latest discard in a larger spotlight near the discarding seat', () => {
     const { container } = render(
       <TableStage
