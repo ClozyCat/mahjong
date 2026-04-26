@@ -776,7 +776,7 @@ describe('TableStage', () => {
     const menu = screen.getByRole('menu', { name: 'Player A 快捷表情' });
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(9);
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(6);
   });
 
   it('renders a theme switch button beside the leave control and forwards clicks', () => {

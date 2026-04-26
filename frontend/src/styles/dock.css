@@ -8,8 +8,8 @@
 .action-dock {
   --action-dock-shift: 0rem;
   --action-dock-tile-width: var(--battle-hand-tile-width, 3.18rem);
-  --action-dock-tile-gap: clamp(0.12rem, 0.45vw, 0.36rem);
-  --action-dock-drawn-gap-extra: 0.48rem;
+  --action-dock-tile-gap: clamp(1px, 0.05vw, 0.04rem);
+  --action-dock-drawn-gap-extra: 0.28rem;
   --action-dock-drawn-gap-count: 0;
   --action-dock-hand-count: 13;
   --action-dock-gap-count: 12;
@@ -1403,7 +1403,7 @@
 @media (orientation: landscape) and (max-height: 500px) {
   .action-dock {
     bottom: clamp(0.4rem, 2vh, 1rem);
-    --action-dock-tile-gap: clamp(0.08rem, 0.35vw, 0.24rem);
+    --action-dock-tile-gap: clamp(1px, 0.05vw, 0.04rem);
   }
 
   .action-dock__response-stack {

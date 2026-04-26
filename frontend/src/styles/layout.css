@@ -74,7 +74,7 @@
   --battle-stage-width: 100vw;
   --battle-stage-discard-width: clamp(1rem, 3.2vw, 2.28rem);
   --battle-stage-discard-height: calc(var(--battle-stage-discard-width) * 1.36);
-  --battle-stage-gap: clamp(0.04rem, 0.25vw, 0.14rem);
+  --battle-stage-gap: clamp(1px, 0.06vw, 0.04rem);
   position: relative;
   z-index: 1;
   min-height: 100dvh;
@@ -150,7 +150,7 @@
     --battle-shell-bottom-gap: 0.5rem;
     --battle-top-clearance: clamp(0.08rem, 0.2vh, 0.18rem);
     --battle-stage-size-trim: clamp(0.6rem, 1.4vw, 1.1rem);
-    --battle-hand-tile-width-narrow-base: min(clamp(1.05rem, 5vw, 1.9rem), calc((100vw - 5rem) / 15));
+    --battle-hand-tile-width-narrow-base: min(clamp(1.15rem, 6.2vw, 2.45rem), calc((100vw - 2rem) / 14.5));
     --battle-hand-tile-width: calc(var(--battle-hand-tile-width-narrow-base) * var(--table-stage-tile-scale, 1));
     --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
     --battle-bottom-clearance: clamp(0.5rem, 0.85vh, 0.7rem);
@@ -185,5 +185,53 @@
     --battle-bottom-clearance: clamp(0.6rem, 1.1vh, 0.9rem);
     --battle-stage-bottom-reserve: clamp(1.4rem, 3.4vh, 2.2rem);
     --battle-dock-bottom-gap: clamp(0.04rem, 0.1vh, 0.1rem);
+  }
+}
+/* ------- Forced Landscape for Portrait Mobile ------- */
+
+@media (orientation: portrait) {
+  html[data-mobile='true'] {
+    overflow: hidden;
+  }
+
+  html[data-mobile='true'] body {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 100dvh;
+    height: 100vw;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+    overflow: hidden;
+  }
+
+  /* Override viewport-based units for rotated state */
+  :root[data-mobile='true'] {
+    --battle-stage-width: 100dvh;
+    --battle-stage-height: 100vw;
+    --battle-shell-gap: clamp(0.5rem, 1.1vh, 1.2rem);
+    --battle-hand-tile-width-base: clamp(1.32rem, 4.6vh, 3.15rem);
+    --battle-meld-tile-width-base: clamp(1.15rem, 3.8vh, 2.7rem);
+
+    /* Responsive overrides for portrait-mode-mobile (now landscape-rendered) */
+    --battle-hand-tile-width-narrow-base: min(clamp(1.05rem, 5vh, 1.9rem), calc((100dvh - 5rem) / 15));
+    --battle-stage-max-width: calc(100dvh - 2rem - var(--battle-stage-size-trim));
+  }
+
+  /* Specific overrides for .battle-screen to ensure they take precedence */
+  :root[data-mobile='true'] .battle-screen {
+    --battle-stage-width: 100dvh;
+    --battle-stage-height: 100vw;
+  }
+
+  /* Fix for ConnectGate in rotated state */
+  html[data-mobile='true'] .connect-gate {
+    min-height: 100dvh;
+    padding: clamp(1rem, 5vh, 4rem);
+  }
+
+  html[data-mobile='true'] .connect-gate__card {
+    padding: clamp(1rem, 6vh, 2.8rem);
+    border-radius: clamp(1.2rem, 3vh, 1.8rem);
   }
 }

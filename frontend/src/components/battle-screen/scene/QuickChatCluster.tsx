@@ -12,11 +12,8 @@ const QUICK_CHAT_TEXT_LIMIT = 50;
 const QUICK_CHAT_ITEMS: Array<{ emoji: QuickChatEmoji; label: string }> = [
   { emoji: '😄', label: '笑' },
   { emoji: '😭', label: '哭' },
-  { emoji: '🀄', label: '红中' },
-  { emoji: '☠️', label: '骷髅' },
   { emoji: '😡', label: '生气' },
   { emoji: '🙏', label: '谢谢' },
-  { emoji: '👍', label: '赞' },
   { emoji: '🍵', label: '喝茶' },
 ];
 
