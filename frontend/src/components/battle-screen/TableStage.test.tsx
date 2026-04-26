@@ -831,12 +831,14 @@ describe('TableStage', () => {
       />,
     );
 
+    const fullscreenButton = screen.getByRole('button', { name: '全屏显示' });
     const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
     const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
     const controls = helpButton.parentElement;
 
-    expect(controls?.firstElementChild).toBe(helpButton);
-    expect(controls?.children[1]).toBe(themeButton);
+    expect(controls?.firstElementChild).toBe(fullscreenButton);
+    expect(controls?.children[1]).toBe(helpButton);
+    expect(controls?.children[2]).toBe(themeButton);
 
     fireEvent.click(helpButton);
 

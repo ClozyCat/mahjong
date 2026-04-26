@@ -44,76 +44,11 @@
   100% { transform: translate3d(1rem, -0.8rem, 0) scale(1.06); }
 }
 
-@keyframes halo-pulse {
-  0%, 100% { opacity: 0.48; transform: translateX(-50%) scale(0.97); }
-  50% { opacity: 0.85; transform: translateX(-50%) scale(1.02); }
-}
 
-@keyframes action-lane-sweep {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.82);
-  }
-  14%, 56% {
-    opacity: 0.85;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.06);
-  }
-}
 
-@keyframes action-trail-fade {
-  0% {
-    opacity: 0;
-  }
-  16%, 52% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-  }
-}
 
-@keyframes action-seat-flare {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.56);
-  }
-  26% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.22);
-  }
-}
 
-@keyframes action-flare-unified {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.72);
-  }
-  26% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.14);
-  }
-}
 
-@keyframes urgent-spotlight-pulse {
-  0%, 100% {
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    transform: translate(-50%, -50%) scale(1.04);
-  }
-}
 
 @keyframes table-stage-action-callout-fade {
   0% {
@@ -181,15 +116,7 @@
   50% { opacity: 1; transform: scale(1.03); }
 }
 
-@keyframes action-dock-acrylic-breathe {
-  0%, 100% { opacity: 0.44; }
-  50% { opacity: 0.72; }
-}
 
-@keyframes action-dock-countdown-alert {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.68; transform: scale(1.05); }
-}
 
 @keyframes action-dock-hu-burn-flame {
   0% {

@@ -292,7 +292,6 @@ export function BattleScreen({
     <main className="battle-screen">
       <div className="battle-shell">
         <div className="battle-stage" style={battleStageStyle}>
-          <div className="battle-stage__halo" />
           <div className="battle-stage__table-wrap">
             <TableStage
               discards={viewModel.discards}
