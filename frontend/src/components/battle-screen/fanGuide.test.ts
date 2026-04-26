@@ -11,4 +11,13 @@ describe('fanGuide', () => {
       label: '听牌成和',
     });
   });
+
+  it('maps mixed_kongs to 明暗杠 and five fan', () => {
+    expect(getFanLabel('mixed_kongs')).toBe('明暗杠');
+    expect(getFanGuideEntry('mixed_kongs')).toMatchObject({
+      fanKey: 'mixed_kongs',
+      fanValue: 5,
+      label: '明暗杠',
+    });
+  });
 });

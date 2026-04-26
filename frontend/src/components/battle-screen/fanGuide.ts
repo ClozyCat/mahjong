@@ -176,6 +176,12 @@ const FAN_GUIDE_DEFINITIONS: Array<Omit<FanGuideEntry, 'label'>> = [
     example: '前三张 8条 已全部出现，第 4 张 8条 被用来和牌。',
   },
   {
+    fanKey: 'mixed_kongs',
+    fanValue: 5,
+    intro: '和牌中同时有一副明杠和一副暗杠。',
+    example: '1111万 明杠，7777筒 暗杠。',
+  },
+  {
     fanKey: 'half_flush',
     fanValue: 6,
     intro: '整手牌由一种数牌和字牌组成。',
@@ -527,6 +533,7 @@ export const FAN_LABELS: Record<string, string> = {
   all_chows: '平和',
   concealed_hand: '门前清',
   two_melded_kongs: '双明杠',
+  mixed_kongs: '明暗杠',
   outside_hand: '全带幺',
   fully_concealed_hand: '不求人',
   last_tile: '和绝张',
