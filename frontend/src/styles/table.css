@@ -1861,7 +1861,7 @@
   .table-stage, :root[data-small-screen='true'] .table-stage {
     --table-stage-center-indicator-size: clamp(1rem, 6vw, 3.2rem);
     --table-stage-spotlight-offset: clamp(1.2rem, 7vw, 3.6rem);
-    --table-stage-spotlight-scale: 1.22;
+    --table-stage-spotlight-scale: 1.18;
     --table-stage-river-columns: 7;
   }
 
