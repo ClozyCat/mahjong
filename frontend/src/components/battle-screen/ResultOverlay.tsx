@@ -184,7 +184,7 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
       const availableHeight = Math.max(window.innerHeight - 32, 1);
       const baseWidth = Math.max(cardElement.offsetWidth, 1);
       const baseHeight = Math.max(cardElement.offsetHeight, 1);
-      const nextScale = Math.max(0.65, Math.min(availableWidth / baseWidth, availableHeight / baseHeight, 1));
+      const nextScale = Math.max(0.4, Math.min(availableWidth / baseWidth, availableHeight / baseHeight, 1));
 
       setDynamicScale((currentScale) => Math.abs(currentScale - nextScale) < 0.01 ? currentScale : nextScale);
     };
