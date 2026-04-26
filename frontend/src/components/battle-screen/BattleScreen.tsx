@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
 import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
@@ -28,7 +28,7 @@ interface BattleScreenProps {
   onSwitchSpectatorPerspective?: () => void;
 }
 
-const DEFAULT_TABLE_TILE_SCALE = 1.00;
+const DEFAULT_TABLE_TILE_SCALE = 1.12;
 const TABLE_TILE_SCALE_STEP = 0.06;
 const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
@@ -132,6 +132,10 @@ export function BattleScreen({
 
     onAction(actionId);
   }
+
+  const battleStageStyle = {
+    '--table-stage-tile-scale': `${tableTileScale}`,
+  } as CSSProperties;
 
   useEffect(() => {
     consumedActionEffectRef.current = consumedActionEffect;
@@ -287,7 +291,7 @@ export function BattleScreen({
   return (
     <main className="battle-screen">
       <div className="battle-shell">
-        <div className="battle-stage">
+        <div className="battle-stage" style={battleStageStyle}>
           <div className="battle-stage__halo" />
           <div className="battle-stage__table-wrap">
             <TableStage
