@@ -380,7 +380,7 @@
   border-radius: 1.25rem;
   border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
   background: rgba(10, 10, 10, 0.88);
-  backdrop-filter: blur(40px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
   color: var(--theme-paper-strong);
   box-shadow: 
     0 24px 64px rgba(0, 0, 0, 0.6),
@@ -388,6 +388,7 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent);
   animation: overlay-fade-in-up 0.35s var(--ease-lux) forwards;
   z-index: 100;
+  will-change: transform, opacity;
 }
 
 .action-dock__hand-insight-section {
@@ -538,7 +539,7 @@
   width: 14rem;
   padding: 0.85rem 1rem;
   background: rgba(14, 14, 14, 0.92);
-  backdrop-filter: blur(32px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
   border-radius: 1rem;
   box-shadow: 
@@ -548,6 +549,7 @@
   z-index: 110;
   pointer-events: none;
   animation: tooltip-fade-in-right-centered 0.25s var(--ease-lux) forwards;
+  will-change: transform, opacity;
 }
 
 .action-dock__fan-detail-popover::before {

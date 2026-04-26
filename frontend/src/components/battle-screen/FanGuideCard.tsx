@@ -1,5 +1,6 @@
-import type { FanGuideEntry } from './fanGuide';
+import { memo } from 'react';
 import type { CSSProperties } from 'react';
+import type { FanGuideEntry } from './fanGuide';
 
 interface FanGuideCardProps {
   entry: FanGuideEntry;
@@ -48,7 +49,7 @@ export function getFanColor(value: number): string {
   return `rgb(${stops[0].c.r}, ${stops[0].c.g}, ${stops[0].c.b})`;
 }
 
-export function FanGuideCard({ entry, className, isPinned, onPin }: FanGuideCardProps) {
+export const FanGuideCard = memo(function FanGuideCard({ entry, className, isPinned, onPin }: FanGuideCardProps) {
   const resolvedClassName = ['fan-guide__card', className].filter(Boolean).join(' ');
   const fanBg = getFanColor(entry.fanValue);
 
@@ -90,7 +91,7 @@ export function FanGuideCard({ entry, className, isPinned, onPin }: FanGuideCard
       </div>
     </article>
   );
-}
+});
 
 function PinIcon() {
   return (

@@ -25,9 +25,10 @@
     0 32px 80px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent),
     0 0 24px color-mix(in srgb, var(--accent) 12%, transparent);
-  backdrop-filter: blur(32px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
   isolation: isolate;
   border-width: 1.5px;
+  will-change: transform, opacity;
 }
 
 
@@ -758,10 +759,10 @@
   transform: scale(var(--result-overlay-dynamic-scale, 1));
   transform-origin: center center;
   animation: overlay-fade-in-up 0.5s var(--ease-lux) forwards;
-  backdrop-filter: blur(32px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
   background: rgba(14, 14, 14, 0.9);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 14%, transparent);
-  will-change: transform, opacity;
+  will-change: transform, opacity, backdrop-filter;
 }
 
 .result-overlay__card::after {
@@ -1084,12 +1085,13 @@
   border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
   border-radius: 1.8rem;
   background: rgba(14, 14, 14, 0.94);
-  backdrop-filter: blur(32px) saturate(110%);
+  backdrop-filter: blur(12px) saturate(110%);
   box-shadow: 
     0 16px 64px rgba(0, 0, 0, 0.6),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   min-width: 22rem;
   animation: result-overlay-fan-tooltip-enter 160ms ease;
+  will-change: transform, opacity;
 }
 
 .result-overlay__fan-tooltip-card .fan-guide__card {
@@ -1319,12 +1321,13 @@
   border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
   border-radius: 1.8rem;
   background: rgba(14, 14, 14, 0.94);
-  backdrop-filter: blur(32px) saturate(110%);
+  backdrop-filter: blur(12px) saturate(110%);
   box-shadow: 
     0 16px 64px rgba(0, 0, 0, 0.6),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   min-width: 23rem;
   animation: result-overlay-fan-tooltip-enter 160ms ease;
+  will-change: transform, opacity;
 }
 
 .result-overlay__seat-tooltip-head {

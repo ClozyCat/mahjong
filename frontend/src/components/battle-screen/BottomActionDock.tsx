@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   BackendActionType,
@@ -55,16 +55,20 @@ export function BottomActionDock({
   const handInsightPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
   const hasDrawnTile = hand.some((tile) => tile.isDrawn || tile.isReplacementDrawn);
-  const layoutHandCount = handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1;
-  const dockStyle = {
+  const layoutHandCount = useMemo(() => 
+    handCount > 0 ? handCount : isWaitingForMatchStart ? WAITING_HAND_PLACEHOLDER_COUNT : 1
+  , [handCount, isWaitingForMatchStart]);
+
+  const dockStyle = useMemo(() => ({
     '--action-dock-hand-count': `${handCount}`,
     '--action-dock-effective-hand-count': `${Math.max(handCount, 1)}`,
     '--action-dock-gap-count': `${Math.max(handCount - 1, 0)}`,
     '--action-dock-drawn-gap-count': hasDrawnTile ? '1' : '0',
     '--action-dock-layout-hand-count': `${layoutHandCount}`,
     '--action-dock-layout-gap-count': `${Math.max(layoutHandCount - 1, 0)}`,
-  } as CSSProperties;
-  const visibleActions = actions
+  }), [handCount, hasDrawnTile, layoutHandCount]) as CSSProperties;
+
+  const visibleActions = useMemo(() => actions
     .filter((action) => {
       if (!action.enabled) {
         return false;
@@ -80,12 +84,19 @@ export function BottomActionDock({
       (left, right) =>
         (ACTION_PRIORITY[left.id] ?? Number.MAX_SAFE_INTEGER) -
         (ACTION_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER),
-    );
+    ), [actions, promptCue]);
+
   const shouldElevateDock = isElevated && !isResponsePrompt(promptCue);
-  const hasHandInsightContent = Boolean(handInsight?.isTenpai || handInsight?.winningFans.length);
+  const hasHandInsightContent = useMemo(() => 
+    Boolean(handInsight?.isTenpai || handInsight?.winningFans.length)
+  , [handInsight]);
+  
   const isHandInsightPopoverOpen =
     hasHandInsightContent && (isHandInsightPopoverHovered || isHandInsightPopoverPinned);
-  const displayedWinningFans = handInsight ? getDisplayedWinningFans(handInsight) : [];
+  
+  const displayedWinningFans = useMemo(() => 
+    handInsight ? getDisplayedWinningFans(handInsight) : []
+  , [handInsight]);
 
   useEffect(() => {
     if (!isHandInsightPopoverPinned) {

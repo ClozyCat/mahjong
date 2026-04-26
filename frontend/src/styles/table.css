@@ -1905,20 +1905,8 @@
   }
 
   .table-stage__global-emoji-trigger {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--theme-paper) 20%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
     font-size: 1.4rem;
-    backdrop-filter: blur(12px);
     touch-action: manipulation;
-    transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
   }
 }
 
