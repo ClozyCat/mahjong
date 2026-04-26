@@ -1200,10 +1200,9 @@
   }
 
   .action-dock__ready-hand-popover {
-    right: -0.1rem;
-    min-width: 4.6rem;
-    max-width: calc(100vw - 1.4rem);
-    padding: 0.44rem 0.46rem 0.48rem;
+    right: -0.12rem;
+    min-width: 10.5rem;
+    padding: 0.8rem 1rem;
   }
 
   .action-dock__info-rail {

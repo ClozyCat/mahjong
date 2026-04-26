@@ -1861,7 +1861,7 @@
   .table-stage, :root[data-small-screen='true'] .table-stage {
     --table-stage-center-indicator-size: clamp(1rem, 6vw, 3.2rem);
     --table-stage-spotlight-offset: clamp(1.2rem, 7vw, 3.6rem);
-    --table-stage-spotlight-scale: 1.3;
+    --table-stage-spotlight-scale: 1.22;
     --table-stage-river-columns: 7;
   }
 
@@ -1898,16 +1898,8 @@
     font-size: 0.56rem;
   }
 
-  .table-stage__global-emoji-cluster {
-    bottom: calc(var(--battle-stage-bottom-reserve) + 2.2rem);
-    right: 0.85rem;
-    width: 3.2rem;
-    height: 3.2rem;
-  }
-
-  .table-stage__global-emoji-trigger {
-    font-size: 1.4rem;
-    touch-action: manipulation;
+  .table-stage__table-info span {
+    font-size: 0.56rem;
   }
 }
 
