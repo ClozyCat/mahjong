@@ -15,8 +15,8 @@ use tokio::sync::{Notify, mpsc};
 #[cfg(feature = "spectator")]
 use super::collect_observer_outbound_from_snapshot;
 use super::protocol::{
-    HeartbeatPayload, action_rejected_message, dealer_selection_started_message,
-    heartbeat_message, leave_table_accepted_message, quick_chat_message,
+    HeartbeatPayload, action_rejected_message, dealer_selection_started_message, heartbeat_message,
+    leave_table_accepted_message, quick_chat_message,
 };
 use super::room_runtime::{
     PendingStartMatch, close_runtime, ensure_room_loaded, replace_connection,

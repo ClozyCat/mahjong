@@ -6,10 +6,14 @@ use super::search::{
 };
 use std::{env, time::Instant};
 
+const HYBRID_TOP_SEARCH_CANDIDATES: usize = 3;
+const HYBRID_CLOSE_SEARCH_GAP: i64 = 30;
+const DEFAULT_NEURAL_PRIOR_WEIGHT: i64 = 15;
+
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     let decision_started = Instant::now();
     let mut engine = SearchEngine::new(context);
-    let baseline = engine.best_discard_plan(
+    let search_plans = engine.rank_best_discard_plans(
         context,
         &context.player.concealed_tiles,
         &context.player.concealed_tile_counts,
@@ -17,7 +21,8 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
         &[],
         context.restricted_discard_tile_key.as_deref(),
         context.drawn_tile_id.as_deref(),
-    )?;
+    );
+    let baseline = search_plans.first()?.clone();
 
     let mut best_kong = None;
     for candidate in &context.self_kong_candidates {
@@ -79,7 +84,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     trace_discard_decision_if_enabled(context, &engine, &baseline, decision_started.elapsed());
 
     let selected_discard =
-        select_neural_hybrid_discard(context, &mut engine).unwrap_or_else(|| baseline.clone());
+        select_neural_hybrid_discard(context, &search_plans).unwrap_or_else(|| baseline.clone());
 
     if let Some((action, score)) = best_kong {
         if score > baseline.score + engine.kong_margin() {
@@ -243,26 +248,17 @@ fn tile_counts_after_removal(
 
 fn select_neural_hybrid_discard(
     context: &BotContext,
-    engine: &mut SearchEngine,
+    search_plans: &[BotDiscardPlan],
 ) -> Option<BotDiscardPlan> {
     let neural_scores = neural_discard_scores(context)?;
-    let search_plans = engine.rank_discard_plans_for_policy(
-        context,
-        &context.player.concealed_tiles,
-        &context.player.concealed_tile_counts,
-        &context.player.meld_tile_key_groups,
-        &[],
-        context.restricted_discard_tile_key.as_deref(),
-        context.drawn_tile_id.as_deref(),
-    );
-    select_hybrid_discard_plan(&search_plans, &neural_scores, neural_prior_weight())
+    select_hybrid_discard_plan(search_plans, &neural_scores, neural_prior_weight())
 }
 
 fn neural_prior_weight() -> i64 {
     env::var("MAHJONG_BOT_NEURAL_WEIGHT")
         .ok()
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(80)
+        .unwrap_or(DEFAULT_NEURAL_PRIOR_WEIGHT)
         .max(0)
 }
 
@@ -271,19 +267,37 @@ fn select_hybrid_discard_plan(
     neural_scores: &[NeuralDiscardScore],
     weight: i64,
 ) -> Option<BotDiscardPlan> {
+    let best_search = search_plans.first()?.clone();
+    let candidate_count = search_plans
+        .iter()
+        .take(HYBRID_TOP_SEARCH_CANDIDATES)
+        .take_while(|plan| best_search.score - plan.score <= HYBRID_CLOSE_SEARCH_GAP)
+        .count();
+    if candidate_count <= 1 {
+        return Some(best_search);
+    }
+    let candidate_plans = &search_plans[..candidate_count];
     let mut best = None;
-    let min_logit = neural_scores
+    let candidate_neural_scores = neural_scores
+        .iter()
+        .filter(|score| {
+            candidate_plans
+                .iter()
+                .any(|plan| plan.tile_key == score.tile_key)
+        })
+        .collect::<Vec<_>>();
+    let min_logit = candidate_neural_scores
         .iter()
         .map(|score| score.logit)
         .fold(f32::INFINITY, f32::min);
-    let max_logit = neural_scores
+    let max_logit = candidate_neural_scores
         .iter()
         .map(|score| score.logit)
         .fold(f32::NEG_INFINITY, f32::max);
     let logit_range = max_logit - min_logit;
 
-    for plan in search_plans {
-        let neural_bonus = neural_scores
+    for plan in candidate_plans {
+        let neural_bonus = candidate_neural_scores
             .iter()
             .find(|score| score.tile_key == plan.tile_key)
             .map(|score| {
@@ -431,6 +445,92 @@ mod tests {
             .expect("hybrid selection");
 
         assert_eq!(selected.tile_key, "t1");
+    }
+
+    #[test]
+    fn neural_prior_cannot_override_clear_search_lead() {
+        let search_plans = vec![
+            search::BotDiscardPlan {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                score: 1000,
+            },
+            search::BotDiscardPlan {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                score: 880,
+            },
+        ];
+        let neural_scores = vec![
+            neural::NeuralDiscardScore {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                logit: 0.0,
+            },
+            neural::NeuralDiscardScore {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                logit: 4.0,
+            },
+        ];
+
+        let selected = select_hybrid_discard_plan(&search_plans, &neural_scores, 80)
+            .expect("hybrid selection");
+
+        assert_eq!(selected.tile_key, "w1");
+    }
+
+    #[test]
+    fn neural_prior_only_breaks_top_three_search_candidates() {
+        let search_plans = vec![
+            search::BotDiscardPlan {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                score: 1000,
+            },
+            search::BotDiscardPlan {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                score: 998,
+            },
+            search::BotDiscardPlan {
+                tile_id: "b1#0".to_string(),
+                tile_key: "b1".to_string(),
+                score: 997,
+            },
+            search::BotDiscardPlan {
+                tile_id: "red#0".to_string(),
+                tile_key: "red".to_string(),
+                score: 996,
+            },
+        ];
+        let neural_scores = vec![
+            neural::NeuralDiscardScore {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                logit: 0.0,
+            },
+            neural::NeuralDiscardScore {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                logit: 1.0,
+            },
+            neural::NeuralDiscardScore {
+                tile_id: "b1#0".to_string(),
+                tile_key: "b1".to_string(),
+                logit: 2.0,
+            },
+            neural::NeuralDiscardScore {
+                tile_id: "red#0".to_string(),
+                tile_key: "red".to_string(),
+                logit: 100.0,
+            },
+        ];
+
+        let selected = select_hybrid_discard_plan(&search_plans, &neural_scores, 80)
+            .expect("hybrid selection");
+
+        assert_ne!(selected.tile_key, "red");
     }
 
     #[test]

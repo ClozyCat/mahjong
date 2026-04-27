@@ -373,6 +373,8 @@
   box-shadow: none;
   z-index: 1;
   isolation: isolate;
+  /* Prevent blur smears from leaking out during transforms */
+  contain: paint;
   transform: translateZ(0);
   will-change: transform;
 }
@@ -384,25 +386,28 @@
   inset: 0;
   border-radius: inherit;
   z-index: -1;
-  /* Balanced misty background with better contrast */
+  /* 
+     Integrated misty background with built-in radial fade.
+     Avoiding mask-image + backdrop-filter combination which causes 
+     major artifacts in transformed containers.
+  */
   background:
     radial-gradient(circle at center,
       color-mix(in srgb, var(--theme-paper) 32%, transparent) 0%,
       color-mix(in srgb, var(--theme-paper) 16%, transparent) 45%,
-      color-mix(in srgb, var(--theme-paper) 4%, transparent) 100%),
+      color-mix(in srgb, var(--theme-paper) 4%, transparent) 72%,
+      transparent 100%),
     radial-gradient(circle at center,
       color-mix(in srgb, var(--theme-paper-line) 8%, transparent) 0%,
       transparent 80%);
   /* Glassmorphism applies only to background surface */
-  backdrop-filter: blur(12px) saturate(1.08);
+  backdrop-filter: blur(8px) saturate(1.08);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-2) 14%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent),
     0 10px 28px -10px rgba(0, 0, 0, 0.16),
     inset 0 0 14px color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  /* Feathered mask only affects the background surface, not the tiles */
-  mask-image: radial-gradient(circle at center, black 78%, transparent 100%);
   opacity: 1;
-  transform: scale(1) translateZ(0);
+  transform: translateZ(0);
   transition: opacity 180ms ease, transform 180ms ease;
   backface-visibility: hidden;
 }
@@ -411,16 +416,16 @@
 .table-stage__river::before {
   content: '';
   position: absolute;
-  inset: -22%;
+  inset: -12%;
   background:
-    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--theme-paper) 8%, transparent) 0%, transparent 45%),
-    radial-gradient(circle at 90% 20%, color-mix(in srgb, var(--theme-paper) 8%, transparent) 0%, transparent 45%),
-    radial-gradient(circle at 20% 90%, color-mix(in srgb, var(--theme-paper) 8%, transparent) 0%, transparent 45%),
-    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--theme-paper) 8%, transparent) 0%, transparent 45%);
-  filter: blur(24px);
+    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 90% 20%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 20% 90%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%);
+  filter: blur(16px);
   pointer-events: none;
   z-index: -2;
-  opacity: 0.5;
+  opacity: 0.4;
   transform: scale(1);
   transition: opacity 180ms ease, transform 180ms ease;
 }

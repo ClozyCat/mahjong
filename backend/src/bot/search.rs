@@ -606,6 +606,29 @@ impl SearchEngine {
         restricted_discard_tile_key: Option<&str>,
         drawn_tile_id: Option<&str>,
     ) -> Option<BotDiscardPlan> {
+        self.rank_best_discard_plans(
+            context,
+            concealed_tiles,
+            concealed_counts,
+            meld_tile_key_groups,
+            appended_open_flags,
+            restricted_discard_tile_key,
+            drawn_tile_id,
+        )
+        .into_iter()
+        .next()
+    }
+
+    pub(crate) fn rank_best_discard_plans(
+        &mut self,
+        context: &BotContext,
+        concealed_tiles: &[BotTileView],
+        concealed_counts: &TileCounts,
+        meld_tile_key_groups: &[Vec<String>],
+        appended_open_flags: &[bool],
+        restricted_discard_tile_key: Option<&str>,
+        drawn_tile_id: Option<&str>,
+    ) -> Vec<BotDiscardPlan> {
         let stage_one = self.rank_discard_plans_at_depth(
             context,
             concealed_tiles,
@@ -622,17 +645,17 @@ impl SearchEngine {
         };
         if stage_one.is_empty() {
             self.last_discard_telemetry = Some(telemetry);
-            return None;
+            return Vec::new();
         }
         if stage_one.len() == 1 {
             self.last_discard_telemetry = Some(telemetry);
-            return stage_one.into_iter().next();
+            return stage_one;
         }
         let finalist_gap = stage_one[0].score - stage_one[1].score;
         telemetry.finalist_gap = Some(finalist_gap);
         if finalist_gap >= STAGE_ONE_EARLY_RETURN_MARGIN {
             self.last_discard_telemetry = Some(telemetry);
-            return stage_one.into_iter().next();
+            return stage_one.into_iter().take(1).collect();
         }
 
         let stage_two_candidates = self
@@ -662,7 +685,7 @@ impl SearchEngine {
                 .find(|tile| tile.tile_id == finalist.tile_id)
                 .cloned()
             {
-                let stage_two_score = self.score_discard_candidate(
+                if let Some(stage_two_score) = self.score_discard_candidate(
                     context,
                     concealed_counts,
                     meld_tile_key_groups,
@@ -671,23 +694,24 @@ impl SearchEngine {
                     drawn_tile_id,
                     &tile,
                     STAGE_TWO_DEPTH,
-                )?;
-                finalist.score = if run_monte_carlo {
-                    if let Some(monte_carlo_score) = self.monte_carlo_discard_score(
-                        context,
-                        concealed_counts,
-                        meld_tile_key_groups,
-                        appended_open_flags,
-                        restricted_discard_tile_key,
-                        &tile,
-                    ) {
-                        (stage_two_score * 5 + monte_carlo_score * 4) / 9
+                ) {
+                    finalist.score = if run_monte_carlo {
+                        if let Some(monte_carlo_score) = self.monte_carlo_discard_score(
+                            context,
+                            concealed_counts,
+                            meld_tile_key_groups,
+                            appended_open_flags,
+                            restricted_discard_tile_key,
+                            &tile,
+                        ) {
+                            (stage_two_score * 5 + monte_carlo_score * 4) / 9
+                        } else {
+                            stage_two_score
+                        }
                     } else {
                         stage_two_score
-                    }
-                } else {
-                    stage_two_score
-                };
+                    };
+                }
             }
         }
         finalists.sort_by(|left, right| {
@@ -697,29 +721,7 @@ impl SearchEngine {
                 .then_with(|| right.tile_key.cmp(&left.tile_key))
         });
         self.last_discard_telemetry = Some(telemetry);
-        finalists.into_iter().next()
-    }
-
-    pub(crate) fn rank_discard_plans_for_policy(
-        &mut self,
-        context: &BotContext,
-        concealed_tiles: &[BotTileView],
-        concealed_counts: &TileCounts,
-        meld_tile_key_groups: &[Vec<String>],
-        appended_open_flags: &[bool],
-        restricted_discard_tile_key: Option<&str>,
-        drawn_tile_id: Option<&str>,
-    ) -> Vec<BotDiscardPlan> {
-        self.rank_discard_plans_at_depth(
-            context,
-            concealed_tiles,
-            concealed_counts,
-            meld_tile_key_groups,
-            appended_open_flags,
-            restricted_discard_tile_key,
-            drawn_tile_id,
-            STAGE_ONE_DEPTH,
-        )
+        finalists
     }
 
     fn stage_two_candidate_count(
