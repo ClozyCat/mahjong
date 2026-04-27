@@ -3,6 +3,7 @@ import { startTransition, useEffect, useEffectEvent, useMemo, useReducer, useRef
 import { BattleScreen } from './components/battle-screen/BattleScreen';
 import { ConnectGate, type ConnectGateValue } from './components/connect-gate/ConnectGate';
 import { ApiError, createTable } from './lib/api';
+import { useSequentialBackgroundMusic } from './lib/backgroundMusic';
 import {
   getActionCandidateGroups,
   getFlowerCandidateTileIds,
@@ -210,6 +211,8 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
 }
 
 export default function App() {
+  useSequentialBackgroundMusic();
+
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
   const isMobileClient = useMemo(() => isMobileDevice(), []);
   const [themeId, setThemeId] = useState(() => {
