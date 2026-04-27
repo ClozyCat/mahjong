@@ -42,7 +42,7 @@ function shouldUseLowFx(width: number, height: number, isSmallScreen: boolean) {
   const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   const lowCoreCount = (navigator.hardwareConcurrency ?? Number.POSITIVE_INFINITY) <= 4;
   const lowMemory = ((navigator as NavigatorWithDeviceMemory).deviceMemory ?? Number.POSITIVE_INFINITY) <= 4;
-  const crampedViewport = Math.min(width, height) < 820;
+  const crampedViewport = Math.min(width, height) < 640;
 
   return isSmallScreen || coarsePointer || isMobileDevice() || lowCoreCount || lowMemory || crampedViewport;
 }
