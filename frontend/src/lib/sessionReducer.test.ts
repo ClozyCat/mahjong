@@ -167,6 +167,40 @@ describe('sessionReducer', () => {
     expect(next.latestRoundEvent).toEqual(roundEventMessage);
   });
 
+  it('retains recent round_events so transient cues are not overwritten before rendering', () => {
+    const discardEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'tile_discarded',
+        event: {
+          seat: 1,
+          tile_id: 'b7#bot-8',
+        },
+      },
+    };
+    const settlementEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'settlement_ready',
+        event: {
+          round_id: 'round-1',
+        },
+      },
+    };
+
+    const afterDiscard = sessionReducer(createInitialSessionState(), {
+      type: 'ws_message',
+      message: discardEvent,
+    });
+    const afterSettlement = sessionReducer(afterDiscard, {
+      type: 'ws_message',
+      message: settlementEvent,
+    });
+
+    expect(afterSettlement.latestRoundEvent).toEqual(settlementEvent);
+    expect(afterSettlement.recentRoundEvents).toEqual([discardEvent, settlementEvent]);
+  });
+
   it('does not synthesize local display meld state from round events anymore', () => {
     const afterClaim = sessionReducer(createInitialSessionState(), {
       type: 'ws_message',

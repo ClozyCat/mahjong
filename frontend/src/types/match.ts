@@ -335,6 +335,7 @@ export interface SessionState {
   latestMatchResult: MatchResultMessage | null;
   latestActionPrompt: ActionPromptMessage | null;
   latestRoundEvent: RoundEventMessage | null;
+  recentRoundEvents?: RoundEventMessage[];
   latestReplacementTileId?: string | null;
   latestQuickChatMessage?: QuickChatMessage | null;
   lastRejectedAction: ActionRejectedMessage | null;
@@ -603,6 +604,7 @@ export interface BattleViewModel {
   lastDiscardSeat: Seat | null;
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
+  actionEffects?: ActionEffectView[];
   dealerSelection: DealerSelectionView | null;
   quickChatEvent?: QuickChatEventView | null;
   toasts: ToastMessage[];

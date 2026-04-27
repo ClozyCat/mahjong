@@ -1608,6 +1608,28 @@ function createActionIndicatorSeat(state: SessionState, options: MatchViewModelO
 }
 
 function createActionEffect(state: SessionState, options: MatchViewModelOptions = {}): ActionEffectView | null {
+  return createOptimisticActionEffect(state, options) ?? createRoundEventActionEffect(state, state.latestRoundEvent, options);
+}
+
+function createActionEffects(state: SessionState, options: MatchViewModelOptions = {}): ActionEffectView[] {
+  const effects = [
+    createOptimisticActionEffect(state, options),
+    ...(state.recentRoundEvents?.length ? state.recentRoundEvents : state.latestRoundEvent ? [state.latestRoundEvent] : [])
+      .map((roundEvent) => createRoundEventActionEffect(state, roundEvent, options)),
+  ].filter((effect): effect is ActionEffectView => Boolean(effect));
+  const seenKeys = new Set<string>();
+
+  return effects.filter((effect) => {
+    if (seenKeys.has(effect.key)) {
+      return false;
+    }
+
+    seenKeys.add(effect.key);
+    return true;
+  });
+}
+
+function createOptimisticActionEffect(state: SessionState, options: MatchViewModelOptions = {}): ActionEffectView | null {
   const optimisticDiscard = getOptimisticDiscard(state);
   if (optimisticDiscard) {
     return {
@@ -1619,8 +1641,16 @@ function createActionEffect(state: SessionState, options: MatchViewModelOptions 
     };
   }
 
+  return null;
+}
+
+function createRoundEventActionEffect(
+  state: SessionState,
+  roundEvent: SessionState['latestRoundEvent'],
+  options: MatchViewModelOptions = {},
+): ActionEffectView | null {
   const snapshot = state.roomSnapshot?.payload;
-  const event = state.latestRoundEvent?.payload;
+  const event = roundEvent?.payload;
 
   if (!snapshot || !event) {
     return null;
@@ -1849,6 +1879,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     lastDiscardSeat: createLastDiscardSeat(state, options),
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state, options),
+    actionEffects: createActionEffects(state, options),
     dealerSelection,
     quickChatEvent: createQuickChatEvent(state, options),
     toasts: state.toasts,

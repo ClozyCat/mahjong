@@ -41,6 +41,8 @@ const ACTION_REJECTION_COPY: Record<string, string> = {
   unsupported_message: '客户端发送了服务器不支持的消息。',
 };
 
+const RECENT_ROUND_EVENT_LIMIT = 24;
+
 function createToast(kind: ToastMessage['kind'], text: string): ToastMessage {
   return {
     id: `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -95,6 +97,13 @@ function getNextLatestRoundEvent(
   }
 
   return incoming;
+}
+
+function appendRecentRoundEvent(
+  current: SessionState['recentRoundEvents'],
+  incoming: Extract<ServerMessage, { type: 'round_event' }>,
+) {
+  return [...(current ?? []), incoming].slice(-RECENT_ROUND_EVENT_LIMIT);
 }
 
 function createMatchStatisticsFromScores(scores: Record<string, number> | null | undefined): MatchStatisticsState | null {
@@ -354,6 +363,7 @@ export function createInitialSessionState(): SessionState {
     latestMatchResult: null,
     latestActionPrompt: null,
     latestRoundEvent: null,
+    recentRoundEvents: [],
     latestQuickChatMessage: null,
     lastRejectedAction: null,
     reconnectToken: null,
@@ -445,6 +455,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
       return {
         ...state,
         latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
+        recentRoundEvents: appendRecentRoundEvent(state.recentRoundEvents, message),
         optimisticDiscard: reconcileOptimisticDiscardWithRoundEvent(
           state.optimisticDiscard ?? null,
           message,

@@ -1513,6 +1513,48 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('keeps earlier round events available for voice playback when a later event is visible', () => {
+    const discardEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'tile_discarded',
+        event: {
+          seat: 1,
+          tile_id: 'b7#bot-8',
+        },
+      },
+    };
+    const settlementEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'settlement_ready',
+        event: {
+          round_id: 'round-123',
+        },
+      },
+    };
+    const base = createPlayingSessionState({
+      latestRoundEvent: settlementEvent,
+      recentRoundEvents: [discardEvent, settlementEvent],
+    });
+    const viewModel = createMatchViewModel(base);
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '结算',
+      emphasis: 'system',
+    });
+    expect(viewModel.actionEffects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '出牌',
+          emphasis: 'discard',
+          seat: 'left',
+          tileCode: 'b7',
+        }),
+      ]),
+    );
+  });
+
   it('maps relative seats so the local seat is always bottom', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 

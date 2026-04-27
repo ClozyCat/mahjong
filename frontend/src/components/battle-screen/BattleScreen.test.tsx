@@ -561,6 +561,41 @@ describe('BattleScreen', () => {
     }
   });
 
+  it('plays a queued discard voice when a later round event becomes the visible action effect', () => {
+    const audioMock = mockAudioPlayback();
+    const discardEffect = {
+      key: 'tile_discarded:seat-1:b7',
+      label: '出牌',
+      emphasis: 'discard',
+      seat: 'left',
+      calloutTone: null,
+      tileCode: 'b7',
+    } satisfies NonNullable<BattleViewModel['actionEffect']>;
+    const settlementEffect = {
+      key: 'settlement_ready:round-1',
+      label: '结算',
+      emphasis: 'system',
+      seat: null,
+      calloutTone: null,
+    } satisfies NonNullable<BattleViewModel['actionEffect']>;
+    const viewModel = {
+      ...createBattleViewModel({
+        actionEffect: settlementEffect,
+      }),
+      actionEffects: [discardEffect, settlementEffect],
+    } as BattleViewModel;
+
+    try {
+      renderBattleScreen(viewModel);
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('qi_tong');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
+  });
+
   it('shows ready and start controls in waiting state', () => {
     renderBattleScreen(
       createBattleViewModel({

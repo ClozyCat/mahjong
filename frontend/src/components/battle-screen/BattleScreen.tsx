@@ -157,31 +157,36 @@ export function BattleScreen({
   }, [consumedActionEffect]);
 
   useEffect(() => {
-    const voiceCue = createVoiceCue(viewModel);
-    if (!voiceCue || playedVoiceCueKeysRef.current.has(voiceCue.key)) {
-      return;
+    const actionEffects = viewModel.actionEffects?.length ? viewModel.actionEffects : [viewModel.actionEffect];
+
+    for (const actionEffect of actionEffects) {
+      const voiceCue = createVoiceCue(viewModel, actionEffect);
+      if (!voiceCue || playedVoiceCueKeysRef.current.has(voiceCue.key)) {
+        continue;
+      }
+
+      const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.absoluteSeat, voiceCue.clipName);
+      if (!voiceUrl) {
+        continue;
+      }
+
+      const now = Date.now();
+      const voiceCueSignature = getVoiceCueSignature(voiceCue);
+      const previousPlayedAt = recentVoiceCueSignaturesRef.current.get(voiceCueSignature);
+
+      playedVoiceCueKeysRef.current.add(voiceCue.key);
+      pruneRecentVoiceCues(recentVoiceCueSignaturesRef.current, now);
+
+      if (typeof previousPlayedAt === 'number' && now - previousPlayedAt < VOICE_CUE_DEDUP_MS) {
+        continue;
+      }
+
+      recentVoiceCueSignaturesRef.current.set(voiceCueSignature, now);
+      playVoiceClip(voiceUrl);
     }
-
-    const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.absoluteSeat, voiceCue.clipName);
-    if (!voiceUrl) {
-      return;
-    }
-
-    const now = Date.now();
-    const voiceCueSignature = getVoiceCueSignature(voiceCue);
-    const previousPlayedAt = recentVoiceCueSignaturesRef.current.get(voiceCueSignature);
-
-    playedVoiceCueKeysRef.current.add(voiceCue.key);
-    pruneRecentVoiceCues(recentVoiceCueSignaturesRef.current, now);
-
-    if (typeof previousPlayedAt === 'number' && now - previousPlayedAt < VOICE_CUE_DEDUP_MS) {
-      return;
-    }
-
-    recentVoiceCueSignaturesRef.current.set(voiceCueSignature, now);
-    playVoiceClip(voiceUrl);
   }, [
     viewModel.actionEffect,
+    viewModel.actionEffects,
     viewModel.discards,
     viewModel.lastDiscard,
     viewModel.lastDiscardSeat,
@@ -437,8 +442,10 @@ function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
   return `${viewModel.lastDiscardSeat}:${viewModel.lastDiscard}:${discardCount}`;
 }
 
-function createVoiceCue(viewModel: BattleViewModel): VoiceCue | null {
-  const actionEffect = viewModel.actionEffect;
+function createVoiceCue(
+  viewModel: BattleViewModel,
+  actionEffect: BattleViewModel['actionEffect'],
+): VoiceCue | null {
   if (!actionEffect?.key || !actionEffect.seat) {
     return null;
   }
