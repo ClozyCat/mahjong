@@ -738,12 +738,12 @@
   --result-overlay-score-surface: color-mix(in srgb, var(--theme-paper) 2%, transparent);
   --result-overlay-row-surface: color-mix(in srgb, var(--theme-paper) 3%, transparent);
   --result-overlay-seat-surface: color-mix(in srgb, var(--theme-paper) 4%, transparent);
-  --result-overlay-positive-rim: color-mix(in srgb, var(--theme-success) 64%, transparent);
-  --result-overlay-positive-glow: color-mix(in srgb, var(--theme-success) 12%, transparent);
-  --result-overlay-positive-fill: var(--theme-success);
+  --result-overlay-positive-rim: color-mix(in srgb, var(--theme-danger) 64%, transparent);
+  --result-overlay-positive-glow: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  --result-overlay-positive-fill: var(--theme-danger);
   --result-overlay-positive-ink: #fff;
-  --result-overlay-negative-rim: color-mix(in srgb, var(--theme-danger) 54%, transparent);
-  --result-overlay-negative-fill: var(--theme-danger);
+  --result-overlay-negative-rim: color-mix(in srgb, var(--theme-success) 54%, transparent);
+  --result-overlay-negative-fill: var(--theme-success);
   --result-overlay-negative-ink: #fff;
   --result-overlay-neutral-fill: rgba(255, 255, 255, 0.05);
 
@@ -1143,13 +1143,13 @@
 }
 
 .result-overlay__seat-row--positive {
-  border-color: color-mix(in srgb, var(--theme-success) 20%, transparent);
-  background: color-mix(in srgb, var(--theme-success) 8%, var(--result-overlay-seat-surface));
+  border-color: color-mix(in srgb, var(--theme-danger) 20%, transparent);
+  background: color-mix(in srgb, var(--theme-danger) 8%, var(--result-overlay-seat-surface));
 }
 
 .result-overlay__seat-row--negative {
-  border-color: color-mix(in srgb, var(--theme-danger) 20%, transparent);
-  background: color-mix(in srgb, var(--theme-danger) 8%, var(--result-overlay-seat-surface));
+  border-color: color-mix(in srgb, var(--theme-success) 20%, transparent);
+  background: color-mix(in srgb, var(--theme-success) 8%, var(--result-overlay-seat-surface));
 }
 
 .result-overlay__seat-main {
@@ -1205,14 +1205,14 @@
 
 .result-overlay__seat-delta--positive {
   color: var(--result-overlay-positive-ink);
-  border-color: color-mix(in srgb, var(--theme-success) 28%, var(--theme-border));
+  border-color: color-mix(in srgb, var(--theme-danger) 28%, var(--theme-border));
   background: var(--result-overlay-positive-fill);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent);
 }
 
 .result-overlay__seat-delta--negative {
   color: var(--result-overlay-negative-ink);
-  border-color: color-mix(in srgb, var(--theme-danger) 28%, var(--theme-border));
+  border-color: color-mix(in srgb, var(--theme-success) 28%, var(--theme-border));
   background: var(--result-overlay-negative-fill);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
 }
