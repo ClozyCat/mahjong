@@ -1564,6 +1564,15 @@ function createRemainingTileCount(state: SessionState) {
   return typeof remaining === 'number' ? remaining : null;
 }
 
+function getTileCodeFromEventTileId(tileId: unknown): string | null {
+  if (typeof tileId !== 'string') {
+    return null;
+  }
+
+  const [tileCode] = tileId.split('#');
+  return tileCode?.trim().toLowerCase() || null;
+}
+
 function createActionIndicatorSeat(state: SessionState, options: MatchViewModelOptions = {}): Seat | null {
   if (hasOptimisticDiscardPending(state)) {
     return null;
@@ -1659,6 +1668,7 @@ function createActionEffect(state: SessionState, options: MatchViewModelOptions 
       emphasis: 'discard',
       seat: effectSeat,
       calloutTone: null,
+      tileCode: getTileCodeFromEventTileId(event.event?.tile_id),
     };
   }
 
@@ -1669,6 +1679,7 @@ function createActionEffect(state: SessionState, options: MatchViewModelOptions 
       emphasis: 'claim',
       seat: effectSeat,
       calloutTone: 'ready_hand',
+      tileCode: getTileCodeFromEventTileId(event.event?.tile_id),
     };
   }
 

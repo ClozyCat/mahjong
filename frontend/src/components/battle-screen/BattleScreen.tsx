@@ -458,13 +458,17 @@ function createVoiceCue(viewModel: BattleViewModel): VoiceCue | null {
   }
 
   if (actionEffect.emphasis === 'discard' || actionEffect.calloutTone === 'ready_hand') {
-    const tileClipName = getVoiceClipNameForTile(viewModel.lastDiscard);
+    const voiceTileCode = actionEffect.tileCode ?? viewModel.lastDiscard;
+    const tileClipName = getVoiceClipNameForTile(voiceTileCode);
     if (tileClipName) {
       const discardSeat = viewModel.lastDiscardSeat ?? actionEffect.seat;
       const discardCount = discardSeat ? viewModel.discards[discardSeat]?.length ?? 0 : 0;
+      const cueKey = actionEffect.tileCode
+        ? `discard-event:${actionEffect.key}:${absoluteSeat}:${actionEffect.tileCode}:${tileClipName}`
+        : `discard:${absoluteSeat}:${discardSeat ?? 'unknown'}:${discardCount}:${viewModel.lastDiscard}:${tileClipName}`;
 
       return {
-        key: `discard:${absoluteSeat}:${discardSeat ?? 'unknown'}:${discardCount}:${viewModel.lastDiscard}:${tileClipName}`,
+        key: cueKey,
         absoluteSeat,
         clipName: tileClipName,
       };

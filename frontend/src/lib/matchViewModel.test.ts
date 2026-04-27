@@ -1484,6 +1484,32 @@ describe('createMatchViewModel', () => {
       emphasis: 'claim',
       seat: 'bottom',
       calloutTone: 'ready_hand',
+      tileCode: 'b9',
+    });
+  });
+
+  it('uses the tile from tile_discarded events for discard action effects', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'tile_discarded',
+          event: {
+            seat: 1,
+            tile_id: 'b4#bot-7',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '出牌',
+      emphasis: 'discard',
+      seat: 'left',
+      calloutTone: null,
+      tileCode: 'b4',
     });
   });
 

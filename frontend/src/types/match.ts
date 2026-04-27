@@ -537,6 +537,7 @@ export interface ActionEffectView {
   emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
   seat: Seat | null;
   calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'ready_hand' | null;
+  tileCode?: string | null;
 }
 
 export interface BattlePromptView {

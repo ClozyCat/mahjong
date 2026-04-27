@@ -389,6 +389,75 @@ describe('BattleScreen', () => {
     }
   });
 
+  it('uses the event tile for a bot discard voice while the snapshot is catching up', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    const actionEffect = {
+      key: 'tile_discarded-{"seat":1,"tile_id":"b4#bot-7"}',
+      label: '出牌',
+      emphasis: 'discard',
+      seat: 'left',
+      calloutTone: null,
+      tileCode: 'b4',
+    } as unknown as BattleViewModel['actionEffect'];
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['w1'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'left',
+          actionEffect,
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('si_tong');
+
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            discards: {
+              bottom: ['w1'],
+              left: ['w1', 'b4'],
+              top: [],
+              right: [],
+            },
+            lastDiscard: 'b4',
+            lastDiscardSeat: 'left',
+            actionEffect,
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
   it('plays a repeated tile voice again when it is a later discard in the same river', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
