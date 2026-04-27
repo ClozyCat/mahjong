@@ -30,9 +30,10 @@ describe('TableStage', () => {
     const riverTiles = container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile');
     const spotlight = container.querySelector('.table-stage__spotlight--top');
 
-    expect(tiles.length).toBe(3);
-    expect(tiles.filter((tile) => tile.classList.contains('mahjong-tile--last-discard'))).toHaveLength(1);
-    expect(riverTiles).toHaveLength(2);
+    expect(tiles.length).toBe(4);
+    expect(tiles.filter((tile) => tile.classList.contains('mahjong-tile--last-discard'))).toHaveLength(2);
+    expect(riverTiles).toHaveLength(3);
+    expect(riverTiles?.[2]).toHaveStyle('visibility: hidden');
     expect(spotlight?.querySelector('.mahjong-tile--last-discard')).not.toBeNull();
   });
 
@@ -178,7 +179,8 @@ describe('TableStage', () => {
 
     expect(container.querySelector('.table-stage__seat-zone--fixed-meld-anchor')).toBeNull();
     expect(container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
-    expect(container.querySelector('.table-stage__river-track--bottom')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+    expect(container.querySelector('.table-stage__river-track--bottom')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
+    expect(container.querySelectorAll('.table-stage__river-track--bottom .mahjong-tile')[0]).toHaveStyle('visibility: hidden');
   });
 
   it('pins dense top and bottom meld racks to the river edge to keep them within the table frame', () => {
@@ -326,7 +328,8 @@ describe('TableStage', () => {
     );
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).not.toBeNull();
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
+    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(2);
+    expect(container.querySelectorAll('.table-stage__river-track--left .mahjong-tile')[1]).toHaveStyle('visibility: hidden');
   });
 
   it('does not render the action pointer when the current prompt has no unique public actor', () => {
@@ -681,7 +684,7 @@ describe('TableStage', () => {
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).not.toBeNull();
     expect(container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+    expect(container.querySelector('.table-stage__river-track--left .mahjong-tile')).toHaveStyle('visibility: hidden');
   });
 
   it('renders the pre-match room actions in the table center and keeps the corner leave button', () => {
@@ -1096,7 +1099,7 @@ describe('TableStage', () => {
     container.innerHTML = markup;
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelector('.mahjong-tile')).toBeNull();
+    expect(container.querySelector('.table-stage__river-track--left')?.querySelector('.mahjong-tile')).toHaveStyle('visibility: hidden');
   });
 
   it('delays showing the latest discard until the ready_hand callout disappears', () => {
@@ -1126,7 +1129,7 @@ describe('TableStage', () => {
 
     expect(screen.getByText('听')).toBeInTheDocument();
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+    expect(container.querySelector('.table-stage__river-track--left .mahjong-tile')).toHaveStyle('visibility: hidden');
 
     act(() => {
       vi.advanceTimersByTime(999);

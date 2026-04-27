@@ -1375,7 +1375,8 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
-    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).toHaveStyle('visibility: hidden');
 
     act(() => {
       vi.advanceTimersByTime(1499);
@@ -1414,7 +1415,8 @@ describe('BattleScreen', () => {
     });
 
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
-    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).toHaveStyle('visibility: hidden');
     vi.useRealTimers();
   });
 
@@ -1776,7 +1778,8 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByText('听')).toBeNull();
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
-    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).toHaveStyle('visibility: hidden');
 
     act(() => {
       vi.advanceTimersByTime(1499);
@@ -1790,6 +1793,7 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
     expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).not.toHaveStyle('visibility: hidden');
     vi.useRealTimers();
   });
 

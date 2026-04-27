@@ -108,10 +108,7 @@ export const SeatZone = memo(function SeatZone({
             >
               {discards.map((tile, index) => {
                 const isLastDiscard = lastDiscardSeat === seat && index === discards.length - 1;
-
-                if (isLastDiscard && hasSpotlightDiscard) {
-                  return null;
-                }
+                const isSpotlightHidden = isLastDiscard && hasSpotlightDiscard;
 
                 return (
                   <MahjongTile
@@ -120,6 +117,7 @@ export const SeatZone = memo(function SeatZone({
                     variant="discard"
                     isLastDiscard={isLastDiscard}
                     relatedTileCode={selectedTileCode}
+                    style={isSpotlightHidden ? { visibility: 'hidden' } : undefined}
                   />
                 );
               })}

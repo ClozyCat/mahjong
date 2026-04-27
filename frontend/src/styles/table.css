@@ -373,6 +373,8 @@
   box-shadow: none;
   z-index: 1;
   isolation: isolate;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Misty surface layer isolated behind tiles */
@@ -400,8 +402,9 @@
   /* Feathered mask only affects the background surface, not the tiles */
   mask-image: radial-gradient(circle at center, black 78%, transparent 100%);
   opacity: 1;
-  transform: scale(1);
+  transform: scale(1) translateZ(0);
   transition: opacity 180ms ease, transform 180ms ease;
+  backface-visibility: hidden;
 }
 
 /* Softer cloud blobs moved further back */
