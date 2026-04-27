@@ -42,6 +42,7 @@ const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const READY_HAND_CALLOUT_LINGER_MS = 1000;
 const READY_ACTION_COOLDOWN_MS = 3000;
+const VOICE_CUE_DEDUP_MS = 1200;
 
 export function BattleScreen({
   viewModel,
@@ -70,7 +71,8 @@ export function BattleScreen({
   const [isSnakeActive, setIsSnakeActive] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
-  const playedVoiceCueKeyRef = useRef<string | null>(null);
+  const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
+  const recentVoiceCueSignaturesRef = useRef<Map<string, number>>(new Map());
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
@@ -152,7 +154,7 @@ export function BattleScreen({
 
   useEffect(() => {
     const voiceCue = createVoiceCue(viewModel);
-    if (!voiceCue || playedVoiceCueKeyRef.current === voiceCue.key) {
+    if (!voiceCue || playedVoiceCueKeysRef.current.has(voiceCue.key)) {
       return;
     }
 
@@ -161,7 +163,18 @@ export function BattleScreen({
       return;
     }
 
-    playedVoiceCueKeyRef.current = voiceCue.key;
+    const now = Date.now();
+    const voiceCueSignature = getVoiceCueSignature(voiceCue);
+    const previousPlayedAt = recentVoiceCueSignaturesRef.current.get(voiceCueSignature);
+
+    playedVoiceCueKeysRef.current.add(voiceCue.key);
+    pruneRecentVoiceCues(recentVoiceCueSignaturesRef.current, now);
+
+    if (typeof previousPlayedAt === 'number' && now - previousPlayedAt < VOICE_CUE_DEDUP_MS) {
+      return;
+    }
+
+    recentVoiceCueSignaturesRef.current.set(voiceCueSignature, now);
     playVoiceClip(voiceUrl);
   }, [
     viewModel.actionEffect,
@@ -456,6 +469,18 @@ function getAbsoluteSeatForRelativeSeat(viewModel: BattleViewModel, seat: NonNul
   }
 
   return viewModel.players.find((player) => player.seat === seat)?.absoluteSeat ?? null;
+}
+
+function getVoiceCueSignature(voiceCue: VoiceCue) {
+  return `${voiceCue.absoluteSeat}:${voiceCue.clipName}`;
+}
+
+function pruneRecentVoiceCues(recentVoiceCues: Map<string, number>, now: number) {
+  for (const [signature, playedAt] of recentVoiceCues) {
+    if (now - playedAt >= VOICE_CUE_DEDUP_MS) {
+      recentVoiceCues.delete(signature);
+    }
+  }
 }
 
 function getSettlementPanelDelayMs(

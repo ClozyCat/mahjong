@@ -259,6 +259,65 @@ describe('BattleScreen', () => {
     }
   });
 
+  it('does not replay the same tile voice when an optimistic discard is quickly confirmed', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'bottom',
+          actionEffect: {
+            key: 'optimistic-discard:w1#1',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'bottom',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            lastDiscard: 'w1',
+            lastDiscardSeat: 'bottom',
+            actionEffect: {
+              key: 'tile_discarded:seat-2:w1',
+              label: '出牌',
+              emphasis: 'discard',
+              seat: 'bottom',
+              calloutTone: null,
+            },
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
   it('plays the matching operation voice when a claim action effect arrives', () => {
     const audioMock = mockAudioPlayback();
 
