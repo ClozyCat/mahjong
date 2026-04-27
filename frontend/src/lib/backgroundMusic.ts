@@ -41,13 +41,17 @@ export function createShuffledTrackOrder(
   return order;
 }
 
-export function useSequentialBackgroundMusic() {
+export function useSequentialBackgroundMusic(enabled: boolean) {
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     const player = new SequentialBackgroundMusicPlayer(getBackgroundMusicTracks());
 
     player.attachInteractionStartListeners();
     return () => player.dispose();
-  }, []);
+  }, [enabled]);
 }
 
 class SequentialBackgroundMusicPlayer {

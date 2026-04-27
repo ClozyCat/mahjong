@@ -35,6 +35,8 @@ import {
   loadStoredThemeId,
   saveStoredSession,
   saveStoredThemeId,
+  loadStoredBgmEnabled,
+  saveStoredBgmEnabled,
 } from './lib/storage';
 import {
   isMobileDevice,
@@ -211,7 +213,8 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
 }
 
 export default function App() {
-  useSequentialBackgroundMusic();
+  const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
+  useSequentialBackgroundMusic(isBgmEnabled);
 
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
   const isMobileClient = useMemo(() => isMobileDevice(), []);
@@ -1045,6 +1048,14 @@ export default function App() {
 
   return (
     <BattleScreen
+      isBgmEnabled={isBgmEnabled}
+      onToggleBgm={() =>
+        setIsBgmEnabled((current) => {
+          const next = !current;
+          saveStoredBgmEnabled(next);
+          return next;
+        })
+      }
       viewModel={viewModel}
       themeId={themeId}
       themeLabel={getThemeLabel(themeId)}

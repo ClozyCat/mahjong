@@ -1655,6 +1655,7 @@
 }
 
 .table-stage__fullscreen-button,
+.table-stage__bgm-button,
 .table-stage__help-button,
 .table-stage__theme-button,
 .table-stage__leave-button {
@@ -1678,6 +1679,7 @@
 }
 
 .table-stage__fullscreen-button:hover,
+.table-stage__bgm-button:hover,
 .table-stage__help-button:hover,
 .table-stage__theme-button:hover,
 .table-stage__leave-button:hover {
@@ -1689,6 +1691,7 @@
 }
 
 .table-stage__fullscreen-button:active,
+.table-stage__bgm-button:active,
 .table-stage__help-button:active,
 .table-stage__theme-button:active,
 .table-stage__leave-button:active {
@@ -1704,6 +1707,27 @@
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.4),
     0 0 14px color-mix(in srgb, var(--accent-3) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
+}
+
+.table-stage__bgm-button {
+  color: var(--muted);
+}
+
+.table-stage__bgm-button:hover {
+  border-color: color-mix(in srgb, var(--theme-paper) 40%, transparent);
+  color: var(--theme-paper-strong);
+}
+
+.table-stage__bgm-button--active {
+  color: var(--theme-success);
+}
+
+.table-stage__bgm-button--active:hover {
+  border-color: var(--theme-success);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.4),
+    0 0 14px color-mix(in srgb, var(--theme-success) 20%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
@@ -1747,6 +1771,7 @@
 }
 
 .table-stage__fullscreen-button span,
+.table-stage__bgm-button span,
 .table-stage__help-button span,
 .table-stage__theme-button span,
 .table-stage__leave-button span {
@@ -1755,6 +1780,7 @@
 }
 
 .table-stage__fullscreen-button span,
+.table-stage__bgm-button span,
 .table-stage__help-button span {
   font-size: clamp(0.75rem, 1.8vmin, 0.96rem);
   font-weight: 700;
@@ -1895,6 +1921,7 @@
   }
 
   .table-stage__fullscreen-button,
+  .table-stage__bgm-button,
   .table-stage__help-button,
   .table-stage__theme-button,
   .table-stage__leave-button {

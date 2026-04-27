@@ -33,6 +33,8 @@ interface BattleScreenProps {
   isSpectator?: boolean;
   spectatorFocusName?: string | null;
   onSwitchSpectatorPerspective?: () => void;
+  isBgmEnabled?: boolean;
+  onToggleBgm?: () => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -62,6 +64,8 @@ export function BattleScreen({
   isSpectator = false,
   spectatorFocusName = null,
   onSwitchSpectatorPerspective,
+  isBgmEnabled = false,
+  onToggleBgm,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -382,6 +386,8 @@ export function BattleScreen({
               onQuickChat={onQuickChat}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
+              isBgmEnabled={isBgmEnabled}
+              onToggleBgm={onToggleBgm}
             >
               <BottomActionDock
                 hand={viewModel.localHand}

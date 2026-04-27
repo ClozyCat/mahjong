@@ -67,6 +67,8 @@ interface TableStageProps {
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
+  isBgmEnabled?: boolean;
+  onToggleBgm?: () => void;
   children?: ReactNode;
 }
 
@@ -115,6 +117,8 @@ export function TableStage({
   onQuickChat,
   onDecreaseTileScale: _onDecreaseTileScale,
   onIncreaseTileScale: _onIncreaseTileScale,
+  isBgmEnabled = false,
+  onToggleBgm,
   children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -162,6 +166,8 @@ export function TableStage({
             onAction={onAction}
             onAddBot={onAddBot}
             onRemoveBot={onRemoveBot}
+            isBgmEnabled={isBgmEnabled}
+            onToggleBgm={onToggleBgm}
           />
           <CenterIndicator
             remainingCount={remainingTileCount}
