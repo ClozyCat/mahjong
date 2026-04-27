@@ -29,7 +29,7 @@
   --table-stage-horizontal-river-reference-height: calc((var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) + (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1)));
   --table-stage-action-pointer-size: clamp(0.65rem, 1.8vmin, 1.4rem);
   --table-stage-center-indicator-size: clamp(1.8rem, 18vmin, 5.5rem);
-  --table-stage-spotlight-offset: clamp(1.6rem, 15vmin, 6rem);
+  --table-stage-spotlight-offset: clamp(1.5rem, 14vmin, 5.5rem);
   --table-stage-center-v: 41%;
   --table-stage-seat-top-v: clamp(0.1rem, 1.2vmin, 0.82rem);
   --table-stage-side-gap: clamp(0.2rem, 11vmin, 8rem);
