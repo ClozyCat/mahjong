@@ -810,8 +810,28 @@
 /* Specific item colors */
 .table-stage__stat-plate--seat {
   --stat-accent: #00ccff;
-  /* Azure Blue for Wind */
+  /* Azure Blue as fallback */
   min-width: clamp(2.4rem, 6vw, 3.2rem);
+}
+
+.table-stage__stat-plate--seat[data-absolute-seat='0'] {
+  --stat-accent: #ff4d4f;
+  /* Red */
+}
+
+.table-stage__stat-plate--seat[data-absolute-seat='1'] {
+  --stat-accent: #1890ff;
+  /* Blue */
+}
+
+.table-stage__stat-plate--seat[data-absolute-seat='2'] {
+  --stat-accent: #52c41a;
+  /* Green */
+}
+
+.table-stage__stat-plate--seat[data-absolute-seat='3'] {
+  --stat-accent: #722ed1;
+  /* Purple */
 }
 
 .table-stage__stat-plate--score {
