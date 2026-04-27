@@ -9,6 +9,9 @@ services:
     restart: unless-stopped
     environment:
       MAHJONG_DATABASE_URL: ${MAHJONG_DATABASE_URL:-sqlite+pysqlite:////data/mahjong.db}
+      MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-search}
+      MAHJONG_BOT_MODEL_PATH: ${MAHJONG_BOT_MODEL_PATH:-/app/assets/models/mahjong_policy_net.onnx}
+      MAHJONG_BOT_NEURAL_WEIGHT: ${MAHJONG_BOT_NEURAL_WEIGHT:-80}
     volumes:
       - mahjong-data:/data
     expose:

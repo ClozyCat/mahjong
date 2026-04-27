@@ -700,6 +700,28 @@ impl SearchEngine {
         finalists.into_iter().next()
     }
 
+    pub(crate) fn rank_discard_plans_for_policy(
+        &mut self,
+        context: &BotContext,
+        concealed_tiles: &[BotTileView],
+        concealed_counts: &TileCounts,
+        meld_tile_key_groups: &[Vec<String>],
+        appended_open_flags: &[bool],
+        restricted_discard_tile_key: Option<&str>,
+        drawn_tile_id: Option<&str>,
+    ) -> Vec<BotDiscardPlan> {
+        self.rank_discard_plans_at_depth(
+            context,
+            concealed_tiles,
+            concealed_counts,
+            meld_tile_key_groups,
+            appended_open_flags,
+            restricted_discard_tile_key,
+            drawn_tile_id,
+            STAGE_ONE_DEPTH,
+        )
+    }
+
     fn stage_two_candidate_count(
         &mut self,
         context: &BotContext,

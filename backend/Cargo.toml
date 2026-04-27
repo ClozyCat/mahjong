@@ -12,6 +12,7 @@ anyhow = "1.0"
 axum = { version = "0.8.8", features = ["ws", "json"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
+ort = "2.0.0-rc.12"
 rand = "0.9"
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }

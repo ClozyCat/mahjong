@@ -39,6 +39,7 @@ FROM debian:bookworm-slim AS backend-runtime
 WORKDIR /app
 
 COPY --from=rust-backend-builder /app/backend/target/release/backend /usr/local/bin/backend
+COPY --from=rust-backend-builder /app/backend/assets/models /app/assets/models
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
 # [修改 2] 运行时：将 Debian 12 (Bookworm) 的 apt 源替换为腾讯云镜像源
