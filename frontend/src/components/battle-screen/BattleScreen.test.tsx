@@ -148,7 +148,15 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
 }
 
 function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<ComponentProps<typeof BattleScreen>>) {
-  setViewportSize(1720, 900);
+  return renderBattleScreenAtViewport(viewModel, { width: 1720, height: 900 }, overrides);
+}
+
+function renderBattleScreenAtViewport(
+  viewModel: BattleViewModel,
+  viewport: { width: number; height: number },
+  overrides?: Partial<ComponentProps<typeof BattleScreen>>,
+) {
+  setViewportSize(viewport.width, viewport.height);
 
   return render(
     <BattleScreen
@@ -2139,6 +2147,21 @@ describe('BattleScreen', () => {
     expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
     expect(screen.getByText('房间座位数：4/4')).toBeInTheDocument();
     expect(screen.getByText('round-123 | playing')).toBeInTheDocument();
+  });
+
+  it('prompts for rotation when the table viewport is taller than it is wide', () => {
+    const { container } = renderBattleScreenAtViewport(createBattleViewModel(), { width: 390, height: 844 });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('请旋转屏幕或调整窗口比例');
+    expect(screen.getByText('当前牌桌需要宽度大于或等于高度的画面比例。')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage')?.getAttribute('data-layout')).toBe('balanced');
+  });
+
+  it('does not show the rotation prompt when the table viewport is at least as wide as tall', () => {
+    renderBattleScreenAtViewport(createBattleViewModel(), { width: 844, height: 390 });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('请旋转屏幕或调整窗口比例')).toBeNull();
   });
 
 

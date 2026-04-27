@@ -1487,39 +1487,6 @@
   }
 }
 
-:root[data-small-screen='true'] .result-overlay__columns {
-  grid-template-columns: 1fr;
-  gap: 0.75rem;
-}
-
-:root[data-small-screen='true'] .result-overlay__card {
-  border-radius: 1.2rem;
-  padding: 0.75rem 0.9rem 0.8rem;
-}
-
-:root[data-small-screen='true'] .result-overlay__score-pagination {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-:root[data-small-screen='true'] .result-overlay__seat-row--inactive {
-  display: none;
-}
-
-:root[data-small-screen='true'] .result-overlay__score-hint {
-  display: none;
-}
-
-:root[data-small-screen='true'] .result-overlay__actions {
-  flex-direction: row;
-  width: 100%;
-}
-
-:root[data-small-screen='true'] .result-overlay__actions button {
-  flex: 1;
-}
-
 @media (max-height: 500px) {
   .result-overlay {
     align-items: center;
@@ -2040,17 +2007,6 @@
   .fan-guide__content {
     padding-right: 0.6rem;
   }
-}
-
-:root[data-small-screen='true'] .fan-guide__dialog {
-  width: 100vw;
-  height: 100vh;
-  border-radius: 0;
-  padding: 1.2rem;
-}
-
-:root[data-small-screen='true'] .fan-guide__grid {
-  grid-template-columns: 1fr;
 }
 
 @media (orientation: landscape) and (max-height: 500px) {

@@ -110,6 +110,48 @@
   overflow: hidden;
 }
 
+.table-stage__aspect-ratio-prompt {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 5vw, 2rem);
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--theme-paper) 12%, transparent), transparent 48%),
+    color-mix(in srgb, var(--theme-shadow) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(1.1);
+  pointer-events: auto;
+}
+
+.table-stage__aspect-ratio-panel {
+  width: min(24rem, 100%);
+  display: grid;
+  gap: 0.55rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 20%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 10%, transparent), transparent),
+    color-mix(in srgb, var(--theme-panel-bg-strong) 90%, black);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  text-align: center;
+  color: var(--theme-paper-strong);
+}
+
+.table-stage__aspect-ratio-panel strong {
+  font-size: clamp(1rem, 3.4vw, 1.32rem);
+  line-height: 1.2;
+}
+
+.table-stage__aspect-ratio-panel span {
+  color: color-mix(in srgb, var(--theme-paper) 72%, transparent);
+  font-size: clamp(0.78rem, 2.6vw, 0.92rem);
+  line-height: 1.55;
+}
+
 /* ------- Urgent table state ------- */
 
 
@@ -1849,60 +1891,9 @@
   }
 }
 
-:root[data-small-screen='true'] .table-stage {
-  --table-stage-spotlight-scale: 1.1;
-}
-
-:root[data-small-screen='true'] .table-stage__seat-panel--left,
-:root[data-small-screen='true'] .table-stage__seat-panel--right,
-:root[data-small-screen='true'] .table-stage__seat-panel--top,
-:root[data-small-screen='true'] .table-stage__seat-panel--bottom {
-  transform: none;
-}
-
-:root[data-small-screen='true'] .table-stage__player-info {
-  gap: 0.12rem;
-  width: 100%;
-  padding: 0.42rem;
-}
-
-:root[data-small-screen='true'] .table-stage__player-info-cluster--top,
-:root[data-small-screen='true'] .table-stage__player-info-cluster--bottom,
-:root[data-small-screen='true'] .table-stage__player-info-cluster--left,
-:root[data-small-screen='true'] .table-stage__player-info-cluster--right {
-  width: 4.6rem;
-}
-
-:root[data-small-screen='true'] .table-stage__player-info-name {
-  font-size: 0.64rem;
-}
-
-:root[data-small-screen='true'] .table-stage__player-info-eyebrow,
-:root[data-small-screen='true'] .table-stage__player-info-meta,
-:root[data-small-screen='true'] .table-stage__player-info-detail {
-  font-size: 0.4rem;
-}
-
-:root[data-small-screen='true'] .table-stage__status-summary {
-  bottom: calc(var(--battle-stage-bottom-reserve) + 0.5rem);
-  left: 0.85rem;
-}
-
-:root[data-small-screen='true'] .table-stage__global-emoji-cluster {
-  right: 0.85rem;
-  bottom: calc(var(--battle-stage-bottom-reserve) + 2.9rem);
-  width: 3.2rem;
-  height: 3.2rem;
-}
-
-:root[data-small-screen='true'] .table-stage__global-emoji-trigger {
-  font-size: 1.5rem;
-  touch-action: manipulation;
-}
-
 /* ---- Landscape mobile ---- */
 @media (orientation: landscape) and (max-height: 500px) {
-  .table-stage, :root[data-small-screen='true'] .table-stage {
+  .table-stage {
     --table-stage-center-indicator-size: clamp(1rem, 6vw, 3.2rem);
     --table-stage-spotlight-offset: clamp(1.2rem, 7vw, 3.6rem);
     --table-stage-spotlight-scale: 1.18;
@@ -2122,8 +2113,4 @@
   .pinned-fan-list {
     display: none !important;
   }
-}
-
-:root[data-small-screen='true'] .pinned-fan-list {
-  display: none !important;
 }

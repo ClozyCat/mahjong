@@ -123,6 +123,7 @@ export function TableStage({
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const viewport = useBattleViewport(containerRef);
+  const shouldShowAspectRatioPrompt = viewport.width < viewport.height;
   const scene = buildTableSceneModel({
     viewport,
     players,
@@ -206,6 +207,18 @@ export function TableStage({
             actionEffect={actionEffect}
             quickChatEvent={quickChatEvent}
           />
+          {shouldShowAspectRatioPrompt ? (
+            <div
+              className="table-stage__aspect-ratio-prompt"
+              role="alert"
+              aria-live="assertive"
+            >
+              <div className="table-stage__aspect-ratio-panel">
+                <strong>请旋转屏幕或调整窗口比例</strong>
+                <span>当前牌桌需要宽度大于或等于高度的画面比例。</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       {children}

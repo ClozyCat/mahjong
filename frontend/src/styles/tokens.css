@@ -84,23 +84,6 @@ html {
   html { font-size: clamp(8px, 3.2vmin, 13px); }
 }
 
-html[data-small-screen='true'] {
-  font-size: clamp(8.5px, 3vmin, 14px);
-}
-
-html[data-small-screen='true'],
-html[data-small-screen='true'] body,
-html[data-small-screen='true'] #root {
-  height: 100dvh;
-  min-height: 100dvh;
-  overflow: hidden;
-}
-
-html[data-small-screen='true'],
-html[data-small-screen='true'] body {
-  overscroll-behavior: none;
-}
-
 body {
   margin: 0;
   color: var(--text);
@@ -230,7 +213,7 @@ input {
 
 /* ---- Landscape mobile overrides ---- */
 @media (orientation: landscape) and (max-height: 500px) {
-  html, html[data-small-screen='true'] {
+  html {
     font-size: 13.8px;
   }
 

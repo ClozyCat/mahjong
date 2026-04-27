@@ -156,24 +156,6 @@
   }
 }
 
-:root[data-small-screen='true'] {
-  --battle-shell-gap: 0.6rem;
-  --battle-shell-top-gap: 0.3rem;
-  --battle-shell-bottom-gap: 0.5rem;
-  --battle-top-clearance: clamp(0.08rem, 0.2vh, 0.18rem);
-  --battle-stage-size-trim: clamp(0.6rem, 1.4vw, 1.1rem);
-  --battle-hand-tile-width-narrow-base: min(clamp(1.1rem, 5.8vw, 2.6rem), calc((100vw - 3rem) / 14.5));
-  --battle-hand-tile-width: calc(var(--battle-hand-tile-width-narrow-base) * var(--table-stage-tile-scale, 1));
-  --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
-  --battle-bottom-clearance: clamp(0.5rem, 0.85vh, 0.7rem);
-  --battle-stage-bottom-reserve: clamp(1rem, 2.2vh, 1.7rem);
-  --battle-dock-bottom-gap: clamp(0.03rem, 0.08vh, 0.08rem);
-}
-
-:root[data-small-screen='true'] .battle-screen {
-  --battle-stage-max-width: calc(100vw - 2rem - var(--battle-stage-size-trim));
-}
-
 @media (max-height: 860px) {
   :root {
     --battle-shell-top-gap: clamp(0.25rem, 0.5vh, 0.5rem);

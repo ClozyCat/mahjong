@@ -4,10 +4,6 @@ type NavigatorWithUserAgentData = Navigator & {
   };
 };
 
-type ScreenOrientationWithLock = {
-  lock?: (orientation: 'landscape') => Promise<void> | void;
-};
-
 type ElementWithFullscreen = HTMLElement & {
   requestFullscreen?: () => Promise<void> | void;
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -40,19 +36,6 @@ export function isMobileDevice() {
   }
 
   return MOBILE_USER_AGENT_PATTERN.test(navigator.userAgent);
-}
-
-export function requestLandscapeOrientation() {
-  if (typeof window === 'undefined' || !isMobileDevice()) {
-    return;
-  }
-
-  const orientation = window.screen.orientation as ScreenOrientationWithLock | undefined;
-  if (typeof orientation?.lock !== 'function') {
-    return;
-  }
-
-  swallowAsyncResult(orientation.lock('landscape'));
 }
 
 export function requestFullscreenMode() {

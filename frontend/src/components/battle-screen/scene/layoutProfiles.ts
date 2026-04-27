@@ -1,5 +1,5 @@
 export interface TableLayoutProfile {
-  id: 'compact-portrait' | 'balanced' | 'wide';
+  id: 'balanced' | 'wide';
   centerVPercent: number;
   seatTop: { ratio: number; minPx: number; maxPx: number };
   safeInsetSide: { ratio: number; minPx: number; maxPx: number };
@@ -100,28 +100,6 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
     meldBaseWidth: { ratio: 0.019, minPx: 13, maxPx: 26 },
     settlementBaseWidth: { ratio: 0.013, minPx: 11, maxPx: 20 },
   },
-  {
-    id: 'compact-portrait',
-    centerVPercent: 42,
-    seatTop: { ratio: 0.01, minPx: 3, maxPx: 16 },
-    safeInsetSide: { ratio: 0.008, minPx: 2, maxPx: 12 },
-    safeInsetTop: { ratio: 0.01, minPx: 3, maxPx: 16 },
-    safeInsetBottom: { ratio: 0.022, minPx: 8, maxPx: 24 },
-    topBottomSafeWidthRatio: 0.66,
-    sideSafeHeightRatio: 0.48,
-    spotlightScale: 1.14,
-    horizontalMeldRows: 2,
-    verticalMeldColumns: 1,
-    horizontalRiverColumns: { min: 6, max: 8 },
-    verticalRiverColumns: { min: 6, max: 10 },
-    centerIndicator: { ratio: 0.126, minPx: 16, maxPx: 82 },
-    spotlightOffset: { ratio: 0.12, minPx: 14, maxPx: 88 },
-    riverBaseWidth: { ratio: 0.028, minPx: 8, maxPx: 30 },
-    riverGap: { ratio: 0.0008, minPx: 0.5, maxPx: 4 },
-    handBaseWidth: { ratio: 0.037, minPx: 10, maxPx: 42 },
-    meldBaseWidth: { ratio: 0.021, minPx: 8, maxPx: 24 },
-    settlementBaseWidth: { ratio: 0.014, minPx: 6, maxPx: 18 },
-  },
 ];
 
 export function resolveTableLayoutProfile(width: number, height: number) {
@@ -135,5 +113,5 @@ export function resolveTableLayoutProfile(width: number, height: number) {
     return TABLE_LAYOUT_PROFILES[1];
   }
 
-  return TABLE_LAYOUT_PROFILES[2];
+  return TABLE_LAYOUT_PROFILES[1];
 }

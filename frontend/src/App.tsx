@@ -38,9 +38,6 @@ import {
   loadStoredBgmEnabled,
   saveStoredBgmEnabled,
 } from './lib/storage';
-import {
-  isMobileDevice,
-} from './lib/device';
 import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
 import type { BackendActionType, BattleActionId, ClaimActionId, QuickChatEmoji, SessionState } from './types/match';
@@ -217,16 +214,12 @@ export default function App() {
   useSequentialBackgroundMusic(isBgmEnabled);
 
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
-  const isMobileClient = useMemo(() => isMobileDevice(), []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
     const nextThemeId = isThemeId(storedThemeId) ? getRandomThemeId(storedThemeId) : getRandomThemeId();
 
     return isThemeId(nextThemeId) ? nextThemeId : DEFAULT_THEME_ID;
   });
-  const [isPortrait, setIsPortrait] = useState(() => 
-    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false
-  );
   const [connectValue, setConnectValue] = useState<ConnectGateValue>({
     tableCode: storedSession?.tableCode ?? '',
     nickname: storedSession?.nickname ?? '',
@@ -477,14 +470,6 @@ export default function App() {
   }, [connectValue.nickname, openRoomSocket, state.connectionStatus, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
     return () => {
       closeSocket(socketRef, heartbeatTimerRef);
     };
@@ -541,26 +526,12 @@ export default function App() {
     state.connectionStatus !== 'reconnecting' &&
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
-  const shouldForceSmallScreen = isMobileClient && state.roomSnapshot !== null && isPortrait;
   const isSpectator = __SPECTATOR_ENABLED__ && state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
     isSpectator
       ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === spectatorFocusSeat)?.nickname ?? null
       : null;
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-
-    if (shouldForceSmallScreen) {
-      document.documentElement.dataset.smallScreen = 'true';
-      return;
-    }
-
-    delete document.documentElement.dataset.smallScreen;
-  }, [shouldForceSmallScreen]);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;

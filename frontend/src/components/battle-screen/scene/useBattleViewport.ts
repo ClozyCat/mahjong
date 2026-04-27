@@ -33,18 +33,17 @@ function clampViewportDimension(value: number, fallback: number) {
   return value;
 }
 
-function shouldUseLowFx(width: number, height: number, isSmallScreen: boolean) {
+function shouldUseLowFx(width: number, height: number) {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     return false;
   }
-
 
   const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   const lowCoreCount = (navigator.hardwareConcurrency ?? Number.POSITIVE_INFINITY) <= 4;
   const lowMemory = ((navigator as NavigatorWithDeviceMemory).deviceMemory ?? Number.POSITIVE_INFINITY) <= 4;
   const crampedViewport = Math.min(width, height) < 640;
 
-  return isSmallScreen || coarsePointer || isMobileDevice() || lowCoreCount || lowMemory || crampedViewport;
+  return coarsePointer || isMobileDevice() || lowCoreCount || lowMemory || crampedViewport;
 }
 
 export function useBattleViewport(containerRef: RefObject<HTMLElement | null>): BattleViewportMetrics {
@@ -53,15 +52,11 @@ export function useBattleViewport(containerRef: RefObject<HTMLElement | null>): 
       typeof window === 'undefined' ? 1280 : clampViewportDimension(window.innerWidth, 1280);
     const height =
       typeof window === 'undefined' ? 720 : clampViewportDimension(window.innerHeight, 720);
-    const isSmallScreen =
-      typeof document !== 'undefined' &&
-      document.documentElement.dataset.smallScreen === 'true';
-    const effectMode = shouldUseLowFx(width, height, isSmallScreen) ? 'lowFx' : 'fullFx';
+    const effectMode = shouldUseLowFx(width, height) ? 'lowFx' : 'fullFx';
 
     return {
       width,
       height,
-      isSmallScreen,
       effectMode,
     };
   });
@@ -75,15 +70,10 @@ export function useBattleViewport(containerRef: RefObject<HTMLElement | null>): 
       const elementSize = resolveElementSize(containerRef.current);
       const width = clampViewportDimension(elementSize?.width ?? window.innerWidth, 1280);
       const height = clampViewportDimension(elementSize?.height ?? window.innerHeight, 720);
-      const isSmallScreen =
-        typeof document !== 'undefined' &&
-        document.documentElement.dataset.smallScreen === 'true';
-
       setViewport({
         width,
         height,
-        isSmallScreen,
-        effectMode: shouldUseLowFx(width, height, isSmallScreen) ? 'lowFx' : 'fullFx',
+        effectMode: shouldUseLowFx(width, height) ? 'lowFx' : 'fullFx',
       });
     };
 
@@ -128,7 +118,6 @@ export function useBattleViewport(containerRef: RefObject<HTMLElement | null>): 
       width: viewport.width,
       height: viewport.height,
       aspectRatio: viewport.height > 0 ? viewport.width / viewport.height : 1,
-      isSmallScreen: viewport.isSmallScreen,
       effectMode: viewport.effectMode as TableFxMode,
       layoutProfile: resolveTableLayoutProfile(viewport.width, viewport.height),
     }),
