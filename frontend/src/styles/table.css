@@ -560,6 +560,8 @@
 }
 
 .table-stage__melds .meld-rack {
+  --meld-rack-tile-width: var(--table-stage-meld-tile-width);
+  --meld-rack-tile-height: var(--table-stage-meld-tile-height);
   display: grid;
   gap: calc(var(--table-stage-river-gap) * 0.7);
   align-content: start;
@@ -572,12 +574,6 @@
 .table-stage__melds .meld-rack__tile {
   width: var(--table-stage-meld-tile-width);
   height: var(--table-stage-meld-tile-height);
-}
-
-.table-stage__melds .meld-rack__tile--sourced {
-
-
-  margin-inline: 1px;
 }
 
 .table-stage__melds--top,
