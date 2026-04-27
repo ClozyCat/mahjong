@@ -560,6 +560,15 @@ export interface QuickChatEventView {
   text: string;
 }
 
+export interface DealerSelectionView {
+  key: string;
+  dealerSeat: Seat;
+  dealerName: string;
+  startedAt: string;
+  revealAt: string;
+  durationMs: number;
+}
+
 export interface BattleViewModel {
   roomMode: TableMode;
   mode: MatchPhase;
@@ -593,6 +602,7 @@ export interface BattleViewModel {
   lastDiscardSeat: Seat | null;
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
+  dealerSelection: DealerSelectionView | null;
   quickChatEvent?: QuickChatEventView | null;
   toasts: ToastMessage[];
 }

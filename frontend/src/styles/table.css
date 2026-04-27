@@ -170,6 +170,24 @@
   transition: transform 0.4s var(--ease-spring);
 }
 
+.table-stage__center-indicator--dealer-selection .table-stage__center-indicator-base {
+  stroke: color-mix(in srgb, var(--accent-2) 72%, var(--table-center-ring-border));
+  filter:
+    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.44))
+    drop-shadow(0 0 10px color-mix(in srgb, var(--accent-2) 34%, transparent));
+}
+
+.table-stage__center-indicator--dealer-selection .table-stage__center-indicator-pointer {
+  fill: color-mix(in srgb, var(--accent-2) 88%, white);
+  filter:
+    drop-shadow(0 0 7px var(--accent-2))
+    drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 34%, transparent));
+}
+
+.table-stage__center-indicator--dealer-selection .table-stage__center-indicator-count {
+  font-size: calc(var(--table-stage-center-indicator-size) * 0.28);
+}
+
 .table-stage__center-indicator-breathing {
   position: absolute;
   inset: -8%;

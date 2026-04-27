@@ -32,6 +32,22 @@ struct QuickChatPayload {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct DealerSelectionStartedPayload {
+    event_type: &'static str,
+    event: DealerSelectionStartedEvent,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DealerSelectionStartedEvent {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    dealer_seat: usize,
+    started_at: String,
+    reveal_at: String,
+    duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct LeaveTableAcceptedPayload {
     table_code: String,
     seat_index: usize,
@@ -137,6 +153,42 @@ pub(crate) fn quick_chat_message(
                 "target_seat": target_seat,
                 "emoji": fallback_emoji,
             }
+        })
+    })
+}
+
+pub(crate) fn dealer_selection_started_message(
+    dealer_seat: usize,
+    started_at: String,
+    reveal_at: String,
+    duration_ms: u64,
+) -> Value {
+    serde_json::to_value(PayloadEnvelope {
+        kind: "round_event",
+        payload: DealerSelectionStartedPayload {
+            event_type: "dealer_selection_started",
+            event: DealerSelectionStartedEvent {
+                kind: "dealer_selection_started",
+                dealer_seat,
+                started_at: started_at.clone(),
+                reveal_at: reveal_at.clone(),
+                duration_ms,
+            },
+        },
+    })
+    .unwrap_or_else(|_| {
+        serde_json::json!({
+            "type": "round_event",
+            "payload": {
+                "event_type": "dealer_selection_started",
+                "event": {
+                    "type": "dealer_selection_started",
+                    "dealer_seat": dealer_seat,
+                    "started_at": started_at,
+                    "reveal_at": reveal_at,
+                    "duration_ms": duration_ms,
+                },
+            },
         })
     })
 }

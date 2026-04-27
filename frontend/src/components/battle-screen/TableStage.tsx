@@ -5,6 +5,7 @@ import type {
   ActionEffectView,
   BattleActionView,
   BattlePromptView,
+  DealerSelectionView,
   QuickChatEmoji,
   QuickChatEventView,
   Seat,
@@ -36,6 +37,7 @@ interface TableStageProps {
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
+  dealerSelection?: DealerSelectionView | null;
   deadlineAt?: string | null;
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
@@ -83,6 +85,7 @@ export function TableStage({
   remainingTileCount = null,
   promptText: _promptText,
   promptCue = null,
+  dealerSelection = null,
   deadlineAt = null,
   actionEffect = null,
   quickChatEvent = null,
@@ -163,6 +166,7 @@ export function TableStage({
           <CenterIndicator
             remainingCount={remainingTileCount}
             actionSeat={actionIndicatorSeat}
+            dealerSelection={dealerSelection}
             deadlineAt={deadlineAt}
             isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
           />

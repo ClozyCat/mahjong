@@ -2,6 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 
 import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
+import {
+  getVoiceClipNameForAction,
+  getVoiceClipNameForTile,
+  playVoiceClip,
+  resolveVoiceClipUrl,
+  type VoiceCue,
+} from '../../lib/voicePacks';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
@@ -63,6 +70,7 @@ export function BattleScreen({
   const [isSnakeActive, setIsSnakeActive] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
+  const playedVoiceCueKeyRef = useRef<string | null>(null);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
@@ -81,6 +89,7 @@ export function BattleScreen({
         }
         : action,
     );
+  const visiblePreMatchActions = viewModel.dealerSelection ? [] : preMatchActions;
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
@@ -140,6 +149,26 @@ export function BattleScreen({
   useEffect(() => {
     consumedActionEffectRef.current = consumedActionEffect;
   }, [consumedActionEffect]);
+
+  useEffect(() => {
+    const voiceCue = createVoiceCue(viewModel);
+    if (!voiceCue || playedVoiceCueKeyRef.current === voiceCue.key) {
+      return;
+    }
+
+    const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.absoluteSeat, voiceCue.clipName);
+    if (!voiceUrl) {
+      return;
+    }
+
+    playedVoiceCueKeyRef.current = voiceCue.key;
+    playVoiceClip(voiceUrl);
+  }, [
+    viewModel.actionEffect,
+    viewModel.lastDiscard,
+    viewModel.players,
+    viewModel.tableCode,
+  ]);
 
   useEffect(() => {
     const nextActionEffect = viewModel.actionEffect;
@@ -308,6 +337,7 @@ export function BattleScreen({
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
+              dealerSelection={viewModel.dealerSelection}
               deadlineAt={viewModel.deadlineAt}
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
@@ -318,11 +348,11 @@ export function BattleScreen({
               phaseLabel={viewModel.phaseLabel}
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
-              preMatchActions={!isSpectator && viewModel.waitingControls ? preMatchActions : []}
+              preMatchActions={!isSpectator && viewModel.waitingControls ? visiblePreMatchActions : []}
               isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
-              botCount={viewModel.waitingControls?.botCount ?? 0}
-              canAddBot={viewModel.waitingControls?.canAddBot ?? false}
-              canRemoveBot={viewModel.waitingControls?.canRemoveBot ?? false}
+              botCount={viewModel.dealerSelection ? 0 : viewModel.waitingControls?.botCount ?? 0}
+              canAddBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canAddBot ?? false)}
+              canRemoveBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canRemoveBot ?? false)}
               tileScale={tableTileScale}
               canDecreaseTileScale={canDecreaseTableTileScale}
               canIncreaseTileScale={canIncreaseTableTileScale}
@@ -384,6 +414,48 @@ function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
 
   const discardCount = viewModel.discards[viewModel.lastDiscardSeat]?.length ?? 0;
   return `${viewModel.lastDiscardSeat}:${viewModel.lastDiscard}:${discardCount}`;
+}
+
+function createVoiceCue(viewModel: BattleViewModel): VoiceCue | null {
+  const actionEffect = viewModel.actionEffect;
+  if (!actionEffect?.key || !actionEffect.seat) {
+    return null;
+  }
+
+  const absoluteSeat = getAbsoluteSeatForRelativeSeat(viewModel, actionEffect.seat);
+  if (typeof absoluteSeat !== 'number') {
+    return null;
+  }
+
+  const actionClipName = getVoiceClipNameForAction(actionEffect.calloutTone);
+  if (actionClipName) {
+    return {
+      key: `action:${actionEffect.key}:${absoluteSeat}:${actionClipName}`,
+      absoluteSeat,
+      clipName: actionClipName,
+    };
+  }
+
+  if (actionEffect.emphasis === 'discard' || actionEffect.calloutTone === 'ready_hand') {
+    const tileClipName = getVoiceClipNameForTile(viewModel.lastDiscard);
+    if (tileClipName) {
+      return {
+        key: `discard:${actionEffect.key}:${absoluteSeat}:${viewModel.lastDiscard}:${tileClipName}`,
+        absoluteSeat,
+        clipName: tileClipName,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getAbsoluteSeatForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {
+  if (!seat) {
+    return null;
+  }
+
+  return viewModel.players.find((player) => player.seat === seat)?.absoluteSeat ?? null;
 }
 
 function getSettlementPanelDelayMs(

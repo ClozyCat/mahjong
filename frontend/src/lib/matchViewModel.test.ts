@@ -270,6 +270,50 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.canRemoveBot).toBe(false);
   });
 
+  it('surfaces dealer selection and disables waiting controls during the draw animation', () => {
+    const base = createWaitingSessionState();
+    const state: SessionState = {
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Alice', connected: true, ready: true },
+            { seat_index: 1, nickname: 'Bob', connected: true, ready: true },
+            { seat_index: 2, nickname: 'Carol', connected: true, ready: true },
+            { seat_index: 3, nickname: 'Dora', connected: true, ready: true },
+          ],
+        },
+      },
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'dealer_selection_started',
+          event: {
+            type: 'dealer_selection_started',
+            dealer_seat: 1,
+            started_at: '2026-04-27T12:00:00Z',
+            reveal_at: '2026-04-27T12:00:04.200Z',
+            duration_ms: 4200,
+          },
+        },
+      },
+    };
+
+    const viewModel = createMatchViewModel(state);
+
+    expect(viewModel.dealerSelection).toMatchObject({
+      dealerSeat: 'right',
+      dealerName: 'Bob',
+      durationMs: 4200,
+    });
+    expect(viewModel.centerStatusText).toBe('抽取东家');
+    expect(viewModel.waitingControls?.canReady).toBe(false);
+    expect(viewModel.waitingControls?.canStart).toBe(false);
+    expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(false);
+  });
+
   it('shows cancel-ready when the local seat is already ready in the waiting room', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({

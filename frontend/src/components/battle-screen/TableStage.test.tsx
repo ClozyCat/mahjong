@@ -777,6 +777,71 @@ describe('TableStage', () => {
     expect(topZone?.querySelector('.table-stage__stat-plate--hand')).not.toHaveClass('table-stage__stat-plate--muted');
   });
 
+  it('shows player initials instead of preset winds while waiting for match start', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        isWaitingForMatchStart
+        players={[
+          {
+            seat: 'bottom',
+            name: '阿强',
+            melds: [],
+          },
+          {
+            seat: 'right',
+            name: 'Bob',
+            melds: [],
+          },
+        ]}
+      />,
+    );
+
+    const bottomSeatLabel = container.querySelector(
+      '.table-stage__player-edge-info--bottom .table-stage__stat-plate--seat .table-stage__stat-value',
+    );
+    const rightSeatLabel = container.querySelector(
+      '.table-stage__player-edge-info--right .table-stage__stat-plate--seat .table-stage__stat-value',
+    );
+
+    expect(bottomSeatLabel).toHaveTextContent('阿');
+    expect(rightSeatLabel).toHaveTextContent('B');
+  });
+
+  it('shows east in the center while the dealer selection wheel spins', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        dealerSelection={{
+          key: 'dealer-selection-1',
+          dealerSeat: 'right',
+          dealerName: 'Player B',
+          startedAt: '2026-04-27T12:00:00Z',
+          revealAt: '2026-04-27T12:00:04.200Z',
+          durationMs: 4200,
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__center-indicator-count')).toHaveTextContent('东');
+  });
+
   it('opens the quick-chat radial menu from the global emoji trigger', async () => {
     const user = userEvent.setup();
 

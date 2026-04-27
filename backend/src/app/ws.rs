@@ -5,6 +5,7 @@ use anyhow::Error;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path as AxumPath, State};
 use axum::response::IntoResponse;
+use chrono::{SecondsFormat, TimeDelta, Utc};
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use serde::Deserialize;
@@ -14,12 +15,13 @@ use tokio::sync::{Notify, mpsc};
 #[cfg(feature = "spectator")]
 use super::collect_observer_outbound_from_snapshot;
 use super::protocol::{
-    HeartbeatPayload, action_rejected_message, heartbeat_message, leave_table_accepted_message,
-    quick_chat_message,
+    HeartbeatPayload, action_rejected_message, dealer_selection_started_message,
+    heartbeat_message, leave_table_accepted_message, quick_chat_message,
 };
 use super::room_runtime::{
-    close_runtime, ensure_room_loaded, replace_connection, restore_room_snapshot, room_handle,
-    room_has_only_bots, should_terminate_unattended, snapshot_connections, unregister_room_handle,
+    PendingStartMatch, close_runtime, ensure_room_loaded, replace_connection,
+    restore_room_snapshot, room_handle, room_has_only_bots, should_terminate_unattended,
+    snapshot_connections, unregister_room_handle,
 };
 #[cfg(feature = "spectator")]
 use super::room_runtime::{
@@ -42,8 +44,9 @@ use crate::rules::standard::flow::{
     reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
     record_continue_action_in_room_state as record_standard_continue_action,
     room_ready_to_start as room_ready_to_start_in_state,
-    start_match_in_room_state as start_standard_match,
 };
+
+const DEALER_SELECTION_DURATION_MS: u64 = 4_200;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
@@ -140,6 +143,11 @@ struct AdjustBotsRequest {
 
 fn default_true() -> bool {
     true
+}
+
+fn dealer_selection_reveal_at() -> String {
+    (Utc::now() + TimeDelta::milliseconds(DEALER_SELECTION_DURATION_MS as i64))
+        .to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 pub(crate) struct MessageOutcome {
@@ -834,11 +842,13 @@ async fn handle_start_match(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
-    let previous_room = runtime.room.clone();
+    if runtime.pending_start_match.is_some() {
+        return reject_to(connection, "room_already_started");
+    }
     let already_started = room_has_round_state(&runtime.room);
     let ready_to_start = room_ready_to_start_in_state(&runtime.room);
     let occupied = occupied_seats(&runtime.room);
-    if already_started {
+    if already_started || room_phase(&runtime.room) != "waiting" {
         return reject_to(connection, "room_already_started");
     }
     if !ready_to_start {
@@ -849,35 +859,32 @@ async fn handle_start_match(
         let mut rng = rand::rng();
         occupied[rng.random_range(0..occupied.len())]
     };
-    if let Err(error) = start_standard_match(&mut runtime.room, dealer_seat, rand::random::<u64>())
-    {
-        return internal_error_to(connection, Error::msg(error));
-    }
-    let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
+    let started_at = super::now_iso();
+    let reveal_at = dealer_selection_reveal_at();
+    runtime.pending_start_match = Some(PendingStartMatch {
+        dealer_seat,
+        reveal_at: reveal_at.clone(),
+    });
     let connections = snapshot_connections(&runtime);
     #[cfg(feature = "spectator")]
     let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
-    let room_json = match serialize_room(&room) {
-        Ok(value) => value,
-        Err(error) => return internal_error_to(connection, error),
-    };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let selection_message = dealer_selection_started_message(
+        dealer_seat,
+        started_at,
+        reveal_at,
+        DEALER_SELECTION_DURATION_MS,
+    );
+    let mut outbound = connections
+        .into_iter()
+        .map(|(_, handle)| handle.outbound(selection_message.clone()))
+        .collect::<Vec<_>>();
     #[cfg(feature = "spectator")]
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_connections,
-    ));
-    if let Err(error) = state
-        .inner
-        .db
-        .save_table(table_code, &created_at, &room_json)
-        .await
-    {
-        restore_room_snapshot(&room_handle, previous_room).await;
-        return internal_error_to(connection, error);
-    }
+    outbound.extend(
+        spectator_connections
+            .into_iter()
+            .map(|(_, handle)| handle.outbound(selection_message.clone())),
+    );
     let outcome = MessageOutcome {
         outbound,
         role: None,

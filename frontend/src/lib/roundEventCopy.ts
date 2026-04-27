@@ -49,6 +49,10 @@ export function getRoundEventCopy(
     return `${getSeatName(event.seat, seats)}宣布听牌`;
   }
 
+  if (eventType === 'dealer_selection_started') {
+    return `开始抽取东家`;
+  }
+
   if (eventType === 'claim_made') {
     const claimType = CLAIM_TYPE_NAMES[String(event.claim_type)] ?? '响应';
     const tileName = getTileName(getTileCodeFromTileId(event.tile_id));

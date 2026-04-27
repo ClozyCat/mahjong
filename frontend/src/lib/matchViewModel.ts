@@ -9,6 +9,7 @@ import type {
   ClaimActionId,
   ClaimCandidateTileView,
   ClaimCandidateView,
+  DealerSelectionView,
   DisplayMeldView,
   MatchResultPayload,
   PlayerView,
@@ -499,18 +500,19 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   const localSeatState = typeof localSeat === 'number' ? snapshot.seats.find((seat) => seat.seat_index === localSeat) : null;
   const occupiedSeats = snapshot.seats.length;
   const botCount = snapshot.seats.filter((seat) => seat.is_bot).length;
+  const dealerSelection = createDealerSelection(state, options);
   const allReady =
     occupiedSeats === 4 &&
     snapshot.seats.every((seat) => seat.ready && (seat.connected || seat.is_bot));
 
   return {
-    canReady: Boolean(localSeatState),
-    canStart: allReady,
+    canReady: Boolean(localSeatState) && !dealerSelection,
+    canStart: allReady && !dealerSelection,
     isReady: Boolean(localSeatState?.ready),
     occupiedSeats,
     botCount,
-    canAddBot: Boolean(localSeatState) && occupiedSeats < 4,
-    canRemoveBot: Boolean(localSeatState) && botCount > 0,
+    canAddBot: Boolean(localSeatState) && occupiedSeats < 4 && !dealerSelection,
+    canRemoveBot: Boolean(localSeatState) && botCount > 0 && !dealerSelection,
   };
 }
 
@@ -807,6 +809,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
   const displayedScores = getDisplayedScores(state);
   const liveDeltaBySeat = getLiveDeltaBySeat(state);
   const flowerCountBySeat = getFlowerCountBySeat(state);
+  const dealerSelection = createDealerSelection(state, options);
 
   return snapshot.seats
     .map((seat) => {
@@ -841,6 +844,8 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
             ? 'Bot代打中'
             : !seat.connected
               ? '等待重连中'
+              : snapshot.phase === 'waiting' && dealerSelection
+                ? '抽座中'
               : snapshot.phase === 'waiting'
                 ? seat.ready
                   ? '已准备'
@@ -1722,6 +1727,37 @@ function createActionEffect(state: SessionState, options: MatchViewModelOptions 
   return null;
 }
 
+function createDealerSelection(state: SessionState, options: MatchViewModelOptions = {}): DealerSelectionView | null {
+  const snapshot = state.roomSnapshot?.payload;
+  const event = state.latestRoundEvent?.payload;
+
+  if (snapshot?.phase !== 'waiting' || event?.event_type !== 'dealer_selection_started') {
+    return null;
+  }
+
+  const dealerSeatIndex = event.event?.dealer_seat;
+  const startedAt = event.event?.started_at;
+  const revealAt = event.event?.reveal_at;
+  const durationMs = event.event?.duration_ms;
+
+  if (
+    typeof dealerSeatIndex !== 'number' ||
+    typeof startedAt !== 'string' ||
+    typeof revealAt !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    key: `${dealerSeatIndex}:${startedAt}:${revealAt}`,
+    dealerSeat: toRelativeSeat(getPerspectiveSeat(state, options), dealerSeatIndex),
+    dealerName: getSeatName(state, dealerSeatIndex),
+    startedAt,
+    revealAt,
+    durationMs: typeof durationMs === 'number' ? durationMs : 4_200,
+  };
+}
+
 function getWinTypeLabel(result: MatchResultPayload) {
   return result.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type;
 }
@@ -1731,6 +1767,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
   const optimisticDiscard = getOptimisticDiscard(state);
   const waitingControls = createWaitingControls(state, options);
   const isWaiting = snapshot?.phase === 'waiting';
+  const dealerSelection = createDealerSelection(state, options);
   const isReconnecting = state.connectionStatus === 'reconnecting';
   const isSettlement = snapshot?.phase === 'settlement';
   const isFinished = snapshot?.phase === 'finished';
@@ -1773,6 +1810,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
         ? '等待再来一局'
         : snapshot?.phase === 'settlement'
           ? '结算中'
+          : dealerSelection
+            ? '抽取东家'
           : snapshot?.phase === 'waiting'
             ? '等待牌手'
             : '对局中',
@@ -1789,7 +1828,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     claimCandidates: options.isSpectator ? [] : createClaimCandidates(state),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
-    centerStatusText: createCenterStatusText(state),
+    centerStatusText: dealerSelection ? '抽取东家' : createCenterStatusText(state),
     remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state, options),
     promptCue,
@@ -1799,6 +1838,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     lastDiscardSeat: createLastDiscardSeat(state, options),
     shouldAutoReturnLastDiscardToRiver: createShouldAutoReturnLastDiscardToRiver(state),
     actionEffect: createActionEffect(state, options),
+    dealerSelection,
     quickChatEvent: createQuickChatEvent(state, options),
     toasts: state.toasts,
   };

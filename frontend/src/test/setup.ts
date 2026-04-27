@@ -36,3 +36,8 @@ class TestIntersectionObserver implements IntersectionObserver {
 if (!globalThis.IntersectionObserver) {
   globalThis.IntersectionObserver = TestIntersectionObserver;
 }
+
+Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+  configurable: true,
+  value: () => Promise.resolve(),
+});

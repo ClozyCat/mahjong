@@ -164,6 +164,15 @@ function getWindLabel(player: TableStagePlayer | undefined, seat: Seat) {
   return player?.wind ? WIND_NAME_TO_CHAR[player.wind] ?? WIND_COPY[seat] : WIND_COPY[seat];
 }
 
+function getPlayerInitial(player: TableStagePlayer | undefined) {
+  const trimmedName = player?.name?.trim();
+  return trimmedName ? Array.from(trimmedName)[0] : '';
+}
+
+function getSeatInfoLabel(player: TableStagePlayer | undefined, seat: Seat, isWaitingForMatchStart: boolean) {
+  return isWaitingForMatchStart ? getPlayerInitial(player) : getWindLabel(player, seat);
+}
+
 function shouldPinDenseMeldRack(seat: Seat, meldCount: number) {
   return (seat === 'top' || seat === 'bottom') && meldCount >= 3;
 }
@@ -301,7 +310,7 @@ export function buildTableSceneModel({
       return {
         seat,
         player,
-        windLabel: getWindLabel(player, seat),
+        windLabel: getSeatInfoLabel(player, seat, isWaitingForMatchStart),
         riverColumns,
         hasMelds,
         shouldMuteWaitingStats: isWaitingForMatchStart && player?.ready === false,

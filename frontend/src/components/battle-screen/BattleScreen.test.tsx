@@ -37,6 +37,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     players: [
       {
         seat: 'top',
+        absoluteSeat: 0,
         name: 'Player Top',
         score: 26800,
         liveDelta: 0,
@@ -56,6 +57,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       },
       {
         seat: 'left',
+        absoluteSeat: 1,
         name: 'Player Left',
         score: 24300,
         liveDelta: -8,
@@ -75,6 +77,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       },
       {
         seat: 'bottom',
+        absoluteSeat: 2,
         name: 'Player A',
         score: 25000,
         liveDelta: 8,
@@ -94,6 +97,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       },
       {
         seat: 'right',
+        absoluteSeat: 3,
         name: 'Player B',
         score: 25000,
         liveDelta: 0,
@@ -137,6 +141,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     lastDiscardSeat: 'left',
     shouldAutoReturnLastDiscardToRiver: false,
     actionEffect: null,
+    dealerSelection: null,
     toasts: [],
     ...overrides,
   };
@@ -204,9 +209,78 @@ function getVisibleFanList() {
   return within(fanViewport);
 }
 
+function mockAudioPlayback() {
+  const play = vi.fn(() => Promise.resolve());
+  const audio = vi.fn((url: string) => {
+    void url;
+    return { play };
+  });
+  const originalAudio = globalThis.Audio;
+
+  globalThis.Audio = audio as unknown as typeof Audio;
+
+  return {
+    audio,
+    play,
+    restore: () => {
+      globalThis.Audio = originalAudio;
+    },
+  };
+}
+
 describe('BattleScreen', () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('plays the matching tile voice when a discard action effect arrives', () => {
+    const audioMock = mockAudioPlayback();
+
+    try {
+      renderBattleScreen(
+        createBattleViewModel({
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'bottom',
+          actionEffect: {
+            key: 'tile_discarded:seat-2:w1',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'bottom',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('yi_wan');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
+  });
+
+  it('plays the matching operation voice when a claim action effect arrives', () => {
+    const audioMock = mockAudioPlayback();
+
+    try {
+      renderBattleScreen(
+        createBattleViewModel({
+          actionEffect: {
+            key: 'claim_made:seat-1:pung',
+            label: '碰',
+            emphasis: 'claim',
+            seat: 'left',
+            calloutTone: 'pung',
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
   });
 
   it('shows ready and start controls in waiting state', () => {
@@ -1842,6 +1916,41 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('等待牌手')).toBeNull();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
+  });
+
+  it('hides pre-match room and bot controls while dealer selection is spinning', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'disconnected_or_waiting',
+        actions: [
+          { id: 'ready', label: '准备', enabled: false, emphasis: 'medium' },
+          { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
+        ],
+        waitingControls: {
+          canReady: false,
+          canStart: false,
+          isReady: true,
+          occupiedSeats: 4,
+          botCount: 2,
+          canAddBot: false,
+          canRemoveBot: false,
+        },
+        dealerSelection: {
+          key: 'dealer-selection-1',
+          dealerSeat: 'right',
+          dealerName: 'Player B',
+          startedAt: '2026-04-27T12:00:00Z',
+          revealAt: '2026-04-27T12:00:04.200Z',
+          durationMs: 4200,
+        },
+      }),
+    );
+
+    expect(screen.queryByRole('group', { name: '开局前房间操作' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'BOT 数量控制' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '开始对局' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '增加 BOT' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '减少 BOT' })).toBeNull();
   });
 
   it('prevents repeated ready clicks for 3 seconds', () => {
