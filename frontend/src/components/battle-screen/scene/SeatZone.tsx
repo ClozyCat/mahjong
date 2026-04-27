@@ -106,11 +106,6 @@ export const SeatZone = memo(function SeatZone({
               className={`table-stage__river-track table-stage__river-track--${seat}`}
               style={scene.trackStyle}
             >
-              {player?.name ? (
-                <div className="table-stage__river-watermark" aria-hidden="true">
-                  {player.name.charAt(0)}
-                </div>
-              ) : null}
               {discards.map((tile, index) => {
                 const isLastDiscard = lastDiscardSeat === seat && index === discards.length - 1;
 

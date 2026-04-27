@@ -321,42 +321,6 @@
 .table-stage__seat-zone--left,
 .table-stage__seat-zone--right {}
 
-/* ------- Seat watermarks ------- */
-
-.table-stage__seat-watermark {
-  position: absolute;
-  font-family: 'SimSun', '宋体', serif;
-  font-size: clamp(2.2rem, 8vmin, 5.5rem);
-  color: color-mix(in srgb, var(--theme-paper) 5%, transparent);
-  pointer-events: none;
-  z-index: 0;
-  user-select: none;
-  opacity: 0.7;
-}
-
-.table-stage__seat-watermark--bottom {
-  bottom: 8%;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.table-stage__seat-watermark--top {
-  top: 8%;
-  left: 50%;
-  transform: translateX(-50%) rotate(180deg);
-}
-
-.table-stage__seat-watermark--left {
-  left: 8%;
-  top: 50%;
-  transform: translateY(-50%) rotate(90deg);
-}
-
-.table-stage__seat-watermark--right {
-  right: 8%;
-  top: 50%;
-  transform: translateY(-50%) rotate(-90deg);
-}
 
 .table-stage__seat-group {
   position: relative;
@@ -568,38 +532,6 @@
   /* Removed hardcoded padding to use the unified relative scale from tiles.css */
 }
 
-/* ------- River Watermarks ------- */
-
-.table-stage__river-watermark {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-family: 'SimSun', '宋体', serif;
-  font-size: clamp(2.8rem, 12vw, 8rem);
-  color: color-mix(in srgb, var(--theme-paper) 15%, transparent);
-  pointer-events: none;
-  z-index: 0;
-  user-select: none;
-  opacity: 0.45;
-  white-space: nowrap;
-}
-
-.table-stage__river-track--top .table-stage__river-watermark {
-  transform: translate(-50%, -50%) rotate(0deg);
-}
-
-.table-stage__river-track--bottom .table-stage__river-watermark {
-  transform: translate(-50%, -50%) rotate(0deg);
-}
-
-.table-stage__river-track--left .table-stage__river-watermark {
-  transform: translate(-50%, -50%) rotate(0deg);
-}
-
-.table-stage__river-track--right .table-stage__river-watermark {
-  transform: translate(-50%, -50%) rotate(0deg);
-}
 
 /* ------- Melds ------- */
 
