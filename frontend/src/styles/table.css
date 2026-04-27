@@ -500,6 +500,8 @@
   align-content: end;
   border-radius: inherit;
   contain: layout style;
+  min-width: var(--table-stage-river-tile-width);
+  min-height: var(--table-stage-river-tile-height);
 }
 
 .table-stage__river-track--top,
@@ -1566,6 +1568,7 @@
 .table-stage__action-callout--center {
   --spotlight-left: 50%;
   --spotlight-top: 50%;
+  z-index: 10;
 }
 
 /* Seat-specific spotlight & callout positioning (higher specificity) */
