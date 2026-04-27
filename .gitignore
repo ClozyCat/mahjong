@@ -2,10 +2,10 @@ output/
 .playwright-cli
 backend/target/
 backend/__pycache__/
-backend/*.log
 .omx/
 __pycache__/
 .superpowers/
 node_modules/
 .tmp/
 .pytest_cache/
+*.log
