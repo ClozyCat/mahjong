@@ -794,6 +794,7 @@ fn fan_result_for_win_with_state(
 
     let player_tile_keys =
         player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
+    let winning_tile = winning_tile_for_win_state(state, winner_seat, incoming_tile);
 
     let evaluation = ScoringEvaluationInput {
         win_type: win_type.clone(),
@@ -818,6 +819,7 @@ fn fan_result_for_win_with_state(
         meld_tile_key_groups,
         open_meld_tile_key_groups,
         incoming_tile: incoming_tile.map(ToString::to_string),
+        winning_tile,
         decompositions,
     };
     let result = scoring_evaluate_fans(evaluation);
@@ -862,6 +864,26 @@ fn prepare_win_evaluation(
         decompositions,
         kong_entries,
     })
+}
+
+fn winning_tile_for_win_state(
+    state: &RoomState,
+    winner_seat: usize,
+    incoming_tile: Option<&str>,
+) -> Option<String> {
+    if let Some(tile_key) = incoming_tile {
+        return Some(tile_key.to_string());
+    }
+
+    let round = state.round_state.as_ref()?;
+    let drawn_tile_id = round.last_action_context.tile_id.as_deref()?;
+    round
+        .players
+        .get(winner_seat)?
+        .concealed_tiles
+        .iter()
+        .find(|tile| tile.tile_id == drawn_tile_id)
+        .map(|tile| tile.tile_key.clone())
 }
 
 fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
@@ -945,6 +967,35 @@ mod tests {
 
         assert!(settlement.fan_total < 8);
         assert_eq!(settlement.display_win_label, None);
+    }
+
+    #[test]
+    fn self_draw_on_fourth_visible_copy_counts_last_tile() {
+        let tile_keys = [
+            "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red", "w1",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        let opponent = state
+            .round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(1))
+            .expect("opponent should exist");
+        opponent.discards = (0..3)
+            .map(|index| Tile {
+                tile_id: format!("w1#discard-{index}"),
+                tile_key: "w1".to_string(),
+                ..Default::default()
+            })
+            .collect();
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
+
+        assert!(
+            settlement.fan_keys.iter().any(|fan| fan == "last_tile"),
+            "fan keys should include last_tile, got {:?}",
+            settlement.fan_keys
+        );
     }
 
     #[test]

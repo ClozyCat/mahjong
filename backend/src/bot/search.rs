@@ -1401,6 +1401,7 @@ impl SearchEngine {
             meld_tile_key_groups: meld_tile_key_groups.to_vec(),
             open_meld_tile_key_groups: analysis.open_meld_tile_key_groups.clone(),
             incoming_tile: Some(incoming_tile.to_string()),
+            winning_tile: Some(incoming_tile.to_string()),
             decompositions,
         });
         let score =
