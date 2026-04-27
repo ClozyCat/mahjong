@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   BackendActionType,
@@ -51,6 +51,7 @@ export function BottomActionDock({
 }: BottomActionDockProps) {
   const [isHandInsightPopoverHovered, setIsHandInsightPopoverHovered] = useState(false);
   const [isHandInsightPopoverPinned, setIsHandInsightPopoverPinned] = useState(false);
+  const [isHandInsightPopoverHorizontal, setIsHandInsightPopoverHorizontal] = useState(false);
   const handInsightPopoverRef = useRef<HTMLDivElement | null>(null);
   const handCount = hand.length;
   const hasDrawnTile = hand.some((tile) => tile.isDrawn || tile.isReplacementDrawn);
@@ -123,6 +124,28 @@ export function BottomActionDock({
     setIsHandInsightPopoverPinned(false);
   }, [handInsight]);
 
+  useLayoutEffect(() => {
+    if (!isHandInsightPopoverOpen) {
+      setIsHandInsightPopoverHorizontal(false);
+      return undefined;
+    }
+
+    function updatePopoverLayout() {
+      const popover = handInsightPopoverRef.current?.querySelector<HTMLElement>('.action-dock__ready-hand-popover');
+
+      if (!popover) {
+        return;
+      }
+
+      const maxNaturalHeight = window.innerHeight * 0.75;
+      setIsHandInsightPopoverHorizontal(measureNaturalPopoverHeight(popover) > maxNaturalHeight);
+    }
+
+    updatePopoverLayout();
+    window.addEventListener('resize', updatePopoverLayout);
+    return () => window.removeEventListener('resize', updatePopoverLayout);
+  }, [displayedWinningFans.length, handInsight?.waits.length, isHandInsightPopoverOpen]);
+
   const handInsightControl = hasHandInsightContent && handInsight ? (
     <div
       ref={handInsightPopoverRef}
@@ -151,7 +174,11 @@ export function BottomActionDock({
       </button>
       {isHandInsightPopoverOpen ? (
         <section 
-          className={`action-dock__ready-hand-popover ${isHandInsightPopoverPinned ? 'action-dock__ready-hand-popover--pinned' : ''}`} 
+          className={[
+            'action-dock__ready-hand-popover',
+            isHandInsightPopoverPinned ? 'action-dock__ready-hand-popover--pinned' : '',
+            isHandInsightPopoverHorizontal ? 'action-dock__ready-hand-popover--horizontal' : '',
+          ].filter(Boolean).join(' ')}
           aria-label={getHandInsightPopoverLabel(handInsight)}
         >
           {handInsight.waits.length > 0 ? (
@@ -412,6 +439,27 @@ function getHandInsightTriggerLabel(handInsight: NonNullable<BottomActionDockPro
 
 function getHandInsightPopoverLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
   return handInsight.source === 'selected_discard' ? '打出后手牌洞察' : '当前手牌洞察';
+}
+
+function measureNaturalPopoverHeight(popover: HTMLElement) {
+  const clone = popover.cloneNode(true) as HTMLElement;
+  clone.classList.remove('action-dock__ready-hand-popover--horizontal');
+  clone.setAttribute('aria-hidden', 'true');
+  clone.style.position = 'fixed';
+  clone.style.left = '-10000px';
+  clone.style.top = '0';
+  clone.style.visibility = 'hidden';
+  clone.style.pointerEvents = 'none';
+  clone.style.maxHeight = 'none';
+  clone.style.overflow = 'visible';
+  clone.style.animation = 'none';
+
+  document.body.appendChild(clone);
+  const rect = clone.getBoundingClientRect();
+  const height = Math.max(rect.height, clone.scrollHeight);
+  clone.remove();
+
+  return height;
 }
 
 function getActionEffectClass(actionId: BattleActionView['id']) {

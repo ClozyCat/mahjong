@@ -738,12 +738,12 @@
   --result-overlay-score-surface: color-mix(in srgb, var(--theme-paper) 2%, transparent);
   --result-overlay-row-surface: color-mix(in srgb, var(--theme-paper) 3%, transparent);
   --result-overlay-seat-surface: color-mix(in srgb, var(--theme-paper) 4%, transparent);
-  --result-overlay-positive-rim: color-mix(in srgb, var(--theme-success) 64%, transparent);
-  --result-overlay-positive-glow: color-mix(in srgb, var(--theme-success) 12%, transparent);
-  --result-overlay-positive-fill: var(--theme-success);
+  --result-overlay-positive-rim: color-mix(in srgb, var(--theme-danger) 64%, transparent);
+  --result-overlay-positive-glow: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  --result-overlay-positive-fill: var(--theme-danger);
   --result-overlay-positive-ink: #fff;
-  --result-overlay-negative-rim: color-mix(in srgb, var(--theme-danger) 54%, transparent);
-  --result-overlay-negative-fill: var(--theme-danger);
+  --result-overlay-negative-rim: color-mix(in srgb, var(--theme-success) 54%, transparent);
+  --result-overlay-negative-fill: var(--theme-success);
   --result-overlay-negative-ink: #fff;
   --result-overlay-neutral-fill: rgba(255, 255, 255, 0.05);
 
@@ -1143,13 +1143,13 @@
 }
 
 .result-overlay__seat-row--positive {
-  border-color: color-mix(in srgb, var(--theme-success) 20%, transparent);
-  background: color-mix(in srgb, var(--theme-success) 8%, var(--result-overlay-seat-surface));
+  border-color: color-mix(in srgb, var(--theme-danger) 20%, transparent);
+  background: color-mix(in srgb, var(--theme-danger) 8%, var(--result-overlay-seat-surface));
 }
 
 .result-overlay__seat-row--negative {
-  border-color: color-mix(in srgb, var(--theme-danger) 20%, transparent);
-  background: color-mix(in srgb, var(--theme-danger) 8%, var(--result-overlay-seat-surface));
+  border-color: color-mix(in srgb, var(--theme-success) 20%, transparent);
+  background: color-mix(in srgb, var(--theme-success) 8%, var(--result-overlay-seat-surface));
 }
 
 .result-overlay__seat-main {
@@ -1205,14 +1205,14 @@
 
 .result-overlay__seat-delta--positive {
   color: var(--result-overlay-positive-ink);
-  border-color: color-mix(in srgb, var(--theme-success) 28%, var(--theme-border));
+  border-color: color-mix(in srgb, var(--theme-danger) 28%, var(--theme-border));
   background: var(--result-overlay-positive-fill);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent);
 }
 
 .result-overlay__seat-delta--negative {
   color: var(--result-overlay-negative-ink);
-  border-color: color-mix(in srgb, var(--theme-danger) 28%, var(--theme-border));
+  border-color: color-mix(in srgb, var(--theme-success) 28%, var(--theme-border));
   background: var(--result-overlay-negative-fill);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
 }
@@ -1485,39 +1485,6 @@
   .result-overlay__actions button {
     flex: 1;
   }
-}
-
-:root[data-small-screen='true'] .result-overlay__columns {
-  grid-template-columns: 1fr;
-  gap: 0.75rem;
-}
-
-:root[data-small-screen='true'] .result-overlay__card {
-  border-radius: 1.2rem;
-  padding: 0.75rem 0.9rem 0.8rem;
-}
-
-:root[data-small-screen='true'] .result-overlay__score-pagination {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-:root[data-small-screen='true'] .result-overlay__seat-row--inactive {
-  display: none;
-}
-
-:root[data-small-screen='true'] .result-overlay__score-hint {
-  display: none;
-}
-
-:root[data-small-screen='true'] .result-overlay__actions {
-  flex-direction: row;
-  width: 100%;
-}
-
-:root[data-small-screen='true'] .result-overlay__actions button {
-  flex: 1;
 }
 
 @media (max-height: 500px) {
@@ -2010,6 +1977,17 @@
    ============================== */
 
 @media (max-width: 960px) {
+  .fan-guide__backdrop {
+    padding: 0;
+  }
+
+  .fan-guide__dialog {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+    padding: 1.2rem;
+  }
+
   .fan-guide__grid {
     grid-template-columns: 1fr;
     max-width: 34rem;
@@ -2018,13 +1996,6 @@
 }
 
 @media (max-width: 760px) {
-  .fan-guide__dialog {
-    width: 100vw;
-    height: 100vh;
-    border-radius: 0;
-    padding: 1.2rem;
-  }
-
   .fan-guide__layout {
     gap: 1.2rem;
   }
@@ -2040,17 +2011,6 @@
   .fan-guide__content {
     padding-right: 0.6rem;
   }
-}
-
-:root[data-small-screen='true'] .fan-guide__dialog {
-  width: 100vw;
-  height: 100vh;
-  border-radius: 0;
-  padding: 1.2rem;
-}
-
-:root[data-small-screen='true'] .fan-guide__grid {
-  grid-template-columns: 1fr;
 }
 
 @media (orientation: landscape) and (max-height: 500px) {

@@ -61,6 +61,7 @@ export const SeatZone = memo(function SeatZone({
             <div
               className="table-stage__stat-plate table-stage__stat-plate--seat"
               data-player-name={player.name}
+              data-absolute-seat={player.absoluteSeat}
             >
               <FanIcon className="table-stage__stat-icon" />
               <span className="table-stage__stat-value">{scene.windLabel}</span>
@@ -106,17 +107,9 @@ export const SeatZone = memo(function SeatZone({
               className={`table-stage__river-track table-stage__river-track--${seat}`}
               style={scene.trackStyle}
             >
-              {player?.name ? (
-                <div className="table-stage__river-watermark" aria-hidden="true">
-                  {player.name.charAt(0)}
-                </div>
-              ) : null}
               {discards.map((tile, index) => {
                 const isLastDiscard = lastDiscardSeat === seat && index === discards.length - 1;
-
-                if (isLastDiscard && hasSpotlightDiscard) {
-                  return null;
-                }
+                const isSpotlightHidden = isLastDiscard && hasSpotlightDiscard;
 
                 return (
                   <MahjongTile
@@ -125,6 +118,7 @@ export const SeatZone = memo(function SeatZone({
                     variant="discard"
                     isLastDiscard={isLastDiscard}
                     relatedTileCode={selectedTileCode}
+                    style={isSpotlightHidden ? { visibility: 'hidden' } : undefined}
                   />
                 );
               })}

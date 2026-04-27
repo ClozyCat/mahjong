@@ -335,6 +335,7 @@ export interface SessionState {
   latestMatchResult: MatchResultMessage | null;
   latestActionPrompt: ActionPromptMessage | null;
   latestRoundEvent: RoundEventMessage | null;
+  recentRoundEvents?: RoundEventMessage[];
   latestReplacementTileId?: string | null;
   latestQuickChatMessage?: QuickChatMessage | null;
   lastRejectedAction: ActionRejectedMessage | null;
@@ -537,6 +538,7 @@ export interface ActionEffectView {
   emphasis: 'draw' | 'discard' | 'claim' | 'kong' | 'system';
   seat: Seat | null;
   calloutTone?: 'chow' | 'pung' | 'kong' | 'hu' | 'ready_hand' | null;
+  tileCode?: string | null;
 }
 
 export interface BattlePromptView {
@@ -558,6 +560,15 @@ export interface QuickChatEventView {
   targetName: string;
   emoji: QuickChatEmoji;
   text: string;
+}
+
+export interface DealerSelectionView {
+  key: string;
+  dealerSeat: Seat;
+  dealerName: string;
+  startedAt: string;
+  revealAt: string;
+  durationMs: number;
 }
 
 export interface BattleViewModel {
@@ -593,6 +604,8 @@ export interface BattleViewModel {
   lastDiscardSeat: Seat | null;
   shouldAutoReturnLastDiscardToRiver: boolean;
   actionEffect: ActionEffectView | null;
+  actionEffects?: ActionEffectView[];
+  dealerSelection: DealerSelectionView | null;
   quickChatEvent?: QuickChatEventView | null;
   toasts: ToastMessage[];
 }

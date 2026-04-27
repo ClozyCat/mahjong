@@ -34,12 +34,21 @@ pub(crate) struct RoomRuntime {
     pub(crate) spectator_connections: HashMap<u64, ConnectionHandle>,
     pub(crate) timeout_nonce: u64,
     pub(crate) continue_nonce: u64,
+    pub(crate) start_match_nonce: u64,
     pub(crate) disconnect_nonce: u64,
     pub(crate) bot_nonce: u64,
     pub(crate) timeout_task: Option<JoinHandle<()>>,
     pub(crate) continue_task: Option<JoinHandle<()>>,
+    pub(crate) start_match_task: Option<JoinHandle<()>>,
     pub(crate) disconnect_task: Option<JoinHandle<()>>,
     pub(crate) bot_task: Option<JoinHandle<()>>,
+    pub(crate) pending_start_match: Option<PendingStartMatch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingStartMatch {
+    pub(crate) dealer_seat: usize,
+    pub(crate) reveal_at: String,
 }
 
 impl RoomRuntime {
@@ -52,12 +61,15 @@ impl RoomRuntime {
             spectator_connections: HashMap::new(),
             timeout_nonce: 0,
             continue_nonce: 0,
+            start_match_nonce: 0,
             disconnect_nonce: 0,
             bot_nonce: 0,
             timeout_task: None,
             continue_task: None,
+            start_match_task: None,
             disconnect_task: None,
             bot_task: None,
+            pending_start_match: None,
         }
     }
 }
@@ -89,6 +101,7 @@ pub(crate) fn abort_join_handle(handle: &mut Option<JoinHandle<()>>) {
 pub(crate) fn abort_room_tasks(runtime: &mut RoomRuntime) {
     abort_join_handle(&mut runtime.timeout_task);
     abort_join_handle(&mut runtime.continue_task);
+    abort_join_handle(&mut runtime.start_match_task);
     abort_join_handle(&mut runtime.disconnect_task);
     abort_join_handle(&mut runtime.bot_task);
 }

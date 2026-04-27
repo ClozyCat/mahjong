@@ -210,6 +210,7 @@ fn evaluate_current_winning_hand(
         meld_tile_key_groups: local_player.melds.clone(),
         open_meld_tile_key_groups,
         incoming_tile: None,
+        winning_tile: concealed_tile_keys.last().cloned(),
         decompositions,
     });
     let mut winning_fans = fan_result
@@ -389,6 +390,7 @@ fn evaluate_wait_scenario(
         meld_tile_key_groups: local_player.melds.clone(),
         open_meld_tile_key_groups,
         incoming_tile: incoming_tile.map(ToString::to_string),
+        winning_tile: Some(wait_tile_key.to_string()),
         decompositions,
     });
 

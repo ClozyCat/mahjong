@@ -37,6 +37,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     players: [
       {
         seat: 'top',
+        absoluteSeat: 0,
         name: 'Player Top',
         score: 26800,
         liveDelta: 0,
@@ -56,6 +57,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       },
       {
         seat: 'left',
+        absoluteSeat: 1,
         name: 'Player Left',
         score: 24300,
         liveDelta: -8,
@@ -75,6 +77,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       },
       {
         seat: 'bottom',
+        absoluteSeat: 2,
         name: 'Player A',
         score: 25000,
         liveDelta: 8,
@@ -94,6 +97,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       },
       {
         seat: 'right',
+        absoluteSeat: 3,
         name: 'Player B',
         score: 25000,
         liveDelta: 0,
@@ -137,13 +141,22 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     lastDiscardSeat: 'left',
     shouldAutoReturnLastDiscardToRiver: false,
     actionEffect: null,
+    dealerSelection: null,
     toasts: [],
     ...overrides,
   };
 }
 
 function renderBattleScreen(viewModel: BattleViewModel, overrides?: Partial<ComponentProps<typeof BattleScreen>>) {
-  setViewportSize(1720, 900);
+  return renderBattleScreenAtViewport(viewModel, { width: 1720, height: 900 }, overrides);
+}
+
+function renderBattleScreenAtViewport(
+  viewModel: BattleViewModel,
+  viewport: { width: number; height: number },
+  overrides?: Partial<ComponentProps<typeof BattleScreen>>,
+) {
+  setViewportSize(viewport.width, viewport.height);
 
   return render(
     <BattleScreen
@@ -204,9 +217,383 @@ function getVisibleFanList() {
   return within(fanViewport);
 }
 
+function mockAudioPlayback() {
+  const play = vi.fn(() => Promise.resolve());
+  const audio = vi.fn((url: string) => {
+    void url;
+    return { play };
+  });
+  const originalAudio = globalThis.Audio;
+
+  globalThis.Audio = audio as unknown as typeof Audio;
+
+  return {
+    audio,
+    play,
+    restore: () => {
+      globalThis.Audio = originalAudio;
+    },
+  };
+}
+
 describe('BattleScreen', () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('plays the matching tile voice when a discard action effect arrives', () => {
+    const audioMock = mockAudioPlayback();
+
+    try {
+      renderBattleScreen(
+        createBattleViewModel({
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'bottom',
+          actionEffect: {
+            key: 'tile_discarded:seat-2:w1',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'bottom',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('yi_wan');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
+  });
+
+  it('does not replay the same tile voice when an optimistic discard is quickly confirmed', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'bottom',
+          actionEffect: {
+            key: 'optimistic-discard:w1#1',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'bottom',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            lastDiscard: 'w1',
+            lastDiscardSeat: 'bottom',
+            actionEffect: {
+              key: 'tile_discarded:seat-2:w1',
+              label: '出牌',
+              emphasis: 'discard',
+              seat: 'bottom',
+              calloutTone: null,
+            },
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not replay a bot discard voice when the same river position is rendered again with a new effect key', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          actionEffect: {
+            key: 'tile_discarded:bot:first',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'left',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            discards: {
+              bottom: ['w1'],
+              left: ['b4'],
+              top: [],
+              right: [],
+            },
+            lastDiscard: 'b4',
+            lastDiscardSeat: 'left',
+            actionEffect: {
+              key: 'tile_discarded:bot:duplicate',
+              label: '出牌',
+              emphasis: 'discard',
+              seat: 'left',
+              calloutTone: null,
+            },
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the event tile for a bot discard voice while the snapshot is catching up', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    const actionEffect = {
+      key: 'tile_discarded-{"seat":1,"tile_id":"b4#bot-7"}',
+      label: '出牌',
+      emphasis: 'discard',
+      seat: 'left',
+      calloutTone: null,
+      tileCode: 'b4',
+    } as unknown as BattleViewModel['actionEffect'];
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['w1'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'left',
+          actionEffect,
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('si_tong');
+
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            discards: {
+              bottom: ['w1'],
+              left: ['w1', 'b4'],
+              top: [],
+              right: [],
+            },
+            lastDiscard: 'b4',
+            lastDiscardSeat: 'left',
+            actionEffect,
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('plays a repeated tile voice again when it is a later discard in the same river', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          actionEffect: {
+            key: 'tile_discarded:bot:first',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'left',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            discards: {
+              bottom: ['w1'],
+              left: ['b4', 'b4'],
+              top: [],
+              right: [],
+            },
+            lastDiscard: 'b4',
+            lastDiscardSeat: 'left',
+            actionEffect: {
+              key: 'tile_discarded:bot:later',
+              label: '出牌',
+              emphasis: 'discard',
+              seat: 'left',
+              calloutTone: null,
+            },
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(2);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('plays the matching operation voice when a claim action effect arrives', () => {
+    const audioMock = mockAudioPlayback();
+
+    try {
+      renderBattleScreen(
+        createBattleViewModel({
+          actionEffect: {
+            key: 'claim_made:seat-1:pung',
+            label: '碰',
+            emphasis: 'claim',
+            seat: 'left',
+            calloutTone: 'pung',
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
+  });
+
+  it('plays a queued discard voice when a later round event becomes the visible action effect', () => {
+    const audioMock = mockAudioPlayback();
+    const discardEffect = {
+      key: 'tile_discarded:seat-1:b7',
+      label: '出牌',
+      emphasis: 'discard',
+      seat: 'left',
+      calloutTone: null,
+      tileCode: 'b7',
+    } satisfies NonNullable<BattleViewModel['actionEffect']>;
+    const settlementEffect = {
+      key: 'settlement_ready:round-1',
+      label: '结算',
+      emphasis: 'system',
+      seat: null,
+      calloutTone: null,
+    } satisfies NonNullable<BattleViewModel['actionEffect']>;
+    const viewModel = {
+      ...createBattleViewModel({
+        actionEffect: settlementEffect,
+      }),
+      actionEffects: [discardEffect, settlementEffect],
+    } as BattleViewModel;
+
+    try {
+      renderBattleScreen(viewModel);
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('qi_tong');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
   });
 
   it('shows ready and start controls in waiting state', () => {
@@ -988,7 +1375,8 @@ describe('BattleScreen', () => {
     );
 
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
-    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).toHaveStyle('visibility: hidden');
 
     act(() => {
       vi.advanceTimersByTime(1499);
@@ -1027,7 +1415,8 @@ describe('BattleScreen', () => {
     });
 
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
-    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).toHaveStyle('visibility: hidden');
     vi.useRealTimers();
   });
 
@@ -1389,7 +1778,8 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByText('听')).toBeNull();
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
-    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(0);
+    expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).toHaveStyle('visibility: hidden');
 
     act(() => {
       vi.advanceTimersByTime(1499);
@@ -1403,6 +1793,7 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
     expect(document.body.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile--discard')).toHaveLength(1);
+    expect(document.body.querySelectorAll('.table-stage__river-track--left .mahjong-tile--discard')[0]).not.toHaveStyle('visibility: hidden');
     vi.useRealTimers();
   });
 
@@ -1797,6 +2188,21 @@ describe('BattleScreen', () => {
     expect(screen.getByText('round-123 | playing')).toBeInTheDocument();
   });
 
+  it('prompts for rotation when the table viewport is taller than it is wide', () => {
+    const { container } = renderBattleScreenAtViewport(createBattleViewModel(), { width: 390, height: 844 });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('请旋转屏幕或调整窗口比例');
+    expect(screen.getByText('当前牌桌需要宽度大于或等于高度的画面比例。')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage')?.getAttribute('data-layout')).toBe('balanced');
+  });
+
+  it('does not show the rotation prompt when the table viewport is at least as wide as tall', () => {
+    renderBattleScreenAtViewport(createBattleViewModel(), { width: 844, height: 390 });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('请旋转屏幕或调整窗口比例')).toBeNull();
+  });
+
 
   it('does not render any log window affordance even when toasts exist', () => {
     renderBattleScreen(
@@ -1842,6 +2248,41 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('等待牌手')).toBeNull();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
+  });
+
+  it('hides pre-match room and bot controls while dealer selection is spinning', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'disconnected_or_waiting',
+        actions: [
+          { id: 'ready', label: '准备', enabled: false, emphasis: 'medium' },
+          { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
+        ],
+        waitingControls: {
+          canReady: false,
+          canStart: false,
+          isReady: true,
+          occupiedSeats: 4,
+          botCount: 2,
+          canAddBot: false,
+          canRemoveBot: false,
+        },
+        dealerSelection: {
+          key: 'dealer-selection-1',
+          dealerSeat: 'right',
+          dealerName: 'Player B',
+          startedAt: '2026-04-27T12:00:00Z',
+          revealAt: '2026-04-27T12:00:04.200Z',
+          durationMs: 4200,
+        },
+      }),
+    );
+
+    expect(screen.queryByRole('group', { name: '开局前房间操作' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'BOT 数量控制' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '开始对局' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '增加 BOT' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '减少 BOT' })).toBeNull();
   });
 
   it('prevents repeated ready clicks for 3 seconds', () => {

@@ -30,9 +30,10 @@ describe('TableStage', () => {
     const riverTiles = container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile');
     const spotlight = container.querySelector('.table-stage__spotlight--top');
 
-    expect(tiles.length).toBe(3);
-    expect(tiles.filter((tile) => tile.classList.contains('mahjong-tile--last-discard'))).toHaveLength(1);
-    expect(riverTiles).toHaveLength(2);
+    expect(tiles.length).toBe(4);
+    expect(tiles.filter((tile) => tile.classList.contains('mahjong-tile--last-discard'))).toHaveLength(2);
+    expect(riverTiles).toHaveLength(3);
+    expect(riverTiles?.[2]).toHaveStyle('visibility: hidden');
     expect(spotlight?.querySelector('.mahjong-tile--last-discard')).not.toBeNull();
   });
 
@@ -178,7 +179,8 @@ describe('TableStage', () => {
 
     expect(container.querySelector('.table-stage__seat-zone--fixed-meld-anchor')).toBeNull();
     expect(container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
-    expect(container.querySelector('.table-stage__river-track--bottom')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+    expect(container.querySelector('.table-stage__river-track--bottom')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
+    expect(container.querySelectorAll('.table-stage__river-track--bottom .mahjong-tile')[0]).toHaveStyle('visibility: hidden');
   });
 
   it('pins dense top and bottom meld racks to the river edge to keep them within the table frame', () => {
@@ -225,7 +227,7 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__melds--right.table-stage__melds--dense')).toBeNull();
   });
 
-  it('keeps top and bottom meld racks in two-row mode on wide screens so the third meld starts a new column', () => {
+  it('keeps top and bottom meld racks in two-row mode on large screens so the third meld starts a new column', () => {
     const originalWidth = window.innerWidth;
     const originalHeight = window.innerHeight;
 
@@ -302,7 +304,7 @@ describe('TableStage', () => {
 
     const tableStage = container.querySelector('.table-stage') as HTMLElement | null;
 
-    expect(tableStage?.style.getPropertyValue('--table-stage-local-info-guard-bottom')).toBe('173px');
+    expect(tableStage?.style.getPropertyValue('--table-stage-local-info-guard-bottom')).toBe('177px');
 
     unmount();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
@@ -326,7 +328,8 @@ describe('TableStage', () => {
     );
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).not.toBeNull();
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
+    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(2);
+    expect(container.querySelectorAll('.table-stage__river-track--left .mahjong-tile')[1]).toHaveStyle('visibility: hidden');
   });
 
   it('does not render the action pointer when the current prompt has no unique public actor', () => {
@@ -681,7 +684,7 @@ describe('TableStage', () => {
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).not.toBeNull();
     expect(container.querySelector('.table-stage__river-track--top')?.querySelectorAll('.mahjong-tile')).toHaveLength(1);
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+    expect(container.querySelector('.table-stage__river-track--left .mahjong-tile')).toHaveStyle('visibility: hidden');
   });
 
   it('renders the pre-match room actions in the table center and keeps the corner leave button', () => {
@@ -777,6 +780,71 @@ describe('TableStage', () => {
     expect(topZone?.querySelector('.table-stage__stat-plate--hand')).not.toHaveClass('table-stage__stat-plate--muted');
   });
 
+  it('shows player initials instead of preset winds while waiting for match start', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        isWaitingForMatchStart
+        players={[
+          {
+            seat: 'bottom',
+            name: '阿强',
+            melds: [],
+          },
+          {
+            seat: 'right',
+            name: 'Bob',
+            melds: [],
+          },
+        ]}
+      />,
+    );
+
+    const bottomSeatLabel = container.querySelector(
+      '.table-stage__player-edge-info--bottom .table-stage__stat-plate--seat .table-stage__stat-value',
+    );
+    const rightSeatLabel = container.querySelector(
+      '.table-stage__player-edge-info--right .table-stage__stat-plate--seat .table-stage__stat-value',
+    );
+
+    expect(bottomSeatLabel).toHaveTextContent('阿');
+    expect(rightSeatLabel).toHaveTextContent('B');
+  });
+
+  it('shows east in the center while the dealer selection wheel spins', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        dealerSelection={{
+          key: 'dealer-selection-1',
+          dealerSeat: 'right',
+          dealerName: 'Player B',
+          startedAt: '2026-04-27T12:00:00Z',
+          revealAt: '2026-04-27T12:00:04.200Z',
+          durationMs: 4200,
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__center-indicator-count')).toHaveTextContent('东');
+  });
+
   it('opens the quick-chat radial menu from the global emoji trigger', async () => {
     const user = userEvent.setup();
 
@@ -862,14 +930,16 @@ describe('TableStage', () => {
       />,
     );
 
+    const bgmButton = screen.getByRole('button', { name: '开启背景音乐' });
     const fullscreenButton = screen.getByRole('button', { name: '全屏显示' });
     const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
     const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
     const controls = helpButton.parentElement;
 
-    expect(controls?.firstElementChild).toBe(fullscreenButton);
-    expect(controls?.children[1]).toBe(helpButton);
-    expect(controls?.children[2]).toBe(themeButton);
+    expect(controls?.firstElementChild).toBe(bgmButton);
+    expect(controls?.children[1]).toBe(fullscreenButton);
+    expect(controls?.children[2]).toBe(helpButton);
+    expect(controls?.children[3]).toBe(themeButton);
 
     fireEvent.click(helpButton);
 
@@ -1029,7 +1099,7 @@ describe('TableStage', () => {
     container.innerHTML = markup;
 
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelector('.mahjong-tile')).toBeNull();
+    expect(container.querySelector('.table-stage__river-track--left')?.querySelector('.mahjong-tile')).toHaveStyle('visibility: hidden');
   });
 
   it('delays showing the latest discard until the ready_hand callout disappears', () => {
@@ -1059,7 +1129,7 @@ describe('TableStage', () => {
 
     expect(screen.getByText('听')).toBeInTheDocument();
     expect(container.querySelector('.table-stage__spotlight--left .table-stage__spotlight-tile')).toBeNull();
-    expect(container.querySelector('.table-stage__river-track--left')?.querySelectorAll('.mahjong-tile')).toHaveLength(0);
+    expect(container.querySelector('.table-stage__river-track--left .mahjong-tile')).toHaveStyle('visibility: hidden');
 
     act(() => {
       vi.advanceTimersByTime(999);

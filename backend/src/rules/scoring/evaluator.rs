@@ -109,6 +109,7 @@ pub struct EvaluationInput {
     pub meld_tile_key_groups: Vec<Vec<String>>,
     pub open_meld_tile_key_groups: Vec<Vec<String>>,
     pub incoming_tile: Option<String>,
+    pub winning_tile: Option<String>,
     pub decompositions: Vec<Decomposition>,
 }
 
@@ -192,6 +193,7 @@ impl FanContext {
             meld_tile_key_groups: _,
             open_meld_tile_key_groups,
             incoming_tile,
+            winning_tile,
             decompositions: input_decompositions,
         } = input;
 
@@ -205,9 +207,10 @@ impl FanContext {
             .filter(|decomposition| decomposition.kind == "standard")
             .cloned()
             .collect::<Vec<_>>();
+        let winning_tile = winning_tile.or_else(|| incoming_tile.clone());
         let wait_types = resolve_wait_types(
             &standard_decompositions,
-            incoming_tile.as_deref(),
+            winning_tile.as_deref(),
             &tile_keys,
         );
         let standard_derived = derive_standard_data(
@@ -234,7 +237,7 @@ impl FanContext {
             standard_decompositions,
             all_tile_keys: tile_keys,
             wait_types,
-            winning_tile: incoming_tile,
+            winning_tile,
             standard_derived,
             all_tile_derived,
         }
@@ -494,6 +497,9 @@ fn canonicalize_evaluation_input(mut input: EvaluationInput) -> EvaluationInput 
     input.concealed_tile_keys = canonicalize_tile_keys(input.concealed_tile_keys);
     input.meld_tile_key_groups = canonicalize_tile_key_groups(input.meld_tile_key_groups);
     input.open_meld_tile_key_groups = canonicalize_tile_key_groups(input.open_meld_tile_key_groups);
+    input.winning_tile = input
+        .winning_tile
+        .and_then(|tile| canonicalize_tile_keys(vec![tile]).into_iter().next());
     input.decompositions = canonicalize_decompositions(input.decompositions);
     input
 }
@@ -2849,26 +2855,26 @@ fn concealed_pung_count(context: &FanContext) -> usize {
 }
 fn resolve_wait_types(
     standard_decompositions: &[Decomposition],
-    incoming_tile: Option<&str>,
+    winning_tile: Option<&str>,
     all_tile_keys: &[String],
 ) -> Vec<String> {
-    let Some(incoming_tile) = incoming_tile else {
+    let Some(winning_tile) = winning_tile else {
         return vec![];
     };
-    if winning_tile_options(all_tile_keys, incoming_tile) != vec![incoming_tile.to_string()] {
+    if winning_tile_options(all_tile_keys, winning_tile) != vec![winning_tile.to_string()] {
         return vec![];
     }
 
     let mut wait_types = Vec::new();
     for decomposition in standard_decompositions {
-        if decomposition.pair.as_deref() == Some(incoming_tile) {
+        if decomposition.pair.as_deref() == Some(winning_tile) {
             if !wait_types.iter().any(|wait| wait == "single_wait") {
                 wait_types.push("single_wait".to_string());
             }
             continue;
         }
         for meld in &decomposition.melds {
-            if !meld.iter().any(|tile_key| tile_key == incoming_tile) {
+            if !meld.iter().any(|tile_key| tile_key == winning_tile) {
                 continue;
             }
             if !meld.iter().all(|tile_key| parse_suit(tile_key).is_some()) {
@@ -2879,12 +2885,12 @@ fn resolve_wait_types(
                 .filter_map(|tile_key| parse_suit(tile_key).map(|(_, rank)| rank))
                 .collect::<Vec<_>>();
             ranks.sort_unstable();
-            let incoming_rank = parse_suit(incoming_tile).map(|(_, rank)| rank).unwrap_or(0);
-            let next = if (ranks == [1, 2, 3] && incoming_rank == 3)
-                || (ranks == [7, 8, 9] && incoming_rank == 7)
+            let winning_rank = parse_suit(winning_tile).map(|(_, rank)| rank).unwrap_or(0);
+            let next = if (ranks == [1, 2, 3] && winning_rank == 3)
+                || (ranks == [7, 8, 9] && winning_rank == 7)
             {
                 Some("edge_wait")
-            } else if incoming_rank == ranks[1] {
+            } else if winning_rank == ranks[1] {
                 Some("closed_wait")
             } else {
                 None
@@ -3587,6 +3593,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -3627,6 +3634,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -3675,6 +3683,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -3726,6 +3735,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions: decompositions.clone(),
         });
         let ready_hand_result = evaluate_fans(EvaluationInput {
@@ -3744,6 +3754,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -3798,6 +3809,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -3850,6 +3862,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -3956,6 +3969,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions: first_decompositions,
         };
 
@@ -4018,6 +4032,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions: ordered_decompositions,
         });
         let shuffled_result = evaluate_fans(EvaluationInput {
@@ -4036,6 +4051,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions: shuffled_decompositions,
         });
 
@@ -4093,6 +4109,7 @@ mod tests {
             meld_tile_key_groups,
             open_meld_tile_key_groups: vec![],
             incoming_tile: Some("red".to_string()),
+            winning_tile: Some("red".to_string()),
             decompositions,
         });
 
@@ -4143,6 +4160,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -4205,6 +4223,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -4275,6 +4294,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -4335,6 +4355,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -4386,6 +4407,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -4397,6 +4419,77 @@ mod tests {
                 .iter()
                 .any(|fan| fan == "fully_concealed_hand")
         );
+    }
+
+    #[test]
+    fn self_draw_winning_tile_resolves_wait_fans() {
+        for (winning_tile, tile_keys, expected_fan) in [
+            (
+                "w3",
+                [
+                    "w1", "w2", "w3", "w5", "w6", "w7", "t1", "t2", "t3", "b1", "b2", "b3", "red",
+                    "red",
+                ],
+                "edge_wait",
+            ),
+            (
+                "w3",
+                [
+                    "w2", "w3", "w4", "w5", "w6", "w7", "t1", "t2", "t3", "b1", "b2", "b3", "red",
+                    "red",
+                ],
+                "closed_wait",
+            ),
+            (
+                "red",
+                [
+                    "w1", "w2", "w3", "w5", "w6", "w7", "t1", "t2", "t3", "b1", "b2", "b3", "red",
+                    "red",
+                ],
+                "single_wait",
+            ),
+        ] {
+            let tile_keys = tile_keys
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            let decompositions = decompose_winning_hand(&tile_keys);
+            let features = extract_hand_features(
+                &tile_keys,
+                &[],
+                None,
+                None,
+                Some("east"),
+                Some("south"),
+                Some(&decompositions),
+            );
+
+            let result = evaluate_fans(EvaluationInput {
+                win_type: "self_draw".to_string(),
+                winner_seat: Some(0),
+                discarder_seat: None,
+                ready_hand_declared: false,
+                flower_count: 0,
+                seat_count: 4,
+                features,
+                timing: TimingFeatures::default(),
+                kong_entries: vec![],
+                tile_keys: tile_keys.clone(),
+                visible_tile_keys: vec![],
+                concealed_tile_keys: tile_keys,
+                meld_tile_key_groups: vec![],
+                open_meld_tile_key_groups: vec![],
+                incoming_tile: None,
+                winning_tile: Some(winning_tile.to_string()),
+                decompositions,
+            });
+
+            assert!(
+                result.fan_keys.iter().any(|fan| fan == expected_fan),
+                "expected {expected_fan} for winning tile {winning_tile}, got {:?}",
+                result.fan_keys
+            );
+        }
     }
 
     #[test]
@@ -4434,6 +4527,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions,
         });
 
@@ -4474,6 +4568,7 @@ mod tests {
             meld_tile_key_groups: vec![],
             open_meld_tile_key_groups: vec![],
             incoming_tile: None,
+            winning_tile: None,
             decompositions: vec![],
         });
 

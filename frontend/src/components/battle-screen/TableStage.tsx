@@ -5,6 +5,7 @@ import type {
   ActionEffectView,
   BattleActionView,
   BattlePromptView,
+  DealerSelectionView,
   QuickChatEmoji,
   QuickChatEventView,
   Seat,
@@ -36,6 +37,7 @@ interface TableStageProps {
   remainingTileCount?: number | null;
   promptText: string | null;
   promptCue?: BattlePromptView | null;
+  dealerSelection?: DealerSelectionView | null;
   deadlineAt?: string | null;
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
@@ -65,6 +67,8 @@ interface TableStageProps {
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
+  isBgmEnabled?: boolean;
+  onToggleBgm?: () => void;
   children?: ReactNode;
 }
 
@@ -83,6 +87,7 @@ export function TableStage({
   remainingTileCount = null,
   promptText: _promptText,
   promptCue = null,
+  dealerSelection = null,
   deadlineAt = null,
   actionEffect = null,
   quickChatEvent = null,
@@ -112,10 +117,13 @@ export function TableStage({
   onQuickChat,
   onDecreaseTileScale: _onDecreaseTileScale,
   onIncreaseTileScale: _onIncreaseTileScale,
+  isBgmEnabled = false,
+  onToggleBgm,
   children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const viewport = useBattleViewport(containerRef);
+  const shouldShowAspectRatioPrompt = viewport.width < viewport.height;
   const scene = buildTableSceneModel({
     viewport,
     players,
@@ -159,10 +167,13 @@ export function TableStage({
             onAction={onAction}
             onAddBot={onAddBot}
             onRemoveBot={onRemoveBot}
+            isBgmEnabled={isBgmEnabled}
+            onToggleBgm={onToggleBgm}
           />
           <CenterIndicator
             remainingCount={remainingTileCount}
             actionSeat={actionIndicatorSeat}
+            dealerSelection={dealerSelection}
             deadlineAt={deadlineAt}
             isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
           />
@@ -196,6 +207,18 @@ export function TableStage({
             actionEffect={actionEffect}
             quickChatEvent={quickChatEvent}
           />
+          {shouldShowAspectRatioPrompt ? (
+            <div
+              className="table-stage__aspect-ratio-prompt"
+              role="alert"
+              aria-live="assertive"
+            >
+              <div className="table-stage__aspect-ratio-panel">
+                <strong>请旋转屏幕或调整窗口比例</strong>
+                <span>当前牌桌需要宽度大于或等于高度的画面比例。</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       {children}

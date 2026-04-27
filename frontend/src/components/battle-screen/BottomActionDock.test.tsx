@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -223,6 +223,64 @@ describe('BottomActionDock', () => {
     expect(screen.getByText('和牌番型')).toBeInTheDocument();
     expect(screen.getByText('24番')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it('switches the hand insight popover to horizontal layout when its natural height exceeds three quarters of the viewport', async () => {
+    const user = userEvent.setup();
+    const originalInnerHeight = window.innerHeight;
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() {
+        return this.classList.contains('action-dock__ready-hand-popover') ? 360 : 0;
+      },
+    });
+
+    try {
+      render(
+        <BottomActionDock
+          hand={localHand}
+          selectedTileCode="w2"
+          handInsight={{
+            source: 'current',
+            discardTileId: null,
+            discardTileCode: null,
+            isTenpai: true,
+            waits: [
+              { code: 'w1', availableCount: 1 },
+              { code: 'w2', availableCount: 2 },
+              { code: 'w3', availableCount: 3 },
+            ],
+            winningFans: [{ fanKey: 'full_flush', fanValue: 24 }],
+          }}
+          claimCandidates={[]}
+          actions={[]}
+          isElevated={false}
+          promptCue={null}
+          deadlineAt={null}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onAction={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole('button', { name: '查看当前听牌信息与和牌番型' }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('当前手牌洞察')).toHaveClass('action-dock__ready-hand-popover--horizontal');
+      });
+    } finally {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight });
+      if (originalScrollHeight) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight);
+      } else {
+        delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+      }
+    }
   });
 
   it('keeps the hand insight trigger visible when the hu button is available', async () => {

@@ -27,6 +27,8 @@ interface TableChromeProps {
   onAction?: (actionId: BattleActionView['id']) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
+  isBgmEnabled?: boolean;
+  onToggleBgm?: () => void;
 }
 
 export const TableChrome = memo(function TableChrome({
@@ -46,6 +48,8 @@ export const TableChrome = memo(function TableChrome({
   onAction,
   onAddBot,
   onRemoveBot,
+  isBgmEnabled = false,
+  onToggleBgm,
 }: TableChromeProps) {
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [pinnedFanKeys, setPinnedFanKeys] = useState<string[]>(() => {
@@ -116,6 +120,48 @@ export const TableChrome = memo(function TableChrome({
         </div>
       ) : null}
       <div className="table-stage__corner-controls">
+        <button
+          type="button"
+          className={`table-stage__bgm-button ${isBgmEnabled ? 'table-stage__bgm-button--active' : ''}`.trim()}
+          aria-label={isBgmEnabled ? '关闭背景音乐' : '开启背景音乐'}
+          title={isBgmEnabled ? '关闭背景音乐' : '开启背景音乐'}
+          onClick={onToggleBgm}
+        >
+          <span aria-hidden="true">
+            {isBgmEnabled ? (
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            )}
+          </span>
+        </button>
         <button
           type="button"
           className="table-stage__fullscreen-button"

@@ -26,16 +26,9 @@
   --battle-shell-gap: clamp(0.5rem, 1.1vw, 1.2rem);
   --battle-shell-top-gap: clamp(0.2rem, 0.4vh, 0.45rem);
   --battle-shell-bottom-gap: clamp(0.2rem, 0.4vh, 0.45rem);
-  --battle-top-clearance: clamp(0.08rem, 0.18vh, 0.22rem);
-  --battle-stage-size-trim: 0rem;
   --battle-hand-tile-width-base: clamp(1.32rem, 4.6vw, 3.8rem);
   --battle-hand-tile-width: calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1));
   --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
-  --battle-meld-tile-width-base: clamp(1.15rem, 3.8vw, 2.7rem);
-  --battle-meld-tile-width: calc(var(--battle-meld-tile-width-base) * var(--table-stage-tile-scale, 1));
-  --battle-bottom-clearance: clamp(0.5rem, 0.9vh, 0.8rem);
-  --battle-stage-bottom-reserve: clamp(1.1rem, 2.6vh, 1.9rem);
-  --battle-dock-bottom-gap: 0.12rem;
 
   /* ---- Halo Timer ---- */
   --halo-size: 100%;
@@ -82,23 +75,6 @@ html {
 
 @media (max-width: 360px) {
   html { font-size: clamp(8px, 3.2vmin, 13px); }
-}
-
-html[data-small-screen='true'] {
-  font-size: clamp(8.5px, 3vmin, 14px);
-}
-
-html[data-small-screen='true'],
-html[data-small-screen='true'] body,
-html[data-small-screen='true'] #root {
-  height: 100dvh;
-  min-height: 100dvh;
-  overflow: hidden;
-}
-
-html[data-small-screen='true'],
-html[data-small-screen='true'] body {
-  overscroll-behavior: none;
 }
 
 body {
@@ -230,7 +206,7 @@ input {
 
 /* ---- Landscape mobile overrides ---- */
 @media (orientation: landscape) and (max-height: 500px) {
-  html, html[data-small-screen='true'] {
+  html {
     font-size: 13.8px;
   }
 
@@ -238,17 +214,12 @@ input {
     --battle-shell-gap: clamp(0.3rem, 0.8vw, 0.6rem);
     --battle-shell-top-gap: clamp(0.1rem, 0.2vh, 0.2rem);
     --battle-shell-bottom-gap: clamp(0.1rem, 0.2vh, 0.2rem);
-    --battle-top-clearance: clamp(0.04rem, 0.1vh, 0.1rem);
     --battle-hand-tile-width-base: clamp(1.2rem, 6vw, 3.3rem);
-    --battle-bottom-clearance: clamp(0.3rem, 0.6vh, 0.5rem);
-    --battle-stage-bottom-reserve: clamp(0.8rem, 2vh, 1.4rem);
-    --battle-dock-bottom-gap: 0.06rem;
   }
 }
 
 @media (min-width: 1920px) {
   :root {
     --battle-hand-tile-width-base: 4.2rem;
-    --battle-stage-bottom-reserve: 2.2rem;
   }
 }

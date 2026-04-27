@@ -270,6 +270,50 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.canRemoveBot).toBe(false);
   });
 
+  it('surfaces dealer selection and disables waiting controls during the draw animation', () => {
+    const base = createWaitingSessionState();
+    const state: SessionState = {
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Alice', connected: true, ready: true },
+            { seat_index: 1, nickname: 'Bob', connected: true, ready: true },
+            { seat_index: 2, nickname: 'Carol', connected: true, ready: true },
+            { seat_index: 3, nickname: 'Dora', connected: true, ready: true },
+          ],
+        },
+      },
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'dealer_selection_started',
+          event: {
+            type: 'dealer_selection_started',
+            dealer_seat: 1,
+            started_at: '2026-04-27T12:00:00Z',
+            reveal_at: '2026-04-27T12:00:04.200Z',
+            duration_ms: 4200,
+          },
+        },
+      },
+    };
+
+    const viewModel = createMatchViewModel(state);
+
+    expect(viewModel.dealerSelection).toMatchObject({
+      dealerSeat: 'right',
+      dealerName: 'Bob',
+      durationMs: 4200,
+    });
+    expect(viewModel.centerStatusText).toBe('抽取东家');
+    expect(viewModel.waitingControls?.canReady).toBe(false);
+    expect(viewModel.waitingControls?.canStart).toBe(false);
+    expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(false);
+  });
+
   it('shows cancel-ready when the local seat is already ready in the waiting room', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({
@@ -1440,7 +1484,75 @@ describe('createMatchViewModel', () => {
       emphasis: 'claim',
       seat: 'bottom',
       calloutTone: 'ready_hand',
+      tileCode: 'b9',
     });
+  });
+
+  it('uses the tile from tile_discarded events for discard action effects', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestRoundEvent: {
+        type: 'round_event',
+        payload: {
+          event_type: 'tile_discarded',
+          event: {
+            seat: 1,
+            tile_id: 'b4#bot-7',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '出牌',
+      emphasis: 'discard',
+      seat: 'left',
+      calloutTone: null,
+      tileCode: 'b4',
+    });
+  });
+
+  it('keeps earlier round events available for voice playback when a later event is visible', () => {
+    const discardEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'tile_discarded',
+        event: {
+          seat: 1,
+          tile_id: 'b7#bot-8',
+        },
+      },
+    };
+    const settlementEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'settlement_ready',
+        event: {
+          round_id: 'round-123',
+        },
+      },
+    };
+    const base = createPlayingSessionState({
+      latestRoundEvent: settlementEvent,
+      recentRoundEvents: [discardEvent, settlementEvent],
+    });
+    const viewModel = createMatchViewModel(base);
+
+    expect(viewModel.actionEffect).toMatchObject({
+      label: '结算',
+      emphasis: 'system',
+    });
+    expect(viewModel.actionEffects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '出牌',
+          emphasis: 'discard',
+          seat: 'left',
+          tileCode: 'b7',
+        }),
+      ]),
+    );
   });
 
   it('maps relative seats so the local seat is always bottom', () => {

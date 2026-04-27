@@ -2,6 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 
 import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
+import {
+  getVoiceClipNameForAction,
+  getVoiceClipNameForTile,
+  playVoiceClip,
+  resolveVoiceClipUrl,
+  type VoiceCue,
+} from '../../lib/voicePacks';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
@@ -26,6 +33,8 @@ interface BattleScreenProps {
   isSpectator?: boolean;
   spectatorFocusName?: string | null;
   onSwitchSpectatorPerspective?: () => void;
+  isBgmEnabled?: boolean;
+  onToggleBgm?: () => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -35,6 +44,7 @@ const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const READY_HAND_CALLOUT_LINGER_MS = 1000;
 const READY_ACTION_COOLDOWN_MS = 3000;
+const VOICE_CUE_DEDUP_MS = 1200;
 
 export function BattleScreen({
   viewModel,
@@ -54,6 +64,8 @@ export function BattleScreen({
   isSpectator = false,
   spectatorFocusName = null,
   onSwitchSpectatorPerspective,
+  isBgmEnabled = false,
+  onToggleBgm,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -63,6 +75,8 @@ export function BattleScreen({
   const [isSnakeActive, setIsSnakeActive] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
+  const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
+  const recentVoiceCueSignaturesRef = useRef<Map<string, number>>(new Map());
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
@@ -81,6 +95,7 @@ export function BattleScreen({
         }
         : action,
     );
+  const visiblePreMatchActions = viewModel.dealerSelection ? [] : preMatchActions;
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
@@ -140,6 +155,44 @@ export function BattleScreen({
   useEffect(() => {
     consumedActionEffectRef.current = consumedActionEffect;
   }, [consumedActionEffect]);
+
+  useEffect(() => {
+    const actionEffects = viewModel.actionEffects?.length ? viewModel.actionEffects : [viewModel.actionEffect];
+
+    for (const actionEffect of actionEffects) {
+      const voiceCue = createVoiceCue(viewModel, actionEffect);
+      if (!voiceCue || playedVoiceCueKeysRef.current.has(voiceCue.key)) {
+        continue;
+      }
+
+      const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.absoluteSeat, voiceCue.clipName);
+      if (!voiceUrl) {
+        continue;
+      }
+
+      const now = Date.now();
+      const voiceCueSignature = getVoiceCueSignature(voiceCue);
+      const previousPlayedAt = recentVoiceCueSignaturesRef.current.get(voiceCueSignature);
+
+      playedVoiceCueKeysRef.current.add(voiceCue.key);
+      pruneRecentVoiceCues(recentVoiceCueSignaturesRef.current, now);
+
+      if (typeof previousPlayedAt === 'number' && now - previousPlayedAt < VOICE_CUE_DEDUP_MS) {
+        continue;
+      }
+
+      recentVoiceCueSignaturesRef.current.set(voiceCueSignature, now);
+      playVoiceClip(voiceUrl);
+    }
+  }, [
+    viewModel.actionEffect,
+    viewModel.actionEffects,
+    viewModel.discards,
+    viewModel.lastDiscard,
+    viewModel.lastDiscardSeat,
+    viewModel.players,
+    viewModel.tableCode,
+  ]);
 
   useEffect(() => {
     const nextActionEffect = viewModel.actionEffect;
@@ -308,6 +361,7 @@ export function BattleScreen({
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
+              dealerSelection={viewModel.dealerSelection}
               deadlineAt={viewModel.deadlineAt}
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
@@ -318,11 +372,11 @@ export function BattleScreen({
               phaseLabel={viewModel.phaseLabel}
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
-              preMatchActions={!isSpectator && viewModel.waitingControls ? preMatchActions : []}
+              preMatchActions={!isSpectator && viewModel.waitingControls ? visiblePreMatchActions : []}
               isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
-              botCount={viewModel.waitingControls?.botCount ?? 0}
-              canAddBot={viewModel.waitingControls?.canAddBot ?? false}
-              canRemoveBot={viewModel.waitingControls?.canRemoveBot ?? false}
+              botCount={viewModel.dealerSelection ? 0 : viewModel.waitingControls?.botCount ?? 0}
+              canAddBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canAddBot ?? false)}
+              canRemoveBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canRemoveBot ?? false)}
               tileScale={tableTileScale}
               canDecreaseTileScale={canDecreaseTableTileScale}
               canIncreaseTileScale={canIncreaseTableTileScale}
@@ -337,6 +391,8 @@ export function BattleScreen({
               onQuickChat={onQuickChat}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
+              isBgmEnabled={isBgmEnabled}
+              onToggleBgm={onToggleBgm}
             >
               <BottomActionDock
                 hand={viewModel.localHand}
@@ -384,6 +440,69 @@ function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
 
   const discardCount = viewModel.discards[viewModel.lastDiscardSeat]?.length ?? 0;
   return `${viewModel.lastDiscardSeat}:${viewModel.lastDiscard}:${discardCount}`;
+}
+
+function createVoiceCue(
+  viewModel: BattleViewModel,
+  actionEffect: BattleViewModel['actionEffect'],
+): VoiceCue | null {
+  if (!actionEffect?.key || !actionEffect.seat) {
+    return null;
+  }
+
+  const absoluteSeat = getAbsoluteSeatForRelativeSeat(viewModel, actionEffect.seat);
+  if (typeof absoluteSeat !== 'number') {
+    return null;
+  }
+
+  const actionClipName = getVoiceClipNameForAction(actionEffect.calloutTone);
+  if (actionClipName) {
+    return {
+      key: `action:${actionEffect.key}:${absoluteSeat}:${actionClipName}`,
+      absoluteSeat,
+      clipName: actionClipName,
+    };
+  }
+
+  if (actionEffect.emphasis === 'discard' || actionEffect.calloutTone === 'ready_hand') {
+    const voiceTileCode = actionEffect.tileCode ?? viewModel.lastDiscard;
+    const tileClipName = getVoiceClipNameForTile(voiceTileCode);
+    if (tileClipName) {
+      const discardSeat = viewModel.lastDiscardSeat ?? actionEffect.seat;
+      const discardCount = discardSeat ? viewModel.discards[discardSeat]?.length ?? 0 : 0;
+      const cueKey = actionEffect.tileCode
+        ? `discard-event:${actionEffect.key}:${absoluteSeat}:${actionEffect.tileCode}:${tileClipName}`
+        : `discard:${absoluteSeat}:${discardSeat ?? 'unknown'}:${discardCount}:${viewModel.lastDiscard}:${tileClipName}`;
+
+      return {
+        key: cueKey,
+        absoluteSeat,
+        clipName: tileClipName,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getAbsoluteSeatForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {
+  if (!seat) {
+    return null;
+  }
+
+  return viewModel.players.find((player) => player.seat === seat)?.absoluteSeat ?? null;
+}
+
+function getVoiceCueSignature(voiceCue: VoiceCue) {
+  return `${voiceCue.absoluteSeat}:${voiceCue.clipName}`;
+}
+
+function pruneRecentVoiceCues(recentVoiceCues: Map<string, number>, now: number) {
+  for (const [signature, playedAt] of recentVoiceCues) {
+    if (now - playedAt >= VOICE_CUE_DEDUP_MS) {
+      recentVoiceCues.delete(signature);
+    }
+  }
 }
 
 function getSettlementPanelDelayMs(

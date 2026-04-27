@@ -13,7 +13,6 @@ export interface BattleViewportMetrics {
   width: number;
   height: number;
   aspectRatio: number;
-  isSmallScreen: boolean;
   effectMode: TableFxMode;
   layoutProfile: TableLayoutProfile;
 }

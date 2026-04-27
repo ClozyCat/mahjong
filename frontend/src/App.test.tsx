@@ -178,6 +178,16 @@ function mockMobileBattleImmersiveApis() {
     configurable: true,
     value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
   });
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: 390,
+  });
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    writable: true,
+    value: 844,
+  });
   Object.defineProperty(window.screen, 'orientation', {
     configurable: true,
     value: { lock },
@@ -230,7 +240,16 @@ describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
-    delete document.documentElement.dataset.smallScreen;
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1024,
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: 768,
+    });
   });
 
   it('does not request landscape orientation when a mobile user joins a table', async () => {
@@ -246,7 +265,7 @@ describe('App', () => {
     expect(lock).not.toHaveBeenCalled();
   });
 
-  it('forces mobile battle sessions into small-screen mode even after joining', async () => {
+  it('shows the aspect-ratio prompt for mobile portrait battle sessions', async () => {
     const user = userEvent.setup();
     mockMobileBattleImmersiveApis();
 
@@ -259,7 +278,7 @@ describe('App', () => {
       });
     });
 
-    expect(document.documentElement.dataset.smallScreen).toBe('true');
+    expect(screen.getByText('请旋转屏幕或调整窗口比例')).toBeInTheDocument();
   });
 
   it('does not request fullscreen when a mobile user enters the battle screen or leave it', async () => {
@@ -275,7 +294,7 @@ describe('App', () => {
     });
 
     expect(requestFullscreen).not.toHaveBeenCalled();
-    expect(document.documentElement.dataset.smallScreen).toBe('true');
+    expect(screen.getByText('请旋转屏幕或调整窗口比例')).toBeInTheDocument();
 
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
@@ -291,7 +310,6 @@ describe('App', () => {
     });
 
     expect(exitFullscreen).not.toHaveBeenCalled();
-    expect(document.documentElement.dataset.smallScreen).toBeUndefined();
   });
 
   it('keeps mobile battle sessions out of forced landscape retries', async () => {

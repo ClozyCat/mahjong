@@ -272,6 +272,8 @@
 }
 
 .meld-rack {
+  --meld-rack-tile-width: var(--tile-w, 2rem);
+  --meld-rack-tile-height: var(--tile-h, 3rem);
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -280,8 +282,10 @@
 }
 
 .meld-rack__group {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, var(--meld-rack-tile-width));
   align-items: flex-end;
+  justify-items: center;
   gap: 0.5px;
   border: none;
   background: none;
@@ -292,8 +296,8 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  width: var(--tile-w, 2rem);
-  height: var(--tile-h, 3rem);
+  width: var(--meld-rack-tile-width);
+  height: var(--meld-rack-tile-height);
   overflow: visible;
   flex: 0 0 auto;
 }

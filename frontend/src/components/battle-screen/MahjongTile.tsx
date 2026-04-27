@@ -13,6 +13,7 @@ interface MahjongTileProps {
   isFaceDown?: boolean;
   relatedTileCode?: string | null;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 export const MahjongTile = memo(function MahjongTile({
@@ -25,6 +26,7 @@ export const MahjongTile = memo(function MahjongTile({
   isFaceDown = false,
   relatedTileCode = null,
   className,
+  style,
 }: MahjongTileProps) {
   const asset = isFaceDown ? { kind: 'blank' as const } : getTileAsset(code);
   const tileName = isFaceDown ? '牌背' : formatTileName(code, code);
@@ -44,7 +46,7 @@ export const MahjongTile = memo(function MahjongTile({
     .join(' ');
 
   return (
-    <span className={classes} data-testid="mahjong-tile" aria-label={`${tileName}`}>
+    <span className={classes} style={style} data-testid="mahjong-tile" aria-label={`${tileName}`}>
       <span className="mahjong-tile__shell">
         <span className="mahjong-tile__face-area">
           <span className="mahjong-tile__face-viewport">

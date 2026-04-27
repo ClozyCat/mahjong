@@ -22,6 +22,8 @@ use crate::rules::standard::automation::{
 use crate::rules::standard::flow::{
     process_due_continue_action_in_room_state as standard_process_due_continue_action,
     reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
+    room_ready_to_start as standard_room_ready_to_start,
+    start_match_in_room_state as standard_start_match,
 };
 use crate::rules::standard::win::apply_hu_action_output_in_room_state;
 
@@ -141,6 +143,86 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     let connections = snapshot_connections(&runtime);
     let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
     drop(runtime);
+    send_outbound(outbound);
+    schedule_room_tasks_detached(state, table_code);
+}
+
+async fn process_due_start_match(state: AppContext, table_code: String, expected_nonce: u64) {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
+        return;
+    };
+    if room_handle.is_closed() {
+        return;
+    }
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return;
+    }
+    let previous_room = runtime.room.clone();
+    if runtime.start_match_nonce != expected_nonce {
+        return;
+    }
+    let Some(pending_start) = runtime.pending_start_match.clone() else {
+        return;
+    };
+    let Some(deadline) = super::parse_datetime(&pending_start.reveal_at) else {
+        runtime.pending_start_match = None;
+        return;
+    };
+    if deadline > Utc::now() {
+        return;
+    }
+    if runtime.room.phase != "waiting"
+        || runtime.room.round_state.is_some()
+        || !standard_room_ready_to_start(&runtime.room)
+        || !runtime
+            .room
+            .seats
+            .iter()
+            .any(|seat| seat.seat_index == pending_start.dealer_seat)
+    {
+        runtime.pending_start_match = None;
+        let room = runtime.room.clone();
+        let connections = snapshot_connections(&runtime);
+        drop(runtime);
+        let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+        send_outbound(outbound);
+        schedule_room_tasks_detached(state, table_code);
+        return;
+    }
+
+    if standard_start_match(
+        &mut runtime.room,
+        pending_start.dealer_seat,
+        rand::random::<u64>(),
+    )
+    .is_err()
+    {
+        runtime.pending_start_match = None;
+        return;
+    }
+    runtime.pending_start_match = None;
+
+    let created_at = runtime.created_at.clone();
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    if state
+        .inner
+        .db
+        .save_table(&table_code, &created_at, &room_json)
+        .await
+        .is_err()
+    {
+        restore_room_snapshot(&room_handle, previous_room).await;
+        return;
+    }
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
@@ -335,10 +417,12 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     }
     abort_join_handle(&mut runtime.timeout_task);
     abort_join_handle(&mut runtime.continue_task);
+    abort_join_handle(&mut runtime.start_match_task);
     abort_join_handle(&mut runtime.disconnect_task);
     abort_join_handle(&mut runtime.bot_task);
     runtime.timeout_nonce = runtime.timeout_nonce.wrapping_add(1);
     runtime.continue_nonce = runtime.continue_nonce.wrapping_add(1);
+    runtime.start_match_nonce = runtime.start_match_nonce.wrapping_add(1);
     runtime.disconnect_nonce = runtime.disconnect_nonce.wrapping_add(1);
     runtime.bot_nonce = runtime.bot_nonce.wrapping_add(1);
 
@@ -359,6 +443,18 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         runtime.continue_task = Some(tokio::spawn(async move {
             sleep_until(deadline).await;
             process_due_continue_action(state_clone, table_clone, nonce).await;
+        }));
+    }
+
+    if let Some(pending_start) = runtime.pending_start_match.clone()
+        && let Some(deadline) = super::parse_datetime(&pending_start.reveal_at)
+    {
+        let state_clone = state.clone();
+        let table_clone = table_code.clone();
+        let nonce = runtime.start_match_nonce;
+        runtime.start_match_task = Some(tokio::spawn(async move {
+            sleep_until(deadline).await;
+            process_due_start_match(state_clone, table_clone, nonce).await;
         }));
     }
 
