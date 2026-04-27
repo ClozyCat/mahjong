@@ -225,7 +225,7 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__melds--right.table-stage__melds--dense')).toBeNull();
   });
 
-  it('keeps top and bottom meld racks in two-row mode on wide screens so the third meld starts a new column', () => {
+  it('keeps top and bottom meld racks in two-row mode on large screens so the third meld starts a new column', () => {
     const originalWidth = window.innerWidth;
     const originalHeight = window.innerHeight;
 
@@ -302,7 +302,7 @@ describe('TableStage', () => {
 
     const tableStage = container.querySelector('.table-stage') as HTMLElement | null;
 
-    expect(tableStage?.style.getPropertyValue('--table-stage-local-info-guard-bottom')).toBe('173px');
+    expect(tableStage?.style.getPropertyValue('--table-stage-local-info-guard-bottom')).toBe('177px');
 
     unmount();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
@@ -927,14 +927,16 @@ describe('TableStage', () => {
       />,
     );
 
+    const bgmButton = screen.getByRole('button', { name: '开启背景音乐' });
     const fullscreenButton = screen.getByRole('button', { name: '全屏显示' });
     const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
     const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
     const controls = helpButton.parentElement;
 
-    expect(controls?.firstElementChild).toBe(fullscreenButton);
-    expect(controls?.children[1]).toBe(helpButton);
-    expect(controls?.children[2]).toBe(themeButton);
+    expect(controls?.firstElementChild).toBe(bgmButton);
+    expect(controls?.children[1]).toBe(fullscreenButton);
+    expect(controls?.children[2]).toBe(helpButton);
+    expect(controls?.children[3]).toBe(themeButton);
 
     fireEvent.click(helpButton);
 

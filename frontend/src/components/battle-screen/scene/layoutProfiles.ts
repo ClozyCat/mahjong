@@ -1,5 +1,5 @@
 export interface TableLayoutProfile {
-  id: 'balanced' | 'wide';
+  id: 'balanced';
   centerVPercent: number;
   seatTop: { ratio: number; minPx: number; maxPx: number };
   safeInsetSide: { ratio: number; minPx: number; maxPx: number };
@@ -57,28 +57,6 @@ export interface TableLayoutProfile {
 
 export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
   {
-    id: 'wide',
-    centerVPercent: 41,
-    seatTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
-    safeInsetSide: { ratio: 0.014, minPx: 6, maxPx: 24 },
-    safeInsetTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
-    safeInsetBottom: { ratio: 0.014, minPx: 6, maxPx: 24 },
-    topBottomSafeWidthRatio: 0.76,
-    sideSafeHeightRatio: 0.58,
-    spotlightScale: 1.25,
-    horizontalMeldRows: 2,
-    verticalMeldColumns: 1,
-    horizontalRiverColumns: { min: 8, max: 12 },
-    verticalRiverColumns: { min: 5, max: 7 },
-    centerIndicator: { ratio: 0.1, minPx: 48, maxPx: 96 },
-    spotlightOffset: { ratio: 0.14, minPx: 42, maxPx: 120 },
-    riverBaseWidth: { ratio: 0.022, minPx: 16, maxPx: 38 },
-    riverGap: { ratio: 0.0012, minPx: 1, maxPx: 6 },
-    handBaseWidth: { ratio: 0.03, minPx: 18, maxPx: 52 },
-    meldBaseWidth: { ratio: 0.018, minPx: 14, maxPx: 28 },
-    settlementBaseWidth: { ratio: 0.012, minPx: 12, maxPx: 22 },
-  },
-  {
     id: 'balanced',
     centerVPercent: 42,
     seatTop: { ratio: 0.012, minPx: 4, maxPx: 20 },
@@ -102,16 +80,6 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
   },
 ];
 
-export function resolveTableLayoutProfile(width: number, height: number) {
-  const aspectRatio = height > 0 ? width / height : 1;
-
-  if (aspectRatio >= 1.55 && width >= 1180) {
-    return TABLE_LAYOUT_PROFILES[0];
-  }
-
-  if (aspectRatio >= 1.02 && width >= 820) {
-    return TABLE_LAYOUT_PROFILES[1];
-  }
-
-  return TABLE_LAYOUT_PROFILES[1];
+export function resolveTableLayoutProfile(_width: number, _height: number) {
+  return TABLE_LAYOUT_PROFILES[0];
 }

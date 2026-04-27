@@ -1977,6 +1977,17 @@
    ============================== */
 
 @media (max-width: 960px) {
+  .fan-guide__backdrop {
+    padding: 0;
+  }
+
+  .fan-guide__dialog {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+    padding: 1.2rem;
+  }
+
   .fan-guide__grid {
     grid-template-columns: 1fr;
     max-width: 34rem;
@@ -1985,13 +1996,6 @@
 }
 
 @media (max-width: 760px) {
-  .fan-guide__dialog {
-    width: 100vw;
-    height: 100vh;
-    border-radius: 0;
-    padding: 1.2rem;
-  }
-
   .fan-guide__layout {
     gap: 1.2rem;
   }
