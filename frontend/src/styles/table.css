@@ -373,8 +373,7 @@
   box-shadow: none;
   z-index: 1;
   isolation: isolate;
-  /* Prevent blur smears from leaking out during transforms */
-  contain: paint;
+  /* clip-path used on pseudo-elements instead of contain: paint to allow tile animations to overflow */
   transform: translateZ(0);
   will-change: transform;
 }
@@ -406,6 +405,8 @@
     0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent),
     0 10px 28px -10px rgba(0, 0, 0, 0.16),
     inset 0 0 14px color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  /* Precise clipping for the blur area only, preserving the 1.5rem radius */
+  clip-path: inset(0 round 1.5rem);
   opacity: 1;
   transform: translateZ(0);
   transition: opacity 180ms ease, transform 180ms ease;
@@ -423,6 +424,8 @@
     radial-gradient(circle at 20% 90%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
     radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%);
   filter: blur(16px);
+  /* Precise clipping for the blur area only */
+  clip-path: inset(0 round 1.5rem);
   pointer-events: none;
   z-index: -2;
   opacity: 0.4;
@@ -524,8 +527,8 @@
   height: var(--table-stage-river-tile-height);
   min-width: var(--table-stage-river-tile-width);
   min-height: var(--table-stage-river-tile-height);
-  /* Enhance readability with a clear drop shadow on the misty background */
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.18));
+  /* Use hardware acceleration for the "slam" animation to avoid ghosting with background filters */
+  will-change: transform;
 }
 
 .table-stage__melds .mahjong-tile--discard {
