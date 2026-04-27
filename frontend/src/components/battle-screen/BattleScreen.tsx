@@ -178,7 +178,9 @@ export function BattleScreen({
     playVoiceClip(voiceUrl);
   }, [
     viewModel.actionEffect,
+    viewModel.discards,
     viewModel.lastDiscard,
+    viewModel.lastDiscardSeat,
     viewModel.players,
     viewModel.tableCode,
   ]);
@@ -452,8 +454,11 @@ function createVoiceCue(viewModel: BattleViewModel): VoiceCue | null {
   if (actionEffect.emphasis === 'discard' || actionEffect.calloutTone === 'ready_hand') {
     const tileClipName = getVoiceClipNameForTile(viewModel.lastDiscard);
     if (tileClipName) {
+      const discardSeat = viewModel.lastDiscardSeat ?? actionEffect.seat;
+      const discardCount = discardSeat ? viewModel.discards[discardSeat]?.length ?? 0 : 0;
+
       return {
-        key: `discard:${actionEffect.key}:${absoluteSeat}:${viewModel.lastDiscard}:${tileClipName}`,
+        key: `discard:${absoluteSeat}:${discardSeat ?? 'unknown'}:${discardCount}:${viewModel.lastDiscard}:${tileClipName}`,
         absoluteSeat,
         clipName: tileClipName,
       };
