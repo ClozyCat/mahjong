@@ -38,10 +38,6 @@ function shouldUseLowFx(width: number, height: number, isSmallScreen: boolean) {
     return false;
   }
 
-  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-  if (prefersReducedMotion) {
-    return true;
-  }
 
   const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   const lowCoreCount = (navigator.hardwareConcurrency ?? Number.POSITIVE_INFINITY) <= 4;
@@ -102,15 +98,12 @@ export function useBattleViewport(containerRef: RefObject<HTMLElement | null>): 
 
     window.addEventListener('resize', updateViewport);
 
-    const reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     const coarsePointerQuery = window.matchMedia?.('(pointer: coarse)');
-    reducedMotionQuery?.addEventListener?.('change', updateViewport);
     coarsePointerQuery?.addEventListener?.('change', updateViewport);
 
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener('resize', updateViewport);
-      reducedMotionQuery?.removeEventListener?.('change', updateViewport);
       coarsePointerQuery?.removeEventListener?.('change', updateViewport);
     };
   }, [containerRef]);
