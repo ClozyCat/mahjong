@@ -404,7 +404,7 @@ pub fn apply_hu_action_output_in_room_state(
         return Err("invalid_action".to_string());
     };
     let settlement = compute_hu_settlement_for_state(room, seat_index, hu_context)?;
-    if seat_is_bot(room, seat_index) && settlement.fan_total < BOT_MINIMUM_HU_FAN {
+    if seat_is_bot(room, seat_index) && !settlement_meets_bot_minimum_fan(&settlement) {
         return Err("invalid_action".to_string());
     }
     apply_hu_settlement_output_in_room_state(room, seat_index, hu_context, settlement)
@@ -416,7 +416,11 @@ pub(crate) fn hu_meets_bot_minimum_fan_for_state(
     hu_context: &str,
 ) -> bool {
     compute_hu_settlement_for_state(state, winner_seat, hu_context)
-        .is_ok_and(|settlement| settlement.fan_total >= BOT_MINIMUM_HU_FAN)
+        .is_ok_and(|settlement| settlement_meets_bot_minimum_fan(&settlement))
+}
+
+fn settlement_meets_bot_minimum_fan(settlement: &RoundSettlement) -> bool {
+    settlement.score_delta.minimum_qualifying_fan_total >= BOT_MINIMUM_HU_FAN
 }
 
 pub(crate) fn compute_hu_settlement_for_state(
@@ -955,6 +959,40 @@ mod tests {
 
         assert_eq!(
             result.expect_err("low fan bot hu should fail"),
+            "invalid_action"
+        );
+    }
+
+    #[test]
+    fn bot_minimum_hu_fan_excludes_flower_tiles() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        state.seats.get_mut(0).expect("seat should exist").is_bot = true;
+        let player = state
+            .round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(0))
+            .expect("player should exist");
+        player.flowers = (0..7)
+            .map(|index| Tile {
+                tile_id: format!("flower#{index}"),
+                tile_key: format!("f{}", index + 1),
+                kind: "flower".to_string(),
+                ..Default::default()
+            })
+            .collect();
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
+        assert!(settlement.fan_total >= 8);
+        assert!(settlement.score_delta.minimum_qualifying_fan_total < 8);
+
+        let result = apply_hu_action_output_in_room_state(&mut state, 0);
+
+        assert_eq!(
+            result.expect_err("flower-only minimum fan should fail"),
             "invalid_action"
         );
     }

@@ -1403,8 +1403,8 @@ impl SearchEngine {
             incoming_tile: Some(incoming_tile.to_string()),
             decompositions,
         });
-        let fan_total = result.fan_total.max(result.minimum_qualifying_fan_total);
-        let score = (fan_total >= BOT_MINIMUM_HU_FAN).then_some(fan_total);
+        let score =
+            (result.minimum_qualifying_fan_total >= BOT_MINIMUM_HU_FAN).then_some(result.fan_total);
         self.winning_fan_cache.insert(key, score);
         score
     }
@@ -3731,6 +3731,29 @@ mod tests {
     #[test]
     fn low_fan_self_draw_is_not_scored_as_bot_win() {
         let context = base_context();
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red",
+            ]
+            .into_iter(),
+        );
+        let mut engine = SearchEngine::new(&context);
+
+        let fan_total = engine.hypothetical_self_draw_fan_total(
+            &context,
+            &concealed_counts,
+            &[],
+            &[],
+            tile_index("red").expect("tile index"),
+        );
+
+        assert_eq!(fan_total, None);
+    }
+
+    #[test]
+    fn flower_tiles_do_not_satisfy_bot_minimum_self_draw_fan() {
+        let mut context = base_context();
+        context.player.flower_count = 7;
         let concealed_counts = tile_counts34(
             [
                 "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red",
