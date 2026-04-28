@@ -823,22 +823,22 @@
 }
 
 .table-stage__stat-plate--seat[data-absolute-seat='0'] {
-  --stat-accent: #ff4d4f;
+  --stat-accent: #FF5733;
   /* Red */
 }
 
 .table-stage__stat-plate--seat[data-absolute-seat='1'] {
-  --stat-accent: #1890ff;
+  --stat-accent: #2E86AB;
   /* Blue */
 }
 
 .table-stage__stat-plate--seat[data-absolute-seat='2'] {
-  --stat-accent: #52c41a;
+  --stat-accent: #F2C14E;
   /* Green */
 }
 
 .table-stage__stat-plate--seat[data-absolute-seat='3'] {
-  --stat-accent: #722ed1;
+  --stat-accent: #8367C7;
   /* Purple */
 }
 
