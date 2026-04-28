@@ -112,6 +112,7 @@ pub(crate) fn parse_matches(raw: &str) -> Result<Vec<BotZoneMatch>, BotZoneParse
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn parse_match(raw: &str) -> Result<BotZoneMatch, BotZoneParseError> {
     let lines = raw
         .lines()

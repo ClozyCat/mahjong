@@ -25,10 +25,6 @@ pub(crate) fn tile_index(tile_key: &str) -> Option<usize> {
     TILE_KEYS.iter().position(|key| *key == tile_key)
 }
 
-pub(crate) fn tile_key_for_index(index: usize) -> Option<&'static str> {
-    TILE_KEYS.get(index).copied()
-}
-
 pub(crate) fn claim_action_index(action: &str) -> Option<usize> {
     CLAIM_ACTIONS
         .iter()

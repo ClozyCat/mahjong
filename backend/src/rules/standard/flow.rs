@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::{plan_flower_action, plan_round_start_payload};
 use crate::core::event::GameEvent;
-use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState};
+use crate::core::state::{ContinueActionState, MatchState, RoomState};
+#[cfg(test)]
+use crate::core::state::SeatState;
 use crate::core::tile::Tile;
 
 use super::runtime::{
@@ -50,6 +52,7 @@ pub fn room_ready_to_start(room: &RoomState) -> bool {
             .all(|seat| seat.ready && (seat.connected || seat.is_bot))
 }
 
+#[cfg(test)]
 pub fn add_bot_seats_for_test(room: &mut RoomState) {
     let occupied = room
         .seats

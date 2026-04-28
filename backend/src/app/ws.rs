@@ -534,6 +534,7 @@ async fn handle_join_table(
         restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = collect_join_outbound_from_snapshot(
         &room,
         &connections,
@@ -651,6 +652,7 @@ async fn handle_reconnect(
         return internal_error_to(connection, error);
     }
 
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = collect_join_outbound_from_snapshot(
         &room,
         &connections,
@@ -719,6 +721,7 @@ async fn handle_ready(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     #[cfg(feature = "spectator")]
     outbound.extend(collect_observer_outbound_from_snapshot(
@@ -787,6 +790,7 @@ async fn handle_adjust_bots(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     #[cfg(feature = "spectator")]
     outbound.extend(collect_observer_outbound_from_snapshot(
@@ -875,6 +879,7 @@ async fn handle_start_match(
         reveal_at,
         DEALER_SELECTION_DURATION_MS,
     );
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = connections
         .into_iter()
         .map(|(_, handle)| handle.outbound(selection_message.clone()))
@@ -928,6 +933,7 @@ async fn handle_continue_action(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     #[cfg(feature = "spectator")]
     outbound.extend(collect_observer_outbound_from_snapshot(
@@ -1009,6 +1015,7 @@ async fn handle_action_request(
     let connections = snapshot_connections(&runtime);
     #[cfg(feature = "spectator")]
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut broadcast_handles = connections
         .iter()
         .map(|(_, handle)| handle.clone())
@@ -1020,6 +1027,7 @@ async fn handle_action_request(
             .map(|(_, handle)| handle.clone()),
     );
     let room = runtime.room.clone();
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut snapshot_outbound =
         collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     #[cfg(feature = "spectator")]
@@ -1287,6 +1295,7 @@ async fn handle_disconnect(
         Ok(value) => value,
         Err(_) => return,
     };
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
     let mut outbound = presence_and_snapshot_for_all_from_snapshot(
         &room,
         &connections,

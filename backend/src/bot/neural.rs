@@ -177,14 +177,21 @@ fn load_session(model_path: &Path) -> Result<Session, ()> {
 }
 
 fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralDecisionScores, ()> {
+    let BotFeaturesV2 {
+        tile_planes,
+        scalar_features,
+        self_kong_mask: _self_kong_mask,
+        hu_mask: _hu_mask,
+        ..
+    } = features;
     let tile_planes = Tensor::from_array((
         [1_usize, tile_plane_count_v2(), TILE_KIND_COUNT],
-        features.tile_planes,
+        tile_planes,
     ))
     .map_err(|_| ())?;
     let scalar_features = Tensor::from_array((
         [1_usize, scalar_feature_count_v2()],
-        features.scalar_features,
+        scalar_features,
     ))
     .map_err(|_| ())?;
     let outputs = session
