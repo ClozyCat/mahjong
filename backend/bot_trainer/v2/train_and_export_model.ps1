@@ -3,14 +3,14 @@ param(
     [string]$CheckpointDir = "backend/bot_trainer/v2/checkpoints",
     [string]$OnnxOutput = "backend/assets/models/mahjong_policy_net.onnx",
     [int]$Epochs = 20,
-    [int]$BatchSize = 2048,
-    [string]$Device = "cuda",
-    [int]$NumWorkers = 0,
+    [int]$BatchSize = 4096,
+    [string]$Device = "auto",  # [主要改动] 从 "cuda" 改为 "auto"，适配 AMD 显卡
+    [int]$NumWorkers = 0,      # 保持为 0，这在 Windows 的 DirectML 环境下是最稳定、不卡死的选择
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [double]$LearningRate = 0.001,
     [double]$WeightDecay = 0.0001,
-    [switch]$NoAmp,
+    [switch]$NoAmp,            # 虽然我们脚本里保留了 AMP 推送，但之前 Python 脚本里已经做了智能拦截，DirectML 下会自动屏蔽
     [switch]$CompileModel,
     [switch]$SkipTests,
     [switch]$SkipOnnxExport
@@ -74,6 +74,7 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if (-not $SkipOnnxExport) {
+        # 注意：通常 ONNX 导出 (export_onnx.py) 跑在 CPU 上就行，所以这里没有显式传 Device 参数是安全的
         Invoke-TrainingPython @(
             "backend/bot_trainer/v2/export_onnx.py",
             "--checkpoint", (Join-Path $CheckpointDir "best.pt"),

@@ -69,9 +69,9 @@ pub(crate) fn map_botzone_tile(raw: &str) -> Option<String> {
     let raw = raw.trim();
     match raw {
         "F1" => Some("east".to_string()),
-        "F2" => Some("north".to_string()),
+        "F2" => Some("south".to_string()),
         "F3" => Some("west".to_string()),
-        "F4" => Some("south".to_string()),
+        "F4" => Some("north".to_string()),
         "J1" => Some("red".to_string()),
         "J2" => Some("green".to_string()),
         "J3" => Some("white".to_string()),
@@ -276,10 +276,14 @@ fn parse_score_delta(rest: &str) -> [i64; 4] {
 
 fn parse_wind(raw: &str) -> String {
     match raw.trim() {
+        "0" => "east",
+        "1" => "north",
+        "2" => "west",
+        "3" => "south",
         "F1" | "east" | "East" => "east",
-        "F2" | "north" | "North" => "north",
+        "F2" | "south" | "South" => "south",
         "F3" | "west" | "West" => "west",
-        "F4" | "south" | "South" => "south",
+        "F4" | "north" | "North" => "north",
         _ => "east",
     }
     .to_string()
@@ -295,12 +299,31 @@ mod tests {
         assert_eq!(map_botzone_tile("T9"), Some("t9".to_string()));
         assert_eq!(map_botzone_tile("B5"), Some("b5".to_string()));
         assert_eq!(map_botzone_tile("F1"), Some("east".to_string()));
-        assert_eq!(map_botzone_tile("F2"), Some("north".to_string()));
+        assert_eq!(map_botzone_tile("F2"), Some("south".to_string()));
         assert_eq!(map_botzone_tile("F3"), Some("west".to_string()));
-        assert_eq!(map_botzone_tile("F4"), Some("south".to_string()));
+        assert_eq!(map_botzone_tile("F4"), Some("north".to_string()));
         assert_eq!(map_botzone_tile("J1"), Some("red".to_string()));
         assert_eq!(map_botzone_tile("J2"), Some("green".to_string()));
         assert_eq!(map_botzone_tile("J3"), Some("white".to_string()));
+    }
+
+    #[test]
+    fn parses_numeric_wind_codes_from_dataset_format() {
+        let match_record = parse_match(
+            r#"
+Match wind fixture
+Wind 1
+Player 0 Deal W1 W2 W3
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J1 J2 J3
+Huang
+Score 0 0 0 0
+"#,
+        )
+        .expect("match should parse");
+
+        assert_eq!(match_record.round_wind, "north");
     }
 
     #[test]
@@ -343,7 +366,7 @@ Score 8 -8 0 0
         .expect("match");
 
         assert_eq!(record.match_id, "fixture");
-        assert_eq!(record.round_wind, "north");
+        assert_eq!(record.round_wind, "south");
         assert_eq!(record.deals[0][0], "w1");
         assert_eq!(record.events.len(), 2);
     }

@@ -1,5 +1,6 @@
 from __future__ import annotations
-
+import concurrent.futures
+import multiprocessing
 import json
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,22 @@ TILE_PLANE_COUNT = 10
 SCALAR_FEATURE_COUNT = 10
 IGNORE_INDEX = -100
 
+
+def parse_and_encode_chunk(chunk_data: tuple[list[str], dict[str, Any], int]) -> tuple[int, list[dict[str, np.ndarray]]]:
+    """
+    供子进程调用的工作函数
+    接收：(文本行列表, metadata, 起始索引)
+    返回：(起始索引, 编码后的结果列表)
+    """
+    lines, metadata, start_idx = chunk_data
+    results = []
+    for line in lines:
+        if line:
+            results.append(encode_row(json.loads(line), metadata))
+        else:
+            results.append(None) # 处理空行
+    return start_idx, results
+
 class MissingTorchError(RuntimeError):
     pass
 
@@ -33,7 +50,29 @@ class MahjongDecisionDataset(Dataset):
             print(f"Warning: Dataset file not found at {jsonl_path}")
             self.num_samples = 0
             return
-
+        cache_path = jsonl_path.with_suffix('.cache.pt')
+        if cache_path.exists():
+            print(f"⚡ 发现本地缓存文件 {cache_path.name}，正在极速加载二进制张量...")
+            # 直接从磁盘加载张量字典到内存，速度极快
+            cache = torch.load(cache_path, map_location='cpu', weights_only=True)
+            
+            self.num_samples = cache["num_samples"]
+            self.tile_planes = cache["tile_planes"]
+            self.scalar_features = cache["scalar_features"]
+            self.discard_mask = cache["discard_mask"]
+            self.claim_mask = cache["claim_mask"]
+            self.self_kong_mask = cache["self_kong_mask"]
+            self.hu_mask = cache["hu_mask"]
+            self.discard_target = cache["discard_target"]
+            self.claim_target = cache["claim_target"]
+            self.self_kong_target = cache["self_kong_target"]
+            self.hu_target = cache["hu_target"]
+            self.value_target = cache["value_target"]
+            self.risk_target = cache["risk_target"]
+            self.decision_kind = cache["decision_kind"]
+            
+            print("✅ 缓存加载完毕！可以直接开始训练。")
+            return
         # 1. 极速扫描获取总行数，用于精确预分配内存
         print(f"Scanning {jsonl_path.name} to allocate continuous memory...")
         with jsonl_path.open("rb") as f:
@@ -56,30 +95,74 @@ class MahjongDecisionDataset(Dataset):
         self.risk_target = torch.zeros((self.num_samples, TILE_KIND_COUNT), dtype=torch.float32)
         self.decision_kind = torch.zeros((self.num_samples,), dtype=torch.int64)
 
-        # 3. 填充数据
-        print("Filling tensors...")
-        with jsonl_path.open("r", encoding="utf-8") as f:
-            for i, line in enumerate(tqdm(f, desc=f"Loading {jsonl_path.name}", total=self.num_samples)):
-                line = line.strip()
-                if not line:
-                    continue
-                encoded = encode_row(json.loads(line), self.metadata)
-                
-                # 直接填入大张量，不需要再创建任何中转对象
-                self.tile_planes[i] = torch.from_numpy(encoded["tile_planes"])
-                self.scalar_features[i] = torch.from_numpy(encoded["scalar_features"])
-                self.discard_mask[i] = torch.from_numpy(encoded["discard_mask"])
-                self.claim_mask[i] = torch.from_numpy(encoded["claim_mask"])
-                self.self_kong_mask[i] = torch.from_numpy(encoded["self_kong_mask"])
-                self.hu_mask[i] = torch.from_numpy(encoded["hu_mask"])
-                self.discard_target[i] = int(encoded["discard_target"])
-                self.claim_target[i] = int(encoded["claim_target"])
-                self.self_kong_target[i] = int(encoded["self_kong_target"])
-                self.hu_target[i] = int(encoded["hu_target"])
-                self.value_target[i] = torch.from_numpy(encoded["value_target"])
-                self.risk_target[i] = torch.from_numpy(encoded["risk_target"])
-                self.decision_kind[i] = int(encoded["decision_kind"])
+        # 3. 填充数据 (多核加速版)
+        print(f"Filling tensors using {multiprocessing.cpu_count()} CPU cores...")
+        
+        chunk_size = 4096 # 每个子进程一次性处理的行数，可根据内存大小调整
+        
+        # 定义一个生成器，用于按块读取文本行
+        def line_chunk_generator():
+            with jsonl_path.open("r", encoding="utf-8") as f:
+                chunk = []
+                start_idx = 0
+                for i, line in enumerate(f):
+                    line = line.strip()
+                    chunk.append(line)
+                    if len(chunk) == chunk_size:
+                        yield (chunk, self.metadata, start_idx)
+                        start_idx += chunk_size
+                        chunk = []
+                if chunk: # 处理最后剩下的一点尾巴
+                    yield (chunk, self.metadata, start_idx)
 
+        # 启动进程池
+        workers = max(1, multiprocessing.cpu_count() - 1) # 留一个核心给系统和主进程
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+            # 提交任务
+            futures = executor.map(parse_and_encode_chunk, line_chunk_generator())
+            
+            # 使用 tqdm 追踪进度（按 chunk 追踪）
+            total_chunks = (self.num_samples + chunk_size - 1) // chunk_size
+            
+            for start_idx, encoded_list in tqdm(futures, total=total_chunks, desc=f"Multi-core Loading {jsonl_path.name}"):
+                for offset, encoded in enumerate(encoded_list):
+                    if encoded is None:
+                        continue # 跳过空行
+                    
+                    i = start_idx + offset
+                    
+                    # 填入预分配的张量 (主进程在此处只是做极速的内存赋值)
+                    self.tile_planes[i] = torch.from_numpy(encoded["tile_planes"])
+                    self.scalar_features[i] = torch.from_numpy(encoded["scalar_features"])
+                    self.discard_mask[i] = torch.from_numpy(encoded["discard_mask"])
+                    self.claim_mask[i] = torch.from_numpy(encoded["claim_mask"])
+                    self.self_kong_mask[i] = torch.from_numpy(encoded["self_kong_mask"])
+                    self.hu_mask[i] = torch.from_numpy(encoded["hu_mask"])
+                    self.discard_target[i] = int(encoded["discard_target"])
+                    self.claim_target[i] = int(encoded["claim_target"])
+                    self.self_kong_target[i] = int(encoded["self_kong_target"])
+                    self.hu_target[i] = int(encoded["hu_target"])
+                    self.value_target[i] = torch.from_numpy(encoded["value_target"])
+                    self.risk_target[i] = torch.from_numpy(encoded["risk_target"])
+                    self.decision_kind[i] = int(encoded["decision_kind"])
+        print(f"💾 首次解析完成！正在将张量保存为二进制缓存至 {cache_path.name}...")
+        torch.save({
+            "num_samples": self.num_samples,
+            "tile_planes": self.tile_planes,
+            "scalar_features": self.scalar_features,
+            "discard_mask": self.discard_mask,
+            "claim_mask": self.claim_mask,
+            "self_kong_mask": self.self_kong_mask,
+            "hu_mask": self.hu_mask,
+            "discard_target": self.discard_target,
+            "claim_target": self.claim_target,
+            "self_kong_target": self.self_kong_target,
+            "hu_target": self.hu_target,
+            "value_target": self.value_target,
+            "risk_target": self.risk_target,
+            "decision_kind": self.decision_kind,
+        }, cache_path)
+        print("✅ 缓存保存完毕！下次启动将极速进入训练。")
     def __len__(self) -> int:
         return getattr(self, "num_samples", 0)
 

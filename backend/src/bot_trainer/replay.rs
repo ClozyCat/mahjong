@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::botzone::{BotZoneAction, BotZoneMatch, BotZoneResult};
 use crate::bot::action_space::{TILE_KIND_COUNT, tile_index};
 
+const TOTAL_TILE_COUNT: i64 = 136;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DecisionKind {
@@ -143,8 +145,10 @@ pub(crate) fn replay_match_to_samples(
                 ));
                 state.remove_one_tile(event.actor, tile_key);
                 state.discards[event.actor].push(tile_key.clone());
-                state.visible_tile_keys.push(tile_key.clone());
                 state.last_discard_tile_key = Some(tile_key.clone());
+                state.last_discarder_seat = Some(event.actor);
+                state.current_drawn_tile_ids[event.actor] = None;
+                state.restricted_discard_tile_key = None;
 
                 let declared_claims = declared_claims_after_play(record, event_index);
                 samples.extend(state.claim_samples(
@@ -214,17 +218,26 @@ struct DeclaredClaim {
 }
 
 struct ReplayState {
+    match_id: String,
     hands: [Vec<SerializableBotTile>; 4],
     discards: [Vec<String>; 4],
     melds: [Vec<Vec<String>>; 4],
-    visible_tile_keys: Vec<String>,
+    wall_tiles_remaining: i64,
     last_discard_tile_key: Option<String>,
+    last_discarder_seat: Option<usize>,
+    current_drawn_tile_ids: [Option<String>; 4],
+    restricted_discard_tile_key: Option<String>,
     next_sequence: usize,
 }
 
 impl ReplayState {
     fn new(record: &BotZoneMatch) -> Self {
         let mut next_sequence = 0_usize;
+        let total_dealt = record
+            .deals
+            .iter()
+            .map(|deal| deal.len() as i64)
+            .sum::<i64>();
         let hands = std::array::from_fn(|seat| {
             record.deals[seat]
                 .iter()
@@ -236,19 +249,26 @@ impl ReplayState {
                 .collect()
         });
         Self {
+            match_id: record.match_id.clone(),
             hands,
             discards: std::array::from_fn(|_| Vec::new()),
             melds: std::array::from_fn(|_| Vec::new()),
-            visible_tile_keys: Vec::new(),
+            wall_tiles_remaining: (TOTAL_TILE_COUNT - total_dealt).max(0),
             last_discard_tile_key: None,
+            last_discarder_seat: None,
+            current_drawn_tile_ids: std::array::from_fn(|_| None),
+            restricted_discard_tile_key: None,
             next_sequence,
         }
     }
 
     fn add_tile(&mut self, seat: usize, tile_key: &str) {
-        let tile = make_tile("draw", seat, self.next_sequence, tile_key);
+        let tile = make_tile(&self.match_id, seat, self.next_sequence, tile_key);
+        let tile_id = tile.tile_id.clone();
         self.next_sequence += 1;
+        self.wall_tiles_remaining = (self.wall_tiles_remaining - 1).max(0);
         self.hands[seat].push(tile);
+        self.current_drawn_tile_ids[seat] = Some(tile_id);
     }
 
     fn remove_one_tile(&mut self, seat: usize, tile_key: &str) -> Option<SerializableBotTile> {
@@ -429,8 +449,8 @@ impl ReplayState {
             dealer_seat: 0,
             round_wind: record.round_wind.clone(),
             cumulative_scores: vec![0, 0, 0, 0],
-            wall_tiles_remaining: (83_i64 - self.visible_tile_keys.len() as i64).max(0),
-            visible_tile_keys: self.visible_tile_keys.clone(),
+            wall_tiles_remaining: self.wall_tiles_remaining,
+            visible_tile_keys: self.visible_tile_keys(),
             opponent_discards_by_seat: self.discards.iter().cloned().collect(),
             opponent_melds_by_seat: self.melds.iter().cloned().collect(),
             player: SerializableBotPlayer {
@@ -439,10 +459,8 @@ impl ReplayState {
                 meld_tile_key_groups: self.melds[seat_index].clone(),
                 flower_count: 0,
             },
-            restricted_discard_tile_key: None,
-            drawn_tile_id: self.hands[seat_index]
-                .last()
-                .map(|tile| tile.tile_id.clone()),
+            restricted_discard_tile_key: self.restricted_discard_tile_key.clone(),
+            drawn_tile_id: self.current_drawn_tile_ids[seat_index].clone(),
             self_kong_candidates,
             claim_options,
             last_discard_tile_key: self.last_discard_tile_key.clone(),
@@ -531,10 +549,15 @@ impl ReplayState {
     }
 
     fn apply_same_tile_meld(&mut self, seat: usize, tile_key: &str, count: usize) {
+        self.remove_claimed_discard_from_discards(tile_key);
         for _ in 0..count {
             self.remove_one_tile(seat, tile_key);
         }
         self.melds[seat].push(vec![tile_key.to_string(); count + 1]);
+        self.current_drawn_tile_ids[seat] = None;
+        self.restricted_discard_tile_key = Some(tile_key.to_string());
+        self.last_discard_tile_key = None;
+        self.last_discarder_seat = None;
     }
 
     fn apply_concealed_kong(&mut self, seat: usize, tile_key: &str) {
@@ -542,12 +565,14 @@ impl ReplayState {
             self.remove_one_tile(seat, tile_key);
         }
         self.melds[seat].push(vec![tile_key.to_string(); 4]);
+        self.current_drawn_tile_ids[seat] = None;
     }
 
     fn apply_chow(&mut self, seat: usize, middle_tile_key: &str) {
         let Some(last_discard) = self.last_discard_tile_key.clone() else {
             return;
         };
+        self.remove_claimed_discard_from_discards(&last_discard);
         if let Some(tile_ids) =
             chow_tile_ids_for_middle(&self.hands[seat], &last_discard, middle_tile_key)
         {
@@ -562,16 +587,44 @@ impl ReplayState {
             }
         }
         self.melds[seat].push(chow_group(&last_discard, middle_tile_key));
+        self.current_drawn_tile_ids[seat] = None;
+        self.restricted_discard_tile_key = Some(last_discard);
+        self.last_discard_tile_key = None;
+        self.last_discarder_seat = None;
     }
 
     fn apply_add_kong(&mut self, seat: usize, tile_key: &str) {
         self.remove_one_tile(seat, tile_key);
+        self.current_drawn_tile_ids[seat] = None;
         if let Some(meld) = self.melds[seat]
             .iter_mut()
             .find(|meld| meld.len() == 3 && meld.iter().all(|key| key == tile_key))
         {
             meld.push(tile_key.to_string());
         }
+    }
+
+    fn remove_claimed_discard_from_discards(&mut self, tile_key: &str) {
+        if let Some(discarder_seat) = self.last_discarder_seat
+            && self.discards[discarder_seat]
+                .last()
+                .is_some_and(|discard| discard == tile_key)
+        {
+            self.discards[discarder_seat].pop();
+        }
+    }
+
+    fn visible_tile_keys(&self) -> Vec<String> {
+        let mut visible_tile_keys = Vec::new();
+        for discards in &self.discards {
+            visible_tile_keys.extend(discards.iter().cloned());
+        }
+        for melds in &self.melds {
+            for meld in melds {
+                extend_visible_meld_tile_keys(&mut visible_tile_keys, meld);
+            }
+        }
+        visible_tile_keys
     }
 }
 
@@ -692,18 +745,21 @@ fn outcome_by_seat(record: &BotZoneMatch) -> [SampleOutcome; 4] {
         BotZoneResult::Hu { score_delta, .. } => (*score_delta, false),
         BotZoneResult::Huang { score_delta } => (*score_delta, true),
     };
-    let winner = record.events.iter().find_map(|event| match event.action {
-        BotZoneAction::Hu { .. } => Some(event.actor),
-        _ => None,
-    });
-    let discarder = record
+    let winner_event = record
         .events
         .iter()
-        .rev()
-        .find_map(|event| match event.action {
-            BotZoneAction::Play { .. } => Some(event.actor),
+        .enumerate()
+        .find(|(_, event)| matches!(event.action, BotZoneAction::Hu { .. }));
+    let winner = winner_event.map(|(_, event)| event.actor);
+    let discarder = winner_event.and_then(|(event_index, _)| {
+        let previous_event = event_index
+            .checked_sub(1)
+            .and_then(|index| record.events.get(index))?;
+        match previous_event.action {
+            BotZoneAction::Play { .. } => Some(previous_event.actor),
             _ => None,
-        });
+        }
+    });
     std::array::from_fn(|seat| SampleOutcome {
         score_delta: score_delta[seat],
         won: winner == Some(seat),
@@ -728,6 +784,18 @@ fn tile_counts(tiles: &[SerializableBotTile]) -> [u8; TILE_KIND_COUNT] {
         }
     }
     counts
+}
+
+fn extend_visible_meld_tile_keys(target: &mut Vec<String>, meld_tile_keys: &[String]) {
+    if meld_tile_keys.len() == 4
+        && meld_tile_keys
+            .iter()
+            .all(|tile_key| tile_key == &meld_tile_keys[0])
+    {
+        target.extend(meld_tile_keys.iter().take(3).cloned());
+    } else {
+        target.extend(meld_tile_keys.iter().cloned());
+    }
 }
 
 fn take_tile_ids(tiles: &[SerializableBotTile], tile_key: &str, count: usize) -> Vec<String> {
@@ -917,6 +985,33 @@ Player 1 BuGang W1
 Score 0 0 0 0
 "#;
 
+    const CLAIMED_TURN_CONTEXT_MATCH: &str = r#"
+Match claimed turn context
+Wind 1
+Player 0 Deal B1 W1 W2 W3 W4 W5 W6 W7 W8 W9 T1 T2 T3
+Player 1 Deal B1 B1 B1 T1 T2 T3 T4 T5 T6 T7 T8 T9 J1
+Player 2 Deal W1 W2 W3 W4 W5 W6 W7 W8 W9 B2 B3 B4 B5
+Player 3 Deal T1 T2 T3 T4 T5 T6 T7 T8 T9 J2 J3 F1 F2
+Player 0 Draw J3
+Player 0 Play B1
+Player 1 Peng B1
+Player 1 Play T1
+Score 0 0 0 0
+"#;
+
+    const SELF_DRAW_MATCH: &str = r#"
+Match self draw outcome
+Player 0 Deal W1 W9 T9
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J2 J2 B6
+Player 0 Draw W2
+Player 0 Play W9
+Player 1 Draw B4
+Player 1 Hu B4
+Score 8 -8 0 0
+"#;
+
     const ROB_KONG_MATCH: &str = r#"
 Match rob kong
 Player 0 Deal W1 B1 B2
@@ -1068,6 +1163,105 @@ Score 0 0 0 0
                 .any(|action| action == "self_kong:add_kong:w1")
         );
         assert_eq!(kong.context.self_kong_candidates[0].meld_index, Some(0));
+    }
+
+    #[test]
+    fn claimed_turn_context_matches_runtime_active_turn_state() {
+        let record = parse_match(CLAIMED_TURN_CONTEXT_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let claimed_turn = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 1
+                    && sample.decision_kind == DecisionKind::ActiveTurn
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "t1".to_string(),
+                        }
+            })
+            .expect("active turn after pung claim");
+
+        assert_eq!(claimed_turn.context.round_wind, "north");
+        assert_eq!(claimed_turn.context.wall_tiles_remaining, 83);
+        assert_eq!(claimed_turn.context.drawn_tile_id, None);
+        assert_eq!(
+            claimed_turn.context.restricted_discard_tile_key.as_deref(),
+            Some("b1")
+        );
+        assert!(
+            claimed_turn
+                .legal_actions
+                .iter()
+                .any(|action| action == "discard:b1")
+        );
+        assert!(!claimed_turn.context.opponent_discards_by_seat[0].contains(&"b1".to_string()));
+        assert!(
+            claimed_turn.context.opponent_melds_by_seat[1]
+                .iter()
+                .any(|meld| meld == &vec!["b1".to_string(), "b1".to_string(), "b1".to_string()])
+        );
+        assert_eq!(
+            claimed_turn
+                .context
+                .visible_tile_keys
+                .iter()
+                .filter(|tile_key| tile_key.as_str() == "b1")
+                .count(),
+            3
+        );
+        assert_eq!(claimed_turn.context.last_discard_tile_key, None);
+    }
+
+    #[test]
+    fn same_tile_key_after_chow_remains_legal_when_source_player_has_own_copy() {
+        let record = parse_match(
+            r#"
+Match same key after chow
+Player 0 Deal B9 W1 W2
+Player 1 Deal B7 B8 B9 T3 T4 J3
+Player 2 Deal W3 W4 W5
+Player 3 Deal T1 T2 T3
+Player 0 Draw J1
+Player 0 Play B9
+Player 1 Chi B8
+Player 1 Play B9
+Score 0 0 0 0
+"#,
+        )
+        .expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let claimed_turn = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 1
+                    && sample.decision_kind == DecisionKind::ActiveTurn
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "b9".to_string(),
+                        }
+            })
+            .expect("active turn after chow");
+
+        assert_eq!(
+            claimed_turn.context.restricted_discard_tile_key.as_deref(),
+            Some("b9")
+        );
+        assert!(
+            claimed_turn
+                .legal_actions
+                .iter()
+                .any(|action| action == "discard:b9")
+        );
+    }
+
+    #[test]
+    fn self_draw_outcome_does_not_mark_previous_discarder_as_dealt_in() {
+        let record = parse_match(SELF_DRAW_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        assert!(samples.iter().all(|sample| !sample.outcome.dealt_in));
     }
 
     #[test]
