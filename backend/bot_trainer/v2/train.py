@@ -26,7 +26,11 @@ def main() -> None:
     torch.manual_seed(args.seed)
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
-    use_amp = args.amp and device.type == "cuda"
+    
+    # 动态判断是否支持 AMP (ROCm 环境下的 "cuda" 支持，DirectML 暂不支持)
+    is_rocm_or_cuda = device.type == "cuda"
+    use_amp = args.amp and is_rocm_or_cuda
+    amp_device_type = "cuda" if is_rocm_or_cuda else "cpu"
 
     print("Initializing datasets...")
     train_dataset = MahjongDecisionDataset(args.data / "train.jsonl", args.data / "metadata.json")
@@ -41,10 +45,16 @@ def main() -> None:
     )
 
     model = build_model(ModelConfig(TILE_PLANE_COUNT, SCALAR_FEATURE_COUNT)).to(device)
+    
+    # 动态处理模型编译：仅在支持的后端上开启
     if args.compile and hasattr(torch, "compile"):
-        model = torch.compile(model)
+        if is_rocm_or_cuda:
+            model = torch.compile(model)
+        else:
+            print("Warning: 当前硬件后端 (如 DirectML/CPU) 暂不支持 torch.compile，已跳过。")
+            
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
     print(f"device={device} amp={use_amp} num_workers={args.num_workers}")
 
     best_metric = math.inf
@@ -107,11 +117,27 @@ def parse_args() -> argparse.Namespace:
 
 def resolve_device(requested: str) -> torch.device:
     if requested == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device(requested)
-    if device.type == "cuda" and not torch.cuda.is_available():
-        raise SystemExit("CUDA was requested")
-    return device
+        # 1. 优先尝试 ROCm / CUDA
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        # 2. 尝试 Windows 专属的 AMD 加速库 (DirectML)
+        try:
+            import torch_directml
+            if torch_directml.is_available():
+                return torch_directml.device()
+        except ImportError:
+            pass
+        # 3. 都没有则回退 CPU
+        return torch.device("cpu")
+    
+    if requested == "dml":
+        try:
+            import torch_directml
+            return torch_directml.device()
+        except ImportError as exc:
+            raise SystemExit("torch-directml 未安装。请运行: pip install torch-directml") from exc
+            
+    return torch.device(requested)
 
 def build_loader(
     dataset: MahjongDecisionDataset,
@@ -120,13 +146,12 @@ def build_loader(
     num_workers: int,
     device: torch.device,
 ) -> DataLoader:
-    # [核心优化] 告诉 DataLoader：只给我发索引，我自己用 get_batch 切片组装！
     kwargs: dict[str, Any] = {
         "batch_size": batch_size,
         "shuffle": shuffle,
         "num_workers": num_workers,
-        "collate_fn": lambda indices: dataset.get_batch(indices), # 自定义拼装
-        "pin_memory": device.type == "cuda",
+        "collate_fn": lambda indices: dataset.get_batch(indices), 
+        "pin_memory": device.type == "cuda", # pin_memory 仅适用于真正的 cuda/ROCm 后端
     }
     if num_workers > 0:
         kwargs["persistent_workers"] = True
@@ -148,13 +173,14 @@ def run_epoch(
     is_training = optimizer is not None
     model.train(is_training)
     totals = MetricTotals(device)
+    amp_device_type = "cuda" if device.type == "cuda" else "cpu"
 
     pbar = tqdm(loader, desc=epoch_desc, leave=False, dynamic_ncols=True)
 
     for i, batch in enumerate(pbar):
         batch = move_batch(batch, device)
         with torch.set_grad_enabled(is_training):
-            with torch.amp.autocast("cuda", enabled=use_amp):
+            with torch.amp.autocast(amp_device_type, enabled=use_amp):
                 outputs = model(batch["tile_planes"].float(), batch["scalar_features"].float())
                 losses = compute_losses(outputs, batch)
             loss = losses["loss"]
@@ -166,7 +192,6 @@ def run_epoch(
         
         totals.update(outputs, batch, losses)
         
-        # 降低刷新频率，减少不必要的 GPU 阻塞
         if i % 10 == 0:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
@@ -192,7 +217,6 @@ def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch
 class MetricTotals:
     def __init__(self, device: torch.device) -> None:
         self.device = device
-        # [核心优化] 所有累加器直接建立在 GPU 上，避免循环内的数据搬运
         self.loss_sum = torch.tensor(0.0, device=device)
         self.value_loss_sum = torch.tensor(0.0, device=device)
         self.batch_count = 0
@@ -205,7 +229,6 @@ class MetricTotals:
         self.kong_confusion = torch.zeros((3, 3), dtype=torch.int64, device=device)
 
     def update(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor], losses: dict[str, torch.Tensor]) -> None:
-        # 全部用 .detach() 保留为张量，不使用 .cpu()
         self.loss_sum += losses["loss"].detach()
         self.value_loss_sum += losses["value_loss"].detach()
         self.batch_count += 1
@@ -235,7 +258,6 @@ class MetricTotals:
         masked = logits.masked_fill(~batch["claim_mask"].bool(), -1.0e4)
         pred = masked[active].argmax(dim=1)
         target_active = target[active].long()
-        # [核心优化] GPU 级纯张量操作，消除 Python zip 带来的极度降速
         indices = target_active * 7 + pred 
         counts = torch.bincount(indices, minlength=49)
         self.claim_confusion += counts.view(7, 7)
@@ -265,7 +287,6 @@ class MetricTotals:
         self.kong_confusion += counts.view(3, 3)
 
     def as_metrics(self) -> dict[str, float]:
-        # 只在计算最终结果时（也就是 Epoch 结束时），才统一下发 .item() 获取数据
         claim_f1 = macro_f1(self.claim_confusion)
         hu_precision, hu_recall = positive_precision_recall(self.hu_confusion, 1)
         kong_precision, kong_recall = grouped_positive_precision_recall(self.kong_confusion)
