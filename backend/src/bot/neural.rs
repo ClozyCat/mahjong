@@ -189,11 +189,9 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
         tile_planes,
     ))
     .map_err(|_| ())?;
-    let scalar_features = Tensor::from_array((
-        [1_usize, scalar_feature_count_v2()],
-        scalar_features,
-    ))
-    .map_err(|_| ())?;
+    let scalar_features =
+        Tensor::from_array(([1_usize, scalar_feature_count_v2()], scalar_features))
+            .map_err(|_| ())?;
     let outputs = session
         .run(ort::inputs![
             "tile_planes" => tile_planes,

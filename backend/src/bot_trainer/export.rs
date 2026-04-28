@@ -7,7 +7,9 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use super::botzone::parse_matches;
-use super::replay::{DecisionKind, TrainingDecisionSampleV2, TrainingLabel, replay_match_to_samples};
+use super::replay::{
+    DecisionKind, TrainingDecisionSampleV2, TrainingLabel, replay_match_to_samples,
+};
 use crate::bot::action_space::{CLAIM_ACTIONS, SELF_KONG_ACTIONS, TILE_KEYS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
@@ -121,8 +123,7 @@ pub fn run_export_with_options(
         "parsing matches: {:.1} MB loaded",
         raw.len() as f64 / 1024.0 / 1024.0
     );
-    let mut matches =
-        parse_matches(&raw).map_err(|error| ExportError::Parse(error.to_string()))?;
+    let mut matches = parse_matches(&raw).map_err(|error| ExportError::Parse(error.to_string()))?;
     if let Some(limit) = options.max_matches {
         matches.truncate(limit);
     }
@@ -359,11 +360,7 @@ mod tests {
                 .model_outputs
                 .contains(&"discard_logits".to_string())
         );
-        assert!(
-            metadata
-                .model_outputs
-                .contains(&"claim_logits".to_string())
-        );
+        assert!(metadata.model_outputs.contains(&"claim_logits".to_string()));
         assert!(metadata.model_outputs.contains(&"risk_logits".to_string()));
     }
 

@@ -225,10 +225,7 @@ fn parse_player_prefix(line: &str) -> Option<(usize, &str)> {
     Some((seat.parse().ok()?, rest))
 }
 
-fn parse_player_tokens(
-    tokens: &[&str],
-    index: usize,
-) -> Result<(usize, usize), BotZoneParseError> {
+fn parse_player_tokens(tokens: &[&str], index: usize) -> Result<(usize, usize), BotZoneParseError> {
     if tokens.get(index) != Some(&"Player") {
         return Err(BotZoneParseError::new("expected Player token"));
     }

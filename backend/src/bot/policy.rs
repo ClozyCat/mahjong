@@ -12,8 +12,25 @@ use std::{env, time::Instant};
 const HYBRID_TOP_SEARCH_CANDIDATES: usize = 3;
 const HYBRID_CLOSE_SEARCH_GAP: i64 = 30;
 const DEFAULT_NEURAL_PRIOR_WEIGHT: i64 = 15;
+const POLICY_ENV: &str = "MAHJONG_BOT_POLICY";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BotPolicyMode {
+    Heuristic,
+    Hybrid,
+    Neural,
+}
 
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
+    let policy_mode = bot_policy_mode();
+    if policy_mode == BotPolicyMode::Neural {
+        if let Some(scores) = neural_decision_scores(context) {
+            if let Some(action) = select_neural_only_active_turn_action(context, &scores) {
+                return Some(action);
+            }
+        }
+    }
+
     let decision_started = Instant::now();
     let mut engine = SearchEngine::new(context);
     let search_plans = engine.rank_best_discard_plans(
@@ -86,10 +103,24 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 
     trace_discard_decision_if_enabled(context, &engine, &baseline, decision_started.elapsed());
 
-    let neural_scores = neural_decision_scores(context);
-    let selected_discard = neural_scores
+    let neural_scores = if policy_mode == BotPolicyMode::Hybrid {
+        neural_decision_scores(context)
+    } else {
+        None
+    };
+    let neural_discard_scores = neural_scores
         .as_ref()
-        .and_then(|scores| select_neural_v2_discard(context, &search_plans, scores))
+        .map(|scores| rank_masked_discards(context, &scores.discard_logits));
+    let selected_discard = neural_discard_scores
+        .as_deref()
+        .and_then(|scores| {
+            select_discard_plan_for_policy(
+                policy_mode,
+                &search_plans,
+                scores,
+                neural_prior_weight(),
+            )
+        })
         .unwrap_or_else(|| baseline.clone());
 
     if let Some(action) = neural_scores.as_ref().and_then(|scores| {
@@ -118,6 +149,15 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 }
 
 pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
+    let policy_mode = bot_policy_mode();
+    if policy_mode == BotPolicyMode::Neural {
+        if let Some(scores) = neural_decision_scores(context) {
+            if let Some(action) = select_neural_only_claim(context, &scores) {
+                return Some(action);
+            }
+        }
+    }
+
     let mut engine = SearchEngine::new(context);
     let pass_score = engine.score_13_tile_hand(
         context,
@@ -204,13 +244,18 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         }
     }
 
-    if let Some(action) = select_neural_v2_claim(
-        context,
-        pass_score,
-        best_claim.as_ref(),
-        engine.claim_margin(),
-    ) {
-        return Some(action);
+    if policy_mode == BotPolicyMode::Hybrid {
+        if let Some(scores) = neural_decision_scores(context) {
+            if let Some(action) = select_hybrid_claim(
+                context,
+                &scores,
+                pass_score,
+                best_claim.as_ref(),
+                engine.claim_margin(),
+            ) {
+                return Some(action);
+            }
+        }
     }
 
     if let Some((action, score)) = best_claim {
@@ -224,6 +269,14 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         action_type: "pass".to_string(),
         tile_ids: vec![],
     })
+}
+
+fn bot_policy_mode() -> BotPolicyMode {
+    match env::var(POLICY_ENV).ok().as_deref() {
+        Some(value) if value.eq_ignore_ascii_case("neural") => BotPolicyMode::Neural,
+        Some(value) if value.eq_ignore_ascii_case("hybrid") => BotPolicyMode::Hybrid,
+        _ => BotPolicyMode::Heuristic,
+    }
 }
 
 fn trace_discard_decision_if_enabled(
@@ -273,13 +326,20 @@ fn tile_counts_after_removal(
     counts
 }
 
-fn select_neural_v2_discard(
+fn select_neural_only_active_turn_action(
     context: &BotContext,
-    search_plans: &[BotDiscardPlan],
     scores: &NeuralDecisionScores,
-) -> Option<BotDiscardPlan> {
-    let neural_scores = rank_masked_discards(context, &scores.discard_logits);
-    select_hybrid_discard_plan(search_plans, &neural_scores, neural_prior_weight())
+) -> Option<BotAction> {
+    if let Some(action) = select_neural_only_self_kong(context, scores) {
+        return Some(action);
+    }
+    select_neural_only_discard_plan(&rank_masked_discards(context, &scores.discard_logits)).map(
+        |plan| BotAction {
+            seat_index: context.seat_index,
+            action_type: "discard".to_string(),
+            tile_ids: vec![plan.tile_id],
+        },
+    )
 }
 
 fn neural_prior_weight() -> i64 {
@@ -288,6 +348,29 @@ fn neural_prior_weight() -> i64 {
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(DEFAULT_NEURAL_PRIOR_WEIGHT)
         .max(0)
+}
+
+fn select_discard_plan_for_policy(
+    policy_mode: BotPolicyMode,
+    search_plans: &[BotDiscardPlan],
+    neural_scores: &[RankedTileScore],
+    neural_weight: i64,
+) -> Option<BotDiscardPlan> {
+    match policy_mode {
+        BotPolicyMode::Neural => select_neural_only_discard_plan(neural_scores),
+        BotPolicyMode::Hybrid => {
+            select_hybrid_discard_plan(search_plans, neural_scores, neural_weight)
+        }
+        BotPolicyMode::Heuristic => search_plans.first().cloned(),
+    }
+}
+
+fn select_neural_only_discard_plan(neural_scores: &[RankedTileScore]) -> Option<BotDiscardPlan> {
+    neural_scores.first().map(|score| BotDiscardPlan {
+        tile_id: score.tile_id.clone(),
+        tile_key: score.tile_key.clone(),
+        score: 0,
+    })
 }
 
 fn select_hybrid_discard_plan(
@@ -353,13 +436,33 @@ fn select_hybrid_discard_plan(
     best.map(|(plan, _)| plan)
 }
 
-fn select_neural_v2_claim(
+fn select_neural_only_claim(
     context: &BotContext,
+    scores: &NeuralDecisionScores,
+) -> Option<BotAction> {
+    let ranked = rank_masked_claims(context, &scores.claim_logits);
+    let best = ranked.first()?;
+    if best.action_name == "pass" {
+        return Some(pass_action(context.seat_index));
+    }
+    let option = context
+        .claim_options
+        .iter()
+        .find(|option| claim_option_matches_ranked_action(&option.action_type, best.action_name))?;
+    Some(BotAction {
+        seat_index: context.seat_index,
+        action_type: option.action_type.clone(),
+        tile_ids: option.tile_ids.clone(),
+    })
+}
+
+fn select_hybrid_claim(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
     pass_score: i64,
     best_search_claim: Option<&(BotAction, i64)>,
     claim_margin: i64,
 ) -> Option<BotAction> {
-    let scores = neural_decision_scores(context)?;
     let ranked = rank_masked_claims(context, &scores.claim_logits);
     let best = ranked.first()?;
     if best.action_name == "pass" {
@@ -390,12 +493,9 @@ fn select_neural_v2_claim(
     None
 }
 
-fn select_neural_v2_self_kong(
+fn select_neural_only_self_kong(
     context: &BotContext,
     scores: &NeuralDecisionScores,
-    best_search_kong: Option<&(BotAction, i64)>,
-    baseline_score: i64,
-    kong_margin: i64,
 ) -> Option<BotAction> {
     if context.self_kong_candidates.is_empty() {
         return None;
@@ -429,9 +529,17 @@ fn select_neural_v2_self_kong(
         }
     }
     let (action, logit) = best?;
-    if logit <= pass_logit {
-        return None;
-    }
+    (logit > pass_logit).then_some(action)
+}
+
+fn select_neural_v2_self_kong(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
+    best_search_kong: Option<&(BotAction, i64)>,
+    baseline_score: i64,
+    kong_margin: i64,
+) -> Option<BotAction> {
+    let action = select_neural_only_self_kong(context, scores)?;
     if let Some((search_action, search_score)) = best_search_kong {
         if search_action.tile_ids == action.tile_ids
             && *search_score >= baseline_score - kong_margin
@@ -696,6 +804,82 @@ mod tests {
 
         let selected =
             select_hybrid_discard_plan(&search_plans, &neural_scores, 0).expect("hybrid selection");
+
+        assert_eq!(selected.tile_key, "w1");
+    }
+
+    #[test]
+    fn neural_policy_uses_top_neural_discard_even_when_search_disagrees() {
+        let search_plans = vec![
+            search::BotDiscardPlan {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                score: 1000,
+            },
+            search::BotDiscardPlan {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                score: 700,
+            },
+        ];
+        let neural_scores = vec![
+            neural::RankedTileScore {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                logit: 9.0,
+            },
+            neural::RankedTileScore {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                logit: 0.0,
+            },
+        ];
+
+        let selected = select_discard_plan_for_policy(
+            BotPolicyMode::Neural,
+            &search_plans,
+            &neural_scores,
+            80,
+        )
+        .expect("neural selection");
+
+        assert_eq!(selected.tile_key, "t1");
+    }
+
+    #[test]
+    fn hybrid_policy_keeps_search_lead_when_neural_disagrees() {
+        let search_plans = vec![
+            search::BotDiscardPlan {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                score: 1000,
+            },
+            search::BotDiscardPlan {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                score: 700,
+            },
+        ];
+        let neural_scores = vec![
+            neural::RankedTileScore {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                logit: 9.0,
+            },
+            neural::RankedTileScore {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                logit: 0.0,
+            },
+        ];
+
+        let selected = select_discard_plan_for_policy(
+            BotPolicyMode::Hybrid,
+            &search_plans,
+            &neural_scores,
+            80,
+        )
+        .expect("hybrid selection");
 
         assert_eq!(selected.tile_key, "w1");
     }

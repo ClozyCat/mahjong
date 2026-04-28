@@ -309,7 +309,9 @@ impl ReplayState {
                 flower_count: 0,
             },
             restricted_discard_tile_key: None,
-            drawn_tile_id: self.hands[seat_index].last().map(|tile| tile.tile_id.clone()),
+            drawn_tile_id: self.hands[seat_index]
+                .last()
+                .map(|tile| tile.tile_id.clone()),
             self_kong_candidates: Vec::new(),
             claim_options,
             last_discard_tile_key: self.last_discard_tile_key.clone(),
@@ -441,7 +443,10 @@ fn claim_legal_actions(context: &SerializableBotContext) -> Vec<String> {
     };
     for option in &context.claim_options {
         match option.action_type.as_str() {
-            "chow" => actions.push(format!("claim:chow:{}", chow_middle_key(last_discard, &option.tile_ids, context))),
+            "chow" => actions.push(format!(
+                "claim:chow:{}",
+                chow_middle_key(last_discard, &option.tile_ids, context)
+            )),
             "pung" => actions.push(format!("claim:pung:{last_discard}")),
             "kong" => actions.push(format!("claim:kong:{last_discard}")),
             "hu" => actions.push("claim:hu".to_string()),
@@ -462,10 +467,14 @@ fn outcome_by_seat(record: &BotZoneMatch) -> [SampleOutcome; 4] {
         BotZoneAction::Hu { .. } => Some(event.actor),
         _ => None,
     });
-    let discarder = record.events.iter().rev().find_map(|event| match event.action {
-        BotZoneAction::Play { .. } => Some(event.actor),
-        _ => None,
-    });
+    let discarder = record
+        .events
+        .iter()
+        .rev()
+        .find_map(|event| match event.action {
+            BotZoneAction::Play { .. } => Some(event.actor),
+            _ => None,
+        });
     std::array::from_fn(|seat| SampleOutcome {
         score_delta: score_delta[seat],
         won: winner == Some(seat),
@@ -538,7 +547,9 @@ fn chow_middle_key(
         }
     }
     keys.sort_by_key(|key| tile_index(key).unwrap_or(usize::MAX));
-    keys.get(1).cloned().unwrap_or_else(|| discarded_tile_key.to_string())
+    keys.get(1)
+        .cloned()
+        .unwrap_or_else(|| discarded_tile_key.to_string())
 }
 
 fn chow_group(discarded_tile_key: &str, middle_tile_key: &str) -> Vec<String> {
@@ -652,7 +663,7 @@ Score 0 0 0 0
                 sample.seat_index == 0
                     && sample.label
                         == TrainingLabel::ClaimPung {
-                            tile_key: "b6".to_string()
+                            tile_key: "b6".to_string(),
                         }
             })
             .expect("ignored pung sample");
