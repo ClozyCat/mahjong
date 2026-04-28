@@ -19,5 +19,4 @@ output
 .claude
 .playwright-cli
 .env
-backend/bot_trainer/out*
-backend/bot_trainer/checkpoints*
+backend/bot_trainer/*
