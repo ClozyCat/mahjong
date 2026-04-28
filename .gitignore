@@ -10,4 +10,4 @@ node_modules/
 .pytest_cache/
 *.log
 BOTTrainer/
-backend/bot_trainer/
+bot_trainer/

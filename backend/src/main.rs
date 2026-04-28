@@ -1,5 +1,6 @@
 mod app;
 mod bot;
+mod bot_trainer;
 mod core;
 #[cfg(test)]
 mod mahjong;

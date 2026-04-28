@@ -1,5 +1,8 @@
 use super::context::*;
-use super::neural::{NeuralDiscardScore, neural_discard_scores};
+use super::neural::{
+    NeuralDecisionScores, RankedTileScore, neural_decision_scores, rank_masked_claims,
+    rank_masked_discards,
+};
 use super::search::{
     BotDiscardPlan, STAGE_ONE_DEPTH, SearchEngine, claim_action_bonus, claim_meld_tile_keys,
     simulated_tiles_after_removal,
@@ -83,8 +86,17 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 
     trace_discard_decision_if_enabled(context, &engine, &baseline, decision_started.elapsed());
 
-    let selected_discard =
-        select_neural_hybrid_discard(context, &search_plans).unwrap_or_else(|| baseline.clone());
+    let neural_scores = neural_decision_scores(context);
+    let selected_discard = neural_scores
+        .as_ref()
+        .and_then(|scores| select_neural_v2_discard(context, &search_plans, scores))
+        .unwrap_or_else(|| baseline.clone());
+
+    if let Some(action) = neural_scores.as_ref().and_then(|scores| {
+        select_neural_v2_self_kong(context, scores, best_kong.as_ref(), baseline.score, engine.kong_margin())
+    }) {
+        return Some(action);
+    }
 
     if let Some((action, score)) = best_kong {
         if score > baseline.score + engine.kong_margin() {
@@ -186,6 +198,12 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         }
     }
 
+    if let Some(action) =
+        select_neural_v2_claim(context, pass_score, best_claim.as_ref(), engine.claim_margin())
+    {
+        return Some(action);
+    }
+
     if let Some((action, score)) = best_claim {
         if score > pass_score + engine.claim_margin() {
             return Some(action);
@@ -246,11 +264,12 @@ fn tile_counts_after_removal(
     counts
 }
 
-fn select_neural_hybrid_discard(
+fn select_neural_v2_discard(
     context: &BotContext,
     search_plans: &[BotDiscardPlan],
+    scores: &NeuralDecisionScores,
 ) -> Option<BotDiscardPlan> {
-    let neural_scores = neural_discard_scores(context)?;
+    let neural_scores = rank_masked_discards(context, &scores.discard_logits);
     select_hybrid_discard_plan(search_plans, &neural_scores, neural_prior_weight())
 }
 
@@ -264,7 +283,7 @@ fn neural_prior_weight() -> i64 {
 
 fn select_hybrid_discard_plan(
     search_plans: &[BotDiscardPlan],
-    neural_scores: &[NeuralDiscardScore],
+    neural_scores: &[RankedTileScore],
     weight: i64,
 ) -> Option<BotDiscardPlan> {
     let best_search = search_plans.first()?.clone();
@@ -323,6 +342,117 @@ fn select_hybrid_discard_plan(
     }
 
     best.map(|(plan, _)| plan)
+}
+
+fn select_neural_v2_claim(
+    context: &BotContext,
+    pass_score: i64,
+    best_search_claim: Option<&(BotAction, i64)>,
+    claim_margin: i64,
+) -> Option<BotAction> {
+    let scores = neural_decision_scores(context)?;
+    let ranked = rank_masked_claims(context, &scores.claim_logits);
+    let best = ranked.first()?;
+    if best.action_name == "pass" {
+        return Some(pass_action(context.seat_index));
+    }
+    let option = context
+        .claim_options
+        .iter()
+        .find(|option| claim_option_matches_ranked_action(&option.action_type, best.action_name))?;
+    if best.action_name == "hu" {
+        return Some(BotAction {
+            seat_index: context.seat_index,
+            action_type: option.action_type.clone(),
+            tile_ids: option.tile_ids.clone(),
+        });
+    }
+    if let Some((search_action, search_score)) = best_search_claim {
+        if claim_action_matches_ranked_action(search_action, option, best.action_name)
+            && *search_score >= pass_score - claim_margin
+        {
+            return Some(BotAction {
+                seat_index: context.seat_index,
+                action_type: option.action_type.clone(),
+                tile_ids: option.tile_ids.clone(),
+            });
+        }
+    }
+    None
+}
+
+fn select_neural_v2_self_kong(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
+    best_search_kong: Option<&(BotAction, i64)>,
+    baseline_score: i64,
+    kong_margin: i64,
+) -> Option<BotAction> {
+    if context.self_kong_candidates.is_empty() {
+        return None;
+    }
+    let pass_logit = scores.self_kong_logits[0];
+    let mut best = None;
+    for candidate in &context.self_kong_candidates {
+        if candidate.kind == BotSelfKongKind::Add
+            && context.add_kong_risk_tiles.contains(&candidate.tile_key)
+        {
+            continue;
+        }
+        let index = match candidate.kind {
+            BotSelfKongKind::Concealed => 1,
+            BotSelfKongKind::Add => 2,
+        };
+        let logit = scores.self_kong_logits[index];
+        let replace = best
+            .as_ref()
+            .map(|(_, selected_logit): &(BotAction, f32)| logit > *selected_logit)
+            .unwrap_or(true);
+        if replace {
+            best = Some((
+                BotAction {
+                    seat_index: context.seat_index,
+                    action_type: "kong".to_string(),
+                    tile_ids: candidate.tile_ids.clone(),
+                },
+                logit,
+            ));
+        }
+    }
+    let (action, logit) = best?;
+    if logit <= pass_logit {
+        return None;
+    }
+    if let Some((search_action, search_score)) = best_search_kong {
+        if search_action.tile_ids == action.tile_ids && *search_score >= baseline_score - kong_margin {
+            return Some(action);
+        }
+    }
+    None
+}
+
+fn claim_option_matches_ranked_action(option_action_type: &str, ranked_action_name: &str) -> bool {
+    match ranked_action_name {
+        "chow_left" | "chow_mid" | "chow_right" => option_action_type == "chow",
+        other => option_action_type == other,
+    }
+}
+
+fn claim_action_matches_ranked_action(
+    action: &BotAction,
+    option: &crate::projection::bot_view::BotClaimOption,
+    ranked_action_name: &str,
+) -> bool {
+    claim_option_matches_ranked_action(&action.action_type, ranked_action_name)
+        && action.tile_ids == option.tile_ids
+}
+
+fn pass_action(seat_index: usize) -> BotAction {
+    BotAction {
+        seat_index,
+        action_type: "pass".to_string(),
+        tile_ids: vec![],
+    }
 }
 
 #[cfg(test)]
@@ -429,12 +559,12 @@ mod tests {
             },
         ];
         let neural_scores = vec![
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "w1#0".to_string(),
                 tile_key: "w1".to_string(),
                 logit: 0.0,
             },
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "t1#0".to_string(),
                 tile_key: "t1".to_string(),
                 logit: 4.0,
@@ -462,12 +592,12 @@ mod tests {
             },
         ];
         let neural_scores = vec![
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "w1#0".to_string(),
                 tile_key: "w1".to_string(),
                 logit: 0.0,
             },
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "t1#0".to_string(),
                 tile_key: "t1".to_string(),
                 logit: 4.0,
@@ -505,22 +635,22 @@ mod tests {
             },
         ];
         let neural_scores = vec![
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "w1#0".to_string(),
                 tile_key: "w1".to_string(),
                 logit: 0.0,
             },
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "t1#0".to_string(),
                 tile_key: "t1".to_string(),
                 logit: 1.0,
             },
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "b1#0".to_string(),
                 tile_key: "b1".to_string(),
                 logit: 2.0,
             },
-            neural::NeuralDiscardScore {
+            neural::RankedTileScore {
                 tile_id: "red#0".to_string(),
                 tile_key: "red".to_string(),
                 logit: 100.0,
@@ -547,7 +677,7 @@ mod tests {
                 score: 980,
             },
         ];
-        let neural_scores = vec![neural::NeuralDiscardScore {
+        let neural_scores = vec![neural::RankedTileScore {
             tile_id: "t1#0".to_string(),
             tile_key: "t1".to_string(),
             logit: 99.0,
