@@ -359,78 +359,25 @@
 /* ------- Rivers ------- */
 
 .table-stage__river {
-  /* Misty Cloud River - Isolated Mask */
   position: relative;
   display: flex;
   justify-content: center;
   width: max-content;
   border-radius: 1.5rem;
   padding: 0.48rem;
-  /* Clean container to keep tiles 100% opaque */
-  background: transparent;
+  background: color-mix(in srgb, var(--theme-paper) 18%, transparent);
   backdrop-filter: none;
-  border: none;
-  box-shadow: none;
-  z-index: 1;
-  isolation: isolate;
-  /* clip-path used on pseudo-elements instead of contain: paint to allow tile animations to overflow */
-  transform: translateZ(0);
-  will-change: transform;
-}
-
-/* Misty surface layer isolated behind tiles */
-.table-stage__river::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  z-index: -1;
-  /* 
-     Integrated misty background with built-in radial fade.
-     Avoiding mask-image + backdrop-filter combination which causes 
-     major artifacts in transformed containers.
-  */
-  background:
-    radial-gradient(circle at center,
-      color-mix(in srgb, var(--theme-paper) 32%, transparent) 0%,
-      color-mix(in srgb, var(--theme-paper) 16%, transparent) 45%,
-      color-mix(in srgb, var(--theme-paper) 4%, transparent) 72%,
-      transparent 100%),
-    radial-gradient(circle at center,
-      color-mix(in srgb, var(--theme-paper-line) 8%, transparent) 0%,
-      transparent 80%);
-  /* Glassmorphism applies only to background surface */
-  backdrop-filter: blur(8px) saturate(1.08);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 10%, transparent);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent),
-    0 10px 28px -10px rgba(0, 0, 0, 0.16),
-    inset 0 0 14px color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  /* Precise clipping for the blur area only, preserving the 1.5rem radius */
-  clip-path: inset(0 round 1.5rem);
-  opacity: 1;
-  transform: translateZ(0);
-  transition: opacity 180ms ease, transform 180ms ease;
-  backface-visibility: hidden;
+    0 8px 22px -12px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper-strong) 8%, transparent);
+  z-index: 1;
+  isolation: auto;
 }
 
-/* Softer cloud blobs moved further back */
-.table-stage__river::before {
-  content: '';
-  position: absolute;
-  inset: -12%;
-  background:
-    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
-    radial-gradient(circle at 90% 20%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
-    radial-gradient(circle at 20% 90%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%),
-    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--theme-paper) 6%, transparent) 0%, transparent 45%);
-  filter: blur(16px);
-  /* Precise clipping for the blur area only */
-  clip-path: inset(0 round 1.5rem);
-  pointer-events: none;
-  z-index: -2;
-  opacity: 0.4;
-  transform: scale(1);
-  transition: opacity 180ms ease, transform 180ms ease;
+.table-stage__river::before,
+.table-stage__river::after {
+  content: none;
 }
 
 .table-stage__river--top,
@@ -658,19 +605,10 @@
   animation: table-stage-barrage-sweep 9000ms linear forwards;
 }
 
-.table-stage[data-fx='lowFx'] .table-stage__river::after {
-  backdrop-filter: none;
+.table-stage[data-fx='lowFx'] .table-stage__river {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-2) 10%, transparent),
-    0 6px 18px -10px rgba(0, 0, 0, 0.12);
-  opacity: 0.82;
-  transform: scale(0.99);
-}
-
-.table-stage[data-fx='lowFx'] .table-stage__river::before {
-  filter: none;
-  opacity: 0.18;
-  transform: scale(0.96);
+    0 6px 18px -12px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper-strong) 6%, transparent);
 }
 
 .table-stage[data-fx='lowFx'] .table-stage__seat-panel,
