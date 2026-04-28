@@ -8,23 +8,35 @@ V2 uses Rust to parse BotZone match records and export backend-native decision s
 .\backend\bot_trainer\v2\export_full_dataset.ps1 -ProgressEvery 100
 ```
 
+```bash
+./backend/bot_trainer/v2/export_full_dataset.sh --progress-every 100
+```
+
 Small export:
 
 ```powershell
 .\backend\bot_trainer\v2\export_full_dataset.ps1 -OutputDir backend/bot_trainer/v2/out_smoke -MaxMatches 100 -ProgressEvery 10
 ```
 
+```bash
+./backend/bot_trainer/v2/export_full_dataset.sh --output backend/bot_trainer/v2/out_smoke --max-matches 100 --progress-every 10
+```
+
 Default dataset path is `backend/bot_trainer/datasets/data.txt`.
 
 ## GPU Training
 
-The training wrapper defaults to Python from `PATH`, CUDA, AMP, and batch size `2048`.
+The training wrapper defaults to `uv run python`, automatic device selection, AMP, and batch size `4096`.
 
 ```powershell
-.\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 2048 -Device cuda -NumWorkers 0
+.\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 4096 -Device cuda -NumWorkers 0
 ```
 
-If VRAM is tight, reduce `-BatchSize` to `1024`. If you want CPU training, use `-Device cpu -NoAmp`.
+```bash
+./backend/bot_trainer/v2/train_and_export_model.sh --epochs 20 --batch-size 4096 --device cuda --num-workers 0
+```
+
+If VRAM is tight, reduce the batch size to `1024`. If you want CPU training, use `-Device cpu -NoAmp` on Windows or `--device cpu --no-amp` on Linux.
 
 The wrapper writes:
 
@@ -37,8 +49,8 @@ After ONNX export, it runs the Rust ONNX smoke test.
 ## Direct Commands
 
 ```powershell
-python backend/bot_trainer/v2/train.py --data backend/bot_trainer/v2/out --epochs 20 --batch-size 2048 --output backend/bot_trainer/v2/checkpoints --device cuda --amp
-python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --output backend/assets/models/mahjong_policy_net.onnx
+uv run python backend/bot_trainer/v2/train.py --data backend/bot_trainer/v2/out --epochs 20 --batch-size 2048 --output backend/bot_trainer/v2/checkpoints --device cuda --amp
+uv run python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --output backend/assets/models/mahjong_policy_net.onnx
 ```
 
 ## Model Outputs

@@ -10,3 +10,4 @@ node_modules/
 .pytest_cache/
 *.log
 backend/bot_trainer/datasets
+.venv/
