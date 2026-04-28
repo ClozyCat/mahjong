@@ -2,7 +2,9 @@ use super::action_space::{
     CLAIM_ACTION_COUNT, CLAIM_ACTIONS, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT, tile_index,
 };
 use super::context::{BotContext, BotTileView};
-use super::features::{BotFeaturesV2, encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2};
+use super::features::{
+    BotFeaturesV2, encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
+};
 use ort::{session::Session, value::Tensor};
 use std::{
     env,
@@ -160,7 +162,10 @@ impl OrtNeuralSession {
                 }
             };
         }
-        run_session(self.session.as_mut().expect("session initialized"), features)
+        run_session(
+            self.session.as_mut().expect("session initialized"),
+            features,
+        )
     }
 }
 

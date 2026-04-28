@@ -93,7 +93,13 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
         .unwrap_or_else(|| baseline.clone());
 
     if let Some(action) = neural_scores.as_ref().and_then(|scores| {
-        select_neural_v2_self_kong(context, scores, best_kong.as_ref(), baseline.score, engine.kong_margin())
+        select_neural_v2_self_kong(
+            context,
+            scores,
+            best_kong.as_ref(),
+            baseline.score,
+            engine.kong_margin(),
+        )
     }) {
         return Some(action);
     }
@@ -198,9 +204,12 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
         }
     }
 
-    if let Some(action) =
-        select_neural_v2_claim(context, pass_score, best_claim.as_ref(), engine.claim_margin())
-    {
+    if let Some(action) = select_neural_v2_claim(
+        context,
+        pass_score,
+        best_claim.as_ref(),
+        engine.claim_margin(),
+    ) {
         return Some(action);
     }
 
@@ -424,7 +433,9 @@ fn select_neural_v2_self_kong(
         return None;
     }
     if let Some((search_action, search_score)) = best_search_kong {
-        if search_action.tile_ids == action.tile_ids && *search_score >= baseline_score - kong_margin {
+        if search_action.tile_ids == action.tile_ids
+            && *search_score >= baseline_score - kong_margin
+        {
             return Some(action);
         }
     }

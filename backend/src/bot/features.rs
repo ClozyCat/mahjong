@@ -77,7 +77,9 @@ fn encode_tile_planes(context: &BotContext) -> Vec<f32> {
             set_count_plane(
                 &mut planes,
                 2 + offset * 2,
-                melds.iter().flat_map(|group| group.iter().map(String::as_str)),
+                melds
+                    .iter()
+                    .flat_map(|group| group.iter().map(String::as_str)),
             );
         }
     }
@@ -112,7 +114,9 @@ fn encode_scalar_features(context: &BotContext) -> Vec<f32> {
 fn legal_discard_mask(context: &BotContext) -> [bool; TILE_KIND_COUNT] {
     let mut mask = [false; TILE_KIND_COUNT];
     for tile in &context.player.concealed_tiles {
-        if tile.is_flower || Some(tile.tile_key.as_str()) == context.restricted_discard_tile_key.as_deref() {
+        if tile.is_flower
+            || Some(tile.tile_key.as_str()) == context.restricted_discard_tile_key.as_deref()
+        {
             continue;
         }
         if let Some(index) = tile_index(&tile.tile_key) {
@@ -164,11 +168,7 @@ fn legal_hu_mask(context: &BotContext) -> [bool; 2] {
     [true, can_hu]
 }
 
-fn set_count_plane<'a>(
-    planes: &mut [f32],
-    plane: usize,
-    tile_keys: impl Iterator<Item = &'a str>,
-) {
+fn set_count_plane<'a>(planes: &mut [f32], plane: usize, tile_keys: impl Iterator<Item = &'a str>) {
     for tile_key in tile_keys {
         if let Some(index) = tile_index(tile_key) {
             let offset = plane * TILE_KIND_COUNT + index;
@@ -250,7 +250,10 @@ mod tests {
         let context = sample_context_with_tiles(&["w1", "t5", "red"]);
         let encoded = encode_bot_context_v2(&context);
 
-        assert_eq!(encoded.tile_planes.len(), tile_plane_count_v2() * TILE_KIND_COUNT);
+        assert_eq!(
+            encoded.tile_planes.len(),
+            tile_plane_count_v2() * TILE_KIND_COUNT
+        );
         assert_eq!(encoded.scalar_features.len(), scalar_feature_count_v2());
         assert_eq!(encoded.claim_mask.len(), CLAIM_ACTION_COUNT);
         assert_eq!(encoded.self_kong_mask.len(), SELF_KONG_ACTION_COUNT);

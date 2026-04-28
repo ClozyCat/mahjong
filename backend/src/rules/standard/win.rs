@@ -26,7 +26,8 @@ use crate::core::engine::reducer::update_room_state;
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const MULTI_HU_WIN_LABEL: &str = "一炮多响";
-pub(crate) const BOT_MINIMUM_HU_FAN: i64 = 8;
+pub(crate) const MINIMUM_HU_FAN: i64 = 8;
+pub(crate) const BOT_MINIMUM_HU_FAN: i64 = MINIMUM_HU_FAN;
 
 struct PreparedWinEvaluation {
     concealed_tile_keys: Vec<String>,
@@ -80,6 +81,12 @@ pub(crate) fn compute_multi_hu_settlement_for_state(
         .copied()
         .map(|winner_seat| compute_hu_settlement_for_state(state, winner_seat, "discard"))
         .collect::<Result<Vec<_>, _>>()?;
+    if settlements
+        .iter()
+        .any(|settlement| !settlement_meets_minimum_hu_fan(settlement))
+    {
+        return Err("invalid_action".to_string());
+    }
     let seat_count = state
         .round_state
         .as_ref()
@@ -404,7 +411,7 @@ pub fn apply_hu_action_output_in_room_state(
         return Err("invalid_action".to_string());
     };
     let settlement = compute_hu_settlement_for_state(room, seat_index, hu_context)?;
-    if seat_is_bot(room, seat_index) && !settlement_meets_bot_minimum_fan(&settlement) {
+    if !settlement_meets_minimum_hu_fan(&settlement) {
         return Err("invalid_action".to_string());
     }
     apply_hu_settlement_output_in_room_state(room, seat_index, hu_context, settlement)
@@ -416,11 +423,11 @@ pub(crate) fn hu_meets_bot_minimum_fan_for_state(
     hu_context: &str,
 ) -> bool {
     compute_hu_settlement_for_state(state, winner_seat, hu_context)
-        .is_ok_and(|settlement| settlement_meets_bot_minimum_fan(&settlement))
+        .is_ok_and(|settlement| settlement_meets_minimum_hu_fan(&settlement))
 }
 
-fn settlement_meets_bot_minimum_fan(settlement: &RoundSettlement) -> bool {
-    settlement.score_delta.minimum_qualifying_fan_total >= BOT_MINIMUM_HU_FAN
+pub(crate) fn settlement_meets_minimum_hu_fan(settlement: &RoundSettlement) -> bool {
+    settlement.score_delta.minimum_qualifying_fan_total >= MINIMUM_HU_FAN
 }
 
 pub(crate) fn compute_hu_settlement_for_state(
@@ -682,14 +689,6 @@ fn rob_kong_action_offers_seat(
     pending_action.offered_hu_seats.contains(&seat_index)
 }
 
-fn seat_is_bot(state: &RoomState, seat_index: usize) -> bool {
-    state
-        .seats
-        .iter()
-        .find(|seat| seat.seat_index == seat_index)
-        .is_some_and(|seat| seat.is_bot)
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 pub fn claim_window_offers_claim(
@@ -728,7 +727,8 @@ pub fn can_declare_hu_with_cache_for_state(
     incoming_tile: Option<&str>,
     discarder_seat: Option<usize>,
 ) -> bool {
-    fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat).is_ok()
+    fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat)
+        .is_ok_and(|evaluated| evaluated.fan_result.minimum_qualifying_fan_total >= MINIMUM_HU_FAN)
 }
 
 #[cfg(test)]
@@ -1015,6 +1015,21 @@ mod tests {
     }
 
     #[test]
+    fn human_low_fan_self_draw_is_rejected_at_hu_execution() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+
+        let result = apply_hu_action_output_in_room_state(&mut state, 0);
+
+        assert_eq!(
+            result.expect_err("low fan human hu should fail"),
+            "invalid_action"
+        );
+    }
+
+    #[test]
     fn bot_minimum_hu_fan_excludes_flower_tiles() {
         let tile_keys = [
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
@@ -1046,6 +1061,32 @@ mod tests {
             result.expect_err("flower-only minimum fan should fail"),
             "invalid_action"
         );
+    }
+
+    #[test]
+    fn can_declare_hu_requires_eight_non_flower_fan() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        let player = state
+            .round_state
+            .as_mut()
+            .and_then(|round| round.players.get_mut(0))
+            .expect("player should exist");
+        player.flowers = (0..7)
+            .map(|index| Tile {
+                tile_id: format!("flower#{index}"),
+                tile_key: format!("f{}", index + 1),
+                kind: "flower".to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let cache = RoomScoringCache::from_state(&state);
+
+        assert!(!can_declare_hu_with_cache_for_state(
+            &state, &cache, 0, None, None
+        ));
     }
 
     #[test]
