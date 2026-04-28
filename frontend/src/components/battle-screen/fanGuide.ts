@@ -251,7 +251,7 @@ const FAN_GUIDE_DEFINITIONS: Array<Omit<FanGuideEntry, 'label'>> = [
     fanKey: 'reversible_tiles',
     fanValue: 8,
     intro: '整手牌只由推不倒牌张构成，牌面上下颠倒看仍对称。',
-    example: '只用 1234589筒、245689条 和白板组成和牌。',
+    example: '只用 12458筒、245条 和白板组成和牌。',
   },
   {
     fanKey: 'mixed_triple_chow',

@@ -9,9 +9,7 @@ const HONOR_KEYS: [&str; 7] = ["east", "south", "west", "north", "red", "green",
 const WIND_KEYS: [&str; 4] = ["east", "south", "west", "north"];
 const DRAGON_KEYS: [&str; 3] = ["red", "green", "white"];
 const ALL_GREEN_KEYS: [&str; 6] = ["t2", "t3", "t4", "t6", "t8", "green"];
-const REVERSIBLE_TILE_KEYS: [&str; 14] = [
-    "b2", "b4", "b5", "b6", "b8", "b9", "t1", "t2", "t3", "t4", "t5", "t8", "t9", "white",
-];
+const REVERSIBLE_TILE_KEYS: [&str; 9] = ["b1", "b2", "b4", "b5", "b8", "t2", "t4", "t5", "white"];
 const STANDARD_WIN_TILE_KEYS: [&str; 34] = [
     "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
     "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south", "west",
@@ -3539,6 +3537,24 @@ fn parse_suit(tile_key: &str) -> Option<(char, i32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reversible_tiles_use_exact_allowed_tile_set() {
+        let allowed = ["b1", "b2", "b4", "b5", "b8", "t2", "t4", "t5", "white"];
+
+        for tile_key in STANDARD_WIN_TILE_KEYS {
+            let derived = derive_all_tile_data(&[tile_key.to_string()]);
+
+            if allowed.contains(&tile_key) {
+                assert!(derived.reversible_tiles, "{tile_key} should be reversible");
+            } else {
+                assert!(
+                    !derived.reversible_tiles,
+                    "{tile_key} should not be reversible"
+                );
+            }
+        }
+    }
 
     #[test]
     fn scores_big_three_dragons() {
