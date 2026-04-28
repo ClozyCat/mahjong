@@ -343,7 +343,7 @@ impl ReplayState {
             });
         }
         if seat_index == (discarder_seat + 1) % 4 {
-            if let Some(tile_ids) = chow_tile_ids(&self.hands[seat_index], discarded_tile_key) {
+            for tile_ids in chow_tile_id_options(&self.hands[seat_index], discarded_tile_key) {
                 options.push(SerializableClaimOption {
                     action_type: "chow".to_string(),
                     tile_ids,
@@ -364,7 +364,7 @@ impl ReplayState {
         let Some(last_discard) = self.last_discard_tile_key.clone() else {
             return;
         };
-        if let Some(tile_ids) = chow_tile_ids(&self.hands[seat], &last_discard) {
+        if let Some(tile_ids) = chow_tile_ids_for_middle(&self.hands[seat], &last_discard, middle_tile_key) {
             for tile_id in tile_ids {
                 if let Some(tile) = self.hands[seat]
                     .iter()
@@ -510,8 +510,11 @@ fn take_tile_ids(tiles: &[SerializableBotTile], tile_key: &str, count: usize) ->
         .collect()
 }
 
-fn chow_tile_ids(tiles: &[SerializableBotTile], discarded_tile_key: &str) -> Option<Vec<String>> {
-    let discard_index = tile_index(discarded_tile_key)?;
+fn chow_tile_id_options(tiles: &[SerializableBotTile], discarded_tile_key: &str) -> Vec<Vec<String>> {
+    let Some(discard_index) = tile_index(discarded_tile_key) else {
+        return Vec::new();
+    };
+    let mut options = Vec::new();
     for (left, right) in chow_required_tile_pairs(discard_index) {
         let left_key = tile_key_for_index(left);
         let right_key = tile_key_for_index(right);
@@ -524,10 +527,29 @@ fn chow_tile_ids(tiles: &[SerializableBotTile], discarded_tile_key: &str) -> Opt
             .find(|tile| tile.tile_key == right_key)
             .map(|tile| tile.tile_id.clone());
         if let (Some(left_id), Some(right_id)) = (left_id, right_id) {
-            return Some(vec![left_id, right_id]);
+            options.push(vec![left_id, right_id]);
         }
     }
-    None
+    options
+}
+
+fn chow_tile_ids_for_middle(
+    tiles: &[SerializableBotTile],
+    discarded_tile_key: &str,
+    middle_tile_key: &str,
+) -> Option<Vec<String>> {
+    chow_tile_id_options(tiles, discarded_tile_key)
+        .into_iter()
+        .find(|tile_ids| {
+            let mut keys = vec![discarded_tile_key.to_string()];
+            for tile_id in tile_ids {
+                if let Some(tile) = tiles.iter().find(|tile| &tile.tile_id == tile_id) {
+                    keys.push(tile.tile_key.clone());
+                }
+            }
+            keys.sort_by_key(|key| tile_index(key).unwrap_or(usize::MAX));
+            keys.get(1).is_some_and(|key| key == middle_tile_key)
+        })
 }
 
 fn chow_middle_key(

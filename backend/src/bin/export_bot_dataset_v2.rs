@@ -32,7 +32,7 @@ fn main() -> Result<()> {
 }
 
 fn parse_args() -> Result<ExportArgs> {
-    let mut input_path = PathBuf::from("backend/bot_trainer/dataset/data.txt");
+    let mut input_path = PathBuf::from("backend/bot_trainer/datasets/data.txt");
     let mut output_dir = PathBuf::from("backend/bot_trainer/v2/out");
     let mut max_matches = None;
     let mut progress_every = Some(100_usize);

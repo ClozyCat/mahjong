@@ -9,4 +9,4 @@ node_modules/
 .tmp/
 .pytest_cache/
 *.log
-backend/bot_trainer/
+backend/bot_trainer/datasets
