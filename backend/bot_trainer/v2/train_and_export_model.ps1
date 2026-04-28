@@ -9,6 +9,11 @@ param(
     [string]$PythonVersion = "",
     [double]$LearningRate = 0.001,
     [double]$WeightDecay = 0.0001,
+    [double]$ClaimLossWeight = 1.0,
+    [double]$SelfKongLossWeight = 1.0,
+    [double]$HuLossWeight = 1.0,
+    [double]$ValueLossWeight = 0.25,
+    [double]$RiskLossWeight = 0.25,
     [switch]$NoAmp,
     [switch]$CompileModel,
     [switch]$SkipTests,
@@ -133,7 +138,12 @@ try {
         "--device", "cuda",
         "--num-workers", "$NumWorkers",
         "--lr", "$LearningRate",
-        "--weight-decay", "$WeightDecay"
+        "--weight-decay", "$WeightDecay",
+        "--claim-loss-weight", "$ClaimLossWeight",
+        "--self-kong-loss-weight", "$SelfKongLossWeight",
+        "--hu-loss-weight", "$HuLossWeight",
+        "--value-loss-weight", "$ValueLossWeight",
+        "--risk-loss-weight", "$RiskLossWeight"
     )
     if (-not $NoAmp) {
         $trainArgs += "--amp"

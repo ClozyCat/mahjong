@@ -10,6 +10,11 @@ NUM_WORKERS=0
 PYTHON_CMD=(python3)
 LEARNING_RATE=0.001
 WEIGHT_DECAY=0.0001
+CLAIM_LOSS_WEIGHT=1.0
+SELF_KONG_LOSS_WEIGHT=1.0
+HU_LOSS_WEIGHT=1.0
+VALUE_LOSS_WEIGHT=0.25
+RISK_LOSS_WEIGHT=0.25
 NO_AMP=0
 COMPILE_MODEL=0
 SKIP_TESTS=0
@@ -29,6 +34,12 @@ Options:
   --python-exe PATH         Python executable override. Defaults to python3.
   --lr VALUE                Learning rate.
   --weight-decay VALUE      Weight decay.
+  --claim-loss-weight VALUE Claim head loss weight.
+  --self-kong-loss-weight VALUE
+                            Self-kong head loss weight.
+  --hu-loss-weight VALUE    Hu head loss weight.
+  --value-loss-weight VALUE Value head loss weight.
+  --risk-loss-weight VALUE  Risk head loss weight.
   --no-amp                  Do not pass --amp to train.py.
   --compile                 Pass --compile to train.py.
   --skip-tests              Skip pytest before training.
@@ -91,6 +102,31 @@ while [[ $# -gt 0 ]]; do
         --weight-decay)
             require_value "$1" "${2:-}"
             WEIGHT_DECAY="$2"
+            shift 2
+            ;;
+        --claim-loss-weight)
+            require_value "$1" "${2:-}"
+            CLAIM_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
+        --self-kong-loss-weight)
+            require_value "$1" "${2:-}"
+            SELF_KONG_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
+        --hu-loss-weight)
+            require_value "$1" "${2:-}"
+            HU_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
+        --value-loss-weight)
+            require_value "$1" "${2:-}"
+            VALUE_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
+        --risk-loss-weight)
+            require_value "$1" "${2:-}"
+            RISK_LOSS_WEIGHT="$2"
             shift 2
             ;;
         --no-amp)
@@ -208,6 +244,11 @@ train_args=(
     --num-workers "$NUM_WORKERS"
     --lr "$LEARNING_RATE"
     --weight-decay "$WEIGHT_DECAY"
+    --claim-loss-weight "$CLAIM_LOSS_WEIGHT"
+    --self-kong-loss-weight "$SELF_KONG_LOSS_WEIGHT"
+    --hu-loss-weight "$HU_LOSS_WEIGHT"
+    --value-loss-weight "$VALUE_LOSS_WEIGHT"
+    --risk-loss-weight "$RISK_LOSS_WEIGHT"
 )
 
 if (( NO_AMP == 0 )); then

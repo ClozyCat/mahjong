@@ -130,19 +130,55 @@ fn legal_claim_mask(context: &BotContext) -> [bool; CLAIM_ACTION_COUNT] {
     let mut mask = [false; CLAIM_ACTION_COUNT];
     mask[claim_action_index("pass").expect("pass action")] = true;
     for option in &context.claim_options {
-        if let Some(index) = claim_action_index(claim_mask_action_name(&option.action_type)) {
+        if let Some(index) = claim_action_index(claim_mask_action_name(context, option)) {
             mask[index] = true;
         }
     }
     mask
 }
 
-fn claim_mask_action_name(action_type: &str) -> &str {
-    match action_type {
-        "chow_left" | "chow_mid" | "chow_right" => action_type,
-        "chow" => "chow_mid",
-        other => other,
+fn claim_mask_action_name<'a>(
+    context: &BotContext,
+    option: &'a crate::projection::bot_view::BotClaimOption,
+) -> &'a str {
+    if option.action_type != "chow" {
+        return option.action_type.as_str();
     }
+    chow_action_name(context, option).unwrap_or("chow_mid")
+}
+
+fn chow_action_name(
+    context: &BotContext,
+    option: &crate::projection::bot_view::BotClaimOption,
+) -> Option<&'static str> {
+    let last_discard = context.last_discard_tile_key.as_deref()?;
+    let discard_index = tile_index(last_discard)?;
+    if discard_index >= 27 {
+        return Some("chow_mid");
+    }
+
+    let mut keys = vec![last_discard.to_string()];
+    for tile_id in &option.tile_ids {
+        let tile = context
+            .player
+            .concealed_tiles
+            .iter()
+            .find(|tile| &tile.tile_id == tile_id)?;
+        keys.push(tile.tile_key.clone());
+    }
+
+    keys.sort_by_key(|key| tile_index(key).unwrap_or(usize::MAX));
+    let middle_index = tile_index(keys.get(1)?)?;
+    if middle_index >= 27 || middle_index / 9 != discard_index / 9 {
+        return Some("chow_mid");
+    }
+    if discard_index == middle_index - 1 {
+        return Some("chow_left");
+    }
+    if discard_index == middle_index + 1 {
+        return Some("chow_right");
+    }
+    Some("chow_mid")
 }
 
 fn legal_self_kong_mask(context: &BotContext) -> [bool; SELF_KONG_ACTION_COUNT] {
@@ -243,6 +279,26 @@ mod tests {
         assert!(encoded.discard_mask[tile_index("t5").unwrap()]);
         assert!(encoded.discard_mask[tile_index("red").unwrap()]);
         assert!(!encoded.discard_mask[tile_index("b9").unwrap()]);
+    }
+
+    #[test]
+    fn chow_claim_mask_preserves_left_middle_right_direction() {
+        use crate::bot::action_space::claim_action_index;
+        use crate::projection::bot_view::BotClaimOption;
+
+        let mut context = sample_context_with_tiles(&["w4", "w5", "t1"]);
+        context.last_discard_tile_key = Some("w3".to_string());
+        context.claim_options = vec![BotClaimOption {
+            action_type: "chow".to_string(),
+            tile_ids: vec!["w4#0".to_string(), "w5#1".to_string()],
+        }];
+
+        let encoded = encode_bot_context_v2(&context);
+
+        assert!(encoded.claim_mask[claim_action_index("pass").unwrap()]);
+        assert!(encoded.claim_mask[claim_action_index("chow_left").unwrap()]);
+        assert!(!encoded.claim_mask[claim_action_index("chow_mid").unwrap()]);
+        assert!(!encoded.claim_mask[claim_action_index("chow_right").unwrap()]);
     }
 
     #[test]

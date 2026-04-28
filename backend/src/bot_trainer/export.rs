@@ -36,6 +36,7 @@ pub struct ExportReport {
     pub match_count: usize,
     pub sample_count: usize,
     pub illegal_label_count: usize,
+    pub runtime_illegal_label_count: usize,
     pub parse_error_count: usize,
     pub skipped_match_ids: Vec<String>,
     pub samples_by_split: BTreeMap<DatasetSplit, usize>,
@@ -152,8 +153,9 @@ pub fn run_export_with_options(
         };
         for sample in samples {
             if let Err(error) = validate_sample(&sample) {
-                report.illegal_label_count += 1;
-                return Err(error);
+                report.runtime_illegal_label_count += 1;
+                eprintln!("skip runtime-illegal sample: {error}");
+                continue;
             }
             *report.samples_by_split.entry(split).or_default() += 1;
             *report
@@ -175,11 +177,12 @@ pub fn run_export_with_options(
     writers.flush()?;
     write_json(output_dir.join("export_report.json"), &report)?;
     eprintln!(
-        "finished export: matches={} samples={} skipped={} illegal_labels={} elapsed_s={:.1}",
+        "finished export: matches={} samples={} skipped={} illegal_labels={} runtime_illegal_labels={} elapsed_s={:.1}",
         report.match_count,
         report.sample_count,
         report.skipped_match_ids.len(),
         report.illegal_label_count,
+        report.runtime_illegal_label_count,
         started.elapsed().as_secs_f64()
     );
     Ok(report)
@@ -380,5 +383,55 @@ mod tests {
         );
         assert_eq!(label_to_action_id(&TrainingLabel::Hu), "claim:hu");
         assert_eq!(label_to_action_id(&TrainingLabel::Pass), "pass");
+    }
+
+    #[test]
+    fn validate_sample_rejects_restricted_discard_label() {
+        let mut sample = TrainingDecisionSampleV2 {
+            schema_version: 2,
+            match_id: "fixture".to_string(),
+            decision_index: 0,
+            seat_index: 0,
+            decision_kind: DecisionKind::ActiveTurn,
+            context: crate::bot_trainer::replay::SerializableBotContext {
+                seat_index: 0,
+                seat_count: 4,
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                cumulative_scores: vec![0, 0, 0, 0],
+                wall_tiles_remaining: 70,
+                visible_tile_keys: vec![],
+                opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
+                opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+                player: crate::bot_trainer::replay::SerializableBotPlayer {
+                    concealed_tiles: vec![],
+                    concealed_tile_counts: vec![0; 34],
+                    meld_tile_key_groups: vec![],
+                    flower_count: 0,
+                },
+                restricted_discard_tile_key: Some("w1".to_string()),
+                drawn_tile_id: None,
+                self_kong_candidates: vec![],
+                claim_options: vec![],
+                last_discard_tile_key: None,
+                add_kong_risk_tiles: Default::default(),
+            },
+            legal_actions: vec!["discard:w2".to_string()],
+            label: TrainingLabel::Discard {
+                tile_key: "w1".to_string(),
+            },
+            outcome: crate::bot_trainer::replay::SampleOutcome {
+                score_delta: 0,
+                won: false,
+                dealt_in: false,
+                round_drawn: false,
+            },
+        };
+
+        assert!(validate_sample(&sample).is_err());
+        sample.label = TrainingLabel::Discard {
+            tile_key: "w2".to_string(),
+        };
+        assert!(validate_sample(&sample).is_ok());
     }
 }

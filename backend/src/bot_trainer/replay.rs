@@ -700,6 +700,9 @@ fn legal_discard_actions(context: &SerializableBotContext) -> Vec<String> {
         .concealed_tiles
         .iter()
         .filter(|tile| !tile.is_flower)
+        .filter(|tile| {
+            Some(tile.tile_key.as_str()) != context.restricted_discard_tile_key.as_deref()
+        })
         .filter(|tile| seen.insert(tile.tile_key.clone()))
         .map(|tile| format!("discard:{}", tile.tile_key))
         .collect()
@@ -1189,12 +1192,10 @@ Score 0 0 0 0
             claimed_turn.context.restricted_discard_tile_key.as_deref(),
             Some("b1")
         );
-        assert!(
-            claimed_turn
-                .legal_actions
-                .iter()
-                .any(|action| action == "discard:b1")
-        );
+        assert!(!claimed_turn
+            .legal_actions
+            .iter()
+            .any(|action| action == "discard:b1"));
         assert!(!claimed_turn.context.opponent_discards_by_seat[0].contains(&"b1".to_string()));
         assert!(
             claimed_turn.context.opponent_melds_by_seat[1]
@@ -1214,7 +1215,7 @@ Score 0 0 0 0
     }
 
     #[test]
-    fn same_tile_key_after_chow_remains_legal_when_source_player_has_own_copy() {
+    fn same_tile_key_after_chow_matches_runtime_restricted_discard_rule() {
         let record = parse_match(
             r#"
 Match same key after chow
@@ -1237,23 +1238,14 @@ Score 0 0 0 0
             .find(|sample| {
                 sample.seat_index == 1
                     && sample.decision_kind == DecisionKind::ActiveTurn
-                    && sample.label
-                        == TrainingLabel::Discard {
-                            tile_key: "b9".to_string(),
-                        }
+                    && sample.context.restricted_discard_tile_key.as_deref() == Some("b9")
             })
             .expect("active turn after chow");
 
-        assert_eq!(
-            claimed_turn.context.restricted_discard_tile_key.as_deref(),
-            Some("b9")
-        );
-        assert!(
-            claimed_turn
-                .legal_actions
-                .iter()
-                .any(|action| action == "discard:b9")
-        );
+        assert!(!claimed_turn
+            .legal_actions
+            .iter()
+            .any(|action| action == "discard:b9"));
     }
 
     #[test]

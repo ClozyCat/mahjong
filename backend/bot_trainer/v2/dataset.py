@@ -52,7 +52,7 @@ class MahjongDecisionDataset(Dataset):
             return
         cache_path = jsonl_path.with_suffix('.cache.pt')
         if cache_path.exists():
-            print(f"⚡ 发现本地缓存文件 {cache_path.name}，正在极速加载二进制张量...")
+            print(f"发现本地缓存文件 {cache_path.name}，正在快速加载二进制张量...")
             # 直接从磁盘加载张量字典到内存，速度极快
             cache = torch.load(cache_path, map_location='cpu', weights_only=True)
             
@@ -71,7 +71,7 @@ class MahjongDecisionDataset(Dataset):
             self.risk_target = cache["risk_target"]
             self.decision_kind = cache["decision_kind"]
             
-            print("✅ 缓存加载完毕！可以直接开始训练。")
+            print("缓存加载完毕！可以直接开始训练。")
             return
         # 1. 极速扫描获取总行数，用于精确预分配内存
         print(f"Scanning {jsonl_path.name} to allocate continuous memory...")
@@ -145,7 +145,7 @@ class MahjongDecisionDataset(Dataset):
                     self.value_target[i] = torch.from_numpy(encoded["value_target"])
                     self.risk_target[i] = torch.from_numpy(encoded["risk_target"])
                     self.decision_kind[i] = int(encoded["decision_kind"])
-        print(f"💾 首次解析完成！正在将张量保存为二进制缓存至 {cache_path.name}...")
+        print(f"首次解析完成！正在将张量保存为二进制缓存至 {cache_path.name}...")
         torch.save({
             "num_samples": self.num_samples,
             "tile_planes": self.tile_planes,
@@ -162,7 +162,7 @@ class MahjongDecisionDataset(Dataset):
             "risk_target": self.risk_target,
             "decision_kind": self.decision_kind,
         }, cache_path)
-        print("✅ 缓存保存完毕！下次启动将极速进入训练。")
+        print("缓存保存完毕！下次启动将快速进入训练。")
     def __len__(self) -> int:
         return getattr(self, "num_samples", 0)
 

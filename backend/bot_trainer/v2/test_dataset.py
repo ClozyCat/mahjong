@@ -56,6 +56,38 @@ def test_self_kong_pass_trains_self_kong_head_only(tmp_path: Path) -> None:
     assert encoded["self_kong_mask"][1].item()
 
 
+def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.tensor([[3.0, 0.0] + [-100.0] * 32]),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.tensor([[999.0]]),
+        "risk_logits": torch.full((1, 34), 999.0),
+    }
+    batch = {
+        "discard_mask": torch.tensor([[True, True] + [False] * 32]),
+        "discard_target": torch.tensor([0]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.tensor([[True, False]]),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.tensor([[0.0]]),
+        "risk_target": torch.zeros((1, 34)),
+    }
+
+    losses = compute_losses(outputs, batch, value_weight=0.0, risk_weight=0.0, hu_weight=1.0)
+
+    assert losses["value_loss"].item() > 1000.0
+    assert losses["risk_loss"].item() > 100.0
+    assert losses["loss"].item() < 0.1
+
+
 def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
     row = json.loads(json.dumps(base_row))
     row["decision_kind"] = "claim_window"

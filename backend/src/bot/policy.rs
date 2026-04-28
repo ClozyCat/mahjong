@@ -445,10 +445,7 @@ fn select_neural_only_claim(
     if best.action_name == "pass" {
         return Some(pass_action(context.seat_index));
     }
-    let option = context
-        .claim_options
-        .iter()
-        .find(|option| claim_option_matches_ranked_action(&option.action_type, best.action_name))?;
+    let option = claim_option_for_ranked_action(context, best.action_name)?;
     Some(BotAction {
         seat_index: context.seat_index,
         action_type: option.action_type.clone(),
@@ -468,10 +465,7 @@ fn select_hybrid_claim(
     if best.action_name == "pass" {
         return Some(pass_action(context.seat_index));
     }
-    let option = context
-        .claim_options
-        .iter()
-        .find(|option| claim_option_matches_ranked_action(&option.action_type, best.action_name))?;
+    let option = claim_option_for_ranked_action(context, best.action_name)?;
     if best.action_name == "hu" {
         return Some(BotAction {
             seat_index: context.seat_index,
@@ -480,7 +474,7 @@ fn select_hybrid_claim(
         });
     }
     if let Some((search_action, search_score)) = best_search_claim {
-        if claim_action_matches_ranked_action(search_action, option, best.action_name)
+        if claim_action_matches_option(search_action, option)
             && *search_score >= pass_score - claim_margin
         {
             return Some(BotAction {
@@ -550,20 +544,67 @@ fn select_neural_v2_self_kong(
     None
 }
 
-fn claim_option_matches_ranked_action(option_action_type: &str, ranked_action_name: &str) -> bool {
-    match ranked_action_name {
-        "chow_left" | "chow_mid" | "chow_right" => option_action_type == "chow",
-        other => option_action_type == other,
-    }
+fn claim_option_for_ranked_action<'a>(
+    context: &'a BotContext,
+    ranked_action_name: &str,
+) -> Option<&'a crate::projection::bot_view::BotClaimOption> {
+    context.claim_options.iter().find(|option| {
+        if option.action_type == "chow" {
+            claim_chow_action_name(context, option) == ranked_action_name
+        } else {
+            option.action_type == ranked_action_name
+        }
+    })
 }
 
-fn claim_action_matches_ranked_action(
+fn claim_chow_action_name(
+    context: &BotContext,
+    option: &crate::projection::bot_view::BotClaimOption,
+) -> &'static str {
+    let Some(last_discard) = context.last_discard_tile_key.as_deref() else {
+        return "chow_mid";
+    };
+    let Some(discard_index) = tile_index(last_discard) else {
+        return "chow_mid";
+    };
+    if discard_index >= HONOR_TILE_START {
+        return "chow_mid";
+    }
+
+    let mut keys = vec![last_discard.to_string()];
+    for tile_id in &option.tile_ids {
+        let Some(tile) = context
+            .player
+            .concealed_tiles
+            .iter()
+            .find(|tile| &tile.tile_id == tile_id)
+        else {
+            return "chow_mid";
+        };
+        keys.push(tile.tile_key.clone());
+    }
+
+    keys.sort_by_key(|key| tile_index(key).unwrap_or(usize::MAX));
+    let Some(middle_index) = keys.get(1).and_then(|key| tile_index(key)) else {
+        return "chow_mid";
+    };
+    if middle_index >= HONOR_TILE_START || middle_index / 9 != discard_index / 9 {
+        return "chow_mid";
+    }
+    if discard_index == middle_index - 1 {
+        return "chow_left";
+    }
+    if discard_index == middle_index + 1 {
+        return "chow_right";
+    }
+    "chow_mid"
+}
+
+fn claim_action_matches_option(
     action: &BotAction,
     option: &crate::projection::bot_view::BotClaimOption,
-    ranked_action_name: &str,
 ) -> bool {
-    claim_option_matches_ranked_action(&action.action_type, ranked_action_name)
-        && action.tile_ids == option.tile_ids
+    action.action_type == option.action_type && action.tile_ids == option.tile_ids
 }
 
 fn pass_action(seat_index: usize) -> BotAction {
@@ -661,6 +702,42 @@ mod tests {
         assert_eq!(counts[tile_index("w1").expect("tile index")], 1);
         assert_eq!(counts[tile_index("east").expect("tile index")], 1);
         assert_eq!(counts[tile_index("red").expect("tile index")], 0);
+    }
+
+    #[test]
+    fn ranked_chow_action_matches_the_same_chow_shape() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&["w2", "w4", "w4", "w5"]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles.clone();
+        context.last_discard_tile_key = Some("w3".to_string());
+        context.claim_options = vec![
+            BotClaimOption {
+                action_type: "chow".to_string(),
+                tile_ids: vec![
+                    concealed_tiles[0].tile_id.clone(),
+                    concealed_tiles[1].tile_id.clone(),
+                ],
+            },
+            BotClaimOption {
+                action_type: "chow".to_string(),
+                tile_ids: vec![
+                    concealed_tiles[2].tile_id.clone(),
+                    concealed_tiles[3].tile_id.clone(),
+                ],
+            },
+        ];
+
+        let selected = claim_option_for_ranked_action(&context, "chow_left").expect("chow option");
+
+        assert_eq!(
+            selected.tile_ids,
+            vec![
+                concealed_tiles[2].tile_id.clone(),
+                concealed_tiles[3].tile_id.clone()
+            ]
+        );
     }
 
     #[test]

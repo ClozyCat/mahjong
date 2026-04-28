@@ -56,6 +56,13 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
     print(f"device={device} amp={use_amp} num_workers={args.num_workers}")
+    loss_weights = {
+        "claim_weight": args.claim_loss_weight,
+        "self_kong_weight": args.self_kong_loss_weight,
+        "hu_weight": args.hu_loss_weight,
+        "value_weight": args.value_loss_weight,
+        "risk_weight": args.risk_loss_weight,
+    }
 
     best_metric = math.inf
     best_metrics: dict[str, float] = {}
@@ -63,12 +70,14 @@ def main() -> None:
     for epoch in range(1, args.epochs + 1):
         train_metrics = run_epoch(
             model, train_loader, optimizer, device, scaler, use_amp, 
+            loss_weights=loss_weights,
             epoch_desc=f"Train Epoch {epoch}/{args.epochs}"
         )
         
         val_metrics = (
             run_epoch(
                 model, val_loader, None, device, scaler, use_amp, 
+                loss_weights=loss_weights,
                 epoch_desc=f"Val Epoch {epoch}/{args.epochs}"
             )
             if val_loader is not None
@@ -113,6 +122,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--claim-loss-weight", type=float, default=1.0)
+    parser.add_argument("--self-kong-loss-weight", type=float, default=1.0)
+    parser.add_argument("--hu-loss-weight", type=float, default=1.0)
+    parser.add_argument("--value-loss-weight", type=float, default=0.25)
+    parser.add_argument("--risk-loss-weight", type=float, default=0.25)
     return parser.parse_args()
 
 def resolve_device(requested: str) -> torch.device:
@@ -165,6 +179,7 @@ def run_epoch(
     device: torch.device,
     scaler: torch.amp.GradScaler,
     use_amp: bool,
+    loss_weights: dict[str, float] | None = None,
     epoch_desc: str = "",
 ) -> dict[str, float]:
     if loader is None:
@@ -182,7 +197,7 @@ def run_epoch(
         with torch.set_grad_enabled(is_training):
             with torch.amp.autocast(amp_device_type, enabled=use_amp):
                 outputs = model(batch["tile_planes"].float(), batch["scalar_features"].float())
-                losses = compute_losses(outputs, batch)
+                losses = compute_losses(outputs, batch, **(loss_weights or {}))
             loss = losses["loss"]
             if is_training:
                 optimizer.zero_grad(set_to_none=True)
@@ -197,15 +212,38 @@ def run_epoch(
 
     return totals.as_metrics()
 
-def compute_losses(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def compute_losses(
+    outputs: dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
+    claim_weight: float = 1.0,
+    self_kong_weight: float = 1.0,
+    hu_weight: float = 1.0,
+    value_weight: float = 0.25,
+    risk_weight: float = 0.25,
+) -> dict[str, torch.Tensor]:
     discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
     claim_loss = masked_cross_entropy(outputs["claim_logits"], batch["claim_mask"], batch["claim_target"])
     self_kong_loss = masked_cross_entropy(outputs["self_kong_logits"], batch["self_kong_mask"], batch["self_kong_target"])
     hu_loss = masked_cross_entropy(outputs["hu_logits"], batch["hu_mask"], batch["hu_target"])
     value_loss = F.mse_loss(outputs["value"], batch["value_target"].float())
     risk_loss = F.binary_cross_entropy_with_logits(outputs["risk_logits"], batch["risk_target"].float())
-    loss = discard_loss + claim_loss + self_kong_loss + hu_loss + 0.25 * value_loss + 0.25 * risk_loss
-    return {"loss": loss, "value_loss": value_loss}
+    loss = (
+        discard_loss
+        + claim_weight * claim_loss
+        + self_kong_weight * self_kong_loss
+        + hu_weight * hu_loss
+        + value_weight * value_loss
+        + risk_weight * risk_loss
+    )
+    return {
+        "loss": loss,
+        "discard_loss": discard_loss,
+        "claim_loss": claim_loss,
+        "self_kong_loss": self_kong_loss,
+        "hu_loss": hu_loss,
+        "value_loss": value_loss,
+        "risk_loss": risk_loss,
+    }
 
 def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     active = target != IGNORE_INDEX
@@ -218,7 +256,12 @@ class MetricTotals:
     def __init__(self, device: torch.device) -> None:
         self.device = device
         self.loss_sum = torch.tensor(0.0, device=device)
+        self.discard_loss_sum = torch.tensor(0.0, device=device)
+        self.claim_loss_sum = torch.tensor(0.0, device=device)
+        self.self_kong_loss_sum = torch.tensor(0.0, device=device)
+        self.hu_loss_sum = torch.tensor(0.0, device=device)
         self.value_loss_sum = torch.tensor(0.0, device=device)
+        self.risk_loss_sum = torch.tensor(0.0, device=device)
         self.batch_count = 0
         self.discard_top1 = torch.tensor(0, device=device)
         self.discard_top3 = torch.tensor(0, device=device)
@@ -230,7 +273,12 @@ class MetricTotals:
 
     def update(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor], losses: dict[str, torch.Tensor]) -> None:
         self.loss_sum += losses["loss"].detach()
+        self.discard_loss_sum += losses["discard_loss"].detach()
+        self.claim_loss_sum += losses["claim_loss"].detach()
+        self.self_kong_loss_sum += losses["self_kong_loss"].detach()
+        self.hu_loss_sum += losses["hu_loss"].detach()
         self.value_loss_sum += losses["value_loss"].detach()
+        self.risk_loss_sum += losses["risk_loss"].detach()
         self.batch_count += 1
         self.update_discard(outputs["discard_logits"], batch)
         self.update_claim(outputs["claim_logits"], batch)
@@ -292,7 +340,12 @@ class MetricTotals:
         kong_precision, kong_recall = grouped_positive_precision_recall(self.kong_confusion)
         metrics = {
             "loss": self.loss_sum.item() / max(1, self.batch_count),
+            "discard_loss": self.discard_loss_sum.item() / max(1, self.batch_count),
+            "claim_loss": self.claim_loss_sum.item() / max(1, self.batch_count),
+            "self_kong_loss": self.self_kong_loss_sum.item() / max(1, self.batch_count),
+            "hu_loss": self.hu_loss_sum.item() / max(1, self.batch_count),
             "value_loss": self.value_loss_sum.item() / max(1, self.batch_count),
+            "risk_loss": self.risk_loss_sum.item() / max(1, self.batch_count),
             "discard_top1": self.discard_top1.item() / max(1, self.discard_count.item()),
             "discard_top3": self.discard_top3.item() / max(1, self.discard_count.item()),
             "discard_top5": self.discard_top5.item() / max(1, self.discard_count.item()),
@@ -352,7 +405,12 @@ def per_class_metrics(confusion: torch.Tensor, names: list[str], prefix: str) ->
 def empty_metrics() -> dict[str, float]:
     metrics = {
         "loss": 0.0,
+        "discard_loss": 0.0,
+        "claim_loss": 0.0,
+        "self_kong_loss": 0.0,
+        "hu_loss": 0.0,
         "value_loss": 0.0,
+        "risk_loss": 0.0,
         "discard_top1": 0.0,
         "discard_top3": 0.0,
         "discard_top5": 0.0,
