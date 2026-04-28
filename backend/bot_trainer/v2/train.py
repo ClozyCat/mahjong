@@ -18,6 +18,9 @@ except ModuleNotFoundError as exc:
 from dataset import IGNORE_INDEX, MahjongDecisionDataset, SCALAR_FEATURE_COUNT, TILE_PLANE_COUNT
 from model import ModelConfig, build_model
 
+CLAIM_ACTION_NAMES = ["pass", "hu", "pung", "kong", "chow_left", "chow_mid", "chow_right"]
+SELF_KONG_ACTION_NAMES = ["pass", "concealed_kong", "add_kong"]
+
 def main() -> None:
     args = parse_args()
     torch.manual_seed(args.seed)
@@ -73,8 +76,12 @@ def main() -> None:
             f"train_loss={train_metrics['loss']:.4f} | "
             f"val_loss={val_metrics['loss']:.4f} | "
             f"discard_top1={val_metrics['discard_top1']:.4f} | "
+            f"discard_top3={val_metrics['discard_top3']:.4f} | "
+            f"discard_top5={val_metrics['discard_top5']:.4f} | "
             f"claim_macro_f1={val_metrics['claim_macro_f1']:.4f} | "
+            f"hu_precision={val_metrics['hu_precision']:.4f} | "
             f"hu_recall={val_metrics['hu_recall']:.4f} | "
+            f"kong_precision={val_metrics['kong_precision']:.4f} | "
             f"kong_recall={val_metrics['kong_recall']:.4f}"
         )
 
@@ -191,12 +198,11 @@ class MetricTotals:
         self.batch_count = 0
         self.discard_top1 = torch.tensor(0, device=device)
         self.discard_top3 = torch.tensor(0, device=device)
+        self.discard_top5 = torch.tensor(0, device=device)
         self.discard_count = torch.tensor(0, device=device)
         self.claim_confusion = torch.zeros((7, 7), dtype=torch.int64, device=device)
-        self.hu_tp = torch.tensor(0, device=device)
-        self.hu_fn = torch.tensor(0, device=device)
-        self.kong_tp = torch.tensor(0, device=device)
-        self.kong_fn = torch.tensor(0, device=device)
+        self.hu_confusion = torch.zeros((2, 2), dtype=torch.int64, device=device)
+        self.kong_confusion = torch.zeros((3, 3), dtype=torch.int64, device=device)
 
     def update(self, outputs: dict[str, torch.Tensor], batch: dict[str, torch.Tensor], losses: dict[str, torch.Tensor]) -> None:
         # 全部用 .detach() 保留为张量，不使用 .cpu()
@@ -214,10 +220,11 @@ class MetricTotals:
         if not torch.any(active):
             return
         masked = logits.masked_fill(~batch["discard_mask"].bool(), -1.0e4)
-        topk = torch.topk(masked[active], k=min(3, masked.shape[1]), dim=1).indices
+        topk = torch.topk(masked[active], k=min(5, masked.shape[1]), dim=1).indices
         target_active = target[active].long()
         self.discard_top1 += (topk[:, 0] == target_active).sum()
-        self.discard_top3 += (topk == target_active.unsqueeze(1)).any(dim=1).sum()
+        self.discard_top3 += (topk[:, : min(3, topk.shape[1])] == target_active.unsqueeze(1)).any(dim=1).sum()
+        self.discard_top5 += (topk == target_active.unsqueeze(1)).any(dim=1).sum()
         self.discard_count += target_active.numel()
 
     def update_claim(self, logits: torch.Tensor, batch: dict[str, torch.Tensor]) -> None:
@@ -238,33 +245,45 @@ class MetricTotals:
         active = target != IGNORE_INDEX
         if not torch.any(active):
             return
-        pred = logits[active].argmax(dim=1)
-        positives = target[active].long() == 1
-        self.hu_tp += ((pred == 1) & positives).sum()
-        self.hu_fn += ((pred != 1) & positives).sum()
+        masked = logits.masked_fill(~batch["hu_mask"].bool(), -1.0e4)
+        pred = masked[active].argmax(dim=1)
+        target_active = target[active].long()
+        indices = target_active * 2 + pred
+        counts = torch.bincount(indices, minlength=4)
+        self.hu_confusion += counts.view(2, 2)
 
     def update_kong(self, logits: torch.Tensor, batch: dict[str, torch.Tensor]) -> None:
         target = batch["self_kong_target"]
         active = target != IGNORE_INDEX
         if not torch.any(active):
             return
-        pred = logits[active].argmax(dim=1)
-        positives = target[active].long() != 0
-        self.kong_tp += ((pred != 0) & positives).sum()
-        self.kong_fn += ((pred == 0) & positives).sum()
+        masked = logits.masked_fill(~batch["self_kong_mask"].bool(), -1.0e4)
+        pred = masked[active].argmax(dim=1)
+        target_active = target[active].long()
+        indices = target_active * 3 + pred
+        counts = torch.bincount(indices, minlength=9)
+        self.kong_confusion += counts.view(3, 3)
 
     def as_metrics(self) -> dict[str, float]:
         # 只在计算最终结果时（也就是 Epoch 结束时），才统一下发 .item() 获取数据
         claim_f1 = macro_f1(self.claim_confusion)
-        return {
+        hu_precision, hu_recall = positive_precision_recall(self.hu_confusion, 1)
+        kong_precision, kong_recall = grouped_positive_precision_recall(self.kong_confusion)
+        metrics = {
             "loss": self.loss_sum.item() / max(1, self.batch_count),
             "value_loss": self.value_loss_sum.item() / max(1, self.batch_count),
             "discard_top1": self.discard_top1.item() / max(1, self.discard_count.item()),
             "discard_top3": self.discard_top3.item() / max(1, self.discard_count.item()),
+            "discard_top5": self.discard_top5.item() / max(1, self.discard_count.item()),
             "claim_macro_f1": claim_f1,
-            "hu_recall": self.hu_tp.item() / max(1, self.hu_tp.item() + self.hu_fn.item()),
-            "kong_recall": self.kong_tp.item() / max(1, self.kong_tp.item() + self.kong_fn.item()),
+            "hu_precision": hu_precision,
+            "hu_recall": hu_recall,
+            "kong_precision": kong_precision,
+            "kong_recall": kong_recall,
         }
+        metrics.update(per_class_metrics(self.claim_confusion, CLAIM_ACTION_NAMES, "claim"))
+        metrics.update(per_class_metrics(self.kong_confusion, SELF_KONG_ACTION_NAMES, "self_kong"))
+        return metrics
 
 def macro_f1(confusion: torch.Tensor) -> float:
     scores = []
@@ -279,8 +298,60 @@ def macro_f1(confusion: torch.Tensor) -> float:
         scores.append(0.0 if precision + recall == 0.0 else 2 * precision * recall / (precision + recall))
     return sum(scores) / max(1, len(scores))
 
+def positive_precision_recall(confusion: torch.Tensor, index: int) -> tuple[float, float]:
+    tp = float(confusion[index, index].item())
+    fp = float((confusion[:, index].sum() - confusion[index, index]).item())
+    fn = float((confusion[index, :].sum() - confusion[index, index]).item())
+    return tp / max(1.0, tp + fp), tp / max(1.0, tp + fn)
+
+def grouped_positive_precision_recall(confusion: torch.Tensor) -> tuple[float, float]:
+    tp = float(confusion[1:, 1:].sum().item())
+    fp = float(confusion[0, 1:].sum().item())
+    fn = float(confusion[1:, 0].sum().item())
+    return tp / max(1.0, tp + fp), tp / max(1.0, tp + fn)
+
+def per_class_metrics(confusion: torch.Tensor, names: list[str], prefix: str) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    for index, name in enumerate(names):
+        if index >= confusion.shape[0]:
+            continue
+        tp = float(confusion[index, index].item())
+        fp = float((confusion[:, index].sum() - confusion[index, index]).item())
+        fn = float((confusion[index, :].sum() - confusion[index, index]).item())
+        support = float(confusion[index, :].sum().item())
+        precision = tp / max(1.0, tp + fp)
+        recall = tp / max(1.0, tp + fn)
+        f1 = 0.0 if precision + recall == 0.0 else 2 * precision * recall / (precision + recall)
+        metrics[f"{prefix}_{name}_precision"] = precision
+        metrics[f"{prefix}_{name}_recall"] = recall
+        metrics[f"{prefix}_{name}_f1"] = f1
+        metrics[f"{prefix}_{name}_support"] = support
+    return metrics
+
 def empty_metrics() -> dict[str, float]:
-    return {"loss": 0.0, "value_loss": 0.0, "discard_top1": 0.0, "discard_top3": 0.0, "claim_macro_f1": 0.0, "hu_recall": 0.0, "kong_recall": 0.0}
+    metrics = {
+        "loss": 0.0,
+        "value_loss": 0.0,
+        "discard_top1": 0.0,
+        "discard_top3": 0.0,
+        "discard_top5": 0.0,
+        "claim_macro_f1": 0.0,
+        "hu_precision": 0.0,
+        "hu_recall": 0.0,
+        "kong_precision": 0.0,
+        "kong_recall": 0.0,
+    }
+    for name in CLAIM_ACTION_NAMES:
+        metrics[f"claim_{name}_precision"] = 0.0
+        metrics[f"claim_{name}_recall"] = 0.0
+        metrics[f"claim_{name}_f1"] = 0.0
+        metrics[f"claim_{name}_support"] = 0.0
+    for name in SELF_KONG_ACTION_NAMES:
+        metrics[f"self_kong_{name}_precision"] = 0.0
+        metrics[f"self_kong_{name}_recall"] = 0.0
+        metrics[f"self_kong_{name}_f1"] = 0.0
+        metrics[f"self_kong_{name}_support"] = 0.0
+    return metrics
 
 def move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}

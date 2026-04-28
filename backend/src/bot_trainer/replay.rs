@@ -123,6 +123,15 @@ pub(crate) fn replay_match_to_samples(
             }
             BotZoneAction::Play { tile_key } => {
                 let outcome = outcome_by_seat[event.actor].clone();
+                if state.has_self_kong_candidates(event.actor) {
+                    samples.push(state.self_kong_sample(
+                        record,
+                        &mut decision_index,
+                        event.actor,
+                        TrainingLabel::Pass,
+                        outcome.clone(),
+                    ));
+                }
                 samples.push(state.active_turn_sample(
                     record,
                     &mut decision_index,
@@ -157,9 +166,38 @@ pub(crate) fn replay_match_to_samples(
                 state.apply_same_tile_meld(event.actor, tile_key, 3);
             }
             BotZoneAction::AnGang { tile_key } => {
-                state.apply_same_tile_meld(event.actor, tile_key, 4);
+                samples.push(state.self_kong_sample(
+                    record,
+                    &mut decision_index,
+                    event.actor,
+                    TrainingLabel::SelfKong {
+                        kind: "concealed_kong".to_string(),
+                        tile_key: tile_key.clone(),
+                    },
+                    outcome_by_seat[event.actor].clone(),
+                ));
+                state.apply_concealed_kong(event.actor, tile_key);
             }
             BotZoneAction::BuGang { tile_key } => {
+                samples.push(state.self_kong_sample(
+                    record,
+                    &mut decision_index,
+                    event.actor,
+                    TrainingLabel::SelfKong {
+                        kind: "add_kong".to_string(),
+                        tile_key: tile_key.clone(),
+                    },
+                    outcome_by_seat[event.actor].clone(),
+                ));
+                let declared_rob_kongs = declared_rob_kongs_after_add_kong(record, event_index);
+                samples.extend(state.rob_kong_samples(
+                    record,
+                    &mut decision_index,
+                    event.actor,
+                    tile_key,
+                    &declared_rob_kongs,
+                    &outcome_by_seat,
+                ));
                 state.apply_add_kong(event.actor, tile_key);
             }
             BotZoneAction::Hu { .. } => {}
@@ -228,8 +266,51 @@ impl ReplayState {
         label: TrainingLabel,
         outcome: SampleOutcome,
     ) -> TrainingDecisionSampleV2 {
-        let context = self.context(record, seat_index, Vec::new());
+        let context = self.context(
+            record,
+            seat_index,
+            self.self_kong_candidates(seat_index),
+            Vec::new(),
+        );
         let legal_actions = legal_discard_actions(&context);
+        let sample = TrainingDecisionSampleV2 {
+            schema_version: 2,
+            match_id: record.match_id.clone(),
+            decision_index: *decision_index,
+            seat_index,
+            decision_kind: DecisionKind::ActiveTurn,
+            context,
+            legal_actions,
+            label,
+            outcome,
+        };
+        *decision_index += 1;
+        sample
+    }
+
+    fn self_kong_sample(
+        &self,
+        record: &BotZoneMatch,
+        decision_index: &mut u64,
+        seat_index: usize,
+        label: TrainingLabel,
+        outcome: SampleOutcome,
+    ) -> TrainingDecisionSampleV2 {
+        let context = self.context(
+            record,
+            seat_index,
+            self.self_kong_candidates(seat_index),
+            Vec::new(),
+        );
+        let mut legal_actions = self_kong_legal_actions(&context);
+        if let TrainingLabel::SelfKong { kind, tile_key } = &label {
+            let action_id = format!("self_kong:{kind}:{tile_key}");
+            if !legal_actions.iter().any(|action| action == &action_id) {
+                legal_actions.push(action_id);
+                legal_actions.sort();
+                legal_actions.dedup();
+            }
+        }
         let sample = TrainingDecisionSampleV2 {
             schema_version: 2,
             match_id: record.match_id.clone(),
@@ -259,16 +340,27 @@ impl ReplayState {
             if seat_index == discarder_seat {
                 continue;
             }
-            let claim_options = self.claim_options(seat_index, discarder_seat, discarded_tile_key);
-            if claim_options.is_empty() {
-                continue;
-            }
             let label = declared_claims
                 .iter()
                 .find(|claim| claim.seat_index == seat_index)
                 .map(|claim| claim.label.clone())
                 .unwrap_or(TrainingLabel::Pass);
-            let context = self.context(record, seat_index, claim_options);
+            let mut claim_options =
+                self.claim_options(seat_index, discarder_seat, discarded_tile_key);
+            if matches!(label, TrainingLabel::Hu)
+                && !claim_options
+                    .iter()
+                    .any(|option| option.action_type == "hu")
+            {
+                claim_options.push(SerializableClaimOption {
+                    action_type: "hu".to_string(),
+                    tile_ids: Vec::new(),
+                });
+            }
+            if claim_options.is_empty() {
+                continue;
+            }
+            let context = self.context(record, seat_index, Vec::new(), claim_options);
             let legal_actions = claim_legal_actions(&context);
             samples.push(TrainingDecisionSampleV2 {
                 schema_version: 2,
@@ -286,10 +378,49 @@ impl ReplayState {
         samples
     }
 
+    fn rob_kong_samples(
+        &self,
+        record: &BotZoneMatch,
+        decision_index: &mut u64,
+        kong_seat: usize,
+        tile_key: &str,
+        declared_rob_kongs: &[DeclaredClaim],
+        outcome_by_seat: &[SampleOutcome; 4],
+    ) -> Vec<TrainingDecisionSampleV2> {
+        let mut samples = Vec::new();
+        for seat_index in 0..4 {
+            if seat_index == kong_seat {
+                continue;
+            }
+            let label = declared_rob_kongs
+                .iter()
+                .find(|claim| claim.seat_index == seat_index)
+                .map(|claim| claim.label.clone())
+                .unwrap_or(TrainingLabel::Pass);
+            let mut context = self.context(record, seat_index, Vec::new(), Vec::new());
+            context.last_discard_tile_key = Some(tile_key.to_string());
+            context.add_kong_risk_tiles.insert(tile_key.to_string());
+            samples.push(TrainingDecisionSampleV2 {
+                schema_version: 2,
+                match_id: record.match_id.clone(),
+                decision_index: *decision_index,
+                seat_index,
+                decision_kind: DecisionKind::RobKong,
+                context,
+                legal_actions: vec!["claim:hu".to_string(), "pass".to_string()],
+                label,
+                outcome: outcome_by_seat[seat_index].clone(),
+            });
+            *decision_index += 1;
+        }
+        samples
+    }
+
     fn context(
         &self,
         record: &BotZoneMatch,
         seat_index: usize,
+        self_kong_candidates: Vec<SerializableSelfKongCandidate>,
         claim_options: Vec<SerializableClaimOption>,
     ) -> SerializableBotContext {
         SerializableBotContext {
@@ -312,7 +443,7 @@ impl ReplayState {
             drawn_tile_id: self.hands[seat_index]
                 .last()
                 .map(|tile| tile.tile_id.clone()),
-            self_kong_candidates: Vec::new(),
+            self_kong_candidates,
             claim_options,
             last_discard_tile_key: self.last_discard_tile_key.clone(),
             add_kong_risk_tiles: HashSet::new(),
@@ -353,6 +484,52 @@ impl ReplayState {
         options
     }
 
+    fn has_self_kong_candidates(&self, seat_index: usize) -> bool {
+        !self.self_kong_candidates(seat_index).is_empty()
+    }
+
+    fn self_kong_candidates(&self, seat_index: usize) -> Vec<SerializableSelfKongCandidate> {
+        let mut candidates = Vec::new();
+        let mut seen_concealed = HashSet::new();
+        for tile in &self.hands[seat_index] {
+            if !seen_concealed.insert(tile.tile_key.clone()) {
+                continue;
+            }
+            let tile_ids = take_tile_ids(&self.hands[seat_index], &tile.tile_key, 4);
+            if tile_ids.len() == 4 {
+                candidates.push(SerializableSelfKongCandidate {
+                    kind: "concealed_kong".to_string(),
+                    tile_ids,
+                    tile_key: tile.tile_key.clone(),
+                    meld_index: None,
+                });
+            }
+        }
+
+        for (meld_index, meld) in self.melds[seat_index].iter().enumerate() {
+            if meld.len() != 3 {
+                continue;
+            }
+            let Some(tile_key) = meld.first() else {
+                continue;
+            };
+            if !meld.iter().all(|candidate| candidate == tile_key) {
+                continue;
+            }
+            let tile_ids = take_tile_ids(&self.hands[seat_index], tile_key, 1);
+            if tile_ids.len() == 1 {
+                candidates.push(SerializableSelfKongCandidate {
+                    kind: "add_kong".to_string(),
+                    tile_ids,
+                    tile_key: tile_key.clone(),
+                    meld_index: Some(meld_index),
+                });
+            }
+        }
+
+        candidates
+    }
+
     fn apply_same_tile_meld(&mut self, seat: usize, tile_key: &str, count: usize) {
         for _ in 0..count {
             self.remove_one_tile(seat, tile_key);
@@ -360,11 +537,20 @@ impl ReplayState {
         self.melds[seat].push(vec![tile_key.to_string(); count + 1]);
     }
 
+    fn apply_concealed_kong(&mut self, seat: usize, tile_key: &str) {
+        for _ in 0..4 {
+            self.remove_one_tile(seat, tile_key);
+        }
+        self.melds[seat].push(vec![tile_key.to_string(); 4]);
+    }
+
     fn apply_chow(&mut self, seat: usize, middle_tile_key: &str) {
         let Some(last_discard) = self.last_discard_tile_key.clone() else {
             return;
         };
-        if let Some(tile_ids) = chow_tile_ids_for_middle(&self.hands[seat], &last_discard, middle_tile_key) {
+        if let Some(tile_ids) =
+            chow_tile_ids_for_middle(&self.hands[seat], &last_discard, middle_tile_key)
+        {
             for tile_id in tile_ids {
                 if let Some(tile) = self.hands[seat]
                     .iter()
@@ -405,6 +591,36 @@ fn declared_claims_after_play(record: &BotZoneMatch, event_index: usize) -> Vec<
             });
         }
     }
+    claims
+}
+
+fn declared_rob_kongs_after_add_kong(
+    record: &BotZoneMatch,
+    event_index: usize,
+) -> Vec<DeclaredClaim> {
+    let mut claims = record.events[event_index]
+        .ignored_claims
+        .iter()
+        .filter_map(|claim| match &claim.action {
+            BotZoneAction::Hu { .. } => Some(DeclaredClaim {
+                seat_index: claim.actor,
+                label: TrainingLabel::Hu,
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(next_event) = record.events.get(event_index + 1)
+        && matches!(next_event.action, BotZoneAction::Hu { .. })
+    {
+        claims.push(DeclaredClaim {
+            seat_index: next_event.actor,
+            label: TrainingLabel::Hu,
+        });
+    }
+
+    claims.sort_by_key(|claim| claim.seat_index);
+    claims.dedup_by_key(|claim| claim.seat_index);
     claims
 }
 
@@ -452,6 +668,19 @@ fn claim_legal_actions(context: &SerializableBotContext) -> Vec<String> {
             "hu" => actions.push("claim:hu".to_string()),
             _ => {}
         }
+    }
+    actions.sort();
+    actions.dedup();
+    actions
+}
+
+fn self_kong_legal_actions(context: &SerializableBotContext) -> Vec<String> {
+    let mut actions = vec!["pass".to_string()];
+    for candidate in &context.self_kong_candidates {
+        actions.push(format!(
+            "self_kong:{}:{}",
+            candidate.kind, candidate.tile_key
+        ));
     }
     actions.sort();
     actions.dedup();
@@ -510,7 +739,10 @@ fn take_tile_ids(tiles: &[SerializableBotTile], tile_key: &str, count: usize) ->
         .collect()
 }
 
-fn chow_tile_id_options(tiles: &[SerializableBotTile], discarded_tile_key: &str) -> Vec<Vec<String>> {
+fn chow_tile_id_options(
+    tiles: &[SerializableBotTile],
+    discarded_tile_key: &str,
+) -> Vec<Vec<String>> {
     let Some(discard_index) = tile_index(discarded_tile_key) else {
         return Vec::new();
     };
@@ -649,6 +881,56 @@ Player 2 Play W1
 Score 0 0 0 0
 "#;
 
+    const DISCARD_HU_MATCH: &str = r#"
+Match discard hu
+Player 0 Deal W1 W9 T9
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J2 J2 B6
+Player 2 Draw T9
+Player 2 Play J2
+Player 3 Hu J2
+Score 0 0 -8 8
+"#;
+
+    const CONCEALED_KONG_MATCH: &str = r#"
+Match concealed kong
+Player 0 Deal W1 W1 W1 W1
+Player 1 Deal T1 T2 T3
+Player 2 Deal B1 B2 B3
+Player 3 Deal W2 W3 W4
+Player 0 AnGang W1
+Score 0 0 0 0
+"#;
+
+    const ADD_KONG_MATCH: &str = r#"
+Match add kong
+Player 0 Deal W1 B1 B2
+Player 1 Deal W1 W1 T1
+Player 2 Deal T2 T3 T4
+Player 3 Deal B3 B4 B5
+Player 0 Draw B3
+Player 0 Play W1
+Player 1 Peng W1
+Player 1 Draw W1
+Player 1 BuGang W1
+Score 0 0 0 0
+"#;
+
+    const ROB_KONG_MATCH: &str = r#"
+Match rob kong
+Player 0 Deal W1 B1 B2
+Player 1 Deal W1 W1 T1
+Player 2 Deal T2 T3 T4
+Player 3 Deal B3 B4 B5
+Player 0 Draw B3
+Player 0 Play W1
+Player 1 Peng W1
+Player 1 Draw W1
+Player 1 BuGang W1 Ignore Player 2 Hu W1
+Score 0 0 0 0
+"#;
+
     #[test]
     fn replay_emits_active_turn_discard_sample_before_play_event() {
         let record = parse_match(SIMPLE_MATCH).expect("match");
@@ -717,5 +999,101 @@ Score 0 0 0 0
             .expect("legal chow pass sample");
 
         assert_eq!(pass.decision_kind, DecisionKind::ClaimWindow);
+    }
+
+    #[test]
+    fn replay_declared_discard_hu_is_a_legal_claim_action() {
+        let record = parse_match(DISCARD_HU_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let hu = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 3
+                    && sample.decision_kind == DecisionKind::ClaimWindow
+                    && sample.label == TrainingLabel::Hu
+            })
+            .expect("discard hu sample");
+
+        assert!(hu.legal_actions.iter().any(|action| action == "claim:hu"));
+    }
+
+    #[test]
+    fn replay_emits_concealed_kong_sample_before_an_gang() {
+        let record = parse_match(CONCEALED_KONG_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let kong = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 0
+                    && sample.label
+                        == TrainingLabel::SelfKong {
+                            kind: "concealed_kong".to_string(),
+                            tile_key: "w1".to_string(),
+                        }
+            })
+            .expect("concealed kong sample");
+
+        assert_eq!(kong.decision_kind, DecisionKind::ActiveTurn);
+        assert!(
+            kong.legal_actions
+                .iter()
+                .any(|action| action == "self_kong:concealed_kong:w1")
+        );
+        assert_eq!(kong.context.self_kong_candidates.len(), 1);
+    }
+
+    #[test]
+    fn replay_emits_add_kong_sample_before_bu_gang() {
+        let record = parse_match(ADD_KONG_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let kong = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 1
+                    && sample.label
+                        == TrainingLabel::SelfKong {
+                            kind: "add_kong".to_string(),
+                            tile_key: "w1".to_string(),
+                        }
+            })
+            .expect("add kong sample");
+
+        assert_eq!(kong.decision_kind, DecisionKind::ActiveTurn);
+        assert!(
+            kong.legal_actions
+                .iter()
+                .any(|action| action == "self_kong:add_kong:w1")
+        );
+        assert_eq!(kong.context.self_kong_candidates[0].meld_index, Some(0));
+    }
+
+    #[test]
+    fn replay_emits_rob_kong_hu_and_pass_samples_after_bu_gang() {
+        let record = parse_match(ROB_KONG_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let hu = samples
+            .iter()
+            .find(|sample| {
+                sample.decision_kind == DecisionKind::RobKong
+                    && sample.seat_index == 2
+                    && sample.label == TrainingLabel::Hu
+            })
+            .expect("rob kong hu sample");
+        assert!(hu.legal_actions.iter().any(|action| action == "claim:hu"));
+        assert!(hu.context.add_kong_risk_tiles.contains("w1"));
+
+        let pass = samples
+            .iter()
+            .find(|sample| {
+                sample.decision_kind == DecisionKind::RobKong
+                    && sample.seat_index == 3
+                    && sample.label == TrainingLabel::Pass
+            })
+            .expect("rob kong pass sample");
+        assert!(pass.legal_actions.iter().any(|action| action == "pass"));
     }
 }

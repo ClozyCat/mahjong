@@ -152,11 +152,11 @@ def encode_row(row: dict[str, Any], metadata: dict[str, Any]) -> dict[str, np.nd
         "tile_planes": encode_tile_planes(context, tile_to_index),
         "scalar_features": encode_scalar_features(context),
         "discard_mask": encode_discard_mask(row, tile_to_index),
-        "claim_mask": encode_claim_mask(row, claim_to_index),
+        "claim_mask": encode_claim_mask(row, claim_to_index, tile_to_index),
         "self_kong_mask": encode_self_kong_mask(row, self_kong_to_index),
         "hu_mask": encode_hu_mask(row),
         "discard_target": np.asarray(discard_target(row, tile_to_index), dtype=np.int64),
-        "claim_target": np.asarray(claim_target(row, claim_to_index), dtype=np.int64),
+        "claim_target": np.asarray(claim_target(row, claim_to_index, tile_to_index), dtype=np.int64),
         "self_kong_target": np.asarray(self_kong_target(row, self_kong_to_index), dtype=np.int64),
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
         "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 100.0], dtype=np.float32),
@@ -225,13 +225,18 @@ def encode_discard_mask(row: dict[str, Any], tile_to_index: dict[str, int]) -> n
     return mask
 
 
-def encode_claim_mask(row: dict[str, Any], claim_to_index: dict[str, int]) -> np.ndarray:
+def encode_claim_mask(
+    row: dict[str, Any],
+    claim_to_index: dict[str, int],
+    tile_to_index: dict[str, int],
+) -> np.ndarray:
     mask = np.zeros((len(claim_to_index),), dtype=np.bool_)
+    last_discard = row.get("context", {}).get("last_discard_tile_key")
     for action in row.get("legal_actions", []):
         if action == "pass":
             mask[claim_to_index["pass"]] = True
         elif action.startswith("claim:"):
-            claim_name = claim_name_from_action_id(action)
+            claim_name = claim_name_from_action_id(action, last_discard, tile_to_index)
             if claim_name in claim_to_index:
                 mask[claim_to_index[claim_name]] = True
     return mask
@@ -261,10 +266,16 @@ def discard_target(row: dict[str, Any], tile_to_index: dict[str, int]) -> int:
     return tile_to_index[label["tile_key"]]
 
 
-def claim_target(row: dict[str, Any], claim_to_index: dict[str, int]) -> int:
+def claim_target(
+    row: dict[str, Any],
+    claim_to_index: dict[str, int],
+    tile_to_index: dict[str, int],
+) -> int:
     label_type = row["label"]["type"]
     if label_type == "pass":
-        return claim_to_index["pass"]
+        if row["decision_kind"] in {"claim_window", "rob_kong"}:
+            return claim_to_index["pass"]
+        return IGNORE_INDEX
     if label_type == "hu":
         return claim_to_index["hu"]
     if label_type == "claim_pung":
@@ -272,12 +283,21 @@ def claim_target(row: dict[str, Any], claim_to_index: dict[str, int]) -> int:
     if label_type == "claim_kong":
         return claim_to_index["kong"]
     if label_type == "claim_chow":
-        return claim_to_index["chow_mid"]
+        claim_name = chow_claim_name(
+            row.get("context", {}).get("last_discard_tile_key"),
+            row["label"].get("middle_tile_key"),
+            tile_to_index,
+        )
+        return claim_to_index[claim_name]
     return IGNORE_INDEX
 
 
 def self_kong_target(row: dict[str, Any], self_kong_to_index: dict[str, int]) -> int:
     label = row["label"]
+    if label["type"] == "pass" and any(
+        action.startswith("self_kong:") for action in row.get("legal_actions", [])
+    ):
+        return self_kong_to_index["pass"]
     if label["type"] != "self_kong":
         return IGNORE_INDEX
     return self_kong_to_index[label["kind"]]
@@ -305,11 +325,36 @@ def decision_kind_index(decision_kind: str) -> int:
     return {"active_turn": 0, "claim_window": 1, "rob_kong": 2}.get(decision_kind, -1)
 
 
-def claim_name_from_action_id(action: str) -> str:
+def claim_name_from_action_id(
+    action: str,
+    last_discard: str | None,
+    tile_to_index: dict[str, int],
+) -> str:
     parts = action.split(":")
     if len(parts) < 2:
         return action
-    return "chow_mid" if parts[1] == "chow" else parts[1]
+    if parts[1] != "chow":
+        return parts[1]
+    middle_tile_key = parts[2] if len(parts) > 2 else None
+    return chow_claim_name(last_discard, middle_tile_key, tile_to_index)
+
+
+def chow_claim_name(
+    last_discard: str | None,
+    middle_tile_key: str | None,
+    tile_to_index: dict[str, int],
+) -> str:
+    if last_discard not in tile_to_index or middle_tile_key not in tile_to_index:
+        return "chow_mid"
+    discard_index = tile_to_index[last_discard]
+    middle_index = tile_to_index[middle_tile_key]
+    if discard_index >= 27 or middle_index >= 27 or discard_index // 9 != middle_index // 9:
+        return "chow_mid"
+    if discard_index == middle_index - 1:
+        return "chow_left"
+    if discard_index == middle_index + 1:
+        return "chow_right"
+    return "chow_mid"
 
 
 def add_count_plane(

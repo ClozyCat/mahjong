@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dataset import encode_row
+from dataset import IGNORE_INDEX, encode_row
 
 
 def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
@@ -17,6 +17,52 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     assert encoded["scalar_features"].shape == (10,)
     assert encoded["discard_mask"].shape == (34,)
     assert encoded["discard_target"].item() == 0
+
+
+def test_chow_claim_target_uses_discard_position(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    base_row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    expected_by_discard = {"w3": 4, "w4": 5, "w5": 6}
+
+    for last_discard, expected_target in expected_by_discard.items():
+        row = claim_row(base_row, last_discard, "w4")
+        encoded = encode_row(row, metadata)
+        assert encoded["claim_target"].item() == expected_target
+        assert encoded["claim_mask"][expected_target].item()
+
+
+def test_self_kong_pass_trains_self_kong_head_only(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["decision_kind"] = "active_turn"
+    row["context"]["self_kong_candidates"] = [
+        {
+            "kind": "concealed_kong",
+            "tile_ids": ["w1#0", "w1#1", "w1#2", "w1#3"],
+            "tile_key": "w1",
+            "meld_index": None,
+        }
+    ]
+    row["legal_actions"] = ["pass", "self_kong:concealed_kong:w1"]
+    row["label"] = {"type": "pass"}
+
+    encoded = encode_row(row, metadata)
+
+    assert encoded["claim_target"].item() == IGNORE_INDEX
+    assert encoded["self_kong_target"].item() == 0
+    assert encoded["self_kong_mask"][0].item()
+    assert encoded["self_kong_mask"][1].item()
+
+
+def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
+    row = json.loads(json.dumps(base_row))
+    row["decision_kind"] = "claim_window"
+    row["context"]["last_discard_tile_key"] = last_discard
+    row["legal_actions"] = ["pass", f"claim:chow:{middle_tile_key}"]
+    row["label"] = {"type": "claim_chow", "middle_tile_key": middle_tile_key}
+    return row
 
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
