@@ -16,11 +16,17 @@ EPOCHS=3
 BATCH_SIZE=256
 LEARNING_RATE=0.00001
 GAMMA=0.99
+GAE_LAMBDA=0.95
 CLIP_EPSILON=0.2
+VALUE_CLIP_EPSILON=0.2
 ENTROPY_COEF=0.02
 ENTROPY_END_COEF=0.005
 ENTROPY_DECAY_STEPS=0
+KL_COEF=0.01
+KL_END_COEF=0.0
 DEVICE=auto
+OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
+LEARNER_POLICY_ID="learner"
 SELFPLAY_POLICY_ID="selfplay_neural"
 SELFPLAY_POLICY_MODE=neural
 SKIP_TESTS=0
@@ -55,11 +61,17 @@ Options:
   --batch-size N                   PPO batch size.
   --lr VALUE                       PPO learning rate.
   --gamma VALUE                    Return discount.
+  --gae-lambda VALUE               GAE lambda.
   --clip-epsilon VALUE             PPO clipping epsilon.
+  --value-clip-epsilon VALUE       PPO value clipping epsilon.
   --entropy-coef VALUE             PPO entropy coefficient.
   --entropy-end-coef VALUE         PPO final entropy coefficient after decay.
   --entropy-decay-steps N          Linear entropy decay steps. Use 0 for full training.
+  --kl-coef VALUE                  Supervised policy KL coefficient.
+  --kl-end-coef VALUE              Final KL coefficient after decay.
   --device DEVICE                  auto, cpu, cuda, etc.
+  --opponent-pool PATH             Opponent pool JSON for league rollout.
+  --learner-policy-id ID           Policy id filtered for PPO training.
   --selfplay-policy-id ID          Policy id written to trajectory rows.
   --selfplay-policy-mode MODE      heuristic or neural.
   --skip-tests                     Skip Python tests.
@@ -168,9 +180,19 @@ while [[ $# -gt 0 ]]; do
             GAMMA="$2"
             shift 2
             ;;
+        --gae-lambda)
+            require_value "$1" "${2:-}"
+            GAE_LAMBDA="$2"
+            shift 2
+            ;;
         --clip-epsilon)
             require_value "$1" "${2:-}"
             CLIP_EPSILON="$2"
+            shift 2
+            ;;
+        --value-clip-epsilon)
+            require_value "$1" "${2:-}"
+            VALUE_CLIP_EPSILON="$2"
             shift 2
             ;;
         --entropy-coef)
@@ -188,9 +210,29 @@ while [[ $# -gt 0 ]]; do
             ENTROPY_DECAY_STEPS="$2"
             shift 2
             ;;
+        --kl-coef)
+            require_value "$1" "${2:-}"
+            KL_COEF="$2"
+            shift 2
+            ;;
+        --kl-end-coef)
+            require_value "$1" "${2:-}"
+            KL_END_COEF="$2"
+            shift 2
+            ;;
         --device)
             require_value "$1" "${2:-}"
             DEVICE="$2"
+            shift 2
+            ;;
+        --opponent-pool)
+            require_value "$1" "${2:-}"
+            OPPONENT_POOL="$2"
+            shift 2
+            ;;
+        --learner-policy-id)
+            require_value "$1" "${2:-}"
+            LEARNER_POLICY_ID="$2"
             shift 2
             ;;
         --selfplay-policy-id)
@@ -247,7 +289,7 @@ cd "$REPO_ROOT"
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 
-TRAJECTORY_CONFIG="$OUTPUT_DIR/trajectory_config.json"
+TRAJECTORY_CONFIG_DIR="$OUTPUT_DIR/trajectory_configs"
 TRAJECTORY_JSONL="$OUTPUT_DIR/trajectories.jsonl"
 ARENA_REPORT_JSONL="$OUTPUT_DIR/trajectory_arena_report.jsonl"
 CHECKPOINT_DIR="$OUTPUT_DIR/checkpoints"
@@ -294,6 +336,8 @@ echo "Baseline checkpoint: $BASELINE_CHECKPOINT"
 echo "Baseline ONNX:       $BASELINE_ONNX"
 echo "Trajectory matches:  $TRAJECTORY_MATCHES"
 echo "Trajectory progress: every $TRAJECTORY_PROGRESS_EVERY match(es)"
+echo "Opponent pool:       $OPPONENT_POOL"
+echo "Learner policy id:   $LEARNER_POLICY_ID"
 echo "Eval matches:        $EVAL_MATCHES"
 echo "Device:              $DEVICE"
 echo "Python:              ${PYTHON_CMD[*]}"
@@ -331,33 +375,41 @@ if (( SKIP_TESTS == 0 )); then
 fi
 
 if (( SKIP_TRAJECTORY_GENERATION == 0 )); then
-    cat > "$TRAJECTORY_CONFIG" <<JSON
-{
-  "matches": $TRAJECTORY_MATCHES,
-  "seed": $SEED,
-  "max_actions_per_match": $MAX_ACTIONS_PER_MATCH,
-  "report_trajectories": true,
-  "policies": [
-    {
-      "id": "$SELFPLAY_POLICY_ID",
-      "mode": "$SELFPLAY_POLICY_MODE",
-      "model_path": "$BASELINE_ONNX"
-    }
-  ]
-}
-JSON
+    mkdir -p "$TRAJECTORY_CONFIG_DIR"
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
+        --pool "$OPPONENT_POOL" \
+        --output-dir "$TRAJECTORY_CONFIG_DIR" \
+        --matches "$TRAJECTORY_MATCHES" \
+        --seed "$SEED" \
+        --max-actions "$MAX_ACTIONS_PER_MATCH" \
+        --mode trajectory \
+        --rollout-onnx "$BASELINE_ONNX"
 
-    arena_args=(
-        run --manifest-path backend/Cargo.toml --release --bin bot_arena --
-        --config "$TRAJECTORY_CONFIG"
-        --output "$ARENA_REPORT_JSONL"
-        --trajectories "$TRAJECTORY_JSONL"
-        --jobs "$ARENA_JOBS"
-    )
-    if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
-        arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
+    trajectory_files=()
+    for config_path in "$TRAJECTORY_CONFIG_DIR"/trajectory_config_*.json; do
+        [[ -e "$config_path" ]] || continue
+        config_name="$(basename "$config_path" .json)"
+        index="${config_name#trajectory_config_}"
+        partial_report="$OUTPUT_DIR/trajectory_arena_report_$index.jsonl"
+        partial_trajectory="$OUTPUT_DIR/trajectories_$index.jsonl"
+        trajectory_files+=("$partial_trajectory")
+        arena_args=(
+            run --manifest-path backend/Cargo.toml --release --bin bot_arena --
+            --config "$config_path"
+            --output "$partial_report"
+            --trajectories "$partial_trajectory"
+            --jobs "$ARENA_JOBS"
+        )
+        if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
+            arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
+        fi
+        "${CARGO_CMD[@]}" "${arena_args[@]}"
+    done
+    if (( ${#trajectory_files[@]} == 0 )); then
+        echo "No trajectory configs generated in $TRAJECTORY_CONFIG_DIR" >&2
+        exit 2
     fi
-    "${CARGO_CMD[@]}" "${arena_args[@]}"
+    cat "${trajectory_files[@]}" > "$TRAJECTORY_JSONL"
 fi
 
 rl_train_args=(
@@ -368,9 +420,14 @@ rl_train_args=(
     --batch-size "$BATCH_SIZE"
     --lr "$LEARNING_RATE"
     --gamma "$GAMMA"
+    --gae-lambda "$GAE_LAMBDA"
+    --policy-id "$LEARNER_POLICY_ID"
     --clip-epsilon "$CLIP_EPSILON"
+    --value-clip-epsilon "$VALUE_CLIP_EPSILON"
     --entropy-coef "$ENTROPY_COEF"
     --entropy-end-coef "$ENTROPY_END_COEF"
+    --kl-coef "$KL_COEF"
+    --kl-end-coef "$KL_END_COEF"
     --output "$CHECKPOINT_DIR"
     --device "$DEVICE"
 )

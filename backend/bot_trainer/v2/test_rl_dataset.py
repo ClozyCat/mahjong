@@ -215,6 +215,37 @@ def test_masked_categorical_kl_is_finite() -> None:
     assert kl.item() >= 0.0
 
 
+def test_league_config_rotates_learner_seat() -> None:
+    from league_config import build_trajectory_configs
+
+    learner = {
+        "id": "learner",
+        "mode": "neural",
+        "model_path": "candidate.onnx",
+        "sample_actions": True,
+        "temperature": 1.0,
+    }
+    pool = {
+        "learner": learner,
+        "opponents": [
+            {
+                "id": "heuristic",
+                "mode": "heuristic",
+                "model_path": None,
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 1,
+            }
+        ],
+    }
+
+    configs = build_trajectory_configs(pool, matches=8, seed=10, max_actions=2400)
+
+    assert len(configs) == 4
+    assert [config["policies"].index(learner) for config in configs] == [0, 1, 2, 3]
+    assert all(config["matches"] == 2 for config in configs)
+
+
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     from arena_summary import load_reports, summarize_reports
 

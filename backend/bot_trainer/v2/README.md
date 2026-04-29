@@ -130,6 +130,36 @@ Trajectory generation prints progress every 20 matches by default. Use `-Traject
 Arena self-play and candidate evaluation run in parallel by default from these scripts. Use `-ArenaJobs 4` or `--arena-jobs 4` to pin worker count; `0` means all available cores.
 The script prints PPO epoch losses during `rl_train.py`, then prints an arena summary after candidate evaluation and writes `candidate_eval_summary.json`.
 
+### PPO League Training
+
+```powershell
+.\backend\bot_trainer\v2\train_rl_model.ps1 `
+  -OutputDir backend/bot_trainer/v2/rl_runs/league_smoke `
+  -TrajectoryMatches 8 `
+  -EvalMatches 4 `
+  -Epochs 1 `
+  -BatchSize 64 `
+  -Device cpu `
+  -LearnerPolicyId learner `
+  -GaeLambda 0.95 `
+  -KlCoef 0.01
+```
+
+```bash
+./backend/bot_trainer/v2/train_rl_model.sh \
+  --output-dir backend/bot_trainer/v2/rl_runs/league_smoke \
+  --trajectory-matches 8 \
+  --eval-matches 4 \
+  --epochs 1 \
+  --batch-size 64 \
+  --device cpu \
+  --learner-policy-id learner \
+  --gae-lambda 0.95 \
+  --kl-coef 0.01
+```
+
+The generated trajectory configs rotate the sampled `learner` policy through all four seats and fill the other seats from `opponent_pool.json`. PPO filters rows by `policy_id=learner`, so frozen opponents do not train the learner.
+
 Manual PPO training command:
 
 ```powershell

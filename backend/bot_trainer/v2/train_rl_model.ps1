@@ -15,11 +15,17 @@ param(
     [int]$BatchSize = 256,
     [double]$LearningRate = 0.00001,
     [double]$Gamma = 0.99,
+    [double]$GaeLambda = 0.95,
     [double]$ClipEpsilon = 0.2,
+    [double]$ValueClipEpsilon = 0.2,
     [double]$EntropyCoef = 0.02,
     [double]$EntropyEndCoef = 0.005,
     [int]$EntropyDecaySteps = 0,
+    [double]$KlCoef = 0.01,
+    [double]$KlEndCoef = 0.0,
     [string]$Device = "auto",
+    [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
+    [string]$LearnerPolicyId = "learner",
     [string]$SelfPlayPolicyId = "selfplay_neural",
     [ValidateSet("heuristic", "neural")]
     [string]$SelfPlayPolicyMode = "neural",
@@ -110,7 +116,7 @@ try {
     $env:TEMP = (Resolve-Path $TempDir).Path
     $env:TMP = $env:TEMP
     $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
-    $TrajectoryConfig = Join-Path $OutputDir "trajectory_config.json"
+    $TrajectoryConfigDir = Join-Path $OutputDir "trajectory_configs"
     $TrajectoryJsonl = Join-Path $OutputDir "trajectories.jsonl"
     $ArenaReportJsonl = Join-Path $OutputDir "trajectory_arena_report.jsonl"
     $CheckpointDir = Join-Path $OutputDir "checkpoints"
@@ -125,6 +131,8 @@ try {
     Write-Host "Baseline ONNX:       $BaselineOnnx"
     Write-Host "Trajectory matches:  $TrajectoryMatches"
     Write-Host "Trajectory progress: every $TrajectoryProgressEvery match(es)"
+    Write-Host "Opponent pool:       $OpponentPool"
+    Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"
     Write-Host "Device:              $Device"
     Write-Host "Python:              $PythonExe $PythonVersion"
@@ -174,37 +182,48 @@ try {
     }
 
     if (-not $SkipTrajectoryGeneration) {
-        $trajectoryConfigObject = @{
-            matches = $TrajectoryMatches
-            seed = $Seed
-            max_actions_per_match = $MaxActionsPerMatch
-            report_trajectories = $true
-            policies = @(
-                @{
-                    id = $SelfPlayPolicyId
-                    mode = $SelfPlayPolicyMode
-                    model_path = $BaselineOnnx
-                }
-            )
-        }
-        Write-Utf8NoBom $TrajectoryConfig ($trajectoryConfigObject | ConvertTo-Json -Depth 8)
-
-        $arenaArgs = @(
-            "run",
-            "--manifest-path", "backend/Cargo.toml",
-            "--release",
-            "--bin", "bot_arena",
-            "--",
-            "--config", $TrajectoryConfig,
-            "--output", $ArenaReportJsonl,
-            "--trajectories", $TrajectoryJsonl,
-            "--jobs", "$ArenaJobs"
+        New-Item -ItemType Directory -Force -Path $TrajectoryConfigDir | Out-Null
+        Invoke-TrainingPython @(
+            "backend/bot_trainer/v2/league_config.py",
+            "--pool", $OpponentPool,
+            "--output-dir", $TrajectoryConfigDir,
+            "--matches", "$TrajectoryMatches",
+            "--seed", "$Seed",
+            "--max-actions", "$MaxActionsPerMatch",
+            "--mode", "trajectory",
+            "--rollout-onnx", $BaselineOnnx
         )
-        if ($TrajectoryProgressEvery -gt 0) {
-            $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
-        }
-        & $CargoExe @arenaArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $trajectoryFiles = @()
+        Get-ChildItem -LiteralPath $TrajectoryConfigDir -Filter "trajectory_config_*.json" |
+            Sort-Object Name |
+            ForEach-Object {
+                $index = [System.IO.Path]::GetFileNameWithoutExtension($_.Name).Replace("trajectory_config_", "")
+                $partialReport = Join-Path $OutputDir "trajectory_arena_report_$index.jsonl"
+                $partialTrajectory = Join-Path $OutputDir "trajectories_$index.jsonl"
+                $trajectoryFiles += $partialTrajectory
+                $arenaArgs = @(
+                    "run",
+                    "--manifest-path", "backend/Cargo.toml",
+                    "--release",
+                    "--bin", "bot_arena",
+                    "--",
+                    "--config", $_.FullName,
+                    "--output", $partialReport,
+                    "--trajectories", $partialTrajectory,
+                    "--jobs", "$ArenaJobs"
+                )
+                if ($TrajectoryProgressEvery -gt 0) {
+                    $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
+                }
+                & $CargoExe @arenaArgs
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+        if ($trajectoryFiles.Count -eq 0) {
+            throw "No trajectory configs generated in $TrajectoryConfigDir"
+        }
+        Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $TrajectoryJsonl
     }
 
     $rlTrainArgs = @(
@@ -215,9 +234,14 @@ try {
         "--batch-size", "$BatchSize",
         "--lr", "$LearningRate",
         "--gamma", "$Gamma",
+        "--gae-lambda", "$GaeLambda",
+        "--policy-id", $LearnerPolicyId,
         "--clip-epsilon", "$ClipEpsilon",
+        "--value-clip-epsilon", "$ValueClipEpsilon",
         "--entropy-coef", "$EntropyCoef",
         "--entropy-end-coef", "$EntropyEndCoef",
+        "--kl-coef", "$KlCoef",
+        "--kl-end-coef", "$KlEndCoef",
         "--output", $CheckpointDir,
         "--device", $Device
     )
