@@ -12,15 +12,20 @@ use crate::core::state::{ContinueActionState, MatchState, RoomState};
 use crate::core::tile::Tile;
 
 use super::runtime::{
-    current_actor_in_room_state, is_last_live_tile_point_in_room_state, round_event_message,
+    current_actor_in_room_state, is_last_live_tile_point_in_room_state,
+    replacement_tile_from_tail_in_room_state, round_event_message,
     sync_pending_timeout_in_room_state,
 };
-use super::settlement::apply_settlement_to_match_in_room_state;
+use super::settlement::{
+    apply_settlement_to_match_in_room_state, settle_exhaustive_draw_output_in_room_state,
+};
 
 #[cfg(test)]
-use super::runtime::{current_actor, is_last_live_tile_point, project_room_state};
+use super::runtime::{
+    current_actor, is_last_live_tile_point, project_room_state, replacement_tile_from_tail,
+};
 #[cfg(test)]
-use super::settlement::apply_settlement_to_match;
+use super::settlement::{apply_settlement_to_match, settle_exhaustive_draw_output};
 #[cfg(test)]
 use crate::core::engine::reducer::update_room_state;
 
@@ -261,10 +266,6 @@ pub fn apply_flower_action_output(
     if tile_ids.len() != 1 {
         return Err("invalid_action".to_string());
     }
-    if is_last_live_tile_point(room) {
-        return Err("invalid_action".to_string());
-    }
-
     let pending_type = room
         .get("round_state")
         .and_then(|round| round.get("pending_action"))
@@ -272,6 +273,10 @@ pub fn apply_flower_action_output(
         .and_then(Value::as_str);
     if pending_type.is_some() {
         return Err("invalid_action".to_string());
+    }
+
+    if is_last_live_tile_point(room) || replacement_tile_from_tail(room).is_none() {
+        return Ok(settle_exhaustive_draw_output(room));
     }
 
     let tile_id = &tile_ids[0];
@@ -339,10 +344,6 @@ pub fn apply_flower_action_output_in_room_state(
     if tile_ids.len() != 1 {
         return Err("invalid_action".to_string());
     }
-    if is_last_live_tile_point_in_room_state(room) {
-        return Err("invalid_action".to_string());
-    }
-
     let pending_type = room
         .round_state
         .as_ref()
@@ -350,6 +351,12 @@ pub fn apply_flower_action_output_in_room_state(
         .map(|pending| pending.action_type());
     if pending_type.is_some() {
         return Err("invalid_action".to_string());
+    }
+
+    if is_last_live_tile_point_in_room_state(room)
+        || replacement_tile_from_tail_in_room_state(room).is_none()
+    {
+        return Ok(settle_exhaustive_draw_output_in_room_state(room));
     }
 
     let tile_id = &tile_ids[0];
@@ -1123,6 +1130,30 @@ mod tests {
             )
             .round_state
         );
+    }
+
+    #[test]
+    fn typed_flower_action_after_last_live_tile_drawn_settles_exhaustive_draw() {
+        let mut room = flower_action_room();
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.wall.head_index = 1;
+        round.wall.tail_index = 0;
+        round.last_action_context.was_last_live_tile = true;
+
+        let output =
+            apply_flower_action_output_in_room_state(&mut room, 0, &[String::from("f1#0")])
+                .expect("flower action should settle exhaustive draw");
+
+        assert_eq!(
+            output.emitted_messages[0]["payload"]["event_type"],
+            "round_drawn"
+        );
+        assert_eq!(room.phase, "settlement");
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.phase.as_str()),
+            Some("settlement")
+        );
+        assert!(room.pending_timeout.is_none());
     }
 
     #[test]

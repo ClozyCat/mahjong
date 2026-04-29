@@ -368,7 +368,6 @@ pub fn try_handle_self_kong_action_output(
     let Some(selection) = selection else {
         return Some(Err("invalid_action".to_string()));
     };
-    replacement_tile_from_tail(room)?;
     if selection.kind == SelfKongKind::Add {
         let offered_hu_seats =
             seats_with_hu_candidate_for_tile(room, seat_index, &selection.tile_key);
@@ -380,6 +379,9 @@ pub fn try_handle_self_kong_action_output(
                 offered_hu_seats,
             ));
         }
+    }
+    if replacement_tile_from_tail(room).is_none() {
+        return Some(Ok(settle_exhaustive_draw_output(room)));
     }
     Some(apply_self_kong_action_output(room, seat_index, &selection))
 }
@@ -397,7 +399,6 @@ pub fn try_handle_self_kong_action_output_in_room_state(
     let Some(selection) = resolve_self_kong_selection(&candidates, tile_ids) else {
         return Ok(Some(Err("invalid_action".to_string())));
     };
-    replacement_tile_from_tail_in_room_state(room).ok_or_else(|| "invalid_action".to_string())?;
     if selection.kind == SelfKongKind::Add {
         let offered_hu_seats =
             seats_with_hu_candidate_for_tile_in_room_state(room, seat_index, &selection.tile_key);
@@ -409,6 +410,9 @@ pub fn try_handle_self_kong_action_output_in_room_state(
                 offered_hu_seats,
             )));
         }
+    }
+    if replacement_tile_from_tail_in_room_state(room).is_none() {
+        return Ok(Some(Ok(settle_exhaustive_draw_output_in_room_state(room))));
     }
     Ok(Some(complete_self_kong_output_in_room_state(
         room, seat_index, &selection,
@@ -977,8 +981,8 @@ fn apply_self_kong_action_output(
     {
         return Err("invalid_action".to_string());
     }
-    if is_last_live_tile_point(room) {
-        return Err("invalid_action".to_string());
+    if is_last_live_tile_point(room) || replacement_tile_from_tail(room).is_none() {
+        return Ok(settle_exhaustive_draw_output(room));
     }
 
     let replacement_tile =
@@ -1035,8 +1039,10 @@ fn complete_self_kong_output_in_room_state(
     {
         return Err("invalid_action".to_string());
     }
-    if is_last_live_tile_point_in_room_state(room) {
-        return Err("invalid_action".to_string());
+    if is_last_live_tile_point_in_room_state(room)
+        || replacement_tile_from_tail_in_room_state(room).is_none()
+    {
+        return Ok(settle_exhaustive_draw_output_in_room_state(room));
     }
 
     let replacement_tile = replacement_tile_from_tail_in_room_state(room)
@@ -1742,7 +1748,6 @@ fn apply_selected_claim(
         let round = round_state_mut(state)?;
         apply_selected_claim_plan_to_round(round, seat_index, &plan)
     })?;
-    sync_pending_timeout_for_value_room(room);
     let mut events = vec![meld_claimed_event(
         seat_index,
         &plan.meld,
@@ -1751,6 +1756,14 @@ fn apply_selected_claim(
     if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
         events.push(replacement_draw_event(seat_index, replacement_tile));
     }
+    if plan.needs_exhaustive_draw {
+        let settlement_output = settle_exhaustive_draw_output(room);
+        events.extend(settlement_output.events);
+        let mut emitted_messages = plan.emitted_messages;
+        emitted_messages.extend(settlement_output.emitted_messages);
+        return Ok(EngineOutput::new(events, emitted_messages));
+    }
+    sync_pending_timeout_for_value_room(room);
     Ok(EngineOutput::new(events, plan.emitted_messages))
 }
 
@@ -1772,7 +1785,6 @@ fn apply_selected_claim_in_room_state(
         let round = round_state_mut(room)?;
         apply_selected_claim_plan_to_round(round, seat_index, &plan)?;
     }
-    sync_pending_timeout_in_room_state(room);
     let mut events = vec![meld_claimed_event(
         seat_index,
         &plan.meld,
@@ -1781,6 +1793,14 @@ fn apply_selected_claim_in_room_state(
     if let Some(replacement_tile) = plan.replacement_tile.as_ref() {
         events.push(replacement_draw_event(seat_index, replacement_tile));
     }
+    if plan.needs_exhaustive_draw {
+        let settlement_output = settle_exhaustive_draw_output_in_room_state(room);
+        events.extend(settlement_output.events);
+        let mut emitted_messages = plan.emitted_messages;
+        emitted_messages.extend(settlement_output.emitted_messages);
+        return Ok(EngineOutput::new(events, emitted_messages));
+    }
+    sync_pending_timeout_in_room_state(room);
     Ok(EngineOutput::new(events, plan.emitted_messages))
 }
 
@@ -1793,6 +1813,7 @@ struct SelectedClaimPlan {
     restricted_tile_key: Option<String>,
     kong_entry: Option<KongTrackerEntry>,
     last_action_context: Option<LastActionContext>,
+    needs_exhaustive_draw: bool,
     emitted_messages: Vec<Value>,
 }
 
@@ -1843,26 +1864,29 @@ fn plan_selected_claim(
     let mut replacement_tile_for_output = None;
     let mut kong_entry = None;
     let mut last_action_context = None;
+    let mut needs_exhaustive_draw = false;
     if action_type == "kong" {
-        let replacement_tile = tile_from_value(
-            &replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?,
-        )?;
-        replacement_tile_for_output = Some(replacement_tile.clone());
         kong_entry = Some(KongTrackerEntry {
             kong_type: "exposed_kong".to_string(),
             actor_seat: seat_index,
             payer_seats: vec![discarder_seat],
             tile_key: Some(last_discard_tile.tile_key.clone()),
         });
-        last_action_context = Some(LastActionContext {
-            kind: "replacement_draw".to_string(),
-            seat: seat_index,
-            tile_id: Some(replacement_tile.tile_id.clone()),
-            from_kong_replacement: true,
-            was_last_live_tile: false,
-            was_last_discard: false,
-        });
-        emitted_messages.push(replacement_draw_message(seat_index, &replacement_tile));
+        if let Some(replacement_tile_value) = replacement_tile_from_tail(room) {
+            let replacement_tile = tile_from_value(&replacement_tile_value)?;
+            replacement_tile_for_output = Some(replacement_tile.clone());
+            last_action_context = Some(LastActionContext {
+                kind: "replacement_draw".to_string(),
+                seat: seat_index,
+                tile_id: Some(replacement_tile.tile_id.clone()),
+                from_kong_replacement: true,
+                was_last_live_tile: false,
+                was_last_discard: false,
+            });
+            emitted_messages.push(replacement_draw_message(seat_index, &replacement_tile));
+        } else {
+            needs_exhaustive_draw = true;
+        }
     }
 
     Ok(SelectedClaimPlan {
@@ -1874,6 +1898,7 @@ fn plan_selected_claim(
         restricted_tile_key,
         kong_entry,
         last_action_context,
+        needs_exhaustive_draw,
         emitted_messages,
     })
 }
@@ -1923,25 +1948,28 @@ fn plan_selected_claim_in_room_state(
     let mut replacement_tile_for_output = None;
     let mut kong_entry = None;
     let mut last_action_context = None;
+    let mut needs_exhaustive_draw = false;
     if action_type == "kong" {
-        let replacement_tile = replacement_tile_from_tail_in_room_state(room)
-            .ok_or_else(|| "invalid_action".to_string())?;
-        replacement_tile_for_output = Some(replacement_tile.clone());
         kong_entry = Some(KongTrackerEntry {
             kong_type: "exposed_kong".to_string(),
             actor_seat: seat_index,
             payer_seats: vec![discarder_seat],
             tile_key: Some(last_discard_tile.tile_key.clone()),
         });
-        last_action_context = Some(LastActionContext {
-            kind: "replacement_draw".to_string(),
-            seat: seat_index,
-            tile_id: Some(replacement_tile.tile_id.clone()),
-            from_kong_replacement: true,
-            was_last_live_tile: false,
-            was_last_discard: false,
-        });
-        emitted_messages.push(replacement_draw_message(seat_index, &replacement_tile));
+        if let Some(replacement_tile) = replacement_tile_from_tail_in_room_state(room) {
+            replacement_tile_for_output = Some(replacement_tile.clone());
+            last_action_context = Some(LastActionContext {
+                kind: "replacement_draw".to_string(),
+                seat: seat_index,
+                tile_id: Some(replacement_tile.tile_id.clone()),
+                from_kong_replacement: true,
+                was_last_live_tile: false,
+                was_last_discard: false,
+            });
+            emitted_messages.push(replacement_draw_message(seat_index, &replacement_tile));
+        } else {
+            needs_exhaustive_draw = true;
+        }
     }
 
     Ok(SelectedClaimPlan {
@@ -1953,6 +1981,7 @@ fn plan_selected_claim_in_room_state(
         restricted_tile_key,
         kong_entry,
         last_action_context,
+        needs_exhaustive_draw,
         emitted_messages,
     })
 }
@@ -2081,15 +2110,16 @@ fn complete_add_kong_after_passes_output(room: &mut Value) -> Result<EngineOutpu
         .clone()
         .ok_or_else(|| "invalid_action".to_string())?;
     let meld_index = rob.meld_index;
-    let replacement_tile = tile_from_value(
-        &replacement_tile_from_tail(room).ok_or_else(|| "invalid_action".to_string())?,
-    )?;
     let selection = SelfKongCandidate {
         kind: SelfKongKind::Add,
         tile_ids: vec![tile_id],
         tile_key,
         meld_index,
     };
+    let Some(replacement_tile_value) = replacement_tile_from_tail(room) else {
+        return Ok(settle_exhaustive_draw_output(room));
+    };
+    let replacement_tile = tile_from_value(&replacement_tile_value)?;
     let output_replacement_tile = replacement_tile.clone();
     let plan = plan_self_kong_completion(room, actor_seat, &selection, replacement_tile, true)?;
     update_room_state(room, |state| {
@@ -2132,13 +2162,14 @@ fn complete_add_kong_after_passes_output_in_room_state(
         .clone()
         .ok_or_else(|| "invalid_action".to_string())?;
     let meld_index = rob.meld_index;
-    let replacement_tile = replacement_tile_from_tail_in_room_state(room)
-        .ok_or_else(|| "invalid_action".to_string())?;
     let selection = SelfKongCandidate {
         kind: SelfKongKind::Add,
         tile_ids: vec![tile_id],
         tile_key,
         meld_index,
+    };
+    let Some(replacement_tile) = replacement_tile_from_tail_in_room_state(room) else {
+        return Ok(settle_exhaustive_draw_output_in_room_state(room));
     };
     let output_replacement_tile = replacement_tile.clone();
     let plan = plan_self_kong_completion_in_room_state(
@@ -2583,6 +2614,104 @@ mod tests {
             room.round_state.as_ref().map(|round| round.phase.as_str()),
             Some("settlement")
         );
+        assert!(room.pending_timeout.is_none());
+    }
+
+    #[test]
+    fn typed_claim_kong_without_replacement_tile_settles_exhaustive_draw() {
+        let mut room = discard_action_room();
+        let last_discard = suit("w3", "w3#discard");
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.wall.head_index = 1;
+        round.wall.tail_index = 0;
+        round.current_actor = 0;
+        round.last_discard = Some(last_discard.clone());
+        round.players[0].discards.push(last_discard);
+        round.players[2].concealed_tiles = vec![
+            suit("w3", "w3#2a"),
+            suit("w3", "w3#2b"),
+            suit("w3", "w3#2c"),
+            suit("t1", "t1#2"),
+        ];
+        round.pending_action = Some(PendingAction::ClaimWindow(ClaimWindowAction {
+            discarder_seat: 0,
+            claim_window: vec![vec![], vec![], vec!["kong".to_string()], vec![]],
+            responded_seats: vec![],
+            claim_responses: vec![],
+        }));
+        room.pending_timeout = Some(PendingTimeout {
+            kind: "claim_window".to_string(),
+            seat_index: 0,
+            deadline_at: None,
+            drawn_tile_id: None,
+        });
+
+        let output = apply_claim_window_action_in_room_state(
+            &mut room,
+            2,
+            "kong",
+            &[
+                String::from("w3#2a"),
+                String::from("w3#2b"),
+                String::from("w3#2c"),
+            ],
+        )
+        .expect("claim kong should settle exhaustive draw when no replacement exists");
+
+        assert_eq!(
+            output
+                .emitted_messages
+                .last()
+                .and_then(|message| message["payload"]["event_type"].as_str()),
+            Some("round_drawn")
+        );
+        assert_eq!(room.phase, "settlement");
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.phase.as_str()),
+            Some("settlement")
+        );
+        assert!(room.pending_timeout.is_none());
+    }
+
+    #[test]
+    fn typed_self_kong_without_replacement_tile_settles_exhaustive_draw() {
+        let mut room = discard_action_room();
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.wall.head_index = 1;
+        round.wall.tail_index = 0;
+        round.last_action_context.was_last_live_tile = true;
+        round.players[0].concealed_tiles = vec![
+            suit("w3", "w3#0a"),
+            suit("w3", "w3#0b"),
+            suit("w3", "w3#0c"),
+            suit("w3", "w3#0d"),
+        ];
+        room.pending_timeout = Some(PendingTimeout {
+            kind: "active_turn".to_string(),
+            seat_index: 0,
+            deadline_at: None,
+            drawn_tile_id: Some("w3#0d".to_string()),
+        });
+
+        let output = try_handle_self_kong_action_output_in_room_state(
+            &mut room,
+            0,
+            &[
+                String::from("w3#0a"),
+                String::from("w3#0b"),
+                String::from("w3#0c"),
+                String::from("w3#0d"),
+            ],
+        )
+        .expect("self kong handler should run")
+        .expect("self kong should be handled")
+        .expect("self kong should settle exhaustive draw when no replacement exists");
+
+        assert_eq!(
+            output.emitted_messages[0]["payload"]["event_type"],
+            "round_drawn"
+        );
+        assert_eq!(room.phase, "settlement");
         assert!(room.pending_timeout.is_none());
     }
 }
