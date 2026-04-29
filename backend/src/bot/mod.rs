@@ -1,3 +1,4 @@
+pub mod arena;
 pub(crate) mod action_space;
 pub mod context;
 pub(crate) mod features;
@@ -6,4 +7,8 @@ pub mod policy;
 mod search;
 
 pub use context::BotAction;
-pub use policy::{choose_active_turn_action, choose_claim_action};
+pub(crate) use policy::bot_policy_config_from_env;
+pub use policy::{
+    choose_active_turn_action, choose_active_turn_action_with_config, choose_claim_action,
+    choose_claim_action_with_config,
+};

@@ -1442,9 +1442,7 @@ impl SearchEngine {
         if let Some(shanten) = self.shanten_cache.get(&key).copied() {
             return shanten;
         }
-        let shanten = standard_shanten_with_open_melds(concealed_counts, open_meld_count)
-            .min(seven_pairs_shanten(concealed_counts, open_meld_count))
-            .min(thirteen_orphans_shanten(concealed_counts, open_meld_count));
+        let shanten = min_shanten_for_counts(concealed_counts, open_meld_count);
         self.shanten_cache.insert(key, shanten);
         shanten
     }
@@ -2326,6 +2324,15 @@ fn standard_shanten_with_open_melds(counts: &TileCounts, open_meld_count: usize)
     let mut working = *counts;
     dfs(&mut working, 0, 0, 0, 0, open_meld_count as i32, &mut best);
     best
+}
+
+pub(crate) fn min_shanten_for_counts(
+    concealed_counts: &TileCounts,
+    open_meld_count: usize,
+) -> i32 {
+    standard_shanten_with_open_melds(concealed_counts, open_meld_count)
+        .min(seven_pairs_shanten(concealed_counts, open_meld_count))
+        .min(thirteen_orphans_shanten(concealed_counts, open_meld_count))
 }
 
 fn seven_pairs_shanten(counts: &TileCounts, open_meld_count: usize) -> i32 {

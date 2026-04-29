@@ -17,7 +17,6 @@ const DEFAULT_MODEL_PATHS: [&str; 3] = [
     "backend/assets/models/mahjong_policy_net.onnx",
     "mahjong_policy_net.onnx",
 ];
-const POLICY_ENV: &str = "MAHJONG_BOT_POLICY";
 const MODEL_PATH_ENV: &str = "MAHJONG_BOT_MODEL_PATH";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -43,11 +42,14 @@ pub(crate) struct RankedClaimScore {
     pub(crate) logit: f32,
 }
 
-pub(crate) fn neural_decision_scores(context: &BotContext) -> Option<NeuralDecisionScores> {
-    if !neural_policy_enabled() {
-        return None;
-    }
+pub(crate) fn neural_decision_scores_for_model_path(
+    context: &BotContext,
+    model_path: Option<&Path>,
+) -> Option<NeuralDecisionScores> {
     let features = encode_bot_context_v2(context);
+    if let Some(path) = model_path {
+        return OrtNeuralSession::new(path.to_path_buf()).run(features).ok();
+    }
     shared_session().lock().ok()?.run(features).ok()
 }
 
@@ -110,12 +112,6 @@ pub(crate) fn rank_masked_claims(
             .then_with(|| right.action_name.cmp(left.action_name))
     });
     scores
-}
-
-fn neural_policy_enabled() -> bool {
-    env::var(POLICY_ENV).ok().is_some_and(|value| {
-        value.eq_ignore_ascii_case("neural") || value.eq_ignore_ascii_case("hybrid")
-    })
 }
 
 fn shared_session() -> &'static Mutex<OrtNeuralSession> {
@@ -277,7 +273,7 @@ mod tests {
     #[test]
     fn v2_session_outputs_named_multi_head_scores() {
         let context = base_context();
-        let scores = neural_decision_scores(&context);
+        let scores = neural_decision_scores_for_model_path(&context, None);
 
         if let Some(scores) = scores {
             assert_eq!(scores.discard_logits.len(), 34);

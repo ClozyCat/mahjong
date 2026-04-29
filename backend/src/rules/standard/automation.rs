@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
+use crate::bot::arena::ArenaBotPolicyConfig;
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
@@ -32,9 +33,20 @@ use super::win::{
 };
 
 const MAX_SEATS: usize = 4;
+type BotPolicyResolver<'a> = &'a dyn Fn(usize) -> ArenaBotPolicyConfig;
 
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
     Ok(next_bot_action_for_state(room))
+}
+
+pub fn next_bot_action_in_room_state_with_policy_resolver(
+    room: &RoomState,
+    policy_for_seat: BotPolicyResolver<'_>,
+) -> Result<Option<BotAction>, String> {
+    Ok(next_bot_action_for_state_with_policy_resolver(
+        room,
+        policy_for_seat,
+    ))
 }
 
 pub fn try_process_due_timeout_in_room_state(
@@ -261,6 +273,7 @@ fn choose_bot_active_turn_action_with_cache_for_state(
     room: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
+    policy_config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     let self_kong_candidates = available_self_kongs_from_cache(cache, seat_index);
     let add_kong_risk_tiles = self_kong_candidates
@@ -280,7 +293,7 @@ fn choose_bot_active_turn_action_with_cache_for_state(
         self_kong_candidates,
         add_kong_risk_tiles,
     )?;
-    bot::choose_active_turn_action(&bot_context)
+    bot::choose_active_turn_action_with_config(&bot_context, policy_config)
 }
 
 #[allow(dead_code)]
@@ -328,6 +341,7 @@ fn choose_bot_claim_action_with_cache_for_state(
     room: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
+    policy_config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     let claim = match room.round_state.as_ref()?.pending_action.as_ref()? {
         PendingAction::ClaimWindow(claim) => claim,
@@ -370,13 +384,14 @@ fn choose_bot_claim_action_with_cache_for_state(
         Vec::new(),
         HashSet::new(),
     )?;
-    bot::choose_claim_action(&bot_context)
+    bot::choose_claim_action_with_config(&bot_context, policy_config)
 }
 
 fn next_ready_hand_action_for_state(
     state: &RoomState,
     cache: &RoomScoringCache,
     seat_index: usize,
+    policy_config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     if let Some(tile_id) = player_first_flower_tile_id_from_cache(cache, seat_index) {
         return Some(BotAction {
@@ -399,7 +414,12 @@ fn next_ready_hand_action_for_state(
 
     if seat_is_bot(state, seat_index) {
         if let Some(action) =
-            choose_bot_active_turn_action_with_cache_for_state(state, cache, seat_index)
+            choose_bot_active_turn_action_with_cache_for_state(
+                state,
+                cache,
+                seat_index,
+                policy_config,
+            )
         {
             return Some(action);
         }
@@ -424,6 +444,13 @@ fn next_ready_hand_action_for_state(
 }
 
 fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
+    next_bot_action_for_state_with_policy_resolver(state, &|_| bot::bot_policy_config_from_env())
+}
+
+fn next_bot_action_for_state_with_policy_resolver(
+    state: &RoomState,
+    policy_for_seat: BotPolicyResolver<'_>,
+) -> Option<BotAction> {
     if state.phase != "playing" {
         return None;
     }
@@ -433,11 +460,12 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
         "active_turn" => {
             let seat_index = round.current_actor;
             let cache = RoomScoringCache::from_state(state);
+            let policy_config = policy_for_seat(seat_index);
             if player_is_ready_hand(state, seat_index) {
                 if ready_hand_human_waits_for_manual_action(state, &cache, seat_index) {
                     return None;
                 }
-                return next_ready_hand_action_for_state(state, &cache, seat_index);
+                return next_ready_hand_action_for_state(state, &cache, seat_index, &policy_config);
             }
             if !seat_is_bot(state, seat_index) {
                 return None;
@@ -458,7 +486,12 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
                     tile_ids: vec![tile_id],
                 });
             }
-            choose_bot_active_turn_action_with_cache_for_state(state, &cache, seat_index)
+            choose_bot_active_turn_action_with_cache_for_state(
+                state,
+                &cache,
+                seat_index,
+                &policy_config,
+            )
         }
         "claim_window" => match round.pending_action.as_ref()? {
             PendingAction::RobKongWindow(rob) => {
@@ -481,7 +514,13 @@ fn next_bot_action_for_state(state: &RoomState) -> Option<BotAction> {
                 let cache = RoomScoringCache::from_state(state);
                 let seat_index = next_claim_window_responder_seat(claim)
                     .filter(|seat| seat_is_bot(state, *seat))?;
-                choose_bot_claim_action_with_cache_for_state(state, &cache, seat_index)
+                let policy_config = policy_for_seat(seat_index);
+                choose_bot_claim_action_with_cache_for_state(
+                    state,
+                    &cache,
+                    seat_index,
+                    &policy_config,
+                )
             }
         },
         _ => None,

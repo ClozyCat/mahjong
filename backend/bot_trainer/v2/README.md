@@ -61,3 +61,32 @@ uv run python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_tra
 - `hu_logits`: 2 logits.
 - `value`: expected score delta.
 - `risk_logits`: 34 tile risk logits.
+
+## Arena Evaluation
+
+Smoke:
+
+```powershell
+cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl
+```
+
+Windows matrix:
+
+```powershell
+.\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429
+```
+
+Linux matrix:
+
+```bash
+MATCHES=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
+```
+
+Primary model-selection metrics:
+
+- average score delta
+- win rate
+- deal-in rate
+- first-tenpai turn
+- final-tenpai rate
+- average decision latency

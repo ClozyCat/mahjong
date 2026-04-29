@@ -1,0 +1,10 @@
+{
+  "matches": 1,
+  "seed": 20260429,
+  "max_actions_per_match": 2400,
+  "report_trajectories": false,
+  "policies": [
+    {"id": "heuristic", "mode": "heuristic", "neural_weight": 0, "model_path": null},
+    {"id": "hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
+  ]
+}

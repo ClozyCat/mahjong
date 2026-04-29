@@ -1,12 +1,12 @@
 use super::context::*;
 use super::neural::{
-    NeuralDecisionScores, RankedTileScore, neural_decision_scores, rank_masked_claims,
-    rank_masked_discards,
+    NeuralDecisionScores, RankedTileScore, rank_masked_claims, rank_masked_discards,
 };
 use super::search::{
     BotDiscardPlan, STAGE_ONE_DEPTH, SearchEngine, claim_action_bonus, claim_meld_tile_keys,
     simulated_tiles_after_removal,
 };
+use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
 use std::{env, time::Instant};
 
 const HYBRID_TOP_SEARCH_CANDIDATES: usize = 5;
@@ -23,9 +23,26 @@ enum BotPolicyMode {
 }
 
 pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
-    let policy_mode = bot_policy_mode();
+    choose_active_turn_action_with_config(context, &bot_policy_config_from_env())
+}
+
+pub fn choose_active_turn_action_with_config(
+    context: &BotContext,
+    config: &ArenaBotPolicyConfig,
+) -> Option<BotAction> {
+    let policy_mode = bot_policy_mode_from_config(config);
+    let neural_weight = config.neural_weight.max(0);
+    choose_active_turn_action_inner(context, policy_mode, neural_weight, config)
+}
+
+fn choose_active_turn_action_inner(
+    context: &BotContext,
+    policy_mode: BotPolicyMode,
+    neural_weight: i64,
+    config: &ArenaBotPolicyConfig,
+) -> Option<BotAction> {
     if policy_mode == BotPolicyMode::Neural {
-        if let Some(scores) = neural_decision_scores(context) {
+        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
             if let Some(action) = select_neural_only_active_turn_action(context, &scores) {
                 return Some(action);
             }
@@ -105,7 +122,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     trace_discard_decision_if_enabled(context, &engine, &baseline, decision_started.elapsed());
 
     let neural_scores = if policy_mode == BotPolicyMode::Hybrid {
-        neural_decision_scores(context)
+        neural_decision_scores_for_policy(context, config)
     } else {
         None
     };
@@ -118,7 +135,7 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
                 &search_plans,
                 &neural_discard_scores,
                 Some(scores),
-                neural_prior_weight(),
+                neural_weight,
             )
         })
         .unwrap_or_else(|| baseline.clone());
@@ -149,9 +166,26 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
 }
 
 pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
-    let policy_mode = bot_policy_mode();
+    choose_claim_action_with_config(context, &bot_policy_config_from_env())
+}
+
+pub fn choose_claim_action_with_config(
+    context: &BotContext,
+    config: &ArenaBotPolicyConfig,
+) -> Option<BotAction> {
+    let policy_mode = bot_policy_mode_from_config(config);
+    let neural_weight = config.neural_weight.max(0);
+    choose_claim_action_inner(context, policy_mode, neural_weight, config)
+}
+
+fn choose_claim_action_inner(
+    context: &BotContext,
+    policy_mode: BotPolicyMode,
+    neural_weight: i64,
+    config: &ArenaBotPolicyConfig,
+) -> Option<BotAction> {
     if policy_mode == BotPolicyMode::Neural {
-        if let Some(scores) = neural_decision_scores(context) {
+        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
             if let Some(action) = select_neural_only_claim(context, &scores) {
                 return Some(action);
             }
@@ -239,14 +273,14 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
     }
 
     if policy_mode == BotPolicyMode::Hybrid {
-        if let Some(scores) = neural_decision_scores(context) {
+        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
             if let Some(action) = select_hybrid_claim(
                 context,
                 &scores,
                 pass_score,
                 &claim_plans,
                 engine.claim_margin(),
-                neural_prior_weight(),
+                neural_weight,
             ) {
                 return Some(action);
             }
@@ -266,12 +300,47 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
     })
 }
 
+pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
+    let mode = match bot_policy_mode() {
+        BotPolicyMode::Heuristic => ArenaPolicyMode::Heuristic,
+        BotPolicyMode::Hybrid => ArenaPolicyMode::Hybrid,
+        BotPolicyMode::Neural => ArenaPolicyMode::Neural,
+    };
+    ArenaBotPolicyConfig {
+        id: match mode {
+            ArenaPolicyMode::Heuristic => "env-heuristic",
+            ArenaPolicyMode::Hybrid => "env-hybrid",
+            ArenaPolicyMode::Neural => "env-neural",
+        }
+        .to_string(),
+        mode,
+        neural_weight: neural_prior_weight(),
+        model_path: env::var("MAHJONG_BOT_MODEL_PATH").ok(),
+    }
+}
+
 fn bot_policy_mode() -> BotPolicyMode {
     match env::var(POLICY_ENV).ok().as_deref() {
         Some(value) if value.eq_ignore_ascii_case("neural") => BotPolicyMode::Neural,
         Some(value) if value.eq_ignore_ascii_case("hybrid") => BotPolicyMode::Hybrid,
         _ => BotPolicyMode::Heuristic,
     }
+}
+
+fn bot_policy_mode_from_config(config: &ArenaBotPolicyConfig) -> BotPolicyMode {
+    match config.mode {
+        ArenaPolicyMode::Heuristic => BotPolicyMode::Heuristic,
+        ArenaPolicyMode::Hybrid => BotPolicyMode::Hybrid,
+        ArenaPolicyMode::Neural => BotPolicyMode::Neural,
+    }
+}
+
+fn neural_decision_scores_for_policy(
+    context: &BotContext,
+    config: &ArenaBotPolicyConfig,
+) -> Option<NeuralDecisionScores> {
+    let path = config.model_path.as_deref().map(std::path::Path::new);
+    super::neural::neural_decision_scores_for_model_path(context, path)
 }
 
 fn trace_discard_decision_if_enabled(
@@ -818,6 +887,25 @@ mod tests {
 
         let action = choose_active_turn_action(&context).expect("action");
         assert_eq!(action.action_type, "discard");
+    }
+
+    #[test]
+    fn explicit_heuristic_config_uses_existing_search_path() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&[
+            "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "green", "w9",
+            "w6",
+        ]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles;
+        let config = crate::bot::arena::ArenaBotPolicyConfig::heuristic();
+
+        let action = choose_active_turn_action_with_config(&context, &config).expect("action");
+
+        assert_eq!(action.seat_index, 0);
+        assert_eq!(action.action_type, "discard");
+        assert_eq!(action.tile_ids.len(), 1);
     }
 
     #[test]
