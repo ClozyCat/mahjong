@@ -89,13 +89,18 @@ Windows matrix:
 
 ```powershell
 .\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429
+.\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429 -SeatOrder rotate1
 ```
 
 Linux matrix:
 
 ```bash
 MATCHES=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
+MATCHES=200 SEED=20260429 SEAT_ORDER=rotate1 ./backend/bot_trainer/v2/arena_matrix.sh
 ```
+
+`arena_matrix` compares `heuristic` and `neural` policies only. `SeatOrder=default` seats them as
+`heuristic,neural,heuristic,neural`; `rotate1` swaps the order.
 
 Primary model-selection metrics:
 
@@ -159,4 +164,4 @@ An RL candidate can replace the production model only when arena evaluation show
 - first-tenpai turn or final-tenpai rate improves, or stays neutral
 - average decision latency remains under 100 ms
 
-The first RL runs should keep production policy in `hybrid` mode unless pure neural wins the same arena matrix without higher deal-in rate.
+The production policy modes are `heuristic` and `neural`. Keep `heuristic` as the fallback and promote a neural candidate only after it wins the rotated arena matrix without a higher deal-in rate.

@@ -21,9 +21,8 @@ ENTROPY_COEF=0.02
 ENTROPY_END_COEF=0.005
 ENTROPY_DECAY_STEPS=0
 DEVICE=auto
-SELFPLAY_POLICY_ID="selfplay_hybrid30"
-SELFPLAY_POLICY_MODE=hybrid
-SELFPLAY_NEURAL_WEIGHT=30
+SELFPLAY_POLICY_ID="selfplay_neural"
+SELFPLAY_POLICY_MODE=neural
 SKIP_TESTS=0
 SKIP_TRAJECTORY_GENERATION=0
 SKIP_ONNX_EXPORT=0
@@ -62,8 +61,7 @@ Options:
   --entropy-decay-steps N          Linear entropy decay steps. Use 0 for full training.
   --device DEVICE                  auto, cpu, cuda, etc.
   --selfplay-policy-id ID          Policy id written to trajectory rows.
-  --selfplay-policy-mode MODE      heuristic, hybrid, or neural.
-  --selfplay-neural-weight N       Hybrid neural prior weight.
+  --selfplay-policy-mode MODE      heuristic or neural.
   --skip-tests                     Skip Python tests.
   --skip-trajectory-generation     Reuse existing trajectories.jsonl in output dir.
   --skip-onnx-export               Do not export candidate.onnx.
@@ -205,11 +203,6 @@ while [[ $# -gt 0 ]]; do
             SELFPLAY_POLICY_MODE="$2"
             shift 2
             ;;
-        --selfplay-neural-weight)
-            require_value "$1" "${2:-}"
-            SELFPLAY_NEURAL_WEIGHT="$2"
-            shift 2
-            ;;
         --skip-tests)
             SKIP_TESTS=1
             shift
@@ -242,8 +235,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$SELFPLAY_POLICY_MODE" != "heuristic" && "$SELFPLAY_POLICY_MODE" != "hybrid" && "$SELFPLAY_POLICY_MODE" != "neural" ]]; then
-    echo "--selfplay-policy-mode must be heuristic, hybrid, or neural." >&2
+if [[ "$SELFPLAY_POLICY_MODE" != "heuristic" && "$SELFPLAY_POLICY_MODE" != "neural" ]]; then
+    echo "--selfplay-policy-mode must be heuristic or neural." >&2
     exit 2
 fi
 
@@ -348,7 +341,7 @@ if (( SKIP_TRAJECTORY_GENERATION == 0 )); then
     {
       "id": "$SELFPLAY_POLICY_ID",
       "mode": "$SELFPLAY_POLICY_MODE",
-      "neural_weight": $SELFPLAY_NEURAL_WEIGHT,
+      "neural_weight": 0,
       "model_path": "$BASELINE_ONNX"
     }
   ]
@@ -407,7 +400,7 @@ if (( SKIP_EVAL == 0 )); then
     {
       "id": "baseline_${SELFPLAY_POLICY_ID}",
       "mode": "$SELFPLAY_POLICY_MODE",
-      "neural_weight": $SELFPLAY_NEURAL_WEIGHT,
+      "neural_weight": 0,
       "model_path": "$BASELINE_ONNX"
     },
     {

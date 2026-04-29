@@ -28,17 +28,6 @@ require_value() {
     fi
 }
 
-require_cuda_gpu() {
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "CUDA GPU is required, but nvidia-smi was not found." >&2
-        exit 3
-    fi
-    if ! nvidia-smi --query-gpu=name --format=csv,noheader >/dev/null; then
-        echo "CUDA GPU is required, but nvidia-smi could not detect an NVIDIA GPU." >&2
-        exit 3
-    fi
-}
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --input)
@@ -77,7 +66,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 
 cd "$REPO_ROOT"
-require_cuda_gpu
 
 args=(
     run

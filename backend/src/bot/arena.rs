@@ -31,7 +31,6 @@ use crate::rules::standard::{
 #[serde(rename_all = "snake_case")]
 pub enum ArenaPolicyMode {
     Heuristic,
-    Hybrid,
     Neural,
 }
 
@@ -535,10 +534,7 @@ fn neural_policy_stats(
     action_head: &str,
     action_index: i64,
 ) -> Option<(f32, f32)> {
-    if !matches!(
-        policy.mode,
-        ArenaPolicyMode::Hybrid | ArenaPolicyMode::Neural
-    ) {
+    if !matches!(policy.mode, ArenaPolicyMode::Neural) {
         return None;
     }
     let model_path = policy.model_path.as_deref().map(std::path::Path::new);
@@ -747,7 +743,7 @@ mod tests {
             "seed": 20260429,
             "policies": [
                 {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-                {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"neural","mode":"neural","neural_weight":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
@@ -757,8 +753,23 @@ mod tests {
         assert_eq!(config.seed, 20260429);
         assert_eq!(config.max_actions_per_match, 2400);
         assert!(!config.report_trajectories);
-        assert_eq!(config.policies[1].id, "hybrid30");
-        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Hybrid);
+        assert_eq!(config.policies[1].id, "neural");
+        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Neural);
+    }
+
+    #[test]
+    fn arena_config_rejects_removed_hybrid_policy_mode() {
+        let raw = r#"{
+            "matches": 2,
+            "seed": 20260429,
+            "policies": [
+                {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+            ]
+        }"#;
+
+        let parsed = serde_json::from_str::<ArenaConfig>(raw);
+
+        assert!(parsed.is_err());
     }
 
     #[test]

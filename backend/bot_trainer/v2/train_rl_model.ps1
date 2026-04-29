@@ -20,10 +20,9 @@ param(
     [double]$EntropyEndCoef = 0.005,
     [int]$EntropyDecaySteps = 0,
     [string]$Device = "auto",
-    [string]$SelfPlayPolicyId = "selfplay_hybrid30",
-    [ValidateSet("heuristic", "hybrid", "neural")]
-    [string]$SelfPlayPolicyMode = "hybrid",
-    [int]$SelfPlayNeuralWeight = 30,
+    [string]$SelfPlayPolicyId = "selfplay_neural",
+    [ValidateSet("heuristic", "neural")]
+    [string]$SelfPlayPolicyMode = "neural",
     [switch]$SkipTests,
     [switch]$SkipTrajectoryGeneration,
     [switch]$SkipOnnxExport,
@@ -184,7 +183,7 @@ try {
                 @{
                     id = $SelfPlayPolicyId
                     mode = $SelfPlayPolicyMode
-                    neural_weight = $SelfPlayNeuralWeight
+                    neural_weight = 0
                     model_path = $BaselineOnnx
                 }
             )
@@ -251,7 +250,7 @@ try {
                 @{
                     id = "baseline_$SelfPlayPolicyId"
                     mode = $SelfPlayPolicyMode
-                    neural_weight = $SelfPlayNeuralWeight
+                    neural_weight = 0
                     model_path = $BaselineOnnx
                 },
                 @{

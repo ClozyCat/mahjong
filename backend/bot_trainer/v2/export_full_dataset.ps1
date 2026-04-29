@@ -10,24 +10,8 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..")
 
-function Assert-NvidiaCudaGpu {
-    $nvidiaSmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-    if (-not $nvidiaSmi) {
-        [Console]::Error.WriteLine("CUDA GPU is required, but nvidia-smi was not found.")
-        exit 3
-    }
-
-    & $nvidiaSmi.Source --query-gpu=name --format=csv,noheader 1>$null
-    if ($LASTEXITCODE -ne 0) {
-        [Console]::Error.WriteLine("CUDA GPU is required, but nvidia-smi could not detect an NVIDIA GPU.")
-        exit 3
-    }
-}
-
 Push-Location $RepoRoot
 try {
-    Assert-NvidiaCudaGpu
-
     $arguments = @(
         "run",
         "--release",

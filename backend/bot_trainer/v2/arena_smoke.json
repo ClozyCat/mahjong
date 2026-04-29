@@ -5,6 +5,6 @@
   "report_trajectories": false,
   "policies": [
     {"id": "heuristic", "mode": "heuristic", "neural_weight": 0, "model_path": null},
-    {"id": "hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
+    {"id": "neural", "mode": "neural", "neural_weight": 0, "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
   ]
 }
