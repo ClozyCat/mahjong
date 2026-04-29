@@ -20,10 +20,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--gae-lambda", type=float, default=0.95)
+    parser.add_argument("--policy-id", default=None)
     parser.add_argument("--clip-epsilon", type=float, default=0.2)
+    parser.add_argument("--value-clip-epsilon", type=float, default=0.2)
     parser.add_argument("--entropy-coef", type=float, default=0.02)
     parser.add_argument("--entropy-end-coef", type=float, default=0.005)
     parser.add_argument("--entropy-decay-steps", type=int, default=0)
+    parser.add_argument("--kl-coef", type=float, default=0.01)
+    parser.add_argument("--kl-end-coef", type=float, default=0.0)
     parser.add_argument("--recompute-old-policy-stats", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="auto")
@@ -72,8 +77,35 @@ def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
         f"policy_loss={metrics['policy_loss']:.6f} "
         f"value_loss={metrics['value_loss']:.6f} "
         f"entropy={metrics['entropy']:.6f} "
-        f"entropy_coef={metrics['entropy_coef']:.6f}"
+        f"entropy_coef={metrics['entropy_coef']:.6f} "
+        f"kl_loss={metrics['kl_loss']:.6f} "
+        f"kl_coef={metrics['kl_coef']:.6f}"
     )
+
+
+def clipped_value_loss(
+    values: torch.Tensor,
+    old_values: torch.Tensor,
+    returns: torch.Tensor,
+    clip_epsilon: float,
+) -> torch.Tensor:
+    clipped = old_values + (values - old_values).clamp(-clip_epsilon, clip_epsilon)
+    unclipped_loss = (values - returns).pow(2)
+    clipped_loss = (clipped - returns).pow(2)
+    return torch.maximum(unclipped_loss, clipped_loss).mean()
+
+
+def masked_categorical_kl(
+    teacher_logits: torch.Tensor,
+    student_logits: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    teacher_masked = teacher_logits.masked_fill(~mask.bool(), -1.0e4)
+    student_masked = student_logits.masked_fill(~mask.bool(), -1.0e4)
+    teacher_log_probs = F.log_softmax(teacher_masked, dim=1)
+    student_log_probs = F.log_softmax(student_masked, dim=1)
+    teacher_probs = teacher_log_probs.exp()
+    return (teacher_probs * (teacher_log_probs - student_log_probs)).sum(dim=1).mean()
 
 
 def resolve_device(requested: str) -> torch.device:
@@ -143,6 +175,31 @@ def select_action_entropy(
     return result.mean()
 
 
+def select_action_head_kl(
+    teacher_outputs: dict[str, torch.Tensor],
+    student_outputs: dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    result = torch.zeros((), device=batch["reward"].device)
+    count = 0
+    heads = [
+        (0, "discard_logits", "discard_mask"),
+        (1, "claim_logits", "claim_mask"),
+        (2, "self_kong_logits", "self_kong_mask"),
+        (3, "hu_logits", "hu_mask"),
+    ]
+    for head_index, logits_key, mask_key in heads:
+        active = batch["action_head"] == head_index
+        if torch.any(active):
+            result = result + masked_categorical_kl(
+                teacher_outputs[logits_key][active],
+                student_outputs[logits_key][active],
+                batch[mask_key][active],
+            )
+            count += 1
+    return result / max(count, 1)
+
+
 def trajectory_stats_are_all_zero(dataset: ArenaTrajectoryDataset) -> bool:
     if len(dataset) == 0:
         return False
@@ -170,7 +227,12 @@ def main() -> None:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
-    dataset = ArenaTrajectoryDataset(args.trajectories, gamma=args.gamma)
+    dataset = ArenaTrajectoryDataset(
+        args.trajectories,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+        policy_id=args.policy_id,
+    )
     if trajectory_stats_are_all_zero(dataset) and not args.recompute_old_policy_stats:
         raise SystemExit(
             "Trajectory old policy stats are all zero. Regenerate trajectories with "
@@ -184,6 +246,7 @@ def main() -> None:
         if args.recompute_old_policy_stats
         else None
     )
+    teacher_model = build_old_policy_model(args.checkpoint, device) if args.kl_coef > 0.0 else None
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     print(
@@ -203,6 +266,8 @@ def main() -> None:
         total_value_loss = 0.0
         total_entropy = 0.0
         total_entropy_coef = 0.0
+        total_kl_loss = 0.0
+        total_kl_coef = 0.0
         batch_count = 0
         for batch in loader:
             batch = {key: value.to(device) for key, value in batch.items()}
@@ -211,6 +276,12 @@ def main() -> None:
                 entropy_decay_steps,
                 args.entropy_coef,
                 args.entropy_end_coef,
+            )
+            kl_coef = entropy_coef_for_progress(
+                global_step,
+                entropy_decay_steps,
+                args.kl_coef,
+                args.kl_end_coef,
             )
             outputs = model(batch["tile_planes"].float(), batch["scalar_features"].float())
             if old_policy_model is not None:
@@ -226,7 +297,7 @@ def main() -> None:
                 old_values = batch["old_value"].float()
             log_probs = select_action_log_probs(outputs, batch)
             returns = batch["return"].float()
-            advantages = returns - old_values
+            advantages = batch["advantage"].float()
             advantages = (advantages - advantages.mean()) / (
                 advantages.std(unbiased=False) + 1.0e-8
             )
@@ -237,9 +308,22 @@ def main() -> None:
                 args.clip_epsilon,
             )
             values = outputs["value"].squeeze(1)
-            value_loss = F.mse_loss(values, returns)
+            value_loss = clipped_value_loss(
+                values,
+                old_values,
+                returns,
+                args.value_clip_epsilon,
+            )
             entropy = select_action_entropy(outputs, batch)
-            loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy
+            kl_loss = torch.zeros((), device=device)
+            if teacher_model is not None:
+                with torch.no_grad():
+                    teacher_outputs = teacher_model(
+                        batch["tile_planes"].float(),
+                        batch["scalar_features"].float(),
+                    )
+                kl_loss = select_action_head_kl(teacher_outputs, outputs, batch)
+            loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
@@ -248,6 +332,8 @@ def main() -> None:
             total_value_loss += float(value_loss.detach().cpu())
             total_entropy += float(entropy.detach().cpu())
             total_entropy_coef += entropy_coef
+            total_kl_loss += float(kl_loss.detach().cpu())
+            total_kl_coef += kl_coef
             batch_count += 1
             global_step += 1
         epoch_metrics = {
@@ -257,6 +343,8 @@ def main() -> None:
             "value_loss": total_value_loss / max(batch_count, 1),
             "entropy": total_entropy / max(batch_count, 1),
             "entropy_coef": total_entropy_coef / max(batch_count, 1),
+            "kl_loss": total_kl_loss / max(batch_count, 1),
+            "kl_coef": total_kl_coef / max(batch_count, 1),
         }
         history.append(epoch_metrics)
         print(format_epoch_metrics(epoch_metrics, args.epochs))

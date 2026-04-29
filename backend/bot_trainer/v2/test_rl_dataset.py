@@ -6,8 +6,45 @@ from pathlib import Path
 from rl_dataset import (
     ArenaTrajectoryDataset,
     compute_discounted_returns_for_rows,
+    compute_gae_for_rows,
     compute_returns,
 )
+
+
+def base_trajectory_row(
+    policy_id: str,
+    seat_index: int,
+    reward: float,
+    value: float,
+    done: bool = True,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "match_id": "m1",
+        "decision_index": seat_index,
+        "seat_index": seat_index,
+        "policy_id": policy_id,
+        "decision_kind": "active_turn",
+        "tile_planes": [0.0] * 340,
+        "scalar_features": [0.0] * 10,
+        "discard_mask": [True] + [False] * 33,
+        "claim_mask": [True] + [False] * 6,
+        "self_kong_mask": [True, False, False],
+        "hu_mask": [True, False],
+        "action_head": "discard",
+        "action_index": 0,
+        "action_semantic": "discard:w1",
+        "log_prob": -0.3,
+        "value": value,
+        "reward": reward,
+        "step_reward": 0.0,
+        "terminal_reward": reward,
+        "shanten_before": None,
+        "shanten_after": None,
+        "fan_potential_before": None,
+        "fan_potential_after": None,
+        "done": done,
+    }
 
 
 def test_loads_trajectory_row(tmp_path: Path) -> None:
@@ -47,6 +84,7 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
     assert row["action_index"].item() == 0
     assert row["reward"].item() == 1.0
     assert row["return"].item() == 1.0
+    assert row["advantage"].item() == 1.0
     assert row["shanten_after"].item() == 0
     assert row["fan_potential_after"].item() == 3
     assert row["tile_planes"].shape == (10, 34)
@@ -73,6 +111,33 @@ def test_compute_discounted_returns_are_per_seat_episode() -> None:
     returns = compute_discounted_returns_for_rows(rows, gamma=0.9)
 
     assert returns == [0.9, 10.0, 1.0, 0.0]
+
+
+def test_dataset_filters_policy_id(tmp_path: Path) -> None:
+    path = tmp_path / "trajectories.jsonl"
+    rows = [
+        base_trajectory_row("learner", 0, reward=1.0, value=0.2),
+        base_trajectory_row("opponent", 1, reward=9.0, value=0.0),
+    ]
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    dataset = ArenaTrajectoryDataset(path, policy_id="learner")
+
+    assert len(dataset) == 1
+    assert dataset[0]["reward"].item() == 1.0
+
+
+def test_compute_gae_for_rows_is_per_seat_episode() -> None:
+    rows = [
+        {"match_id": "m1", "seat_index": 0, "reward": 0.0, "value": 0.5},
+        {"match_id": "m1", "seat_index": 1, "reward": 5.0, "value": 0.0},
+        {"match_id": "m1", "seat_index": 0, "reward": 1.0, "value": 0.25},
+    ]
+
+    advantages, returns = compute_gae_for_rows(rows, gamma=1.0, gae_lambda=1.0)
+
+    assert advantages == [0.5, 5.0, 0.75]
+    assert returns == [1.0, 5.0, 1.0]
 
 
 def test_masked_ppo_loss_is_finite() -> None:
@@ -111,12 +176,43 @@ def test_epoch_log_line_includes_entropy_metrics() -> None:
             "value_loss": 0.25,
             "entropy": 1.75,
             "entropy_coef": 0.02,
+            "kl_loss": 0.03,
+            "kl_coef": 0.01,
         },
         total_epochs=3,
     )
 
     assert "entropy=1.750000" in line
     assert "entropy_coef=0.020000" in line
+    assert "kl_loss=0.030000" in line
+    assert "kl_coef=0.010000" in line
+
+
+def test_clipped_value_loss_uses_larger_loss() -> None:
+    import torch
+    from rl_train import clipped_value_loss
+
+    values = torch.tensor([3.0])
+    old_values = torch.tensor([0.0])
+    returns = torch.tensor([1.0])
+
+    loss = clipped_value_loss(values, old_values, returns, clip_epsilon=0.2)
+
+    assert loss.item() == 4.0
+
+
+def test_masked_categorical_kl_is_finite() -> None:
+    import torch
+    from rl_train import masked_categorical_kl
+
+    teacher_logits = torch.tensor([[1.0, 0.0, 99.0]])
+    student_logits = torch.tensor([[0.5, 0.2, -99.0]])
+    mask = torch.tensor([[True, True, False]])
+
+    kl = masked_categorical_kl(teacher_logits, student_logits, mask)
+
+    assert torch.isfinite(kl)
+    assert kl.item() >= 0.0
 
 
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:

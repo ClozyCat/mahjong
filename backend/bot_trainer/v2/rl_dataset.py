@@ -9,19 +9,34 @@ from torch.utils.data import Dataset
 
 
 class ArenaTrajectoryDataset(Dataset):
-    def __init__(self, path: Path, gamma: float = 0.99) -> None:
-        self.rows = [
+    def __init__(
+        self,
+        path: Path,
+        gamma: float = 0.99,
+        gae_lambda: float = 0.95,
+        policy_id: str | None = None,
+    ) -> None:
+        rows = [
             json.loads(line)
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        self.returns = compute_discounted_returns_for_rows(self.rows, gamma)
+        if policy_id is not None:
+            rows = [row for row in rows if row.get("policy_id") == policy_id]
+        self.rows = rows
+        self.advantages, self.returns = compute_gae_for_rows(
+            self.rows,
+            gamma=gamma,
+            gae_lambda=gae_lambda,
+        )
 
     def __len__(self) -> int:
         return len(self.rows)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
-        return encode_row(self.rows[index], self.returns[index])
+        row = dict(self.rows[index])
+        row["advantage"] = self.advantages[index]
+        return encode_row(row, self.returns[index])
 
 
 def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> dict[str, torch.Tensor]:
@@ -38,6 +53,7 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
             row["reward"] if discounted_return is None else discounted_return,
             dtype=torch.float32,
         ),
+        "advantage": torch.tensor(row.get("advantage", 0.0), dtype=torch.float32),
         "step_reward": torch.tensor(row.get("step_reward", 0.0), dtype=torch.float32),
         "terminal_reward": torch.tensor(row.get("terminal_reward", 0.0), dtype=torch.float32),
         "shanten_before": optional_int_tensor(row.get("shanten_before")),
@@ -87,3 +103,29 @@ def compute_discounted_returns_for_rows(
             running = float(rows[index]["reward"]) + gamma * running
             returns[index] = round(running, 6)
     return returns
+
+
+def compute_gae_for_rows(
+    rows: list[dict[str, Any]],
+    gamma: float,
+    gae_lambda: float,
+) -> tuple[list[float], list[float]]:
+    advantages = [0.0 for _ in rows]
+    returns = [0.0 for _ in rows]
+    groups: dict[tuple[str, int], list[int]] = {}
+    for index, row in enumerate(rows):
+        key = (str(row["match_id"]), int(row["seat_index"]))
+        groups.setdefault(key, []).append(index)
+
+    for indices in groups.values():
+        running_advantage = 0.0
+        next_value = 0.0
+        for index in reversed(indices):
+            reward = float(rows[index]["reward"])
+            value = float(rows[index].get("value", 0.0))
+            delta = reward + gamma * next_value - value
+            running_advantage = delta + gamma * gae_lambda * running_advantage
+            advantages[index] = round(running_advantage, 6)
+            returns[index] = round(value + running_advantage, 6)
+            next_value = value
+    return advantages, returns
