@@ -16,8 +16,8 @@ function New-PolicyConfig {
     )
 
     switch ($Id) {
-        "heuristic" { return @{ id = "heuristic"; mode = "heuristic"; neural_weight = 0; model_path = $null } }
-        "neural" { return @{ id = "neural"; mode = "neural"; neural_weight = 0; model_path = "backend/assets/models/mahjong_policy_net.onnx" } }
+        "heuristic" { return @{ id = "heuristic"; mode = "heuristic"; model_path = $null } }
+        "neural" { return @{ id = "neural"; mode = "neural"; model_path = "backend/assets/models/mahjong_policy_net.onnx" } }
         default { throw "Unknown policy id: $Id" }
     }
 }

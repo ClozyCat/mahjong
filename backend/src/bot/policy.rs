@@ -257,7 +257,6 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         }
         .to_string(),
         mode,
-        neural_weight: 0,
         model_path: env::var("MAHJONG_BOT_MODEL_PATH").ok(),
     }
 }

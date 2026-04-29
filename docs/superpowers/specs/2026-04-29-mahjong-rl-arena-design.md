@@ -61,9 +61,9 @@ Current runtime policy selection is environment-variable based. The arena needs 
   "matches": 200,
   "seed": 20260429,
   "policies": [
-    {"id": "heuristic", "mode": "heuristic", "neural_weight": 0, "model_path": null},
-    {"id": "hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/assets/models/mahjong_policy_net.onnx"},
-    {"id": "rl_candidate", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/bot_trainer/v2/checkpoints_rl/candidate.onnx"}
+    {"id": "heuristic", "mode": "heuristic", "model_path": null},
+    {"id": "neural", "mode": "neural", "model_path": "backend/assets/models/mahjong_policy_net.onnx"},
+    {"id": "rl_candidate", "mode": "neural", "model_path": "backend/bot_trainer/v2/checkpoints_rl/candidate.onnx"}
   ]
 }
 ```
@@ -161,7 +161,7 @@ Training flow:
 Avoid selecting a model that only beats its own latest version. Keep a small pool:
 
 - heuristic baseline
-- current production hybrid
+- current production neural
 - last accepted RL model
 - one or two older RL checkpoints
 
@@ -186,7 +186,7 @@ One row per arena match:
   "seats": [
     {
       "seat_index": 0,
-      "policy_id": "hybrid30",
+      "policy_id": "neural",
       "score_delta": 12,
       "wins": 1,
       "dealt_in": 0,
@@ -252,8 +252,8 @@ Add policy config structs and route arena decisions through config-driven bot en
 
 Verification:
 
-- arena can compare heuristic, neural, and hybrid in one config
-- missing model path falls back safely for hybrid or fails clearly for neural-only
+- arena can compare heuristic and neural policies in one config
+- missing model path fails clearly for neural-only or falls back through the existing search path
 - production env behavior remains unchanged
 
 ### Phase 3: Baseline Matrix
@@ -262,7 +262,6 @@ Run the arena before RL to establish baselines:
 
 - heuristic
 - pure neural
-- hybrid weights such as 5, 15, 30, 60
 - current production default
 
 Verification:
@@ -332,12 +331,12 @@ uv run python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trai
 - Reward shaping may create bad incentives. Mitigation: keep terminal score delta dominant.
 - Arena throughput may be too slow with ONNX per decision. Mitigation: start with evaluation correctness, then batch inference or cache model sessions.
 - Feature mismatch between Rust and Python can corrupt training. Mitigation: reuse metadata and add shape / mask consistency tests.
-- Pure neural may regress tactical safety. Mitigation: evaluate hybrid mode and deal-in rate before production replacement.
+- Pure neural may regress tactical safety. Mitigation: evaluate deal-in rate before production replacement.
 
 ## Open Decisions
 
 - Whether the first RL trainer reads offline trajectories only or uses a live Rust-Python loop.
-- Whether the production policy after RL should be pure neural or hybrid. Default recommendation is hybrid until arena results prove pure neural is stronger and safe.
+- Whether the production policy after RL should remain on the accepted neural baseline or move to a new RL candidate. Default recommendation is to require arena evidence before replacement.
 - Exact reward weights should be tuned after the first arena baseline matrix.
 
 ## Approval Status

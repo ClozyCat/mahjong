@@ -183,7 +183,6 @@ try {
                 @{
                     id = $SelfPlayPolicyId
                     mode = $SelfPlayPolicyMode
-                    neural_weight = 0
                     model_path = $BaselineOnnx
                 }
             )
@@ -250,13 +249,11 @@ try {
                 @{
                     id = "baseline_$SelfPlayPolicyId"
                     mode = $SelfPlayPolicyMode
-                    neural_weight = 0
                     model_path = $BaselineOnnx
                 },
                 @{
                     id = "rl_candidate_neural"
                     mode = "neural"
-                    neural_weight = 0
                     model_path = $CandidateOnnx
                 }
             )

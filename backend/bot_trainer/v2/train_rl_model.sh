@@ -341,7 +341,6 @@ if (( SKIP_TRAJECTORY_GENERATION == 0 )); then
     {
       "id": "$SELFPLAY_POLICY_ID",
       "mode": "$SELFPLAY_POLICY_MODE",
-      "neural_weight": 0,
       "model_path": "$BASELINE_ONNX"
     }
   ]
@@ -400,13 +399,11 @@ if (( SKIP_EVAL == 0 )); then
     {
       "id": "baseline_${SELFPLAY_POLICY_ID}",
       "mode": "$SELFPLAY_POLICY_MODE",
-      "neural_weight": 0,
       "model_path": "$BASELINE_ONNX"
     },
     {
       "id": "rl_candidate_neural",
       "mode": "neural",
-      "neural_weight": 0,
       "model_path": "$CANDIDATE_ONNX"
     }
   ]

@@ -1,9 +1,8 @@
 {
     "policies":  [
                      {
-                         "neural_weight":  30,
-                         "id":  "selfplay_hybrid30",
-                         "mode":  "hybrid",
+                         "id":  "selfplay_neural",
+                         "mode":  "neural",
                          "model_path":  "backend/assets/models/mahjong_policy_net.onnx"
                      }
                  ],

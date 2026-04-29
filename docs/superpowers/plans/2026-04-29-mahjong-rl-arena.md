@@ -62,8 +62,8 @@ The first implementation should stop after a working arena MVP if code risk grow
   "max_actions_per_match": 2400,
   "report_trajectories": false,
   "policies": [
-    {"id": "heuristic", "mode": "heuristic", "neural_weight": 0, "model_path": null},
-    {"id": "hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
+    {"id": "heuristic", "mode": "heuristic", "model_path": null},
+    {"id": "neural", "mode": "neural", "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
   ]
 }
 ```
@@ -102,7 +102,7 @@ The first implementation should stop after a working arena MVP if code risk grow
   "match_id": "arena-20260429-0",
   "decision_index": 42,
   "seat_index": 2,
-  "policy_id": "hybrid30",
+  "policy_id": "neural",
   "decision_kind": "active_turn",
   "tile_planes": [0.0],
   "scalar_features": [0.0],
@@ -139,7 +139,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum ArenaPolicyMode {
     Heuristic,
-    Hybrid,
     Neural,
 }
 
@@ -147,7 +146,6 @@ pub enum ArenaPolicyMode {
 pub struct ArenaBotPolicyConfig {
     pub id: String,
     pub mode: ArenaPolicyMode,
-    pub neural_weight: i64,
     pub model_path: Option<String>,
 }
 
@@ -195,7 +193,6 @@ impl ArenaBotPolicyConfig {
         Self {
             id: "heuristic".to_string(),
             mode: ArenaPolicyMode::Heuristic,
-            neural_weight: 0,
             model_path: None,
         }
     }
@@ -235,8 +232,8 @@ mod tests {
             "matches": 2,
             "seed": 20260429,
             "policies": [
-                {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-                {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"heuristic","mode":"heuristic","model_path":null},
+                {"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
@@ -246,8 +243,8 @@ mod tests {
         assert_eq!(config.seed, 20260429);
         assert_eq!(config.max_actions_per_match, 2400);
         assert!(!config.report_trajectories);
-        assert_eq!(config.policies[1].id, "hybrid30");
-        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Hybrid);
+        assert_eq!(config.policies[1].id, "neural");
+        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Neural);
     }
 
     #[test]
@@ -256,7 +253,6 @@ mod tests {
 
         assert_eq!(config.id, "heuristic");
         assert_eq!(config.mode, ArenaPolicyMode::Heuristic);
-        assert_eq!(config.neural_weight, 0);
         assert_eq!(config.model_path, None);
     }
 }
@@ -294,18 +290,15 @@ Add this helper near the existing policy mode helpers:
 fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
     let mode = match env::var(POLICY_ENV).ok().as_deref() {
         Some(value) if value.eq_ignore_ascii_case("neural") => ArenaPolicyMode::Neural,
-        Some(value) if value.eq_ignore_ascii_case("hybrid") => ArenaPolicyMode::Hybrid,
         _ => ArenaPolicyMode::Heuristic,
     };
     ArenaBotPolicyConfig {
         id: match mode {
             ArenaPolicyMode::Heuristic => "env-heuristic",
-            ArenaPolicyMode::Hybrid => "env-hybrid",
             ArenaPolicyMode::Neural => "env-neural",
         }
         .to_string(),
         mode,
-        neural_weight: neural_prior_weight(),
         model_path: env::var("MAHJONG_BOT_MODEL_PATH").ok(),
     }
 }
@@ -337,8 +330,7 @@ pub fn choose_active_turn_action_with_config(
     config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     let policy_mode = bot_policy_mode_from_config(config);
-    let neural_weight = config.neural_weight.max(0);
-    choose_active_turn_action_inner(context, policy_mode, neural_weight, config)
+    choose_active_turn_action_inner(context, policy_mode, config)
 }
 
 pub fn choose_claim_action_with_config(
@@ -346,8 +338,7 @@ pub fn choose_claim_action_with_config(
     config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     let policy_mode = bot_policy_mode_from_config(config);
-    let neural_weight = config.neural_weight.max(0);
-    choose_claim_action_inner(context, policy_mode, neural_weight, config)
+    choose_claim_action_inner(context, policy_mode, config)
 }
 ```
 
@@ -361,18 +352,6 @@ becomes a function argument:
 
 ```rust
 policy_mode: BotPolicyMode
-```
-
-Every call to:
-
-```rust
-neural_prior_weight()
-```
-
-becomes:
-
-```rust
-neural_weight
 ```
 
 Every call to:
@@ -397,7 +376,6 @@ Keep the existing internal `BotPolicyMode` enum and add:
 fn bot_policy_mode_from_config(config: &ArenaBotPolicyConfig) -> BotPolicyMode {
     match config.mode {
         ArenaPolicyMode::Heuristic => BotPolicyMode::Heuristic,
-        ArenaPolicyMode::Hybrid => BotPolicyMode::Hybrid,
         ArenaPolicyMode::Neural => BotPolicyMode::Neural,
     }
 }
@@ -437,7 +415,6 @@ fn neural_decision_scores_for_policy(
 Inside `choose_active_turn_action_with_config` and `choose_claim_action_with_config`:
 
 - replace `neural_decision_scores(context)` with `neural_decision_scores_for_policy(context, config)`
-- replace `neural_prior_weight()` with `neural_weight`
 - keep search fallback behavior unchanged
 - keep `choose_active_turn_action` and `choose_claim_action` public behavior unchanged
 
@@ -944,8 +921,8 @@ Create `backend/bot_trainer/v2/arena_smoke.json`:
   "max_actions_per_match": 2400,
   "report_trajectories": false,
   "policies": [
-    {"id": "heuristic", "mode": "heuristic", "neural_weight": 0, "model_path": null},
-    {"id": "hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
+    {"id": "heuristic", "mode": "heuristic", "model_path": null},
+    {"id": "neural", "mode": "neural", "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
   ]
 }
 ```
@@ -994,12 +971,8 @@ $config = @{
     max_actions_per_match = 2400
     report_trajectories = $false
     policies = @(
-        @{ id = "heuristic"; mode = "heuristic"; neural_weight = 0; model_path = $null },
-        @{ id = "neural"; mode = "neural"; neural_weight = 0; model_path = "backend/assets/models/mahjong_policy_net.onnx" },
-        @{ id = "hybrid05"; mode = "hybrid"; neural_weight = 5; model_path = "backend/assets/models/mahjong_policy_net.onnx" },
-        @{ id = "hybrid15"; mode = "hybrid"; neural_weight = 15; model_path = "backend/assets/models/mahjong_policy_net.onnx" },
-        @{ id = "hybrid30"; mode = "hybrid"; neural_weight = 30; model_path = "backend/assets/models/mahjong_policy_net.onnx" },
-        @{ id = "hybrid60"; mode = "hybrid"; neural_weight = 60; model_path = "backend/assets/models/mahjong_policy_net.onnx" }
+        @{ id = "heuristic"; mode = "heuristic"; model_path = $null },
+        @{ id = "neural"; mode = "neural"; model_path = "backend/assets/models/mahjong_policy_net.onnx" }
     )
 }
 
@@ -1033,12 +1006,8 @@ cat > "$CONFIG_PATH" <<JSON
   "max_actions_per_match": 2400,
   "report_trajectories": false,
   "policies": [
-    {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-    {"id":"neural","mode":"neural","neural_weight":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"},
-    {"id":"hybrid05","mode":"hybrid","neural_weight":5,"model_path":"backend/assets/models/mahjong_policy_net.onnx"},
-    {"id":"hybrid15","mode":"hybrid","neural_weight":15,"model_path":"backend/assets/models/mahjong_policy_net.onnx"},
-    {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":"backend/assets/models/mahjong_policy_net.onnx"},
-    {"id":"hybrid60","mode":"hybrid","neural_weight":60,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+    {"id":"heuristic","mode":"heuristic","model_path":null},
+    {"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
   ]
 }
 JSON
@@ -1603,8 +1572,8 @@ Create `backend/bot_trainer/v2/arena_runs/rl_candidate_config.json`:
   "max_actions_per_match": 2400,
   "report_trajectories": false,
   "policies": [
-    {"id": "baseline_hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/assets/models/mahjong_policy_net.onnx"},
-    {"id": "rl_candidate_hybrid30", "mode": "hybrid", "neural_weight": 30, "model_path": "backend/bot_trainer/v2/checkpoints_rl_smoke/candidate.onnx"}
+    {"id": "baseline_neural", "mode": "neural", "model_path": "backend/assets/models/mahjong_policy_net.onnx"},
+    {"id": "rl_candidate_neural", "mode": "neural", "model_path": "backend/bot_trainer/v2/checkpoints_rl_smoke/candidate.onnx"}
   ]
 }
 ```
@@ -1637,7 +1606,7 @@ An RL candidate can replace the production model only when arena evaluation show
 - first-tenpai turn or final-tenpai rate improves, or stays neutral
 - average decision latency remains under 100 ms
 
-The first RL runs should keep production policy in `hybrid` mode unless pure neural wins the same arena matrix without higher deal-in rate.
+The first RL runs should keep production policy in `neural` mode and require arena results without higher deal-in rate before replacing the model.
 ```
 
 - [ ] **Step 5: Verify documentation**
@@ -1716,7 +1685,7 @@ Expected: changes are limited to arena, policy config, trajectory/PPO trainer, s
 
 - Arena can run deterministic all-bot matches from JSON config.
 - Arena writes match reports with four seat metric entries per match.
-- Arena can compare heuristic, neural, and hybrid policies without changing environment variables.
+- Arena can compare heuristic and neural policies without changing environment variables.
 - Production env-based bot behavior remains available.
 - Trajectory export writes legal masked decisions with stable tensor shapes.
 - Python PPO smoke training can load trajectory JSONL and save a checkpoint.

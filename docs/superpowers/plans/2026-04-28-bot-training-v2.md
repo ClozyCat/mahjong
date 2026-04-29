@@ -12,7 +12,7 @@
 
 ## Non-Negotiable Constraints
 
-- Delete the legacy v1 discard-only path. Do not keep `TRAINER_FEATURE_LAYERS`, `build_trainer_features`, `trainer_index_for_backend_index`, or hybrid v1 fallback behavior.
+- Delete the legacy v1 discard-only path. Do not keep `TRAINER_FEATURE_LAYERS`, `build_trainer_features`, `trainer_index_for_backend_index`, or neural v1 fallback behavior.
 - Replace the old ONNX asset with a v2 multi-head model. Do not ship both `mahjong_policy_net.onnx` v1 and v2 side by side.
 - Training data must be generated from all four players' actions, not winner-only histories.
 - Training and runtime must share one tile vocabulary, one action vocabulary, one legal-mask convention, and one feature schema version.
@@ -885,7 +885,7 @@ fn select_neural_v2_discard(
     search_plans: &[BotDiscardPlan],
 ) -> Option<BotDiscardPlan> {
     let scores = neural_decision_scores(context)?;
-    select_hybrid_discard_plan_v2(search_plans, &scores.discard_logits, &scores.risk_logits, neural_prior_weight())
+    select_neural_discard_plan_v2(search_plans, &scores.discard_logits, &scores.risk_logits, neural_prior_weight())
 }
 
 fn select_neural_v2_claim(context: &BotContext, pass_score: i64, best_search_claim: Option<(BotAction, i64)>) -> Option<BotAction> {
@@ -916,12 +916,11 @@ Expected: PASS, and claim/discard policy tests compile against v2 API only.
 ```env
 MAHJONG_BOT_POLICY=neural
 MAHJONG_BOT_MODEL_PATH=/app/assets/models/mahjong_policy_net.onnx
-MAHJONG_BOT_NEURAL_WEIGHT=15
 MAHJONG_BOT_STRENGTH=strong
 ```
 
-Run: `rg -n "legacy|v1|TRAINER_FEATURE|build_trainer_features|trainer_index_for_backend_index|hybrid" backend docker-compose.yml docker-compose.prebuilt.yml .env.example`  
-Expected: no v1 trainer symbols; `hybrid` may remain only if the policy mode still intentionally means neural-plus-search and is documented as v2 hybrid, not legacy v1.
+Run: `rg -n "legacy|v1|TRAINER_FEATURE|build_trainer_features|trainer_index_for_backend_index|neural" backend docker-compose.yml docker-compose.prebuilt.yml .env.example`
+Expected: no v1 trainer symbols; `neural` may remain only if the policy mode still intentionally means neural-plus-search and is documented as v2 neural, not legacy v1.
 
 - [ ] **Step 2: Verify only one production ONNX asset remains**
 

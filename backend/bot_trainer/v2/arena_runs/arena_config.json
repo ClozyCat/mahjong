@@ -1,28 +1,24 @@
 {
   "policies": [
     {
-      "neural_weight": 5,
       "model_path": "backend/assets/models/mahjong_policy_net.onnx",
-      "mode": "hybrid",
-      "id": "hybrid05"
+      "mode": "neural",
+      "id": "neural"
     },
     {
-      "neural_weight": 15,
-      "model_path": "backend/assets/models/mahjong_policy_net.onnx",
-      "mode": "hybrid",
-      "id": "hybrid15"
-    },
-    {
-      "neural_weight": 0,
       "model_path": null,
       "mode": "heuristic",
       "id": "heuristic"
     },
     {
-      "neural_weight": 0,
       "model_path": "backend/assets/models/mahjong_policy_net.onnx",
       "mode": "neural",
       "id": "neural"
+    },
+    {
+      "model_path": null,
+      "mode": "heuristic",
+      "id": "heuristic"
     }
   ],
   "max_actions_per_match": 2400,

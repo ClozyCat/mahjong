@@ -15,10 +15,10 @@ OUTPUT_PATH="$OUTPUT_DIR/arena_results.jsonl"
 policy_json() {
     case "$1" in
         heuristic)
-            printf '{"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null}'
+            printf '{"id":"heuristic","mode":"heuristic","model_path":null}'
             ;;
         neural)
-            printf '{"id":"neural","mode":"neural","neural_weight":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}'
+            printf '{"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}'
             ;;
         *)
             echo "Unknown policy id: $1" >&2

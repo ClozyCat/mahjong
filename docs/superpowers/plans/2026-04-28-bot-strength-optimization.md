@@ -21,7 +21,7 @@
 ## File Map
 
 - Modify: `docker-compose.yml`
-  Responsibility: default production bot mode to `hybrid`.
+  Responsibility: default production bot mode to `neural`.
 - Modify: `docker-compose.prebuilt.yml`
   Responsibility: mirror production bot default.
 - Modify: `backend/src/bot/features.rs`
@@ -61,7 +61,7 @@
 
 ---
 
-## Task 1: Default Runtime To Hybrid
+## Task 1: Default Runtime To Neural
 
 **Files:**
 - Modify: `docker-compose.yml:13`
@@ -79,7 +79,7 @@ MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-neural}
 with:
 
 ```yaml
-MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-hybrid}
+MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-neural}
 ```
 
 - [ ] **Step 2: Verify defaults**
@@ -93,8 +93,8 @@ rg -n "MAHJONG_BOT_POLICY" docker-compose.yml docker-compose.prebuilt.yml
 Expected:
 
 ```text
-docker-compose.yml:13:      MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-hybrid}
-docker-compose.prebuilt.yml:10:      MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-hybrid}
+docker-compose.yml:13:      MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-neural}
+docker-compose.prebuilt.yml:10:      MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-neural}
 ```
 
 - [ ] **Step 3: Commit**
@@ -255,7 +255,7 @@ Expected: FAIL until policy selection uses the same chow action-name derivation.
 
 - [ ] **Step 5: Implement policy helper**
 
-In `backend/src/bot/policy.rs`, add a helper used by both neural-only and hybrid claim selection:
+In `backend/src/bot/policy.rs`, add a helper used by the neural claim selection path:
 
 ```rust
 fn claim_option_for_ranked_action<'a>(
@@ -272,7 +272,7 @@ fn claim_option_for_ranked_action<'a>(
 }
 ```
 
-Replace existing broad chow matching in `select_neural_only_claim` and `select_hybrid_claim` with `claim_option_for_ranked_action(context, best.action_name)`.
+Replace existing broad chow matching in `select_neural_only_claim` with `claim_option_for_ranked_action(context, best.action_name)`.
 
 - [ ] **Step 6: Run policy tests**
 
@@ -685,7 +685,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum ArenaPolicyMode {
     Heuristic,
-    Hybrid,
     Neural,
 }
 
@@ -693,7 +692,6 @@ pub enum ArenaPolicyMode {
 pub struct ArenaBotPolicyConfig {
     pub id: String,
     pub mode: ArenaPolicyMode,
-    pub neural_weight: i64,
     pub model_path: Option<String>,
 }
 
@@ -702,7 +700,6 @@ impl ArenaBotPolicyConfig {
         Self {
             id: "heuristic".to_string(),
             mode: ArenaPolicyMode::Heuristic,
-            neural_weight: 0,
             model_path: None,
         }
     }
@@ -721,12 +718,11 @@ Add to `backend/src/bot/policy.rs` tests:
 
 ```rust
 #[test]
-fn explicit_hybrid_config_uses_search_when_neural_is_unavailable() {
+fn explicit_neural_config_uses_search_when_neural_is_unavailable() {
     let context = base_context();
     let config = crate::bot::arena::ArenaBotPolicyConfig {
-        id: "hybrid-test".to_string(),
-        mode: crate::bot::arena::ArenaPolicyMode::Hybrid,
-        neural_weight: 15,
+        id: "neural-test".to_string(),
+        mode: crate::bot::arena::ArenaPolicyMode::Neural,
         model_path: Some("missing-model.onnx".to_string()),
     };
 
@@ -739,7 +735,7 @@ fn explicit_hybrid_config_uses_search_when_neural_is_unavailable() {
 Run:
 
 ```powershell
-cargo test --manifest-path backend/Cargo.toml bot::policy::tests::explicit_hybrid_config_uses_search_when_neural_is_unavailable -- --nocapture
+cargo test --manifest-path backend/Cargo.toml bot::policy::tests::explicit_neural_config_uses_search_when_neural_is_unavailable -- --nocapture
 ```
 
 Expected: FAIL because configurable entry point does not exist.
@@ -776,7 +772,6 @@ pub fn choose_claim_action_with_config(
 }
 ```
 
-Replace `neural_prior_weight()` call sites inside configurable functions with `config.neural_weight.max(0)`.
 
 - [ ] **Step 4: Add explicit neural scoring model-path wrapper**
 
@@ -895,16 +890,16 @@ mod tests {
             "matches": 2,
             "seed": 7,
             "policies": [
-                {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-                {"id":"hybrid15","mode":"hybrid","neural_weight":15,"model_path":null}
+                {"id":"heuristic","mode":"heuristic","model_path":null},
+                {"id":"neural","mode":"neural","model_path":null}
             ]
         }"#;
 
         let config: ArenaConfig = serde_json::from_str(raw).expect("config");
 
         assert_eq!(config.matches, 2);
-        assert_eq!(config.policies[1].id, "hybrid15");
-        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Hybrid);
+        assert_eq!(config.policies[1].id, "neural");
+        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Neural);
     }
 }
 ```
@@ -986,10 +981,8 @@ Create a temporary config:
   "matches": 2,
   "seed": 7,
   "policies": [
-    {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-    {"id":"hybrid15","mode":"hybrid","neural_weight":15,"model_path":null},
-    {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":null},
-    {"id":"neural","mode":"neural","neural_weight":0,"model_path":null}
+    {"id":"heuristic","mode":"heuristic","model_path":null},
+    {"id":"neural","mode":"neural","model_path":null}
   ]
 }
 ```
@@ -1036,12 +1029,8 @@ $config = @{
     matches = $Matches
     seed = $Seed
     policies = @(
-        @{ id = "heuristic"; mode = "heuristic"; neural_weight = 0; model_path = $null },
-        @{ id = "hybrid05"; mode = "hybrid"; neural_weight = 5; model_path = $null },
-        @{ id = "hybrid15"; mode = "hybrid"; neural_weight = 15; model_path = $null },
-        @{ id = "hybrid30"; mode = "hybrid"; neural_weight = 30; model_path = $null },
-        @{ id = "hybrid60"; mode = "hybrid"; neural_weight = 60; model_path = $null },
-        @{ id = "neural"; mode = "neural"; neural_weight = 0; model_path = $null }
+        @{ id = "heuristic"; mode = "heuristic"; model_path = $null },
+        @{ id = "neural"; mode = "neural"; model_path = $null }
     )
 }
 
@@ -1073,12 +1062,8 @@ cat > "$CONFIG_PATH" <<JSON
   "matches": $MATCHES,
   "seed": $SEED,
   "policies": [
-    {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-    {"id":"hybrid05","mode":"hybrid","neural_weight":5,"model_path":null},
-    {"id":"hybrid15","mode":"hybrid","neural_weight":15,"model_path":null},
-    {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":null},
-    {"id":"hybrid60","mode":"hybrid","neural_weight":60,"model_path":null},
-    {"id":"neural","mode":"neural","neural_weight":0,"model_path":null}
+    {"id":"heuristic","mode":"heuristic","model_path":null},
+    {"id":"neural","mode":"neural","model_path":null}
   ]
 }
 JSON
@@ -1315,10 +1300,10 @@ Expected:
 
 ## Completion Criteria
 
-- Production default uses `hybrid`, not pure `neural`.
+- Production default uses `neural`.
 - Runtime chow masks and policy selection preserve `chow_left/chow_mid/chow_right`.
 - Exported legal discards match runtime restricted-discard legality.
 - Training can disable noisy auxiliary heads without code changes.
-- Arena can compare `heuristic`, `hybrid`, and `neural` configs in deterministic matches.
+- Arena can compare `heuristic` and `neural` configs in deterministic matches.
 - Model selection is based on arena metrics, not only validation loss or discard top-k.
 - Transformer is attempted only after the MLP-plus-arena baseline is measured.

@@ -4,7 +4,7 @@
   "max_actions_per_match": 2400,
   "report_trajectories": false,
   "policies": [
-    {"id": "heuristic", "mode": "heuristic", "neural_weight": 0, "model_path": null},
-    {"id": "neural", "mode": "neural", "neural_weight": 0, "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
+    {"id": "heuristic", "mode": "heuristic", "model_path": null},
+    {"id": "neural", "mode": "neural", "model_path": "backend/assets/models/mahjong_policy_net.onnx"}
   ]
 }

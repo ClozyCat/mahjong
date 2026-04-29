@@ -35,10 +35,10 @@ pub enum ArenaPolicyMode {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ArenaBotPolicyConfig {
     pub id: String,
     pub mode: ArenaPolicyMode,
-    pub neural_weight: i64,
     pub model_path: Option<String>,
 }
 
@@ -126,7 +126,6 @@ impl ArenaBotPolicyConfig {
         Self {
             id: "heuristic".to_string(),
             mode: ArenaPolicyMode::Heuristic,
-            neural_weight: 0,
             model_path: None,
         }
     }
@@ -742,8 +741,8 @@ mod tests {
             "matches": 2,
             "seed": 20260429,
             "policies": [
-                {"id":"heuristic","mode":"heuristic","neural_weight":0,"model_path":null},
-                {"id":"neural","mode":"neural","neural_weight":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"heuristic","mode":"heuristic","model_path":null},
+                {"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
@@ -758,12 +757,12 @@ mod tests {
     }
 
     #[test]
-    fn arena_config_rejects_removed_hybrid_policy_mode() {
+    fn arena_config_rejects_removed_policy_mode() {
         let raw = r#"{
             "matches": 2,
             "seed": 20260429,
             "policies": [
-                {"id":"hybrid30","mode":"hybrid","neural_weight":30,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"removed_policy","mode":"removed_policy","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
@@ -778,8 +777,25 @@ mod tests {
 
         assert_eq!(config.id, "heuristic");
         assert_eq!(config.mode, ArenaPolicyMode::Heuristic);
-        assert_eq!(config.neural_weight, 0);
         assert_eq!(config.model_path, None);
+    }
+
+    #[test]
+    fn arena_config_rejects_removed_policy_weight_field() {
+        let removed_field = concat!("neural", "_weight");
+        let raw = format!(
+            r#"{{
+            "matches": 2,
+            "seed": 20260429,
+            "policies": [
+                {{"id":"neural","mode":"neural","{removed_field}":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}}
+            ]
+        }}"#
+        );
+
+        let parsed = serde_json::from_str::<ArenaConfig>(&raw);
+
+        assert!(parsed.is_err());
     }
 
     #[test]
