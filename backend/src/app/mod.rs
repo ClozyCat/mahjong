@@ -31,7 +31,7 @@ use crate::projection::support::build_seat_projection_support_for_state;
 
 pub(crate) const MAX_SEATS: usize = 4;
 pub(crate) const DISCONNECT_GRACE_SECONDS: i64 = 120;
-pub(crate) const BOT_ACTION_DELAY_MS: u64 = 300;
+pub(crate) const BOT_ACTION_DELAY_MS: u64 = 150;
 pub(crate) const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 #[derive(Clone)]
