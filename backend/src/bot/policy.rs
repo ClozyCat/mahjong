@@ -7,6 +7,7 @@ use super::search::{
     simulated_tiles_after_removal,
 };
 use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
+use rand::{Rng, rngs::StdRng};
 use std::{env, time::Instant};
 
 const POLICY_ENV: &str = "MAHJONG_BOT_POLICY";
@@ -258,6 +259,8 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         .to_string(),
         mode,
         model_path: env::var("MAHJONG_BOT_MODEL_PATH").ok(),
+        sample_actions: false,
+        temperature: 1.0,
     }
 }
 
@@ -328,6 +331,181 @@ fn tile_counts_after_removal(
         counts[tile_index] = counts[tile_index].saturating_sub(1);
     }
     counts
+}
+
+fn sample_masked_index<const N: usize>(
+    logits: &[f32; N],
+    mask: &[bool; N],
+    temperature: f32,
+    rng: &mut StdRng,
+) -> Option<usize> {
+    let temperature = temperature.clamp(0.05, 5.0);
+    let max_logit = logits
+        .iter()
+        .zip(mask.iter())
+        .filter_map(|(logit, allowed)| (*allowed && logit.is_finite()).then_some(*logit))
+        .max_by(f32::total_cmp)?;
+    let mut weights = [0.0_f32; N];
+    let mut total = 0.0_f32;
+    for (index, (logit, allowed)) in logits.iter().zip(mask.iter()).enumerate() {
+        if !*allowed || !logit.is_finite() {
+            continue;
+        }
+        let weight = ((*logit - max_logit) / temperature).exp();
+        if weight.is_finite() && weight > 0.0 {
+            weights[index] = weight;
+            total += weight;
+        }
+    }
+    if total <= 0.0 || !total.is_finite() {
+        return None;
+    }
+    let mut threshold = rng.random_range(0.0..total);
+    for (index, weight) in weights.iter().enumerate() {
+        threshold -= *weight;
+        if threshold <= 0.0 {
+            return Some(index);
+        }
+    }
+    weights.iter().rposition(|weight| *weight > 0.0)
+}
+
+pub(crate) fn choose_active_turn_action_with_config_and_rng(
+    context: &BotContext,
+    config: &ArenaBotPolicyConfig,
+    rng: Option<&mut StdRng>,
+) -> Option<BotAction> {
+    if config.sample_actions {
+        if let Some(rng) = rng {
+            if matches!(config.mode, ArenaPolicyMode::Neural) {
+                if let Some(scores) = neural_decision_scores_for_policy(context, config) {
+                    if let Some(action) =
+                        sample_neural_active_turn_action(context, &scores, config.temperature, rng)
+                    {
+                        return Some(action);
+                    }
+                }
+            }
+        }
+    }
+    choose_active_turn_action_with_config(context, config)
+}
+
+pub(crate) fn choose_claim_action_with_config_and_rng(
+    context: &BotContext,
+    config: &ArenaBotPolicyConfig,
+    rng: Option<&mut StdRng>,
+) -> Option<BotAction> {
+    if config.sample_actions {
+        if let Some(rng) = rng {
+            if matches!(config.mode, ArenaPolicyMode::Neural) {
+                if let Some(scores) = neural_decision_scores_for_policy(context, config) {
+                    if let Some(action) =
+                        sample_neural_claim_action(context, &scores, config.temperature, rng)
+                    {
+                        return Some(action);
+                    }
+                }
+            }
+        }
+    }
+    choose_claim_action_with_config(context, config)
+}
+
+fn sample_neural_active_turn_action(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
+    temperature: f32,
+    rng: &mut StdRng,
+) -> Option<BotAction> {
+    let features = crate::bot::features::encode_bot_context_v2(context);
+    if context.self_kong_candidates.is_empty() {
+        return sample_neural_discard_action(context, scores, temperature, rng);
+    }
+
+    let selected = sample_masked_index(
+        &scores.self_kong_logits,
+        &features.self_kong_mask,
+        temperature,
+        rng,
+    )?;
+    match selected {
+        0 => sample_neural_discard_action(context, scores, temperature, rng),
+        1 | 2 => {
+            let expected_kind = if selected == 1 {
+                BotSelfKongKind::Concealed
+            } else {
+                BotSelfKongKind::Add
+            };
+            context
+                .self_kong_candidates
+                .iter()
+                .find(|candidate| {
+                    candidate.kind == expected_kind
+                        && !(candidate.kind == BotSelfKongKind::Add
+                            && context.add_kong_risk_tiles.contains(&candidate.tile_key))
+                })
+                .map(|candidate| BotAction {
+                    seat_index: context.seat_index,
+                    action_type: "kong".to_string(),
+                    tile_ids: candidate.tile_ids.clone(),
+                })
+                .or_else(|| sample_neural_discard_action(context, scores, temperature, rng))
+        }
+        _ => sample_neural_discard_action(context, scores, temperature, rng),
+    }
+}
+
+fn sample_neural_discard_action(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
+    temperature: f32,
+    rng: &mut StdRng,
+) -> Option<BotAction> {
+    let features = crate::bot::features::encode_bot_context_v2(context);
+    let tile_index = sample_masked_index(
+        &scores.discard_logits,
+        &features.discard_mask,
+        temperature,
+        rng,
+    )?;
+    let tile_key = tile_key_for_index(tile_index);
+    let tile_id = context
+        .player
+        .concealed_tiles
+        .iter()
+        .find(|tile| !tile.is_flower && tile.tile_key == tile_key)
+        .map(|tile| tile.tile_id.clone())?;
+    Some(BotAction {
+        seat_index: context.seat_index,
+        action_type: "discard".to_string(),
+        tile_ids: vec![tile_id],
+    })
+}
+
+fn sample_neural_claim_action(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
+    temperature: f32,
+    rng: &mut StdRng,
+) -> Option<BotAction> {
+    let features = crate::bot::features::encode_bot_context_v2(context);
+    let selected = sample_masked_index(
+        &scores.claim_logits,
+        &features.claim_mask,
+        temperature,
+        rng,
+    )?;
+    let action_name = crate::bot::action_space::CLAIM_ACTIONS.get(selected)?;
+    if *action_name == "pass" {
+        return Some(pass_action(context.seat_index));
+    }
+    let option = claim_option_for_ranked_action(context, action_name)?;
+    Some(BotAction {
+        seat_index: context.seat_index,
+        action_type: option.action_type.clone(),
+        tile_ids: option.tile_ids.clone(),
+    })
 }
 
 fn select_neural_only_active_turn_action(
@@ -642,5 +820,20 @@ mod tests {
         let selected = select_neural_only_discard_plan(&neural_scores).expect("neural selection");
 
         assert_eq!(selected.tile_key, "t1");
+    }
+
+    #[test]
+    fn sample_masked_index_never_selects_illegal_action() {
+        use rand::SeedableRng;
+
+        let logits = [100.0_f32, 1.0, 2.0];
+        let mask = [false, true, true];
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+
+        for _ in 0..64 {
+            let selected =
+                sample_masked_index(&logits, &mask, 1.0, &mut rng).expect("sample should exist");
+            assert_ne!(selected, 0);
+        }
     }
 }

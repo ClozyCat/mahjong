@@ -1,3 +1,4 @@
+use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use std::sync::{
     Arc,
@@ -34,15 +35,19 @@ pub enum ArenaPolicyMode {
     Neural,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArenaBotPolicyConfig {
     pub id: String,
     pub mode: ArenaPolicyMode,
     pub model_path: Option<String>,
+    #[serde(default)]
+    pub sample_actions: bool,
+    #[serde(default = "default_policy_temperature")]
+    pub temperature: f32,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct ArenaConfig {
     pub matches: usize,
     pub seed: u64,
@@ -121,12 +126,18 @@ fn default_max_actions_per_match() -> usize {
     2400
 }
 
+fn default_policy_temperature() -> f32 {
+    1.0
+}
+
 impl ArenaBotPolicyConfig {
     pub fn heuristic() -> Self {
         Self {
             id: "heuristic".to_string(),
             mode: ArenaPolicyMode::Heuristic,
             model_path: None,
+            sample_actions: false,
+            temperature: 1.0,
         }
     }
 }
@@ -378,14 +389,17 @@ fn run_arena_match(
     let mut accumulator = ArenaMatchAccumulator::new(config);
     let mut action_count = 0_usize;
     let mut trajectories = Vec::new();
+    let mut rollout_rng = StdRng::seed_from_u64(seed ^ 0xA17E_5EED);
 
     while room.phase == "playing" && action_count < config.max_actions_per_match {
         let started = std::time::Instant::now();
         let trace = include_trajectories
             .then(|| {
-                next_bot_decision_trace_in_room_state_with_policy_resolver(&room, &|seat| {
-                    policy_for_seat(config, seat)
-                })
+                next_bot_decision_trace_in_room_state_with_policy_resolver(
+                    &room,
+                    &|seat| policy_for_seat(config, seat),
+                    Some(&mut rollout_rng),
+                )
             })
             .transpose()?
             .flatten();
@@ -754,6 +768,31 @@ mod tests {
         assert!(!config.report_trajectories);
         assert_eq!(config.policies[1].id, "neural");
         assert_eq!(config.policies[1].mode, ArenaPolicyMode::Neural);
+        assert!(!config.policies[0].sample_actions);
+        assert_eq!(config.policies[0].temperature, 1.0);
+    }
+
+    #[test]
+    fn arena_config_parses_stochastic_neural_rollout_policy() {
+        let raw = r#"{
+            "matches": 1,
+            "seed": 20260429,
+            "policies": [
+                {
+                    "id":"learner",
+                    "mode":"neural",
+                    "model_path":"backend/assets/models/mahjong_policy_net.onnx",
+                    "sample_actions":true,
+                    "temperature":0.8
+                }
+            ]
+        }"#;
+
+        let config: ArenaConfig = serde_json::from_str(raw).expect("config");
+
+        assert_eq!(config.policies[0].id, "learner");
+        assert!(config.policies[0].sample_actions);
+        assert_eq!(config.policies[0].temperature, 0.8);
     }
 
     #[test]
@@ -778,6 +817,8 @@ mod tests {
         assert_eq!(config.id, "heuristic");
         assert_eq!(config.mode, ArenaPolicyMode::Heuristic);
         assert_eq!(config.model_path, None);
+        assert!(!config.sample_actions);
+        assert_eq!(config.temperature, 1.0);
     }
 
     #[test]

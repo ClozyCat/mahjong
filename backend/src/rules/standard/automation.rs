@@ -58,10 +58,12 @@ pub fn next_bot_action_in_room_state_with_policy_resolver(
 pub(crate) fn next_bot_decision_trace_in_room_state_with_policy_resolver(
     room: &RoomState,
     policy_for_seat: BotPolicyResolver<'_>,
+    rollout_rng: Option<&mut rand::rngs::StdRng>,
 ) -> Result<Option<BotDecisionTrace>, String> {
     Ok(next_bot_decision_trace_for_state_with_policy_resolver(
         room,
         policy_for_seat,
+        rollout_rng,
     ))
 }
 
@@ -544,6 +546,7 @@ fn next_bot_action_for_state_with_policy_resolver(
 fn next_bot_decision_trace_for_state_with_policy_resolver(
     state: &RoomState,
     policy_for_seat: BotPolicyResolver<'_>,
+    mut rollout_rng: Option<&mut rand::rngs::StdRng>,
 ) -> Option<BotDecisionTrace> {
     if state.phase != "playing" {
         return None;
@@ -592,7 +595,11 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                 add_kong_risk_tiles,
             )?;
             let policy_config = policy_for_seat(seat_index);
-            let action = bot::choose_active_turn_action_with_config(&context, &policy_config)?;
+            let action = bot::policy::choose_active_turn_action_with_config_and_rng(
+                &context,
+                &policy_config,
+                rollout_rng.as_deref_mut(),
+            )?;
             Some(BotDecisionTrace {
                 decision_kind: "active_turn".to_string(),
                 context,
@@ -636,9 +643,13 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     claim_options,
                     Vec::new(),
                     HashSet::new(),
-                )?;
-                let policy_config = policy_for_seat(seat_index);
-                let action = bot::choose_claim_action_with_config(&context, &policy_config)?;
+            )?;
+            let policy_config = policy_for_seat(seat_index);
+            let action = bot::policy::choose_claim_action_with_config_and_rng(
+                &context,
+                &policy_config,
+                rollout_rng.as_deref_mut(),
+            )?;
                 Some(BotDecisionTrace {
                     decision_kind: "claim_window".to_string(),
                     context,
