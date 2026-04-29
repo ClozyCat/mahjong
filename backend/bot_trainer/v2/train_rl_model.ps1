@@ -16,7 +16,9 @@ param(
     [double]$LearningRate = 0.00001,
     [double]$Gamma = 0.99,
     [double]$ClipEpsilon = 0.2,
-    [double]$EntropyCoef = 0.01,
+    [double]$EntropyCoef = 0.02,
+    [double]$EntropyEndCoef = 0.005,
+    [int]$EntropyDecaySteps = 0,
     [string]$Device = "auto",
     [string]$SelfPlayPolicyId = "selfplay_hybrid30",
     [ValidateSet("heuristic", "hybrid", "neural")]
@@ -217,9 +219,13 @@ try {
         "--gamma", "$Gamma",
         "--clip-epsilon", "$ClipEpsilon",
         "--entropy-coef", "$EntropyCoef",
+        "--entropy-end-coef", "$EntropyEndCoef",
         "--output", $CheckpointDir,
         "--device", $Device
     )
+    if ($EntropyDecaySteps -gt 0) {
+        $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
+    }
     if ($RecomputeOldPolicyStats) {
         $rlTrainArgs += @("--recompute-old-policy-stats")
     }

@@ -128,8 +128,10 @@ The script prints PPO epoch losses during `rl_train.py`, then prints an arena su
 Manual PPO training command:
 
 ```powershell
-python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu --entropy-coef 0.01
+python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu --entropy-coef 0.02 --entropy-end-coef 0.005
 ```
+
+RL uses linear entropy decay. `--entropy-coef` is the starting exploration weight and `--entropy-end-coef` is the final weight. If `--entropy-decay-steps` is omitted or `0`, decay spans the full training run. Epoch logs and `rl_metrics.json` include average `entropy` and `entropy_coef` so collapse can be spotted during training.
 
 If you train from old trajectories that contain placeholder `log_prob=0` and `value=0`, pass `--recompute-old-policy-stats` with the rollout checkpoint. New neural-backed arena trajectories emit old log-prob/value directly.
 

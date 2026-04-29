@@ -17,7 +17,9 @@ BATCH_SIZE=256
 LEARNING_RATE=0.00001
 GAMMA=0.99
 CLIP_EPSILON=0.2
-ENTROPY_COEF=0.01
+ENTROPY_COEF=0.02
+ENTROPY_END_COEF=0.005
+ENTROPY_DECAY_STEPS=0
 DEVICE=auto
 SELFPLAY_POLICY_ID="selfplay_hybrid30"
 SELFPLAY_POLICY_MODE=hybrid
@@ -56,6 +58,8 @@ Options:
   --gamma VALUE                    Return discount.
   --clip-epsilon VALUE             PPO clipping epsilon.
   --entropy-coef VALUE             PPO entropy coefficient.
+  --entropy-end-coef VALUE         PPO final entropy coefficient after decay.
+  --entropy-decay-steps N          Linear entropy decay steps. Use 0 for full training.
   --device DEVICE                  auto, cpu, cuda, etc.
   --selfplay-policy-id ID          Policy id written to trajectory rows.
   --selfplay-policy-mode MODE      heuristic, hybrid, or neural.
@@ -174,6 +178,16 @@ while [[ $# -gt 0 ]]; do
         --entropy-coef)
             require_value "$1" "${2:-}"
             ENTROPY_COEF="$2"
+            shift 2
+            ;;
+        --entropy-end-coef)
+            require_value "$1" "${2:-}"
+            ENTROPY_END_COEF="$2"
+            shift 2
+            ;;
+        --entropy-decay-steps)
+            require_value "$1" "${2:-}"
+            ENTROPY_DECAY_STEPS="$2"
             shift 2
             ;;
         --device)
@@ -364,9 +378,13 @@ rl_train_args=(
     --gamma "$GAMMA"
     --clip-epsilon "$CLIP_EPSILON"
     --entropy-coef "$ENTROPY_COEF"
+    --entropy-end-coef "$ENTROPY_END_COEF"
     --output "$CHECKPOINT_DIR"
     --device "$DEVICE"
 )
+if (( ENTROPY_DECAY_STEPS > 0 )); then
+    rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
+fi
 if (( RECOMPUTE_OLD_POLICY_STATS == 1 )); then
     rl_train_args+=(--recompute-old-policy-stats)
 fi

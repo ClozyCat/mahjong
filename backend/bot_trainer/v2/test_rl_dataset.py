@@ -91,6 +91,34 @@ def test_masked_ppo_loss_is_finite() -> None:
     assert torch.isfinite(loss)
 
 
+def test_entropy_coef_decays_linearly() -> None:
+    from rl_train import entropy_coef_for_progress
+
+    assert entropy_coef_for_progress(0, 10, 0.05, 0.005) == 0.05
+    assert entropy_coef_for_progress(5, 10, 0.05, 0.005) == 0.0275
+    assert entropy_coef_for_progress(10, 10, 0.05, 0.005) == 0.005
+    assert entropy_coef_for_progress(20, 10, 0.05, 0.005) == 0.005
+
+
+def test_epoch_log_line_includes_entropy_metrics() -> None:
+    from rl_train import format_epoch_metrics
+
+    line = format_epoch_metrics(
+        {
+            "epoch": 1,
+            "loss": 1.0,
+            "policy_loss": 0.5,
+            "value_loss": 0.25,
+            "entropy": 1.75,
+            "entropy_coef": 0.02,
+        },
+        total_epochs=3,
+    )
+
+    assert "entropy=1.750000" in line
+    assert "entropy_coef=0.020000" in line
+
+
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     from arena_summary import load_reports, summarize_reports
 

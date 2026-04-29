@@ -21,7 +21,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--clip-epsilon", type=float, default=0.2)
-    parser.add_argument("--entropy-coef", type=float, default=0.01)
+    parser.add_argument("--entropy-coef", type=float, default=0.02)
+    parser.add_argument("--entropy-end-coef", type=float, default=0.005)
+    parser.add_argument("--entropy-decay-steps", type=int, default=0)
     parser.add_argument("--recompute-old-policy-stats", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="auto")
@@ -47,6 +49,31 @@ def ppo_policy_loss(
     ratio = torch.exp(log_probs - old_log_probs)
     clipped = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon)
     return -torch.minimum(ratio * advantages, clipped * advantages).mean()
+
+
+def entropy_coef_for_progress(
+    step: int,
+    decay_steps: int,
+    start_coef: float,
+    end_coef: float,
+) -> float:
+    if decay_steps <= 0:
+        return round(end_coef, 10)
+    progress = min(max(step, 0), decay_steps) / decay_steps
+    value = start_coef + (end_coef - start_coef) * progress
+    return round(value, 10)
+
+
+def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
+    return (
+        "RL train epoch "
+        f"{int(metrics['epoch'])}/{total_epochs}: "
+        f"loss={metrics['loss']:.6f} "
+        f"policy_loss={metrics['policy_loss']:.6f} "
+        f"value_loss={metrics['value_loss']:.6f} "
+        f"entropy={metrics['entropy']:.6f} "
+        f"entropy_coef={metrics['entropy_coef']:.6f}"
+    )
 
 
 def resolve_device(requested: str) -> torch.device:
@@ -162,16 +189,29 @@ def main() -> None:
     print(
         "RL train: "
         f"trajectories={len(dataset)} batches={len(loader)} "
-        f"epochs={args.epochs} batch_size={args.batch_size} device={device}"
+        f"epochs={args.epochs} batch_size={args.batch_size} device={device} "
+        f"entropy_start={args.entropy_coef} entropy_end={args.entropy_end_coef}"
     )
+    entropy_decay_steps = args.entropy_decay_steps
+    if entropy_decay_steps <= 0:
+        entropy_decay_steps = max(args.epochs * max(len(loader), 1) - 1, 1)
     history = []
+    global_step = 0
     for epoch in range(args.epochs):
         total_loss = 0.0
         total_policy_loss = 0.0
         total_value_loss = 0.0
+        total_entropy = 0.0
+        total_entropy_coef = 0.0
         batch_count = 0
         for batch in loader:
             batch = {key: value.to(device) for key, value in batch.items()}
+            entropy_coef = entropy_coef_for_progress(
+                global_step,
+                entropy_decay_steps,
+                args.entropy_coef,
+                args.entropy_end_coef,
+            )
             outputs = model(batch["tile_planes"].float(), batch["scalar_features"].float())
             if old_policy_model is not None:
                 with torch.no_grad():
@@ -199,28 +239,27 @@ def main() -> None:
             values = outputs["value"].squeeze(1)
             value_loss = F.mse_loss(values, returns)
             entropy = select_action_entropy(outputs, batch)
-            loss = policy_loss + 0.5 * value_loss - args.entropy_coef * entropy
+            loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
             total_loss += float(loss.detach().cpu())
             total_policy_loss += float(policy_loss.detach().cpu())
             total_value_loss += float(value_loss.detach().cpu())
+            total_entropy += float(entropy.detach().cpu())
+            total_entropy_coef += entropy_coef
             batch_count += 1
+            global_step += 1
         epoch_metrics = {
             "epoch": epoch + 1,
             "loss": total_loss / max(batch_count, 1),
             "policy_loss": total_policy_loss / max(batch_count, 1),
             "value_loss": total_value_loss / max(batch_count, 1),
+            "entropy": total_entropy / max(batch_count, 1),
+            "entropy_coef": total_entropy_coef / max(batch_count, 1),
         }
         history.append(epoch_metrics)
-        print(
-            "RL train epoch "
-            f"{epoch_metrics['epoch']}/{args.epochs}: "
-            f"loss={epoch_metrics['loss']:.6f} "
-            f"policy_loss={epoch_metrics['policy_loss']:.6f} "
-            f"value_loss={epoch_metrics['value_loss']:.6f}"
-        )
+        print(format_epoch_metrics(epoch_metrics, args.epochs))
 
     checkpoint_path = args.output / "best.pt"
     torch.save(
