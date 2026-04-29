@@ -88,6 +88,7 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
     assert row["shanten_after"].item() == 0
     assert row["fan_potential_after"].item() == 3
     assert row["tile_planes"].shape == (10, 34)
+    assert row["has_global_state"].item() is False
 
 
 def test_compute_returns_resets_on_done() -> None:
@@ -125,6 +126,16 @@ def test_dataset_filters_policy_id(tmp_path: Path) -> None:
 
     assert len(dataset) == 1
     assert dataset[0]["reward"].item() == 1.0
+
+
+def test_dataset_accepts_missing_global_state(tmp_path: Path) -> None:
+    path = tmp_path / "trajectories.jsonl"
+    row = base_trajectory_row("learner", 0, reward=1.0, value=0.0)
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    dataset = ArenaTrajectoryDataset(path, policy_id="learner")
+
+    assert dataset[0]["has_global_state"].item() is False
 
 
 def test_compute_gae_for_rows_is_per_seat_episode() -> None:

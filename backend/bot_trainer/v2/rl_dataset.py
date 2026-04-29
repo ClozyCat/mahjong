@@ -64,6 +64,11 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
         "old_log_prob": torch.tensor(row["log_prob"], dtype=torch.float32),
         "old_value": torch.tensor(row["value"], dtype=torch.float32),
         "action_head": torch.tensor(action_head_index(row["action_head"]), dtype=torch.long),
+        "has_global_state": torch.tensor(
+            row.get("global_tile_planes") is not None
+            and row.get("global_scalar_features") is not None,
+            dtype=torch.bool,
+        ),
     }
 
 

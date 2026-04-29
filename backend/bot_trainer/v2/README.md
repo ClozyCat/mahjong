@@ -178,6 +178,10 @@ Arena trajectory rows now split reward fields:
 - `shanten_before` / `shanten_after`
 - `fan_potential_before` / `fan_potential_after`
 
+### Centralized Critic Boundary
+
+Trajectory rows reserve `global_tile_planes` and `global_scalar_features` for a future centralized critic. They are currently `null` and ignored by PPO. Actor inputs remain strictly local observations, so exported ONNX policy behavior is unchanged.
+
 Export a trained RL checkpoint with the same ONNX exporter:
 
 ```powershell
