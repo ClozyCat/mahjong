@@ -112,7 +112,7 @@ Run the full RL pipeline with a small smoke configuration:
 For a normal local run, increase `-TrajectoryMatches` / `--trajectory-matches` and `-EvalMatches` / `--eval-matches` to at least `200`.
 If your shell does not resolve the intended tools, pass `-PythonExe` / `--python-exe` or `-CargoExe` / `--cargo-exe` explicitly.
 RL starts from a supervised checkpoint. By default the scripts expect `backend/bot_trainer/v2/checkpoints/best.pt` and `backend/assets/models/mahjong_policy_net.onnx`; pass `-BaselineCheckpoint` / `--baseline-checkpoint` and `-BaselineOnnx` / `--baseline-onnx` if your baseline files are elsewhere.
-Trajectory generation prints progress every match by default. Use `-TrajectoryProgressEvery 10` or `--trajectory-progress-every 10` for less frequent updates, or `0` to disable script-level arena progress.
+Trajectory generation prints progress every 20 matches by default. Use `-TrajectoryProgressEvery 10` or `--trajectory-progress-every 10` for more frequent updates, or `0` to disable script-level arena progress.
 Arena self-play and candidate evaluation run in parallel by default from these scripts. Use `-ArenaJobs 4` or `--arena-jobs 4` to pin worker count; `0` means all available cores.
 The script prints PPO epoch losses during `rl_train.py`, then prints an arena summary after candidate evaluation and writes `candidate_eval_summary.json`.
 

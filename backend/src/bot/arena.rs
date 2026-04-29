@@ -12,7 +12,7 @@ use super::{
 };
 use crate::core::{
     engine::try_handle_player_action_in_room_state,
-    state::{RoomState, SeatState},
+    state::{PlayerRoundState, RoomState, SeatState},
 };
 use crate::rules::standard::{
     automation::{
@@ -20,6 +20,7 @@ use crate::rules::standard::{
         next_bot_decision_trace_in_room_state_with_policy_resolver,
     },
     flow::start_match_in_room_state,
+    ready_hand::is_tenpai_hand_with_melds,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -157,6 +158,29 @@ impl ArenaMatchAccumulator {
             }
         }
     }
+
+    pub fn record_tenpai_metrics(&mut self, room: &RoomState) {
+        let Some(round) = &room.round_state else {
+            return;
+        };
+        for player in &round.players {
+            if let Some(metrics) = self.seats.get_mut(player.seat) {
+                metrics.final_tenpai = player_is_tenpai(player);
+                if metrics.final_tenpai && metrics.first_tenpai_turn.is_none() {
+                    metrics.first_tenpai_turn = Some(metrics.discard_count + 1);
+                }
+            }
+        }
+    }
+}
+
+fn player_is_tenpai(player: &PlayerRoundState) -> bool {
+    let concealed_tile_keys = player
+        .concealed_tiles
+        .iter()
+        .map(|tile| tile.tile_key.clone())
+        .collect::<Vec<_>>();
+    is_tenpai_hand_with_melds(&concealed_tile_keys, &player.melds)
 }
 
 pub fn arena_room(table_code: &str) -> RoomState {
@@ -211,13 +235,7 @@ pub fn build_match_report(
             }
         }
     }
-    if let Some(round) = &room.round_state {
-        for player in &round.players {
-            if let Some(metrics) = accumulator.seats.get_mut(player.seat) {
-                metrics.final_tenpai = player.is_ready_hand;
-            }
-        }
-    }
+    accumulator.record_tenpai_metrics(room);
     ArenaMatchReport {
         match_index,
         seed,
@@ -387,6 +405,7 @@ fn run_arena_match(
         match handled {
             Some(Ok(_)) => {
                 accumulator.record_decision(action_seat, &action_type, elapsed_ms);
+                accumulator.record_tenpai_metrics(&room);
                 if let Some(trace) = trace.as_ref() {
                     let policy = policy_for_seat(config, action_seat);
                     if let Some(row) = trajectory_row_from_trace(
@@ -600,6 +619,8 @@ fn assign_terminal_rewards(rows: &mut [ArenaTrajectoryRow], report: &ArenaMatchR
 mod tests {
     use super::*;
     use crate::bot::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT};
+    use crate::core::state::{PlayerRoundState, RoundState};
+    use crate::core::tile::Tile;
 
     #[test]
     fn arena_config_parses_policy_ids() {
@@ -663,6 +684,83 @@ mod tests {
     }
 
     #[test]
+    fn match_report_final_tenpai_uses_hand_shape_not_ready_hand_flag() {
+        let config = ArenaConfig {
+            matches: 1,
+            seed: 7,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            policies: vec![ArenaBotPolicyConfig::heuristic()],
+        };
+        let mut room = RoomState {
+            phase: "playing".to_string(),
+            round_state: Some(RoundState {
+                players: vec![PlayerRoundState {
+                    seat: 0,
+                    is_ready_hand: false,
+                    concealed_tiles: tile_key_only_vec(&[
+                        "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3",
+                        "east",
+                    ]),
+                    ..PlayerRoundState::default()
+                }],
+                ..RoundState::default()
+            }),
+            ..RoomState::default()
+        };
+
+        let report = build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config), 1, true);
+        assert!(report.seats[0].final_tenpai);
+
+        let non_tenpai_tiles = tile_key_only_vec(&[
+            "w1", "w1", "w4", "w7", "t2", "t5", "t8", "b3", "b6", "b9", "east", "south", "red",
+        ]);
+        room.round_state
+            .as_mut()
+            .expect("round")
+            .players
+            .get_mut(0)
+            .expect("player")
+            .concealed_tiles = non_tenpai_tiles;
+        let report = build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config), 1, true);
+        assert!(!report.seats[0].final_tenpai);
+    }
+
+    #[test]
+    fn match_report_records_first_tenpai_turn_from_actual_hand_shape() {
+        let config = ArenaConfig {
+            matches: 1,
+            seed: 7,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            policies: vec![ArenaBotPolicyConfig::heuristic()],
+        };
+        let mut accumulator = ArenaMatchAccumulator::new(&config);
+        accumulator.seats[0].discard_count = 3;
+        let room = RoomState {
+            phase: "playing".to_string(),
+            round_state: Some(RoundState {
+                players: vec![PlayerRoundState {
+                    seat: 0,
+                    is_ready_hand: false,
+                    concealed_tiles: tile_key_only_vec(&[
+                        "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3",
+                        "east",
+                    ]),
+                    ..PlayerRoundState::default()
+                }],
+                ..RoundState::default()
+            }),
+            ..RoomState::default()
+        };
+
+        let report = build_match_report(0, 7, &room, accumulator, 1, true);
+
+        assert_eq!(report.seats[0].first_tenpai_turn, Some(4));
+        assert!(report.seats[0].final_tenpai);
+    }
+
+    #[test]
     fn trajectory_row_serializes_action_metadata() {
         let row = ArenaTrajectoryRow {
             schema_version: 1,
@@ -694,5 +792,12 @@ mod tests {
             value["discard_mask"].as_array().expect("mask").len(),
             TILE_KIND_COUNT
         );
+    }
+
+    fn tile_key_only_vec(tile_keys: &[&str]) -> Vec<Tile> {
+        tile_keys
+            .iter()
+            .map(|tile_key| Tile::tile_key_only(tile_key))
+            .collect()
     }
 }

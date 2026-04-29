@@ -7,7 +7,7 @@ ONNX_OUTPUT="backend/assets/models/mahjong_policy_net.onnx"
 EPOCHS=20
 BATCH_SIZE=4096
 NUM_WORKERS=0
-PYTHON_CMD=(python3)
+PYTHON_CMD=(python)
 LEARNING_RATE=0.001
 WEIGHT_DECAY=0.0001
 CLAIM_LOSS_WEIGHT=1.0
@@ -31,7 +31,7 @@ Options:
   --epochs N                Number of training epochs.
   --batch-size N            Training batch size.
   --num-workers N           DataLoader worker count.
-  --python-exe PATH         Python executable override. Defaults to python3.
+  --python-exe PATH         Python executable override. Defaults to python.
   --lr VALUE                Learning rate.
   --weight-decay VALUE      Weight decay.
   --claim-loss-weight VALUE Claim head loss weight.

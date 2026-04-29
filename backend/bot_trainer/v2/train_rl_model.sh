@@ -4,7 +4,7 @@ set -euo pipefail
 OUTPUT_DIR="backend/bot_trainer/v2/rl_runs/latest"
 BASELINE_CHECKPOINT="backend/bot_trainer/v2/checkpoints/best.pt"
 BASELINE_ONNX="backend/assets/models/mahjong_policy_net.onnx"
-PYTHON_CMD=(python3)
+PYTHON_CMD=(python)
 CARGO_CMD=(cargo)
 ARENA_JOBS=0
 TRAJECTORY_MATCHES=200
@@ -40,7 +40,7 @@ Options:
   --output-dir DIR                 Directory for RL run artifacts.
   --baseline-checkpoint PATH       Supervised checkpoint to initialize PPO.
   --baseline-onnx PATH             Baseline ONNX used for self-play and evaluation.
-  --python-exe PATH                Python executable override. Defaults to python3.
+  --python-exe PATH                Python executable override. Defaults to python.
   --cargo-exe PATH                 Cargo executable override. Defaults to cargo.
   --arena-jobs N                   Parallel arena workers. Use 0 for all available cores.
   --trajectory-matches N           Matches used to generate trajectories.
@@ -237,6 +237,26 @@ EVAL_JSONL="$OUTPUT_DIR/candidate_eval.jsonl"
 EVAL_SUMMARY="$OUTPUT_DIR/candidate_eval_summary.json"
 
 mkdir -p "$OUTPUT_DIR"
+TEMP_DIR="$OUTPUT_DIR/tmp"
+PYTEST_SITE_DIR="$TEMP_DIR/pytest_site"
+mkdir -p "$TEMP_DIR" "$PYTEST_SITE_DIR"
+export TMPDIR="$TEMP_DIR"
+export PYTEST_DEBUG_TEMPROOT="$TMPDIR"
+
+cat > "$PYTEST_SITE_DIR/sitecustomize.py" <<'PY'
+import os
+import pathlib
+
+if os.name == "nt":
+    _original_mkdir = pathlib.Path.mkdir
+
+    def _mkdir_with_accessible_mode(self, mode=0o777, parents=False, exist_ok=False):
+        if mode == 0o700:
+            mode = 0o777
+        return _original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    pathlib.Path.mkdir = _mkdir_with_accessible_mode
+PY
 
 "${PYTHON_CMD[@]}" - <<'PY'
 import importlib.util
@@ -281,10 +301,12 @@ if (( SKIP_TRAJECTORY_GENERATION == 1 )); then
 fi
 
 if (( SKIP_TESTS == 0 )); then
-    "${PYTHON_CMD[@]}" -m pytest \
+    PYTHONPATH="$PYTEST_SITE_DIR${PYTHONPATH:+:$PYTHONPATH}" "${PYTHON_CMD[@]}" -m pytest \
         backend/bot_trainer/v2/test_rl_dataset.py \
         backend/bot_trainer/v2/test_dataset.py \
-        -q
+        -q \
+        -p no:cacheprovider \
+        --basetemp "$TEMP_DIR/pytest"
 fi
 
 if (( SKIP_TRAJECTORY_GENERATION == 0 )); then

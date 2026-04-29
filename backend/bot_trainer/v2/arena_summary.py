@@ -39,16 +39,26 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             metrics["decision_count"] += seat["decision_count"]
             metrics["decision_latency_ms_sum"] += seat["decision_latency_ms_sum"]
             metrics["final_tenpai"] += 1 if seat["final_tenpai"] else 0
+            first_tenpai_turn = seat.get("first_tenpai_turn")
+            if first_tenpai_turn is not None:
+                metrics["first_tenpai_turn_sum"] += first_tenpai_turn
+                metrics["first_tenpai_turn_count"] += 1
 
     policies = {}
     for policy, metrics in sorted(by_policy.items()):
         seat_count = max(metrics["seat_count"], 1.0)
         decision_count = max(metrics["decision_count"], 1.0)
+        first_tenpai_turn_count = metrics["first_tenpai_turn_count"]
         policies[policy] = {
             "seat_count": int(metrics["seat_count"]),
             "avg_score_delta": metrics["score_delta_sum"] / seat_count,
             "win_rate": metrics["wins"] / seat_count,
             "deal_in_rate": metrics["dealt_in"] / seat_count,
+            "avg_first_tenpai_turn": (
+                metrics["first_tenpai_turn_sum"] / first_tenpai_turn_count
+                if first_tenpai_turn_count
+                else None
+            ),
             "final_tenpai_rate": metrics["final_tenpai"] / seat_count,
             "avg_claims": metrics["claim_count"] / seat_count,
             "avg_discards": metrics["discard_count"] / seat_count,
@@ -69,11 +79,18 @@ def print_summary(summary: dict[str, Any]) -> None:
         f"completed={summary['completed_matches']}"
     )
     for policy, metrics in summary["policies"].items():
+        avg_first_tenpai_turn = metrics["avg_first_tenpai_turn"]
+        avg_first_tenpai_turn_text = (
+            f"{avg_first_tenpai_turn:.2f}"
+            if avg_first_tenpai_turn is not None
+            else "none"
+        )
         print(
             f"  {policy}: "
             f"avg_score_delta={metrics['avg_score_delta']:.4f} "
             f"win_rate={metrics['win_rate']:.4f} "
             f"deal_in_rate={metrics['deal_in_rate']:.4f} "
+            f"avg_first_tenpai_turn={avg_first_tenpai_turn_text} "
             f"final_tenpai_rate={metrics['final_tenpai_rate']:.4f} "
             f"avg_latency_ms_per_decision={metrics['avg_latency_ms_per_decision']:.2f}"
         )

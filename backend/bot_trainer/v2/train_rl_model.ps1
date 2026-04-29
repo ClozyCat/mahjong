@@ -74,12 +74,39 @@ function Write-Utf8NoBom {
     [System.IO.File]::WriteAllText((Resolve-Path -LiteralPath (Split-Path -Parent $Path)).Path + [System.IO.Path]::DirectorySeparatorChar + (Split-Path -Leaf $Path), $Content, $encoding)
 }
 
+function New-PytestWindowsSiteCustomize {
+    param([string]$TempDir)
+    $siteDir = Join-Path $TempDir "pytest_site"
+    New-Item -ItemType Directory -Force -Path $siteDir | Out-Null
+    $siteCustomize = Join-Path $siteDir "sitecustomize.py"
+    Write-Utf8NoBom $siteCustomize @'
+import os
+import pathlib
+
+if os.name == "nt":
+    _original_mkdir = pathlib.Path.mkdir
+
+    def _mkdir_with_accessible_mode(self, mode=0o777, parents=False, exist_ok=False):
+        if mode == 0o700:
+            mode = 0o777
+        return _original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    pathlib.Path.mkdir = _mkdir_with_accessible_mode
+'@
+    return (Resolve-Path $siteDir).Path
+}
+
 Push-Location $RepoRoot
 try {
     Assert-PythonModule "torch"
     Assert-PythonModule "onnxruntime"
 
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    $TempDir = Join-Path $OutputDir "tmp"
+    New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+    $env:TEMP = (Resolve-Path $TempDir).Path
+    $env:TMP = $env:TEMP
+    $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
     $TrajectoryConfig = Join-Path $OutputDir "trajectory_config.json"
     $TrajectoryJsonl = Join-Path $OutputDir "trajectories.jsonl"
     $ArenaReportJsonl = Join-Path $OutputDir "trajectory_arena_report.jsonl"
@@ -118,8 +145,28 @@ try {
     }
 
     if (-not $SkipTests) {
-        Invoke-TrainingPython @("-m", "pytest", "backend/bot_trainer/v2/test_rl_dataset.py", "backend/bot_trainer/v2/test_dataset.py", "-q")
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $pytestSiteDir = New-PytestWindowsSiteCustomize $TempDir
+        $previousPythonPath = $env:PYTHONPATH
+        try {
+            if ([string]::IsNullOrEmpty($previousPythonPath)) {
+                $env:PYTHONPATH = $pytestSiteDir
+            }
+            else {
+                $env:PYTHONPATH = "$pytestSiteDir;$previousPythonPath"
+            }
+            Invoke-TrainingPython @(
+                "-m", "pytest",
+                "backend/bot_trainer/v2/test_rl_dataset.py",
+                "backend/bot_trainer/v2/test_dataset.py",
+                "-q",
+                "-p", "no:cacheprovider",
+                "--basetemp", (Join-Path $TempDir "pytest")
+            )
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        finally {
+            $env:PYTHONPATH = $previousPythonPath
+        }
     }
 
     if (-not $SkipTrajectoryGeneration) {

@@ -81,7 +81,7 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
                 "score_delta": 10,
                 "wins": 1,
                 "dealt_in": 0,
-                "first_tenpai_turn": None,
+                "first_tenpai_turn": 4,
                 "final_tenpai": True,
                 "claim_count": 1,
                 "discard_count": 2,
@@ -110,4 +110,6 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     assert summary["matches"] == 1
     assert summary["policies"]["a"]["avg_score_delta"] == 10.0
     assert summary["policies"]["a"]["win_rate"] == 1.0
+    assert summary["policies"]["a"]["avg_first_tenpai_turn"] == 4.0
     assert summary["policies"]["b"]["deal_in_rate"] == 1.0
+    assert summary["policies"]["b"]["avg_first_tenpai_turn"] is None
