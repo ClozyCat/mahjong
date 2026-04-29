@@ -235,15 +235,15 @@ try {
             report_trajectories = $false
             policies = @(
                 @{
-                    id = "baseline_hybrid30"
-                    mode = "hybrid"
-                    neural_weight = 30
+                    id = "baseline_$SelfPlayPolicyId"
+                    mode = $SelfPlayPolicyMode
+                    neural_weight = $SelfPlayNeuralWeight
                     model_path = $BaselineOnnx
                 },
                 @{
-                    id = "rl_candidate_hybrid30"
-                    mode = "hybrid"
-                    neural_weight = 30
+                    id = "rl_candidate_neural"
+                    mode = "neural"
+                    neural_weight = 0
                     model_path = $CandidateOnnx
                 }
             )

@@ -366,15 +366,15 @@ if (( SKIP_EVAL == 0 )); then
   "report_trajectories": false,
   "policies": [
     {
-      "id": "baseline_hybrid30",
-      "mode": "hybrid",
-      "neural_weight": 30,
+      "id": "baseline_${SELFPLAY_POLICY_ID}",
+      "mode": "$SELFPLAY_POLICY_MODE",
+      "neural_weight": $SELFPLAY_NEURAL_WEIGHT,
       "model_path": "$BASELINE_ONNX"
     },
     {
-      "id": "rl_candidate_hybrid30",
-      "mode": "hybrid",
-      "neural_weight": 30,
+      "id": "rl_candidate_neural",
+      "mode": "neural",
+      "neural_weight": 0,
       "model_path": "$CANDIDATE_ONNX"
     }
   ]
