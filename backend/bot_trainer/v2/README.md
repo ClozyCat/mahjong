@@ -26,7 +26,7 @@ Default dataset path is `backend/bot_trainer/datasets/data.txt`.
 
 ## GPU Training
 
-The training wrapper defaults to `uv run python`, automatic device selection, AMP, and batch size `4096`.
+The training wrapper defaults to the local `python` executable, automatic device selection, AMP, and batch size `4096`.
 
 ```powershell
 .\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 4096 -Device cuda -NumWorkers 0
