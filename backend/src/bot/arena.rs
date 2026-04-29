@@ -221,6 +221,14 @@ pub fn run_arena(
     config: &ArenaConfig,
     include_trajectories: bool,
 ) -> Result<ArenaRunOutput, String> {
+    run_arena_with_progress(config, include_trajectories, |_| {})
+}
+
+pub fn run_arena_with_progress(
+    config: &ArenaConfig,
+    include_trajectories: bool,
+    mut on_match_complete: impl FnMut(&ArenaMatchReport),
+) -> Result<ArenaRunOutput, String> {
     if config.policies.is_empty() {
         return Err("arena config requires at least one policy".to_string());
     }
@@ -301,6 +309,7 @@ pub fn run_arena(
             action_count < config.max_actions_per_match,
         );
         assign_terminal_rewards(&mut match_trajectories, &report);
+        on_match_complete(&report);
         output.trajectories.extend(match_trajectories);
         output.reports.push(report);
     }

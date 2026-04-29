@@ -111,6 +111,7 @@ Run the full RL pipeline with a small smoke configuration:
 
 For a normal local run, increase `-TrajectoryMatches` / `--trajectory-matches` and `-EvalMatches` / `--eval-matches` to at least `200`.
 If your shell does not resolve the intended tools, pass `-PythonExe` / `--python-exe` or `-CargoExe` / `--cargo-exe` explicitly.
+Trajectory generation prints progress every match by default. Use `-TrajectoryProgressEvery 10` or `--trajectory-progress-every 10` for less frequent updates, or `0` to disable script-level arena progress.
 
 Manual PPO training command:
 

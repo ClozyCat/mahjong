@@ -6,6 +6,7 @@ param(
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
     [int]$TrajectoryMatches = 200,
+    [int]$TrajectoryProgressEvery = 1,
     [int]$EvalMatches = 200,
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
@@ -80,6 +81,7 @@ try {
     Write-Host "Baseline checkpoint: $BaselineCheckpoint"
     Write-Host "Baseline ONNX:       $BaselineOnnx"
     Write-Host "Trajectory matches:  $TrajectoryMatches"
+    Write-Host "Trajectory progress: every $TrajectoryProgressEvery match(es)"
     Write-Host "Eval matches:        $EvalMatches"
     Write-Host "Device:              $Device"
     Write-Host "Python:              $PythonExe $PythonVersion"
@@ -107,7 +109,20 @@ try {
         }
         Write-Utf8NoBom $TrajectoryConfig ($trajectoryConfigObject | ConvertTo-Json -Depth 8)
 
-        & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $TrajectoryConfig --output $ArenaReportJsonl --trajectories $TrajectoryJsonl
+        $arenaArgs = @(
+            "run",
+            "--manifest-path", "backend/Cargo.toml",
+            "--release",
+            "--bin", "bot_arena",
+            "--",
+            "--config", $TrajectoryConfig,
+            "--output", $ArenaReportJsonl,
+            "--trajectories", $TrajectoryJsonl
+        )
+        if ($TrajectoryProgressEvery -gt 0) {
+            $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
+        }
+        & $CargoExe @arenaArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 

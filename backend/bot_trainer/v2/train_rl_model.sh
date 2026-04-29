@@ -7,6 +7,7 @@ BASELINE_ONNX="backend/assets/models/mahjong_policy_net.onnx"
 PYTHON_CMD=(python3)
 CARGO_CMD=(cargo)
 TRAJECTORY_MATCHES=200
+TRAJECTORY_PROGRESS_EVERY=1
 EVAL_MATCHES=200
 SEED=20260429
 MAX_ACTIONS_PER_MATCH=2400
@@ -41,6 +42,7 @@ Options:
   --python-exe PATH                Python executable override. Defaults to python3.
   --cargo-exe PATH                 Cargo executable override. Defaults to cargo.
   --trajectory-matches N           Matches used to generate trajectories.
+  --trajectory-progress-every N    Print trajectory arena progress every N matches. Use 0 to disable.
   --eval-matches N                 Matches used for candidate evaluation.
   --seed N                         Arena seed.
   --max-actions-per-match N        Arena action cap.
@@ -100,6 +102,11 @@ while [[ $# -gt 0 ]]; do
         --trajectory-matches)
             require_value "$1" "${2:-}"
             TRAJECTORY_MATCHES="$2"
+            shift 2
+            ;;
+        --trajectory-progress-every)
+            require_value "$1" "${2:-}"
+            TRAJECTORY_PROGRESS_EVERY="$2"
             shift 2
             ;;
         --eval-matches)
@@ -227,6 +234,7 @@ echo "Output:              $OUTPUT_DIR"
 echo "Baseline checkpoint: $BASELINE_CHECKPOINT"
 echo "Baseline ONNX:       $BASELINE_ONNX"
 echo "Trajectory matches:  $TRAJECTORY_MATCHES"
+echo "Trajectory progress: every $TRAJECTORY_PROGRESS_EVERY match(es)"
 echo "Eval matches:        $EVAL_MATCHES"
 echo "Device:              $DEVICE"
 echo "Python:              ${PYTHON_CMD[*]}"
@@ -257,10 +265,16 @@ if (( SKIP_TRAJECTORY_GENERATION == 0 )); then
 }
 JSON
 
-    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
-        --config "$TRAJECTORY_CONFIG" \
-        --output "$ARENA_REPORT_JSONL" \
+    arena_args=(
+        run --manifest-path backend/Cargo.toml --release --bin bot_arena --
+        --config "$TRAJECTORY_CONFIG"
+        --output "$ARENA_REPORT_JSONL"
         --trajectories "$TRAJECTORY_JSONL"
+    )
+    if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
+        arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
+    fi
+    "${CARGO_CMD[@]}" "${arena_args[@]}"
 fi
 
 "${PYTHON_CMD[@]}" backend/bot_trainer/v2/rl_train.py \
