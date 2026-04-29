@@ -33,6 +33,7 @@ param(
     [switch]$SkipTrajectoryGeneration,
     [switch]$SkipOnnxExport,
     [switch]$SkipEval,
+    [switch]$EnforceCandidateGate,
     [switch]$RecomputeOldPolicyStats
 )
 
@@ -124,6 +125,7 @@ try {
     $EvalConfig = Join-Path $OutputDir "candidate_eval_config.json"
     $EvalJsonl = Join-Path $OutputDir "candidate_eval.jsonl"
     $EvalSummary = Join-Path $OutputDir "candidate_eval_summary.json"
+    $GateOutput = Join-Path $OutputDir "candidate_gate.json"
 
     Write-Host "Mahjong RL training"
     Write-Host "Output:              $OutputDir"
@@ -264,25 +266,18 @@ try {
     }
 
     if (-not $SkipEval) {
-        $evalConfigObject = @{
-            matches = $EvalMatches
-            seed = $Seed
-            max_actions_per_match = $MaxActionsPerMatch
-            report_trajectories = $false
-            policies = @(
-                @{
-                    id = "baseline_$SelfPlayPolicyId"
-                    mode = $SelfPlayPolicyMode
-                    model_path = $BaselineOnnx
-                },
-                @{
-                    id = "rl_candidate_neural"
-                    mode = "neural"
-                    model_path = $CandidateOnnx
-                }
-            )
-        }
-        Write-Utf8NoBom $EvalConfig ($evalConfigObject | ConvertTo-Json -Depth 8)
+        Invoke-TrainingPython @(
+            "backend/bot_trainer/v2/league_config.py",
+            "--pool", $OpponentPool,
+            "--output-dir", $OutputDir,
+            "--matches", "$EvalMatches",
+            "--seed", "$Seed",
+            "--max-actions", "$MaxActionsPerMatch",
+            "--mode", "eval",
+            "--candidate-onnx", $CandidateOnnx,
+            "--baseline-onnx", $BaselineOnnx
+        )
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
         & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $EvalConfig --output $EvalJsonl --jobs $ArenaJobs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -293,6 +288,21 @@ try {
             "--output", $EvalSummary
         )
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        Invoke-TrainingPython @(
+            "backend/bot_trainer/v2/candidate_gate.py",
+            "--summary", $EvalSummary,
+            "--baseline-policy", "baseline_neural",
+            "--candidate-policy", "rl_candidate_neural",
+            "--output", $GateOutput
+        )
+        $gateExit = $LASTEXITCODE
+        if ($EnforceCandidateGate -and $gateExit -ne 0) {
+            exit $gateExit
+        }
+        if (-not $EnforceCandidateGate -and $gateExit -ne 0) {
+            Write-Warning "Candidate gate rejected this model. See $GateOutput"
+        }
     }
 
     Write-Host "RL training pipeline finished."

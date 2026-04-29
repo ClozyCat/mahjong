@@ -195,3 +195,27 @@ An RL candidate can replace the production model only when arena evaluation show
 - average decision latency remains under 100 ms
 
 The production policy modes are `heuristic` and `neural`. Keep `heuristic` as the fallback and promote a neural candidate only after it wins the rotated arena matrix without a higher deal-in rate.
+
+### Candidate Gate
+
+By default the RL wrapper writes `candidate_gate.json` but does not stop local experimentation when a model is rejected. Use `-EnforceCandidateGate` or `--enforce-candidate-gate` for promotion runs.
+
+```powershell
+.\backend\bot_trainer\v2\train_rl_model.ps1 `
+  -OutputDir backend/bot_trainer/v2/rl_runs/promotion `
+  -TrajectoryMatches 400 `
+  -EvalMatches 400 `
+  -Epochs 3 `
+  -Device cuda `
+  -EnforceCandidateGate
+```
+
+```bash
+./backend/bot_trainer/v2/train_rl_model.sh \
+  --output-dir backend/bot_trainer/v2/rl_runs/promotion \
+  --trajectory-matches 400 \
+  --eval-matches 400 \
+  --epochs 3 \
+  --device cuda \
+  --enforce-candidate-gate
+```

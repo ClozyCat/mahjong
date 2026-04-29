@@ -246,6 +246,65 @@ def test_league_config_rotates_learner_seat() -> None:
     assert all(config["matches"] == 2 for config in configs)
 
 
+def test_candidate_gate_accepts_safe_improvement() -> None:
+    from candidate_gate import evaluate_candidate
+
+    summary = {
+        "policies": {
+            "baseline_neural": {
+                "avg_score_delta": 0.0,
+                "win_rate": 0.20,
+                "deal_in_rate": 0.10,
+                "avg_first_tenpai_turn": 8.0,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 20.0,
+            },
+            "rl_candidate_neural": {
+                "avg_score_delta": 1.5,
+                "win_rate": 0.21,
+                "deal_in_rate": 0.11,
+                "avg_first_tenpai_turn": 7.8,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 22.0,
+            },
+        }
+    }
+
+    result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
+
+    assert result["accepted"] is True
+
+
+def test_candidate_gate_rejects_higher_deal_in() -> None:
+    from candidate_gate import evaluate_candidate
+
+    summary = {
+        "policies": {
+            "baseline_neural": {
+                "avg_score_delta": 0.0,
+                "win_rate": 0.20,
+                "deal_in_rate": 0.10,
+                "avg_first_tenpai_turn": 8.0,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 20.0,
+            },
+            "rl_candidate_neural": {
+                "avg_score_delta": 2.0,
+                "win_rate": 0.22,
+                "deal_in_rate": 0.14,
+                "avg_first_tenpai_turn": 7.7,
+                "final_tenpai_rate": 0.56,
+                "avg_latency_ms_per_decision": 23.0,
+            },
+        }
+    }
+
+    result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
+
+    assert result["accepted"] is False
+    assert "deal_in_rate" in result["failures"]
+
+
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     from arena_summary import load_reports, summarize_reports
 

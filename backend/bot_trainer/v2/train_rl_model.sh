@@ -33,6 +33,7 @@ SKIP_TESTS=0
 SKIP_TRAJECTORY_GENERATION=0
 SKIP_ONNX_EXPORT=0
 SKIP_EVAL=0
+ENFORCE_CANDIDATE_GATE=0
 RECOMPUTE_OLD_POLICY_STATS=0
 
 usage() {
@@ -78,6 +79,7 @@ Options:
   --skip-trajectory-generation     Reuse existing trajectories.jsonl in output dir.
   --skip-onnx-export               Do not export candidate.onnx.
   --skip-eval                      Do not run baseline vs candidate arena evaluation.
+  --enforce-candidate-gate         Exit non-zero when candidate acceptance fails.
   --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
   -h, --help                       Show this help.
 EOF
@@ -261,6 +263,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_EVAL=1
             shift
             ;;
+        --enforce-candidate-gate)
+            ENFORCE_CANDIDATE_GATE=1
+            shift
+            ;;
         --recompute-old-policy-stats)
             RECOMPUTE_OLD_POLICY_STATS=1
             shift
@@ -297,6 +303,7 @@ CANDIDATE_ONNX="$OUTPUT_DIR/candidate.onnx"
 EVAL_CONFIG="$OUTPUT_DIR/candidate_eval_config.json"
 EVAL_JSONL="$OUTPUT_DIR/candidate_eval.jsonl"
 EVAL_SUMMARY="$OUTPUT_DIR/candidate_eval_summary.json"
+GATE_OUTPUT="$OUTPUT_DIR/candidate_gate.json"
 
 mkdir -p "$OUTPUT_DIR"
 TEMP_DIR="$OUTPUT_DIR/tmp"
@@ -446,26 +453,15 @@ if (( SKIP_ONNX_EXPORT == 0 )); then
 fi
 
 if (( SKIP_EVAL == 0 )); then
-    cat > "$EVAL_CONFIG" <<JSON
-{
-  "matches": $EVAL_MATCHES,
-  "seed": $SEED,
-  "max_actions_per_match": $MAX_ACTIONS_PER_MATCH,
-  "report_trajectories": false,
-  "policies": [
-    {
-      "id": "baseline_${SELFPLAY_POLICY_ID}",
-      "mode": "$SELFPLAY_POLICY_MODE",
-      "model_path": "$BASELINE_ONNX"
-    },
-    {
-      "id": "rl_candidate_neural",
-      "mode": "neural",
-      "model_path": "$CANDIDATE_ONNX"
-    }
-  ]
-}
-JSON
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
+        --pool "$OPPONENT_POOL" \
+        --output-dir "$OUTPUT_DIR" \
+        --matches "$EVAL_MATCHES" \
+        --seed "$SEED" \
+        --max-actions "$MAX_ACTIONS_PER_MATCH" \
+        --mode eval \
+        --candidate-onnx "$CANDIDATE_ONNX" \
+        --baseline-onnx "$BASELINE_ONNX"
 
     "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
         --config "$EVAL_CONFIG" \
@@ -475,6 +471,21 @@ JSON
     "${PYTHON_CMD[@]}" backend/bot_trainer/v2/arena_summary.py \
         --input "$EVAL_JSONL" \
         --output "$EVAL_SUMMARY"
+
+    set +e
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/candidate_gate.py \
+        --summary "$EVAL_SUMMARY" \
+        --baseline-policy baseline_neural \
+        --candidate-policy rl_candidate_neural \
+        --output "$GATE_OUTPUT"
+    gate_exit=$?
+    set -e
+    if (( ENFORCE_CANDIDATE_GATE == 1 && gate_exit != 0 )); then
+        exit "$gate_exit"
+    fi
+    if (( ENFORCE_CANDIDATE_GATE != 1 && gate_exit != 0 )); then
+        echo "Candidate gate rejected this model. See $GATE_OUTPUT" >&2
+    fi
 fi
 
 echo "RL training pipeline finished."
