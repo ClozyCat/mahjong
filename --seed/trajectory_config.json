@@ -1,0 +1,14 @@
+{
+    "policies":  [
+                     {
+                         "neural_weight":  30,
+                         "id":  "selfplay_hybrid30",
+                         "mode":  "hybrid",
+                         "model_path":  "backend/assets/models/mahjong_policy_net.onnx"
+                     }
+                 ],
+    "report_trajectories":  true,
+    "seed":  20260429,
+    "matches":  200,
+    "max_actions_per_match":  2400
+}

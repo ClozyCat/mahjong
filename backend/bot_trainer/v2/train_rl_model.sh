@@ -6,8 +6,9 @@ BASELINE_CHECKPOINT="backend/bot_trainer/v2/checkpoints/best.pt"
 BASELINE_ONNX="backend/assets/models/mahjong_policy_net.onnx"
 PYTHON_CMD=(python3)
 CARGO_CMD=(cargo)
+ARENA_JOBS=0
 TRAJECTORY_MATCHES=200
-TRAJECTORY_PROGRESS_EVERY=1
+TRAJECTORY_PROGRESS_EVERY=20
 EVAL_MATCHES=200
 SEED=20260429
 MAX_ACTIONS_PER_MATCH=2400
@@ -41,6 +42,7 @@ Options:
   --baseline-onnx PATH             Baseline ONNX used for self-play and evaluation.
   --python-exe PATH                Python executable override. Defaults to python3.
   --cargo-exe PATH                 Cargo executable override. Defaults to cargo.
+  --arena-jobs N                   Parallel arena workers. Use 0 for all available cores.
   --trajectory-matches N           Matches used to generate trajectories.
   --trajectory-progress-every N    Print trajectory arena progress every N matches. Use 0 to disable.
   --eval-matches N                 Matches used for candidate evaluation.
@@ -72,6 +74,17 @@ require_value() {
     fi
 }
 
+require_file() {
+    local path="$1"
+    local purpose="$2"
+    local advice="$3"
+    if [[ ! -f "$path" ]]; then
+        echo "$purpose not found: $path" >&2
+        echo "$advice" >&2
+        exit 2
+    fi
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --output-dir)
@@ -97,6 +110,11 @@ while [[ $# -gt 0 ]]; do
         --cargo-exe)
             require_value "$1" "${2:-}"
             CARGO_CMD=("$2")
+            shift 2
+            ;;
+        --arena-jobs)
+            require_value "$1" "${2:-}"
+            ARENA_JOBS="$2"
             shift 2
             ;;
         --trajectory-matches)
@@ -216,6 +234,7 @@ CHECKPOINT_DIR="$OUTPUT_DIR/checkpoints"
 CANDIDATE_ONNX="$OUTPUT_DIR/candidate.onnx"
 EVAL_CONFIG="$OUTPUT_DIR/candidate_eval_config.json"
 EVAL_JSONL="$OUTPUT_DIR/candidate_eval.jsonl"
+EVAL_SUMMARY="$OUTPUT_DIR/candidate_eval_summary.json"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -239,6 +258,27 @@ echo "Eval matches:        $EVAL_MATCHES"
 echo "Device:              $DEVICE"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
+if (( ARENA_JOBS == 0 )); then
+    echo "Arena jobs:          auto"
+else
+    echo "Arena jobs:          $ARENA_JOBS"
+fi
+
+require_file \
+    "$BASELINE_CHECKPOINT" \
+    "Baseline checkpoint" \
+    "Run supervised training first with backend/bot_trainer/v2/train_and_export_model.sh, or pass --baseline-checkpoint <existing .pt file>."
+require_file \
+    "$BASELINE_ONNX" \
+    "Baseline ONNX model" \
+    "Export the supervised model first, or pass --baseline-onnx <existing .onnx file>."
+
+if (( SKIP_TRAJECTORY_GENERATION == 1 )); then
+    require_file \
+        "$TRAJECTORY_JSONL" \
+        "Trajectory JSONL" \
+        "Remove --skip-trajectory-generation, or place an existing trajectories.jsonl at $TRAJECTORY_JSONL."
+fi
 
 if (( SKIP_TESTS == 0 )); then
     "${PYTHON_CMD[@]}" -m pytest \
@@ -270,6 +310,7 @@ JSON
         --config "$TRAJECTORY_CONFIG"
         --output "$ARENA_REPORT_JSONL"
         --trajectories "$TRAJECTORY_JSONL"
+        --jobs "$ARENA_JOBS"
     )
     if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
         arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
@@ -320,10 +361,16 @@ JSON
 
     "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
         --config "$EVAL_CONFIG" \
-        --output "$EVAL_JSONL"
+        --output "$EVAL_JSONL" \
+        --jobs "$ARENA_JOBS"
+
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/arena_summary.py \
+        --input "$EVAL_JSONL" \
+        --output "$EVAL_SUMMARY"
 fi
 
 echo "RL training pipeline finished."
 echo "Checkpoint:  $CHECKPOINT_DIR/best.pt"
 echo "Candidate:   $CANDIDATE_ONNX"
 echo "Evaluation:  $EVAL_JSONL"
+echo "Summary:     $EVAL_SUMMARY"

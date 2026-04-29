@@ -1,4 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    mpsc,
+};
 
 use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
@@ -95,6 +100,11 @@ pub struct ArenaTrajectoryRow {
 pub struct ArenaRunOutput {
     pub reports: Vec<ArenaMatchReport>,
     pub trajectories: Vec<ArenaTrajectoryRow>,
+}
+
+struct ArenaCompletedMatch {
+    report: ArenaMatchReport,
+    trajectories: Vec<ArenaTrajectoryRow>,
 }
 
 fn default_max_actions_per_match() -> usize {
@@ -235,85 +245,184 @@ pub fn run_arena_with_progress(
 
     let mut output = ArenaRunOutput::default();
     for match_index in 0..config.matches {
-        let seed = config.seed.wrapping_add(match_index as u64);
-        let match_id = format!("arena-{seed}-{match_index}");
-        let mut room = arena_room(&format!("ARENA{match_index:04}"));
-        start_match_in_room_state(&mut room, 0, seed)?;
-        let mut accumulator = ArenaMatchAccumulator::new(config);
-        let mut action_count = 0_usize;
-        let mut match_trajectories = Vec::new();
+        let completed_match = run_arena_match(config, match_index, include_trajectories)?;
+        on_match_complete(&completed_match.report);
+        output.trajectories.extend(completed_match.trajectories);
+        output.reports.push(completed_match.report);
+    }
+    Ok(output)
+}
 
-        while room.phase == "playing" && action_count < config.max_actions_per_match {
-            let started = std::time::Instant::now();
-            let trace = include_trajectories
-                .then(|| {
-                    next_bot_decision_trace_in_room_state_with_policy_resolver(&room, &|seat| {
-                        policy_for_seat(config, seat)
-                    })
-                })
-                .transpose()?
-                .flatten();
-            let action = if let Some(trace) = trace.as_ref() {
-                trace.action.clone()
-            } else {
-                let Some(action) =
-                    next_bot_action_in_room_state_with_policy_resolver(&room, &|seat| {
-                        policy_for_seat(config, seat)
-                    })?
-                else {
-                    break;
-                };
-                action
-            };
-            let elapsed_ms = started.elapsed().as_millis();
-            let action_seat = action.seat_index;
-            let action_type = action.action_type.clone();
-            let handled = try_handle_player_action_in_room_state(
-                &mut room,
-                action.seat_index,
-                &action.action_type,
-                &action.tile_ids,
-            )?;
-            match handled {
-                Some(Ok(_)) => {
-                    accumulator.record_decision(action_seat, &action_type, elapsed_ms);
-                    if let Some(trace) = trace.as_ref() {
-                        let policy = policy_for_seat(config, action_seat);
-                        if let Some(row) = trajectory_row_from_trace(
-                            &match_id,
-                            match_trajectories.len() as u64,
-                            &policy.id,
-                            trace,
-                        ) {
-                            match_trajectories.push(row);
+pub fn run_arena_parallel_with_progress(
+    config: &ArenaConfig,
+    include_trajectories: bool,
+    worker_count: usize,
+    mut on_match_complete: impl FnMut(&ArenaMatchReport),
+) -> Result<ArenaRunOutput, String> {
+    if config.policies.is_empty() {
+        return Err("arena config requires at least one policy".to_string());
+    }
+    if config.matches == 0 {
+        return Ok(ArenaRunOutput::default());
+    }
+    let worker_count = worker_count.max(1).min(config.matches);
+    if worker_count == 1 {
+        return run_arena_with_progress(config, include_trajectories, on_match_complete);
+    }
+
+    let config = Arc::new(config.clone());
+    let next_match = Arc::new(AtomicUsize::new(0));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = mpsc::channel::<Result<ArenaCompletedMatch, String>>();
+
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let config = Arc::clone(&config);
+            let next_match = Arc::clone(&next_match);
+            let cancel = Arc::clone(&cancel);
+            let sender = sender.clone();
+            scope.spawn(move || {
+                loop {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let match_index = next_match.fetch_add(1, Ordering::Relaxed);
+                    if match_index >= config.matches {
+                        break;
+                    }
+                    match run_arena_match(&config, match_index, include_trajectories) {
+                        Ok(completed_match) => {
+                            if sender.send(Ok(completed_match)).is_err() {
+                                break;
+                            }
+                        }
+                        Err(reason) => {
+                            cancel.store(true, Ordering::Relaxed);
+                            let _ = sender.send(Err(reason));
+                            break;
                         }
                     }
-                    action_count += 1;
                 }
-                Some(Err(reason)) => return Err(format!("arena action was rejected: {reason}")),
-                None => {
-                    return Err(format!(
-                        "arena action was not handled: seat={} action={}",
-                        action_seat, action_type
-                    ));
+            });
+        }
+        drop(sender);
+
+        let mut reports = Vec::with_capacity(config.matches);
+        let mut trajectories_by_match = Vec::with_capacity(config.matches);
+        let mut completed_matches = 0_usize;
+        for received in receiver {
+            let completed_match = match received {
+                Ok(completed_match) => completed_match,
+                Err(reason) => {
+                    cancel.store(true, Ordering::Relaxed);
+                    return Err(reason);
                 }
+            };
+            completed_matches += 1;
+            on_match_complete(&completed_match.report);
+            let match_index = completed_match.report.match_index;
+            reports.push(completed_match.report);
+            trajectories_by_match.push((match_index, completed_match.trajectories));
+            if completed_matches == config.matches {
+                break;
             }
         }
 
-        let report = build_match_report(
-            match_index,
-            seed,
-            &room,
-            accumulator,
-            action_count,
-            action_count < config.max_actions_per_match,
-        );
-        assign_terminal_rewards(&mut match_trajectories, &report);
-        on_match_complete(&report);
-        output.trajectories.extend(match_trajectories);
-        output.reports.push(report);
+        reports.sort_by_key(|report| report.match_index);
+        trajectories_by_match.sort_by_key(|(match_index, _)| *match_index);
+        Ok(ArenaRunOutput {
+            reports,
+            trajectories: trajectories_by_match
+                .into_iter()
+                .flat_map(|(_, rows)| rows)
+                .collect(),
+        })
+    })
+}
+
+fn run_arena_match(
+    config: &ArenaConfig,
+    match_index: usize,
+    include_trajectories: bool,
+) -> Result<ArenaCompletedMatch, String> {
+    let seed = config.seed.wrapping_add(match_index as u64);
+    let match_id = format!("arena-{seed}-{match_index}");
+    let mut room = arena_room(&format!("ARENA{match_index:04}"));
+    start_match_in_room_state(&mut room, 0, seed)?;
+    let mut accumulator = ArenaMatchAccumulator::new(config);
+    let mut action_count = 0_usize;
+    let mut trajectories = Vec::new();
+
+    while room.phase == "playing" && action_count < config.max_actions_per_match {
+        let started = std::time::Instant::now();
+        let trace = include_trajectories
+            .then(|| {
+                next_bot_decision_trace_in_room_state_with_policy_resolver(&room, &|seat| {
+                    policy_for_seat(config, seat)
+                })
+            })
+            .transpose()?
+            .flatten();
+        let action = if let Some(trace) = trace.as_ref() {
+            trace.action.clone()
+        } else {
+            let Some(action) =
+                next_bot_action_in_room_state_with_policy_resolver(&room, &|seat| {
+                    policy_for_seat(config, seat)
+                })?
+            else {
+                break;
+            };
+            action
+        };
+        let elapsed_ms = started.elapsed().as_millis();
+        let action_seat = action.seat_index;
+        let action_type = action.action_type.clone();
+        let handled = try_handle_player_action_in_room_state(
+            &mut room,
+            action.seat_index,
+            &action.action_type,
+            &action.tile_ids,
+        )?;
+        match handled {
+            Some(Ok(_)) => {
+                accumulator.record_decision(action_seat, &action_type, elapsed_ms);
+                if let Some(trace) = trace.as_ref() {
+                    let policy = policy_for_seat(config, action_seat);
+                    if let Some(row) = trajectory_row_from_trace(
+                        &match_id,
+                        trajectories.len() as u64,
+                        &policy.id,
+                        trace,
+                    ) {
+                        trajectories.push(row);
+                    }
+                }
+                action_count += 1;
+            }
+            Some(Err(reason)) => return Err(format!("arena action was rejected: {reason}")),
+            None => {
+                return Err(format!(
+                    "arena action was not handled: seat={} action={}",
+                    action_seat, action_type
+                ));
+            }
+        }
     }
-    Ok(output)
+
+    let report = build_match_report(
+        match_index,
+        seed,
+        &room,
+        accumulator,
+        action_count,
+        action_count < config.max_actions_per_match,
+    );
+    assign_terminal_rewards(&mut trajectories, &report);
+    Ok(ArenaCompletedMatch {
+        report,
+        trajectories,
+    })
 }
 
 fn policy_for_seat(config: &ArenaConfig, seat_index: usize) -> ArenaBotPolicyConfig {

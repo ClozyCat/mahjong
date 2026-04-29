@@ -63,3 +63,51 @@ def test_masked_ppo_loss_is_finite() -> None:
     loss = ppo_policy_loss(log_probs, old_log_probs, advantages, clip_epsilon=0.2)
 
     assert torch.isfinite(loss)
+
+
+def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
+    from arena_summary import load_reports, summarize_reports
+
+    path = tmp_path / "arena.jsonl"
+    report = {
+        "match_index": 0,
+        "seed": 1,
+        "completed": True,
+        "action_count": 10,
+        "seats": [
+            {
+                "seat_index": 0,
+                "policy_id": "a",
+                "score_delta": 10,
+                "wins": 1,
+                "dealt_in": 0,
+                "first_tenpai_turn": None,
+                "final_tenpai": True,
+                "claim_count": 1,
+                "discard_count": 2,
+                "decision_count": 4,
+                "decision_latency_ms_sum": 20,
+            },
+            {
+                "seat_index": 1,
+                "policy_id": "b",
+                "score_delta": -10,
+                "wins": 0,
+                "dealt_in": 1,
+                "first_tenpai_turn": None,
+                "final_tenpai": False,
+                "claim_count": 0,
+                "discard_count": 3,
+                "decision_count": 5,
+                "decision_latency_ms_sum": 50,
+            },
+        ],
+    }
+    path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+
+    summary = summarize_reports(load_reports(path))
+
+    assert summary["matches"] == 1
+    assert summary["policies"]["a"]["avg_score_delta"] == 10.0
+    assert summary["policies"]["a"]["win_rate"] == 1.0
+    assert summary["policies"]["b"]["deal_in_rate"] == 1.0

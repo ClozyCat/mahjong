@@ -5,13 +5,16 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use backend::bot::arena::{ArenaConfig, run_arena, run_arena_with_progress};
+use backend::bot::arena::{
+    ArenaConfig, run_arena, run_arena_parallel_with_progress, run_arena_with_progress,
+};
 
 struct Args {
     config_path: PathBuf,
     output_path: PathBuf,
     trajectories_path: Option<PathBuf>,
     progress_every: Option<usize>,
+    jobs: Option<usize>,
 }
 
 fn main() -> Result<()> {
@@ -21,22 +24,40 @@ fn main() -> Result<()> {
             .with_context(|| format!("failed to read {}", args.config_path.display()))?,
     )?;
     let include_trajectories = args.trajectories_path.is_some();
-    let arena_output = if let Some(progress_every) = args.progress_every {
+    let arena_output = if args.jobs.is_some() || args.progress_every.is_some() {
+        let worker_count = resolve_worker_count(args.jobs);
         let total_matches = config.matches;
-        run_arena_with_progress(&config, include_trajectories, |report| {
-            let current_match = report.match_index + 1;
-            if current_match % progress_every == 0 || current_match == total_matches {
-                eprintln!(
-                    "Arena progress: match {}/{} seed={} actions={} completed={}",
-                    current_match,
-                    total_matches,
-                    report.seed,
-                    report.action_count,
-                    report.completed
-                );
+        let mut completed_count = 0_usize;
+        let progress_every = args.progress_every;
+        let mut on_match_complete = |report: &backend::bot::arena::ArenaMatchReport| {
+            completed_count += 1;
+            if let Some(progress_every) = progress_every {
+                if completed_count % progress_every == 0 || completed_count == total_matches {
+                    eprintln!(
+                        "Arena progress: completed {}/{} match={} seed={} actions={} completed={} jobs={}",
+                        completed_count,
+                        total_matches,
+                        report.match_index + 1,
+                        report.seed,
+                        report.action_count,
+                        report.completed,
+                        worker_count
+                    );
+                }
             }
-        })
-        .map_err(|reason| anyhow::anyhow!(reason))?
+        };
+        if worker_count > 1 {
+            run_arena_parallel_with_progress(
+                &config,
+                include_trajectories,
+                worker_count,
+                &mut on_match_complete,
+            )
+            .map_err(|reason| anyhow::anyhow!(reason))?
+        } else {
+            run_arena_with_progress(&config, include_trajectories, &mut on_match_complete)
+                .map_err(|reason| anyhow::anyhow!(reason))?
+        }
     } else {
         run_arena(&config, include_trajectories).map_err(|reason| anyhow::anyhow!(reason))?
     };
@@ -63,6 +84,7 @@ fn parse_args() -> Result<Args> {
     let mut output_path = None;
     let mut trajectories_path = None;
     let mut progress_every = None;
+    let mut jobs = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -79,6 +101,13 @@ fn parse_args() -> Result<Args> {
                 }
                 progress_every = Some(parsed);
             }
+            "--jobs" => {
+                let raw = args.next().context("--jobs requires a value")?;
+                jobs = Some(
+                    raw.parse::<usize>()
+                        .with_context(|| format!("invalid --jobs value: {raw}"))?,
+                );
+            }
             _ => bail!("unknown argument: {arg}"),
         }
     }
@@ -87,5 +116,16 @@ fn parse_args() -> Result<Args> {
         output_path: output_path.context("--output is required")?,
         trajectories_path,
         progress_every,
+        jobs,
     })
+}
+
+fn resolve_worker_count(jobs: Option<usize>) -> usize {
+    match jobs {
+        Some(0) => std::thread::available_parallelism()
+            .map(|parallelism| parallelism.get())
+            .unwrap_or(1),
+        Some(jobs) => jobs,
+        None => 1,
+    }
 }

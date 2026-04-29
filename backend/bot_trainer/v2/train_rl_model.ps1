@@ -5,8 +5,9 @@ param(
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
+    [int]$ArenaJobs = 0,
     [int]$TrajectoryMatches = 200,
-    [int]$TrajectoryProgressEvery = 1,
+    [int]$TrajectoryProgressEvery = 20,
     [int]$EvalMatches = 200,
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
@@ -53,6 +54,17 @@ function Assert-PythonModule {
     }
 }
 
+function Assert-FileExists {
+    param(
+        [string]$Path,
+        [string]$Purpose,
+        [string]$Advice
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Purpose not found: $Path`n$Advice"
+    }
+}
+
 function Write-Utf8NoBom {
     param(
         [string]$Path,
@@ -75,6 +87,7 @@ try {
     $CandidateOnnx = Join-Path $OutputDir "candidate.onnx"
     $EvalConfig = Join-Path $OutputDir "candidate_eval_config.json"
     $EvalJsonl = Join-Path $OutputDir "candidate_eval.jsonl"
+    $EvalSummary = Join-Path $OutputDir "candidate_eval_summary.json"
 
     Write-Host "Mahjong RL training"
     Write-Host "Output:              $OutputDir"
@@ -86,6 +99,23 @@ try {
     Write-Host "Device:              $Device"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
+    Write-Host "Arena jobs:          $(if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs })"
+
+    Assert-FileExists `
+        $BaselineCheckpoint `
+        "Baseline checkpoint" `
+        "Run supervised training first with backend/bot_trainer/v2/train_and_export_model.ps1, or pass -BaselineCheckpoint <existing .pt file>."
+    Assert-FileExists `
+        $BaselineOnnx `
+        "Baseline ONNX model" `
+        "Export the supervised model first, or pass -BaselineOnnx <existing .onnx file>."
+
+    if ($SkipTrajectoryGeneration) {
+        Assert-FileExists `
+            $TrajectoryJsonl `
+            "Trajectory JSONL" `
+            "Remove -SkipTrajectoryGeneration, or place an existing trajectories.jsonl at $TrajectoryJsonl."
+    }
 
     if (-not $SkipTests) {
         Invoke-TrainingPython @("-m", "pytest", "backend/bot_trainer/v2/test_rl_dataset.py", "backend/bot_trainer/v2/test_dataset.py", "-q")
@@ -117,7 +147,8 @@ try {
             "--",
             "--config", $TrajectoryConfig,
             "--output", $ArenaReportJsonl,
-            "--trajectories", $TrajectoryJsonl
+            "--trajectories", $TrajectoryJsonl,
+            "--jobs", "$ArenaJobs"
         )
         if ($TrajectoryProgressEvery -gt 0) {
             $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
@@ -172,7 +203,14 @@ try {
         }
         Write-Utf8NoBom $EvalConfig ($evalConfigObject | ConvertTo-Json -Depth 8)
 
-        & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $EvalConfig --output $EvalJsonl
+        & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $EvalConfig --output $EvalJsonl --jobs $ArenaJobs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        Invoke-TrainingPython @(
+            "backend/bot_trainer/v2/arena_summary.py",
+            "--input", $EvalJsonl,
+            "--output", $EvalSummary
+        )
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
@@ -180,6 +218,7 @@ try {
     Write-Host "Checkpoint:  $(Join-Path $CheckpointDir "best.pt")"
     Write-Host "Candidate:   $CandidateOnnx"
     Write-Host "Evaluation:  $EvalJsonl"
+    Write-Host "Summary:     $EvalSummary"
 }
 finally {
     Pop-Location
