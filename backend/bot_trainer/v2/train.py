@@ -33,9 +33,23 @@ def main() -> None:
     amp_device_type = "cuda" if is_rocm_or_cuda else "cpu"
 
     print("Initializing datasets...")
-    train_dataset = MahjongDecisionDataset(args.data / "train.jsonl", args.data / "metadata.json")
+    train_dataset = MahjongDecisionDataset(
+        args.data / "train.jsonl",
+        args.data / "metadata.json",
+        cache_dir=args.data_cache_dir,
+        rebuild_cache=args.rebuild_data_cache,
+    )
     val_path = args.data / "val.jsonl"
-    val_dataset = MahjongDecisionDataset(val_path, args.data / "metadata.json") if val_path.exists() else None
+    val_dataset = (
+        MahjongDecisionDataset(
+            val_path,
+            args.data / "metadata.json",
+            cache_dir=args.data_cache_dir,
+            rebuild_cache=args.rebuild_data_cache,
+        )
+        if val_path.exists()
+        else None
+    )
 
     train_loader = build_loader(train_dataset, args.batch_size, True, args.num_workers, device)
     val_loader = (
@@ -55,7 +69,7 @@ def main() -> None:
             
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
-    print(f"device={device} amp={use_amp} num_workers={args.num_workers}")
+    print(f"device={device} amp={use_amp} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
     loss_weights = {
         "claim_weight": args.claim_loss_weight,
         "self_kong_weight": args.self_kong_loss_weight,
@@ -119,6 +133,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--data-cache-dir", type=Path, default=None)
+    parser.add_argument("--rebuild-data-cache", action="store_true")
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
@@ -153,6 +169,15 @@ def resolve_device(requested: str) -> torch.device:
             
     return torch.device(requested)
 
+
+class DatasetBatchCollator:
+    def __init__(self, dataset: MahjongDecisionDataset) -> None:
+        self.dataset = dataset
+
+    def __call__(self, indices: list[int]) -> dict[str, torch.Tensor]:
+        return self.dataset.get_batch(indices)
+
+
 def build_loader(
     dataset: MahjongDecisionDataset,
     batch_size: int,
@@ -164,7 +189,7 @@ def build_loader(
         "batch_size": batch_size,
         "shuffle": shuffle,
         "num_workers": num_workers,
-        "collate_fn": lambda indices: dataset.get_batch(indices), 
+        "collate_fn": DatasetBatchCollator(dataset),
         "pin_memory": device.type == "cuda", # pin_memory 仅适用于真正的 cuda/ROCm 后端
     }
     if num_workers > 0:

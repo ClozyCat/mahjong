@@ -1,9 +1,7 @@
 from __future__ import annotations
-import concurrent.futures
-import multiprocessing
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 from tqdm import tqdm
@@ -19,150 +17,125 @@ TILE_KIND_COUNT = 34
 TILE_PLANE_COUNT = 10
 SCALAR_FEATURE_COUNT = 10
 IGNORE_INDEX = -100
-
-
-def parse_and_encode_chunk(chunk_data: tuple[list[str], dict[str, Any], int]) -> tuple[int, list[dict[str, np.ndarray]]]:
-    """
-    供子进程调用的工作函数
-    接收：(文本行列表, metadata, 起始索引)
-    返回：(起始索引, 编码后的结果列表)
-    """
-    lines, metadata, start_idx = chunk_data
-    results = []
-    for line in lines:
-        if line:
-            results.append(encode_row(json.loads(line), metadata))
-        else:
-            results.append(None) # 处理空行
-    return start_idx, results
+DISK_CACHE_VERSION = 1
 
 class MissingTorchError(RuntimeError):
     pass
 
 class MahjongDecisionDataset(Dataset):
-    def __init__(self, jsonl_path: Path, metadata_path: Path) -> None:
+    def __init__(
+        self,
+        jsonl_path: Path,
+        metadata_path: Path,
+        cache_dir: Path | None = None,
+        rebuild_cache: bool = False,
+    ) -> None:
         if torch is None:
             raise MissingTorchError("PyTorch is required: pip install torch")
         self.jsonl_path = jsonl_path
+        self.metadata_path = metadata_path
         self.metadata = load_metadata(metadata_path)
+        self.lookups = build_encoder_lookups(self.metadata)
+        self.cache_dir = resolve_cache_dir(jsonl_path, cache_dir)
+        self._arrays: dict[str, np.ndarray] = {}
 
         if not jsonl_path.exists():
             print(f"Warning: Dataset file not found at {jsonl_path}")
             self.num_samples = 0
             return
-        cache_path = jsonl_path.with_suffix('.cache.pt')
-        if cache_path.exists():
-            print(f"发现本地缓存文件 {cache_path.name}，正在快速加载二进制张量...")
-            # 直接从磁盘加载张量字典到内存，速度极快
-            cache = torch.load(cache_path, map_location='cpu', weights_only=True)
-            
-            self.num_samples = cache["num_samples"]
-            self.tile_planes = cache["tile_planes"]
-            self.scalar_features = cache["scalar_features"]
-            self.discard_mask = cache["discard_mask"]
-            self.claim_mask = cache["claim_mask"]
-            self.self_kong_mask = cache["self_kong_mask"]
-            self.hu_mask = cache["hu_mask"]
-            self.discard_target = cache["discard_target"]
-            self.claim_target = cache["claim_target"]
-            self.self_kong_target = cache["self_kong_target"]
-            self.hu_target = cache["hu_target"]
-            self.value_target = cache["value_target"]
-            self.risk_target = cache["risk_target"]
-            self.decision_kind = cache["decision_kind"]
-            
-            print("缓存加载完毕！可以直接开始训练。")
-            return
-        # 1. 极速扫描获取总行数，用于精确预分配内存
-        print(f"Scanning {jsonl_path.name} to allocate continuous memory...")
-        with jsonl_path.open("rb") as f:
-            self.num_samples = sum(1 for _ in f)
 
-        print(f"Pre-allocating giant tensors for {self.num_samples} samples...")
-        
-        # 2. 预分配连续内存 (消除 Python Dict/List 的海量内存开销)
-        self.tile_planes = torch.zeros((self.num_samples, TILE_PLANE_COUNT, TILE_KIND_COUNT), dtype=torch.float32)
-        self.scalar_features = torch.zeros((self.num_samples, SCALAR_FEATURE_COUNT), dtype=torch.float32)
-        self.discard_mask = torch.zeros((self.num_samples, TILE_KIND_COUNT), dtype=torch.bool)
-        self.claim_mask = torch.zeros((self.num_samples, len(self.metadata["claim_actions"])), dtype=torch.bool)
-        self.self_kong_mask = torch.zeros((self.num_samples, len(self.metadata["self_kong_actions"])), dtype=torch.bool)
-        self.hu_mask = torch.zeros((self.num_samples, 2), dtype=torch.bool)
-        self.discard_target = torch.zeros((self.num_samples,), dtype=torch.int64)
-        self.claim_target = torch.zeros((self.num_samples,), dtype=torch.int64)
-        self.self_kong_target = torch.zeros((self.num_samples,), dtype=torch.int64)
-        self.hu_target = torch.zeros((self.num_samples,), dtype=torch.int64)
-        self.value_target = torch.zeros((self.num_samples, 1), dtype=torch.float32)
-        self.risk_target = torch.zeros((self.num_samples, TILE_KIND_COUNT), dtype=torch.float32)
-        self.decision_kind = torch.zeros((self.num_samples,), dtype=torch.int64)
+        self._load_or_build_disk_cache(rebuild_cache)
 
-        # 3. 填充数据 (多核加速版)
-        print(f"Filling tensors using {multiprocessing.cpu_count()} CPU cores...")
-        
-        chunk_size = 4096 # 每个子进程一次性处理的行数，可根据内存大小调整
-        
-        # 定义一个生成器，用于按块读取文本行
-        def line_chunk_generator():
-            with jsonl_path.open("r", encoding="utf-8") as f:
-                chunk = []
-                start_idx = 0
-                for i, line in enumerate(f):
+    def _load_or_build_disk_cache(self, rebuild_cache: bool) -> None:
+        manifest = read_json(self.cache_dir / "manifest.json")
+        if rebuild_cache or not cache_is_current(manifest, self):
+            self._build_disk_cache()
+
+        try:
+            self._open_disk_cache(announce=True)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Disk cache is invalid ({exc}); rebuilding {self.cache_dir.name}...")
+            self._build_disk_cache()
+            self._open_disk_cache(announce=True)
+
+    def _build_disk_cache(self) -> None:
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = self.cache_dir / "manifest.json"
+        if manifest_path.exists():
+            manifest_path.unlink()
+        self.num_samples = count_jsonl_rows(self.jsonl_path)
+        print(
+            f"Building disk-backed tensor cache for {self.num_samples} samples: "
+            f"{self.cache_dir}"
+        )
+
+        specs = tensor_array_specs(self.metadata)
+        arrays = {
+            name: np.lib.format.open_memmap(
+                array_path(self.cache_dir, name),
+                mode="w+",
+                dtype=dtype,
+                shape=(self.num_samples, *shape),
+            )
+            for name, (shape, dtype) in specs.items()
+        }
+
+        row_index = 0
+        with self.jsonl_path.open("r", encoding="utf-8") as handle:
+            with tqdm(total=self.num_samples, desc=f"Caching {self.jsonl_path.name}") as pbar:
+                for line in handle:
                     line = line.strip()
-                    chunk.append(line)
-                    if len(chunk) == chunk_size:
-                        yield (chunk, self.metadata, start_idx)
-                        start_idx += chunk_size
-                        chunk = []
-                if chunk: # 处理最后剩下的一点尾巴
-                    yield (chunk, self.metadata, start_idx)
+                    if not line:
+                        continue
+                    encoded = encode_row(json.loads(line), self.metadata, self.lookups)
+                    for name, mmap_array in arrays.items():
+                        mmap_array[row_index] = encoded[name]
+                    row_index += 1
+                    pbar.update(1)
 
-        # 启动进程池
-        workers = max(1, multiprocessing.cpu_count() - 1) # 留一个核心给系统和主进程
-        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-            # 提交任务
-            futures = executor.map(parse_and_encode_chunk, line_chunk_generator())
-            
-            # 使用 tqdm 追踪进度（按 chunk 追踪）
-            total_chunks = (self.num_samples + chunk_size - 1) // chunk_size
-            
-            for start_idx, encoded_list in tqdm(futures, total=total_chunks, desc=f"Multi-core Loading {jsonl_path.name}"):
-                for offset, encoded in enumerate(encoded_list):
-                    if encoded is None:
-                        continue # 跳过空行
-                    
-                    i = start_idx + offset
-                    
-                    # 填入预分配的张量 (主进程在此处只是做极速的内存赋值)
-                    self.tile_planes[i] = torch.from_numpy(encoded["tile_planes"])
-                    self.scalar_features[i] = torch.from_numpy(encoded["scalar_features"])
-                    self.discard_mask[i] = torch.from_numpy(encoded["discard_mask"])
-                    self.claim_mask[i] = torch.from_numpy(encoded["claim_mask"])
-                    self.self_kong_mask[i] = torch.from_numpy(encoded["self_kong_mask"])
-                    self.hu_mask[i] = torch.from_numpy(encoded["hu_mask"])
-                    self.discard_target[i] = int(encoded["discard_target"])
-                    self.claim_target[i] = int(encoded["claim_target"])
-                    self.self_kong_target[i] = int(encoded["self_kong_target"])
-                    self.hu_target[i] = int(encoded["hu_target"])
-                    self.value_target[i] = torch.from_numpy(encoded["value_target"])
-                    self.risk_target[i] = torch.from_numpy(encoded["risk_target"])
-                    self.decision_kind[i] = int(encoded["decision_kind"])
-        print(f"首次解析完成！正在将张量保存为二进制缓存至 {cache_path.name}...")
-        torch.save({
-            "num_samples": self.num_samples,
-            "tile_planes": self.tile_planes,
-            "scalar_features": self.scalar_features,
-            "discard_mask": self.discard_mask,
-            "claim_mask": self.claim_mask,
-            "self_kong_mask": self.self_kong_mask,
-            "hu_mask": self.hu_mask,
-            "discard_target": self.discard_target,
-            "claim_target": self.claim_target,
-            "self_kong_target": self.self_kong_target,
-            "hu_target": self.hu_target,
-            "value_target": self.value_target,
-            "risk_target": self.risk_target,
-            "decision_kind": self.decision_kind,
-        }, cache_path)
-        print("缓存保存完毕！下次启动将快速进入训练。")
+        if row_index != self.num_samples:
+            raise ValueError(f"expected {self.num_samples} rows, cached {row_index}")
+
+        for mmap_array in arrays.values():
+            mmap_array.flush()
+
+        manifest = expected_cache_manifest(self, self.num_samples)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def _open_disk_cache(self, announce: bool) -> None:
+        manifest = read_json(self.cache_dir / "manifest.json")
+        if manifest is None:
+            raise ValueError("missing manifest")
+
+        self.num_samples = int(manifest["num_samples"])
+        specs = tensor_array_specs(self.metadata)
+        arrays: dict[str, np.ndarray] = {}
+        for name, (shape, dtype) in specs.items():
+            mmap_array = np.load(array_path(self.cache_dir, name), mmap_mode="r")
+            expected_shape = (self.num_samples, *shape)
+            if mmap_array.shape != expected_shape:
+                raise ValueError(f"{name} shape {mmap_array.shape} != {expected_shape}")
+            if mmap_array.dtype != dtype:
+                raise ValueError(f"{name} dtype {mmap_array.dtype} != {dtype}")
+            arrays[name] = mmap_array
+        self._arrays = arrays
+        if announce:
+            print(f"Using disk-backed tensor cache: {self.cache_dir}")
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        # DataLoader worker spawn 会 pickle Dataset；不要把 mmap 内容序列化进子进程。
+        state["_arrays"] = {}
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
+        if getattr(self, "num_samples", 0) > 0:
+            self._open_disk_cache(announce=False)
+
     def __len__(self) -> int:
         return getattr(self, "num_samples", 0)
 
@@ -170,23 +143,91 @@ class MahjongDecisionDataset(Dataset):
         # [核心优化] 不再返回字典，而是仅仅返回索引！
         return index
 
-    def get_batch(self, indices: list[int]) -> dict[str, torch.Tensor]:
-        # [核心优化] C++ 级别的极速内存切片，完全绕过低效的 collate_fn 拼装
+    def get_batch(self, indices: Sequence[int]) -> dict[str, torch.Tensor]:
+        # 每个 batch 只从磁盘映射缓存读取当前索引，避免整份数据常驻内存。
+        index_array = np.asarray(list(indices), dtype=np.int64)
         return {
-            "tile_planes": self.tile_planes[indices],
-            "scalar_features": self.scalar_features[indices],
-            "discard_mask": self.discard_mask[indices],
-            "claim_mask": self.claim_mask[indices],
-            "self_kong_mask": self.self_kong_mask[indices],
-            "hu_mask": self.hu_mask[indices],
-            "discard_target": self.discard_target[indices],
-            "claim_target": self.claim_target[indices],
-            "self_kong_target": self.self_kong_target[indices],
-            "hu_target": self.hu_target[indices],
-            "value_target": self.value_target[indices],
-            "risk_target": self.risk_target[indices],
-            "decision_kind": self.decision_kind[indices],
+            name: torch.from_numpy(np.asarray(mmap_array[index_array]))
+            for name, mmap_array in self._arrays.items()
         }
+
+
+def resolve_cache_dir(jsonl_path: Path, cache_dir: Path | None) -> Path:
+    root = cache_dir if cache_dir is not None else jsonl_path.parent / ".tensor_cache"
+    return root / jsonl_path.stem
+
+
+def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, ...], np.dtype]]:
+    return {
+        "tile_planes": ((TILE_PLANE_COUNT, TILE_KIND_COUNT), np.dtype(np.float32)),
+        "scalar_features": ((SCALAR_FEATURE_COUNT,), np.dtype(np.float32)),
+        "discard_mask": ((TILE_KIND_COUNT,), np.dtype(np.bool_)),
+        "claim_mask": ((len(metadata["claim_actions"]),), np.dtype(np.bool_)),
+        "self_kong_mask": ((len(metadata["self_kong_actions"]),), np.dtype(np.bool_)),
+        "hu_mask": ((2,), np.dtype(np.bool_)),
+        "discard_target": ((), np.dtype(np.int64)),
+        "claim_target": ((), np.dtype(np.int64)),
+        "self_kong_target": ((), np.dtype(np.int64)),
+        "hu_target": ((), np.dtype(np.int64)),
+        "value_target": ((1,), np.dtype(np.float32)),
+        "risk_target": ((TILE_KIND_COUNT,), np.dtype(np.float32)),
+        "decision_kind": ((), np.dtype(np.int64)),
+    }
+
+
+def array_path(cache_dir: Path, name: str) -> Path:
+    return cache_dir / f"{name}.npy"
+
+
+def read_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def file_signature(path: Path) -> dict[str, int]:
+    stat = path.stat()
+    return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+
+
+def expected_cache_manifest(dataset: MahjongDecisionDataset, num_samples: int | None = None) -> dict[str, Any]:
+    manifest: dict[str, Any] = {
+        "version": DISK_CACHE_VERSION,
+        "jsonl": file_signature(dataset.jsonl_path),
+        "metadata": file_signature(dataset.metadata_path),
+        "schema_version": dataset.metadata.get("schema_version"),
+        "tile_kind_count": TILE_KIND_COUNT,
+        "tile_plane_count": TILE_PLANE_COUNT,
+        "scalar_feature_count": SCALAR_FEATURE_COUNT,
+        "claim_action_count": len(dataset.metadata["claim_actions"]),
+        "self_kong_action_count": len(dataset.metadata["self_kong_actions"]),
+    }
+    if num_samples is not None:
+        manifest["num_samples"] = num_samples
+    return manifest
+
+
+def cache_is_current(manifest: dict[str, Any] | None, dataset: MahjongDecisionDataset) -> bool:
+    if manifest is None or not isinstance(manifest.get("num_samples"), int):
+        return False
+
+    expected = expected_cache_manifest(dataset)
+    for key, expected_value in expected.items():
+        if manifest.get(key) != expected_value:
+            return False
+
+    for name in tensor_array_specs(dataset.metadata):
+        if not array_path(dataset.cache_dir, name).exists():
+            return False
+    return True
+
+
+def count_jsonl_rows(jsonl_path: Path) -> int:
+    with jsonl_path.open("rb") as handle:
+        return sum(1 for line in handle if line.strip())
 
 
 def load_metadata(metadata_path: Path) -> dict[str, Any]:
@@ -223,13 +264,28 @@ def build_jsonl_offsets(jsonl_path: Path) -> list[int]:
     return offsets
 
 
-def encode_row(row: dict[str, Any], metadata: dict[str, Any]) -> dict[str, np.ndarray]:
-    context = row["context"]
-    tile_to_index = {tile_key: index for index, tile_key in enumerate(metadata["tile_keys"])}
-    claim_to_index = {action: index for index, action in enumerate(metadata["claim_actions"])}
-    self_kong_to_index = {
-        action: index for index, action in enumerate(metadata["self_kong_actions"])
+def build_encoder_lookups(metadata: dict[str, Any]) -> dict[str, dict[str, int]]:
+    return {
+        "tile_to_index": {tile_key: index for index, tile_key in enumerate(metadata["tile_keys"])},
+        "claim_to_index": {
+            action: index for index, action in enumerate(metadata["claim_actions"])
+        },
+        "self_kong_to_index": {
+            action: index for index, action in enumerate(metadata["self_kong_actions"])
+        },
     }
+
+
+def encode_row(
+    row: dict[str, Any],
+    metadata: dict[str, Any],
+    lookups: dict[str, dict[str, int]] | None = None,
+) -> dict[str, np.ndarray]:
+    context = row["context"]
+    lookups = lookups or build_encoder_lookups(metadata)
+    tile_to_index = lookups["tile_to_index"]
+    claim_to_index = lookups["claim_to_index"]
+    self_kong_to_index = lookups["self_kong_to_index"]
 
     return {
         "tile_planes": encode_tile_planes(context, tile_to_index),

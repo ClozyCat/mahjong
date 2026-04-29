@@ -19,6 +19,28 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     assert encoded["discard_target"].item() == 0
 
 
+def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
+    import pytest
+
+    torch = pytest.importorskip("torch")
+    from dataset import MahjongDecisionDataset
+    from train import build_loader
+
+    metadata_path, train_path = write_fixture(tmp_path)
+    dataset = MahjongDecisionDataset(train_path, metadata_path, cache_dir=tmp_path / "cache")
+
+    batch = dataset.get_batch([0])
+    loader_batch = next(iter(build_loader(dataset, 1, False, 0, torch.device("cpu"))))
+
+    assert len(dataset) == 1
+    assert (tmp_path / "cache" / "train" / "tile_planes.npy").exists()
+    assert batch["tile_planes"].shape == (1, 10, 34)
+    assert batch["scalar_features"].shape == (1, 10)
+    assert batch["discard_target"].tolist() == [0]
+    assert batch["discard_mask"].dtype == torch.bool
+    assert loader_batch["discard_target"].tolist() == [0]
+
+
 def test_chow_claim_target_uses_discard_position(tmp_path: Path) -> None:
     metadata_path, train_path = write_fixture(tmp_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))

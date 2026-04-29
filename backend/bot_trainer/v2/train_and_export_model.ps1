@@ -5,6 +5,7 @@ param(
     [int]$Epochs = 20,
     [int]$BatchSize = 4096,
     [int]$NumWorkers = 0,
+    [string]$DataCacheDir = "",
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [double]$LearningRate = 0.001,
@@ -14,6 +15,7 @@ param(
     [double]$HuLossWeight = 1.0,
     [double]$ValueLossWeight = 0.25,
     [double]$RiskLossWeight = 0.25,
+    [switch]$RebuildDataCache,
     [switch]$NoAmp,
     [switch]$CompileModel,
     [switch]$SkipTests,
@@ -107,6 +109,7 @@ Push-Location $RepoRoot
 try {
     Assert-NvidiaCudaGpu
     $CudaDeviceName = Assert-PythonCuda
+    $ResolvedDataCacheDir = if ($DataCacheDir.Length -gt 0) { $DataCacheDir } else { Join-Path $DataDir ".tensor_cache" }
 
     Write-Host "Training Mahjong bot v2 model"
     Write-Host "Data:        $DataDir"
@@ -116,6 +119,7 @@ try {
     Write-Host "Epochs:      $Epochs"
     Write-Host "Batch size:  $BatchSize"
     Write-Host "Workers:     $NumWorkers"
+    Write-Host "Data cache:  $ResolvedDataCacheDir"
     Write-Host "Python:      $PythonExe $PythonVersion"
 
     if (-not $SkipTests) {
@@ -137,6 +141,7 @@ try {
         "--output", $CheckpointDir,
         "--device", "cuda",
         "--num-workers", "$NumWorkers",
+        "--data-cache-dir", $ResolvedDataCacheDir,
         "--lr", "$LearningRate",
         "--weight-decay", "$WeightDecay",
         "--claim-loss-weight", "$ClaimLossWeight",
@@ -150,6 +155,9 @@ try {
     }
     if ($CompileModel) {
         $trainArgs += "--compile"
+    }
+    if ($RebuildDataCache) {
+        $trainArgs += "--rebuild-data-cache"
     }
     Invoke-TrainingPython $trainArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
