@@ -99,7 +99,20 @@ Primary model-selection metrics:
 
 ## RL Training Smoke
 
-Use the arena trajectory JSONL as the first PPO data source:
+Run the full RL pipeline with a small smoke configuration:
+
+```powershell
+.\backend\bot_trainer\v2\train_rl_model.ps1 -OutputDir backend/bot_trainer/v2/rl_runs/smoke -TrajectoryMatches 1 -EvalMatches 1 -Epochs 1 -BatchSize 64 -Device cpu
+```
+
+```bash
+./backend/bot_trainer/v2/train_rl_model.sh --output-dir backend/bot_trainer/v2/rl_runs/smoke --trajectory-matches 1 --eval-matches 1 --epochs 1 --batch-size 64 --device cpu
+```
+
+For a normal local run, increase `-TrajectoryMatches` / `--trajectory-matches` and `-EvalMatches` / `--eval-matches` to at least `200`.
+If your shell does not resolve the intended tools, pass `-PythonExe` / `--python-exe` or `-CargoExe` / `--cargo-exe` explicitly.
+
+Manual PPO training command:
 
 ```powershell
 python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu
