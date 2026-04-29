@@ -9,9 +9,10 @@ use super::search::{
 };
 use std::{env, time::Instant};
 
-const HYBRID_TOP_SEARCH_CANDIDATES: usize = 3;
-const HYBRID_CLOSE_SEARCH_GAP: i64 = 30;
-const DEFAULT_NEURAL_PRIOR_WEIGHT: i64 = 15;
+const HYBRID_TOP_SEARCH_CANDIDATES: usize = 5;
+const HYBRID_CLOSE_SEARCH_GAP: i64 = 90;
+const HYBRID_NEURAL_OVERRIDE_GAP: i64 = 180;
+const DEFAULT_NEURAL_PRIOR_WEIGHT: i64 = 35;
 const POLICY_ENV: &str = "MAHJONG_BOT_POLICY";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,16 +109,15 @@ pub fn choose_active_turn_action(context: &BotContext) -> Option<BotAction> {
     } else {
         None
     };
-    let neural_discard_scores = neural_scores
+    let selected_discard = neural_scores
         .as_ref()
-        .map(|scores| rank_masked_discards(context, &scores.discard_logits));
-    let selected_discard = neural_discard_scores
-        .as_deref()
         .and_then(|scores| {
+            let neural_discard_scores = rank_masked_discards(context, &scores.discard_logits);
             select_discard_plan_for_policy(
                 policy_mode,
                 &search_plans,
-                scores,
+                &neural_discard_scores,
+                Some(scores),
                 neural_prior_weight(),
             )
         })
@@ -174,7 +174,7 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
     );
     let discard_tile_key = context.last_discard_tile_key.as_deref()?;
 
-    let mut best_claim = None;
+    let mut claim_plans = Vec::new();
     for option in &context.claim_options {
         let concealed_counts_after = tile_counts_after_removal(
             &context.player.concealed_tiles,
@@ -228,20 +228,14 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
             plan.score + action_bonus
         };
 
-        let replace = best_claim
-            .as_ref()
-            .map(|(_, score): &(BotAction, i64)| total_score > *score)
-            .unwrap_or(true);
-        if replace {
-            best_claim = Some((
-                BotAction {
-                    seat_index: context.seat_index,
-                    action_type: option.action_type.clone(),
-                    tile_ids: option.tile_ids.clone(),
-                },
-                total_score,
-            ));
-        }
+        claim_plans.push((
+            BotAction {
+                seat_index: context.seat_index,
+                action_type: option.action_type.clone(),
+                tile_ids: option.tile_ids.clone(),
+            },
+            total_score,
+        ));
     }
 
     if policy_mode == BotPolicyMode::Hybrid {
@@ -250,17 +244,18 @@ pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
                 context,
                 &scores,
                 pass_score,
-                best_claim.as_ref(),
+                &claim_plans,
                 engine.claim_margin(),
+                neural_prior_weight(),
             ) {
                 return Some(action);
             }
         }
     }
 
-    if let Some((action, score)) = best_claim {
-        if score > pass_score + engine.claim_margin() {
-            return Some(action);
+    if let Some((action, score)) = best_claim_plan(&claim_plans) {
+        if *score > pass_score + engine.claim_margin() {
+            return Some(action.clone());
         }
     }
 
@@ -354,13 +349,22 @@ fn select_discard_plan_for_policy(
     policy_mode: BotPolicyMode,
     search_plans: &[BotDiscardPlan],
     neural_scores: &[RankedTileScore],
+    decision_scores: Option<&NeuralDecisionScores>,
     neural_weight: i64,
 ) -> Option<BotDiscardPlan> {
     match policy_mode {
         BotPolicyMode::Neural => select_neural_only_discard_plan(neural_scores),
-        BotPolicyMode::Hybrid => {
-            select_hybrid_discard_plan(search_plans, neural_scores, neural_weight)
-        }
+        BotPolicyMode::Hybrid => decision_scores
+            .and_then(|scores| {
+                select_hybrid_discard_plan(
+                    search_plans,
+                    neural_scores,
+                    &scores.risk_logits,
+                    scores.value,
+                    neural_weight,
+                )
+            })
+            .or_else(|| search_plans.first().cloned()),
         BotPolicyMode::Heuristic => search_plans.first().cloned(),
     }
 }
@@ -376,18 +380,15 @@ fn select_neural_only_discard_plan(neural_scores: &[RankedTileScore]) -> Option<
 fn select_hybrid_discard_plan(
     search_plans: &[BotDiscardPlan],
     neural_scores: &[RankedTileScore],
+    risk_logits: &[f32; TILE_KIND_COUNT],
+    model_value: f32,
     weight: i64,
 ) -> Option<BotDiscardPlan> {
     let best_search = search_plans.first()?.clone();
-    let candidate_count = search_plans
-        .iter()
-        .take(HYBRID_TOP_SEARCH_CANDIDATES)
-        .take_while(|plan| best_search.score - plan.score <= HYBRID_CLOSE_SEARCH_GAP)
-        .count();
-    if candidate_count <= 1 {
+    let candidate_plans = hybrid_discard_candidates(search_plans, neural_scores, &best_search);
+    if candidate_plans.len() <= 1 {
         return Some(best_search);
     }
-    let candidate_plans = &search_plans[..candidate_count];
     let mut best = None;
     let candidate_neural_scores = neural_scores
         .iter()
@@ -406,21 +407,36 @@ fn select_hybrid_discard_plan(
         .map(|score| score.logit)
         .fold(f32::NEG_INFINITY, f32::max);
     let logit_range = max_logit - min_logit;
+    let candidate_risks = candidate_plans
+        .iter()
+        .filter_map(|plan| tile_index(&plan.tile_key).map(|index| risk_logits[index]))
+        .collect::<Vec<_>>();
+    let min_risk = candidate_risks
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let max_risk = candidate_risks
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let risk_range = max_risk - min_risk;
+    let authority_weight = neural_authority_weight(weight, model_value);
+    let risk_weight = neural_risk_weight(weight);
 
-    for plan in candidate_plans {
+    for plan in &candidate_plans {
         let neural_bonus = candidate_neural_scores
             .iter()
             .find(|score| score.tile_key == plan.tile_key)
             .map(|score| {
-                if weight == 0 || logit_range.abs() < f32::EPSILON {
-                    0
-                } else {
-                    let normalized = ((score.logit - min_logit) / logit_range) * 2.0 - 1.0;
-                    (normalized * weight as f32).round() as i64
-                }
+                normalized_model_bonus(score.logit, min_logit, logit_range, authority_weight)
             })
             .unwrap_or(0);
-        let final_score = plan.score + neural_bonus;
+        let risk_penalty = tile_index(&plan.tile_key)
+            .map(|index| {
+                normalized_model_bonus(risk_logits[index], min_risk, risk_range, risk_weight)
+            })
+            .unwrap_or(0);
+        let final_score = plan.score + neural_bonus - risk_penalty;
         let replace = best
             .as_ref()
             .map(|(selected, selected_score): &(BotDiscardPlan, i64)| {
@@ -434,6 +450,69 @@ fn select_hybrid_discard_plan(
     }
 
     best.map(|(plan, _)| plan)
+}
+
+fn hybrid_discard_candidates(
+    search_plans: &[BotDiscardPlan],
+    neural_scores: &[RankedTileScore],
+    best_search: &BotDiscardPlan,
+) -> Vec<BotDiscardPlan> {
+    let mut candidates = search_plans
+        .iter()
+        .take(HYBRID_TOP_SEARCH_CANDIDATES)
+        .take_while(|plan| best_search.score - plan.score <= HYBRID_CLOSE_SEARCH_GAP)
+        .cloned()
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        candidates.push(best_search.clone());
+    }
+    if let Some(top_neural) = neural_scores.first() {
+        if let Some(model_plan) = search_plans
+            .iter()
+            .find(|plan| plan.tile_key == top_neural.tile_key)
+        {
+            let already_included = candidates
+                .iter()
+                .any(|plan| plan.tile_key == model_plan.tile_key);
+            if best_search.score - model_plan.score <= HYBRID_NEURAL_OVERRIDE_GAP
+                && !already_included
+            {
+                candidates.push(model_plan.clone());
+            }
+        }
+    }
+    candidates
+}
+
+fn neural_authority_weight(base_weight: i64, model_value: f32) -> i64 {
+    let value_adjustment = (model_value.clamp(-4.0, 4.0) * 4.0).round() as i64;
+    (base_weight + value_adjustment).max(0)
+}
+
+fn neural_risk_weight(base_weight: i64) -> i64 {
+    if base_weight == 0 {
+        0
+    } else {
+        ((base_weight * 3) / 4).max(10)
+    }
+}
+
+fn neural_claim_weight(base_weight: i64, model_value: f32) -> i64 {
+    let value_adjustment = (model_value.clamp(-4.0, 4.0) * 6.0).round() as i64;
+    (base_weight * 2 + value_adjustment).max(0)
+}
+
+fn normalized_model_bonus(value: f32, min_value: f32, value_range: f32, weight: i64) -> i64 {
+    if weight == 0
+        || value_range.abs() < f32::EPSILON
+        || !value.is_finite()
+        || !min_value.is_finite()
+        || !value_range.is_finite()
+    {
+        return 0;
+    }
+    let normalized = ((value - min_value) / value_range) * 2.0 - 1.0;
+    (normalized * weight as f32).round() as i64
 }
 
 fn select_neural_only_claim(
@@ -457,32 +536,79 @@ fn select_hybrid_claim(
     context: &BotContext,
     scores: &NeuralDecisionScores,
     pass_score: i64,
-    best_search_claim: Option<&(BotAction, i64)>,
+    search_claims: &[(BotAction, i64)],
     claim_margin: i64,
+    neural_weight: i64,
 ) -> Option<BotAction> {
     let ranked = rank_masked_claims(context, &scores.claim_logits);
     let best = ranked.first()?;
     if best.action_name == "pass" {
         return Some(pass_action(context.seat_index));
     }
-    let option = claim_option_for_ranked_action(context, best.action_name)?;
-    if best.action_name == "hu" {
+    if let Some(action) = select_neural_hu_claim(context, scores, best.action_name) {
+        return Some(action);
+    }
+
+    let min_logit = ranked
+        .iter()
+        .map(|score| score.logit)
+        .fold(f32::INFINITY, f32::min);
+    let max_logit = ranked
+        .iter()
+        .map(|score| score.logit)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let logit_range = max_logit - min_logit;
+    let claim_weight = neural_claim_weight(neural_weight, scores.value);
+    let mut best_scored_claim = None;
+
+    for (search_action, search_score) in search_claims {
+        let Some(option) = context
+            .claim_options
+            .iter()
+            .find(|option| claim_action_matches_option(search_action, option))
+        else {
+            continue;
+        };
+        let action_name = if option.action_type == "chow" {
+            claim_chow_action_name(context, option)
+        } else {
+            option.action_type.as_str()
+        };
+        let Some(logit) = ranked
+            .iter()
+            .find(|score| score.action_name == action_name)
+            .map(|score| score.logit)
+        else {
+            continue;
+        };
+        let neural_bonus = normalized_model_bonus(logit, min_logit, logit_range, claim_weight);
+        let final_score = *search_score + neural_bonus;
+        let replace = best_scored_claim
+            .as_ref()
+            .map(|(_, selected_score): &(BotAction, i64)| final_score > *selected_score)
+            .unwrap_or(true);
+        if replace {
+            best_scored_claim = Some((search_action.clone(), final_score));
+        }
+    }
+
+    best_scored_claim
+        .filter(|(_, score)| *score >= pass_score - claim_margin)
+        .map(|(action, _)| action)
+}
+
+fn select_neural_hu_claim(
+    context: &BotContext,
+    scores: &NeuralDecisionScores,
+    best_claim_action: &str,
+) -> Option<BotAction> {
+    let option = claim_option_for_ranked_action(context, "hu")?;
+    if best_claim_action == "hu" || scores.hu_logits[1] > scores.hu_logits[0] {
         return Some(BotAction {
             seat_index: context.seat_index,
             action_type: option.action_type.clone(),
             tile_ids: option.tile_ids.clone(),
         });
-    }
-    if let Some((search_action, search_score)) = best_search_claim {
-        if claim_action_matches_option(search_action, option)
-            && *search_score >= pass_score - claim_margin
-        {
-            return Some(BotAction {
-                seat_index: context.seat_index,
-                action_type: option.action_type.clone(),
-                tile_ids: option.tile_ids.clone(),
-            });
-        }
     }
     None
 }
@@ -607,6 +733,12 @@ fn claim_action_matches_option(
     action.action_type == option.action_type && action.tile_ids == option.tile_ids
 }
 
+fn best_claim_plan(claim_plans: &[(BotAction, i64)]) -> Option<&(BotAction, i64)> {
+    claim_plans
+        .iter()
+        .max_by(|(_, left), (_, right)| left.cmp(right))
+}
+
 fn pass_action(seat_index: usize) -> BotAction {
     BotAction {
         seat_index,
@@ -656,6 +788,10 @@ mod tests {
             last_discard_tile_key: None,
             add_kong_risk_tiles: std::collections::HashSet::new(),
         }
+    }
+
+    fn neutral_risk_logits() -> [f32; TILE_KIND_COUNT] {
+        [0.0; TILE_KIND_COUNT]
     }
 
     #[test]
@@ -741,6 +877,64 @@ mod tests {
     }
 
     #[test]
+    fn hybrid_claim_can_choose_model_favored_non_search_best_claim() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&["w2", "w4", "w3", "w3"]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles.clone();
+        context.last_discard_tile_key = Some("w3".to_string());
+        context.claim_options = vec![
+            BotClaimOption {
+                action_type: "chow".to_string(),
+                tile_ids: vec![
+                    concealed_tiles[0].tile_id.clone(),
+                    concealed_tiles[1].tile_id.clone(),
+                ],
+            },
+            BotClaimOption {
+                action_type: "pung".to_string(),
+                tile_ids: vec![
+                    concealed_tiles[2].tile_id.clone(),
+                    concealed_tiles[3].tile_id.clone(),
+                ],
+            },
+        ];
+        let mut claim_logits = [0.0; crate::bot::action_space::CLAIM_ACTION_COUNT];
+        claim_logits[crate::bot::action_space::claim_action_index("pass").expect("pass index")] =
+            -1.0;
+        claim_logits
+            [crate::bot::action_space::claim_action_index("chow_mid").expect("chow index")] = 9.0;
+        claim_logits[crate::bot::action_space::claim_action_index("pung").expect("pung index")] =
+            0.0;
+        let scores = NeuralDecisionScores {
+            discard_logits: [0.0; TILE_KIND_COUNT],
+            claim_logits,
+            self_kong_logits: [0.0; crate::bot::action_space::SELF_KONG_ACTION_COUNT],
+            hu_logits: [0.0, 0.0],
+            value: 0.0,
+            risk_logits: [0.0; TILE_KIND_COUNT],
+        };
+        let search_pung = BotAction {
+            seat_index: context.seat_index,
+            action_type: "pung".to_string(),
+            tile_ids: context.claim_options[1].tile_ids.clone(),
+        };
+        let search_chow = BotAction {
+            seat_index: context.seat_index,
+            action_type: "chow".to_string(),
+            tile_ids: context.claim_options[0].tile_ids.clone(),
+        };
+        let search_claims = vec![(search_pung, 1000), (search_chow, 970)];
+
+        let selected = select_hybrid_claim(&context, &scores, 960, &search_claims, 100, 40)
+            .expect("hybrid claim");
+
+        assert_eq!(selected.action_type, "chow");
+        assert_eq!(selected.tile_ids, context.claim_options[0].tile_ids);
+    }
+
+    #[test]
     fn neural_prior_can_break_close_search_score_tie() {
         let search_plans = vec![
             search::BotDiscardPlan {
@@ -767,8 +961,90 @@ mod tests {
             },
         ];
 
-        let selected = select_hybrid_discard_plan(&search_plans, &neural_scores, 80)
-            .expect("hybrid selection");
+        let selected = select_hybrid_discard_plan(
+            &search_plans,
+            &neural_scores,
+            &neutral_risk_logits(),
+            0.0,
+            80,
+        )
+        .expect("hybrid selection");
+
+        assert_eq!(selected.tile_key, "t1");
+    }
+
+    #[test]
+    fn neural_prior_can_override_moderate_search_gap_in_hybrid() {
+        let search_plans = vec![
+            search::BotDiscardPlan {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                score: 1000,
+            },
+            search::BotDiscardPlan {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                score: 940,
+            },
+        ];
+        let neural_scores = vec![
+            neural::RankedTileScore {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                logit: 8.0,
+            },
+            neural::RankedTileScore {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                logit: 0.0,
+            },
+        ];
+
+        let selected = select_hybrid_discard_plan(
+            &search_plans,
+            &neural_scores,
+            &neutral_risk_logits(),
+            0.0,
+            80,
+        )
+        .expect("hybrid selection");
+
+        assert_eq!(selected.tile_key, "t1");
+    }
+
+    #[test]
+    fn hybrid_discard_uses_risk_head_to_avoid_dangerous_tile() {
+        let search_plans = vec![
+            search::BotDiscardPlan {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                score: 1000,
+            },
+            search::BotDiscardPlan {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                score: 995,
+            },
+        ];
+        let neural_scores = vec![
+            neural::RankedTileScore {
+                tile_id: "w1#0".to_string(),
+                tile_key: "w1".to_string(),
+                logit: 4.0,
+            },
+            neural::RankedTileScore {
+                tile_id: "t1#0".to_string(),
+                tile_key: "t1".to_string(),
+                logit: 4.0,
+            },
+        ];
+        let mut risk_logits = [0.0; TILE_KIND_COUNT];
+        risk_logits[tile_index("w1").expect("tile index")] = 8.0;
+        risk_logits[tile_index("t1").expect("tile index")] = -2.0;
+
+        let selected =
+            select_hybrid_discard_plan(&search_plans, &neural_scores, &risk_logits, 0.0, 40)
+                .expect("hybrid selection");
 
         assert_eq!(selected.tile_key, "t1");
     }
@@ -784,7 +1060,7 @@ mod tests {
             search::BotDiscardPlan {
                 tile_id: "t1#0".to_string(),
                 tile_key: "t1".to_string(),
-                score: 880,
+                score: 700,
             },
         ];
         let neural_scores = vec![
@@ -800,14 +1076,20 @@ mod tests {
             },
         ];
 
-        let selected = select_hybrid_discard_plan(&search_plans, &neural_scores, 80)
-            .expect("hybrid selection");
+        let selected = select_hybrid_discard_plan(
+            &search_plans,
+            &neural_scores,
+            &neutral_risk_logits(),
+            0.0,
+            80,
+        )
+        .expect("hybrid selection");
 
         assert_eq!(selected.tile_key, "w1");
     }
 
     #[test]
-    fn neural_prior_only_breaks_top_three_search_candidates() {
+    fn neural_prior_can_choose_fourth_search_candidate_when_close() {
         let search_plans = vec![
             search::BotDiscardPlan {
                 tile_id: "w1#0".to_string(),
@@ -853,10 +1135,16 @@ mod tests {
             },
         ];
 
-        let selected = select_hybrid_discard_plan(&search_plans, &neural_scores, 80)
-            .expect("hybrid selection");
+        let selected = select_hybrid_discard_plan(
+            &search_plans,
+            &neural_scores,
+            &neutral_risk_logits(),
+            0.0,
+            80,
+        )
+        .expect("hybrid selection");
 
-        assert_ne!(selected.tile_key, "red");
+        assert_eq!(selected.tile_key, "red");
     }
 
     #[test]
@@ -879,8 +1167,14 @@ mod tests {
             logit: 99.0,
         }];
 
-        let selected =
-            select_hybrid_discard_plan(&search_plans, &neural_scores, 0).expect("hybrid selection");
+        let selected = select_hybrid_discard_plan(
+            &search_plans,
+            &neural_scores,
+            &neutral_risk_logits(),
+            0.0,
+            0,
+        )
+        .expect("hybrid selection");
 
         assert_eq!(selected.tile_key, "w1");
     }
@@ -916,6 +1210,7 @@ mod tests {
             BotPolicyMode::Neural,
             &search_plans,
             &neural_scores,
+            None,
             80,
         )
         .expect("neural selection");
@@ -954,6 +1249,7 @@ mod tests {
             BotPolicyMode::Hybrid,
             &search_plans,
             &neural_scores,
+            None,
             80,
         )
         .expect("hybrid selection");
