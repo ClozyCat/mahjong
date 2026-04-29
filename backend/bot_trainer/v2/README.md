@@ -1,6 +1,6 @@
 # Mahjong Bot Trainer V2
 
-V2 uses Rust to parse BotZone match records and export backend-native decision samples. Python trains a multi-head model and exports the production ONNX file used by the Rust bot.
+V2 uses Rust to parse BotZone match records and export backend-native decision samples. Python trains a multi-head ResNet policy/value model and exports the production ONNX file used by the Rust bot.
 
 ## Export Data
 
@@ -62,6 +62,15 @@ python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2
 - `value`: expected score delta.
 - `risk_logits`: 34 tile risk logits.
 
+## Model Architecture
+
+The policy keeps the existing ONNX contract:
+
+- inputs: `tile_planes` shaped `batch x 10 x 34`, `scalar_features` shaped `batch x 10`
+- outputs: `discard_logits`, `claim_logits`, `self_kong_logits`, `hu_logits`, `value`, `risk_logits`
+
+The tile encoder is suit-aware: 万/条/筒 each pass through a shared 1D residual convolution encoder over rank order, while honors use a separate encoder. This preserves local sequence structure without letting convolutions treat suit boundaries such as `w9 -> t1` as adjacent ranks.
+
 ## Arena Evaluation
 
 Smoke:
@@ -119,8 +128,18 @@ The script prints PPO epoch losses during `rl_train.py`, then prints an arena su
 Manual PPO training command:
 
 ```powershell
-python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu
+python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu --entropy-coef 0.01
 ```
+
+If you train from old trajectories that contain placeholder `log_prob=0` and `value=0`, pass `--recompute-old-policy-stats` with the rollout checkpoint. New neural-backed arena trajectories emit old log-prob/value directly.
+
+Arena trajectory rows now split reward fields:
+
+- `step_reward`: small fan-aware shanten shaping reward
+- `terminal_reward`: score/win/deal-in result on the seat's final row
+- `reward`: `step_reward`, plus `terminal_reward` only on that seat's final row
+- `shanten_before` / `shanten_after`
+- `fan_potential_before` / `fan_potential_after`
 
 Export a trained RL checkpoint with the same ONNX exporter:
 

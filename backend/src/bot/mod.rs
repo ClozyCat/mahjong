@@ -4,6 +4,7 @@ pub mod context;
 pub(crate) mod features;
 mod neural;
 pub mod policy;
+pub(crate) mod reward;
 mod search;
 
 pub use context::BotAction;

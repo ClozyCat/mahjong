@@ -16,6 +16,7 @@ param(
     [double]$LearningRate = 0.00001,
     [double]$Gamma = 0.99,
     [double]$ClipEpsilon = 0.2,
+    [double]$EntropyCoef = 0.01,
     [string]$Device = "auto",
     [string]$SelfPlayPolicyId = "selfplay_hybrid30",
     [ValidateSet("heuristic", "hybrid", "neural")]
@@ -24,7 +25,8 @@ param(
     [switch]$SkipTests,
     [switch]$SkipTrajectoryGeneration,
     [switch]$SkipOnnxExport,
-    [switch]$SkipEval
+    [switch]$SkipEval,
+    [switch]$RecomputeOldPolicyStats
 )
 
 $ErrorActionPreference = "Stop"
@@ -157,6 +159,7 @@ try {
             Invoke-TrainingPython @(
                 "-m", "pytest",
                 "backend/bot_trainer/v2/test_rl_dataset.py",
+                "backend/bot_trainer/v2/test_model.py",
                 "backend/bot_trainer/v2/test_dataset.py",
                 "-q",
                 "-p", "no:cacheprovider",
@@ -204,7 +207,7 @@ try {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
-    Invoke-TrainingPython @(
+    $rlTrainArgs = @(
         "backend/bot_trainer/v2/rl_train.py",
         "--trajectories", $TrajectoryJsonl,
         "--checkpoint", $BaselineCheckpoint,
@@ -213,9 +216,14 @@ try {
         "--lr", "$LearningRate",
         "--gamma", "$Gamma",
         "--clip-epsilon", "$ClipEpsilon",
+        "--entropy-coef", "$EntropyCoef",
         "--output", $CheckpointDir,
         "--device", $Device
     )
+    if ($RecomputeOldPolicyStats) {
+        $rlTrainArgs += @("--recompute-old-policy-stats")
+    }
+    Invoke-TrainingPython $rlTrainArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if (-not $SkipOnnxExport) {

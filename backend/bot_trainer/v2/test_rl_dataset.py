@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rl_dataset import ArenaTrajectoryDataset, compute_returns
+from rl_dataset import (
+    ArenaTrajectoryDataset,
+    compute_discounted_returns_for_rows,
+    compute_returns,
+)
 
 
 def test_loads_trajectory_row(tmp_path: Path) -> None:
@@ -27,6 +31,12 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
         "log_prob": 0.0,
         "value": 0.0,
         "reward": 1.0,
+        "step_reward": 0.0,
+        "terminal_reward": 1.0,
+        "shanten_before": 1,
+        "shanten_after": 0,
+        "fan_potential_before": 2,
+        "fan_potential_after": 3,
         "done": True,
     }
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
@@ -36,6 +46,9 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
 
     assert row["action_index"].item() == 0
     assert row["reward"].item() == 1.0
+    assert row["return"].item() == 1.0
+    assert row["shanten_after"].item() == 0
+    assert row["fan_potential_after"].item() == 3
     assert row["tile_planes"].shape == (10, 34)
 
 
@@ -47,6 +60,19 @@ def test_compute_returns_resets_on_done() -> None:
     )
 
     assert returns == [0.9, 1.0, 1.8, 2.0]
+
+
+def test_compute_discounted_returns_are_per_seat_episode() -> None:
+    rows = [
+        {"match_id": "m1", "seat_index": 0, "reward": 0.0},
+        {"match_id": "m1", "seat_index": 1, "reward": 10.0},
+        {"match_id": "m1", "seat_index": 0, "reward": 1.0},
+        {"match_id": "m1", "seat_index": 1, "reward": 0.0},
+    ]
+
+    returns = compute_discounted_returns_for_rows(rows, gamma=0.9)
+
+    assert returns == [0.9, 10.0, 1.0, 0.0]
 
 
 def test_masked_ppo_loss_is_finite() -> None:

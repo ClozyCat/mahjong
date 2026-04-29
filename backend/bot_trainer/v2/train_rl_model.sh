@@ -17,6 +17,7 @@ BATCH_SIZE=256
 LEARNING_RATE=0.00001
 GAMMA=0.99
 CLIP_EPSILON=0.2
+ENTROPY_COEF=0.01
 DEVICE=auto
 SELFPLAY_POLICY_ID="selfplay_hybrid30"
 SELFPLAY_POLICY_MODE=hybrid
@@ -25,6 +26,7 @@ SKIP_TESTS=0
 SKIP_TRAJECTORY_GENERATION=0
 SKIP_ONNX_EXPORT=0
 SKIP_EVAL=0
+RECOMPUTE_OLD_POLICY_STATS=0
 
 usage() {
     cat <<'EOF'
@@ -53,6 +55,7 @@ Options:
   --lr VALUE                       PPO learning rate.
   --gamma VALUE                    Return discount.
   --clip-epsilon VALUE             PPO clipping epsilon.
+  --entropy-coef VALUE             PPO entropy coefficient.
   --device DEVICE                  auto, cpu, cuda, etc.
   --selfplay-policy-id ID          Policy id written to trajectory rows.
   --selfplay-policy-mode MODE      heuristic, hybrid, or neural.
@@ -61,6 +64,7 @@ Options:
   --skip-trajectory-generation     Reuse existing trajectories.jsonl in output dir.
   --skip-onnx-export               Do not export candidate.onnx.
   --skip-eval                      Do not run baseline vs candidate arena evaluation.
+  --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
   -h, --help                       Show this help.
 EOF
 }
@@ -167,6 +171,11 @@ while [[ $# -gt 0 ]]; do
             CLIP_EPSILON="$2"
             shift 2
             ;;
+        --entropy-coef)
+            require_value "$1" "${2:-}"
+            ENTROPY_COEF="$2"
+            shift 2
+            ;;
         --device)
             require_value "$1" "${2:-}"
             DEVICE="$2"
@@ -201,6 +210,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-eval)
             SKIP_EVAL=1
+            shift
+            ;;
+        --recompute-old-policy-stats)
+            RECOMPUTE_OLD_POLICY_STATS=1
             shift
             ;;
         -h|--help)
@@ -303,6 +316,7 @@ fi
 if (( SKIP_TESTS == 0 )); then
     PYTHONPATH="$PYTEST_SITE_DIR${PYTHONPATH:+:$PYTHONPATH}" "${PYTHON_CMD[@]}" -m pytest \
         backend/bot_trainer/v2/test_rl_dataset.py \
+        backend/bot_trainer/v2/test_model.py \
         backend/bot_trainer/v2/test_dataset.py \
         -q \
         -p no:cacheprovider \
@@ -340,16 +354,23 @@ JSON
     "${CARGO_CMD[@]}" "${arena_args[@]}"
 fi
 
-"${PYTHON_CMD[@]}" backend/bot_trainer/v2/rl_train.py \
-    --trajectories "$TRAJECTORY_JSONL" \
-    --checkpoint "$BASELINE_CHECKPOINT" \
-    --epochs "$EPOCHS" \
-    --batch-size "$BATCH_SIZE" \
-    --lr "$LEARNING_RATE" \
-    --gamma "$GAMMA" \
-    --clip-epsilon "$CLIP_EPSILON" \
-    --output "$CHECKPOINT_DIR" \
+rl_train_args=(
+    backend/bot_trainer/v2/rl_train.py
+    --trajectories "$TRAJECTORY_JSONL"
+    --checkpoint "$BASELINE_CHECKPOINT"
+    --epochs "$EPOCHS"
+    --batch-size "$BATCH_SIZE"
+    --lr "$LEARNING_RATE"
+    --gamma "$GAMMA"
+    --clip-epsilon "$CLIP_EPSILON"
+    --entropy-coef "$ENTROPY_COEF"
+    --output "$CHECKPOINT_DIR"
     --device "$DEVICE"
+)
+if (( RECOMPUTE_OLD_POLICY_STATS == 1 )); then
+    rl_train_args+=(--recompute-old-policy-stats)
+fi
+"${PYTHON_CMD[@]}" "${rl_train_args[@]}"
 
 if (( SKIP_ONNX_EXPORT == 0 )); then
     "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \

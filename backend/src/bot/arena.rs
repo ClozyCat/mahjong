@@ -9,6 +9,10 @@ use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
     features::encode_bot_context_v2,
+    neural::neural_decision_scores_for_model_path,
+    reward::{
+        RewardSnapshot, reward_snapshot_from_context, reward_snapshot_from_room, shaping_reward,
+    },
 };
 use crate::core::{
     engine::try_handle_player_action_in_room_state,
@@ -94,6 +98,12 @@ pub struct ArenaTrajectoryRow {
     pub log_prob: f32,
     pub value: f32,
     pub reward: f32,
+    pub step_reward: f32,
+    pub terminal_reward: f32,
+    pub shanten_before: Option<i32>,
+    pub shanten_after: Option<i32>,
+    pub fan_potential_before: Option<i32>,
+    pub fan_potential_after: Option<i32>,
     pub done: bool,
 }
 
@@ -396,6 +406,9 @@ fn run_arena_match(
         let elapsed_ms = started.elapsed().as_millis();
         let action_seat = action.seat_index;
         let action_type = action.action_type.clone();
+        let reward_before = trace
+            .as_ref()
+            .and_then(|trace| reward_snapshot_from_context(&trace.context));
         let handled = try_handle_player_action_in_room_state(
             &mut room,
             action.seat_index,
@@ -408,12 +421,14 @@ fn run_arena_match(
                 accumulator.record_tenpai_metrics(&room);
                 if let Some(trace) = trace.as_ref() {
                     let policy = policy_for_seat(config, action_seat);
-                    if let Some(row) = trajectory_row_from_trace(
+                    let reward_after = reward_snapshot_from_room(&room, action_seat);
+                    if let Some(mut row) = trajectory_row_from_trace(
                         &match_id,
                         trajectories.len() as u64,
-                        &policy.id,
+                        &policy,
                         trace,
                     ) {
+                        apply_shaping_reward(&mut row, reward_before, reward_after);
                         trajectories.push(row);
                     }
                 }
@@ -455,18 +470,26 @@ fn policy_for_seat(config: &ArenaConfig, seat_index: usize) -> ArenaBotPolicyCon
 fn trajectory_row_from_trace(
     match_id: &str,
     decision_index: u64,
-    policy_id: &str,
+    policy: &ArenaBotPolicyConfig,
     trace: &crate::rules::standard::automation::BotDecisionTrace,
 ) -> Option<ArenaTrajectoryRow> {
     let features = encode_bot_context_v2(&trace.context);
     let (action_head, action_index, action_semantic) =
         encode_action_for_trajectory(&trace.decision_kind, &trace.context, &trace.action)?;
+    let (log_prob, value) = neural_policy_stats(
+        policy,
+        &trace.context,
+        &features,
+        &action_head,
+        action_index,
+    )
+    .unwrap_or((0.0, 0.0));
     Some(ArenaTrajectoryRow {
         schema_version: 1,
         match_id: match_id.to_string(),
         decision_index,
         seat_index: trace.action.seat_index,
-        policy_id: policy_id.to_string(),
+        policy_id: policy.id.clone(),
         decision_kind: trace.decision_kind.clone(),
         tile_planes: features.tile_planes,
         scalar_features: features.scalar_features,
@@ -477,11 +500,96 @@ fn trajectory_row_from_trace(
         action_head,
         action_index,
         action_semantic,
-        log_prob: 0.0,
-        value: 0.0,
+        log_prob,
+        value,
         reward: 0.0,
+        step_reward: 0.0,
+        terminal_reward: 0.0,
+        shanten_before: None,
+        shanten_after: None,
+        fan_potential_before: None,
+        fan_potential_after: None,
         done: false,
     })
+}
+
+fn apply_shaping_reward(
+    row: &mut ArenaTrajectoryRow,
+    before: Option<RewardSnapshot>,
+    after: Option<RewardSnapshot>,
+) {
+    row.shanten_before = before.map(|snapshot| snapshot.shanten);
+    row.shanten_after = after.map(|snapshot| snapshot.shanten);
+    row.fan_potential_before = before.map(|snapshot| snapshot.fan_potential);
+    row.fan_potential_after = after.map(|snapshot| snapshot.fan_potential);
+    if let (Some(before), Some(after)) = (before, after) {
+        row.step_reward = shaping_reward(before, after);
+        row.reward = row.step_reward;
+    }
+}
+
+fn neural_policy_stats(
+    policy: &ArenaBotPolicyConfig,
+    context: &BotContext,
+    features: &super::features::BotFeaturesV2,
+    action_head: &str,
+    action_index: i64,
+) -> Option<(f32, f32)> {
+    if !matches!(
+        policy.mode,
+        ArenaPolicyMode::Hybrid | ArenaPolicyMode::Neural
+    ) {
+        return None;
+    }
+    let model_path = policy.model_path.as_deref().map(std::path::Path::new);
+    let scores = neural_decision_scores_for_model_path(context, model_path)?;
+    let log_prob = match action_head {
+        "discard" => masked_log_prob(
+            &scores.discard_logits,
+            &features.discard_mask,
+            action_index as usize,
+        )?,
+        "claim" => masked_log_prob(
+            &scores.claim_logits,
+            &features.claim_mask,
+            action_index as usize,
+        )?,
+        "self_kong" => masked_log_prob(
+            &scores.self_kong_logits,
+            &features.self_kong_mask,
+            action_index as usize,
+        )?,
+        "hu" => masked_log_prob(&scores.hu_logits, &features.hu_mask, action_index as usize)?,
+        _ => return None,
+    };
+    Some((log_prob, scores.value))
+}
+
+fn masked_log_prob<const N: usize>(
+    logits: &[f32; N],
+    mask: &[bool; N],
+    action_index: usize,
+) -> Option<f32> {
+    if action_index >= N || !mask[action_index] || !logits[action_index].is_finite() {
+        return None;
+    }
+    let max_logit = logits
+        .iter()
+        .zip(mask.iter())
+        .filter_map(|(logit, allowed)| allowed.then_some(*logit))
+        .filter(|logit| logit.is_finite())
+        .max_by(f32::total_cmp)?;
+    let sum_exp = logits
+        .iter()
+        .zip(mask.iter())
+        .filter_map(|(logit, allowed)| {
+            (*allowed && logit.is_finite()).then_some((*logit - max_logit).exp())
+        })
+        .sum::<f32>();
+    if sum_exp <= 0.0 || !sum_exp.is_finite() {
+        return None;
+    }
+    Some(logits[action_index] - max_logit - sum_exp.ln())
 }
 
 fn encode_action_for_trajectory(
@@ -599,20 +707,30 @@ pub fn action_semantic(action_type: &str, tile_key: Option<&str>) -> String {
 
 fn assign_terminal_rewards(rows: &mut [ArenaTrajectoryRow], report: &ArenaMatchReport) {
     for row in rows.iter_mut() {
-        if let Some(seat) = report
-            .seats
-            .iter()
-            .find(|seat| seat.seat_index == row.seat_index)
+        row.terminal_reward = 0.0;
+        row.reward = row.step_reward;
+        row.done = false;
+    }
+
+    for seat in &report.seats {
+        let terminal = terminal_reward_for_seat(seat);
+        if let Some(row) = rows
+            .iter_mut()
+            .rev()
+            .find(|row| row.seat_index == seat.seat_index)
         {
-            let score_reward = seat.score_delta as f32 / 100.0;
-            let win_bonus = if seat.wins > 0 { 1.0 } else { 0.0 };
-            let deal_in_penalty = if seat.dealt_in > 0 { -1.5 } else { 0.0 };
-            row.reward = score_reward + win_bonus + deal_in_penalty;
+            row.terminal_reward = terminal;
+            row.reward = row.step_reward + terminal;
+            row.done = true;
         }
     }
-    if let Some(last) = rows.last_mut() {
-        last.done = true;
-    }
+}
+
+fn terminal_reward_for_seat(seat: &ArenaSeatMetrics) -> f32 {
+    let score_reward = seat.score_delta as f32 / 100.0;
+    let win_bonus = if seat.wins > 0 { 1.0 } else { 0.0 };
+    let deal_in_penalty = if seat.dealt_in > 0 { -1.5 } else { 0.0 };
+    score_reward + win_bonus + deal_in_penalty
 }
 
 #[cfg(test)]
@@ -781,6 +899,12 @@ mod tests {
             log_prob: 0.0,
             value: 0.0,
             reward: 0.0,
+            step_reward: 0.0,
+            terminal_reward: 0.0,
+            shanten_before: None,
+            shanten_after: None,
+            fan_potential_before: None,
+            fan_potential_after: None,
             done: false,
         };
 
@@ -792,6 +916,112 @@ mod tests {
             value["discard_mask"].as_array().expect("mask").len(),
             TILE_KIND_COUNT
         );
+    }
+
+    #[test]
+    fn terminal_rewards_mark_each_seat_last_row_done() {
+        let mut rows = vec![
+            trajectory_test_row(0, 0, 0.01),
+            trajectory_test_row(1, 1, 0.02),
+            trajectory_test_row(2, 0, 0.03),
+            trajectory_test_row(3, 1, 0.04),
+        ];
+        let report = ArenaMatchReport {
+            match_index: 0,
+            seed: 7,
+            completed: true,
+            action_count: 4,
+            seats: vec![
+                ArenaSeatMetrics {
+                    seat_index: 0,
+                    score_delta: 20,
+                    wins: 1,
+                    dealt_in: 0,
+                    ..ArenaSeatMetrics::default()
+                },
+                ArenaSeatMetrics {
+                    seat_index: 1,
+                    score_delta: -20,
+                    wins: 0,
+                    dealt_in: 1,
+                    ..ArenaSeatMetrics::default()
+                },
+            ],
+        };
+
+        assign_terminal_rewards(&mut rows, &report);
+
+        assert!(!rows[0].done);
+        assert!(!rows[1].done);
+        assert!(rows[2].done);
+        assert!(rows[3].done);
+        assert_eq!(rows[0].reward, 0.01);
+        assert_eq!(rows[1].reward, 0.02);
+        assert_eq!(rows[2].terminal_reward, 1.2);
+        assert_eq!(rows[3].terminal_reward, -1.7);
+        assert_eq!(rows[2].reward, 1.23);
+        assert_eq!(rows[3].reward, -1.6600001);
+    }
+
+    #[test]
+    fn shaping_reward_updates_step_reward_and_diagnostics() {
+        let mut row = trajectory_test_row(0, 0, 0.0);
+        let before = RewardSnapshot {
+            shanten: 2,
+            fan_potential: 1,
+        };
+        let after = RewardSnapshot {
+            shanten: 1,
+            fan_potential: 2,
+        };
+
+        apply_shaping_reward(&mut row, Some(before), Some(after));
+
+        assert!(row.step_reward > 0.0);
+        assert_eq!(row.reward, row.step_reward);
+        assert_eq!(row.shanten_before, Some(2));
+        assert_eq!(row.shanten_after, Some(1));
+        assert_eq!(row.fan_potential_before, Some(1));
+        assert_eq!(row.fan_potential_after, Some(2));
+
+        let mut worse_row = trajectory_test_row(1, 0, 0.0);
+        apply_shaping_reward(&mut worse_row, Some(after), Some(before));
+
+        assert!(worse_row.step_reward < 0.0);
+    }
+
+    fn trajectory_test_row(
+        decision_index: u64,
+        seat_index: usize,
+        step_reward: f32,
+    ) -> ArenaTrajectoryRow {
+        ArenaTrajectoryRow {
+            schema_version: 1,
+            match_id: "arena-1".to_string(),
+            decision_index,
+            seat_index,
+            policy_id: "heuristic".to_string(),
+            decision_kind: "active_turn".to_string(),
+            tile_planes: vec![0.0; 340],
+            scalar_features: vec![0.0; 10],
+            discard_mask: vec![true; TILE_KIND_COUNT],
+            claim_mask: vec![true; CLAIM_ACTION_COUNT],
+            self_kong_mask: vec![true; SELF_KONG_ACTION_COUNT],
+            hu_mask: vec![true, false],
+            action_head: "discard".to_string(),
+            action_index: 0,
+            action_semantic: "discard:w1".to_string(),
+            log_prob: 0.0,
+            value: 0.0,
+            reward: step_reward,
+            step_reward,
+            terminal_reward: 0.0,
+            shanten_before: None,
+            shanten_after: None,
+            fan_potential_before: None,
+            fan_potential_after: None,
+            done: false,
+        }
     }
 
     fn tile_key_only_vec(tile_keys: &[&str]) -> Vec<Tile> {
