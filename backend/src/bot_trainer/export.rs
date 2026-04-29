@@ -152,9 +152,8 @@ pub fn run_export_with_options(
             }
         };
         for sample in samples {
-            if let Err(error) = validate_sample(&sample) {
+            if validate_sample(&sample).is_err() {
                 report.runtime_illegal_label_count += 1;
-                eprintln!("skip runtime-illegal sample: {error}");
                 continue;
             }
             *report.samples_by_split.entry(split).or_default() += 1;
