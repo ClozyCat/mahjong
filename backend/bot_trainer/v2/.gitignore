@@ -5,3 +5,4 @@ out*/
 rl_runs/
 *.jsonl
 *.pt
+arena_runs/
