@@ -49,8 +49,8 @@ After ONNX export, it runs the Rust ONNX smoke test.
 ## Direct Commands
 
 ```powershell
-uv run python backend/bot_trainer/v2/train.py --data backend/bot_trainer/v2/out --epochs 20 --batch-size 2048 --output backend/bot_trainer/v2/checkpoints --device cuda --amp
-uv run python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --output backend/assets/models/mahjong_policy_net.onnx
+python backend/bot_trainer/v2/train.py --data backend/bot_trainer/v2/out --epochs 20 --batch-size 2048 --output backend/bot_trainer/v2/checkpoints --device cuda --amp
+python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --output backend/assets/models/mahjong_policy_net.onnx
 ```
 
 ## Model Outputs
@@ -68,6 +68,12 @@ Smoke:
 
 ```powershell
 cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl
+```
+
+Trajectory smoke:
+
+```powershell
+cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl
 ```
 
 Windows matrix:
@@ -90,3 +96,29 @@ Primary model-selection metrics:
 - first-tenpai turn
 - final-tenpai rate
 - average decision latency
+
+## RL Training Smoke
+
+Use the arena trajectory JSONL as the first PPO data source:
+
+```powershell
+python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu
+```
+
+Export a trained RL checkpoint with the same ONNX exporter:
+
+```powershell
+python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints_rl_smoke/best.pt --output backend/bot_trainer/v2/checkpoints_rl_smoke/candidate.onnx
+```
+
+## RL Candidate Acceptance
+
+An RL candidate can replace the production model only when arena evaluation shows:
+
+- average score delta improves over the current production baseline
+- win rate does not regress
+- deal-in rate does not increase by more than 2 percentage points
+- first-tenpai turn or final-tenpai rate improves, or stays neutral
+- average decision latency remains under 100 ms
+
+The first RL runs should keep production policy in `hybrid` mode unless pure neural wins the same arena matrix without higher deal-in rate.

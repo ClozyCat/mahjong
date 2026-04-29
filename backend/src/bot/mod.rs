@@ -1,5 +1,5 @@
-pub mod arena;
 pub(crate) mod action_space;
+pub mod arena;
 pub mod context;
 pub(crate) mod features;
 mod neural;

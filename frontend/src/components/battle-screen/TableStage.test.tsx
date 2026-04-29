@@ -1327,6 +1327,60 @@ describe('TableStage', () => {
     vi.useRealTimers();
   });
 
+  it('lets a hu callout interrupt a pending kong callout', () => {
+    vi.useFakeTimers();
+
+    const props = {
+      discards: {
+        top: [],
+        left: ['b1'],
+        right: [],
+        bottom: [],
+      },
+      activeSeat: 'bottom' as const,
+      lastDiscard: 'b1',
+      lastDiscardSeat: 'left' as const,
+      promptText: null,
+    };
+
+    const { container, rerender } = render(
+      <TableStage
+        {...props}
+        actionEffect={{
+          key: 'kong-1',
+          label: '杠',
+          emphasis: 'kong',
+          seat: 'bottom',
+          calloutTone: 'kong',
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--kong')).not.toBeNull();
+
+    rerender(
+      <TableStage
+        {...props}
+        settlementWinnerSeat="right"
+        settlementWinType="discard"
+        settlementWinTypeLabel="荣和"
+        actionEffect={{
+          key: 'hu-1',
+          label: '和牌',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'hu',
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__action-callout--kong')).toBeNull();
+    expect(container.querySelector('.table-stage__action-callout--hu')).not.toBeNull();
+    expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).not.toBeNull();
+
+    vi.useRealTimers();
+  });
+
   it('fades the action callout after three seconds', () => {
     vi.useFakeTimers();
 

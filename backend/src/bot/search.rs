@@ -2326,10 +2326,7 @@ fn standard_shanten_with_open_melds(counts: &TileCounts, open_meld_count: usize)
     best
 }
 
-pub(crate) fn min_shanten_for_counts(
-    concealed_counts: &TileCounts,
-    open_meld_count: usize,
-) -> i32 {
+pub(crate) fn min_shanten_for_counts(concealed_counts: &TileCounts, open_meld_count: usize) -> i32 {
     standard_shanten_with_open_melds(concealed_counts, open_meld_count)
         .min(seven_pairs_shanten(concealed_counts, open_meld_count))
         .min(thirteen_orphans_shanten(concealed_counts, open_meld_count))

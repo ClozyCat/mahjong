@@ -246,7 +246,7 @@ pub fn build_pending_action_view(
                         options.push("ready_hand".to_string());
                     }
                 }
-                if support.can_hu {
+                if support.can_hu || (is_local_ready_hand && support.has_self_kong) {
                     options.push("pass".to_string());
                 }
             }
@@ -1082,6 +1082,47 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
             serde_json::json!(["hu", "kong", "pass"])
+        );
+    }
+
+    #[test]
+    fn active_turn_projection_includes_pass_for_ready_hand_self_kong() {
+        let mut ready_hand_players = players();
+        ready_hand_players[0].is_ready_hand = true;
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                players: ready_hand_players,
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "active_turn".to_string(),
+                seat_index: 0,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: Some("w3#draw".to_string()),
+            }),
+            continue_action: None,
+        };
+
+        let support = SeatProjectionSupport {
+            has_self_kong: true,
+            ..Default::default()
+        };
+        let snapshot = room_snapshot_message(&state, 0, &support);
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["kong", "pass"])
         );
     }
 

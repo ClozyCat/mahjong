@@ -2,6 +2,7 @@ use crate::core::action::PlayerAction;
 use crate::core::ids::Seat;
 use crate::core::state::PendingAction;
 use crate::room_scoring::RoomScoringCache;
+use crate::rules::standard::meld::available_self_kongs_from_cache;
 use crate::rules::standard::ready_hand::can_declare_ready_hand_with_tile_id;
 use crate::rules::standard::win::can_declare_hu_with_cache_for_state;
 
@@ -15,7 +16,7 @@ pub enum LocalPlayerActionKind {
     ReadyHand,
     ClaimWindow,
     SelfKong,
-    SelfHuPass,
+    ActiveTurnPass,
     RobKongPass,
 }
 
@@ -53,8 +54,8 @@ pub fn classify_local_player_action(
                 Some(LocalPlayerActionKind::ClaimWindow)
             } else if rob_kong_pass_supported(context, actor) {
                 Some(LocalPlayerActionKind::RobKongPass)
-            } else if self_hu_pass_supported(context, actor) {
-                Some(LocalPlayerActionKind::SelfHuPass)
+            } else if active_turn_pass_supported(context, actor) {
+                Some(LocalPlayerActionKind::ActiveTurnPass)
             } else {
                 None
             }
@@ -160,7 +161,7 @@ fn self_kong_supported(context: &EngineContext, actor: Seat) -> bool {
             == Some("active_turn")
 }
 
-fn self_hu_pass_supported(context: &EngineContext, actor: Seat) -> bool {
+fn active_turn_pass_supported(context: &EngineContext, actor: Seat) -> bool {
     if context.room.phase != "playing" || context.current_actor() != Some(actor) {
         return false;
     }
@@ -183,6 +184,19 @@ fn self_hu_pass_supported(context: &EngineContext, actor: Seat) -> bool {
     }
     let cache = RoomScoringCache::from_state(&context.room);
     can_declare_hu_with_cache_for_state(&context.room, &cache, actor, None, None)
+        || ready_hand_has_self_kong(&context.room, &cache, actor)
+}
+
+fn ready_hand_has_self_kong(
+    room: &crate::core::state::RoomState,
+    cache: &RoomScoringCache,
+    actor: Seat,
+) -> bool {
+    room.round_state
+        .as_ref()
+        .and_then(|round| round.players.get(actor))
+        .is_some_and(|player| player.is_ready_hand)
+        && !available_self_kongs_from_cache(cache, actor).is_empty()
 }
 
 #[cfg(test)]
@@ -496,6 +510,26 @@ mod tests {
                 }
             ),
             Some(LocalPlayerActionKind::SelfKong)
+        );
+    }
+
+    #[test]
+    fn classifies_ready_hand_self_kong_pass_as_active_turn_pass() {
+        let mut room = base_room();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        room["round_state"]["players"][0]["concealed_tiles"] = json!([
+            tile("w3#0", "w3", "suit"),
+            tile("w3#1", "w3", "suit"),
+            tile("w3#2", "w3", "suit"),
+            tile("w3#3", "w3", "suit"),
+            tile("w4#draw", "w4", "suit")
+        ]);
+        room["pending_timeout"]["drawn_tile_id"] = json!("w4#draw");
+        let context = context(room);
+
+        assert_eq!(
+            classify_local_player_action(&context, 0, &PlayerAction::Pass),
+            Some(LocalPlayerActionKind::ActiveTurnPass)
         );
     }
 }

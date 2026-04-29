@@ -1514,7 +1514,7 @@ mod tests {
         let mut room = room_for_local_concealed_self_kong();
         room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
         let prompt = action_prompt(&room, 0).expect("prompt should exist");
-        assert_eq!(prompt["payload"]["options"], json!(["kong"]));
+        assert_eq!(prompt["payload"]["options"], json!(["kong", "pass"]));
 
         let result = try_handle_action(
             &mut room,
@@ -1538,6 +1538,24 @@ mod tests {
         assert_eq!(action.seat_index, 0);
         assert_eq!(action.action_type, "discard");
         assert_eq!(action.tile_ids, vec!["b9#replacement"]);
+    }
+
+    #[test]
+    fn ready_hand_player_can_pass_self_kong_and_discard_drawn_tile() {
+        let mut room = room_for_local_concealed_self_kong();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+
+        let result = try_handle_action(&mut room, 0, "pass", &[])
+            .expect("ready-hand self kong pass should be handled locally")
+            .expect("ready-hand self kong pass should succeed");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(result[0]["payload"]["event"]["tile_id"], "w6#a");
+        assert_eq!(room["round_state"]["players"][0]["is_ready_hand"], true);
+        assert_eq!(room["round_state"]["current_actor"], 1);
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 1);
     }
 
     #[test]
@@ -1598,7 +1616,7 @@ mod tests {
         let mut room = room_for_local_add_kong_without_robbers();
         room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
         let prompt = action_prompt(&room, 0).expect("prompt should exist");
-        assert_eq!(prompt["payload"]["options"], json!(["kong"]));
+        assert_eq!(prompt["payload"]["options"], json!(["kong", "pass"]));
 
         let result = try_handle_action(&mut room, 0, "kong", &[String::from("w3#add")])
             .expect("ready-hand add kong should be handled locally")

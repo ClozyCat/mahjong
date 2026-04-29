@@ -585,8 +585,8 @@ mod tests {
     use super::{BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path};
 
     #[test]
-    fn bot_action_delay_defaults_to_300ms() {
-        assert_eq!(BOT_ACTION_DELAY_MS, 300);
+    fn bot_action_delay_defaults_to_150ms() {
+        assert_eq!(BOT_ACTION_DELAY_MS, 150);
     }
 
     #[test]

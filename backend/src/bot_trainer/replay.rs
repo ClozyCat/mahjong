@@ -1192,10 +1192,12 @@ Score 0 0 0 0
             claimed_turn.context.restricted_discard_tile_key.as_deref(),
             Some("b1")
         );
-        assert!(!claimed_turn
-            .legal_actions
-            .iter()
-            .any(|action| action == "discard:b1"));
+        assert!(
+            !claimed_turn
+                .legal_actions
+                .iter()
+                .any(|action| action == "discard:b1")
+        );
         assert!(!claimed_turn.context.opponent_discards_by_seat[0].contains(&"b1".to_string()));
         assert!(
             claimed_turn.context.opponent_melds_by_seat[1]
@@ -1242,10 +1244,12 @@ Score 0 0 0 0
             })
             .expect("active turn after chow");
 
-        assert!(!claimed_turn
-            .legal_actions
-            .iter()
-            .any(|action| action == "discard:b9"));
+        assert!(
+            !claimed_turn
+                .legal_actions
+                .iter()
+                .any(|action| action == "discard:b9")
+        );
     }
 
     #[test]

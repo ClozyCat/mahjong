@@ -35,6 +35,12 @@ use super::win::{
 const MAX_SEATS: usize = 4;
 type BotPolicyResolver<'a> = &'a dyn Fn(usize) -> ArenaBotPolicyConfig;
 
+pub(crate) struct BotDecisionTrace {
+    pub(crate) decision_kind: String,
+    pub(crate) context: crate::bot::context::BotContext,
+    pub(crate) action: BotAction,
+}
+
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
     Ok(next_bot_action_for_state(room))
 }
@@ -44,6 +50,16 @@ pub fn next_bot_action_in_room_state_with_policy_resolver(
     policy_for_seat: BotPolicyResolver<'_>,
 ) -> Result<Option<BotAction>, String> {
     Ok(next_bot_action_for_state_with_policy_resolver(
+        room,
+        policy_for_seat,
+    ))
+}
+
+pub(crate) fn next_bot_decision_trace_in_room_state_with_policy_resolver(
+    room: &RoomState,
+    policy_for_seat: BotPolicyResolver<'_>,
+) -> Result<Option<BotDecisionTrace>, String> {
+    Ok(next_bot_decision_trace_for_state_with_policy_resolver(
         room,
         policy_for_seat,
     ))
@@ -413,14 +429,12 @@ fn next_ready_hand_action_for_state(
     }
 
     if seat_is_bot(state, seat_index) {
-        if let Some(action) =
-            choose_bot_active_turn_action_with_cache_for_state(
-                state,
-                cache,
-                seat_index,
-                policy_config,
-            )
-        {
+        if let Some(action) = choose_bot_active_turn_action_with_cache_for_state(
+            state,
+            cache,
+            seat_index,
+            policy_config,
+        ) {
             return Some(action);
         }
     }
@@ -522,6 +536,116 @@ fn next_bot_action_for_state_with_policy_resolver(
                     &policy_config,
                 )
             }
+        },
+        _ => None,
+    }
+}
+
+fn next_bot_decision_trace_for_state_with_policy_resolver(
+    state: &RoomState,
+    policy_for_seat: BotPolicyResolver<'_>,
+) -> Option<BotDecisionTrace> {
+    if state.phase != "playing" {
+        return None;
+    }
+    let pending_timeout = state.pending_timeout.as_ref()?;
+    let round = state.round_state.as_ref()?;
+    match pending_timeout.kind.as_str() {
+        "active_turn" => {
+            let seat_index = round.current_actor;
+            if !seat_is_bot(state, seat_index)
+                || player_is_ready_hand(state, seat_index)
+                || can_declare_hu_with_cache_for_state(
+                    state,
+                    &RoomScoringCache::from_state(state),
+                    seat_index,
+                    None,
+                    None,
+                )
+            {
+                return None;
+            }
+            let cache = RoomScoringCache::from_state(state);
+            if player_first_flower_tile_id_from_cache(&cache, seat_index).is_some() {
+                return None;
+            }
+            let self_kong_candidates = available_self_kongs_from_cache(&cache, seat_index);
+            let add_kong_risk_tiles = self_kong_candidates
+                .iter()
+                .filter(|candidate| candidate.kind == SelfKongKind::Add)
+                .filter(|candidate| {
+                    !seats_with_hu_candidate_for_tile_in_room_state(
+                        state,
+                        seat_index,
+                        &candidate.tile_key,
+                    )
+                    .is_empty()
+                })
+                .map(|candidate| candidate.tile_key.clone())
+                .collect::<HashSet<_>>();
+            let context = build_bot_context_view(
+                &cache,
+                state,
+                seat_index,
+                Vec::new(),
+                self_kong_candidates,
+                add_kong_risk_tiles,
+            )?;
+            let policy_config = policy_for_seat(seat_index);
+            let action = bot::choose_active_turn_action_with_config(&context, &policy_config)?;
+            Some(BotDecisionTrace {
+                decision_kind: "active_turn".to_string(),
+                context,
+                action,
+            })
+        }
+        "claim_window" => match round.pending_action.as_ref()? {
+            PendingAction::ClaimWindow(claim) => {
+                let cache = RoomScoringCache::from_state(state);
+                let seat_index = next_claim_window_responder_seat(claim)
+                    .filter(|seat| seat_is_bot(state, *seat))?;
+                if claim
+                    .claim_window
+                    .get(seat_index)
+                    .is_some_and(|claims| claims.iter().any(|claim_type| claim_type == "hu"))
+                    && hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard")
+                {
+                    return None;
+                }
+                let claim_options = ["kong", "pung", "chow"]
+                    .into_iter()
+                    .filter(|claim_type| {
+                        claim
+                            .claim_window
+                            .get(seat_index)
+                            .is_some_and(|claims| claims.iter().any(|claim| claim == claim_type))
+                    })
+                    .flat_map(|claim_type| {
+                        claim_tile_id_options(&cache, seat_index, claim_type)
+                            .into_iter()
+                            .map(move |tile_ids| BotClaimOption {
+                                action_type: claim_type.to_string(),
+                                tile_ids,
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                let context = build_bot_context_view(
+                    &cache,
+                    state,
+                    seat_index,
+                    claim_options,
+                    Vec::new(),
+                    HashSet::new(),
+                )?;
+                let policy_config = policy_for_seat(seat_index);
+                let action = bot::choose_claim_action_with_config(&context, &policy_config)?;
+                Some(BotDecisionTrace {
+                    decision_kind: "claim_window".to_string(),
+                    context,
+                    action,
+                })
+            }
+            PendingAction::RobKongWindow(_) => None,
         },
         _ => None,
     }

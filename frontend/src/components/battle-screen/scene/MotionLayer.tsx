@@ -305,6 +305,15 @@ export const MotionLayer = memo(function MotionLayer({
     };
 
     consumedActionCalloutKeyRef.current = actionCalloutKey;
+    if (currentActionCallout && nextActionCallout.tone === 'hu' && currentActionCallout.tone !== 'hu') {
+      pendingActionCalloutsRef.current = pendingActionCalloutsRef.current.filter(
+        (callout) => callout.key !== actionCalloutKey,
+      );
+      setPendingActionCallouts(pendingActionCalloutsRef.current);
+      showActionCallout(nextActionCallout);
+      return;
+    }
+
     if (currentActionCallout) {
       const nextPendingCallouts = [...pendingActionCalloutsRef.current, nextActionCallout];
       pendingActionCalloutsRef.current = nextPendingCallouts;
