@@ -17,12 +17,61 @@ class MissingTorchError(RuntimeError):
 class ModelConfig(NamedTuple):
     tile_plane_count: int
     scalar_feature_count: int
+    suited_block_count: int = 2
+    honor_block_count: int = 1
+    use_se: bool = False
+    se_reduction: int = 8
+    film_scalar: bool = False
+
+    @classmethod
+    def from_dict(cls, value: dict[str, object]) -> "ModelConfig":
+        return cls(
+            tile_plane_count=int(value.get("tile_plane_count", 10)),
+            scalar_feature_count=int(value.get("scalar_feature_count", 10)),
+            suited_block_count=int(value.get("suited_block_count", 2)),
+            honor_block_count=int(value.get("honor_block_count", 1)),
+            use_se=bool(value.get("use_se", False)),
+            se_reduction=int(value.get("se_reduction", 8)),
+            film_scalar=bool(value.get("film_scalar", False)),
+        )
+
+    def to_dict(self) -> dict[str, int | bool]:
+        return {
+            "tile_plane_count": self.tile_plane_count,
+            "scalar_feature_count": self.scalar_feature_count,
+            "suited_block_count": self.suited_block_count,
+            "honor_block_count": self.honor_block_count,
+            "use_se": self.use_se,
+            "se_reduction": self.se_reduction,
+            "film_scalar": self.film_scalar,
+        }
 
 
 if nn is not None:
 
+    class SEBlock(nn.Module):
+        def __init__(self, channels: int, reduction: int = 8) -> None:
+            super().__init__()
+            hidden_channels = max(1, channels // reduction)
+            self.net = nn.Sequential(
+                nn.AdaptiveAvgPool1d(1),
+                nn.Conv1d(channels, hidden_channels, kernel_size=1),
+                nn.ReLU(),
+                nn.Conv1d(hidden_channels, channels, kernel_size=1),
+                nn.Sigmoid(),
+            )
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x * self.net(x)
+
+
     class ResidualConvBlock(nn.Module):
-        def __init__(self, channels: int) -> None:
+        def __init__(
+            self,
+            channels: int,
+            use_se: bool = False,
+            se_reduction: int = 8,
+        ) -> None:
             super().__init__()
             self.net = nn.Sequential(
                 nn.Conv1d(channels, channels, kernel_size=3, padding=1),
@@ -30,9 +79,11 @@ if nn is not None:
                 nn.Conv1d(channels, channels, kernel_size=3, padding=1),
             )
             self.norm = nn.BatchNorm1d(channels)
+            self.se = SEBlock(channels, se_reduction) if use_se else nn.Identity()
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return torch.relu(self.norm(self.net(x) + x))
+            residual = self.se(self.norm(self.net(x)))
+            return torch.relu(residual + x)
 
 
     class SuitAwareTileResNet(nn.Module):
@@ -41,28 +92,50 @@ if nn is not None:
             tile_plane_count: int,
             embedding_size: int = 512,
             channels: int = 64,
+            suited_block_count: int = 2,
+            honor_block_count: int = 1,
+            use_se: bool = False,
+            se_reduction: int = 8,
         ) -> None:
             super().__init__()
-            self.suited_encoder = nn.Sequential(
-                nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
-                nn.ReLU(),
-                ResidualConvBlock(channels),
-                ResidualConvBlock(channels),
-                nn.AdaptiveAvgPool1d(1),
-                nn.Flatten(),
+            self.suited_encoder = self._make_encoder(
+                tile_plane_count,
+                channels,
+                suited_block_count,
+                use_se,
+                se_reduction,
             )
-            self.honor_encoder = nn.Sequential(
-                nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
-                nn.ReLU(),
-                ResidualConvBlock(channels),
-                nn.AdaptiveAvgPool1d(1),
-                nn.Flatten(),
+            self.honor_encoder = self._make_encoder(
+                tile_plane_count,
+                channels,
+                honor_block_count,
+                use_se,
+                se_reduction,
             )
             self.projector = nn.Sequential(
                 nn.Linear(channels * 4, embedding_size),
                 nn.ReLU(),
                 nn.LayerNorm(embedding_size),
             )
+
+        @staticmethod
+        def _make_encoder(
+            tile_plane_count: int,
+            channels: int,
+            block_count: int,
+            use_se: bool,
+            se_reduction: int,
+        ) -> nn.Sequential:
+            layers: list[nn.Module] = [
+                nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
+                nn.ReLU(),
+            ]
+            layers.extend(
+                ResidualConvBlock(channels, use_se=use_se, se_reduction=se_reduction)
+                for _ in range(block_count)
+            )
+            layers.extend([nn.AdaptiveAvgPool1d(1), nn.Flatten()])
+            return nn.Sequential(*layers)
 
         def forward(self, tile_planes: torch.Tensor) -> torch.Tensor:
             suit_embeddings = [
@@ -74,13 +147,33 @@ if nn is not None:
 
 
     class MahjongPolicyNetV2(nn.Module):
-        def __init__(self, tile_plane_count: int, scalar_feature_count: int) -> None:
+        def __init__(self, config: ModelConfig) -> None:
             super().__init__()
-            self.tile_plane_count = tile_plane_count
-            self.scalar_feature_count = scalar_feature_count
-            self.tile_encoder = SuitAwareTileResNet(tile_plane_count, embedding_size=512)
+            self.config = config
+            self.tile_plane_count = config.tile_plane_count
+            self.scalar_feature_count = config.scalar_feature_count
+            self.tile_encoder = SuitAwareTileResNet(
+                config.tile_plane_count,
+                embedding_size=512,
+                suited_block_count=config.suited_block_count,
+                honor_block_count=config.honor_block_count,
+                use_se=config.use_se,
+                se_reduction=config.se_reduction,
+            )
+            self.scalar_film = (
+                nn.Sequential(
+                    nn.Linear(config.scalar_feature_count, 128),
+                    nn.ReLU(),
+                    nn.Linear(128, 1024),
+                )
+                if config.film_scalar
+                else None
+            )
+            if self.scalar_film is not None:
+                nn.init.zeros_(self.scalar_film[-1].weight)
+                nn.init.zeros_(self.scalar_film[-1].bias)
             self.scalar_encoder = nn.Sequential(
-                nn.Linear(scalar_feature_count, 128),
+                nn.Linear(config.scalar_feature_count, 128),
                 nn.ReLU(),
                 nn.LayerNorm(128),
             )
@@ -104,6 +197,9 @@ if nn is not None:
             scalar_features: torch.Tensor,
         ) -> dict[str, torch.Tensor]:
             tile_embedding = self.tile_encoder(tile_planes)
+            if self.scalar_film is not None:
+                gamma, beta = self.scalar_film(scalar_features).chunk(2, dim=1)
+                tile_embedding = tile_embedding * (1.0 + gamma) + beta
             scalar_embedding = self.scalar_encoder(scalar_features)
             hidden = self.trunk(torch.cat([tile_embedding, scalar_embedding], dim=1))
             return {
@@ -123,7 +219,7 @@ else:
 
 
 def build_model(config: ModelConfig) -> MahjongPolicyNetV2:
-    return MahjongPolicyNetV2(config.tile_plane_count, config.scalar_feature_count)
+    return MahjongPolicyNetV2(config)
 
 
 def load_compatible_state_dict(

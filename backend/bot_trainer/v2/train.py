@@ -58,7 +58,8 @@ def main() -> None:
         else None
     )
 
-    model = build_model(ModelConfig(TILE_PLANE_COUNT, SCALAR_FEATURE_COUNT)).to(device)
+    model_config = model_config_from_args(args)
+    model = build_model(model_config).to(device)
     
     # 动态处理模型编译：仅在支持的后端上开启
     if args.compile and hasattr(torch, "compile"):
@@ -102,7 +103,14 @@ def main() -> None:
         if selection_metric < best_metric:
             best_metric = selection_metric
             best_metrics = val_metrics
-            save_checkpoint(args.output / "best.pt", model, train_dataset.metadata, val_metrics, epoch)
+            save_checkpoint(
+                args.output / "best.pt",
+                model,
+                train_dataset.metadata,
+                val_metrics,
+                epoch,
+                model_config,
+            )
 
         print(
             f"Epoch {epoch} Summary: "
@@ -143,7 +151,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
     parser.add_argument("--value-loss-weight", type=float, default=0.25)
     parser.add_argument("--risk-loss-weight", type=float, default=0.25)
+    parser.add_argument("--suited-block-count", type=int, default=2)
+    parser.add_argument("--honor-block-count", type=int, default=1)
+    parser.add_argument("--use-se", action="store_true")
+    parser.add_argument("--se-reduction", type=int, default=8)
+    parser.add_argument("--film-scalar", action="store_true")
     return parser.parse_args()
+
+def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
+    return ModelConfig(
+        tile_plane_count=TILE_PLANE_COUNT,
+        scalar_feature_count=SCALAR_FEATURE_COUNT,
+        suited_block_count=args.suited_block_count,
+        honor_block_count=args.honor_block_count,
+        use_se=args.use_se,
+        se_reduction=args.se_reduction,
+        film_scalar=args.film_scalar,
+    )
 
 def resolve_device(requested: str) -> torch.device:
     if requested == "auto":
@@ -460,8 +484,24 @@ def empty_metrics() -> dict[str, float]:
 def move_batch(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
 
-def save_checkpoint(path: Path, model: torch.nn.Module, metadata: dict[str, Any], metrics: dict[str, float], epoch: int) -> None:
-    torch.save({"model_state": model.state_dict(), "metadata": metadata, "metrics": metrics, "epoch": epoch, "model_config": {"tile_plane_count": TILE_PLANE_COUNT, "scalar_feature_count": SCALAR_FEATURE_COUNT}}, path)
+def save_checkpoint(
+    path: Path,
+    model: torch.nn.Module,
+    metadata: dict[str, Any],
+    metrics: dict[str, float],
+    epoch: int,
+    model_config: ModelConfig,
+) -> None:
+    torch.save(
+        {
+            "model_state": model.state_dict(),
+            "metadata": metadata,
+            "metrics": metrics,
+            "epoch": epoch,
+            "model_config": model_config.to_dict(),
+        },
+        path,
+    )
 
 if __name__ == "__main__":
     main()

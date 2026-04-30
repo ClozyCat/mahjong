@@ -71,6 +71,39 @@ The policy keeps the existing ONNX contract:
 
 The tile encoder is suit-aware: 万/条/筒 each pass through a shared 1D residual convolution encoder over rank order, while honors use a separate encoder. This preserves local sequence structure without letting convolutions treat suit boundaries such as `w9 -> t1` as adjacent ranks.
 
+### Architecture Experiment Flags
+
+The default architecture remains the current production-compatible shape: suited encoder `2` residual blocks, honor encoder `1` residual block, no SE, and no FiLM.
+
+Low-risk experiment matrix:
+
+```powershell
+# SE only
+.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe
+
+# SE + moderate depth
+.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2
+
+# SE + deeper encoder
+.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 6 -HonorBlockCount 3
+
+# SE + moderate depth + scalar FiLM
+.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2 -FilmScalar
+```
+
+Linux equivalents:
+
+```bash
+./backend/bot_trainer/v2/train_and_export_model.sh --use-se
+./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2
+./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 6 --honor-block-count 3
+./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2 --film-scalar
+```
+
+All variants preserve the ONNX input/output contract. The checkpoint stores `model_config`, and ONNX export/PPO warm starts instantiate that architecture before loading weights.
+
+Discard-order GRU/LSTM encoding is intentionally deferred. It requires a dataset schema upgrade, Rust context/export changes, new ONNX inputs, and runtime input binding changes.
+
 ## Arena Evaluation
 
 Smoke:

@@ -129,6 +129,13 @@ def load_checkpoint_if_present(model: torch.nn.Module, checkpoint: Path | None) 
         print(f"Skipped {len(skipped)} incompatible checkpoint tensor(s).")
 
 
+def model_config_from_checkpoint(checkpoint: Path | None) -> ModelConfig:
+    if checkpoint is None or not checkpoint.exists():
+        return ModelConfig(tile_plane_count=10, scalar_feature_count=10)
+    payload = torch.load(checkpoint, map_location="cpu")
+    return ModelConfig.from_dict(payload.get("model_config", {}))
+
+
 def select_action_log_probs(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
@@ -215,7 +222,7 @@ def build_old_policy_model(
 ) -> torch.nn.Module | None:
     if checkpoint is None:
         return None
-    model = build_model(ModelConfig(tile_plane_count=10, scalar_feature_count=10)).to(device)
+    model = build_model(model_config_from_checkpoint(checkpoint)).to(device)
     load_checkpoint_if_present(model, checkpoint)
     model.eval()
     for parameter in model.parameters():
@@ -239,7 +246,8 @@ def main() -> None:
             "log_prob/value, or pass --recompute-old-policy-stats with the rollout checkpoint."
         )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    model = build_model(ModelConfig(tile_plane_count=10, scalar_feature_count=10)).to(device)
+    model_config = model_config_from_checkpoint(args.checkpoint)
+    model = build_model(model_config).to(device)
     load_checkpoint_if_present(model, args.checkpoint)
     old_policy_model = (
         build_old_policy_model(args.checkpoint, device)
@@ -353,7 +361,7 @@ def main() -> None:
     torch.save(
         {
             "model_state": model.state_dict(),
-            "model_config": {"tile_plane_count": 10, "scalar_feature_count": 10},
+            "model_config": model_config.to_dict(),
             "rl_metrics": history,
         },
         checkpoint_path,

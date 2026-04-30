@@ -40,13 +40,8 @@ class OnnxWrapper(nn.Module):
 def main() -> None:
     args = parse_args()
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
-    model_config = checkpoint.get("model_config", {})
-    model = build_model(
-        ModelConfig(
-            int(model_config.get("tile_plane_count", 10)),
-            int(model_config.get("scalar_feature_count", 10)),
-        )
-    )
+    model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
+    model = build_model(model_config)
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
 

@@ -15,6 +15,11 @@ SELF_KONG_LOSS_WEIGHT=1.0
 HU_LOSS_WEIGHT=1.0
 VALUE_LOSS_WEIGHT=0.25
 RISK_LOSS_WEIGHT=0.25
+SUITED_BLOCK_COUNT=2
+HONOR_BLOCK_COUNT=1
+SE_REDUCTION=8
+USE_SE=0
+FILM_SCALAR=0
 NO_AMP=0
 COMPILE_MODEL=0
 SKIP_TESTS=0
@@ -40,6 +45,11 @@ Options:
   --hu-loss-weight VALUE    Hu head loss weight.
   --value-loss-weight VALUE Value head loss weight.
   --risk-loss-weight VALUE  Risk head loss weight.
+  --suited-block-count N    Suited tile ResNet block count.
+  --honor-block-count N     Honor tile ResNet block count.
+  --use-se                  Enable SE channel attention blocks.
+  --se-reduction N          SE bottleneck reduction ratio.
+  --film-scalar             Use scalar features to FiLM-modulate tile embedding.
   --no-amp                  Do not pass --amp to train.py.
   --compile                 Pass --compile to train.py.
   --skip-tests              Skip pytest before training.
@@ -128,6 +138,29 @@ while [[ $# -gt 0 ]]; do
             require_value "$1" "${2:-}"
             RISK_LOSS_WEIGHT="$2"
             shift 2
+            ;;
+        --suited-block-count)
+            require_value "$1" "${2:-}"
+            SUITED_BLOCK_COUNT="$2"
+            shift 2
+            ;;
+        --honor-block-count)
+            require_value "$1" "${2:-}"
+            HONOR_BLOCK_COUNT="$2"
+            shift 2
+            ;;
+        --use-se)
+            USE_SE=1
+            shift
+            ;;
+        --se-reduction)
+            require_value "$1" "${2:-}"
+            SE_REDUCTION="$2"
+            shift 2
+            ;;
+        --film-scalar)
+            FILM_SCALAR=1
+            shift
             ;;
         --no-amp)
             NO_AMP=1
@@ -249,7 +282,18 @@ train_args=(
     --hu-loss-weight "$HU_LOSS_WEIGHT"
     --value-loss-weight "$VALUE_LOSS_WEIGHT"
     --risk-loss-weight "$RISK_LOSS_WEIGHT"
+    --suited-block-count "$SUITED_BLOCK_COUNT"
+    --honor-block-count "$HONOR_BLOCK_COUNT"
+    --se-reduction "$SE_REDUCTION"
 )
+
+if (( USE_SE == 1 )); then
+    train_args+=(--use-se)
+fi
+
+if (( FILM_SCALAR == 1 )); then
+    train_args+=(--film-scalar)
+fi
 
 if (( NO_AMP == 0 )); then
     train_args+=(--amp)
