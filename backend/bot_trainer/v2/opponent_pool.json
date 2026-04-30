@@ -14,20 +14,20 @@
       "model_path": null,
       "sample_actions": false,
       "temperature": 1.0,
-      "weight": 3
+      "weight": 2
     },
     {
-      "id": "production_neural",
+      "id": "sft_se",
       "mode": "neural",
-      "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+      "model_path": "backend/assets/history_models/sft_se.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2
     },
     {
-      "id": "history_neural_04300943",
+      "id": "sft_default",
       "mode": "neural",
-      "model_path": "backend/assets/history_models/cnn04300943.onnx",
+      "model_path": "backend/assets/history_models/sft_default.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2

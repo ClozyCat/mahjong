@@ -1,60 +1,122 @@
 param(
     [int]$Matches = 200,
     [int]$Seed = 20260429,
-    [string]$OutputDir = "backend/bot_trainer/v2/arena_runs",
+    [string]$PolicyPool = "",
+    [string]$OutputDir = "",
     [int]$ProgressEvery = 10,
     [int]$Jobs = 0,
-    [string]$SeatOrder = "default"
+    [string]$CargoExe = "cargo"
 )
 
 $ErrorActionPreference = "Stop"
 
-function New-PolicyConfig {
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..\..")).Path
+$BackendManifest = Join-Path $RepoRoot "backend\Cargo.toml"
+$OriginalLocation = (Get-Location).Path
+
+function Resolve-UserPath {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Id
+        [string]$Path,
+        [string]$DefaultPath
     )
 
-    switch ($Id) {
-        "heuristic" { return @{ id = "heuristic"; mode = "heuristic"; model_path = $null } }
-        "neural" { return @{ id = "neural"; mode = "neural"; model_path = "backend/assets/models/mahjong_policy_net.onnx" } }
-        default { throw "Unknown policy id: $Id" }
+    $candidate = if ([string]::IsNullOrWhiteSpace($Path)) { $DefaultPath } else { $Path }
+    if ([System.IO.Path]::IsPathRooted($candidate)) {
+        return $candidate
     }
+    return (Join-Path $OriginalLocation $candidate)
 }
 
-function Resolve-SeatPolicies {
+function Test-JsonProperty {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SeatOrder
+        [object]$Object,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
     )
 
-    $presets = @{
-        "default" = @("heuristic", "neural", "heuristic", "neural")
-        "current" = @("heuristic", "neural", "heuristic", "neural")
-        "rotate1" = @("neural", "heuristic", "neural", "heuristic")
-    }
+    return $null -ne ($Object.PSObject.Properties | Where-Object { $_.Name -eq $Name } | Select-Object -First 1)
+}
 
-    $normalized = $SeatOrder.Trim()
-    $presetKey = $normalized.ToLowerInvariant()
-    if ($presets.ContainsKey($presetKey)) {
-        $policyIds = $presets[$presetKey]
-    }
-    else {
-        $policyIds = @($normalized -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    }
+function ConvertTo-ArenaPolicy {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Policy,
+        [Parameter(Mandatory = $true)]
+        [int]$Index
+    )
 
-    if ($policyIds.Count -ne 4) {
-        throw "SeatOrder must resolve to exactly 4 policy ids. Presets: $($presets.Keys -join ', '). Or use custom form: heuristic,neural,heuristic,neural"
-    }
-
-    $known = @("heuristic", "neural")
-    foreach ($policyId in $policyIds) {
-        if ($known -notcontains $policyId) {
-            throw "Unknown policy id '$policyId'. Known policy ids: $($known -join ', ')"
+    foreach ($required in @("id", "mode")) {
+        if (-not (Test-JsonProperty -Object $Policy -Name $required) -or [string]::IsNullOrWhiteSpace([string]$Policy.$required)) {
+            throw "Policy at index $Index must define '$required'."
         }
     }
 
-    return @($policyIds | ForEach-Object { New-PolicyConfig -Id $_ })
+    $mode = ([string]$Policy.mode).Trim().ToLowerInvariant()
+    if (@("heuristic", "neural") -notcontains $mode) {
+        throw "Policy '$($Policy.id)' has unsupported mode '$($Policy.mode)'. Expected heuristic or neural."
+    }
+
+    $arenaPolicy = [ordered]@{
+        id = [string]$Policy.id
+        mode = $mode
+        model_path = if (Test-JsonProperty -Object $Policy -Name "model_path") { $Policy.model_path } else { $null }
+    }
+
+    if (Test-JsonProperty -Object $Policy -Name "sample_actions") {
+        $arenaPolicy.sample_actions = [bool]$Policy.sample_actions
+    }
+    if (Test-JsonProperty -Object $Policy -Name "temperature") {
+        $arenaPolicy.temperature = [double]$Policy.temperature
+    }
+
+    return $arenaPolicy
+}
+
+function Read-ArenaPolicies {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Policy pool was not found: $Path"
+    }
+
+    $pool = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if (Test-JsonProperty -Object $pool -Name "policies") {
+        $rawPolicies = @($pool.policies)
+    }
+    elseif ((Test-JsonProperty -Object $pool -Name "learner") -and (Test-JsonProperty -Object $pool -Name "opponents")) {
+        $rawPolicies = @($pool.learner) + @($pool.opponents)
+    }
+    else {
+        throw "Policy pool must contain either 'policies' or 'learner' plus 'opponents': $Path"
+    }
+
+    if ($rawPolicies.Count -ne 4) {
+        throw "Policy pool must define exactly 4 arena models, but found $($rawPolicies.Count): $Path"
+    }
+
+    $index = 0
+    return @($rawPolicies | ForEach-Object {
+            $policy = ConvertTo-ArenaPolicy -Policy $_ -Index $index
+            $index += 1
+            $policy
+        })
+}
+
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Content
+    )
+
+    $encoding = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Content, $encoding)
 }
 
 function Write-ArenaSummary {
@@ -105,8 +167,11 @@ function Write-ArenaSummary {
         }
 }
 
+$PolicyPool = Resolve-UserPath -Path $PolicyPool -DefaultPath (Join-Path $ScriptDir "opponent_pool.json")
+$OutputDir = Resolve-UserPath -Path $OutputDir -DefaultPath (Join-Path $ScriptDir "arena_runs")
+
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$seatPolicies = @(Resolve-SeatPolicies -SeatOrder $SeatOrder)
+$seatPolicies = @(Read-ArenaPolicies -Path $PolicyPool)
 $seatOrderIds = @($seatPolicies | ForEach-Object { $_.id })
 
 $config = @{
@@ -119,13 +184,15 @@ $config = @{
 
 $configPath = Join-Path $OutputDir "arena_config.json"
 $outputPath = Join-Path $OutputDir "arena_results.jsonl"
-$config | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $configPath
+Write-Utf8NoBom -Path $configPath -Content (($config | ConvertTo-Json -Depth 8) + "`n")
 
 Write-Host "Seat order: $($seatOrderIds -join ', ')"
+Write-Host "Policy pool: $PolicyPool"
+Write-Host "Output: $OutputDir"
 
 $arenaArgs = @(
     "run",
-    "--manifest-path", "backend/Cargo.toml",
+    "--manifest-path", $BackendManifest,
     "--release",
     "--bin", "bot_arena",
     "--",
@@ -135,9 +202,15 @@ $arenaArgs = @(
     "--jobs", "$Jobs"
 )
 
-& cargo @arenaArgs
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+Push-Location $RepoRoot
+try {
+    & $CargoExe @arenaArgs
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}
+finally {
+    Pop-Location
 }
 
 Write-ArenaSummary -Path $outputPath
