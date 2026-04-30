@@ -119,6 +119,46 @@ function Write-Utf8NoBom {
     [System.IO.File]::WriteAllText($Path, $Content, $encoding)
 }
 
+function Add-Utf8NoBomFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        throw "Arena chunk output was not found: $SourcePath"
+    }
+
+    $encoding = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::AppendAllText($TargetPath, [System.IO.File]::ReadAllText($SourcePath), $encoding)
+}
+
+function Format-SeatPolicyIds {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Policies
+    )
+
+    return (($Policies | ForEach-Object { $_.id }) -join ", ")
+}
+
+function Switch-SeatPolicies {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Policies,
+        [Parameter(Mandatory = $true)]
+        [int]$RotationStep
+    )
+
+    switch ($RotationStep % 3) {
+        0 { return @($Policies[2], $Policies[3], $Policies[0], $Policies[1]) }
+        1 { return @($Policies[1], $Policies[0], $Policies[3], $Policies[2]) }
+        default { return @($Policies[3], $Policies[1], $Policies[2], $Policies[0]) }
+    }
+}
+
 function Write-ArenaSummary {
     param(
         [Parameter(Mandatory = $true)]
@@ -172,41 +212,77 @@ $OutputDir = Resolve-UserPath -Path $OutputDir -DefaultPath (Join-Path $ScriptDi
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $seatPolicies = @(Read-ArenaPolicies -Path $PolicyPool)
-$seatOrderIds = @($seatPolicies | ForEach-Object { $_.id })
 
-$config = @{
-    matches = $Matches
-    seed = $Seed
-    max_actions_per_match = 2400
-    report_trajectories = $false
-    policies = $seatPolicies
+$outputPath = Join-Path $OutputDir "arena_results.jsonl"
+if (Test-Path -LiteralPath $outputPath) {
+    Remove-Item -LiteralPath $outputPath -Force
 }
 
-$configPath = Join-Path $OutputDir "arena_config.json"
-$outputPath = Join-Path $OutputDir "arena_results.jsonl"
-Write-Utf8NoBom -Path $configPath -Content (($config | ConvertTo-Json -Depth 8) + "`n")
+if ($ProgressEvery -le 0) {
+    throw "ProgressEvery must be greater than 0 because seat rotation happens on each progress report."
+}
 
-Write-Host "Seat order: $($seatOrderIds -join ', ')"
+Write-Host "Initial seat order: $(Format-SeatPolicyIds -Policies $seatPolicies)"
 Write-Host "Policy pool: $PolicyPool"
 Write-Host "Output: $OutputDir"
 
-$arenaArgs = @(
-    "run",
-    "--manifest-path", $BackendManifest,
-    "--release",
-    "--bin", "bot_arena",
-    "--",
-    "--config", $configPath,
-    "--output", $outputPath,
-    "--progress-every", "$ProgressEvery",
-    "--jobs", "$Jobs"
-)
-
 Push-Location $RepoRoot
 try {
-    & $CargoExe @arenaArgs
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+    $completedMatches = 0
+    $chunkIndex = 0
+    $rotationStep = 0
+    $currentPolicies = @($seatPolicies)
+
+    while ($completedMatches -lt $Matches) {
+        $chunkMatches = [Math]::Min($ProgressEvery, $Matches - $completedMatches)
+        $chunkConfigPath = Join-Path $OutputDir ("arena_config_{0:D3}.json" -f $chunkIndex)
+        $chunkOutputPath = Join-Path $OutputDir ("arena_results_{0:D3}.jsonl" -f $chunkIndex)
+        if (Test-Path -LiteralPath $chunkOutputPath) {
+            Remove-Item -LiteralPath $chunkOutputPath -Force
+        }
+
+        $config = @{
+            matches = $chunkMatches
+            seed = ($Seed + $completedMatches)
+            max_actions_per_match = 2400
+            report_trajectories = $false
+            policies = $currentPolicies
+        }
+        Write-Utf8NoBom -Path $chunkConfigPath -Content (($config | ConvertTo-Json -Depth 8) + "`n")
+
+        $arenaArgs = @(
+            "run",
+            "--manifest-path", $BackendManifest,
+            "--release",
+            "--bin", "bot_arena",
+            "--",
+            "--config", $chunkConfigPath,
+            "--output", $chunkOutputPath,
+            "--jobs", "$Jobs"
+        )
+
+        & $CargoExe @arenaArgs
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        Add-Utf8NoBomFile -SourcePath $chunkOutputPath -TargetPath $outputPath
+        $completedMatches += $chunkMatches
+        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seats={3}" -f `
+            $completedMatches, $Matches, ($chunkIndex + 1), (Format-SeatPolicyIds -Policies $currentPolicies))
+
+        if ($completedMatches -lt $Matches) {
+            $currentPolicies = @(Switch-SeatPolicies -Policies $currentPolicies -RotationStep $rotationStep)
+            $swapName = switch ($rotationStep % 3) {
+                0 { "1<->3, 2<->4" }
+                1 { "1<->2, 3<->4" }
+                default { "1<->4" }
+            }
+            Write-Host "Next seat order after swap $swapName`: $(Format-SeatPolicyIds -Policies $currentPolicies)"
+            $rotationStep += 1
+        }
+
+        $chunkIndex += 1
     }
 }
 finally {

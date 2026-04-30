@@ -31,8 +31,8 @@ POLICY_POOL="$(resolve_user_path "$POLICY_POOL")"
 OUTPUT_DIR="$(resolve_user_path "$OUTPUT_DIR")"
 
 mkdir -p "$OUTPUT_DIR"
-CONFIG_PATH="$OUTPUT_DIR/arena_config.json"
 OUTPUT_PATH="$OUTPUT_DIR/arena_results.jsonl"
+POLICIES_PATH="$OUTPUT_DIR/arena_policies.json"
 
 find_python() {
     if command -v python >/dev/null 2>&1; then
@@ -47,16 +47,13 @@ find_python() {
 
 PYTHON_BIN="$(find_python)"
 
-SEAT_POLICY_IDS_TEXT="$("$PYTHON_BIN" - "$POLICY_POOL" "$CONFIG_PATH" "$MATCHES" "$SEED" "$MAX_ACTIONS_PER_MATCH" <<'PY'
+SEAT_POLICY_IDS_TEXT="$("$PYTHON_BIN" - "$POLICY_POOL" "$POLICIES_PATH" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 pool_path = Path(sys.argv[1])
-config_path = Path(sys.argv[2])
-matches = int(sys.argv[3])
-seed = int(sys.argv[4])
-max_actions = int(sys.argv[5])
+policies_path = Path(sys.argv[2])
 
 if not pool_path.is_file():
     print(f"Policy pool was not found: {pool_path}", file=sys.stderr)
@@ -108,16 +105,10 @@ for index, source in enumerate(raw_policies):
         policy["temperature"] = float(source["temperature"])
     policies.append(policy)
 
-config_path.parent.mkdir(parents=True, exist_ok=True)
-config_path.write_text(
+policies_path.parent.mkdir(parents=True, exist_ok=True)
+policies_path.write_text(
     json.dumps(
-        {
-            "matches": matches,
-            "seed": seed,
-            "max_actions_per_match": max_actions,
-            "report_trajectories": False,
-            "policies": policies,
-        },
+        policies,
         indent=2,
         ensure_ascii=False,
     )
@@ -129,6 +120,57 @@ for policy in policies:
 PY
 )"
 mapfile -t SEAT_POLICY_IDS <<< "$SEAT_POLICY_IDS_TEXT"
+
+if (( PROGRESS_EVERY <= 0 )); then
+    echo "PROGRESS_EVERY must be greater than 0 because seat rotation happens on each progress report." >&2
+    exit 2
+fi
+
+write_chunk_config() {
+    local config_path="$1"
+    local chunk_matches="$2"
+    local chunk_seed="$3"
+    local order_csv="$4"
+
+    "$PYTHON_BIN" - "$POLICIES_PATH" "$config_path" "$chunk_matches" "$chunk_seed" "$MAX_ACTIONS_PER_MATCH" "$order_csv" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+policies_path = Path(sys.argv[1])
+config_path = Path(sys.argv[2])
+matches = int(sys.argv[3])
+seed = int(sys.argv[4])
+max_actions = int(sys.argv[5])
+order = [int(part) for part in sys.argv[6].split(",")]
+policies = json.loads(policies_path.read_text(encoding="utf-8"))
+config_path.write_text(
+    json.dumps(
+        {
+            "matches": matches,
+            "seed": seed,
+            "max_actions_per_match": max_actions,
+            "report_trajectories": False,
+            "policies": [policies[index] for index in order],
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
+seat_order_text() {
+    local ids=()
+    local index
+    for index in "$@"; do
+        ids+=("${SEAT_POLICY_IDS[$index]}")
+    done
+    local joined="${ids[*]}"
+    printf '%s\n' "${joined// /, }"
+}
 
 print_summary() {
     local output_path="$1"
@@ -191,19 +233,62 @@ for policy_id in sorted(groups):
 PY
 }
 
-echo "Seat order: ${SEAT_POLICY_IDS[*]}"
+echo "Initial seat order: $(seat_order_text 0 1 2 3)"
 echo "Policy pool: $POLICY_POOL"
 echo "Output: $OUTPUT_DIR"
 
 cd "$REPO_ROOT"
-"$CARGO_EXE" run \
-    --manifest-path "$BACKEND_MANIFEST" \
-    --release \
-    --bin bot_arena \
-    -- \
-    --config "$CONFIG_PATH" \
-    --output "$OUTPUT_PATH" \
-    --progress-every "$PROGRESS_EVERY" \
-    --jobs "$JOBS"
+rm -f "$OUTPUT_PATH"
+
+completed_matches=0
+chunk_index=0
+rotation_step=0
+seat_order=(0 1 2 3)
+
+while (( completed_matches < MATCHES )); do
+    chunk_matches=$(( MATCHES - completed_matches ))
+    if (( chunk_matches > PROGRESS_EVERY )); then
+        chunk_matches="$PROGRESS_EVERY"
+    fi
+
+    chunk_config_path="$(printf '%s/arena_config_%03d.json' "$OUTPUT_DIR" "$chunk_index")"
+    chunk_output_path="$(printf '%s/arena_results_%03d.jsonl' "$OUTPUT_DIR" "$chunk_index")"
+    rm -f "$chunk_output_path"
+    write_chunk_config \
+        "$chunk_config_path" \
+        "$chunk_matches" \
+        "$(( SEED + completed_matches ))" \
+        "${seat_order[0]},${seat_order[1]},${seat_order[2]},${seat_order[3]}"
+
+    "$CARGO_EXE" run \
+        --manifest-path "$BACKEND_MANIFEST" \
+        --release \
+        --bin bot_arena \
+        -- \
+        --config "$chunk_config_path" \
+        --output "$chunk_output_path" \
+        --jobs "$JOBS"
+
+    cat "$chunk_output_path" >> "$OUTPUT_PATH"
+    completed_matches=$(( completed_matches + chunk_matches ))
+    echo "Arena progress: completed $completed_matches/$MATCHES chunk=$(( chunk_index + 1 )) seats=$(seat_order_text "${seat_order[@]}")"
+
+    if (( completed_matches < MATCHES )); then
+        if (( rotation_step % 3 == 0 )); then
+            seat_order=("${seat_order[2]}" "${seat_order[3]}" "${seat_order[0]}" "${seat_order[1]}")
+            swap_name="1<->3, 2<->4"
+        elif (( rotation_step % 3 == 1 )); then
+            seat_order=("${seat_order[1]}" "${seat_order[0]}" "${seat_order[3]}" "${seat_order[2]}")
+            swap_name="1<->2, 3<->4"
+        else
+            seat_order=("${seat_order[3]}" "${seat_order[1]}" "${seat_order[2]}" "${seat_order[0]}")
+            swap_name="1<->4"
+        fi
+        echo "Next seat order after swap $swap_name: $(seat_order_text "${seat_order[@]}")"
+        rotation_step=$(( rotation_step + 1 ))
+    fi
+
+    chunk_index=$(( chunk_index + 1 ))
+done
 
 print_summary "$OUTPUT_PATH"
