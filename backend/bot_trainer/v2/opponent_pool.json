@@ -17,17 +17,17 @@
       "weight": 2
     },
     {
-      "id": "sft_se",
+      "id": "sft_block_6_3",
       "mode": "neural",
-      "model_path": "backend/assets/history_models/sft_se.onnx",
+      "model_path": "backend/assets/history_models/sft_block_6_3.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2
     },
     {
-      "id": "sft_default",
+      "id": "sft_block_4_2",
       "mode": "neural",
-      "model_path": "backend/assets/history_models/sft_default.onnx",
+      "model_path": "backend/assets/history_models/sft_block_4_2.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2

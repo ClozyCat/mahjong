@@ -8,6 +8,7 @@ ORIGINAL_PWD="$(pwd)"
 
 MATCHES="${MATCHES:-200}"
 SEED="${SEED:-20260429}"
+RANDOM_SEED="${RANDOM_SEED:-0}"
 POLICY_POOL="${POLICY_POOL:-$SCRIPT_DIR/opponent_pool.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/arena_runs}"
 PROGRESS_EVERY="${PROGRESS_EVERY:-10}"
@@ -125,6 +126,18 @@ if (( PROGRESS_EVERY <= 0 )); then
     echo "PROGRESS_EVERY must be greater than 0 because seat rotation happens on each progress report." >&2
     exit 2
 fi
+if [[ "$RANDOM_SEED" != "0" && "$RANDOM_SEED" != "1" ]]; then
+    echo "RANDOM_SEED must be 0 or 1." >&2
+    exit 2
+fi
+
+random_arena_seed() {
+    "$PYTHON_BIN" - <<'PY'
+import secrets
+
+print(secrets.randbelow(2_147_483_647) + 1)
+PY
+}
 
 write_chunk_config() {
     local config_path="$1"
@@ -236,6 +249,7 @@ PY
 echo "Initial seat order: $(seat_order_text 0 1 2 3)"
 echo "Policy pool: $POLICY_POOL"
 echo "Output: $OUTPUT_DIR"
+echo "Random seed: $RANDOM_SEED"
 
 cd "$REPO_ROOT"
 rm -f "$OUTPUT_PATH"
@@ -254,10 +268,15 @@ while (( completed_matches < MATCHES )); do
     chunk_config_path="$(printf '%s/arena_config_%03d.json' "$OUTPUT_DIR" "$chunk_index")"
     chunk_output_path="$(printf '%s/arena_results_%03d.jsonl' "$OUTPUT_DIR" "$chunk_index")"
     rm -f "$chunk_output_path"
+    if [[ "$RANDOM_SEED" == "1" ]]; then
+        chunk_seed="$(random_arena_seed)"
+    else
+        chunk_seed="$(( SEED + completed_matches ))"
+    fi
     write_chunk_config \
         "$chunk_config_path" \
         "$chunk_matches" \
-        "$(( SEED + completed_matches ))" \
+        "$chunk_seed" \
         "${seat_order[0]},${seat_order[1]},${seat_order[2]},${seat_order[3]}"
 
     "$CARGO_EXE" run \
@@ -271,7 +290,7 @@ while (( completed_matches < MATCHES )); do
 
     cat "$chunk_output_path" >> "$OUTPUT_PATH"
     completed_matches=$(( completed_matches + chunk_matches ))
-    echo "Arena progress: completed $completed_matches/$MATCHES chunk=$(( chunk_index + 1 )) seats=$(seat_order_text "${seat_order[@]}")"
+    echo "Arena progress: completed $completed_matches/$MATCHES chunk=$(( chunk_index + 1 )) seed=$chunk_seed seats=$(seat_order_text "${seat_order[@]}")"
 
     if (( completed_matches < MATCHES )); then
         if (( rotation_step % 3 == 0 )); then

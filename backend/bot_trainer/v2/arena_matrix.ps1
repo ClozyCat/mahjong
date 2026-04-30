@@ -1,6 +1,8 @@
 param(
     [int]$Matches = 200,
     [int]$Seed = 20260429,
+    [ValidateSet(0, 1)]
+    [int]$RandomSeed = 0,
     [string]$PolicyPool = "",
     [string]$OutputDir = "",
     [int]$ProgressEvery = 10,
@@ -159,6 +161,10 @@ function Switch-SeatPolicies {
     }
 }
 
+function New-ArenaSeed {
+    return (Get-Random -Minimum 1 -Maximum ([int]::MaxValue))
+}
+
 function Write-ArenaSummary {
     param(
         [Parameter(Mandatory = $true)]
@@ -225,6 +231,7 @@ if ($ProgressEvery -le 0) {
 Write-Host "Initial seat order: $(Format-SeatPolicyIds -Policies $seatPolicies)"
 Write-Host "Policy pool: $PolicyPool"
 Write-Host "Output: $OutputDir"
+Write-Host "Random seed: $RandomSeed"
 
 Push-Location $RepoRoot
 try {
@@ -235,6 +242,7 @@ try {
 
     while ($completedMatches -lt $Matches) {
         $chunkMatches = [Math]::Min($ProgressEvery, $Matches - $completedMatches)
+        $chunkSeed = if ($RandomSeed -eq 1) { New-ArenaSeed } else { $Seed + $completedMatches }
         $chunkConfigPath = Join-Path $OutputDir ("arena_config_{0:D3}.json" -f $chunkIndex)
         $chunkOutputPath = Join-Path $OutputDir ("arena_results_{0:D3}.jsonl" -f $chunkIndex)
         if (Test-Path -LiteralPath $chunkOutputPath) {
@@ -243,7 +251,7 @@ try {
 
         $config = @{
             matches = $chunkMatches
-            seed = ($Seed + $completedMatches)
+            seed = $chunkSeed
             max_actions_per_match = 2400
             report_trajectories = $false
             policies = $currentPolicies
@@ -268,8 +276,8 @@ try {
 
         Add-Utf8NoBomFile -SourcePath $chunkOutputPath -TargetPath $outputPath
         $completedMatches += $chunkMatches
-        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seats={3}" -f `
-            $completedMatches, $Matches, ($chunkIndex + 1), (Format-SeatPolicyIds -Policies $currentPolicies))
+        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seed={3} seats={4}" -f `
+            $completedMatches, $Matches, ($chunkIndex + 1), $chunkSeed, (Format-SeatPolicyIds -Policies $currentPolicies))
 
         if ($completedMatches -lt $Matches) {
             $currentPolicies = @(Switch-SeatPolicies -Policies $currentPolicies -RotationStep $rotationStep)
