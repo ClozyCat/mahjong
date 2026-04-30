@@ -1610,15 +1610,20 @@
   height: var(--table-stage-corner-button-size);
   padding: 0;
   border-radius: var(--table-stage-corner-button-radius);
-  line-height: 1;
-  background: rgba(14, 14, 14, 0.72);
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 20%, transparent);
-  backdrop-filter: blur(24px) saturate(140%);
-  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux);
+  line-height: 0;
+  background: rgba(14, 14, 14, 0.78);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  backdrop-filter: blur(24px) saturate(160%);
+  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
   box-shadow:
-    0 8px 20px rgba(0, 0, 0, 0.3),
+    0 12px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  color: color-mix(in srgb, var(--theme-paper) 80%, transparent);
   cursor: pointer;
+}
+
+.table-stage__settings-button--active {
+  color: var(--accent-2);
 }
 
 .table-stage__settings-button:hover,
@@ -1629,6 +1634,7 @@
 .table-stage__leave-button:hover {
   transform: scale(1.1) translateY(-1px);
   background: rgba(14, 14, 14, 0.82);
+  color: var(--theme-paper-strong);
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
@@ -1644,12 +1650,14 @@
 }
 
 .table-stage__settings-button {
-  flex-basis: auto;
-  width: auto;
-  min-width: calc(var(--table-stage-corner-button-size) * 1.7);
-  padding-inline: clamp(0.36rem, 1vmin, 0.54rem);
-  border-radius: 999px;
   color: var(--theme-paper-strong);
+}
+
+.table-stage__icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  stroke-width: 2.2;
+  display: block;
 }
 
 .table-stage__settings-button:hover,
@@ -1738,15 +1746,6 @@
 .table-stage__leave-button span {
   position: relative;
   z-index: 1;
-}
-
-.table-stage__settings-button span,
-.table-stage__fullscreen-button span,
-.table-stage__bgm-button span,
-.table-stage__help-button span {
-  font-size: clamp(0.75rem, 1.8vmin, 0.96rem);
-  font-weight: 700;
-  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1761,29 +1760,40 @@
   gap: clamp(0.22rem, 0.8vmin, 0.34rem);
   padding: clamp(0.28rem, 0.9vmin, 0.42rem);
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 16%, transparent);
-  background: rgba(14, 14, 14, 0.78);
-  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  background: rgba(10, 10, 10, 0.88);
+  backdrop-filter: blur(24px) saturate(160%);
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  transform-origin: top right;
+  animation: table-stage-quick-settings-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes table-stage-quick-settings-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .table-stage__quick-setting {
-  min-width: clamp(3.45rem, 8.2vmin, 5.2rem);
-  min-height: clamp(1.38rem, 3.1vmin, 1.86rem);
-  padding: 0 0.58rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 14%, transparent);
-  background: color-mix(in srgb, var(--theme-shadow) 48%, transparent);
-  color: color-mix(in srgb, var(--theme-paper) 72%, transparent);
-  font-size: clamp(0.56rem, 1.3vmin, 0.74rem);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0;
-  white-space: nowrap;
+  flex: 0 0 var(--table-stage-corner-button-size);
+  width: var(--table-stage-corner-button-size);
+  height: var(--table-stage-corner-button-size);
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--theme-paper) 75%, transparent);
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  transition: border-color 0.2s var(--ease-lux), background 0.2s var(--ease-lux), color 0.2s var(--ease-lux), box-shadow 0.2s var(--ease-lux);
+  transition: all 0.2s var(--ease-lux);
 }
 
 .table-stage__quick-setting:hover {
@@ -1792,16 +1802,17 @@
 }
 
 .table-stage__quick-setting--active {
-  border-color: color-mix(in srgb, var(--theme-success) 54%, transparent);
-  background: color-mix(in srgb, var(--theme-success) 16%, rgba(14, 14, 14, 0.62));
-  color: color-mix(in srgb, var(--theme-success) 84%, var(--theme-paper-strong));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-success) 16%, transparent);
+  border-color: color-mix(in srgb, var(--theme-success) 40%, transparent);
+  background: color-mix(in srgb, var(--theme-success) 14%, rgba(255, 255, 255, 0.05));
+  color: var(--accent-2);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-2) 20%, transparent);
 }
 
 .table-stage__quick-setting--bot.table-stage__quick-setting--active {
-  border-color: color-mix(in srgb, var(--theme-warning) 58%, transparent);
-  background: color-mix(in srgb, var(--theme-warning) 16%, rgba(14, 14, 14, 0.62));
-  color: color-mix(in srgb, var(--theme-warning) 86%, var(--theme-paper-strong));
+  border-color: color-mix(in srgb, var(--theme-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--theme-warning) 14%, rgba(255, 255, 255, 0.05));
+  color: var(--accent-2);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-2) 20%, transparent);
 }
 
 .table-stage__quick-setting--theme {
@@ -1814,16 +1825,17 @@
   letter-spacing: 0.04em;
 }
 
+
 .table-stage__leave-button {
   color: var(--theme-danger);
 }
 
 .table-stage__leave-button:hover {
-  border-color: var(--theme-danger);
-  background: color-mix(in srgb, var(--theme-danger) 12%, rgba(14, 14, 14, 0.82));
+  color: #ff4d4f;
+  border-color: color-mix(in srgb, #ff4d4f 40%, transparent);
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.4),
-    0 0 14px color-mix(in srgb, var(--theme-danger) 24%, transparent),
+    0 0 14px color-mix(in srgb, #ff4d4f 24%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
@@ -1893,17 +1905,23 @@
   .table-stage__bgm-button,
   .table-stage__help-button,
   .table-stage__theme-button,
-  .table-stage__leave-button {
+  .table-stage__leave-button,
+  .table-stage__quick-setting {
     width: 1.6rem;
     height: 1.6rem;
     flex: 0 0 1.6rem;
   }
 
+  .table-stage__quick-settings {
+    gap: 0.2rem;
+    padding: 0.25rem;
+  }
+
   .table-stage__settings-button {
-    flex-basis: auto;
-    width: auto;
-    min-width: 2.55rem;
-    padding-inline: 0.42rem;
+    width: 1.6rem;
+    height: 1.6rem;
+    flex: 0 0 1.6rem;
+    padding: 0;
   }
 
   .table-stage__seat-watermark {

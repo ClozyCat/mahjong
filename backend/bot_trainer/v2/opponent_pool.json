@@ -23,6 +23,14 @@
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2
+    },
+    {
+      "id": "history_neural_04300943",
+      "mode": "neural",
+      "model_path": "backend/assets/history_models/cnn04300943.onnx",
+      "sample_actions": false,
+      "temperature": 1.0,
+      "weight": 2
     }
   ]
 }

@@ -105,7 +105,9 @@ export const TableChrome = memo(function TableChrome({
           title={areQuickSettingsOpen ? '收起' : '展开设置'}
           onClick={() => setAreQuickSettingsOpen((current) => !current)}
         >
-          <span aria-hidden="true">收起</span>
+          <svg className="table-stage__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={areQuickSettingsOpen ? "m18 15-6-6-6 6" : "m6 9 6 6 6-6"} />
+          </svg>
         </button>
         <button
           type="button"
@@ -114,7 +116,10 @@ export const TableChrome = memo(function TableChrome({
           title="番种说明"
           onClick={() => setIsFanGuideOpen(true)}
         >
-          <span aria-hidden="true">?</span>
+          <svg className="table-stage__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 17h.01" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          </svg>
         </button>
         {canLeaveTable ? (
           <button
@@ -123,7 +128,11 @@ export const TableChrome = memo(function TableChrome({
             aria-label="快捷离开牌桌"
             onClick={onLeaveTable}
           >
-            <span aria-hidden="true">×</span>
+            <svg className="table-stage__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 6h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-3" />
+              <path d="m10 15 3-3-3-3" />
+              <path d="M13 12H6" />
+            </svg>
           </button>
         ) : null}
         {areQuickSettingsOpen ? (
@@ -136,7 +145,11 @@ export const TableChrome = memo(function TableChrome({
               title={isBgmEnabled ? '关闭背景音乐' : '开启背景音乐'}
               onClick={onToggleBgm}
             >
-              音乐开关
+              <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
             </button>
             <button
               type="button"
@@ -146,7 +159,11 @@ export const TableChrome = memo(function TableChrome({
               title={isVoiceEnabled ? '关闭语音' : '开启语音'}
               onClick={onToggleVoice}
             >
-              语音开关
+              <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
             </button>
             <button
               type="button"
@@ -156,7 +173,13 @@ export const TableChrome = memo(function TableChrome({
               title={isBotTakeoverEnabled ? '切换为人类操控' : '交给 BOT 代打'}
               onClick={() => onToggleBotTakeover?.(!isBotTakeoverEnabled)}
             >
-              BOT代打
+              <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect width="18" height="10" x="3" y="11" rx="2" />
+                <circle cx="12" cy="5" r="2" />
+                <path d="M12 7v4" />
+                <line x1="8" y1="16" x2="8" y2="16" />
+                <line x1="16" y1="16" x2="16" y2="16" />
+              </svg>
             </button>
             {onCycleTheme ? (
               <button
@@ -167,7 +190,13 @@ export const TableChrome = memo(function TableChrome({
                 title={`切换配色：${themeLabel}`}
                 onClick={onCycleTheme}
               >
-                换主题
+                <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="13.5" cy="6.5" r=".5" />
+                  <circle cx="17.5" cy="10.5" r=".5" />
+                  <circle cx="8.5" cy="7.5" r=".5" />
+                  <circle cx="6.5" cy="12.5" r=".5" />
+                  <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.6 1.5-1.5 0-.4-.1-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.5 1.5-1.5H16c3.3 0 6-2.7 6-6 0-4.9-4.5-9-10-9Z" />
+                </svg>
               </button>
             ) : null}
           </div>

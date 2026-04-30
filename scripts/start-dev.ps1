@@ -175,7 +175,7 @@ Set-Location -LiteralPath $(Convert-ToSingleQuotedPowerShellString -Value $backe
 `$env:MAHJONG_DATABASE_URL = $(Convert-ToSingleQuotedPowerShellString -Value $databasePath)
 Write-Host "Backend starting on $backendUrl" -ForegroundColor Cyan
 Write-Host "SQLite database: $databasePath" -ForegroundColor DarkGray
-cargo run
+cargo run --bin backend
 if (`$LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "Backend exited with code `$LASTEXITCODE" -ForegroundColor Red
