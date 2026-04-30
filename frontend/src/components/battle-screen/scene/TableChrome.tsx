@@ -56,6 +56,7 @@ export const TableChrome = memo(function TableChrome({
 }: TableChromeProps) {
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [areQuickSettingsOpen, setAreQuickSettingsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [pinnedFanKeys, setPinnedFanKeys] = useState<string[]>(() => {
     if (typeof window === 'undefined') {
       return [];
@@ -81,6 +82,28 @@ export const TableChrome = memo(function TableChrome({
 
     localStorage.removeItem('mahjong_pinned_fans');
   }, [pinnedFanKeys]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    
+    setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error('Error toggling fullscreen:', err);
+    }
+  };
 
   const shouldShowPreMatchActions = preMatchActions.length > 0;
   const shouldShowBotControls =
@@ -137,6 +160,32 @@ export const TableChrome = memo(function TableChrome({
         ) : null}
         {areQuickSettingsOpen ? (
           <div className="table-stage__quick-settings" role="group" aria-label="牌桌快捷设置">
+            <button
+              type="button"
+              className={`table-stage__quick-setting table-stage__quick-setting--fullscreen ${isFullscreen ? 'table-stage__quick-setting--active' : ''}`.trim()}
+              aria-label="全屏切换"
+              aria-pressed={isFullscreen}
+              title={isFullscreen ? '退出全屏' : '全屏显示'}
+              onClick={handleToggleFullscreen}
+            >
+              <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {isFullscreen ? (
+                  <>
+                    <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                    <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                    <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                    <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                    <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                    <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                    <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                  </>
+                )}
+              </svg>
+            </button>
             <button
               type="button"
               className={`table-stage__quick-setting table-stage__quick-setting--music ${isBgmEnabled ? 'table-stage__quick-setting--active' : ''}`.trim()}
