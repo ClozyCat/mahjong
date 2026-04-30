@@ -419,6 +419,7 @@ export function BattleScreen({
                 actions={isSpectator || isBotTakeoverEnabled ? [] : battleActions}
                 isElevated={viewModel.isActionDockElevated}
                 isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
+                isHandInteractionDisabled={isBotTakeoverEnabled}
                 isSpectator={isSpectator}
                 spectatorFocusName={spectatorFocusName}
                 promptCue={viewModel.promptCue}

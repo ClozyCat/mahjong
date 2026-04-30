@@ -1846,6 +1846,40 @@ describe('BattleScreen', () => {
     expect(hand.querySelectorAll('.mahjong-tile--hand')).toHaveLength(2);
   });
 
+  it('disables and dims local hand tiles while bot takeover is enabled', async () => {
+    const user = userEvent.setup();
+    const onTileSelect = vi.fn();
+    const onTileDoubleClick = vi.fn();
+
+    renderBattleScreen(
+      createBattleViewModel({
+        actions: [
+          { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
+        ],
+      }),
+      {
+        isBotTakeoverEnabled: true,
+        onTileSelect,
+        onTileDoubleClick,
+      },
+    );
+
+    const hand = screen.getByLabelText(/local hand/i);
+    const tileButtons = Array.from(hand.querySelectorAll('button'));
+
+    expect(screen.queryByRole('button', { name: '出牌' })).toBeNull();
+    expect(tileButtons).toHaveLength(2);
+    expect(tileButtons[0]).toBeDisabled();
+    expect(tileButtons[0]).toHaveClass('action-dock__tile--disabled');
+    expect(tileButtons[0].querySelector('.mahjong-tile--disabled')).not.toBeNull();
+
+    await user.click(tileButtons[0]);
+    await user.dblClick(tileButtons[1]);
+
+    expect(onTileSelect).not.toHaveBeenCalled();
+    expect(onTileDoubleClick).not.toHaveBeenCalled();
+  });
+
 
   it('does not render an action overlay when a battle action effect is active', () => {
     renderBattleScreen(

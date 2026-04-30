@@ -47,6 +47,12 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 const MAX_CACHED_RECONNECT_CLOSES = 3;
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
+const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
+  'ready',
+  'start_match',
+  'start_next_round',
+  'restart_match',
+]);
 type ClientMode = NonNullable<SessionState['clientMode']>;
 
 function getRuntimeDefaultBaseUrls() {
@@ -213,8 +219,6 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
-  useSequentialBackgroundMusic(isBgmEnabled);
-
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
@@ -540,6 +544,7 @@ export default function App() {
       ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === localSeatIndex)
       : null;
   const isLocalBotTakeoverEnabled = !isSpectator && Boolean(localSeatState?.is_bot);
+  useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
@@ -748,7 +753,7 @@ export default function App() {
   }
 
   function handleAction(actionId: BattleActionId) {
-    if (isSpectator || isLocalBotTakeoverEnabled) {
+    if (isSpectator || (isLocalBotTakeoverEnabled && !BOT_TAKEOVER_ROOM_ACTION_IDS.has(actionId))) {
       return;
     }
 
@@ -985,6 +990,11 @@ export default function App() {
   }
 
   function handleLeaveTable() {
+    if (isSpectator) {
+      handleLeaveToLobby(state.roomSnapshot?.payload.table_code ?? state.tableCode);
+      return;
+    }
+
     const shouldConfirmLeave = state.roomSnapshot?.payload.phase !== 'waiting';
     if (shouldConfirmLeave && !window.confirm(LEAVE_TABLE_CONFIRM_MESSAGE)) {
       return;

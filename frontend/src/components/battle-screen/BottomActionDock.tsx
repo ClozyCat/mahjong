@@ -19,6 +19,7 @@ interface BottomActionDockProps {
   actions: BattleActionView[];
   isElevated: boolean;
   isWaitingForMatchStart?: boolean;
+  isHandInteractionDisabled?: boolean;
   isSpectator?: boolean;
   spectatorFocusName?: string | null;
   promptCue: BattlePromptView | null;
@@ -38,6 +39,7 @@ export function BottomActionDock({
   claimCandidates,
   actions,
   isWaitingForMatchStart = false,
+  isHandInteractionDisabled = false,
   isSpectator = false,
   spectatorFocusName = null,
   promptCue,
@@ -310,50 +312,56 @@ export function BottomActionDock({
           <div className="action-dock__hand-cluster">
             {hand.length > 0 ? (
               <div className="action-dock__hand" aria-label="Local hand">
-                {hand.map((tile, index) => (
-                  <button
-                    key={`${tile.tileId}-${index}`}
-                    type="button"
-                    className={[
-                      'action-dock__tile',
-                      tile.isSelected ? 'action-dock__tile--selected' : '',
-                      tile.isDrawn ? 'action-dock__tile--drawn' : '',
-                      tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
-                      tile.isDisabled || isSpectator ? 'action-dock__tile--disabled' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    disabled={tile.isDisabled || isSpectator}
-                    aria-label={
-                      isSpectator
-                        ? `${tile.code} 观战模式`
-                        : tile.isDisabled
-                          ? `${tile.code} 当前回合禁止打出`
-                          : undefined
-                    }
-                    onClick={(event) => {
-                      if (isSpectator || event.detail > 1) {
-                        return;
-                      }
+                {hand.map((tile, index) => {
+                  const isTileInteractionDisabled = tile.isDisabled || isSpectator || isHandInteractionDisabled;
 
-                      onTileSelect(tile.tileId);
-                    }}
-                    onDoubleClick={() => {
-                      if (!isSpectator) {
-                        onTileDoubleClick(tile.tileId);
+                  return (
+                    <button
+                      key={`${tile.tileId}-${index}`}
+                      type="button"
+                      className={[
+                        'action-dock__tile',
+                        tile.isSelected ? 'action-dock__tile--selected' : '',
+                        tile.isDrawn ? 'action-dock__tile--drawn' : '',
+                        tile.isReplacementDrawn ? 'action-dock__tile--replacement-drawn' : '',
+                        isTileInteractionDisabled ? 'action-dock__tile--disabled' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      disabled={isTileInteractionDisabled}
+                      aria-label={
+                        isSpectator
+                          ? `${tile.code} 观战模式`
+                          : isHandInteractionDisabled
+                            ? `${tile.code} BOT代打中`
+                            : tile.isDisabled
+                              ? `${tile.code} 当前回合禁止打出`
+                              : undefined
                       }
-                    }}
-                  >
-                    <MahjongTile
-                      code={tile.code}
-                      variant="hand"
-                      isSelected={tile.isSelected}
-                      isDrawn={tile.isDrawn}
-                      isDisabled={tile.isDisabled || isSpectator}
-                      relatedTileCode={selectedTileCode}
-                    />
-                  </button>
-                ))}
+                      onClick={(event) => {
+                        if (isTileInteractionDisabled || event.detail > 1) {
+                          return;
+                        }
+
+                        onTileSelect(tile.tileId);
+                      }}
+                      onDoubleClick={() => {
+                        if (!isTileInteractionDisabled) {
+                          onTileDoubleClick(tile.tileId);
+                        }
+                      }}
+                    >
+                      <MahjongTile
+                        code={tile.code}
+                        variant="hand"
+                        isSelected={tile.isSelected}
+                        isDrawn={tile.isDrawn}
+                        isDisabled={isTileInteractionDisabled}
+                        relatedTileCode={selectedTileCode}
+                      />
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>

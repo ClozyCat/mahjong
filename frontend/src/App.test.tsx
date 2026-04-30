@@ -72,6 +72,32 @@ function createMockLocalStorage(): Storage {
   };
 }
 
+function mockBackgroundMusicPlayback() {
+  const play = vi.fn(() => Promise.resolve());
+  const pause = vi.fn();
+  const addEventListener = vi.fn();
+  const audio = vi.fn((url: string) => {
+    void url;
+    return {
+      play,
+      pause,
+      addEventListener,
+    };
+  });
+  const originalAudio = globalThis.Audio;
+
+  globalThis.Audio = audio as unknown as typeof Audio;
+
+  return {
+    audio,
+    play,
+    pause,
+    restore: () => {
+      globalThis.Audio = originalAudio;
+    },
+  };
+}
+
 function countSelectedTiles(container: HTMLElement) {
   return container.querySelectorAll('.mahjong-tile--selected').length;
 }
@@ -224,6 +250,21 @@ async function joinTable(user: ReturnType<typeof userEvent.setup>) {
   return socket!;
 }
 
+async function watchTable(user: ReturnType<typeof userEvent.setup>) {
+  render(<App />);
+
+  await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
+  await user.click(screen.getByRole('button', { name: '观战牌桌' }));
+
+  const socket = MockWebSocket.instances[0];
+  expect(socket).toBeDefined();
+  await act(async () => {
+    socket!.triggerOpen();
+  });
+
+  return socket!;
+}
+
 describe('App', () => {
   beforeEach(() => {
     MockWebSocket.reset();
@@ -263,6 +304,52 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '加入牌桌' }));
 
     expect(lock).not.toHaveBeenCalled();
+  });
+
+  it('does not start background music from lobby interactions', () => {
+    localStorage.setItem('mahjong:bgm', 'true');
+    const audioMock = mockBackgroundMusicPlayback();
+
+    try {
+      render(<App />);
+
+      window.dispatchEvent(new Event('pointerdown'));
+
+      expect(audioMock.audio).not.toHaveBeenCalled();
+      expect(audioMock.play).not.toHaveBeenCalled();
+    } finally {
+      audioMock.restore();
+    }
+  });
+
+  it('lets a bot-takeover player start the match after all seats are bots', async () => {
+    const user = userEvent.setup();
+    const socket = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Bot 2', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 3, nickname: 'Bot 3', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+          ],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+        },
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '开始对局' }));
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'start_match', payload: {} },
+    ]);
   });
 
   it('shows the aspect-ratio prompt for mobile portrait battle sessions', async () => {
@@ -429,6 +516,29 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Mahjong table')).toBeNull();
     expect(screen.getByText('牌桌不存在，请检查牌桌编号后重试。')).toBeInTheDocument();
+  });
+
+  (__SPECTATOR_ENABLED__ ? it : it.skip)('returns to the lobby when a spectator leaves the table', async () => {
+    const user = userEvent.setup();
+    const socket = await watchTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          local_seat: null,
+          reconnect_token: null,
+        }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Mahjong table')).toBeNull();
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'watch_table', payload: { nickname: '观众' } },
+    ]);
   });
 
   it('stops retrying cached reconnects after repeated socket closes', async () => {
