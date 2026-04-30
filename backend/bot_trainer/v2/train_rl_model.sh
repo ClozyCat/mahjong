@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OUTPUT_DIR="backend/bot_trainer/v2/rl_runs/latest"
+OUTPUT_DIR="backend/bot_trainer/v2/rl_runs/$(date +%Y%m%d%H%M)"
 BASELINE_CHECKPOINT="backend/bot_trainer/v2/checkpoints/best.pt"
 BASELINE_ONNX="backend/assets/models/mahjong_policy_net.onnx"
 PYTHON_CMD=(python)

@@ -23,6 +23,7 @@ import {
   createReadyMessage,
   createReconnectMessage,
   createRestartMatchMessage,
+  createSetBotTakeoverMessage,
   createStartMatchMessage,
   createStartNextRoundMessage,
   parseServerMessage,
@@ -211,6 +212,7 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
 
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   useSequentialBackgroundMusic(isBgmEnabled);
 
   const { defaults, storedSession } = useMemo(getDefaultConfig, []);
@@ -532,6 +534,12 @@ export default function App() {
     isSpectator
       ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === spectatorFocusSeat)?.nickname ?? null
       : null;
+  const localSeatIndex = state.roomSnapshot?.payload.local_seat;
+  const localSeatState =
+    typeof localSeatIndex === 'number'
+      ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === localSeatIndex)
+      : null;
+  const isLocalBotTakeoverEnabled = !isSpectator && Boolean(localSeatState?.is_bot);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
@@ -704,7 +712,7 @@ export default function App() {
   }
 
   function handleTileSelect(tileId: string) {
-    if (isSpectator) {
+    if (isSpectator || isLocalBotTakeoverEnabled) {
       return;
     }
 
@@ -740,7 +748,7 @@ export default function App() {
   }
 
   function handleAction(actionId: BattleActionId) {
-    if (isSpectator) {
+    if (isSpectator || isLocalBotTakeoverEnabled) {
       return;
     }
 
@@ -892,7 +900,7 @@ export default function App() {
   }
 
   function handleClaimCandidateSelect(actionId: ClaimActionId, tileIds: string[]) {
-    if (isSpectator) {
+    if (isSpectator || isLocalBotTakeoverEnabled) {
       return;
     }
 
@@ -904,7 +912,7 @@ export default function App() {
   }
 
   function handleClaimCandidateActivate(actionId: ClaimActionId, tileIds: string[]) {
-    if (isSpectator) {
+    if (isSpectator || isLocalBotTakeoverEnabled) {
       return;
     }
 
@@ -935,8 +943,16 @@ export default function App() {
     sendMessage(serializeClientMessage(createAdjustBotsMessage(delta)));
   }
 
-  function handleTileDoubleClick(tileId: string) {
+  function handleSetBotTakeover(enabled: boolean) {
     if (isSpectator) {
+      return;
+    }
+
+    sendMessage(serializeClientMessage(createSetBotTakeoverMessage(enabled)));
+  }
+
+  function handleTileDoubleClick(tileId: string) {
+    if (isSpectator || isLocalBotTakeoverEnabled) {
       return;
     }
 
@@ -1027,6 +1043,10 @@ export default function App() {
           return next;
         })
       }
+      isVoiceEnabled={isVoiceEnabled}
+      onToggleVoice={() => setIsVoiceEnabled((current) => !current)}
+      isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
+      onToggleBotTakeover={handleSetBotTakeover}
       viewModel={viewModel}
       themeId={themeId}
       themeLabel={getThemeLabel(themeId)}

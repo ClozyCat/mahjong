@@ -69,6 +69,10 @@ interface TableStageProps {
   onIncreaseTileScale?: () => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
+  isVoiceEnabled?: boolean;
+  onToggleVoice?: () => void;
+  isBotTakeoverEnabled?: boolean;
+  onToggleBotTakeover?: (enabled: boolean) => void;
   children?: ReactNode;
 }
 
@@ -119,6 +123,10 @@ export function TableStage({
   onIncreaseTileScale: _onIncreaseTileScale,
   isBgmEnabled = false,
   onToggleBgm,
+  isVoiceEnabled = true,
+  onToggleVoice,
+  isBotTakeoverEnabled = false,
+  onToggleBotTakeover,
   children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -169,6 +177,10 @@ export function TableStage({
             onRemoveBot={onRemoveBot}
             isBgmEnabled={isBgmEnabled}
             onToggleBgm={onToggleBgm}
+            isVoiceEnabled={isVoiceEnabled}
+            onToggleVoice={onToggleVoice}
+            isBotTakeoverEnabled={isBotTakeoverEnabled}
+            onToggleBotTakeover={onToggleBotTakeover}
           />
           <CenterIndicator
             remainingCount={remainingTileCount}

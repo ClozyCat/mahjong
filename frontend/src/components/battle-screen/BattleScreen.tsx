@@ -35,6 +35,10 @@ interface BattleScreenProps {
   onSwitchSpectatorPerspective?: () => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
+  isVoiceEnabled?: boolean;
+  isBotTakeoverEnabled?: boolean;
+  onToggleVoice?: () => void;
+  onToggleBotTakeover?: (enabled: boolean) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -66,6 +70,10 @@ export function BattleScreen({
   onSwitchSpectatorPerspective,
   isBgmEnabled = false,
   onToggleBgm,
+  isVoiceEnabled = true,
+  isBotTakeoverEnabled = false,
+  onToggleVoice,
+  onToggleBotTakeover,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -165,6 +173,11 @@ export function BattleScreen({
         continue;
       }
 
+      playedVoiceCueKeysRef.current.add(voiceCue.key);
+      if (!isVoiceEnabled) {
+        continue;
+      }
+
       const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.absoluteSeat, voiceCue.clipName);
       if (!voiceUrl) {
         continue;
@@ -174,7 +187,6 @@ export function BattleScreen({
       const voiceCueSignature = getVoiceCueSignature(voiceCue);
       const previousPlayedAt = recentVoiceCueSignaturesRef.current.get(voiceCueSignature);
 
-      playedVoiceCueKeysRef.current.add(voiceCue.key);
       pruneRecentVoiceCues(recentVoiceCueSignaturesRef.current, now);
 
       if (typeof previousPlayedAt === 'number' && now - previousPlayedAt < VOICE_CUE_DEDUP_MS) {
@@ -192,6 +204,7 @@ export function BattleScreen({
     viewModel.lastDiscardSeat,
     viewModel.players,
     viewModel.tableCode,
+    isVoiceEnabled,
   ]);
 
   useEffect(() => {
@@ -393,13 +406,17 @@ export function BattleScreen({
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
               isBgmEnabled={isBgmEnabled}
               onToggleBgm={onToggleBgm}
+              isVoiceEnabled={isVoiceEnabled}
+              onToggleVoice={onToggleVoice}
+              isBotTakeoverEnabled={isBotTakeoverEnabled}
+              onToggleBotTakeover={onToggleBotTakeover}
             >
               <BottomActionDock
                 hand={viewModel.localHand}
                 selectedTileCode={viewModel.selectedTileCode}
                 handInsight={viewModel.handInsight}
                 claimCandidates={viewModel.claimCandidates}
-                actions={isSpectator ? [] : battleActions}
+                actions={isSpectator || isBotTakeoverEnabled ? [] : battleActions}
                 isElevated={viewModel.isActionDockElevated}
                 isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
                 isSpectator={isSpectator}

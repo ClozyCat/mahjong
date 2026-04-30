@@ -407,7 +407,9 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     if room_handle.is_closed() {
         return;
     }
-    if room_seats(&runtime.room).is_empty() || room_has_only_bots(&runtime.room) {
+    if room_seats(&runtime.room).is_empty()
+        || (room_has_only_bots(&runtime.room) && runtime.connections.is_empty())
+    {
         room_handle.mark_closed();
         close_runtime(&mut runtime);
         drop(runtime);

@@ -423,6 +423,30 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
     }
 }
 
+pub(crate) fn set_seat_bot_takeover(
+    room: &mut RoomState,
+    seat_index: usize,
+    enabled: bool,
+) -> Result<(), &'static str> {
+    let Some(seat) = room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == seat_index)
+    else {
+        return Err("seat_not_owned");
+    };
+
+    seat.connected = true;
+    seat.disconnect_deadline_at = None;
+    seat.is_bot = enabled;
+    seat.seat_type = if enabled { "bot" } else { "human" }.to_string();
+    if enabled {
+        seat.ready = true;
+    }
+
+    Ok(())
+}
+
 pub(crate) fn set_seat_connected(
     room: &mut RoomState,
     seat_index: usize,
@@ -582,7 +606,8 @@ pub(crate) fn send_outbound(outbound: Vec<OutboundMessage>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path};
+    use super::{BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path, set_seat_bot_takeover};
+    use crate::core::state::{RoomState, SeatState};
 
     #[test]
     fn bot_action_delay_defaults_to_150ms() {
@@ -623,5 +648,47 @@ mod tests {
             resolve_database_path("C:/mahjong/data/mahjong.db"),
             "C:/mahjong/data/mahjong.db"
         );
+    }
+
+    #[test]
+    fn bot_takeover_preserves_human_reconnect_credentials() {
+        let mut room = RoomState {
+            table_code: "ABCD".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            seats: vec![SeatState {
+                seat_index: 0,
+                nickname: Some("Alice".to_string()),
+                reconnect_token: Some("token-1".to_string()),
+                player_session_id: Some(42),
+                connected: true,
+                ready: false,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        set_seat_bot_takeover(&mut room, 0, true).expect("takeover should turn on");
+        let seat = room.seats.first().expect("seat should remain");
+        assert!(seat.is_bot);
+        assert_eq!(seat.seat_type, "bot");
+        assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
+        assert_eq!(seat.player_session_id, Some(42));
+        assert!(seat.ready);
+
+        set_seat_bot_takeover(&mut room, 0, false).expect("takeover should turn off");
+        let seat = room.seats.first().expect("seat should remain");
+        assert!(!seat.is_bot);
+        assert_eq!(seat.seat_type, "human");
+        assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
+        assert_eq!(seat.player_session_id, Some(42));
+        assert!(seat.connected);
     }
 }

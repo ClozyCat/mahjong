@@ -1,11 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { ThemeId } from '../../../lib/themes';
-import {
-  exitFullscreenMode,
-  isFullscreenModeActive,
-  requestFullscreenMode,
-} from '../../../lib/device';
 import type { BattleActionView } from '../../../types/match';
 import { FAN_GUIDE_ENTRIES, type FanGuideEntry } from '../fanGuide';
 import { FanGuideDialog } from '../FanGuideDialog';
@@ -29,6 +24,10 @@ interface TableChromeProps {
   onRemoveBot?: () => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
+  isVoiceEnabled?: boolean;
+  onToggleVoice?: () => void;
+  isBotTakeoverEnabled?: boolean;
+  onToggleBotTakeover?: (enabled: boolean) => void;
 }
 
 export const TableChrome = memo(function TableChrome({
@@ -50,8 +49,13 @@ export const TableChrome = memo(function TableChrome({
   onRemoveBot,
   isBgmEnabled = false,
   onToggleBgm,
+  isVoiceEnabled = true,
+  onToggleVoice,
+  isBotTakeoverEnabled = false,
+  onToggleBotTakeover,
 }: TableChromeProps) {
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
+  const [areQuickSettingsOpen, setAreQuickSettingsOpen] = useState(false);
   const [pinnedFanKeys, setPinnedFanKeys] = useState<string[]>(() => {
     if (typeof window === 'undefined') {
       return [];
@@ -68,33 +72,6 @@ export const TableChrome = memo(function TableChrome({
       return [];
     }
   });
-
-  const [isFullScreen, setIsFullScreen] = useState(false);
-
-  useEffect(() => {
-    const handleFullScreenChange = () => {
-      setIsFullScreen(isFullscreenModeActive());
-    };
-
-    document.addEventListener('fullscreenchange', handleFullScreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullScreenChange);
-
-    // Initial check
-    handleFullScreenChange();
-
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullScreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullScreenChange);
-    };
-  }, []);
-
-  const handleToggleFullScreen = () => {
-    if (isFullscreenModeActive()) {
-      exitFullscreenMode();
-    } else {
-      requestFullscreenMode();
-    }
-  };
 
   useEffect(() => {
     if (pinnedFanKeys.length > 0) {
@@ -122,82 +99,13 @@ export const TableChrome = memo(function TableChrome({
       <div className="table-stage__corner-controls">
         <button
           type="button"
-          className={`table-stage__bgm-button ${isBgmEnabled ? 'table-stage__bgm-button--active' : ''}`.trim()}
-          aria-label={isBgmEnabled ? '关闭背景音乐' : '开启背景音乐'}
-          title={isBgmEnabled ? '关闭背景音乐' : '开启背景音乐'}
-          onClick={onToggleBgm}
+          className={`table-stage__settings-button ${areQuickSettingsOpen ? 'table-stage__settings-button--active' : ''}`.trim()}
+          aria-label={areQuickSettingsOpen ? '收起牌桌快捷设置' : '展开牌桌快捷设置'}
+          aria-expanded={areQuickSettingsOpen}
+          title={areQuickSettingsOpen ? '收起' : '展开设置'}
+          onClick={() => setAreQuickSettingsOpen((current) => !current)}
         >
-          <span aria-hidden="true">
-            {isBgmEnabled ? (
-              <svg
-                viewBox="0 0 24 24"
-                width="1em"
-                height="1em"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 18V5l12-2v13" />
-                <circle cx="6" cy="18" r="3" />
-                <circle cx="18" cy="16" r="3" />
-              </svg>
-            ) : (
-              <svg
-                viewBox="0 0 24 24"
-                width="1em"
-                height="1em"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 18V5l12-2v13" />
-                <circle cx="6" cy="18" r="3" />
-                <circle cx="18" cy="16" r="3" />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
-            )}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="table-stage__fullscreen-button"
-          aria-label={isFullScreen ? '退出全屏' : '全屏显示'}
-          title={isFullScreen ? '退出全屏' : '全屏显示'}
-          onClick={handleToggleFullScreen}
-        >
-          <span aria-hidden="true">
-            {isFullScreen ? (
-              <svg
-                viewBox="0 0 24 24"
-                width="1em"
-                height="1em"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 14h6m0 0v6m0-6-7 7m17-7h-6m0 0v6m0-6 7 7M4 10h6m0 0V4m0 6-7-7m17 7h-6m0 0V4m0 6 7-7" />
-              </svg>
-            ) : (
-              <svg
-                viewBox="0 0 24 24"
-                width="1em"
-                height="1em"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-              </svg>
-            )}
-          </span>
+          <span aria-hidden="true">收起</span>
         </button>
         <button
           type="button"
@@ -208,18 +116,6 @@ export const TableChrome = memo(function TableChrome({
         >
           <span aria-hidden="true">?</span>
         </button>
-        {onCycleTheme ? (
-          <button
-            type="button"
-            className="table-stage__theme-button"
-            data-theme={themeId}
-            aria-label={`切换整体配色，当前 ${themeLabel}`}
-            title={`切换配色：${themeLabel}`}
-            onClick={onCycleTheme}
-          >
-            <span aria-hidden="true">换</span>
-          </button>
-        ) : null}
         {canLeaveTable ? (
           <button
             type="button"
@@ -229,6 +125,52 @@ export const TableChrome = memo(function TableChrome({
           >
             <span aria-hidden="true">×</span>
           </button>
+        ) : null}
+        {areQuickSettingsOpen ? (
+          <div className="table-stage__quick-settings" role="group" aria-label="牌桌快捷设置">
+            <button
+              type="button"
+              className={`table-stage__quick-setting table-stage__quick-setting--music ${isBgmEnabled ? 'table-stage__quick-setting--active' : ''}`.trim()}
+              aria-label="音乐开关"
+              aria-pressed={isBgmEnabled}
+              title={isBgmEnabled ? '关闭背景音乐' : '开启背景音乐'}
+              onClick={onToggleBgm}
+            >
+              音乐开关
+            </button>
+            <button
+              type="button"
+              className={`table-stage__quick-setting table-stage__quick-setting--voice ${isVoiceEnabled ? 'table-stage__quick-setting--active' : ''}`.trim()}
+              aria-label="语音开关"
+              aria-pressed={isVoiceEnabled}
+              title={isVoiceEnabled ? '关闭语音' : '开启语音'}
+              onClick={onToggleVoice}
+            >
+              语音开关
+            </button>
+            <button
+              type="button"
+              className={`table-stage__quick-setting table-stage__quick-setting--bot ${isBotTakeoverEnabled ? 'table-stage__quick-setting--active' : ''}`.trim()}
+              aria-label="BOT代打"
+              aria-pressed={isBotTakeoverEnabled}
+              title={isBotTakeoverEnabled ? '切换为人类操控' : '交给 BOT 代打'}
+              onClick={() => onToggleBotTakeover?.(!isBotTakeoverEnabled)}
+            >
+              BOT代打
+            </button>
+            {onCycleTheme ? (
+              <button
+                type="button"
+                className="table-stage__quick-setting table-stage__quick-setting--theme"
+                data-theme={themeId}
+                aria-label="换主题"
+                title={`切换配色：${themeLabel}`}
+                onClick={onCycleTheme}
+              >
+                换主题
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {shouldShowPreMatchActions || shouldShowBotControls ? (

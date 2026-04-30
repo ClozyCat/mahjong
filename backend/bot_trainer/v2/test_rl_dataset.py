@@ -91,6 +91,17 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
     assert row["has_global_state"].item() is False
 
 
+def test_loads_trajectory_jsonl_with_utf8_bom(tmp_path: Path) -> None:
+    path = tmp_path / "trajectories.jsonl"
+    row = base_trajectory_row("learner", 0, reward=1.0, value=0.0)
+    path.write_text("\ufeff" + json.dumps(row) + "\n", encoding="utf-8")
+
+    dataset = ArenaTrajectoryDataset(path)
+
+    assert len(dataset) == 1
+    assert dataset[0]["reward"].item() == 1.0
+
+
 def test_compute_returns_resets_on_done() -> None:
     returns = compute_returns(
         [0.0, 1.0, 0.0, 2.0],

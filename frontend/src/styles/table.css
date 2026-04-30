@@ -1596,6 +1596,7 @@
   gap: clamp(0.25rem, 1vmin, 0.38rem);
 }
 
+.table-stage__settings-button,
 .table-stage__fullscreen-button,
 .table-stage__bgm-button,
 .table-stage__help-button,
@@ -1620,6 +1621,7 @@
   cursor: pointer;
 }
 
+.table-stage__settings-button:hover,
 .table-stage__fullscreen-button:hover,
 .table-stage__bgm-button:hover,
 .table-stage__help-button:hover,
@@ -1632,12 +1634,28 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
+.table-stage__settings-button:active,
 .table-stage__fullscreen-button:active,
 .table-stage__bgm-button:active,
 .table-stage__help-button:active,
 .table-stage__theme-button:active,
 .table-stage__leave-button:active {
   transform: scale(0.95);
+}
+
+.table-stage__settings-button {
+  flex-basis: auto;
+  width: auto;
+  min-width: calc(var(--table-stage-corner-button-size) * 1.7);
+  padding-inline: clamp(0.36rem, 1vmin, 0.54rem);
+  border-radius: 999px;
+  color: var(--theme-paper-strong);
+}
+
+.table-stage__settings-button:hover,
+.table-stage__settings-button--active {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 12%, rgba(14, 14, 14, 0.82));
 }
 
 .table-stage__fullscreen-button {
@@ -1712,6 +1730,7 @@
   opacity: 0.35;
 }
 
+.table-stage__settings-button span,
 .table-stage__fullscreen-button span,
 .table-stage__bgm-button span,
 .table-stage__help-button span,
@@ -1721,6 +1740,7 @@
   z-index: 1;
 }
 
+.table-stage__settings-button span,
 .table-stage__fullscreen-button span,
 .table-stage__bgm-button span,
 .table-stage__help-button span {
@@ -1730,6 +1750,63 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.table-stage__quick-settings {
+  position: absolute;
+  top: calc(100% + clamp(0.3rem, 1vmin, 0.5rem));
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(0.22rem, 0.8vmin, 0.34rem);
+  padding: clamp(0.28rem, 0.9vmin, 0.42rem);
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 16%, transparent);
+  background: rgba(14, 14, 14, 0.78);
+  backdrop-filter: blur(24px) saturate(140%);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
+.table-stage__quick-setting {
+  min-width: clamp(3.45rem, 8.2vmin, 5.2rem);
+  min-height: clamp(1.38rem, 3.1vmin, 1.86rem);
+  padding: 0 0.58rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 14%, transparent);
+  background: color-mix(in srgb, var(--theme-shadow) 48%, transparent);
+  color: color-mix(in srgb, var(--theme-paper) 72%, transparent);
+  font-size: clamp(0.56rem, 1.3vmin, 0.74rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease-lux), background 0.2s var(--ease-lux), color 0.2s var(--ease-lux), box-shadow 0.2s var(--ease-lux);
+}
+
+.table-stage__quick-setting:hover {
+  border-color: color-mix(in srgb, var(--theme-paper) 34%, transparent);
+  color: var(--theme-paper-strong);
+}
+
+.table-stage__quick-setting--active {
+  border-color: color-mix(in srgb, var(--theme-success) 54%, transparent);
+  background: color-mix(in srgb, var(--theme-success) 16%, rgba(14, 14, 14, 0.62));
+  color: color-mix(in srgb, var(--theme-success) 84%, var(--theme-paper-strong));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-success) 16%, transparent);
+}
+
+.table-stage__quick-setting--bot.table-stage__quick-setting--active {
+  border-color: color-mix(in srgb, var(--theme-warning) 58%, transparent);
+  background: color-mix(in srgb, var(--theme-warning) 16%, rgba(14, 14, 14, 0.62));
+  color: color-mix(in srgb, var(--theme-warning) 86%, var(--theme-paper-strong));
+}
+
+.table-stage__quick-setting--theme {
+  border-color: color-mix(in srgb, var(--accent) 36%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, var(--theme-paper-strong));
 }
 
 .table-stage__theme-button span {
@@ -1811,6 +1888,7 @@
     gap: 0.28rem;
   }
 
+  .table-stage__settings-button,
   .table-stage__fullscreen-button,
   .table-stage__bgm-button,
   .table-stage__help-button,
@@ -1819,6 +1897,13 @@
     width: 1.6rem;
     height: 1.6rem;
     flex: 0 0 1.6rem;
+  }
+
+  .table-stage__settings-button {
+    flex-basis: auto;
+    width: auto;
+    min-width: 2.55rem;
+    padding-inline: 0.42rem;
   }
 
   .table-stage__seat-watermark {

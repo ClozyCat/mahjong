@@ -283,6 +283,7 @@ export type ClientMessage =
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
   | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
+  | { type: 'set_bot_takeover'; payload: { enabled: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
   | { type: 'restart_match'; payload: Record<string, never> }

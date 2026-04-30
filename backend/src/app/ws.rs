@@ -36,7 +36,7 @@ use super::{
     occupied_seats, presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
     remove_bot_from_waiting_room, remove_seat_from_room, room_has_round_state, room_phase,
     room_player_session_id, room_seats, seat_exists, seat_matches_reconnect_credentials,
-    send_outbound, serialize_room, set_seat_connected,
+    send_outbound, serialize_room, set_seat_bot_takeover, set_seat_connected,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::SeatState;
@@ -57,6 +57,7 @@ enum ClientMessage {
     Reconnect(ReconnectRequest),
     Ready(ReadyRequest),
     AdjustBots(AdjustBotsRequest),
+    SetBotTakeover(SetBotTakeoverRequest),
     StartMatch,
     StartNextRound,
     RestartMatch,
@@ -139,6 +140,12 @@ struct QuickChatRequest {
 struct AdjustBotsRequest {
     #[serde(default)]
     delta: i64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SetBotTakeoverRequest {
+    #[serde(default)]
+    enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -337,6 +344,14 @@ async fn handle_client_message(
                 return reject_to(connection, "seat_not_owned");
             };
             handle_adjust_bots(state, table_code, connection, seat_index, request).await
+        }
+        ClientMessage::SetBotTakeover(request) => {
+            let Some(seat_index) =
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
+            else {
+                return reject_to(connection, "seat_not_owned");
+            };
+            handle_set_bot_takeover(state, table_code, connection, seat_index, request).await
         }
         ClientMessage::StartMatch => {
             let Some(seat_index) =
@@ -816,6 +831,66 @@ async fn handle_adjust_bots(
     outcome
 }
 
+async fn handle_set_bot_takeover(
+    state: AppContext,
+    table_code: &str,
+    connection: &ConnectionHandle,
+    seat_index: usize,
+    request: SetBotTakeoverRequest,
+) -> MessageOutcome {
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
+        return reject_to(connection, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let previous_room = runtime.room.clone();
+    if let Err(reason) = set_seat_bot_takeover(&mut runtime.room, seat_index, request.enabled) {
+        return reject_to(connection, reason);
+    }
+    let _ = reconcile_standard_continue_action_state(&mut runtime.room);
+
+    let created_at = runtime.created_at.clone();
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    #[cfg(feature = "spectator")]
+    let spectator_connections = snapshot_spectator_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    #[cfg_attr(not(feature = "spectator"), allow(unused_mut))]
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    #[cfg(feature = "spectator")]
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_connections,
+    ));
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
+        restore_room_snapshot(&room_handle, previous_room).await;
+        return internal_error_to(connection, error);
+    }
+    let outcome = MessageOutcome {
+        outbound,
+        role: None,
+        clear_role: false,
+        close_socket: false,
+    };
+    schedule_room_tasks_detached(state, table_code.to_string());
+    outcome
+}
+
 fn reject_to(connection: &ConnectionHandle, reason: &str) -> MessageOutcome {
     MessageOutcome {
         outbound: vec![connection.outbound(action_rejected_message(reason))],
@@ -979,6 +1054,14 @@ async fn handle_action_request(
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
+    }
+    if runtime
+        .room
+        .seats
+        .iter()
+        .any(|seat| seat.seat_index == seat_index && seat.is_bot)
+    {
+        return reject_to(connection, "bot_takeover_enabled");
     }
     let previous_room = runtime.room.clone();
     let action_result = match try_handle_player_action_in_room_state(
@@ -1193,7 +1276,13 @@ async fn handle_leave_table(
                 close_socket: true,
             }
         }
-    } else if room_has_only_bots(&runtime.room) || should_terminate_unattended(&runtime) {
+    } else if (room_has_only_bots(&runtime.room)
+        && runtime
+            .connections
+            .keys()
+            .all(|connected_seat| *connected_seat == seat_index))
+        || should_terminate_unattended(&runtime)
+    {
         room_handle.mark_closed();
         close_runtime(&mut runtime);
         drop(runtime);
@@ -1393,6 +1482,16 @@ mod tests {
     fn reject_non_empty_payload_for_payloadless_commands() {
         let result = parse_client_message(r#"{"type":"leave_table","payload":{"force":true}}"#);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_bot_takeover_toggle() {
+        let parsed = parse_client_message(
+            r#"{"type":"set_bot_takeover","payload":{"enabled":true}}"#,
+        )
+        .expect("set_bot_takeover should parse");
+
+        assert!(matches!(parsed, ClientMessage::SetBotTakeover(request) if request.enabled));
     }
 
     #[cfg(feature = "spectator")]

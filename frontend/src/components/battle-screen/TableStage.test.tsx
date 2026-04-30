@@ -878,8 +878,11 @@ describe('TableStage', () => {
     expect(within(menu).getAllByRole('menuitem')).toHaveLength(6);
   });
 
-  it('renders a theme switch button beside the leave control and forwards clicks', () => {
+  it('keeps primary corner controls ordered and expands table settings below them', () => {
     const onCycleTheme = vi.fn();
+    const onToggleBgm = vi.fn();
+    const onToggleVoice = vi.fn();
+    const onToggleBotTakeover = vi.fn();
 
     render(
       <TableStage
@@ -895,18 +898,52 @@ describe('TableStage', () => {
         canLeaveTable
         themeId="qiu-xiang"
         themeLabel="秋香"
+        isBgmEnabled
+        isVoiceEnabled
+        isBotTakeoverEnabled={false}
         onLeaveTable={() => undefined}
         onCycleTheme={onCycleTheme}
+        onToggleBgm={onToggleBgm}
+        onToggleVoice={onToggleVoice}
+        onToggleBotTakeover={onToggleBotTakeover}
       />,
     );
 
-    const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
+    const settingsButton = screen.getByRole('button', { name: '展开牌桌快捷设置' });
+    const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
+    const leaveButton = screen.getByRole('button', { name: '快捷离开牌桌' });
+    const controls = helpButton.parentElement;
 
-    expect(themeButton).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '快捷离开牌桌' })).toBeInTheDocument();
+    expect(controls?.children[0]).toBe(settingsButton);
+    expect(controls?.children[1]).toBe(helpButton);
+    expect(controls?.children[2]).toBe(leaveButton);
+    expect(screen.queryByRole('group', { name: '牌桌快捷设置' })).toBeNull();
 
+    fireEvent.click(settingsButton);
+
+    const settings = screen.getByRole('group', { name: '牌桌快捷设置' });
+    const musicButton = within(settings).getByRole('button', { name: '音乐开关' });
+    const voiceButton = within(settings).getByRole('button', { name: '语音开关' });
+    const botButton = within(settings).getByRole('button', { name: 'BOT代打' });
+    const themeButton = within(settings).getByRole('button', { name: '换主题' });
+
+    expect(settingsButton).toHaveAccessibleName('收起牌桌快捷设置');
+    expect(settings.children[0]).toBe(musicButton);
+    expect(settings.children[1]).toBe(voiceButton);
+    expect(settings.children[2]).toBe(botButton);
+    expect(settings.children[3]).toBe(themeButton);
+    expect(musicButton).toHaveAttribute('aria-pressed', 'true');
+    expect(voiceButton).toHaveAttribute('aria-pressed', 'true');
+    expect(botButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(musicButton);
+    fireEvent.click(voiceButton);
+    fireEvent.click(botButton);
     fireEvent.click(themeButton);
 
+    expect(onToggleBgm).toHaveBeenCalledTimes(1);
+    expect(onToggleVoice).toHaveBeenCalledTimes(1);
+    expect(onToggleBotTakeover).toHaveBeenCalledWith(true);
     expect(onCycleTheme).toHaveBeenCalledTimes(1);
   });
 
@@ -930,16 +967,13 @@ describe('TableStage', () => {
       />,
     );
 
-    const bgmButton = screen.getByRole('button', { name: '开启背景音乐' });
-    const fullscreenButton = screen.getByRole('button', { name: '全屏显示' });
+    const settingsButton = screen.getByRole('button', { name: '展开牌桌快捷设置' });
     const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
-    const themeButton = screen.getByRole('button', { name: '切换整体配色，当前 秋香' });
     const controls = helpButton.parentElement;
 
-    expect(controls?.firstElementChild).toBe(bgmButton);
-    expect(controls?.children[1]).toBe(fullscreenButton);
-    expect(controls?.children[2]).toBe(helpButton);
-    expect(controls?.children[3]).toBe(themeButton);
+    expect(controls?.children[0]).toBe(settingsButton);
+    expect(controls?.children[1]).toBe(helpButton);
+    expect(controls?.children[2]).toBe(screen.getByRole('button', { name: '快捷离开牌桌' }));
 
     fireEvent.click(helpButton);
 

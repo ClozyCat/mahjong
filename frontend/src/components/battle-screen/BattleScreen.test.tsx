@@ -267,6 +267,32 @@ describe('BattleScreen', () => {
     }
   });
 
+  it('does not play voice cues while the voice switch is off', () => {
+    const audioMock = mockAudioPlayback();
+
+    try {
+      renderBattleScreen(
+        createBattleViewModel({
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'bottom',
+          actionEffect: {
+            key: 'tile_discarded:voice-off:w1',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'bottom',
+            calloutTone: null,
+          },
+        }),
+        { isVoiceEnabled: false },
+      );
+
+      expect(audioMock.audio).not.toHaveBeenCalled();
+      expect(audioMock.play).not.toHaveBeenCalled();
+    } finally {
+      audioMock.restore();
+    }
+  });
+
   it('does not replay the same tile voice when an optimistic discard is quickly confirmed', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));

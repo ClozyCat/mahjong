@@ -70,6 +70,15 @@ export function createAdjustBotsMessage(delta: 1 | -1): ClientMessage {
   };
 }
 
+export function createSetBotTakeoverMessage(enabled: boolean): ClientMessage {
+  return {
+    type: 'set_bot_takeover',
+    payload: {
+      enabled,
+    },
+  };
+}
+
 export function createStartMatchMessage(): ClientMessage {
   return {
     type: 'start_match',
