@@ -43,10 +43,6 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
     return {
         "tile_planes": torch.tensor(row["tile_planes"], dtype=torch.float32).view(-1, 34),
         "scalar_features": torch.tensor(row["scalar_features"], dtype=torch.float32),
-        "discard_sequence": torch.tensor(
-            row.get("discard_sequence", [[0.0] * 38 for _ in range(64)]),
-            dtype=torch.float32,
-        ).view(64, 38),
         "discard_mask": torch.tensor(row["discard_mask"], dtype=torch.bool),
         "claim_mask": torch.tensor(row["claim_mask"], dtype=torch.bool),
         "self_kong_mask": torch.tensor(row["self_kong_mask"], dtype=torch.bool),

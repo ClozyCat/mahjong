@@ -72,9 +72,9 @@ else:
     )
     raise SystemExit(2)
 
-if len(raw_policies) != 4:
+if len(raw_policies) < 1:
     print(
-        f"Policy pool must define exactly 4 arena models, but found {len(raw_policies)}: {pool_path}",
+        f"Policy pool must define at least 1 arena model, but found {len(raw_policies)}: {pool_path}",
         file=sys.stderr,
     )
     raise SystemExit(2)
@@ -121,6 +121,7 @@ for policy in policies:
 PY
 )"
 mapfile -t SEAT_POLICY_IDS <<< "$SEAT_POLICY_IDS_TEXT"
+POLICY_COUNT="${#SEAT_POLICY_IDS[@]}"
 
 if (( PROGRESS_EVERY <= 0 )); then
     echo "PROGRESS_EVERY must be greater than 0." >&2
@@ -192,7 +193,7 @@ cyclic_seat_order_text() {
     local order=()
     local seat
     for seat in 0 1 2 3; do
-        order+=($(( (seat + offset) % 4 )))
+        order+=($(( (seat + offset) % POLICY_COUNT )))
     done
     seat_order_text "${order[@]}"
 }
@@ -268,7 +269,7 @@ for policy_id in sorted(groups):
 PY
 }
 
-echo "Initial seat order: $(seat_order_text 0 1 2 3)"
+echo "Initial seat order: $(cyclic_seat_order_text 0)"
 echo "Policy pool: $POLICY_POOL"
 echo "Output: $OUTPUT_DIR"
 echo "Random seed: $RANDOM_SEED"
@@ -293,7 +294,7 @@ while (( completed_matches < MATCHES )); do
     else
         chunk_seed="$(( SEED + completed_matches ))"
     fi
-    rotation_offset=$(( completed_matches % 4 ))
+    rotation_offset=$(( completed_matches % POLICY_COUNT ))
     write_chunk_config \
         "$chunk_config_path" \
         "$chunk_matches" \

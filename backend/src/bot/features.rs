@@ -6,14 +6,11 @@ use super::context::{BotContext, BotSelfKongKind};
 
 const TILE_PLANE_COUNT: usize = 10;
 const SCALAR_FEATURE_COUNT: usize = 10;
-const DISCARD_SEQUENCE_LENGTH: usize = 64;
-const DISCARD_EVENT_FEATURE_COUNT: usize = TILE_KIND_COUNT + 4;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BotFeaturesV2 {
     pub(crate) tile_planes: Vec<f32>,
     pub(crate) scalar_features: Vec<f32>,
-    pub(crate) discard_sequence: Vec<f32>,
     pub(crate) discard_mask: [bool; TILE_KIND_COUNT],
     pub(crate) claim_mask: [bool; CLAIM_ACTION_COUNT],
     pub(crate) self_kong_mask: [bool; SELF_KONG_ACTION_COUNT],
@@ -24,7 +21,6 @@ pub(crate) fn encode_bot_context_v2(context: &BotContext) -> BotFeaturesV2 {
     BotFeaturesV2 {
         tile_planes: encode_tile_planes(context),
         scalar_features: encode_scalar_features(context),
-        discard_sequence: encode_discard_sequence(context),
         discard_mask: legal_discard_mask(context),
         claim_mask: legal_claim_mask(context),
         self_kong_mask: legal_self_kong_mask(context),
@@ -38,14 +34,6 @@ pub(crate) fn tile_plane_count_v2() -> usize {
 
 pub(crate) fn scalar_feature_count_v2() -> usize {
     SCALAR_FEATURE_COUNT
-}
-
-pub(crate) fn discard_sequence_length_v2() -> usize {
-    DISCARD_SEQUENCE_LENGTH
-}
-
-pub(crate) fn discard_event_feature_count_v2() -> usize {
-    DISCARD_EVENT_FEATURE_COUNT
 }
 
 fn encode_tile_planes(context: &BotContext) -> Vec<f32> {
@@ -121,27 +109,6 @@ fn encode_scalar_features(context: &BotContext) -> Vec<f32> {
         .unwrap_or(0) as f32
         / 100.0;
     features
-}
-
-fn encode_discard_sequence(context: &BotContext) -> Vec<f32> {
-    let mut sequence = vec![0.0_f32; DISCARD_SEQUENCE_LENGTH * DISCARD_EVENT_FEATURE_COUNT];
-    let start = context
-        .discard_history
-        .len()
-        .saturating_sub(DISCARD_SEQUENCE_LENGTH);
-    for (row_index, event) in context.discard_history.iter().skip(start).enumerate() {
-        let Some(tile_index) = tile_index(&event.tile_key) else {
-            continue;
-        };
-        let relative_seat = (event.seat_index + context.seat_count.max(1) - context.seat_index)
-            % context.seat_count.max(1);
-        let row_offset = row_index * DISCARD_EVENT_FEATURE_COUNT;
-        sequence[row_offset + tile_index] = 1.0;
-        if relative_seat < 4 {
-            sequence[row_offset + TILE_KIND_COUNT + relative_seat] = 1.0;
-        }
-    }
-    sequence
 }
 
 fn legal_discard_mask(context: &BotContext) -> [bool; TILE_KIND_COUNT] {
@@ -345,43 +312,8 @@ mod tests {
             tile_plane_count_v2() * TILE_KIND_COUNT
         );
         assert_eq!(encoded.scalar_features.len(), scalar_feature_count_v2());
-        assert_eq!(
-            encoded.discard_sequence.len(),
-            discard_sequence_length_v2() * discard_event_feature_count_v2()
-        );
         assert_eq!(encoded.claim_mask.len(), CLAIM_ACTION_COUNT);
         assert_eq!(encoded.self_kong_mask.len(), SELF_KONG_ACTION_COUNT);
         assert_eq!(encoded.hu_mask.len(), 2);
-    }
-
-    #[test]
-    fn discard_sequence_encodes_tile_and_relative_seat_order() {
-        use crate::projection::bot_view::BotDiscardEventView;
-
-        let mut context = sample_context_with_tiles(&["w1", "t5", "red"]);
-        context.discard_history = vec![
-            BotDiscardEventView {
-                seat_index: 3,
-                tile_key: "w1".to_string(),
-            },
-            BotDiscardEventView {
-                seat_index: 0,
-                tile_key: "t1".to_string(),
-            },
-        ];
-
-        let encoded = encode_bot_context_v2(&context);
-        let width = discard_event_feature_count_v2();
-
-        assert_eq!(encoded.discard_sequence[0], 1.0);
-        assert_eq!(encoded.discard_sequence[TILE_KIND_COUNT + 3], 1.0);
-        assert_eq!(encoded.discard_sequence[width + 9], 1.0);
-        assert_eq!(encoded.discard_sequence[width + TILE_KIND_COUNT], 1.0);
-        assert_eq!(
-            encoded.discard_sequence[(2 * width)..(3 * width)]
-                .iter()
-                .sum::<f32>(),
-            0.0
-        );
     }
 }

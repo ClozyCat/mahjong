@@ -15,12 +15,6 @@ param(
     [double]$HuLossWeight = 1.0,
     [double]$ValueLossWeight = 0.25,
     [double]$RiskLossWeight = 0.25,
-    [int]$SuitedBlockCount = 2,
-    [int]$HonorBlockCount = 1,
-    [int]$SeReduction = 8,
-    [switch]$UseSe,
-    [switch]$FilmScalar,
-    [switch]$UseDiscardSequence,
     [switch]$RebuildDataCache,
     [switch]$NoAmp,
     [switch]$CompileModel,
@@ -154,20 +148,8 @@ try {
         "--self-kong-loss-weight", "$SelfKongLossWeight",
         "--hu-loss-weight", "$HuLossWeight",
         "--value-loss-weight", "$ValueLossWeight",
-        "--risk-loss-weight", "$RiskLossWeight",
-        "--suited-block-count", "$SuitedBlockCount",
-        "--honor-block-count", "$HonorBlockCount",
-        "--se-reduction", "$SeReduction"
+        "--risk-loss-weight", "$RiskLossWeight"
     )
-    if ($UseSe) {
-        $trainArgs += "--use-se"
-    }
-    if ($FilmScalar) {
-        $trainArgs += "--film-scalar"
-    }
-    if ($UseDiscardSequence) {
-        $trainArgs += "--use-discard-sequence"
-    }
     if (-not $NoAmp) {
         $trainArgs += "--amp"
     }

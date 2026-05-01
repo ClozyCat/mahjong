@@ -162,15 +162,6 @@ def forward_model(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
-    config = getattr(model, "config", None)
-    if config is None and hasattr(model, "_orig_mod"):
-        config = getattr(model._orig_mod, "config", None)
-    if getattr(config, "use_discard_sequence", False):
-        return model(
-            batch["tile_planes"].float(),
-            batch["scalar_features"].float(),
-            batch["discard_sequence"].float(),
-        )
     return model(batch["tile_planes"].float(), batch["scalar_features"].float())
 
 

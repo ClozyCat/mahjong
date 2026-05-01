@@ -97,8 +97,8 @@ function Read-ArenaPolicies {
         throw "Policy pool must contain either 'policies' or 'learner' plus 'opponents': $Path"
     }
 
-    if ($rawPolicies.Count -ne 4) {
-        throw "Policy pool must define exactly 4 arena models, but found $($rawPolicies.Count): $Path"
+    if ($rawPolicies.Count -lt 1) {
+        throw "Policy pool must define at least 1 arena model, but found $($rawPolicies.Count): $Path"
     }
 
     $index = 0

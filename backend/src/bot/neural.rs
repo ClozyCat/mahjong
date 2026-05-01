@@ -3,8 +3,7 @@ use super::action_space::{
 };
 use super::context::{BotContext, BotTileView};
 use super::features::{
-    BotFeaturesV2, discard_event_feature_count_v2, discard_sequence_length_v2,
-    encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
+    BotFeaturesV2, encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
 };
 use ort::{session::Session, value::Tensor};
 use std::{
@@ -177,7 +176,6 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
     let BotFeaturesV2 {
         tile_planes,
         scalar_features,
-        discard_sequence,
         self_kong_mask: _self_kong_mask,
         hu_mask: _hu_mask,
         ..
@@ -190,35 +188,12 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
     let scalar_features =
         Tensor::from_array(([1_usize, scalar_feature_count_v2()], scalar_features))
             .map_err(|_| ())?;
-    let uses_discard_sequence = session
-        .inputs()
-        .iter()
-        .any(|input| input.name() == "discard_sequence");
-    let outputs = if uses_discard_sequence {
-        let discard_sequence = Tensor::from_array((
-            [
-                1_usize,
-                discard_sequence_length_v2(),
-                discard_event_feature_count_v2(),
-            ],
-            discard_sequence,
-        ))
+    let outputs = session
+        .run(ort::inputs![
+            "tile_planes" => tile_planes,
+            "scalar_features" => scalar_features
+        ])
         .map_err(|_| ())?;
-        session
-            .run(ort::inputs![
-                "tile_planes" => tile_planes,
-                "scalar_features" => scalar_features,
-                "discard_sequence" => discard_sequence
-            ])
-            .map_err(|_| ())?
-    } else {
-        session
-            .run(ort::inputs![
-                "tile_planes" => tile_planes,
-                "scalar_features" => scalar_features
-            ])
-            .map_err(|_| ())?
-    };
 
     Ok(NeuralDecisionScores {
         discard_logits: extract_array::<TILE_KIND_COUNT>(&outputs, "discard_logits")?,

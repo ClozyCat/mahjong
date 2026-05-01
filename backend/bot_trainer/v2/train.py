@@ -151,24 +151,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
     parser.add_argument("--value-loss-weight", type=float, default=0.25)
     parser.add_argument("--risk-loss-weight", type=float, default=0.25)
-    parser.add_argument("--suited-block-count", type=int, default=2)
-    parser.add_argument("--honor-block-count", type=int, default=1)
-    parser.add_argument("--use-se", action="store_true")
-    parser.add_argument("--se-reduction", type=int, default=8)
-    parser.add_argument("--film-scalar", action="store_true")
-    parser.add_argument("--use-discard-sequence", action="store_true")
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
     return ModelConfig(
         tile_plane_count=TILE_PLANE_COUNT,
         scalar_feature_count=SCALAR_FEATURE_COUNT,
-        suited_block_count=args.suited_block_count,
-        honor_block_count=args.honor_block_count,
-        use_se=args.use_se,
-        se_reduction=args.se_reduction,
-        film_scalar=args.film_scalar,
-        use_discard_sequence=args.use_discard_sequence,
     )
 
 def resolve_device(requested: str) -> torch.device:
@@ -308,15 +296,6 @@ def forward_model(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
-    config = getattr(model, "config", None)
-    if config is None and hasattr(model, "_orig_mod"):
-        config = getattr(model._orig_mod, "config", None)
-    if getattr(config, "use_discard_sequence", False):
-        return model(
-            batch["tile_planes"].float(),
-            batch["scalar_features"].float(),
-            batch["discard_sequence"].float(),
-        )
     return model(batch["tile_planes"].float(), batch["scalar_features"].float())
 
 class MetricTotals:

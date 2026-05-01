@@ -16,10 +16,8 @@ except ModuleNotFoundError:
 TILE_KIND_COUNT = 34
 TILE_PLANE_COUNT = 10
 SCALAR_FEATURE_COUNT = 10
-DISCARD_SEQUENCE_LENGTH = 64
-DISCARD_EVENT_FEATURE_COUNT = TILE_KIND_COUNT + 4
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 2
+DISK_CACHE_VERSION = 3
 
 class MissingTorchError(RuntimeError):
     pass
@@ -163,7 +161,6 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
     return {
         "tile_planes": ((TILE_PLANE_COUNT, TILE_KIND_COUNT), np.dtype(np.float32)),
         "scalar_features": ((SCALAR_FEATURE_COUNT,), np.dtype(np.float32)),
-        "discard_sequence": ((DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT), np.dtype(np.float32)),
         "discard_mask": ((TILE_KIND_COUNT,), np.dtype(np.bool_)),
         "claim_mask": ((len(metadata["claim_actions"]),), np.dtype(np.bool_)),
         "self_kong_mask": ((len(metadata["self_kong_actions"]),), np.dtype(np.bool_)),
@@ -205,8 +202,6 @@ def expected_cache_manifest(dataset: MahjongDecisionDataset, num_samples: int | 
         "tile_kind_count": TILE_KIND_COUNT,
         "tile_plane_count": TILE_PLANE_COUNT,
         "scalar_feature_count": SCALAR_FEATURE_COUNT,
-        "discard_sequence_length": DISCARD_SEQUENCE_LENGTH,
-        "discard_event_feature_count": DISCARD_EVENT_FEATURE_COUNT,
         "claim_action_count": len(dataset.metadata["claim_actions"]),
         "self_kong_action_count": len(dataset.metadata["self_kong_actions"]),
     }
@@ -295,7 +290,6 @@ def encode_row(
     return {
         "tile_planes": encode_tile_planes(context, tile_to_index),
         "scalar_features": encode_scalar_features(context),
-        "discard_sequence": encode_discard_sequence(context, tile_to_index),
         "discard_mask": encode_discard_mask(row, tile_to_index),
         "claim_mask": encode_claim_mask(row, claim_to_index, tile_to_index),
         "self_kong_mask": encode_self_kong_mask(row, self_kong_to_index),
@@ -358,35 +352,6 @@ def encode_scalar_features(context: dict[str, Any]) -> np.ndarray:
     scores = context.get("cumulative_scores", [])
     features[9] = float(scores[seat_index]) / 100.0 if seat_index < len(scores) else 0.0
     return features
-
-
-def encode_discard_sequence(
-    context: dict[str, Any],
-    tile_to_index: dict[str, int],
-) -> np.ndarray:
-    sequence = np.zeros(
-        (DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT),
-        dtype=np.float32,
-    )
-    seat_index = int(context.get("seat_index", 0))
-    seat_count = max(1, int(context.get("seat_count", 4)))
-    events = context.get("discard_history", [])
-    if not isinstance(events, list):
-        return sequence
-
-    for row_index, event in enumerate(events[-DISCARD_SEQUENCE_LENGTH:]):
-        if not isinstance(event, dict):
-            continue
-        tile_key = event.get("tile_key")
-        tile_index = tile_to_index.get(tile_key)
-        if tile_index is None:
-            continue
-        event_seat = int(event.get("seat_index", seat_index))
-        relative_seat = (event_seat - seat_index) % seat_count
-        sequence[row_index, tile_index] = 1.0
-        if 0 <= relative_seat < 4:
-            sequence[row_index, TILE_KIND_COUNT + relative_seat] = 1.0
-    return sequence
 
 
 def encode_discard_mask(row: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:

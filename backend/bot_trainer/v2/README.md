@@ -71,42 +71,9 @@ The policy keeps the existing ONNX contract:
 
 The tile encoder is suit-aware: 万/条/筒 each pass through a shared 1D residual convolution encoder over rank order, while honors use a separate encoder. This preserves local sequence structure without letting convolutions treat suit boundaries such as `w9 -> t1` as adjacent ranks.
 
-### Architecture Experiment Flags
+### Default Architecture
 
-The default architecture remains the current production-compatible shape: suited encoder `2` residual blocks, honor encoder `1` residual block, no SE, and no FiLM.
-
-Low-risk experiment matrix:
-
-```powershell
-# SE only
-.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe
-
-# SE + moderate depth
-.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2
-
-# SE + deeper encoder
-.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 6 -HonorBlockCount 3
-
-# SE + moderate depth + scalar FiLM
-.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2 -FilmScalar
-
-# Current best family + discard-order GRU sequence input
-.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2 -FilmScalar -UseDiscardSequence
-```
-
-Linux equivalents:
-
-```bash
-./backend/bot_trainer/v2/train_and_export_model.sh --use-se
-./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2
-./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 6 --honor-block-count 3
-./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2 --film-scalar
-./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2 --film-scalar --use-discard-sequence
-```
-
-All non-sequence variants preserve the two-input ONNX contract. Sequence variants add one input named `discard_sequence` shaped `batch x 64 x 38`; Rust runtime detects this input and binds it only when the loaded model declares it, so old two-input models remain a fallback.
-
-The sequence tensor stores the latest 64 discard events in chronological order. Each event is 34 one-hot tile features plus 4 relative-seat one-hot features. Promote a sequence candidate only through the arena gate below; the current se_d4_film model remains the fallback baseline.
+The default architecture is the only supported training path: suited encoder `2` residual blocks, honor encoder `1` residual block, no SE, no FiLM, and no discard-order sequence input. The ONNX runtime contract always stays at two inputs.
 
 ## Arena Evaluation
 
