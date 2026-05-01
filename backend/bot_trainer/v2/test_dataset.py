@@ -19,6 +19,35 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     assert encoded["discard_target"].item() == 0
 
 
+def test_scalar_features_use_standard_seat_wind_for_runtime_context(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["context"]["seat_index"] = 1
+    row["context"]["dealer_seat"] = 0
+    row["context"]["round_wind"] = "south"
+
+    encoded = encode_row(row, metadata)
+
+    assert abs(encoded["scalar_features"][10].item() - (1.0 / 3.0)) < 1e-6
+    assert encoded["scalar_features"][11].item() == 1.0
+
+
+def test_scalar_features_use_standard_north_wind_index(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["context"]["seat_index"] = 3
+    row["context"]["dealer_seat"] = 0
+    row["context"]["seat_wind"] = "north"
+    row["context"]["round_wind"] = "north"
+
+    encoded = encode_row(row, metadata)
+
+    assert encoded["scalar_features"][10].item() == 1.0
+    assert encoded["scalar_features"][11].item() == 1.0
+
+
 def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
     import pytest
 

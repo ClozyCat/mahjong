@@ -57,6 +57,8 @@ pub(crate) struct SerializableBotContext {
     pub(crate) seat_index: usize,
     pub(crate) seat_count: usize,
     pub(crate) dealer_seat: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) seat_wind: Option<String>,
     pub(crate) round_wind: String,
     pub(crate) cumulative_scores: Vec<i64>,
     pub(crate) wall_tiles_remaining: i64,
@@ -158,7 +160,7 @@ pub(crate) fn replay_match_to_samples(
                 state.remove_one_tile(event.actor, tile_key);
                 state.discards[event.actor].push(tile_key.clone());
                 state.discard_history.push(SerializableDiscardEvent {
-                    seat_index: event.actor,
+                    seat_index: botzone_seat_to_standard(event.actor),
                     tile_key: tile_key.clone(),
                 });
                 state.last_discard_tile_key = Some(tile_key.clone());
@@ -315,7 +317,7 @@ impl ReplayState {
             schema_version: 2,
             match_id: record.match_id.clone(),
             decision_index: *decision_index,
-            seat_index,
+            seat_index: botzone_seat_to_standard(seat_index),
             decision_kind: DecisionKind::ActiveTurn,
             context,
             legal_actions,
@@ -353,7 +355,7 @@ impl ReplayState {
             schema_version: 2,
             match_id: record.match_id.clone(),
             decision_index: *decision_index,
-            seat_index,
+            seat_index: botzone_seat_to_standard(seat_index),
             decision_kind: DecisionKind::ActiveTurn,
             context,
             legal_actions,
@@ -404,7 +406,7 @@ impl ReplayState {
                 schema_version: 2,
                 match_id: record.match_id.clone(),
                 decision_index: *decision_index,
-                seat_index,
+                seat_index: botzone_seat_to_standard(seat_index),
                 decision_kind: DecisionKind::ClaimWindow,
                 context,
                 legal_actions,
@@ -442,7 +444,7 @@ impl ReplayState {
                 schema_version: 2,
                 match_id: record.match_id.clone(),
                 decision_index: *decision_index,
-                seat_index,
+                seat_index: botzone_seat_to_standard(seat_index),
                 decision_kind: DecisionKind::RobKong,
                 context,
                 legal_actions: vec!["claim:hu".to_string(), "pass".to_string()],
@@ -461,16 +463,18 @@ impl ReplayState {
         self_kong_candidates: Vec<SerializableSelfKongCandidate>,
         claim_options: Vec<SerializableClaimOption>,
     ) -> SerializableBotContext {
+        let standard_seat_index = botzone_seat_to_standard(seat_index);
         SerializableBotContext {
-            seat_index,
+            seat_index: standard_seat_index,
             seat_count: 4,
             dealer_seat: 0,
+            seat_wind: Some(standard_seat_index_to_wind(standard_seat_index).to_string()),
             round_wind: record.round_wind.clone(),
             cumulative_scores: vec![0, 0, 0, 0],
             wall_tiles_remaining: self.wall_tiles_remaining,
             visible_tile_keys: self.visible_tile_keys(),
-            opponent_discards_by_seat: self.discards.iter().cloned().collect(),
-            opponent_melds_by_seat: self.melds.iter().cloned().collect(),
+            opponent_discards_by_seat: reorder_botzone_seat_array(&self.discards),
+            opponent_melds_by_seat: reorder_botzone_seat_array(&self.melds),
             discard_history: self.discard_history.clone(),
             player: SerializableBotPlayer {
                 concealed_tiles: self.hands[seat_index].clone(),
@@ -803,9 +807,15 @@ fn calculate_match_exact_fan(record: &BotZoneMatch) -> i64 {
                 state.last_discarder_seat = Some(event.actor);
                 state.current_drawn_tile_ids[event.actor] = None;
             }
-            BotZoneAction::Chi { middle_tile_key } => state.apply_chow(event.actor, middle_tile_key),
-            BotZoneAction::Peng { tile_key } => state.apply_same_tile_meld(event.actor, tile_key, 2),
-            BotZoneAction::Gang { tile_key } => state.apply_same_tile_meld(event.actor, tile_key, 3),
+            BotZoneAction::Chi { middle_tile_key } => {
+                state.apply_chow(event.actor, middle_tile_key)
+            }
+            BotZoneAction::Peng { tile_key } => {
+                state.apply_same_tile_meld(event.actor, tile_key, 2)
+            }
+            BotZoneAction::Gang { tile_key } => {
+                state.apply_same_tile_meld(event.actor, tile_key, 3)
+            }
             BotZoneAction::AnGang { tile_key } => state.apply_concealed_kong(event.actor, tile_key),
             BotZoneAction::BuGang { tile_key } => state.apply_add_kong(event.actor, tile_key),
             BotZoneAction::Hu { tile_key } => {
@@ -831,8 +841,10 @@ fn calculate_exact_fan(
     let seat_wind = seat_index_to_wind(winner_seat);
     let round_wind = &record.round_wind;
 
-    let concealed_tile_keys: Vec<String> =
-        state.hands[winner_seat].iter().map(|t| t.tile_key.clone()).collect();
+    let concealed_tile_keys: Vec<String> = state.hands[winner_seat]
+        .iter()
+        .map(|t| t.tile_key.clone())
+        .collect();
     let meld_tile_key_groups = state.melds[winner_seat].clone();
 
     let features = extract_hand_features(
@@ -860,7 +872,11 @@ fn calculate_exact_fan(
         features,
         timing,
         kong_entries: Vec::new(), // 简化处理，暂不追踪历史杠分明细
-        tile_keys: [concealed_tile_keys.clone(), meld_tile_key_groups.iter().flatten().cloned().collect()].concat(),
+        tile_keys: [
+            concealed_tile_keys.clone(),
+            meld_tile_key_groups.iter().flatten().cloned().collect(),
+        ]
+        .concat(),
         visible_tile_keys: state.visible_tile_keys(),
         concealed_tile_keys,
         meld_tile_key_groups: meld_tile_key_groups.clone(),
@@ -882,6 +898,30 @@ fn seat_index_to_wind(index: usize) -> String {
         _ => "east",
     }
     .to_string()
+}
+
+fn botzone_seat_to_standard(seat_index: usize) -> usize {
+    match seat_index {
+        1 => 3,
+        3 => 1,
+        _ => seat_index,
+    }
+}
+
+fn standard_seat_index_to_wind(index: usize) -> &'static str {
+    match index {
+        1 => "south",
+        2 => "west",
+        3 => "north",
+        _ => "east",
+    }
+}
+
+fn reorder_botzone_seat_array<T: Clone>(values: &[T; 4]) -> Vec<T> {
+    [0, 3, 2, 1]
+        .into_iter()
+        .map(|botzone_seat| values[botzone_seat].clone())
+        .collect()
 }
 
 fn make_tile(match_id: &str, seat: usize, sequence: usize, tile_key: &str) -> SerializableBotTile {
@@ -1200,7 +1240,7 @@ Score 0 0 0 0
         let pass = samples
             .iter()
             .find(|sample| {
-                sample.seat_index == 3
+                sample.seat_index == 1
                     && sample
                         .legal_actions
                         .iter()
@@ -1220,7 +1260,7 @@ Score 0 0 0 0
         let hu = samples
             .iter()
             .find(|sample| {
-                sample.seat_index == 3
+                sample.seat_index == 1
                     && sample.decision_kind == DecisionKind::ClaimWindow
                     && sample.label == TrainingLabel::Hu
             })
@@ -1263,7 +1303,7 @@ Score 0 0 0 0
         let kong = samples
             .iter()
             .find(|sample| {
-                sample.seat_index == 1
+                sample.seat_index == 3
                     && sample.label
                         == TrainingLabel::SelfKong {
                             kind: "add_kong".to_string(),
@@ -1289,7 +1329,7 @@ Score 0 0 0 0
         let claimed_turn = samples
             .iter()
             .find(|sample| {
-                sample.seat_index == 1
+                sample.seat_index == 3
                     && sample.decision_kind == DecisionKind::ActiveTurn
                     && sample.label
                         == TrainingLabel::Discard {
@@ -1298,7 +1338,10 @@ Score 0 0 0 0
             })
             .expect("active turn after pung claim");
 
+        assert_eq!(claimed_turn.seat_index, 3);
+        assert_eq!(claimed_turn.context.seat_index, 3);
         assert_eq!(claimed_turn.context.round_wind, "north");
+        assert_eq!(claimed_turn.context.seat_wind.as_deref(), Some("north"));
         assert_eq!(claimed_turn.context.wall_tiles_remaining, 83);
         assert_eq!(claimed_turn.context.drawn_tile_id, None);
         assert_eq!(
@@ -1313,7 +1356,7 @@ Score 0 0 0 0
         );
         assert!(!claimed_turn.context.opponent_discards_by_seat[0].contains(&"b1".to_string()));
         assert!(
-            claimed_turn.context.opponent_melds_by_seat[1]
+            claimed_turn.context.opponent_melds_by_seat[3]
                 .iter()
                 .any(|meld| meld == &vec!["b1".to_string(), "b1".to_string(), "b1".to_string()])
         );
@@ -1354,7 +1397,7 @@ Score 0 0 0 0
         let claimed_turn = samples
             .iter()
             .find(|sample| {
-                sample.seat_index == 1
+                sample.seat_index == 3
                     && sample.decision_kind == DecisionKind::ActiveTurn
                     && sample.context.restricted_discard_tile_key.as_deref() == Some("b9")
             })
@@ -1396,7 +1439,7 @@ Score 0 0 0 0
             .iter()
             .find(|sample| {
                 sample.decision_kind == DecisionKind::RobKong
-                    && sample.seat_index == 3
+                    && sample.seat_index == 1
                     && sample.label == TrainingLabel::Pass
             })
             .expect("rob kong pass sample");

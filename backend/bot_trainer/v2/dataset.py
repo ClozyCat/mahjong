@@ -17,7 +17,9 @@ TILE_KIND_COUNT = 34
 TILE_PLANE_COUNT = 10
 SCALAR_FEATURE_COUNT = 12
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 3
+DISK_CACHE_VERSION = 5
+STANDARD_WIND_ORDER = ("east", "south", "west", "north")
+ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
 class MissingTorchError(RuntimeError):
     pass
@@ -388,13 +390,20 @@ def encode_scalar_features(context: dict[str, Any]) -> np.ndarray:
     scores = context.get("cumulative_scores", [])
     features[9] = float(scores[seat_index]) / 100.0 if seat_index < len(scores) else 0.0
     
-    # 东北西南 0-3 映射 (BotZone 格式)
-    wind_map = {"east": 0.0, "north": 1.0, "west": 2.0, "south": 3.0}
-    round_wind_val = wind_map.get(context.get("round_wind", "east"), 0.0)
+    round_wind = context.get("round_wind", "east")
+    round_wind_val = ROUND_WIND_TO_INDEX.get(round_wind, 0.0)
     features[10] = round_wind_val / 3.0
-    features[11] = 1.0 if round_wind_val == float(seat_index) else 0.0
+    seat_wind = context.get("seat_wind") or seat_wind_key(
+        seat_index,
+        int(context.get("dealer_seat", 0)),
+    )
+    features[11] = 1.0 if seat_wind == round_wind else 0.0
     
     return features
+
+
+def seat_wind_key(seat_index: int, dealer_seat: int) -> str:
+    return STANDARD_WIND_ORDER[(seat_index + 4 - dealer_seat) % 4]
 
 
 def encode_discard_mask(row: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:

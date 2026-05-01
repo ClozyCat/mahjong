@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use crate::bot::arena::ArenaBotPolicyConfig;
+use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
@@ -293,7 +293,18 @@ fn choose_bot_active_turn_action_with_cache_for_state(
     cache: &RoomScoringCache,
     seat_index: usize,
     policy_config: &ArenaBotPolicyConfig,
+    can_hu: bool,
 ) -> Option<BotAction> {
+    let bot_context = build_active_turn_bot_context(room, cache, seat_index, can_hu)?;
+    bot::choose_active_turn_action_with_config(&bot_context, policy_config)
+}
+
+fn build_active_turn_bot_context(
+    room: &RoomState,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+    can_hu: bool,
+) -> Option<crate::bot::context::BotContext> {
     let self_kong_candidates = available_self_kongs_from_cache(cache, seat_index);
     let add_kong_risk_tiles = self_kong_candidates
         .iter()
@@ -304,15 +315,29 @@ fn choose_bot_active_turn_action_with_cache_for_state(
         })
         .map(|candidate| candidate.tile_key.clone())
         .collect::<HashSet<_>>();
-    let bot_context = build_bot_context_view(
+    build_bot_context_view(
         cache,
         room,
         seat_index,
-        Vec::new(),
+        active_turn_hu_options(can_hu),
         self_kong_candidates,
         add_kong_risk_tiles,
-    )?;
-    bot::choose_active_turn_action_with_config(&bot_context, policy_config)
+    )
+}
+
+fn active_turn_hu_options(can_hu: bool) -> Vec<BotClaimOption> {
+    if can_hu {
+        vec![BotClaimOption {
+            action_type: "hu".to_string(),
+            tile_ids: Vec::new(),
+        }]
+    } else {
+        Vec::new()
+    }
+}
+
+fn policy_is_neural(policy_config: &ArenaBotPolicyConfig) -> bool {
+    matches!(policy_config.mode, ArenaPolicyMode::Neural)
 }
 
 #[allow(dead_code)]
@@ -366,35 +391,33 @@ fn choose_bot_claim_action_with_cache_for_state(
         PendingAction::ClaimWindow(claim) => claim,
         _ => return None,
     };
-    if claim
-        .claim_window
-        .get(seat_index)
-        .is_some_and(|claims| claims.iter().any(|claim_type| claim_type == "hu"))
-        && hu_meets_bot_minimum_fan_for_state(room, seat_index, "discard")
-    {
+    let hu_offered = claim_window_offers_action(claim, seat_index, "hu");
+    if policy_is_neural(policy_config) {
+        let claim_options = claim_options_for_seat(cache, claim, seat_index, hu_offered);
+        let bot_context = build_bot_context_view(
+            cache,
+            room,
+            seat_index,
+            claim_options,
+            Vec::new(),
+            HashSet::new(),
+        )?;
+        if let Some(decision) = bot::policy::choose_neural_claim_decision_with_config_and_rng(
+            &bot_context,
+            policy_config,
+            None,
+        ) {
+            return Some(decision.action);
+        }
+    }
+    if hu_offered && hu_meets_bot_minimum_fan_for_state(room, seat_index, "discard") {
         return Some(BotAction {
             seat_index,
             action_type: "hu".to_string(),
             tile_ids: vec![],
         });
     }
-    let claim_options = ["kong", "pung", "chow"]
-        .into_iter()
-        .filter(|claim_type| {
-            claim
-                .claim_window
-                .get(seat_index)
-                .is_some_and(|claims| claims.iter().any(|claim| claim == claim_type))
-        })
-        .flat_map(|claim_type| {
-            claim_tile_id_options(cache, seat_index, claim_type)
-                .into_iter()
-                .map(move |tile_ids| BotClaimOption {
-                    action_type: claim_type.to_string(),
-                    tile_ids,
-                })
-        })
-        .collect::<Vec<_>>();
+    let claim_options = claim_options_for_seat(cache, claim, seat_index, false);
     let bot_context = build_bot_context_view(
         cache,
         room,
@@ -404,6 +427,46 @@ fn choose_bot_claim_action_with_cache_for_state(
         HashSet::new(),
     )?;
     bot::choose_claim_action_with_config(&bot_context, policy_config)
+}
+
+fn claim_options_for_seat(
+    cache: &RoomScoringCache,
+    claim: &crate::core::state::ClaimWindowAction,
+    seat_index: usize,
+    include_hu: bool,
+) -> Vec<BotClaimOption> {
+    let mut claim_options = Vec::new();
+    if include_hu && claim_window_offers_action(claim, seat_index, "hu") {
+        claim_options.push(BotClaimOption {
+            action_type: "hu".to_string(),
+            tile_ids: Vec::new(),
+        });
+    }
+    claim_options.extend(
+        ["kong", "pung", "chow"]
+            .into_iter()
+            .filter(|claim_type| claim_window_offers_action(claim, seat_index, claim_type))
+            .flat_map(|claim_type| {
+                claim_tile_id_options(cache, seat_index, claim_type)
+                    .into_iter()
+                    .map(move |tile_ids| BotClaimOption {
+                        action_type: claim_type.to_string(),
+                        tile_ids,
+                    })
+            }),
+    );
+    claim_options
+}
+
+fn claim_window_offers_action(
+    claim: &crate::core::state::ClaimWindowAction,
+    seat_index: usize,
+    action_type: &str,
+) -> bool {
+    claim
+        .claim_window
+        .get(seat_index)
+        .is_some_and(|claims| claims.iter().any(|claim| claim == action_type))
 }
 
 fn next_ready_hand_action_for_state(
@@ -437,6 +500,7 @@ fn next_ready_hand_action_for_state(
             cache,
             seat_index,
             policy_config,
+            false,
         ) {
             return Some(action);
         }
@@ -487,14 +551,34 @@ fn next_bot_action_for_state_with_policy_resolver(
             if !seat_is_bot(state, seat_index) {
                 return None;
             }
-            if can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None)
-                && hu_meets_bot_minimum_fan_for_state(state, seat_index, "self_draw")
-            {
-                return Some(BotAction {
-                    seat_index,
-                    action_type: "hu".to_string(),
-                    tile_ids: vec![],
-                });
+            let can_hu = can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None);
+            if can_hu {
+                let hu_context = build_active_turn_bot_context(state, &cache, seat_index, true)?;
+                if policy_is_neural(&policy_config) {
+                    if let Some(decision) =
+                        bot::policy::choose_neural_hu_decision_with_config_and_rng(
+                            &hu_context,
+                            &policy_config,
+                            None,
+                        )
+                    {
+                        if decision.action.action_type == "hu" {
+                            return Some(decision.action);
+                        }
+                    } else if hu_meets_bot_minimum_fan_for_state(state, seat_index, "self_draw") {
+                        return Some(BotAction {
+                            seat_index,
+                            action_type: "hu".to_string(),
+                            tile_ids: vec![],
+                        });
+                    }
+                } else if hu_meets_bot_minimum_fan_for_state(state, seat_index, "self_draw") {
+                    return Some(BotAction {
+                        seat_index,
+                        action_type: "hu".to_string(),
+                        tile_ids: vec![],
+                    });
+                }
             }
             if let Some(tile_id) = player_first_flower_tile_id_from_cache(&cache, seat_index) {
                 return Some(BotAction {
@@ -508,12 +592,37 @@ fn next_bot_action_for_state_with_policy_resolver(
                 &cache,
                 seat_index,
                 &policy_config,
+                can_hu,
             )
         }
         "claim_window" => match round.pending_action.as_ref()? {
             PendingAction::RobKongWindow(rob) => {
                 let seat_index =
                     next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
+                let policy_config = policy_for_seat(seat_index);
+                if policy_is_neural(&policy_config) {
+                    let cache = RoomScoringCache::from_state(state);
+                    let bot_context = build_bot_context_view(
+                        &cache,
+                        state,
+                        seat_index,
+                        vec![BotClaimOption {
+                            action_type: "hu".to_string(),
+                            tile_ids: Vec::new(),
+                        }],
+                        Vec::new(),
+                        HashSet::new(),
+                    )?;
+                    if let Some(decision) =
+                        bot::policy::choose_neural_claim_decision_with_config_and_rng(
+                            &bot_context,
+                            &policy_config,
+                            None,
+                        )
+                    {
+                        return Some(decision.action);
+                    }
+                }
                 if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
                     return Some(BotAction {
                         seat_index,
@@ -557,45 +666,39 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
     match pending_timeout.kind.as_str() {
         "active_turn" => {
             let seat_index = round.current_actor;
-            if !seat_is_bot(state, seat_index)
-                || player_is_ready_hand(state, seat_index)
-                || can_declare_hu_with_cache_for_state(
-                    state,
-                    &RoomScoringCache::from_state(state),
-                    seat_index,
-                    None,
-                    None,
-                )
-            {
+            if !seat_is_bot(state, seat_index) || player_is_ready_hand(state, seat_index) {
                 return None;
             }
             let cache = RoomScoringCache::from_state(state);
+            let policy_config = policy_for_seat(seat_index);
+            let can_hu = can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None);
+            if can_hu {
+                let context = build_active_turn_bot_context(state, &cache, seat_index, true)?;
+                if policy_is_neural(&policy_config) {
+                    match bot::policy::choose_neural_hu_decision_with_config_and_rng(
+                        &context,
+                        &policy_config,
+                        rollout_rng.as_deref_mut(),
+                    ) {
+                        Some(decision) if decision.action.action_type == "hu" => {
+                            return Some(BotDecisionTrace {
+                                decision_kind: "active_turn".to_string(),
+                                context,
+                                action: decision.action,
+                                telemetry: decision.telemetry,
+                            });
+                        }
+                        Some(_) => {}
+                        None => return None,
+                    }
+                } else {
+                    return None;
+                }
+            }
             if player_first_flower_tile_id_from_cache(&cache, seat_index).is_some() {
                 return None;
             }
-            let self_kong_candidates = available_self_kongs_from_cache(&cache, seat_index);
-            let add_kong_risk_tiles = self_kong_candidates
-                .iter()
-                .filter(|candidate| candidate.kind == SelfKongKind::Add)
-                .filter(|candidate| {
-                    !seats_with_hu_candidate_for_tile_in_room_state(
-                        state,
-                        seat_index,
-                        &candidate.tile_key,
-                    )
-                    .is_empty()
-                })
-                .map(|candidate| candidate.tile_key.clone())
-                .collect::<HashSet<_>>();
-            let context = build_bot_context_view(
-                &cache,
-                state,
-                seat_index,
-                Vec::new(),
-                self_kong_candidates,
-                add_kong_risk_tiles,
-            )?;
-            let policy_config = policy_for_seat(seat_index);
+            let context = build_active_turn_bot_context(state, &cache, seat_index, can_hu)?;
             let decision = bot::policy::choose_active_turn_decision_with_config_and_rng(
                 &context,
                 &policy_config,
@@ -613,31 +716,38 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                 let cache = RoomScoringCache::from_state(state);
                 let seat_index = next_claim_window_responder_seat(claim)
                     .filter(|seat| seat_is_bot(state, *seat))?;
-                if claim
-                    .claim_window
-                    .get(seat_index)
-                    .is_some_and(|claims| claims.iter().any(|claim_type| claim_type == "hu"))
-                    && hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard")
-                {
+                let policy_config = policy_for_seat(seat_index);
+                let hu_offered = claim_window_offers_action(claim, seat_index, "hu");
+                if policy_is_neural(&policy_config) {
+                    let claim_options =
+                        claim_options_for_seat(&cache, claim, seat_index, hu_offered);
+                    let context = build_bot_context_view(
+                        &cache,
+                        state,
+                        seat_index,
+                        claim_options,
+                        Vec::new(),
+                        HashSet::new(),
+                    )?;
+                    if let Some(decision) =
+                        bot::policy::choose_neural_claim_decision_with_config_and_rng(
+                            &context,
+                            &policy_config,
+                            rollout_rng.as_deref_mut(),
+                        )
+                    {
+                        return Some(BotDecisionTrace {
+                            decision_kind: "claim_window".to_string(),
+                            context,
+                            action: decision.action,
+                            telemetry: decision.telemetry,
+                        });
+                    }
+                }
+                if hu_offered && hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
                     return None;
                 }
-                let claim_options = ["kong", "pung", "chow"]
-                    .into_iter()
-                    .filter(|claim_type| {
-                        claim
-                            .claim_window
-                            .get(seat_index)
-                            .is_some_and(|claims| claims.iter().any(|claim| claim == claim_type))
-                    })
-                    .flat_map(|claim_type| {
-                        claim_tile_id_options(&cache, seat_index, claim_type)
-                            .into_iter()
-                            .map(move |tile_ids| BotClaimOption {
-                                action_type: claim_type.to_string(),
-                                tile_ids,
-                            })
-                    })
-                    .collect::<Vec<_>>();
+                let claim_options = claim_options_for_seat(&cache, claim, seat_index, false);
                 let context = build_bot_context_view(
                     &cache,
                     state,
@@ -659,7 +769,37 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     telemetry: decision.telemetry,
                 })
             }
-            PendingAction::RobKongWindow(_) => None,
+            PendingAction::RobKongWindow(rob) => {
+                let seat_index =
+                    next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
+                let policy_config = policy_for_seat(seat_index);
+                if !policy_is_neural(&policy_config) {
+                    return None;
+                }
+                let cache = RoomScoringCache::from_state(state);
+                let context = build_bot_context_view(
+                    &cache,
+                    state,
+                    seat_index,
+                    vec![BotClaimOption {
+                        action_type: "hu".to_string(),
+                        tile_ids: Vec::new(),
+                    }],
+                    Vec::new(),
+                    HashSet::new(),
+                )?;
+                let decision = bot::policy::choose_neural_claim_decision_with_config_and_rng(
+                    &context,
+                    &policy_config,
+                    rollout_rng.as_deref_mut(),
+                )?;
+                Some(BotDecisionTrace {
+                    decision_kind: "claim_window".to_string(),
+                    context,
+                    action: decision.action,
+                    telemetry: decision.telemetry,
+                })
+            }
         },
         _ => None,
     }

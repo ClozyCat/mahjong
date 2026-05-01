@@ -396,6 +396,7 @@ mod tests {
                 seat_index: 0,
                 seat_count: 4,
                 dealer_seat: 0,
+                seat_wind: Some("east".to_string()),
                 round_wind: "east".to_string(),
                 cumulative_scores: vec![0, 0, 0, 0],
                 wall_tiles_remaining: 70,

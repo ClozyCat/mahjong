@@ -2,7 +2,7 @@ use super::action_space::{
     CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT, claim_action_index,
     self_kong_action_index, tile_index,
 };
-use super::context::{BotContext, BotSelfKongKind};
+use super::context::{BotContext, BotSelfKongKind, seat_wind_key};
 
 const TILE_PLANE_COUNT: usize = 10;
 const SCALAR_FEATURE_COUNT: usize = 12;
@@ -108,17 +108,18 @@ fn encode_scalar_features(context: &BotContext) -> Vec<f32> {
         .copied()
         .unwrap_or(0) as f32
         / 100.0;
-    let round_wind_index = botzone_wind_index(context.round_wind.as_deref().unwrap_or("east"));
+    let round_wind_index = standard_wind_index(context.round_wind.as_deref().unwrap_or("east"));
     features[10] = round_wind_index as f32 / 3.0;
-    features[11] = f32::from(round_wind_index == context.seat_index);
+    let seat_wind = seat_wind_key(context.seat_index, context.dealer_seat);
+    features[11] = f32::from(context.round_wind.as_deref() == Some(seat_wind.as_str()));
     features
 }
 
-fn botzone_wind_index(wind: &str) -> usize {
+fn standard_wind_index(wind: &str) -> usize {
     match wind {
-        "north" => 1,
+        "south" => 1,
         "west" => 2,
-        "south" => 3,
+        "north" => 3,
         _ => 0,
     }
 }
@@ -330,15 +331,29 @@ mod tests {
     }
 
     #[test]
-    fn scalar_features_include_round_wind() {
+    fn scalar_features_include_round_wind_and_seat_wind_match() {
         let mut context = sample_context_with_tiles(&["w1", "t5", "red"]);
         context.seat_index = 1;
-        context.round_wind = Some("north".to_string());
+        context.dealer_seat = 0;
+        context.round_wind = Some("south".to_string());
 
         let encoded = encode_bot_context_v2(&context);
 
         assert_eq!(encoded.scalar_features.len(), 12);
         assert_eq!(encoded.scalar_features[10], 1.0 / 3.0);
         assert_eq!(encoded.scalar_features[11], 1.0);
+    }
+
+    #[test]
+    fn scalar_features_do_not_treat_absolute_seat_as_seat_wind() {
+        let mut context = sample_context_with_tiles(&["w1", "t5", "red"]);
+        context.seat_index = 1;
+        context.dealer_seat = 0;
+        context.round_wind = Some("north".to_string());
+
+        let encoded = encode_bot_context_v2(&context);
+
+        assert_eq!(encoded.scalar_features[10], 3.0 / 3.0);
+        assert_eq!(encoded.scalar_features[11], 0.0);
     }
 }

@@ -678,6 +678,7 @@ fn encode_active_turn_action(
     action: &BotAction,
 ) -> Option<(String, i64, String)> {
     match action.action_type.as_str() {
+        "hu" => Some(("hu".to_string(), 1, "hu".to_string())),
         "discard" => {
             let tile_id = action.tile_ids.first()?;
             let tile_key = context
