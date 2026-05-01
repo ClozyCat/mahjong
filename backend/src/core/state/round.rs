@@ -19,6 +19,7 @@ pub struct RoundState {
     pub phase: String,
     pub wall: WallState,
     pub players: Vec<PlayerRoundState>,
+    pub discard_history: Vec<DiscardEventState>,
     pub last_discard: Option<Tile>,
     pub pending_action: Option<PendingAction>,
     pub settlement: Option<RoundSettlement>,
@@ -29,6 +30,13 @@ pub struct RoundState {
     #[serde(flatten)]
     pub rule_state: RuleRuntimeState,
     pub restricted_discard_tile_key: Option<TileKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct DiscardEventState {
+    pub seat_index: Seat,
+    pub tile_key: TileKey,
 }
 
 impl RoundState {

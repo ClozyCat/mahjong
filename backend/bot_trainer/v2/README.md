@@ -89,6 +89,9 @@ Low-risk experiment matrix:
 
 # SE + moderate depth + scalar FiLM
 .\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2 -FilmScalar
+
+# Current best family + discard-order GRU sequence input
+.\backend\bot_trainer\v2\train_and_export_model.ps1 -UseSe -SuitedBlockCount 4 -HonorBlockCount 2 -FilmScalar -UseDiscardSequence
 ```
 
 Linux equivalents:
@@ -98,11 +101,12 @@ Linux equivalents:
 ./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2
 ./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 6 --honor-block-count 3
 ./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2 --film-scalar
+./backend/bot_trainer/v2/train_and_export_model.sh --use-se --suited-block-count 4 --honor-block-count 2 --film-scalar --use-discard-sequence
 ```
 
-All variants preserve the ONNX input/output contract. The checkpoint stores `model_config`, and ONNX export/PPO warm starts instantiate that architecture before loading weights.
+All non-sequence variants preserve the two-input ONNX contract. Sequence variants add one input named `discard_sequence` shaped `batch x 64 x 38`; Rust runtime detects this input and binds it only when the loaded model declares it, so old two-input models remain a fallback.
 
-Discard-order GRU/LSTM encoding is intentionally deferred. It requires a dataset schema upgrade, Rust context/export changes, new ONNX inputs, and runtime input binding changes.
+The sequence tensor stores the latest 64 discard events in chronological order. Each event is 34 one-hot tile features plus 4 relative-seat one-hot features. Promote a sequence candidate only through the arena gate below; the current se_d4_film model remains the fallback baseline.
 
 ## Arena Evaluation
 

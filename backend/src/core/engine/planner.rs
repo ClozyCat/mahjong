@@ -132,6 +132,7 @@ pub fn plan_round_start_payload(
             tail_index,
         },
         players,
+        discard_history: Vec::new(),
         last_discard: None,
         pending_action: None,
         settlement: None,

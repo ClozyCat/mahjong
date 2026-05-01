@@ -1074,6 +1074,7 @@ mod tests {
                         discards: vec![],
                     },
                 ],
+                discard_history: Vec::new(),
                 last_discard: None,
                 pending_action: None,
                 settlement: None,

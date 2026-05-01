@@ -20,6 +20,7 @@ HONOR_BLOCK_COUNT=1
 SE_REDUCTION=8
 USE_SE=0
 FILM_SCALAR=0
+USE_DISCARD_SEQUENCE=0
 NO_AMP=0
 COMPILE_MODEL=0
 SKIP_TESTS=0
@@ -50,6 +51,7 @@ Options:
   --use-se                  Enable SE channel attention blocks.
   --se-reduction N          SE bottleneck reduction ratio.
   --film-scalar             Use scalar features to FiLM-modulate tile embedding.
+  --use-discard-sequence    Add discard-order GRU sequence input.
   --no-amp                  Do not pass --amp to train.py.
   --compile                 Pass --compile to train.py.
   --skip-tests              Skip pytest before training.
@@ -160,6 +162,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --film-scalar)
             FILM_SCALAR=1
+            shift
+            ;;
+        --use-discard-sequence)
+            USE_DISCARD_SEQUENCE=1
             shift
             ;;
         --no-amp)
@@ -293,6 +299,10 @@ fi
 
 if (( FILM_SCALAR == 1 )); then
     train_args+=(--film-scalar)
+fi
+
+if (( USE_DISCARD_SEQUENCE == 1 )); then
+    train_args+=(--use-discard-sequence)
 fi
 
 if (( NO_AMP == 0 )); then

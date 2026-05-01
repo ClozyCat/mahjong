@@ -8,8 +8,9 @@ use crate::core::engine::planner::{
 };
 use crate::core::event::GameEvent;
 use crate::core::state::{
-    ClaimResponse, DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState,
-    KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction, RoomState, RoundState,
+    ClaimResponse, DiscardEventState, DisplayMeldOrientation, DisplayMeldState,
+    DisplayMeldTileState, KongTrackerEntry, LastActionContext, PendingAction, RobKongWindowAction,
+    RoomState, RoundState,
 };
 use crate::core::tile::Tile;
 use crate::room_scoring::RoomScoringCache;
@@ -327,6 +328,10 @@ fn apply_discard_to_round(
     round_player_mut(round, seat_index)?
         .discards
         .push(discarded_tile.clone());
+    round.discard_history.push(DiscardEventState {
+        seat_index,
+        tile_key: discarded_tile.tile_key.clone(),
+    });
     round.last_discard = Some(discarded_tile.clone());
     Ok(())
 }
@@ -2486,6 +2491,7 @@ mod tests {
                         discards: vec![],
                     },
                 ],
+                discard_history: Vec::new(),
                 last_discard: None,
                 pending_action: None,
                 settlement: None,

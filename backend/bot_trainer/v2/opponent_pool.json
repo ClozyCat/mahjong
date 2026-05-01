@@ -1,12 +1,11 @@
 {
   "schema_version": 1,
   "learner": {
-    "id": "sft_block_6_3",
+    "id": "learner",
     "mode": "neural",
-    "model_path": "backend/assets/history_models/sft_block_6_3.onnx",
-    "sample_actions": false,
-    "temperature": 1.0,
-    "weight": 2
+    "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+    "sample_actions": true,
+    "temperature": 1.0
   },
   "opponents": [
     {
@@ -18,16 +17,17 @@
       "weight": 2
     },
     {
-      "id": "learner",
+      "id": "sft_block_6_3",
       "mode": "neural",
-      "model_path": "backend/assets/models/mahjong_policy_net.onnx",
-      "sample_actions": true,
-      "temperature": 1.0
+      "model_path": "backend/assets/history_models/sft_block_6_3.onnx",
+      "sample_actions": false,
+      "temperature": 1.0,
+      "weight": 2
     },
     {
-      "id": "sft_default",
+      "id": "sft_block_4_2_fs_gru",
       "mode": "neural",
-      "model_path": "backend/assets/history_models/sft_default.onnx",
+      "model_path": "backend/assets/history_models/sft_block_4_2_fs_gru.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2

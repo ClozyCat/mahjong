@@ -20,6 +20,7 @@ param(
     [int]$SeReduction = 8,
     [switch]$UseSe,
     [switch]$FilmScalar,
+    [switch]$UseDiscardSequence,
     [switch]$RebuildDataCache,
     [switch]$NoAmp,
     [switch]$CompileModel,
@@ -163,6 +164,9 @@ try {
     }
     if ($FilmScalar) {
         $trainArgs += "--film-scalar"
+    }
+    if ($UseDiscardSequence) {
+        $trainArgs += "--use-discard-sequence"
     }
     if (-not $NoAmp) {
         $trainArgs += "--amp"

@@ -29,6 +29,12 @@ pub struct BotClaimOption {
 }
 
 #[derive(Clone)]
+pub struct BotDiscardEventView {
+    pub seat_index: usize,
+    pub tile_key: String,
+}
+
+#[derive(Clone)]
 pub struct BotPlayerView {
     pub concealed_tiles: Vec<BotTileView>,
     pub concealed_tile_counts: BotTileCounts,
@@ -47,6 +53,7 @@ pub struct BotContextView {
     pub visible_tile_keys: Vec<String>,
     pub opponent_discards_by_seat: Vec<Vec<String>>,
     pub opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
+    pub discard_history: Vec<BotDiscardEventView>,
     pub kong_entries: Vec<ScoringKongEntry>,
     pub player: BotPlayerView,
     pub restricted_discard_tile_key: Option<String>,
@@ -76,6 +83,14 @@ pub fn build_bot_context_view(
         visible_tile_keys: cache.visible_tile_keys.clone(),
         opponent_discards_by_seat: cache.opponent_discards_by_seat.clone(),
         opponent_melds_by_seat: cache.opponent_melds_by_seat.clone(),
+        discard_history: cache
+            .discard_history
+            .iter()
+            .map(|event| BotDiscardEventView {
+                seat_index: event.seat_index,
+                tile_key: event.tile_key.clone(),
+            })
+            .collect(),
         kong_entries: cache.kong_entries.clone(),
         player: BotPlayerView {
             concealed_tiles: player
@@ -170,6 +185,10 @@ mod tests {
                     flowers: vec![tile("f1#shown", "f1", "flower")],
                     discards: vec![tile("red#0", "red", "dragon")],
                 }],
+                discard_history: vec![crate::core::state::DiscardEventState {
+                    seat_index: 0,
+                    tile_key: "red".to_string(),
+                }],
                 last_discard: Some(tile("w3#discard", "w3", "suit")),
                 pending_action: None,
                 settlement: None,
@@ -223,6 +242,8 @@ mod tests {
         );
         assert_eq!(context.restricted_discard_tile_key.as_deref(), Some("w3"));
         assert_eq!(context.drawn_tile_id.as_deref(), Some("w4#0"));
+        assert_eq!(context.discard_history.len(), 1);
+        assert_eq!(context.discard_history[0].tile_key, "red");
         assert_eq!(
             context.add_kong_risk_tiles,
             HashSet::from(["w3".to_string()])

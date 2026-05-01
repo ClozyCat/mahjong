@@ -402,6 +402,7 @@ mod tests {
                 visible_tile_keys: vec![],
                 opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
                 opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+                discard_history: vec![],
                 player: crate::bot_trainer::replay::SerializableBotPlayer {
                     concealed_tiles: vec![],
                     concealed_tile_counts: vec![0; 34],

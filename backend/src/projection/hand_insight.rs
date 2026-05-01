@@ -751,6 +751,7 @@ mod tests {
                         ..Default::default()
                     })
                     .collect(),
+                discard_history: Vec::new(),
                 settlement: None,
                 pending_action: None,
                 version: 1,

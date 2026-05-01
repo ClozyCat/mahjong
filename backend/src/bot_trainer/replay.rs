@@ -59,6 +59,7 @@ pub(crate) struct SerializableBotContext {
     pub(crate) visible_tile_keys: Vec<String>,
     pub(crate) opponent_discards_by_seat: Vec<Vec<String>>,
     pub(crate) opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
+    pub(crate) discard_history: Vec<SerializableDiscardEvent>,
     pub(crate) player: SerializableBotPlayer,
     pub(crate) restricted_discard_tile_key: Option<String>,
     pub(crate) drawn_tile_id: Option<String>,
@@ -66,6 +67,12 @@ pub(crate) struct SerializableBotContext {
     pub(crate) claim_options: Vec<SerializableClaimOption>,
     pub(crate) last_discard_tile_key: Option<String>,
     pub(crate) add_kong_risk_tiles: HashSet<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SerializableDiscardEvent {
+    pub(crate) seat_index: usize,
+    pub(crate) tile_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,6 +152,10 @@ pub(crate) fn replay_match_to_samples(
                 ));
                 state.remove_one_tile(event.actor, tile_key);
                 state.discards[event.actor].push(tile_key.clone());
+                state.discard_history.push(SerializableDiscardEvent {
+                    seat_index: event.actor,
+                    tile_key: tile_key.clone(),
+                });
                 state.last_discard_tile_key = Some(tile_key.clone());
                 state.last_discarder_seat = Some(event.actor);
                 state.current_drawn_tile_ids[event.actor] = None;
@@ -221,6 +232,7 @@ struct ReplayState {
     match_id: String,
     hands: [Vec<SerializableBotTile>; 4],
     discards: [Vec<String>; 4],
+    discard_history: Vec<SerializableDiscardEvent>,
     melds: [Vec<Vec<String>>; 4],
     wall_tiles_remaining: i64,
     last_discard_tile_key: Option<String>,
@@ -252,6 +264,7 @@ impl ReplayState {
             match_id: record.match_id.clone(),
             hands,
             discards: std::array::from_fn(|_| Vec::new()),
+            discard_history: Vec::new(),
             melds: std::array::from_fn(|_| Vec::new()),
             wall_tiles_remaining: (TOTAL_TILE_COUNT - total_dealt).max(0),
             last_discard_tile_key: None,
@@ -453,6 +466,7 @@ impl ReplayState {
             visible_tile_keys: self.visible_tile_keys(),
             opponent_discards_by_seat: self.discards.iter().cloned().collect(),
             opponent_melds_by_seat: self.melds.iter().cloned().collect(),
+            discard_history: self.discard_history.clone(),
             player: SerializableBotPlayer {
                 concealed_tiles: self.hands[seat_index].clone(),
                 concealed_tile_counts: tile_counts(&self.hands[seat_index]).to_vec(),
@@ -1214,6 +1228,9 @@ Score 0 0 0 0
             3
         );
         assert_eq!(claimed_turn.context.last_discard_tile_key, None);
+        assert_eq!(claimed_turn.context.discard_history.len(), 1);
+        assert_eq!(claimed_turn.context.discard_history[0].seat_index, 0);
+        assert_eq!(claimed_turn.context.discard_history[0].tile_key, "b1");
     }
 
     #[test]

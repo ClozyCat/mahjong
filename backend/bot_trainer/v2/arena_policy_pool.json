@@ -1,0 +1,24 @@
+{
+  "policies": [
+    {
+      "id": "sft_block_4_2_fs_gru",
+      "mode": "neural",
+      "model_path": "backend/assets/history_models/sft_block_4_2_fs_gru.onnx"
+    },
+    {
+      "id": "sft_block_4_2_fs",
+      "mode": "neural",
+      "model_path": "backend/assets/history_models/sft_block_4_2_fs.onnx"
+    },
+    {
+      "id": "heuristic",
+      "mode": "heuristic",
+      "model_path": null
+    },
+    {
+      "id": "sft_block_6_3",
+      "mode": "neural",
+      "model_path": "backend/assets/history_models/sft_block_6_3.onnx"
+    }
+  ]
+}

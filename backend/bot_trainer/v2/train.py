@@ -156,6 +156,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-se", action="store_true")
     parser.add_argument("--se-reduction", type=int, default=8)
     parser.add_argument("--film-scalar", action="store_true")
+    parser.add_argument("--use-discard-sequence", action="store_true")
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
@@ -167,6 +168,7 @@ def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
         use_se=args.use_se,
         se_reduction=args.se_reduction,
         film_scalar=args.film_scalar,
+        use_discard_sequence=args.use_discard_sequence,
     )
 
 def resolve_device(requested: str) -> torch.device:
@@ -245,7 +247,7 @@ def run_epoch(
         batch = move_batch(batch, device)
         with torch.set_grad_enabled(is_training):
             with torch.amp.autocast(amp_device_type, enabled=use_amp):
-                outputs = model(batch["tile_planes"].float(), batch["scalar_features"].float())
+                outputs = forward_model(model, batch)
                 losses = compute_losses(outputs, batch, **(loss_weights or {}))
             loss = losses["loss"]
             if is_training:
@@ -300,6 +302,22 @@ def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch
         return logits.sum() * 0.0
     masked_logits = logits.masked_fill(~mask.bool(), -1.0e4)
     return F.cross_entropy(masked_logits[active], target[active].long())
+
+
+def forward_model(
+    model: torch.nn.Module,
+    batch: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    config = getattr(model, "config", None)
+    if config is None and hasattr(model, "_orig_mod"):
+        config = getattr(model._orig_mod, "config", None)
+    if getattr(config, "use_discard_sequence", False):
+        return model(
+            batch["tile_planes"].float(),
+            batch["scalar_features"].float(),
+            batch["discard_sequence"].float(),
+        )
+    return model(batch["tile_planes"].float(), batch["scalar_features"].float())
 
 class MetricTotals:
     def __init__(self, device: torch.device) -> None:

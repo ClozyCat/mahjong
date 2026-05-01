@@ -685,6 +685,7 @@ mod tests {
             visible_tile_keys: Vec::new(),
             opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
             opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+            discard_history: Vec::new(),
             kong_entries: Vec::new(),
             player: BotPlayerContext {
                 concealed_tiles: Vec::new(),

@@ -15,7 +15,9 @@ pub use player::{
     DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, PlayerRoundState, SeatState,
 };
 pub use room::RoomState;
-pub use round::{KongTrackerEntry, RoundScoreTrackers, RoundState, RuleRuntimeState};
+pub use round::{
+    DiscardEventState, KongTrackerEntry, RoundScoreTrackers, RoundState, RuleRuntimeState,
+};
 pub use settlement::{
     RoundSettlement, SettlementFanBreakdownEntry, SettlementKongScoreDetailEntry,
     SettlementScoreDelta,

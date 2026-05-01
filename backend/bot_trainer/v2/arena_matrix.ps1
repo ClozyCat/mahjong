@@ -213,7 +213,7 @@ function Write-ArenaSummary {
         }
 }
 
-$PolicyPool = Resolve-UserPath -Path $PolicyPool -DefaultPath (Join-Path $ScriptDir "opponent_pool.json")
+$PolicyPool = Resolve-UserPath -Path $PolicyPool -DefaultPath (Join-Path $ScriptDir "arena_policy_pool.json")
 $OutputDir = Resolve-UserPath -Path $OutputDir -DefaultPath (Join-Path $ScriptDir "arena_runs")
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null

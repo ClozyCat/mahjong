@@ -158,6 +158,22 @@ def select_action_log_probs(
     return result
 
 
+def forward_model(
+    model: torch.nn.Module,
+    batch: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    config = getattr(model, "config", None)
+    if config is None and hasattr(model, "_orig_mod"):
+        config = getattr(model._orig_mod, "config", None)
+    if getattr(config, "use_discard_sequence", False):
+        return model(
+            batch["tile_planes"].float(),
+            batch["scalar_features"].float(),
+            batch["discard_sequence"].float(),
+        )
+    return model(batch["tile_planes"].float(), batch["scalar_features"].float())
+
+
 def select_action_entropy(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
@@ -291,13 +307,10 @@ def main() -> None:
                 args.kl_coef,
                 args.kl_end_coef,
             )
-            outputs = model(batch["tile_planes"].float(), batch["scalar_features"].float())
+            outputs = forward_model(model, batch)
             if old_policy_model is not None:
                 with torch.no_grad():
-                    old_outputs = old_policy_model(
-                        batch["tile_planes"].float(),
-                        batch["scalar_features"].float(),
-                    )
+                    old_outputs = forward_model(old_policy_model, batch)
                     old_log_probs = select_action_log_probs(old_outputs, batch)
                     old_values = old_outputs["value"].squeeze(1)
             else:
@@ -326,10 +339,7 @@ def main() -> None:
             kl_loss = torch.zeros((), device=device)
             if teacher_model is not None:
                 with torch.no_grad():
-                    teacher_outputs = teacher_model(
-                        batch["tile_planes"].float(),
-                        batch["scalar_features"].float(),
-                    )
+                    teacher_outputs = forward_model(teacher_model, batch)
                 kl_loss = select_action_head_kl(teacher_outputs, outputs, batch)
             loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
             optimizer.zero_grad(set_to_none=True)

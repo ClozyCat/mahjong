@@ -15,6 +15,7 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
 
     assert encoded["tile_planes"].shape == (10, 34)
     assert encoded["scalar_features"].shape == (10,)
+    assert encoded["discard_sequence"].shape == (64, 38)
     assert encoded["discard_mask"].shape == (34,)
     assert encoded["discard_target"].item() == 0
 
@@ -36,6 +37,7 @@ def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
     assert (tmp_path / "cache" / "train" / "tile_planes.npy").exists()
     assert batch["tile_planes"].shape == (1, 10, 34)
     assert batch["scalar_features"].shape == (1, 10)
+    assert batch["discard_sequence"].shape == (1, 64, 38)
     assert batch["discard_target"].tolist() == [0]
     assert batch["discard_mask"].dtype == torch.bool
     assert loader_batch["discard_target"].tolist() == [0]
@@ -52,6 +54,24 @@ def test_chow_claim_target_uses_discard_position(tmp_path: Path) -> None:
         encoded = encode_row(row, metadata)
         assert encoded["claim_target"].item() == expected_target
         assert encoded["claim_mask"][expected_target].item()
+
+
+def test_discard_sequence_uses_recent_events_and_relative_seats(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["context"]["discard_history"] = [
+        {"seat_index": 3, "tile_key": "w1"},
+        {"seat_index": 0, "tile_key": "t1"},
+    ]
+
+    encoded = encode_row(row, metadata)
+
+    assert encoded["discard_sequence"][0, 0].item() == 1.0
+    assert encoded["discard_sequence"][0, 37].item() == 1.0
+    assert encoded["discard_sequence"][1, 9].item() == 1.0
+    assert encoded["discard_sequence"][1, 34].item() == 1.0
+    assert encoded["discard_sequence"][2].sum().item() == 0.0
 
 
 def test_self_kong_pass_trains_self_kong_head_only(tmp_path: Path) -> None:

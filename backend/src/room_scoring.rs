@@ -32,10 +32,17 @@ pub struct RoomScoringCache {
     pub wall_tiles_remaining: i64,
     pub opponent_discards_by_seat: Vec<Vec<String>>,
     pub opponent_melds_by_seat: Vec<Vec<Vec<String>>>,
+    pub discard_history: Vec<RoomDiscardEvent>,
     pub restricted_discard_tile_key: Option<String>,
     pub drawn_tile_id: Option<String>,
     pub last_discard_tile_key: Option<String>,
     players: Vec<RoomScoringPlayer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoomDiscardEvent {
+    pub seat_index: usize,
+    pub tile_key: String,
 }
 
 impl RoomScoringCache {
@@ -82,6 +89,7 @@ impl RoomScoringCache {
                 wall_tiles_remaining: 0,
                 opponent_discards_by_seat: Vec::new(),
                 opponent_melds_by_seat: Vec::new(),
+                discard_history: Vec::new(),
                 restricted_discard_tile_key: None,
                 drawn_tile_id: state
                     .pending_timeout
@@ -149,6 +157,14 @@ impl RoomScoringCache {
             wall_tiles_remaining: round.wall.live_tiles_remaining() as i64,
             opponent_discards_by_seat,
             opponent_melds_by_seat,
+            discard_history: round
+                .discard_history
+                .iter()
+                .map(|event| RoomDiscardEvent {
+                    seat_index: event.seat_index,
+                    tile_key: event.tile_key.clone(),
+                })
+                .collect(),
             restricted_discard_tile_key: round.restricted_discard_tile_key.clone(),
             drawn_tile_id: state
                 .pending_timeout
@@ -286,6 +302,10 @@ mod tests {
                     flowers: vec![crate::core::tile::Tile::tile_key_only("f1")],
                     discards: vec![crate::core::tile::Tile::tile_key_only("red")],
                 }],
+                discard_history: vec![crate::core::state::DiscardEventState {
+                    seat_index: 0,
+                    tile_key: "red".to_string(),
+                }],
                 last_discard: Some(crate::core::tile::Tile::tile_key_only("red")),
                 pending_action: None,
                 settlement: None,
@@ -330,6 +350,8 @@ mod tests {
         assert_eq!(cache.restricted_discard_tile_key.as_deref(), Some("w1"));
         assert_eq!(cache.drawn_tile_id.as_deref(), Some("w1#1"));
         assert_eq!(cache.last_discard_tile_key.as_deref(), Some("red"));
+        assert_eq!(cache.discard_history.len(), 1);
+        assert_eq!(cache.discard_history[0].tile_key, "red");
         assert_eq!(
             cache
                 .player(0)
