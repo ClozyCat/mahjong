@@ -11,6 +11,11 @@ use rand::{Rng, rngs::StdRng};
 use std::{env, time::Instant};
 
 const POLICY_ENV: &str = "MAHJONG_BOT_POLICY";
+const NEURAL_DISCARD_BASE_RISK_WEIGHT: f32 = 0.90;
+const NEURAL_DISCARD_VALUE_RISK_RANGE: f32 = 0.55;
+const NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
+const NEURAL_DISCARD_MIN_RISK_WEIGHT: f32 = 0.25;
+const NEURAL_DISCARD_MAX_RISK_WEIGHT: f32 = 1.45;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BotPolicyMode {
@@ -526,12 +531,9 @@ fn sample_neural_discard_action(
     rng: &mut StdRng,
 ) -> Option<BotAction> {
     let features = crate::bot::features::encode_bot_context_v2(context);
-    let tile_index = sample_masked_index(
-        &scores.discard_logits,
-        &features.discard_mask,
-        temperature,
-        rng,
-    )?;
+    let discard_logits = risk_adjusted_discard_logits(scores);
+    let tile_index =
+        sample_masked_index(&discard_logits, &features.discard_mask, temperature, rng)?;
     let tile_key = tile_key_for_index(tile_index);
     let tile_id = context
         .player
@@ -574,13 +576,14 @@ fn select_neural_only_active_turn_action(
     if let Some(action) = select_neural_only_self_kong(context, scores) {
         return Some(action);
     }
-    select_neural_only_discard_plan(&rank_masked_discards(context, &scores.discard_logits)).map(
-        |plan| BotAction {
+    let discard_logits = risk_adjusted_discard_logits(scores);
+    select_neural_only_discard_plan(&rank_masked_discards(context, &discard_logits)).map(|plan| {
+        BotAction {
             seat_index: context.seat_index,
             action_type: "discard".to_string(),
             tile_ids: vec![plan.tile_id],
-        },
-    )
+        }
+    })
 }
 
 fn select_neural_only_discard_plan(neural_scores: &[RankedTileScore]) -> Option<BotDiscardPlan> {
@@ -589,6 +592,50 @@ fn select_neural_only_discard_plan(neural_scores: &[RankedTileScore]) -> Option<
         tile_key: score.tile_key.clone(),
         score: 0,
     })
+}
+
+fn risk_adjusted_discard_logits(scores: &NeuralDecisionScores) -> [f32; TILE_KIND_COUNT] {
+    let risk_weight = neural_discard_risk_weight(scores.value);
+    let mut adjusted = scores.discard_logits;
+    for (index, logit) in adjusted.iter_mut().enumerate() {
+        let policy_logit = scores.discard_logits[index];
+        if !policy_logit.is_finite() {
+            continue;
+        }
+        let Some(risk_probability) = sigmoid_probability(scores.risk_logits[index]) else {
+            continue;
+        };
+        let adjusted_logit = policy_logit - risk_weight * risk_probability;
+        if adjusted_logit.is_finite() {
+            *logit = adjusted_logit;
+        }
+    }
+    adjusted
+}
+
+fn neural_discard_risk_weight(value: f32) -> f32 {
+    let normalized_value = if value.is_finite() {
+        (value / NEURAL_DISCARD_VALUE_SCALE).clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    (NEURAL_DISCARD_BASE_RISK_WEIGHT - NEURAL_DISCARD_VALUE_RISK_RANGE * normalized_value).clamp(
+        NEURAL_DISCARD_MIN_RISK_WEIGHT,
+        NEURAL_DISCARD_MAX_RISK_WEIGHT,
+    )
+}
+
+fn sigmoid_probability(logit: f32) -> Option<f32> {
+    if !logit.is_finite() {
+        return None;
+    }
+    if logit >= 0.0 {
+        let z = (-logit).exp();
+        Some(1.0 / (1.0 + z))
+    } else {
+        let z = logit.exp();
+        Some(z / (1.0 + z))
+    }
 }
 
 fn select_neural_only_claim(
@@ -755,6 +802,7 @@ fn normalized_action_tiles(context: &BotContext, action: &BotAction) -> Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bot::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT};
     use crate::bot::neural;
 
     fn tiles(keys: &[&str]) -> Vec<BotTileView> {
@@ -793,6 +841,21 @@ mod tests {
             claim_options: Vec::new(),
             last_discard_tile_key: None,
             add_kong_risk_tiles: std::collections::HashSet::new(),
+        }
+    }
+
+    fn neural_scores_for_discards(
+        discard_logits: [f32; TILE_KIND_COUNT],
+        risk_logits: [f32; TILE_KIND_COUNT],
+        value: f32,
+    ) -> neural::NeuralDecisionScores {
+        neural::NeuralDecisionScores {
+            discard_logits,
+            claim_logits: [0.0; CLAIM_ACTION_COUNT],
+            self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
+            hu_logits: [0.0; 2],
+            value,
+            risk_logits,
         }
     }
 
@@ -943,6 +1006,59 @@ mod tests {
         let selected = select_neural_only_discard_plan(&neural_scores).expect("neural selection");
 
         assert_eq!(selected.tile_key, "t1");
+    }
+
+    #[test]
+    fn neural_policy_avoids_slightly_better_logit_when_discard_risk_is_high() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&["w1", "t1"]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles;
+        let mut discard_logits = [0.0_f32; TILE_KIND_COUNT];
+        discard_logits[tile_index("w1").expect("w1")] = 1.10;
+        discard_logits[tile_index("t1").expect("t1")] = 1.00;
+        let mut risk_logits = [-5.0_f32; TILE_KIND_COUNT];
+        risk_logits[tile_index("w1").expect("w1")] = 5.0;
+        risk_logits[tile_index("t1").expect("t1")] = -5.0;
+        let scores = neural_scores_for_discards(discard_logits, risk_logits, -8.0);
+
+        let action =
+            select_neural_only_active_turn_action(&context, &scores).expect("neural action");
+
+        assert_eq!(action.action_type, "discard");
+        assert_eq!(normalized_action_tiles(&context, &action), vec!["t1"]);
+    }
+
+    #[test]
+    fn neural_discard_risk_penalty_is_weaker_when_value_is_high() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&["w1", "t1"]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles;
+        let mut discard_logits = [0.0_f32; TILE_KIND_COUNT];
+        discard_logits[tile_index("w1").expect("w1")] = 1.60;
+        discard_logits[tile_index("t1").expect("t1")] = 1.00;
+        let mut risk_logits = [-5.0_f32; TILE_KIND_COUNT];
+        risk_logits[tile_index("w1").expect("w1")] = 5.0;
+        risk_logits[tile_index("t1").expect("t1")] = -5.0;
+        let low_value_scores = neural_scores_for_discards(discard_logits, risk_logits, -8.0);
+        let high_value_scores = neural_scores_for_discards(discard_logits, risk_logits, 8.0);
+
+        let low_value_action = select_neural_only_active_turn_action(&context, &low_value_scores)
+            .expect("low value neural action");
+        let high_value_action = select_neural_only_active_turn_action(&context, &high_value_scores)
+            .expect("high value neural action");
+
+        assert_eq!(
+            normalized_action_tiles(&context, &low_value_action),
+            vec!["t1"]
+        );
+        assert_eq!(
+            normalized_action_tiles(&context, &high_value_action),
+            vec!["w1"]
+        );
     }
 
     #[test]
