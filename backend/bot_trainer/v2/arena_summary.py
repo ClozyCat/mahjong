@@ -39,6 +39,14 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             metrics["decision_count"] += seat["decision_count"]
             metrics["decision_latency_ms_sum"] += seat["decision_latency_ms_sum"]
             metrics["final_tenpai"] += 1 if seat["final_tenpai"] else 0
+            metrics["model_loaded_seats"] += 1 if seat.get("model_loaded") else 0
+            metrics["fallback_count"] += seat.get("fallback_count", 0)
+            metrics["neural_action_count"] += seat.get("neural_action_count", 0)
+            metrics["same_as_heuristic_count"] += seat.get("same_as_heuristic_count", 0)
+            metrics["heuristic_comparison_count"] += seat.get(
+                "heuristic_comparison_count",
+                0,
+            )
             first_tenpai_turn = seat.get("first_tenpai_turn")
             if first_tenpai_turn is not None:
                 metrics["first_tenpai_turn_sum"] += first_tenpai_turn
@@ -49,6 +57,7 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
         seat_count = max(metrics["seat_count"], 1.0)
         decision_count = max(metrics["decision_count"], 1.0)
         first_tenpai_turn_count = metrics["first_tenpai_turn_count"]
+        heuristic_comparison_count = metrics["heuristic_comparison_count"]
         policies[policy] = {
             "seat_count": int(metrics["seat_count"]),
             "avg_score_delta": metrics["score_delta_sum"] / seat_count,
@@ -64,6 +73,14 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             "avg_discards": metrics["discard_count"] / seat_count,
             "avg_decisions": metrics["decision_count"] / seat_count,
             "avg_latency_ms_per_decision": metrics["decision_latency_ms_sum"] / decision_count,
+            "model_loaded_seats": int(metrics["model_loaded_seats"]),
+            "fallback_count": int(metrics["fallback_count"]),
+            "neural_action_count": int(metrics["neural_action_count"]),
+            "same_as_heuristic_rate": (
+                metrics["same_as_heuristic_count"] / heuristic_comparison_count
+                if heuristic_comparison_count
+                else None
+            ),
         }
 
     return {
@@ -85,6 +102,12 @@ def print_summary(summary: dict[str, Any]) -> None:
             if avg_first_tenpai_turn is not None
             else "none"
         )
+        same_as_heuristic_rate = metrics["same_as_heuristic_rate"]
+        same_as_heuristic_text = (
+            f"{same_as_heuristic_rate:.4f}"
+            if same_as_heuristic_rate is not None
+            else "none"
+        )
         print(
             f"  {policy}: "
             f"avg_score_delta={metrics['avg_score_delta']:.4f} "
@@ -92,7 +115,11 @@ def print_summary(summary: dict[str, Any]) -> None:
             f"deal_in_rate={metrics['deal_in_rate']:.4f} "
             f"avg_first_tenpai_turn={avg_first_tenpai_turn_text} "
             f"final_tenpai_rate={metrics['final_tenpai_rate']:.4f} "
-            f"avg_latency_ms_per_decision={metrics['avg_latency_ms_per_decision']:.2f}"
+            f"avg_latency_ms_per_decision={metrics['avg_latency_ms_per_decision']:.2f} "
+            f"model_loaded_seats={metrics['model_loaded_seats']} "
+            f"fallback_count={metrics['fallback_count']} "
+            f"neural_action_count={metrics['neural_action_count']} "
+            f"same_as_heuristic_rate={same_as_heuristic_text}"
         )
 
 

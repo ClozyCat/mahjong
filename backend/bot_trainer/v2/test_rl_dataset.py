@@ -349,6 +349,12 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
                 "discard_count": 2,
                 "decision_count": 4,
                 "decision_latency_ms_sum": 20,
+                "model_loaded": True,
+                "fallback_count": 1,
+                "neural_action_count": 3,
+                "same_as_heuristic_count": 2,
+                "heuristic_comparison_count": 3,
+                "same_as_heuristic_rate": 2 / 3,
             },
             {
                 "seat_index": 1,
@@ -373,5 +379,9 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     assert summary["policies"]["a"]["avg_score_delta"] == 10.0
     assert summary["policies"]["a"]["win_rate"] == 1.0
     assert summary["policies"]["a"]["avg_first_tenpai_turn"] == 4.0
+    assert summary["policies"]["a"]["model_loaded_seats"] == 1
+    assert summary["policies"]["a"]["fallback_count"] == 1
+    assert summary["policies"]["a"]["neural_action_count"] == 3
+    assert summary["policies"]["a"]["same_as_heuristic_rate"] == 2 / 3
     assert summary["policies"]["b"]["deal_in_rate"] == 1.0
     assert summary["policies"]["b"]["avg_first_tenpai_turn"] is None

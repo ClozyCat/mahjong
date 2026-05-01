@@ -39,6 +39,7 @@ pub(crate) struct BotDecisionTrace {
     pub(crate) decision_kind: String,
     pub(crate) context: crate::bot::context::BotContext,
     pub(crate) action: BotAction,
+    pub(crate) telemetry: crate::bot::policy::BotPolicyDecisionTelemetry,
 }
 
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
@@ -595,7 +596,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                 add_kong_risk_tiles,
             )?;
             let policy_config = policy_for_seat(seat_index);
-            let action = bot::policy::choose_active_turn_action_with_config_and_rng(
+            let decision = bot::policy::choose_active_turn_decision_with_config_and_rng(
                 &context,
                 &policy_config,
                 rollout_rng.as_deref_mut(),
@@ -603,7 +604,8 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
             Some(BotDecisionTrace {
                 decision_kind: "active_turn".to_string(),
                 context,
-                action,
+                action: decision.action,
+                telemetry: decision.telemetry,
             })
         }
         "claim_window" => match round.pending_action.as_ref()? {
@@ -643,17 +645,18 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     claim_options,
                     Vec::new(),
                     HashSet::new(),
-            )?;
-            let policy_config = policy_for_seat(seat_index);
-            let action = bot::policy::choose_claim_action_with_config_and_rng(
-                &context,
-                &policy_config,
-                rollout_rng.as_deref_mut(),
-            )?;
+                )?;
+                let policy_config = policy_for_seat(seat_index);
+                let decision = bot::policy::choose_claim_decision_with_config_and_rng(
+                    &context,
+                    &policy_config,
+                    rollout_rng.as_deref_mut(),
+                )?;
                 Some(BotDecisionTrace {
                     decision_kind: "claim_window".to_string(),
                     context,
-                    action,
+                    action: decision.action,
+                    telemetry: decision.telemetry,
                 })
             }
             PendingAction::RobKongWindow(_) => None,

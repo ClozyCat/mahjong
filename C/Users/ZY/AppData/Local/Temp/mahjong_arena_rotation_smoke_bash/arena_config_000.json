@@ -1,4 +1,10 @@
 {
+  "matches": 3,
+  "seed": 20260429,
+  "max_actions_per_match": 2400,
+  "report_trajectories": false,
+  "seat_rotation": "cyclic",
+  "seat_rotation_offset": 0,
   "policies": [
     {
       "id": "sft_block_4_2_fs_gru",

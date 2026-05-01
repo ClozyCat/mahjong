@@ -1486,10 +1486,9 @@ mod tests {
 
     #[test]
     fn parse_bot_takeover_toggle() {
-        let parsed = parse_client_message(
-            r#"{"type":"set_bot_takeover","payload":{"enabled":true}}"#,
-        )
-        .expect("set_bot_takeover should parse");
+        let parsed =
+            parse_client_message(r#"{"type":"set_bot_takeover","payload":{"enabled":true}}"#)
+                .expect("set_bot_takeover should parse");
 
         assert!(matches!(parsed, ClientMessage::SetBotTakeover(request) if request.enabled));
     }

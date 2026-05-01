@@ -35,6 +35,13 @@ pub enum ArenaPolicyMode {
     Neural,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ArenaSeatRotation {
+    Fixed,
+    Cyclic,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArenaBotPolicyConfig {
@@ -55,10 +62,14 @@ pub struct ArenaConfig {
     pub max_actions_per_match: usize,
     #[serde(default)]
     pub report_trajectories: bool,
+    #[serde(default = "default_seat_rotation")]
+    pub seat_rotation: ArenaSeatRotation,
+    #[serde(default)]
+    pub seat_rotation_offset: usize,
     pub policies: Vec<ArenaBotPolicyConfig>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct ArenaSeatMetrics {
     pub seat_index: usize,
     pub policy_id: String,
@@ -71,9 +82,15 @@ pub struct ArenaSeatMetrics {
     pub discard_count: u64,
     pub decision_count: u64,
     pub decision_latency_ms_sum: u128,
+    pub model_loaded: bool,
+    pub fallback_count: u64,
+    pub neural_action_count: u64,
+    pub same_as_heuristic_count: u64,
+    pub heuristic_comparison_count: u64,
+    pub same_as_heuristic_rate: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct ArenaMatchReport {
     pub match_index: usize,
     pub seed: u64,
@@ -133,6 +150,10 @@ fn default_policy_temperature() -> f32 {
     1.0
 }
 
+fn default_seat_rotation() -> ArenaSeatRotation {
+    ArenaSeatRotation::Fixed
+}
+
 impl ArenaBotPolicyConfig {
     pub fn heuristic() -> Self {
         Self {
@@ -151,23 +172,25 @@ pub struct ArenaMatchAccumulator {
 }
 
 impl ArenaMatchAccumulator {
-    pub fn new(config: &ArenaConfig) -> Self {
+    pub fn new(config: &ArenaConfig, match_index: usize) -> Self {
         Self {
             seats: (0..4)
                 .map(|seat_index| ArenaSeatMetrics {
                     seat_index,
-                    policy_id: config
-                        .policies
-                        .get(seat_index % config.policies.len())
-                        .map(|policy| policy.id.clone())
-                        .unwrap_or_else(|| "heuristic".to_string()),
+                    policy_id: policy_for_match_seat(config, match_index, seat_index).id,
                     ..ArenaSeatMetrics::default()
                 })
                 .collect(),
         }
     }
 
-    pub fn record_decision(&mut self, seat_index: usize, action_type: &str, latency_ms: u128) {
+    pub(crate) fn record_decision(
+        &mut self,
+        seat_index: usize,
+        action_type: &str,
+        latency_ms: u128,
+        telemetry: Option<&super::policy::BotPolicyDecisionTelemetry>,
+    ) {
         if let Some(metrics) = self.seats.get_mut(seat_index) {
             metrics.decision_count += 1;
             metrics.decision_latency_ms_sum += latency_ms;
@@ -177,6 +200,23 @@ impl ArenaMatchAccumulator {
                 }
                 "chow" | "pung" | "kong" => metrics.claim_count += 1,
                 _ => {}
+            }
+            if let Some(telemetry) = telemetry {
+                metrics.model_loaded |= telemetry.model_loaded;
+                if telemetry.used_neural_action {
+                    metrics.neural_action_count += 1;
+                }
+                if telemetry.used_fallback {
+                    metrics.fallback_count += 1;
+                }
+                if let Some(same_as_heuristic) = telemetry.same_as_heuristic {
+                    metrics.heuristic_comparison_count += 1;
+                    if same_as_heuristic {
+                        metrics.same_as_heuristic_count += 1;
+                    }
+                    metrics.same_as_heuristic_rate = metrics.same_as_heuristic_count as f64
+                        / metrics.heuristic_comparison_count as f64;
+                }
             }
         }
     }
@@ -389,29 +429,31 @@ fn run_arena_match(
     let match_id = format!("arena-{seed}-{match_index}");
     let mut room = arena_room(&format!("ARENA{match_index:04}"));
     start_match_in_room_state(&mut room, 0, seed)?;
-    let mut accumulator = ArenaMatchAccumulator::new(config);
+    let mut accumulator = ArenaMatchAccumulator::new(config, match_index);
     let mut action_count = 0_usize;
     let mut trajectories = Vec::new();
     let mut rollout_rng = StdRng::seed_from_u64(seed ^ 0xA17E_5EED);
 
     while room.phase == "playing" && action_count < config.max_actions_per_match {
         let started = std::time::Instant::now();
-        let trace = include_trajectories
-            .then(|| {
-                next_bot_decision_trace_in_room_state_with_policy_resolver(
-                    &room,
-                    &|seat| policy_for_seat(config, seat),
-                    Some(&mut rollout_rng),
-                )
-            })
-            .transpose()?
-            .flatten();
+        let trace = {
+            let rollout_rng = if include_trajectories {
+                Some(&mut rollout_rng)
+            } else {
+                None
+            };
+            next_bot_decision_trace_in_room_state_with_policy_resolver(
+                &room,
+                &|seat| policy_for_match_seat(config, match_index, seat),
+                rollout_rng,
+            )?
+        };
         let action = if let Some(trace) = trace.as_ref() {
             trace.action.clone()
         } else {
             let Some(action) =
                 next_bot_action_in_room_state_with_policy_resolver(&room, &|seat| {
-                    policy_for_seat(config, seat)
+                    policy_for_match_seat(config, match_index, seat)
                 })?
             else {
                 break;
@@ -432,10 +474,11 @@ fn run_arena_match(
         )?;
         match handled {
             Some(Ok(_)) => {
-                accumulator.record_decision(action_seat, &action_type, elapsed_ms);
+                let telemetry = trace.as_ref().map(|trace| &trace.telemetry);
+                accumulator.record_decision(action_seat, &action_type, elapsed_ms, telemetry);
                 accumulator.record_tenpai_metrics(&room);
                 if let Some(trace) = trace.as_ref() {
-                    let policy = policy_for_seat(config, action_seat);
+                    let policy = policy_for_match_seat(config, match_index, action_seat);
                     let reward_after = reward_snapshot_from_room(&room, action_seat);
                     if let Some(mut row) = trajectory_row_from_trace(
                         &match_id,
@@ -474,10 +517,23 @@ fn run_arena_match(
     })
 }
 
-fn policy_for_seat(config: &ArenaConfig, seat_index: usize) -> ArenaBotPolicyConfig {
+fn policy_for_match_seat(
+    config: &ArenaConfig,
+    match_index: usize,
+    seat_index: usize,
+) -> ArenaBotPolicyConfig {
+    let policy_count = config.policies.len();
+    if policy_count == 0 {
+        return ArenaBotPolicyConfig::heuristic();
+    }
+    let rotation = match config.seat_rotation {
+        ArenaSeatRotation::Fixed => 0,
+        ArenaSeatRotation::Cyclic => config.seat_rotation_offset.wrapping_add(match_index),
+    };
+    let policy_index = seat_index.wrapping_add(rotation) % policy_count;
     config
         .policies
-        .get(seat_index % config.policies.len())
+        .get(policy_index)
         .cloned()
         .unwrap_or_else(ArenaBotPolicyConfig::heuristic)
 }
@@ -802,6 +858,62 @@ mod tests {
     }
 
     #[test]
+    fn cyclic_seat_rotation_assigns_each_policy_to_each_seat_once_per_cycle() {
+        let config = ArenaConfig {
+            matches: 4,
+            seed: 7,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Cyclic,
+            seat_rotation_offset: 0,
+            policies: ["a", "b", "c", "d"]
+                .into_iter()
+                .map(|id| ArenaBotPolicyConfig {
+                    id: id.to_string(),
+                    mode: ArenaPolicyMode::Heuristic,
+                    model_path: None,
+                    sample_actions: false,
+                    temperature: 1.0,
+                })
+                .collect(),
+        };
+
+        for seat_index in 0..4 {
+            let mut policy_ids = (0..4)
+                .map(|match_index| policy_for_match_seat(&config, match_index, seat_index).id)
+                .collect::<Vec<_>>();
+            policy_ids.sort();
+
+            assert_eq!(policy_ids, vec!["a", "b", "c", "d"]);
+        }
+    }
+
+    #[test]
+    fn cyclic_seat_rotation_offset_continues_across_chunks() {
+        let config = ArenaConfig {
+            matches: 2,
+            seed: 7,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Cyclic,
+            seat_rotation_offset: 3,
+            policies: ["a", "b", "c", "d"]
+                .into_iter()
+                .map(|id| ArenaBotPolicyConfig {
+                    id: id.to_string(),
+                    mode: ArenaPolicyMode::Heuristic,
+                    model_path: None,
+                    sample_actions: false,
+                    temperature: 1.0,
+                })
+                .collect(),
+        };
+
+        assert_eq!(policy_for_match_seat(&config, 0, 0).id, "d");
+        assert_eq!(policy_for_match_seat(&config, 1, 0).id, "a");
+    }
+
+    #[test]
     fn arena_config_rejects_removed_policy_mode() {
         let raw = r#"{
             "matches": 2,
@@ -862,17 +974,61 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Fixed,
+            seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig::heuristic()],
         };
-        let mut accumulator = ArenaMatchAccumulator::new(&config);
+        let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
 
-        accumulator.record_decision(0, "discard", 3);
-        accumulator.record_decision(0, "pung", 2);
+        accumulator.record_decision(0, "discard", 3, None);
+        accumulator.record_decision(0, "pung", 2, None);
 
         assert_eq!(accumulator.seats[0].decision_count, 2);
         assert_eq!(accumulator.seats[0].discard_count, 1);
         assert_eq!(accumulator.seats[0].claim_count, 1);
         assert_eq!(accumulator.seats[0].decision_latency_ms_sum, 5);
+    }
+
+    #[test]
+    fn accumulator_records_policy_telemetry() {
+        let config = ArenaConfig {
+            matches: 1,
+            seed: 7,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Fixed,
+            seat_rotation_offset: 0,
+            policies: vec![ArenaBotPolicyConfig {
+                id: "neural".to_string(),
+                mode: ArenaPolicyMode::Neural,
+                model_path: Some("missing.onnx".to_string()),
+                sample_actions: false,
+                temperature: 1.0,
+            }],
+        };
+        let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
+
+        let neural = crate::bot::policy::BotPolicyDecisionTelemetry {
+            model_loaded: true,
+            used_neural_action: true,
+            used_fallback: false,
+            same_as_heuristic: Some(true),
+        };
+        accumulator.record_decision(0, "discard", 3, Some(&neural));
+        let fallback = crate::bot::policy::BotPolicyDecisionTelemetry {
+            model_loaded: false,
+            used_neural_action: false,
+            used_fallback: true,
+            same_as_heuristic: None,
+        };
+        accumulator.record_decision(0, "discard", 2, Some(&fallback));
+
+        assert!(accumulator.seats[0].model_loaded);
+        assert_eq!(accumulator.seats[0].neural_action_count, 1);
+        assert_eq!(accumulator.seats[0].fallback_count, 1);
+        assert_eq!(accumulator.seats[0].same_as_heuristic_count, 1);
+        assert_eq!(accumulator.seats[0].heuristic_comparison_count, 1);
+        assert_eq!(accumulator.seats[0].same_as_heuristic_rate, 1.0);
     }
 
     #[test]
@@ -882,6 +1038,8 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Fixed,
+            seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig::heuristic()],
         };
         let mut room = RoomState {
@@ -901,7 +1059,8 @@ mod tests {
             ..RoomState::default()
         };
 
-        let report = build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config), 1, true);
+        let report =
+            build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config, 0), 1, true);
         assert!(report.seats[0].final_tenpai);
 
         let non_tenpai_tiles = tile_key_only_vec(&[
@@ -914,7 +1073,8 @@ mod tests {
             .get_mut(0)
             .expect("player")
             .concealed_tiles = non_tenpai_tiles;
-        let report = build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config), 1, true);
+        let report =
+            build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config, 0), 1, true);
         assert!(!report.seats[0].final_tenpai);
     }
 
@@ -925,9 +1085,11 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Fixed,
+            seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig::heuristic()],
         };
-        let mut accumulator = ArenaMatchAccumulator::new(&config);
+        let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
         accumulator.seats[0].discard_count = 3;
         let room = RoomState {
             phase: "playing".to_string(),

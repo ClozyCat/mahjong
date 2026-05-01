@@ -19,7 +19,7 @@
     {
       "id": "sft_block_6_3",
       "mode": "neural",
-      "model_path": "backend/assets/history_models/sft_block_6_3.onnx",
+      "model_path": "backend/assets/history_models_v2/sft_block_6_3.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2
@@ -27,7 +27,7 @@
     {
       "id": "sft_block_4_2_fs_gru",
       "mode": "neural",
-      "model_path": "backend/assets/history_models/sft_block_4_2_fs_gru.onnx",
+      "model_path": "backend/assets/history_models_v2/sft_block_4_2_fs_gru.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2

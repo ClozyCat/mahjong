@@ -123,7 +123,7 @@ PY
 mapfile -t SEAT_POLICY_IDS <<< "$SEAT_POLICY_IDS_TEXT"
 
 if (( PROGRESS_EVERY <= 0 )); then
-    echo "PROGRESS_EVERY must be greater than 0 because seat rotation happens on each progress report." >&2
+    echo "PROGRESS_EVERY must be greater than 0." >&2
     exit 2
 fi
 if [[ "$RANDOM_SEED" != "0" && "$RANDOM_SEED" != "1" ]]; then
@@ -143,9 +143,9 @@ write_chunk_config() {
     local config_path="$1"
     local chunk_matches="$2"
     local chunk_seed="$3"
-    local order_csv="$4"
+    local rotation_offset="$4"
 
-    "$PYTHON_BIN" - "$POLICIES_PATH" "$config_path" "$chunk_matches" "$chunk_seed" "$MAX_ACTIONS_PER_MATCH" "$order_csv" <<'PY'
+    "$PYTHON_BIN" - "$POLICIES_PATH" "$config_path" "$chunk_matches" "$chunk_seed" "$MAX_ACTIONS_PER_MATCH" "$rotation_offset" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -155,7 +155,7 @@ config_path = Path(sys.argv[2])
 matches = int(sys.argv[3])
 seed = int(sys.argv[4])
 max_actions = int(sys.argv[5])
-order = [int(part) for part in sys.argv[6].split(",")]
+rotation_offset = int(sys.argv[6])
 policies = json.loads(policies_path.read_text(encoding="utf-8"))
 config_path.write_text(
     json.dumps(
@@ -164,7 +164,9 @@ config_path.write_text(
             "seed": seed,
             "max_actions_per_match": max_actions,
             "report_trajectories": False,
-            "policies": [policies[index] for index in order],
+            "seat_rotation": "cyclic",
+            "seat_rotation_offset": rotation_offset,
+            "policies": policies,
         },
         indent=2,
         ensure_ascii=False,
@@ -183,6 +185,16 @@ seat_order_text() {
     done
     local joined="${ids[*]}"
     printf '%s\n' "${joined// /, }"
+}
+
+cyclic_seat_order_text() {
+    local offset="$1"
+    local order=()
+    local seat
+    for seat in 0 1 2 3; do
+        order+=($(( (seat + offset) % 4 )))
+    done
+    seat_order_text "${order[@]}"
 }
 
 print_summary() {
@@ -234,6 +246,14 @@ for policy_id in sorted(groups):
     dealt_in = sum(row.get("dealt_in", 0) for row in rows)
     decisions = sum(row.get("decision_count", 0) for row in rows)
     latency_sum = sum(row.get("decision_latency_ms_sum", 0) for row in rows)
+    model_loaded = sum(1 for row in rows if row.get("model_loaded"))
+    fallback_count = sum(row.get("fallback_count", 0) for row in rows)
+    neural_actions = sum(row.get("neural_action_count", 0) for row in rows)
+    same_as_heuristic = sum(row.get("same_as_heuristic_count", 0) for row in rows)
+    heuristic_comparisons = sum(row.get("heuristic_comparison_count", 0) for row in rows)
+    same_rate = (
+        same_as_heuristic / heuristic_comparisons if heuristic_comparisons else 0.0
+    )
     avg_score = score_sum / len(rows) if rows else 0.0
     avg_latency = latency_sum / decisions if decisions else 0.0
     tenpai = sum(1 for row in rows if row.get("final_tenpai"))
@@ -241,7 +261,9 @@ for policy_id in sorted(groups):
         f"  {policy_id:<10} seats={len(rows):4d} wins={wins:3d} "
         f"dealt_in={dealt_in:3d} score_sum={score_sum:7d} "
         f"avg_score={avg_score:7.1f} decisions={decisions:6d} "
-        f"avg_latency_ms={avg_latency:6.1f} final_tenpai={tenpai:3d}"
+        f"avg_latency_ms={avg_latency:6.1f} final_tenpai={tenpai:3d} "
+        f"model_loaded={model_loaded:4d} fallback={fallback_count:5d} "
+        f"neural_actions={neural_actions:5d} same_as_heuristic={same_rate:5.2f}"
     )
 PY
 }
@@ -256,8 +278,6 @@ rm -f "$OUTPUT_PATH"
 
 completed_matches=0
 chunk_index=0
-rotation_step=0
-seat_order=(0 1 2 3)
 
 while (( completed_matches < MATCHES )); do
     chunk_matches=$(( MATCHES - completed_matches ))
@@ -273,11 +293,12 @@ while (( completed_matches < MATCHES )); do
     else
         chunk_seed="$(( SEED + completed_matches ))"
     fi
+    rotation_offset=$(( completed_matches % 4 ))
     write_chunk_config \
         "$chunk_config_path" \
         "$chunk_matches" \
         "$chunk_seed" \
-        "${seat_order[0]},${seat_order[1]},${seat_order[2]},${seat_order[3]}"
+        "$rotation_offset"
 
     "$CARGO_EXE" run \
         --manifest-path "$BACKEND_MANIFEST" \
@@ -290,22 +311,7 @@ while (( completed_matches < MATCHES )); do
 
     cat "$chunk_output_path" >> "$OUTPUT_PATH"
     completed_matches=$(( completed_matches + chunk_matches ))
-    echo "Arena progress: completed $completed_matches/$MATCHES chunk=$(( chunk_index + 1 )) seed=$chunk_seed seats=$(seat_order_text "${seat_order[@]}")"
-
-    if (( completed_matches < MATCHES )); then
-        if (( rotation_step % 3 == 0 )); then
-            seat_order=("${seat_order[2]}" "${seat_order[3]}" "${seat_order[0]}" "${seat_order[1]}")
-            swap_name="1<->3, 2<->4"
-        elif (( rotation_step % 3 == 1 )); then
-            seat_order=("${seat_order[1]}" "${seat_order[0]}" "${seat_order[3]}" "${seat_order[2]}")
-            swap_name="1<->2, 3<->4"
-        else
-            seat_order=("${seat_order[3]}" "${seat_order[1]}" "${seat_order[2]}" "${seat_order[0]}")
-            swap_name="1<->4"
-        fi
-        echo "Next seat order after swap $swap_name: $(seat_order_text "${seat_order[@]}")"
-        rotation_step=$(( rotation_step + 1 ))
-    fi
+    echo "Arena progress: completed $completed_matches/$MATCHES chunk=$(( chunk_index + 1 )) seed=$chunk_seed rotation_offset=$rotation_offset first_match_seats=$(cyclic_seat_order_text "$rotation_offset")"
 
     chunk_index=$(( chunk_index + 1 ))
 done

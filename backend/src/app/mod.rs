@@ -606,7 +606,9 @@ pub(crate) fn send_outbound(outbound: Vec<OutboundMessage>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path, set_seat_bot_takeover};
+    use super::{
+        BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path, set_seat_bot_takeover,
+    };
     use crate::core::state::{RoomState, SeatState};
 
     #[test]

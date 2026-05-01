@@ -126,18 +126,18 @@ Windows matrix:
 
 ```powershell
 .\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429
-.\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429 -SeatOrder rotate1
 ```
 
 Linux matrix:
 
 ```bash
 MATCHES=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
-MATCHES=200 SEED=20260429 SEAT_ORDER=rotate1 ./backend/bot_trainer/v2/arena_matrix.sh
 ```
 
-`arena_matrix` compares `heuristic` and `neural` policies only. `SeatOrder=default` seats them as
-`heuristic,neural,heuristic,neural`; `rotate1` swaps the order.
+`arena_matrix` expects exactly four policies from `arena_policy_pool.json`. It keeps the pool order fixed
+in each generated config and asks the Rust arena to rotate seats cyclically per match, using
+`seat_rotation_offset` to continue the cycle across progress chunks. For match counts divisible by 4,
+each policy appears in each seat equally often.
 
 Primary model-selection metrics:
 

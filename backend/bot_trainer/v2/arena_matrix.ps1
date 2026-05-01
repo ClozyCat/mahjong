@@ -146,19 +146,19 @@ function Format-SeatPolicyIds {
     return (($Policies | ForEach-Object { $_.id }) -join ", ")
 }
 
-function Switch-SeatPolicies {
+function Get-CyclicSeatPolicies {
     param(
         [Parameter(Mandatory = $true)]
         [object[]]$Policies,
         [Parameter(Mandatory = $true)]
-        [int]$RotationStep
+        [int]$Offset
     )
 
-    switch ($RotationStep % 3) {
-        0 { return @($Policies[2], $Policies[3], $Policies[0], $Policies[1]) }
-        1 { return @($Policies[1], $Policies[0], $Policies[3], $Policies[2]) }
-        default { return @($Policies[3], $Policies[1], $Policies[2], $Policies[0]) }
+    $rotated = @()
+    for ($seat = 0; $seat -lt $Policies.Count; $seat += 1) {
+        $rotated += $Policies[($seat + $Offset) % $Policies.Count]
     }
+    return $rotated
 }
 
 function New-ArenaSeed {
@@ -205,11 +205,17 @@ function Write-ArenaSummary {
             $dealtIn = ($rows | Measure-Object -Property dealt_in -Sum).Sum
             $decisions = ($rows | Measure-Object -Property decision_count -Sum).Sum
             $latencySum = ($rows | Measure-Object -Property decision_latency_ms_sum -Sum).Sum
+            $modelLoaded = @($rows | Where-Object { $_.model_loaded }).Count
+            $fallbackCount = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "fallback_count") { [int64]$_.fallback_count } else { 0 } } | Measure-Object -Sum).Sum
+            $neuralActions = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "neural_action_count") { [int64]$_.neural_action_count } else { 0 } } | Measure-Object -Sum).Sum
+            $sameAsHeuristic = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "same_as_heuristic_count") { [int64]$_.same_as_heuristic_count } else { 0 } } | Measure-Object -Sum).Sum
+            $heuristicComparisons = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "heuristic_comparison_count") { [int64]$_.heuristic_comparison_count } else { 0 } } | Measure-Object -Sum).Sum
+            $sameRate = if ($heuristicComparisons -gt 0) { $sameAsHeuristic / $heuristicComparisons } else { 0 }
             $avgScore = if ($rows.Count -gt 0) { $scoreSum / $rows.Count } else { 0 }
             $avgLatency = if ($decisions -gt 0) { $latencySum / $decisions } else { 0 }
             $tenpai = @($rows | Where-Object { $_.final_tenpai }).Count
-            Write-Host ("  {0,-10} seats={1,4} wins={2,3} dealt_in={3,3} score_sum={4,7} avg_score={5,7:N1} decisions={6,6} avg_latency_ms={7,6:N1} final_tenpai={8,3}" -f `
-                $_.Name, $rows.Count, $wins, $dealtIn, $scoreSum, $avgScore, $decisions, $avgLatency, $tenpai)
+            Write-Host ("  {0,-10} seats={1,4} wins={2,3} dealt_in={3,3} score_sum={4,7} avg_score={5,7:N1} decisions={6,6} avg_latency_ms={7,6:N1} final_tenpai={8,3} model_loaded={9,4} fallback={10,5} neural_actions={11,5} same_as_heuristic={12,5:N2}" -f `
+                $_.Name, $rows.Count, $wins, $dealtIn, $scoreSum, $avgScore, $decisions, $avgLatency, $tenpai, $modelLoaded, $fallbackCount, $neuralActions, $sameRate)
         }
 }
 
@@ -225,7 +231,7 @@ if (Test-Path -LiteralPath $outputPath) {
 }
 
 if ($ProgressEvery -le 0) {
-    throw "ProgressEvery must be greater than 0 because seat rotation happens on each progress report."
+    throw "ProgressEvery must be greater than 0."
 }
 
 Write-Host "Initial seat order: $(Format-SeatPolicyIds -Policies $seatPolicies)"
@@ -237,12 +243,11 @@ Push-Location $RepoRoot
 try {
     $completedMatches = 0
     $chunkIndex = 0
-    $rotationStep = 0
-    $currentPolicies = @($seatPolicies)
 
     while ($completedMatches -lt $Matches) {
         $chunkMatches = [Math]::Min($ProgressEvery, $Matches - $completedMatches)
         $chunkSeed = if ($RandomSeed -eq 1) { New-ArenaSeed } else { $Seed + $completedMatches }
+        $rotationOffset = $completedMatches % $seatPolicies.Count
         $chunkConfigPath = Join-Path $OutputDir ("arena_config_{0:D3}.json" -f $chunkIndex)
         $chunkOutputPath = Join-Path $OutputDir ("arena_results_{0:D3}.jsonl" -f $chunkIndex)
         if (Test-Path -LiteralPath $chunkOutputPath) {
@@ -254,7 +259,9 @@ try {
             seed = $chunkSeed
             max_actions_per_match = 2400
             report_trajectories = $false
-            policies = $currentPolicies
+            seat_rotation = "cyclic"
+            seat_rotation_offset = $rotationOffset
+            policies = $seatPolicies
         }
         Write-Utf8NoBom -Path $chunkConfigPath -Content (($config | ConvertTo-Json -Depth 8) + "`n")
 
@@ -276,19 +283,9 @@ try {
 
         Add-Utf8NoBomFile -SourcePath $chunkOutputPath -TargetPath $outputPath
         $completedMatches += $chunkMatches
-        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seed={3} seats={4}" -f `
-            $completedMatches, $Matches, ($chunkIndex + 1), $chunkSeed, (Format-SeatPolicyIds -Policies $currentPolicies))
-
-        if ($completedMatches -lt $Matches) {
-            $currentPolicies = @(Switch-SeatPolicies -Policies $currentPolicies -RotationStep $rotationStep)
-            $swapName = switch ($rotationStep % 3) {
-                0 { "1<->3, 2<->4" }
-                1 { "1<->2, 3<->4" }
-                default { "1<->4" }
-            }
-            Write-Host "Next seat order after swap $swapName`: $(Format-SeatPolicyIds -Policies $currentPolicies)"
-            $rotationStep += 1
-        }
+        $firstMatchPolicies = @(Get-CyclicSeatPolicies -Policies $seatPolicies -Offset $rotationOffset)
+        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seed={3} rotation_offset={4} first_match_seats={5}" -f `
+            $completedMatches, $Matches, ($chunkIndex + 1), $chunkSeed, $rotationOffset, (Format-SeatPolicyIds -Policies $firstMatchPolicies))
 
         $chunkIndex += 1
     }
