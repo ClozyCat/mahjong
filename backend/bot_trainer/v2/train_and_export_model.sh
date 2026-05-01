@@ -15,6 +15,7 @@ SELF_KONG_LOSS_WEIGHT=1.0
 HU_LOSS_WEIGHT=1.0
 VALUE_LOSS_WEIGHT=0.25
 RISK_LOSS_WEIGHT=0.25
+FAN_LOSS_WEIGHT=0.25
 DEVICE="cuda"
 NO_AMP=0
 COMPILE_MODEL=0
@@ -42,6 +43,7 @@ Options:
   --hu-loss-weight VALUE    Hu head loss weight.
   --value-loss-weight VALUE Value head loss weight.
   --risk-loss-weight VALUE  Risk head loss weight.
+  --fan-loss-weight VALUE   Fan head loss weight.
   --no-amp                  Do not pass --amp to train.py.
   --compile                 Pass --compile to train.py.
   --skip-tests              Skip pytest before training.
@@ -134,6 +136,11 @@ while [[ $# -gt 0 ]]; do
         --risk-loss-weight)
             require_value "$1" "${2:-}"
             RISK_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
+        --fan-loss-weight)
+            require_value "$1" "${2:-}"
+            FAN_LOSS_WEIGHT="$2"
             shift 2
             ;;
         --no-amp)
@@ -264,6 +271,7 @@ train_args=(
     --hu-loss-weight "$HU_LOSS_WEIGHT"
     --value-loss-weight "$VALUE_LOSS_WEIGHT"
     --risk-loss-weight "$RISK_LOSS_WEIGHT"
+    --fan-loss-weight "$FAN_LOSS_WEIGHT"
 )
 
 if (( NO_AMP == 0 )); then

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use super::botzone::{BotZoneAction, BotZoneMatch, BotZoneResult};
 use crate::bot::action_space::{TILE_KIND_COUNT, tile_index};
+use crate::rules::scoring::{
+    EvaluationInput, TimingFeatures, evaluate_fans, extract_hand_features,
+};
 
 const TOTAL_TILE_COUNT: i64 = 136;
 
@@ -43,6 +46,7 @@ pub(crate) struct TrainingDecisionSampleV2 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SampleOutcome {
     pub(crate) score_delta: i64,
+    pub(crate) fan_count: i64,
     pub(crate) won: bool,
     pub(crate) dealt_in: bool,
     pub(crate) round_drawn: bool,
@@ -123,7 +127,8 @@ pub(crate) fn replay_match_to_samples(
     let mut state = ReplayState::new(record);
     let mut samples = Vec::new();
     let mut decision_index = 0_u64;
-    let outcome_by_seat = outcome_by_seat(record);
+    let exact_fan = calculate_match_exact_fan(record);
+    let outcome_by_seat = outcome_by_seat(record, exact_fan);
 
     for (event_index, event) in record.events.iter().enumerate() {
         match &event.action {
@@ -757,7 +762,7 @@ fn self_kong_legal_actions(context: &SerializableBotContext) -> Vec<String> {
     actions
 }
 
-fn outcome_by_seat(record: &BotZoneMatch) -> [SampleOutcome; 4] {
+fn outcome_by_seat(record: &BotZoneMatch, exact_fan: i64) -> [SampleOutcome; 4] {
     let (score_delta, round_drawn) = match &record.result {
         BotZoneResult::Hu { score_delta, .. } => (*score_delta, false),
         BotZoneResult::Huang { score_delta } => (*score_delta, true),
@@ -779,10 +784,104 @@ fn outcome_by_seat(record: &BotZoneMatch) -> [SampleOutcome; 4] {
     });
     std::array::from_fn(|seat| SampleOutcome {
         score_delta: score_delta[seat],
+        fan_count: if winner == Some(seat) { exact_fan } else { 0 },
         won: winner == Some(seat),
         dealt_in: winner.is_some() && discarder == Some(seat) && winner != Some(seat),
         round_drawn,
     })
+}
+
+fn calculate_match_exact_fan(record: &BotZoneMatch) -> i64 {
+    let mut state = ReplayState::new(record);
+    for event in &record.events {
+        match &event.action {
+            BotZoneAction::Draw { tile_key } => state.add_tile(event.actor, tile_key),
+            BotZoneAction::Play { tile_key } => {
+                state.remove_one_tile(event.actor, tile_key);
+                state.discards[event.actor].push(tile_key.clone());
+                state.last_discard_tile_key = Some(tile_key.clone());
+                state.last_discarder_seat = Some(event.actor);
+                state.current_drawn_tile_ids[event.actor] = None;
+            }
+            BotZoneAction::Chi { middle_tile_key } => state.apply_chow(event.actor, middle_tile_key),
+            BotZoneAction::Peng { tile_key } => state.apply_same_tile_meld(event.actor, tile_key, 2),
+            BotZoneAction::Gang { tile_key } => state.apply_same_tile_meld(event.actor, tile_key, 3),
+            BotZoneAction::AnGang { tile_key } => state.apply_concealed_kong(event.actor, tile_key),
+            BotZoneAction::BuGang { tile_key } => state.apply_add_kong(event.actor, tile_key),
+            BotZoneAction::Hu { tile_key } => {
+                let win_type = if state.current_drawn_tile_ids[event.actor].is_some() {
+                    "self_draw"
+                } else {
+                    "discard"
+                };
+                return calculate_exact_fan(&state, record, event.actor, tile_key, win_type);
+            }
+        }
+    }
+    0
+}
+
+fn calculate_exact_fan(
+    state: &ReplayState,
+    record: &BotZoneMatch,
+    winner_seat: usize,
+    winning_tile: &str,
+    win_type: &str,
+) -> i64 {
+    let seat_wind = seat_index_to_wind(winner_seat);
+    let round_wind = &record.round_wind;
+
+    let concealed_tile_keys: Vec<String> =
+        state.hands[winner_seat].iter().map(|t| t.tile_key.clone()).collect();
+    let meld_tile_key_groups = state.melds[winner_seat].clone();
+
+    let features = extract_hand_features(
+        &concealed_tile_keys,
+        &meld_tile_key_groups,
+        None,
+        Some(winning_tile),
+        Some(&seat_wind),
+        Some(round_wind),
+        None,
+    );
+
+    let timing = TimingFeatures {
+        robbing_the_kong: win_type == "rob_kong",
+        ..Default::default()
+    };
+
+    let input = EvaluationInput {
+        win_type: win_type.to_string(),
+        winner_seat: Some(winner_seat),
+        discarder_seat: state.last_discarder_seat,
+        ready_hand_declared: false,
+        flower_count: 0,
+        seat_count: 4,
+        features,
+        timing,
+        kong_entries: Vec::new(), // 简化处理，暂不追踪历史杠分明细
+        tile_keys: [concealed_tile_keys.clone(), meld_tile_key_groups.iter().flatten().cloned().collect()].concat(),
+        visible_tile_keys: state.visible_tile_keys(),
+        concealed_tile_keys,
+        meld_tile_key_groups: meld_tile_key_groups.clone(),
+        open_meld_tile_key_groups: meld_tile_key_groups,
+        incoming_tile: Some(winning_tile.to_string()),
+        winning_tile: Some(winning_tile.to_string()),
+        decompositions: Vec::new(),
+    };
+
+    evaluate_fans(input).fan_total
+}
+
+fn seat_index_to_wind(index: usize) -> String {
+    match index {
+        0 => "east",
+        1 => "north",
+        2 => "west",
+        3 => "south",
+        _ => "east",
+    }
+    .to_string()
 }
 
 fn make_tile(match_id: &str, seat: usize, sequence: usize, tile_key: &str) -> SerializableBotTile {

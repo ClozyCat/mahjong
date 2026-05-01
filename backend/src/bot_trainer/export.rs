@@ -422,6 +422,7 @@ mod tests {
             },
             outcome: crate::bot_trainer::replay::SampleOutcome {
                 score_delta: 0,
+                fan_count: 0,
                 won: false,
                 dealt_in: false,
                 round_drawn: false,

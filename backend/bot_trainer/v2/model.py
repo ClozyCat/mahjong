@@ -124,6 +124,7 @@ if nn is not None:
             self.hu_head = nn.Linear(256, 2)
             self.value_head = nn.Linear(256, 1)
             self.risk_head = nn.Linear(256, 34)
+            self.fan_head = nn.Linear(256, 1)
 
         def forward(
             self,
@@ -140,6 +141,7 @@ if nn is not None:
                 "hu_logits": self.hu_head(hidden),
                 "value": self.value_head(hidden),
                 "risk_logits": self.risk_head(hidden),
+                "fan_logits": self.fan_head(hidden),
             }
 
 else:

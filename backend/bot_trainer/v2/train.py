@@ -38,6 +38,7 @@ def main() -> None:
         args.data / "metadata.json",
         cache_dir=args.data_cache_dir,
         rebuild_cache=args.rebuild_data_cache,
+        augment=True,
     )
     val_path = args.data / "val.jsonl"
     val_dataset = (
@@ -77,6 +78,7 @@ def main() -> None:
         "hu_weight": args.hu_loss_weight,
         "value_weight": args.value_loss_weight,
         "risk_weight": args.risk_loss_weight,
+        "fan_weight": args.fan_loss_weight,
     }
 
     best_metric = math.inf
@@ -151,6 +153,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
     parser.add_argument("--value-loss-weight", type=float, default=0.25)
     parser.add_argument("--risk-loss-weight", type=float, default=0.25)
+    parser.add_argument("--fan-loss-weight", type=float, default=0.25)
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
@@ -259,6 +262,7 @@ def compute_losses(
     hu_weight: float = 1.0,
     value_weight: float = 0.25,
     risk_weight: float = 0.25,
+    fan_weight: float = 0.25,
 ) -> dict[str, torch.Tensor]:
     discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
     claim_loss = masked_cross_entropy(outputs["claim_logits"], batch["claim_mask"], batch["claim_target"])
@@ -266,6 +270,7 @@ def compute_losses(
     hu_loss = masked_cross_entropy(outputs["hu_logits"], batch["hu_mask"], batch["hu_target"])
     value_loss = F.mse_loss(outputs["value"], batch["value_target"].float())
     risk_loss = F.binary_cross_entropy_with_logits(outputs["risk_logits"], batch["risk_target"].float())
+    fan_loss = F.mse_loss(outputs["fan_logits"], batch["fan_target"].float())
     loss = (
         discard_loss
         + claim_weight * claim_loss
@@ -273,6 +278,7 @@ def compute_losses(
         + hu_weight * hu_loss
         + value_weight * value_loss
         + risk_weight * risk_loss
+        + fan_weight * fan_loss
     )
     return {
         "loss": loss,
@@ -282,6 +288,7 @@ def compute_losses(
         "hu_loss": hu_loss,
         "value_loss": value_loss,
         "risk_loss": risk_loss,
+        "fan_loss": fan_loss,
     }
 
 def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -308,6 +315,7 @@ class MetricTotals:
         self.hu_loss_sum = torch.tensor(0.0, device=device)
         self.value_loss_sum = torch.tensor(0.0, device=device)
         self.risk_loss_sum = torch.tensor(0.0, device=device)
+        self.fan_loss_sum = torch.tensor(0.0, device=device)
         self.batch_count = 0
         self.discard_top1 = torch.tensor(0, device=device)
         self.discard_top3 = torch.tensor(0, device=device)
@@ -325,6 +333,7 @@ class MetricTotals:
         self.hu_loss_sum += losses["hu_loss"].detach()
         self.value_loss_sum += losses["value_loss"].detach()
         self.risk_loss_sum += losses["risk_loss"].detach()
+        self.fan_loss_sum += losses["fan_loss"].detach()
         self.batch_count += 1
         self.update_discard(outputs["discard_logits"], batch)
         self.update_claim(outputs["claim_logits"], batch)
@@ -392,6 +401,7 @@ class MetricTotals:
             "hu_loss": self.hu_loss_sum.item() / max(1, self.batch_count),
             "value_loss": self.value_loss_sum.item() / max(1, self.batch_count),
             "risk_loss": self.risk_loss_sum.item() / max(1, self.batch_count),
+            "fan_loss": self.fan_loss_sum.item() / max(1, self.batch_count),
             "discard_top1": self.discard_top1.item() / max(1, self.discard_count.item()),
             "discard_top3": self.discard_top3.item() / max(1, self.discard_count.item()),
             "discard_top5": self.discard_top5.item() / max(1, self.discard_count.item()),

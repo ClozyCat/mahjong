@@ -15,7 +15,7 @@ except ModuleNotFoundError:
 
 TILE_KIND_COUNT = 34
 TILE_PLANE_COUNT = 10
-SCALAR_FEATURE_COUNT = 10
+SCALAR_FEATURE_COUNT = 12
 IGNORE_INDEX = -100
 DISK_CACHE_VERSION = 3
 
@@ -29,6 +29,7 @@ class MahjongDecisionDataset(Dataset):
         metadata_path: Path,
         cache_dir: Path | None = None,
         rebuild_cache: bool = False,
+        augment: bool = False,
     ) -> None:
         if torch is None:
             raise MissingTorchError("PyTorch is required: pip install torch")
@@ -37,6 +38,7 @@ class MahjongDecisionDataset(Dataset):
         self.metadata = load_metadata(metadata_path)
         self.lookups = build_encoder_lookups(self.metadata)
         self.cache_dir = resolve_cache_dir(jsonl_path, cache_dir)
+        self.augment = augment
         self._arrays: dict[str, np.ndarray] = {}
 
         if not jsonl_path.exists():
@@ -146,10 +148,42 @@ class MahjongDecisionDataset(Dataset):
     def get_batch(self, indices: Sequence[int]) -> dict[str, torch.Tensor]:
         # 每个 batch 只从磁盘映射缓存读取当前索引，避免整份数据常驻内存。
         index_array = np.asarray(list(indices), dtype=np.int64)
-        return {
+        batch = {
             name: torch.from_numpy(np.asarray(mmap_array[index_array]))
             for name, mmap_array in self._arrays.items()
         }
+        if self.augment:
+            batch = self._apply_augmentation(batch)
+        return batch
+
+    def _apply_augmentation(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        # 随机置换万、条、筒 (0-8, 9-17, 18-26)
+        p = torch.randperm(3).tolist()
+        if p == [0, 1, 2]:
+            return batch
+        
+        mapping = torch.arange(34)
+        suit_blocks = [torch.arange(0, 9), torch.arange(9, 18), torch.arange(18, 27)]
+        mapping[0:9] = suit_blocks[p[0]]
+        mapping[9:18] = suit_blocks[p[1]]
+        mapping[18:27] = suit_blocks[p[2]]
+        
+        inv_mapping = torch.zeros(34, dtype=torch.long)
+        inv_mapping[mapping] = torch.arange(34)
+        
+        # 应用于输入特征
+        batch["tile_planes"] = batch["tile_planes"][:, :, mapping]
+        
+        # 应用于掩码和目标
+        batch["discard_mask"] = batch["discard_mask"][:, mapping]
+        batch["risk_target"] = batch["risk_target"][:, mapping]
+        
+        target = batch["discard_target"]
+        active = (target != IGNORE_INDEX) & (target < 27) # 仅置换数牌
+        if torch.any(active):
+            batch["discard_target"][active] = inv_mapping[target[active]]
+            
+        return batch
 
 
 def resolve_cache_dir(jsonl_path: Path, cache_dir: Path | None) -> Path:
@@ -171,6 +205,7 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
         "hu_target": ((), np.dtype(np.int64)),
         "value_target": ((1,), np.dtype(np.float32)),
         "risk_target": ((TILE_KIND_COUNT,), np.dtype(np.float32)),
+        "fan_target": ((1,), np.dtype(np.float32)),
         "decision_kind": ((), np.dtype(np.int64)),
     }
 
@@ -300,6 +335,7 @@ def encode_row(
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
         "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 100.0], dtype=np.float32),
         "risk_target": risk_target(row, tile_to_index),
+        "fan_target": np.asarray([float(row["outcome"].get("fan_count", 0)) / 10.0], dtype=np.float32),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),
     }
 
@@ -351,6 +387,13 @@ def encode_scalar_features(context: dict[str, Any]) -> np.ndarray:
     features[8] = len(context.get("claim_options", [])) / 4.0
     scores = context.get("cumulative_scores", [])
     features[9] = float(scores[seat_index]) / 100.0 if seat_index < len(scores) else 0.0
+    
+    # 东北西南 0-3 映射 (BotZone 格式)
+    wind_map = {"east": 0.0, "north": 1.0, "west": 2.0, "south": 3.0}
+    round_wind_val = wind_map.get(context.get("round_wind", "east"), 0.0)
+    features[10] = round_wind_val / 3.0
+    features[11] = 1.0 if round_wind_val == float(seat_index) else 0.0
+    
     return features
 
 

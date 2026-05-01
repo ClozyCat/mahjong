@@ -5,7 +5,7 @@ use super::action_space::{
 use super::context::{BotContext, BotSelfKongKind};
 
 const TILE_PLANE_COUNT: usize = 10;
-const SCALAR_FEATURE_COUNT: usize = 10;
+const SCALAR_FEATURE_COUNT: usize = 12;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BotFeaturesV2 {
@@ -108,7 +108,19 @@ fn encode_scalar_features(context: &BotContext) -> Vec<f32> {
         .copied()
         .unwrap_or(0) as f32
         / 100.0;
+    let round_wind_index = botzone_wind_index(context.round_wind.as_deref().unwrap_or("east"));
+    features[10] = round_wind_index as f32 / 3.0;
+    features[11] = f32::from(round_wind_index == context.seat_index);
     features
+}
+
+fn botzone_wind_index(wind: &str) -> usize {
+    match wind {
+        "north" => 1,
+        "west" => 2,
+        "south" => 3,
+        _ => 0,
+    }
 }
 
 fn legal_discard_mask(context: &BotContext) -> [bool; TILE_KIND_COUNT] {
@@ -315,5 +327,18 @@ mod tests {
         assert_eq!(encoded.claim_mask.len(), CLAIM_ACTION_COUNT);
         assert_eq!(encoded.self_kong_mask.len(), SELF_KONG_ACTION_COUNT);
         assert_eq!(encoded.hu_mask.len(), 2);
+    }
+
+    #[test]
+    fn scalar_features_include_round_wind() {
+        let mut context = sample_context_with_tiles(&["w1", "t5", "red"]);
+        context.seat_index = 1;
+        context.round_wind = Some("north".to_string());
+
+        let encoded = encode_bot_context_v2(&context);
+
+        assert_eq!(encoded.scalar_features.len(), 12);
+        assert_eq!(encoded.scalar_features[10], 1.0 / 3.0);
+        assert_eq!(encoded.scalar_features[11], 1.0);
     }
 }

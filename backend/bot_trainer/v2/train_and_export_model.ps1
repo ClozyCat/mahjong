@@ -17,6 +17,7 @@ param(
     [double]$HuLossWeight = 1.0,
     [double]$ValueLossWeight = 0.25,
     [double]$RiskLossWeight = 0.25,
+    [double]$FanLossWeight = 0.25,
     [switch]$RebuildDataCache,
     [switch]$NoAmp,
     [switch]$CompileModel,
@@ -188,7 +189,8 @@ try {
         "--self-kong-loss-weight", "$SelfKongLossWeight",
         "--hu-loss-weight", "$HuLossWeight",
         "--value-loss-weight", "$ValueLossWeight",
-        "--risk-loss-weight", "$RiskLossWeight"
+        "--risk-loss-weight", "$RiskLossWeight",
+        "--fan-loss-weight", "$FanLossWeight"
     )
     if (-not $NoAmp) {
         $trainArgs += "--amp"

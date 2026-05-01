@@ -30,7 +30,8 @@
       "Bash(awk 'NR>=4096 && NR<=4120' src/index.css)",
       "Bash(npm install *)",
       "Bash(ls dist/assets/)",
-      "Bash(cat src/main.tsx)"
+      "Bash(cat src/main.tsx)",
+      "Bash(wc *)"
     ]
   }
 }

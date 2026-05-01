@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dataset import IGNORE_INDEX, encode_row
+from dataset import IGNORE_INDEX, SCALAR_FEATURE_COUNT, encode_row
 
 
 def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
@@ -14,7 +14,7 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     encoded = encode_row(row, metadata)
 
     assert encoded["tile_planes"].shape == (10, 34)
-    assert encoded["scalar_features"].shape == (10,)
+    assert encoded["scalar_features"].shape == (SCALAR_FEATURE_COUNT,)
     assert encoded["discard_mask"].shape == (34,)
     assert encoded["discard_target"].item() == 0
 
@@ -35,7 +35,7 @@ def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
     assert len(dataset) == 1
     assert (tmp_path / "cache" / "train" / "tile_planes.npy").exists()
     assert batch["tile_planes"].shape == (1, 10, 34)
-    assert batch["scalar_features"].shape == (1, 10)
+    assert batch["scalar_features"].shape == (1, SCALAR_FEATURE_COUNT)
     assert batch["discard_target"].tolist() == [0]
     assert batch["discard_mask"].dtype == torch.bool
     assert loader_batch["discard_target"].tolist() == [0]
@@ -89,6 +89,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.tensor([[999.0]]),
         "risk_logits": torch.full((1, 34), 999.0),
+        "fan_logits": torch.zeros((1, 1)),
     }
     batch = {
         "discard_mask": torch.tensor([[True, True] + [False] * 32]),
@@ -101,6 +102,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_target": torch.tensor([-100]),
         "value_target": torch.tensor([[0.0]]),
         "risk_target": torch.zeros((1, 34)),
+        "fan_target": torch.zeros((1, 1)),
     }
 
     losses = compute_losses(outputs, batch, value_weight=0.0, risk_weight=0.0, hu_weight=1.0)
