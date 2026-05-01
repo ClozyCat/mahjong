@@ -106,6 +106,28 @@ if os.name == "nt":
     return (Resolve-Path $siteDir).Path
 }
 
+function Resolve-UsableTempPath {
+    param([string]$Candidate)
+
+    if (-not [string]::IsNullOrWhiteSpace($Candidate) -and (Test-Path -LiteralPath $Candidate -PathType Container)) {
+        return (Resolve-Path -LiteralPath $Candidate).Path
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $localTemp = Join-Path $env:LOCALAPPDATA "Temp"
+        New-Item -ItemType Directory -Force -Path $localTemp | Out-Null
+        return (Resolve-Path -LiteralPath $localTemp).Path
+    }
+
+    $fallback = Join-Path $RepoRoot ".tmp\windows-temp"
+    New-Item -ItemType Directory -Force -Path $fallback | Out-Null
+    return (Resolve-Path -LiteralPath $fallback).Path
+}
+
+$PreviousTemp = $env:TEMP
+$PreviousTmp = $env:TMP
+$PreviousPytestTempRoot = $env:PYTEST_DEBUG_TEMPROOT
+
 Push-Location $RepoRoot
 try {
     Assert-PythonModule "torch"
@@ -313,4 +335,12 @@ try {
 }
 finally {
     Pop-Location
+    $env:TEMP = Resolve-UsableTempPath $PreviousTemp
+    $env:TMP = Resolve-UsableTempPath $PreviousTmp
+    if ([string]::IsNullOrWhiteSpace($PreviousPytestTempRoot) -or -not (Test-Path -LiteralPath $PreviousPytestTempRoot -PathType Container)) {
+        Remove-Item Env:PYTEST_DEBUG_TEMPROOT -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:PYTEST_DEBUG_TEMPROOT = (Resolve-Path -LiteralPath $PreviousPytestTempRoot).Path
+    }
 }

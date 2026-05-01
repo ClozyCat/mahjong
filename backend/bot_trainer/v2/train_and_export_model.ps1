@@ -8,6 +8,8 @@ param(
     [string]$DataCacheDir = "",
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
+    [ValidateSet("auto", "cuda", "cpu", "dml")]
+    [string]$Device = "cuda",
     [double]$LearningRate = 0.001,
     [double]$WeightDecay = 0.0001,
     [double]$ClaimLossWeight = 1.0,
@@ -39,6 +41,24 @@ function Invoke-TrainingPython {
     else {
         & $PythonExe @Arguments
     }
+}
+
+function Resolve-UsableTempPath {
+    param([string]$Candidate)
+
+    if (-not [string]::IsNullOrWhiteSpace($Candidate) -and (Test-Path -LiteralPath $Candidate -PathType Container)) {
+        return (Resolve-Path -LiteralPath $Candidate).Path
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $localTemp = Join-Path $env:LOCALAPPDATA "Temp"
+        New-Item -ItemType Directory -Force -Path $localTemp | Out-Null
+        return (Resolve-Path -LiteralPath $localTemp).Path
+    }
+
+    $fallback = Join-Path $RepoRoot ".tmp\windows-temp"
+    New-Item -ItemType Directory -Force -Path $fallback | Out-Null
+    return (Resolve-Path -LiteralPath $fallback).Path
 }
 
 function Assert-NvidiaCudaGpu {
@@ -105,17 +125,32 @@ print('CUDA_DEVICE=' + torch.cuda.get_device_name(0))
     return ($cudaDeviceLine -replace "^CUDA_DEVICE=", "").Trim()
 }
 
+$PreviousTemp = $env:TEMP
+$PreviousTmp = $env:TMP
+$PreviousPytestTempRoot = $env:PYTEST_DEBUG_TEMPROOT
+
 Push-Location $RepoRoot
 try {
-    Assert-NvidiaCudaGpu
-    $CudaDeviceName = Assert-PythonCuda
+    $ScriptTempDir = Join-Path $RepoRoot ".tmp\bot-trainer-v2-sft"
+    New-Item -ItemType Directory -Force -Path $ScriptTempDir | Out-Null
+    $env:TEMP = (Resolve-Path -LiteralPath $ScriptTempDir).Path
+    $env:TMP = $env:TEMP
+    $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
+
+    $CudaDeviceName = ""
+    if ($Device -eq "cuda") {
+        Assert-NvidiaCudaGpu
+        $CudaDeviceName = Assert-PythonCuda
+    }
     $ResolvedDataCacheDir = if ($DataCacheDir.Length -gt 0) { $DataCacheDir } else { Join-Path $DataDir ".tensor_cache" }
 
     Write-Host "Training Mahjong bot v2 model"
     Write-Host "Data:        $DataDir"
     Write-Host "Checkpoints: $CheckpointDir"
-    Write-Host "Device:      cuda"
-    Write-Host "CUDA GPU:    $CudaDeviceName"
+    Write-Host "Device:      $Device"
+    if ($Device -eq "cuda") {
+        Write-Host "CUDA GPU:    $CudaDeviceName"
+    }
     Write-Host "Epochs:      $Epochs"
     Write-Host "Batch size:  $BatchSize"
     Write-Host "Workers:     $NumWorkers"
@@ -125,7 +160,12 @@ try {
     if (-not $SkipTests) {
         Invoke-TrainingPython @("-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('pytest') else 2)")
         if ($LASTEXITCODE -eq 0) {
-            Invoke-TrainingPython @("-m", "pytest", "backend/bot_trainer/v2", "-q")
+            Invoke-TrainingPython @(
+                "-m", "pytest",
+                "backend/bot_trainer/v2",
+                "-q",
+                "--basetemp", (Join-Path $ScriptTempDir "pytest")
+            )
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
         else {
@@ -139,7 +179,7 @@ try {
         "--epochs", "$Epochs",
         "--batch-size", "$BatchSize",
         "--output", $CheckpointDir,
-        "--device", "cuda",
+        "--device", $Device,
         "--num-workers", "$NumWorkers",
         "--data-cache-dir", $ResolvedDataCacheDir,
         "--lr", "$LearningRate",
@@ -176,4 +216,12 @@ try {
 }
 finally {
     Pop-Location
+    $env:TEMP = Resolve-UsableTempPath $PreviousTemp
+    $env:TMP = Resolve-UsableTempPath $PreviousTmp
+    if ([string]::IsNullOrWhiteSpace($PreviousPytestTempRoot) -or -not (Test-Path -LiteralPath $PreviousPytestTempRoot -PathType Container)) {
+        Remove-Item Env:PYTEST_DEBUG_TEMPROOT -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:PYTEST_DEBUG_TEMPROOT = (Resolve-Path -LiteralPath $PreviousPytestTempRoot).Path
+    }
 }

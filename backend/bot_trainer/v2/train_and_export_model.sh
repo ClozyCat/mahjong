@@ -15,6 +15,7 @@ SELF_KONG_LOSS_WEIGHT=1.0
 HU_LOSS_WEIGHT=1.0
 VALUE_LOSS_WEIGHT=0.25
 RISK_LOSS_WEIGHT=0.25
+DEVICE="cuda"
 NO_AMP=0
 COMPILE_MODEL=0
 SKIP_TESTS=0
@@ -32,6 +33,7 @@ Options:
   --batch-size N            Training batch size.
   --num-workers N           DataLoader worker count.
   --python-exe PATH         Python executable override. Defaults to python.
+  --device NAME             Training device: auto, cuda, cpu, or dml. Defaults to cuda.
   --lr VALUE                Learning rate.
   --weight-decay VALUE      Weight decay.
   --claim-loss-weight VALUE Claim head loss weight.
@@ -92,6 +94,11 @@ while [[ $# -gt 0 ]]; do
         --python-exe)
             require_value "$1" "${2:-}"
             PYTHON_CMD=("$2")
+            shift 2
+            ;;
+        --device)
+            require_value "$1" "${2:-}"
+            DEVICE="$2"
             shift 2
             ;;
         --lr)
@@ -164,6 +171,10 @@ cd "$REPO_ROOT"
 
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
+TEMP_DIR="$REPO_ROOT/.tmp/bot-trainer-v2-sft"
+mkdir -p "$TEMP_DIR"
+export TMPDIR="$TEMP_DIR"
+export PYTEST_DEBUG_TEMPROOT="$TMPDIR"
 
 require_cuda_gpu() {
     if ! command -v nvidia-smi >/dev/null 2>&1; then
@@ -176,10 +187,11 @@ require_cuda_gpu() {
     fi
 }
 
-require_cuda_gpu
-
-probe_output="$(
-    "${PYTHON_CMD[@]}" - <<'PY' 2>&1
+CUDA_DEVICE=""
+if [[ "$DEVICE" == "cuda" ]]; then
+    require_cuda_gpu
+    probe_output="$(
+        "${PYTHON_CMD[@]}" - <<'PY' 2>&1
 import sys
 
 try:
@@ -202,25 +214,28 @@ if not torch.cuda.is_available():
 
 print('CUDA_DEVICE=' + torch.cuda.get_device_name(0))
 PY
-)" || {
-    status=$?
-    printf '%s\n' "$probe_output" >&2
-    echo "CUDA preflight failed before training." >&2
-    exit "$status"
-}
+    )" || {
+        status=$?
+        printf '%s\n' "$probe_output" >&2
+        echo "CUDA preflight failed before training." >&2
+        exit "$status"
+    }
 
-CUDA_DEVICE="$(printf '%s\n' "$probe_output" | awk -F= '/^CUDA_DEVICE=/{value=$2} END{print value}')"
-if [[ -z "$CUDA_DEVICE" ]]; then
-    printf '%s\n' "$probe_output" >&2
-    echo "Failed to verify CUDA device from Python probe." >&2
-    exit 3
+    CUDA_DEVICE="$(printf '%s\n' "$probe_output" | awk -F= '/^CUDA_DEVICE=/{value=$2} END{print value}')"
+    if [[ -z "$CUDA_DEVICE" ]]; then
+        printf '%s\n' "$probe_output" >&2
+        echo "Failed to verify CUDA device from Python probe." >&2
+        exit 3
+    fi
 fi
 
 echo "Training Mahjong bot v2 model"
 echo "Data:        $DATA_DIR"
 echo "Checkpoints: $CHECKPOINT_DIR"
-echo "Device:      cuda"
-echo "CUDA GPU:    $CUDA_DEVICE"
+echo "Device:      $DEVICE"
+if [[ "$DEVICE" == "cuda" ]]; then
+    echo "CUDA GPU:    $CUDA_DEVICE"
+fi
 echo "Epochs:      $EPOCHS"
 echo "Batch size:  $BATCH_SIZE"
 echo "Workers:     $NUM_WORKERS"
@@ -228,7 +243,7 @@ echo "Python:      ${PYTHON_CMD[*]}"
 
 if (( SKIP_TESTS == 0 )); then
     if "${PYTHON_CMD[@]}" -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('pytest') else 2)"; then
-        "${PYTHON_CMD[@]}" -m pytest backend/bot_trainer/v2 -q
+        "${PYTHON_CMD[@]}" -m pytest backend/bot_trainer/v2 -q --basetemp "$TEMP_DIR/pytest"
     else
         echo "pytest is not installed for this Python; skipping Python tests. Use --skip-tests to silence this check."
     fi
@@ -240,7 +255,7 @@ train_args=(
     --epochs "$EPOCHS"
     --batch-size "$BATCH_SIZE"
     --output "$CHECKPOINT_DIR"
-    --device cuda
+    --device "$DEVICE"
     --num-workers "$NUM_WORKERS"
     --lr "$LEARNING_RATE"
     --weight-decay "$WEIGHT_DECAY"
