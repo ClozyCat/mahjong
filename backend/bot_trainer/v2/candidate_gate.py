@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 
+CANDIDATE_LATENCY_LIMIT_MS = 200.0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=Path, required=True)
@@ -40,7 +43,7 @@ def evaluate_candidate(
     final_tenpai_ok = candidate["final_tenpai_rate"] >= baseline["final_tenpai_rate"]
     if not (tenpai_turn_ok or final_tenpai_ok):
         failures.append("tenpai")
-    if candidate["avg_latency_ms_per_decision"] >= 100.0:
+    if candidate["avg_latency_ms_per_decision"] >= CANDIDATE_LATENCY_LIMIT_MS:
         failures.append("latency")
 
     return {

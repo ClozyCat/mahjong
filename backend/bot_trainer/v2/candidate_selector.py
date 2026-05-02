@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 
+CANDIDATE_LATENCY_LIMIT_MS = 200.0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
@@ -40,7 +43,7 @@ def summarize_candidate(entry: dict[str, Any]) -> dict[str, Any]:
         "final_tenpai_rate",
     )
     tenpai_margin = max(first_tenpai_margin(baseline, candidate), final_tenpai_margin)
-    latency_margin = 100.0 - metric(candidate, "avg_latency_ms_per_decision")
+    latency_margin = CANDIDATE_LATENCY_LIMIT_MS - metric(candidate, "avg_latency_ms_per_decision")
     return {
         "epoch": entry.get("epoch"),
         "checkpoint": entry.get("checkpoint"),

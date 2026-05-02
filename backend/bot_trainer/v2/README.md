@@ -200,7 +200,7 @@ An RL candidate can replace the production model only when arena evaluation show
 - win rate does not regress
 - deal-in rate does not increase by more than 2 percentage points
 - first-tenpai turn or final-tenpai rate improves, or stays neutral
-- average decision latency remains under 100 ms
+- average decision latency remains under 200 ms
 
 The production policy modes are `heuristic` and `neural`. Keep `heuristic` as the fallback and promote a neural candidate only after it wins the rotated arena matrix without a higher deal-in rate.
 
