@@ -1,9 +1,9 @@
 {
-  "created_at_utc": "2026-05-02T13:34:03.726604+00:00",
-  "onnx": "backend/assets/models/mahjong_policy_net.onnx",
-  "checkpoint": "backend/bot_trainer/v2/checkpoints/best.pt",
-  "training_source": "sft",
-  "checkpoint_created_at_utc": "2026-05-02T13:19:32.048061+00:00",
+  "created_at_utc": "2026-05-02T14:46:22.192690+00:00",
+  "onnx": "backend/bot_trainer/v2/rl_runs/202605022138/iter_005/candidate.onnx",
+  "checkpoint": "backend/bot_trainer/v2/rl_runs/202605022138/iter_005/checkpoints/best.pt",
+  "training_source": "rl",
+  "checkpoint_created_at_utc": "2026-05-02T14:46:19.894059+00:00",
   "model_config": {
     "tile_plane_count": 10,
     "scalar_feature_count": 12

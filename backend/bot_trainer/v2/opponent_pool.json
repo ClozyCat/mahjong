@@ -14,12 +14,20 @@
       "model_path": null,
       "sample_actions": false,
       "temperature": 1.0,
-      "weight": 2
+      "weight": 1
     },
     {
       "id": "sft_default",
       "mode": "neural",
       "model_path": "backend/assets/history_models/sft.onnx",
+      "sample_actions": false,
+      "temperature": 1.0,
+      "weight": 1
+    },
+    {
+      "id": "ppo1",
+      "mode": "neural",
+      "model_path": "backend/assets/history_models/ppo1.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2
