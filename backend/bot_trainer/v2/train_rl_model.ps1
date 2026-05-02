@@ -13,7 +13,7 @@ param(
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
     [int]$Epochs = 2,
-    [int]$BatchSize = 256,
+    [int]$BatchSize = 4096,
     [double]$LearningRate = 0.00001,
     [double]$Gamma = 0.97,
     [double]$GaeLambda = 0.95,

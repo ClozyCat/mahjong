@@ -1,9 +1,9 @@
 {
     "policies": [
         {
-            "id": "ppo1",
+            "id": "ppo2",
             "mode": "neural",
-            "model_path": "backend/assets/history_models/ppo1.onnx"
+            "model_path": "backend/assets/history_models/ppo2.onnx"
         },
         {
             "id": "sft",
