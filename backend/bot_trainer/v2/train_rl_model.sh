@@ -7,22 +7,23 @@ BASELINE_ONNX="backend/assets/models/mahjong_policy_net.onnx"
 PYTHON_CMD=(python)
 CARGO_CMD=(cargo)
 ARENA_JOBS=0
-TRAJECTORY_MATCHES=200
+ITERATIONS=5
+ITERATION_MATCHES=500
 TRAJECTORY_PROGRESS_EVERY=20
 EVAL_MATCHES=200
 SEED=20260429
 MAX_ACTIONS_PER_MATCH=2400
-EPOCHS=3
+EPOCHS=2
 BATCH_SIZE=256
 LEARNING_RATE=0.00001
-GAMMA=0.99
+GAMMA=0.97
 GAE_LAMBDA=0.95
 CLIP_EPSILON=0.2
 VALUE_CLIP_EPSILON=0.2
 ENTROPY_COEF=0.02
 ENTROPY_END_COEF=0.005
 ENTROPY_DECAY_STEPS=0
-KL_COEF=0.01
+KL_COEF=0.0
 KL_END_COEF=0.0
 DEVICE=auto
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
@@ -30,7 +31,6 @@ LEARNER_POLICY_ID="learner"
 SELFPLAY_POLICY_ID="selfplay_neural"
 SELFPLAY_POLICY_MODE=neural
 SKIP_TESTS=0
-SKIP_TRAJECTORY_GENERATION=0
 SKIP_ONNX_EXPORT=0
 SKIP_EVAL=0
 ENFORCE_CANDIDATE_GATE=0
@@ -40,35 +40,38 @@ usage() {
     cat <<'EOF'
 Usage: train_rl_model.sh [options]
 
-Runs the full RL pipeline:
-  1. generate arena trajectories
-  2. train PPO checkpoint
-  3. export candidate ONNX
-  4. evaluate baseline vs candidate in the arena
+Runs the iterative self-play RL pipeline:
+  For each iteration:
+    1. generate arena trajectories using current best model
+    2. train PPO checkpoint
+    3. export candidate ONNX
+    4. evaluate candidate vs original baseline
+    5. update rollout model if improved
 
 Options:
   --output-dir DIR                 Directory for RL run artifacts.
   --baseline-checkpoint PATH       Supervised checkpoint to initialize PPO.
-  --baseline-onnx PATH             Baseline ONNX used for self-play and evaluation.
+  --baseline-onnx PATH             Baseline ONNX used for evaluation reference.
   --python-exe PATH                Python executable override. Defaults to python.
   --cargo-exe PATH                 Cargo executable override. Defaults to cargo.
   --arena-jobs N                   Parallel arena workers. Use 0 for all available cores.
-  --trajectory-matches N           Matches used to generate trajectories.
+  --iterations N                   Number of self-play iterations. Default 5.
+  --iteration-matches N            Matches per iteration for trajectory generation. Default 500.
   --trajectory-progress-every N    Print trajectory arena progress every N matches. Use 0 to disable.
   --eval-matches N                 Matches used for candidate evaluation.
   --seed N                         Arena seed.
   --max-actions-per-match N        Arena action cap.
-  --epochs N                       PPO epochs.
+  --epochs N                       PPO epochs per iteration. Default 2.
   --batch-size N                   PPO batch size.
   --lr VALUE                       PPO learning rate.
-  --gamma VALUE                    Return discount.
+  --gamma VALUE                    Return discount. Default 0.97.
   --gae-lambda VALUE               GAE lambda.
   --clip-epsilon VALUE             PPO clipping epsilon.
   --value-clip-epsilon VALUE       PPO value clipping epsilon.
   --entropy-coef VALUE             PPO entropy coefficient.
   --entropy-end-coef VALUE         PPO final entropy coefficient after decay.
   --entropy-decay-steps N          Linear entropy decay steps. Use 0 for full training.
-  --kl-coef VALUE                  Supervised policy KL coefficient.
+  --kl-coef VALUE                  Supervised policy KL coefficient. Default 0.0.
   --kl-end-coef VALUE              Final KL coefficient after decay.
   --device DEVICE                  auto, cpu, cuda, etc.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
@@ -76,10 +79,9 @@ Options:
   --selfplay-policy-id ID          Policy id written to trajectory rows.
   --selfplay-policy-mode MODE      heuristic or neural.
   --skip-tests                     Skip Python tests.
-  --skip-trajectory-generation     Reuse existing trajectories.jsonl in output dir.
   --skip-onnx-export               Do not export candidate.onnx.
   --skip-eval                      Do not run baseline vs candidate arena evaluation.
-  --enforce-candidate-gate         Exit non-zero when candidate acceptance fails.
+  --enforce-candidate-gate         Exit non-zero when no iteration passes candidate gate.
   --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
   -h, --help                       Show this help.
 EOF
@@ -103,6 +105,55 @@ require_file() {
         echo "$advice" >&2
         exit 2
     fi
+}
+
+copy_required_file() {
+    local source_path="$1"
+    local target_path="$2"
+    if [[ ! -f "$source_path" ]]; then
+        echo "Required file was not found: $source_path" >&2
+        exit 2
+    fi
+    cp -f "$source_path" "$target_path"
+}
+
+run_candidate_eval() {
+    local candidate_model="$1"
+    local eval_dir="$2"
+    local eval_baseline_onnx="$3"
+    mkdir -p "$eval_dir"
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
+        --pool "$OPPONENT_POOL" \
+        --output-dir "$eval_dir" \
+        --matches "$EVAL_MATCHES" \
+        --seed "$SEED" \
+        --max-actions "$MAX_ACTIONS_PER_MATCH" \
+        --mode eval \
+        --candidate-onnx "$candidate_model" \
+        --baseline-onnx "$eval_baseline_onnx"
+
+    RUN_EVAL_CONFIG="$eval_dir/candidate_eval_config.json"
+    RUN_EVAL_JSONL="$eval_dir/candidate_eval.jsonl"
+    RUN_EVAL_SUMMARY="$eval_dir/candidate_eval_summary.json"
+    RUN_EVAL_GATE="$eval_dir/candidate_gate.json"
+
+    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
+        --config "$RUN_EVAL_CONFIG" \
+        --output "$RUN_EVAL_JSONL" \
+        --jobs "$ARENA_JOBS"
+
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/arena_summary.py \
+        --input "$RUN_EVAL_JSONL" \
+        --output "$RUN_EVAL_SUMMARY"
+
+    set +e
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/candidate_gate.py \
+        --summary "$RUN_EVAL_SUMMARY" \
+        --baseline-policy baseline_neural \
+        --candidate-policy rl_candidate_neural \
+        --output "$RUN_EVAL_GATE"
+    RUN_EVAL_GATE_EXIT=$?
+    set -e
 }
 
 while [[ $# -gt 0 ]]; do
@@ -137,9 +188,14 @@ while [[ $# -gt 0 ]]; do
             ARENA_JOBS="$2"
             shift 2
             ;;
-        --trajectory-matches)
+        --iterations)
             require_value "$1" "${2:-}"
-            TRAJECTORY_MATCHES="$2"
+            ITERATIONS="$2"
+            shift 2
+            ;;
+        --iteration-matches)
+            require_value "$1" "${2:-}"
+            ITERATION_MATCHES="$2"
             shift 2
             ;;
         --trajectory-progress-every)
@@ -251,10 +307,6 @@ while [[ $# -gt 0 ]]; do
             SKIP_TESTS=1
             shift
             ;;
-        --skip-trajectory-generation)
-            SKIP_TRAJECTORY_GENERATION=1
-            shift
-            ;;
         --skip-onnx-export)
             SKIP_ONNX_EXPORT=1
             shift
@@ -295,16 +347,6 @@ cd "$REPO_ROOT"
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 
-TRAJECTORY_CONFIG_DIR="$OUTPUT_DIR/trajectory_configs"
-TRAJECTORY_JSONL="$OUTPUT_DIR/trajectories.jsonl"
-ARENA_REPORT_JSONL="$OUTPUT_DIR/trajectory_arena_report.jsonl"
-CHECKPOINT_DIR="$OUTPUT_DIR/checkpoints"
-CANDIDATE_ONNX="$OUTPUT_DIR/candidate.onnx"
-EVAL_CONFIG="$OUTPUT_DIR/candidate_eval_config.json"
-EVAL_JSONL="$OUTPUT_DIR/candidate_eval.jsonl"
-EVAL_SUMMARY="$OUTPUT_DIR/candidate_eval_summary.json"
-GATE_OUTPUT="$OUTPUT_DIR/candidate_gate.json"
-
 mkdir -p "$OUTPUT_DIR"
 TEMP_DIR="$OUTPUT_DIR/tmp"
 PYTEST_SITE_DIR="$TEMP_DIR/pytest_site"
@@ -337,12 +379,15 @@ if missing:
     raise SystemExit(2)
 PY
 
-echo "Mahjong RL training"
+echo "Mahjong RL training (iterative self-play)"
 echo "Output:              $OUTPUT_DIR"
 echo "Baseline checkpoint: $BASELINE_CHECKPOINT"
 echo "Baseline ONNX:       $BASELINE_ONNX"
-echo "Trajectory matches:  $TRAJECTORY_MATCHES"
-echo "Trajectory progress: every $TRAJECTORY_PROGRESS_EVERY match(es)"
+echo "Iterations:          $ITERATIONS"
+echo "Matches/iteration:   $ITERATION_MATCHES"
+echo "PPO epochs/iter:     $EPOCHS"
+echo "Gamma:               $GAMMA"
+echo "KL coef:             $KL_COEF"
 echo "Opponent pool:       $OPPONENT_POOL"
 echo "Learner policy id:   $LEARNER_POLICY_ID"
 echo "Eval matches:        $EVAL_MATCHES"
@@ -364,13 +409,6 @@ require_file \
     "Baseline ONNX model" \
     "Export the supervised model first, or pass --baseline-onnx <existing .onnx file>."
 
-if (( SKIP_TRAJECTORY_GENERATION == 1 )); then
-    require_file \
-        "$TRAJECTORY_JSONL" \
-        "Trajectory JSONL" \
-        "Remove --skip-trajectory-generation, or place an existing trajectories.jsonl at $TRAJECTORY_JSONL."
-fi
-
 if (( SKIP_TESTS == 0 )); then
     PYTHONPATH="$PYTEST_SITE_DIR${PYTHONPATH:+:$PYTHONPATH}" "${PYTHON_CMD[@]}" -m pytest \
         backend/bot_trainer/v2/test_rl_dataset.py \
@@ -381,24 +419,49 @@ if (( SKIP_TESTS == 0 )); then
         --basetemp "$TEMP_DIR/pytest"
 fi
 
-if (( SKIP_TRAJECTORY_GENERATION == 0 )); then
-    mkdir -p "$TRAJECTORY_CONFIG_DIR"
+# ── Iterative Self-Play Loop ──────────────────────────────────────────────
+current_onnx="$BASELINE_ONNX"
+current_checkpoint="$BASELINE_CHECKPOINT"
+best_onnx="$BASELINE_ONNX"
+best_checkpoint="$BASELINE_CHECKPOINT"
+best_score_margin="-999.0"
+best_iter=0
+
+iteration_results=()
+
+for (( iter = 1; iter <= ITERATIONS; iter++ )); do
+    printf -v iter_tag "iter_%03d" "$iter"
+    iter_dir="$OUTPUT_DIR/$iter_tag"
+    iter_trajectory_config_dir="$iter_dir/trajectory_configs"
+    iter_trajectory_jsonl="$iter_dir/trajectories.jsonl"
+    iter_checkpoint_dir="$iter_dir/checkpoints"
+    iter_candidate_onnx="$iter_dir/candidate.onnx"
+    iter_eval_dir="$iter_dir/eval"
+    iter_seed=$(( SEED + (iter - 1) * 1000000 ))
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  Iteration $iter / $ITERATIONS  (rollout model: $(basename "$current_onnx"))"
+    echo "═══════════════════════════════════════════════════════════════"
+
+    # ── Step 1: Generate trajectories with current model ──────────────
+    mkdir -p "$iter_trajectory_config_dir"
     "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
         --pool "$OPPONENT_POOL" \
-        --output-dir "$TRAJECTORY_CONFIG_DIR" \
-        --matches "$TRAJECTORY_MATCHES" \
-        --seed "$SEED" \
+        --output-dir "$iter_trajectory_config_dir" \
+        --matches "$ITERATION_MATCHES" \
+        --seed "$iter_seed" \
         --max-actions "$MAX_ACTIONS_PER_MATCH" \
         --mode trajectory \
-        --rollout-onnx "$BASELINE_ONNX"
+        --rollout-onnx "$current_onnx"
 
     trajectory_files=()
-    for config_path in "$TRAJECTORY_CONFIG_DIR"/trajectory_config_*.json; do
+    for config_path in "$iter_trajectory_config_dir"/trajectory_config_*.json; do
         [[ -e "$config_path" ]] || continue
         config_name="$(basename "$config_path" .json)"
         index="${config_name#trajectory_config_}"
-        partial_report="$OUTPUT_DIR/trajectory_arena_report_$index.jsonl"
-        partial_trajectory="$OUTPUT_DIR/trajectories_$index.jsonl"
+        partial_report="$iter_dir/trajectory_arena_report_$index.jsonl"
+        partial_trajectory="$iter_dir/trajectories_$index.jsonl"
         trajectory_files+=("$partial_trajectory")
         arena_args=(
             run --manifest-path backend/Cargo.toml --release --bin bot_arena --
@@ -413,83 +476,148 @@ if (( SKIP_TRAJECTORY_GENERATION == 0 )); then
         "${CARGO_CMD[@]}" "${arena_args[@]}"
     done
     if (( ${#trajectory_files[@]} == 0 )); then
-        echo "No trajectory configs generated in $TRAJECTORY_CONFIG_DIR" >&2
+        echo "No trajectory configs generated in $iter_trajectory_config_dir" >&2
         exit 2
     fi
-    cat "${trajectory_files[@]}" > "$TRAJECTORY_JSONL"
-fi
+    cat "${trajectory_files[@]}" > "$iter_trajectory_jsonl"
 
-rl_train_args=(
-    backend/bot_trainer/v2/rl_train.py
-    --trajectories "$TRAJECTORY_JSONL"
-    --checkpoint "$BASELINE_CHECKPOINT"
-    --epochs "$EPOCHS"
-    --batch-size "$BATCH_SIZE"
-    --lr "$LEARNING_RATE"
-    --gamma "$GAMMA"
-    --gae-lambda "$GAE_LAMBDA"
-    --policy-id "$LEARNER_POLICY_ID"
-    --clip-epsilon "$CLIP_EPSILON"
-    --value-clip-epsilon "$VALUE_CLIP_EPSILON"
-    --entropy-coef "$ENTROPY_COEF"
-    --entropy-end-coef "$ENTROPY_END_COEF"
-    --kl-coef "$KL_COEF"
-    --kl-end-coef "$KL_END_COEF"
-    --output "$CHECKPOINT_DIR"
-    --device "$DEVICE"
-)
-if (( ENTROPY_DECAY_STEPS > 0 )); then
-    rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
-fi
-if (( RECOMPUTE_OLD_POLICY_STATS == 1 )); then
-    rl_train_args+=(--recompute-old-policy-stats)
-fi
-"${PYTHON_CMD[@]}" "${rl_train_args[@]}"
+    # ── Step 2: PPO training from current checkpoint ─────────────────
+    rl_train_args=(
+        backend/bot_trainer/v2/rl_train.py
+        --trajectories "$iter_trajectory_jsonl"
+        --checkpoint "$current_checkpoint"
+        --epochs "$EPOCHS"
+        --batch-size "$BATCH_SIZE"
+        --lr "$LEARNING_RATE"
+        --gamma "$GAMMA"
+        --gae-lambda "$GAE_LAMBDA"
+        --policy-id "$LEARNER_POLICY_ID"
+        --clip-epsilon "$CLIP_EPSILON"
+        --value-clip-epsilon "$VALUE_CLIP_EPSILON"
+        --entropy-coef "$ENTROPY_COEF"
+        --entropy-end-coef "$ENTROPY_END_COEF"
+        --kl-coef "$KL_COEF"
+        --kl-end-coef "$KL_END_COEF"
+        --output "$iter_checkpoint_dir"
+        --device "$DEVICE"
+    )
+    if (( ENTROPY_DECAY_STEPS > 0 )); then
+        rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
+    fi
+    if (( RECOMPUTE_OLD_POLICY_STATS == 1 )); then
+        rl_train_args+=(--recompute-old-policy-stats)
+    fi
+    "${PYTHON_CMD[@]}" "${rl_train_args[@]}"
 
+    # ── Step 3: Export ONNX ──────────────────────────────────────────
+    iter_best_pt="$iter_checkpoint_dir/best.pt"
+    if (( SKIP_ONNX_EXPORT == 0 )); then
+        "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
+            --checkpoint "$iter_best_pt" \
+            --output "$iter_candidate_onnx"
+    fi
+
+    # ── Step 4: Evaluate candidate vs original baseline ──────────────
+    iter_score_margin="0.0"
+    iter_accepted=0
+
+    if (( SKIP_ONNX_EXPORT == 0 && SKIP_EVAL == 0 )); then
+        run_candidate_eval "$iter_candidate_onnx" "$iter_eval_dir" "$BASELINE_ONNX"
+
+        iter_score_margin="$("${PYTHON_CMD[@]}" - "$iter_eval_dir/candidate_gate.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+gate = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+margin = gate["candidate"]["avg_score_delta"] - gate["baseline"]["avg_score_delta"]
+print(f"{margin:.4f}")
+PY
+)"
+        if (( RUN_EVAL_GATE_EXIT == 0 )); then
+            iter_accepted=1
+        fi
+
+        echo "  Iteration $iter result: score_margin=$iter_score_margin accepted=$iter_accepted"
+
+        # Update best model if improved
+        if "${PYTHON_CMD[@]}" -c "exit(0 if float('$iter_score_margin') > float('$best_score_margin') else 1)"; then
+            best_score_margin="$iter_score_margin"
+            best_checkpoint="$iter_best_pt"
+            best_onnx="$iter_candidate_onnx"
+            best_iter="$iter"
+            echo "  → New best model (score_margin=$iter_score_margin)"
+        fi
+    fi
+
+    iteration_results+=("$iter|$iter_score_margin|$iter_accepted")
+
+    # Next iteration uses this iteration's model for rollout
+    current_checkpoint="$iter_best_pt"
+    if (( SKIP_ONNX_EXPORT == 0 )); then
+        current_onnx="$iter_candidate_onnx"
+    fi
+done
+
+# ── Finalize: copy best results to top-level ──────────────────────────────
+FINAL_CANDIDATE_ONNX="$OUTPUT_DIR/candidate.onnx"
+FINAL_CHECKPOINT_DIR="$OUTPUT_DIR/checkpoints"
+FINAL_EVAL_SUMMARY="$OUTPUT_DIR/candidate_eval_summary.json"
+FINAL_GATE_OUTPUT="$OUTPUT_DIR/candidate_gate.json"
+
+mkdir -p "$FINAL_CHECKPOINT_DIR"
+copy_required_file "$best_checkpoint" "$FINAL_CHECKPOINT_DIR/best.pt"
 if (( SKIP_ONNX_EXPORT == 0 )); then
-    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
-        --checkpoint "$CHECKPOINT_DIR/best.pt" \
-        --output "$CANDIDATE_ONNX"
+    copy_required_file "$best_onnx" "$FINAL_CANDIDATE_ONNX"
 fi
 
-if (( SKIP_EVAL == 0 )); then
-    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
-        --pool "$OPPONENT_POOL" \
-        --output-dir "$OUTPUT_DIR" \
-        --matches "$EVAL_MATCHES" \
-        --seed "$SEED" \
-        --max-actions "$MAX_ACTIONS_PER_MATCH" \
-        --mode eval \
-        --candidate-onnx "$CANDIDATE_ONNX" \
-        --baseline-onnx "$BASELINE_ONNX"
-
-    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
-        --config "$EVAL_CONFIG" \
-        --output "$EVAL_JSONL" \
-        --jobs "$ARENA_JOBS"
-
-    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/arena_summary.py \
-        --input "$EVAL_JSONL" \
-        --output "$EVAL_SUMMARY"
-
-    set +e
-    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/candidate_gate.py \
-        --summary "$EVAL_SUMMARY" \
-        --baseline-policy baseline_neural \
-        --candidate-policy rl_candidate_neural \
-        --output "$GATE_OUTPUT"
-    gate_exit=$?
-    set -e
-    if (( ENFORCE_CANDIDATE_GATE == 1 && gate_exit != 0 )); then
-        exit "$gate_exit"
-    fi
-    if (( ENFORCE_CANDIDATE_GATE != 1 && gate_exit != 0 )); then
-        echo "Candidate gate rejected this model. See $GATE_OUTPUT" >&2
-    fi
+printf -v best_iter_tag "iter_%03d" "$best_iter"
+best_iter_eval_dir="$OUTPUT_DIR/$best_iter_tag/eval"
+if [[ -f "$best_iter_eval_dir/candidate_eval_summary.json" ]]; then
+    copy_required_file "$best_iter_eval_dir/candidate_eval_summary.json" "$FINAL_EVAL_SUMMARY"
+fi
+if [[ -f "$best_iter_eval_dir/candidate_gate.json" ]]; then
+    copy_required_file "$best_iter_eval_dir/candidate_gate.json" "$FINAL_GATE_OUTPUT"
 fi
 
-echo "RL training pipeline finished."
-echo "Checkpoint:  $CHECKPOINT_DIR/best.pt"
-echo "Candidate:   $CANDIDATE_ONNX"
-echo "Evaluation:  $EVAL_JSONL"
-echo "Summary:     $EVAL_SUMMARY"
+# Write iteration history
+"${PYTHON_CMD[@]}" - "$OUTPUT_DIR/iteration_history.json" "${iteration_results[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+entries = []
+for row in sys.argv[2:]:
+    parts = row.split("|", 2)
+    entries.append({
+        "iteration": int(parts[0]),
+        "score_margin": float(parts[1]),
+        "accepted": parts[2] == "1",
+    })
+output.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
+PY
+
+any_accepted=0
+for result in "${iteration_results[@]}"; do
+    if [[ "$result" == *"|1" ]]; then
+        any_accepted=1
+        break
+    fi
+done
+
+if (( ENFORCE_CANDIDATE_GATE == 1 && any_accepted == 0 )); then
+    echo "No iteration passed the candidate gate." >&2
+    exit 1
+fi
+if (( ENFORCE_CANDIDATE_GATE != 1 && any_accepted == 0 )); then
+    echo "No iteration passed the candidate gate. Best score_margin=$best_score_margin. See $FINAL_GATE_OUTPUT" >&2
+fi
+
+echo ""
+echo "RL iterative self-play pipeline finished."
+echo "Iterations:     $ITERATIONS"
+echo "Best iteration: $best_iter_tag (score_margin=$best_score_margin)"
+echo "Checkpoint:     $best_checkpoint"
+echo "Candidate:      $FINAL_CANDIDATE_ONNX"
+echo "History:        $OUTPUT_DIR/iteration_history.json"

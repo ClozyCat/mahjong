@@ -1,14 +1,14 @@
 {
     "policies": [
         {
-            "id": "sft_default",
+            "id": "ppo1",
             "mode": "neural",
-            "model_path": "backend/assets/history_models_v2/sft_default.onnx"
+            "model_path": "backend/assets/history_models/ppo1.onnx"
         },
         {
-            "id": "mahjong_policy_net",
+            "id": "sft",
             "mode": "neural",
-            "model_path": "backend/assets/models/mahjong_policy_net.onnx"
+            "model_path": "backend/assets/history_models/sft.onnx"
         }
     ]
 }

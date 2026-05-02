@@ -137,10 +137,10 @@ pub(crate) fn fan_potential_for_tile_keys(
 pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f32 {
     let shanten_delta = before.shanten - after.shanten;
     let fan_delta = after.fan_potential - before.fan_potential;
-    let shanten_reward = shanten_delta.clamp(-1, 1) as f32 * 0.03;
-    let fan_reward = fan_delta.clamp(-1, 1) as f32 * 0.02;
+    let shanten_reward = shanten_delta.clamp(-1, 1) as f32 * 0.12;
+    let fan_reward = fan_delta.clamp(-1, 1) as f32 * 0.06;
     let tenpai_bonus = if before.shanten > 0 && after.shanten == 0 {
-        0.05
+        0.15
     } else {
         0.0
     };

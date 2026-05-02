@@ -210,6 +210,13 @@ def test_epoch_log_line_includes_entropy_metrics() -> None:
     assert "kl_coef=0.010000" in line
 
 
+def test_epoch_checkpoint_name_is_zero_padded() -> None:
+    from rl_train import epoch_checkpoint_name
+
+    assert epoch_checkpoint_name(1) == "epoch_001.pt"
+    assert epoch_checkpoint_name(12) == "epoch_012.pt"
+
+
 def test_clipped_value_loss_uses_larger_loss() -> None:
     import torch
     from rl_train import clipped_value_loss
@@ -325,6 +332,114 @@ def test_candidate_gate_rejects_higher_deal_in() -> None:
 
     assert result["accepted"] is False
     assert "deal_in_rate" in result["failures"]
+
+
+def test_candidate_selector_prefers_accepted_candidate() -> None:
+    from candidate_selector import select_best_candidate
+
+    rejected = {
+        "epoch": 1,
+        "checkpoint": "epoch_001.pt",
+        "onnx": "epoch_001.onnx",
+        "gate": {
+            "accepted": False,
+            "failures": ["avg_score_delta"],
+            "baseline": {
+                "avg_score_delta": 10.0,
+                "win_rate": 0.30,
+                "deal_in_rate": 0.12,
+                "avg_first_tenpai_turn": 10.0,
+                "final_tenpai_rate": 0.60,
+                "avg_latency_ms_per_decision": 70.0,
+            },
+            "candidate": {
+                "avg_score_delta": 9.0,
+                "win_rate": 0.32,
+                "deal_in_rate": 0.11,
+                "avg_first_tenpai_turn": 9.8,
+                "final_tenpai_rate": 0.62,
+                "avg_latency_ms_per_decision": 72.0,
+            },
+        },
+    }
+    accepted = {
+        "epoch": 2,
+        "checkpoint": "epoch_002.pt",
+        "onnx": "epoch_002.onnx",
+        "gate": {
+            "accepted": True,
+            "failures": [],
+            "baseline": rejected["gate"]["baseline"],
+            "candidate": {
+                "avg_score_delta": 10.5,
+                "win_rate": 0.31,
+                "deal_in_rate": 0.13,
+                "avg_first_tenpai_turn": 10.0,
+                "final_tenpai_rate": 0.60,
+                "avg_latency_ms_per_decision": 74.0,
+            },
+        },
+    }
+
+    selected = select_best_candidate([rejected, accepted])
+
+    assert selected["epoch"] == 2
+    assert selected["accepted"] is True
+
+
+def test_candidate_selector_uses_margin_score_when_all_rejected() -> None:
+    from candidate_selector import select_best_candidate
+
+    baseline = {
+        "avg_score_delta": 10.0,
+        "win_rate": 0.30,
+        "deal_in_rate": 0.12,
+        "avg_first_tenpai_turn": 10.0,
+        "final_tenpai_rate": 0.60,
+        "avg_latency_ms_per_decision": 70.0,
+    }
+    worse = {
+        "epoch": 1,
+        "checkpoint": "epoch_001.pt",
+        "onnx": "epoch_001.onnx",
+        "gate": {
+            "accepted": False,
+            "failures": ["avg_score_delta", "win_rate"],
+            "baseline": baseline,
+            "candidate": {
+                "avg_score_delta": 2.0,
+                "win_rate": 0.20,
+                "deal_in_rate": 0.13,
+                "avg_first_tenpai_turn": 10.5,
+                "final_tenpai_rate": 0.58,
+                "avg_latency_ms_per_decision": 72.0,
+            },
+        },
+    }
+    closer = {
+        "epoch": 2,
+        "checkpoint": "epoch_002.pt",
+        "onnx": "epoch_002.onnx",
+        "gate": {
+            "accepted": False,
+            "failures": ["avg_score_delta"],
+            "baseline": baseline,
+            "candidate": {
+                "avg_score_delta": 8.0,
+                "win_rate": 0.31,
+                "deal_in_rate": 0.13,
+                "avg_first_tenpai_turn": 10.1,
+                "final_tenpai_rate": 0.60,
+                "avg_latency_ms_per_decision": 72.0,
+            },
+        },
+    }
+
+    selected = select_best_candidate([worse, closer])
+
+    assert selected["epoch"] == 2
+    assert selected["accepted"] is False
+    assert selected["score_margin"] == -2.0
 
 
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:

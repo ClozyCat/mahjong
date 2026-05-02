@@ -122,7 +122,11 @@ if nn is not None:
             self.claim_head = nn.Linear(256, 7)
             self.self_kong_head = nn.Linear(256, 3)
             self.hu_head = nn.Linear(256, 2)
-            self.value_head = nn.Linear(256, 1)
+            self.value_head = nn.Sequential(
+                nn.Linear(640, 256),
+                nn.ReLU(),
+                nn.Linear(256, 1),
+            )
             self.risk_head = nn.Linear(256, 34)
             self.fan_head = nn.Linear(256, 1)
 
@@ -133,13 +137,14 @@ if nn is not None:
         ) -> dict[str, torch.Tensor]:
             tile_embedding = self.tile_encoder(tile_planes)
             scalar_embedding = self.scalar_encoder(scalar_features)
-            hidden = self.trunk(torch.cat([tile_embedding, scalar_embedding], dim=1))
+            combined = torch.cat([tile_embedding, scalar_embedding], dim=1)
+            hidden = self.trunk(combined)
             return {
                 "discard_logits": self.discard_head(hidden),
                 "claim_logits": self.claim_head(hidden),
                 "self_kong_logits": self.self_kong_head(hidden),
                 "hu_logits": self.hu_head(hidden),
-                "value": self.value_head(hidden),
+                "value": self.value_head(combined),
                 "risk_logits": self.risk_head(hidden),
                 "fan_logits": self.fan_head(hidden),
             }

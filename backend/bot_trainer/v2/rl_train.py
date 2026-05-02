@@ -83,6 +83,22 @@ def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
     )
 
 
+def epoch_checkpoint_name(epoch: int) -> str:
+    return f"epoch_{epoch:03d}.pt"
+
+
+def checkpoint_payload(
+    model: torch.nn.Module,
+    model_config: ModelConfig,
+    history: list[dict[str, float]],
+) -> dict[str, object]:
+    return {
+        "model_state": model.state_dict(),
+        "model_config": model_config.to_dict(),
+        "rl_metrics": history,
+    }
+
+
 def clipped_value_loss(
     values: torch.Tensor,
     old_values: torch.Tensor,
@@ -357,16 +373,13 @@ def main() -> None:
         }
         history.append(epoch_metrics)
         print(format_epoch_metrics(epoch_metrics, args.epochs))
+        torch.save(
+            checkpoint_payload(model, model_config, history),
+            args.output / epoch_checkpoint_name(epoch + 1),
+        )
 
     checkpoint_path = args.output / "best.pt"
-    torch.save(
-        {
-            "model_state": model.state_dict(),
-            "model_config": model_config.to_dict(),
-            "rl_metrics": history,
-        },
-        checkpoint_path,
-    )
+    torch.save(checkpoint_payload(model, model_config, history), checkpoint_path)
     (args.output / "rl_metrics.json").write_text(
         json.dumps(history, indent=2),
         encoding="utf-8",

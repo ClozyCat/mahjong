@@ -6,22 +6,23 @@ param(
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
     [int]$ArenaJobs = 0,
-    [int]$TrajectoryMatches = 200,
+    [int]$Iterations = 5,
+    [int]$IterationMatches = 500,
     [int]$TrajectoryProgressEvery = 20,
     [int]$EvalMatches = 200,
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
-    [int]$Epochs = 3,
+    [int]$Epochs = 2,
     [int]$BatchSize = 256,
     [double]$LearningRate = 0.00001,
-    [double]$Gamma = 0.99,
+    [double]$Gamma = 0.97,
     [double]$GaeLambda = 0.95,
     [double]$ClipEpsilon = 0.2,
     [double]$ValueClipEpsilon = 0.2,
     [double]$EntropyCoef = 0.02,
     [double]$EntropyEndCoef = 0.005,
     [int]$EntropyDecaySteps = 0,
-    [double]$KlCoef = 0.01,
+    [double]$KlCoef = 0.0,
     [double]$KlEndCoef = 0.0,
     [string]$Device = "auto",
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
@@ -30,17 +31,18 @@ param(
     [ValidateSet("heuristic", "neural")]
     [string]$SelfPlayPolicyMode = "neural",
     [switch]$SkipTests,
-    [switch]$SkipTrajectoryGeneration,
     [switch]$SkipOnnxExport,
     [switch]$SkipEval,
     [switch]$EnforceCandidateGate,
-    [switch]$RecomputeOldPolicyStats
+    [switch]$RecomputeOldPolicyStats,
+    [ValidateSet("epoch", "final")]
+    [string]$CandidateSelectionMode = "final"
 )
 
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..")
+$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..") 
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -82,6 +84,71 @@ function Write-Utf8NoBom {
     )
     $encoding = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText((Resolve-Path -LiteralPath (Split-Path -Parent $Path)).Path + [System.IO.Path]::DirectorySeparatorChar + (Split-Path -Leaf $Path), $Content, $encoding)
+}
+
+function Copy-RequiredFile {
+    param(
+        [string]$SourcePath,
+        [string]$TargetPath
+    )
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        throw "Required file was not found: $SourcePath"
+    }
+    Copy-Item -LiteralPath $SourcePath -Destination $TargetPath -Force
+}
+
+function Invoke-CandidateEvaluation {
+    param(
+        [string]$CandidateModel,
+        [string]$EvalDir,
+        [string]$EvalBaselineOnnx
+    )
+
+    New-Item -ItemType Directory -Force -Path $EvalDir | Out-Null
+    Invoke-TrainingPython @(
+        "backend/bot_trainer/v2/league_config.py",
+        "--pool", $OpponentPool,
+        "--output-dir", $EvalDir,
+        "--matches", "$EvalMatches",
+        "--seed", "$Seed",
+        "--max-actions", "$MaxActionsPerMatch",
+        "--mode", "eval",
+        "--candidate-onnx", $CandidateModel,
+        "--baseline-onnx", $EvalBaselineOnnx
+    )
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    $localConfig = Join-Path $EvalDir "candidate_eval_config.json"
+    $localJsonl = Join-Path $EvalDir "candidate_eval.jsonl"
+    $localSummary = Join-Path $EvalDir "candidate_eval_summary.json"
+    $localGate = Join-Path $EvalDir "candidate_gate.json"
+
+    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Invoke-TrainingPython @(
+        "backend/bot_trainer/v2/arena_summary.py",
+        "--input", $localJsonl,
+        "--output", $localSummary
+    )
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Invoke-TrainingPython @(
+        "backend/bot_trainer/v2/candidate_gate.py",
+        "--summary", $localSummary,
+        "--baseline-policy", "baseline_neural",
+        "--candidate-policy", "rl_candidate_neural",
+        "--output", $localGate
+    )
+    $localGateExit = $LASTEXITCODE
+
+    return [ordered]@{
+        config = $localConfig
+        jsonl = $localJsonl
+        summary = $localSummary
+        gate = $localGate
+        gate_exit = $localGateExit
+    }
 }
 
 function New-PytestWindowsSiteCustomize {
@@ -139,22 +206,16 @@ try {
     $env:TEMP = (Resolve-Path $TempDir).Path
     $env:TMP = $env:TEMP
     $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
-    $TrajectoryConfigDir = Join-Path $OutputDir "trajectory_configs"
-    $TrajectoryJsonl = Join-Path $OutputDir "trajectories.jsonl"
-    $ArenaReportJsonl = Join-Path $OutputDir "trajectory_arena_report.jsonl"
-    $CheckpointDir = Join-Path $OutputDir "checkpoints"
-    $CandidateOnnx = Join-Path $OutputDir "candidate.onnx"
-    $EvalConfig = Join-Path $OutputDir "candidate_eval_config.json"
-    $EvalJsonl = Join-Path $OutputDir "candidate_eval.jsonl"
-    $EvalSummary = Join-Path $OutputDir "candidate_eval_summary.json"
-    $GateOutput = Join-Path $OutputDir "candidate_gate.json"
 
-    Write-Host "Mahjong RL training"
+    Write-Host "Mahjong RL training (iterative self-play)"
     Write-Host "Output:              $OutputDir"
     Write-Host "Baseline checkpoint: $BaselineCheckpoint"
     Write-Host "Baseline ONNX:       $BaselineOnnx"
-    Write-Host "Trajectory matches:  $TrajectoryMatches"
-    Write-Host "Trajectory progress: every $TrajectoryProgressEvery match(es)"
+    Write-Host "Iterations:          $Iterations"
+    Write-Host "Matches/iteration:   $IterationMatches"
+    Write-Host "PPO epochs/iter:     $Epochs"
+    Write-Host "Gamma:               $Gamma"
+    Write-Host "KL coef:             $KlCoef"
     Write-Host "Opponent pool:       $OpponentPool"
     Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"
@@ -171,13 +232,6 @@ try {
         $BaselineOnnx `
         "Baseline ONNX model" `
         "Export the supervised model first, or pass -BaselineOnnx <existing .onnx file>."
-
-    if ($SkipTrajectoryGeneration) {
-        Assert-FileExists `
-            $TrajectoryJsonl `
-            "Trajectory JSONL" `
-            "Remove -SkipTrajectoryGeneration, or place an existing trajectories.jsonl at $TrajectoryJsonl."
-    }
 
     if (-not $SkipTests) {
         $pytestSiteDir = New-PytestWindowsSiteCustomize $TempDir
@@ -205,27 +259,50 @@ try {
         }
     }
 
-    if (-not $SkipTrajectoryGeneration) {
-        New-Item -ItemType Directory -Force -Path $TrajectoryConfigDir | Out-Null
+    # ── Iterative Self-Play Loop ──────────────────────────────────────────
+    $currentOnnx = $BaselineOnnx
+    $currentCheckpoint = $BaselineCheckpoint
+    $bestOnnx = $BaselineOnnx
+    $bestCheckpoint = $BaselineCheckpoint
+    $bestScoreMargin = -999.0
+    $iterationHistory = @()
+
+    for ($iter = 1; $iter -le $Iterations; $iter++) {
+        $iterTag = "iter_{0:D3}" -f $iter
+        $iterDir = Join-Path $OutputDir $iterTag
+        $iterTrajectoryConfigDir = Join-Path $iterDir "trajectory_configs"
+        $iterTrajectoryJsonl = Join-Path $iterDir "trajectories.jsonl"
+        $iterCheckpointDir = Join-Path $iterDir "checkpoints"
+        $iterCandidateOnnx = Join-Path $iterDir "candidate.onnx"
+        $iterEvalDir = Join-Path $iterDir "eval"
+        $iterSeed = $Seed + ($iter - 1) * 1000000
+
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════"
+        Write-Host "  Iteration $iter / $Iterations  (rollout model: $(Split-Path -Leaf $currentOnnx))"
+        Write-Host "═══════════════════════════════════════════════════════════════"
+
+        # ── Step 1: Generate trajectories with current best model ─────────
+        New-Item -ItemType Directory -Force -Path $iterTrajectoryConfigDir | Out-Null
         Invoke-TrainingPython @(
             "backend/bot_trainer/v2/league_config.py",
             "--pool", $OpponentPool,
-            "--output-dir", $TrajectoryConfigDir,
-            "--matches", "$TrajectoryMatches",
-            "--seed", "$Seed",
+            "--output-dir", $iterTrajectoryConfigDir,
+            "--matches", "$IterationMatches",
+            "--seed", "$iterSeed",
             "--max-actions", "$MaxActionsPerMatch",
             "--mode", "trajectory",
-            "--rollout-onnx", $BaselineOnnx
+            "--rollout-onnx", $currentOnnx
         )
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
         $trajectoryFiles = @()
-        Get-ChildItem -LiteralPath $TrajectoryConfigDir -Filter "trajectory_config_*.json" |
+        Get-ChildItem -LiteralPath $iterTrajectoryConfigDir -Filter "trajectory_config_*.json" |
             Sort-Object Name |
             ForEach-Object {
                 $index = [System.IO.Path]::GetFileNameWithoutExtension($_.Name).Replace("trajectory_config_", "")
-                $partialReport = Join-Path $OutputDir "trajectory_arena_report_$index.jsonl"
-                $partialTrajectory = Join-Path $OutputDir "trajectories_$index.jsonl"
+                $partialReport = Join-Path $iterDir "trajectory_arena_report_$index.jsonl"
+                $partialTrajectory = Join-Path $iterDir "trajectories_$index.jsonl"
                 $trajectoryFiles += $partialTrajectory
                 $arenaArgs = @(
                     "run",
@@ -245,93 +322,132 @@ try {
                 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
         if ($trajectoryFiles.Count -eq 0) {
-            throw "No trajectory configs generated in $TrajectoryConfigDir"
+            throw "No trajectory configs generated in $iterTrajectoryConfigDir"
         }
-        Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $TrajectoryJsonl
+        Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
+
+        # ── Step 2: PPO training from current checkpoint ──────────────────
+        $rlTrainArgs = @(
+            "backend/bot_trainer/v2/rl_train.py",
+            "--trajectories", $iterTrajectoryJsonl,
+            "--checkpoint", $currentCheckpoint,
+            "--epochs", "$Epochs",
+            "--batch-size", "$BatchSize",
+            "--lr", "$LearningRate",
+            "--gamma", "$Gamma",
+            "--gae-lambda", "$GaeLambda",
+            "--policy-id", $LearnerPolicyId,
+            "--clip-epsilon", "$ClipEpsilon",
+            "--value-clip-epsilon", "$ValueClipEpsilon",
+            "--entropy-coef", "$EntropyCoef",
+            "--entropy-end-coef", "$EntropyEndCoef",
+            "--kl-coef", "$KlCoef",
+            "--kl-end-coef", "$KlEndCoef",
+            "--output", $iterCheckpointDir,
+            "--device", $Device
+        )
+        if ($EntropyDecaySteps -gt 0) {
+            $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
+        }
+        if ($RecomputeOldPolicyStats) {
+            $rlTrainArgs += @("--recompute-old-policy-stats")
+        }
+        Invoke-TrainingPython $rlTrainArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        # ── Step 3: Export ONNX ───────────────────────────────────────────
+        $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
+        if (-not $SkipOnnxExport) {
+            Invoke-TrainingPython @(
+                "backend/bot_trainer/v2/export_onnx.py",
+                "--checkpoint", $iterBestPt,
+                "--output", $iterCandidateOnnx
+            )
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+
+        # ── Step 4: Evaluate candidate vs original baseline ───────────────
+        $iterResult = [ordered]@{
+            iteration = $iter
+            checkpoint = $iterBestPt
+            onnx = $iterCandidateOnnx
+            accepted = $false
+            score_margin = 0.0
+        }
+
+        if ((-not $SkipOnnxExport) -and (-not $SkipEval)) {
+            $evalResult = Invoke-CandidateEvaluation `
+                -CandidateModel $iterCandidateOnnx `
+                -EvalDir $iterEvalDir `
+                -EvalBaselineOnnx $BaselineOnnx
+
+            $gateOutput = Get-Content -LiteralPath $evalResult.gate -Raw | ConvertFrom-Json
+            $iterResult.accepted = [bool]$gateOutput.accepted
+            $scoreMargin = $gateOutput.candidate.avg_score_delta - $gateOutput.baseline.avg_score_delta
+            $iterResult.score_margin = [math]::Round($scoreMargin, 4)
+
+            Write-Host "  Iteration $iter result: score_margin=$($iterResult.score_margin) accepted=$($iterResult.accepted)"
+
+            # Update the rollout model if this iteration improved
+            if ($iterResult.score_margin -gt $bestScoreMargin) {
+                $bestScoreMargin = $iterResult.score_margin
+                $bestCheckpoint = $iterBestPt
+                $bestOnnx = $iterCandidateOnnx
+                Write-Host "  → New best model (score_margin=$($iterResult.score_margin))"
+            }
+        }
+
+        $iterationHistory += $iterResult
+
+        # Next iteration uses the current iteration's model for rollout
+        $currentCheckpoint = $iterBestPt
+        if (-not $SkipOnnxExport) {
+            $currentOnnx = $iterCandidateOnnx
+        }
     }
 
-    $rlTrainArgs = @(
-        "backend/bot_trainer/v2/rl_train.py",
-        "--trajectories", $TrajectoryJsonl,
-        "--checkpoint", $BaselineCheckpoint,
-        "--epochs", "$Epochs",
-        "--batch-size", "$BatchSize",
-        "--lr", "$LearningRate",
-        "--gamma", "$Gamma",
-        "--gae-lambda", "$GaeLambda",
-        "--policy-id", $LearnerPolicyId,
-        "--clip-epsilon", "$ClipEpsilon",
-        "--value-clip-epsilon", "$ValueClipEpsilon",
-        "--entropy-coef", "$EntropyCoef",
-        "--entropy-end-coef", "$EntropyEndCoef",
-        "--kl-coef", "$KlCoef",
-        "--kl-end-coef", "$KlEndCoef",
-        "--output", $CheckpointDir,
-        "--device", $Device
-    )
-    if ($EntropyDecaySteps -gt 0) {
-        $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
-    }
-    if ($RecomputeOldPolicyStats) {
-        $rlTrainArgs += @("--recompute-old-policy-stats")
-    }
-    Invoke-TrainingPython $rlTrainArgs
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    # ── Finalize: copy best results to top-level ──────────────────────────
+    $FinalCandidateOnnx = Join-Path $OutputDir "candidate.onnx"
+    $FinalCheckpointDir = Join-Path $OutputDir "checkpoints"
+    $FinalEvalSummary = Join-Path $OutputDir "candidate_eval_summary.json"
+    $FinalGateOutput = Join-Path $OutputDir "candidate_gate.json"
 
+    New-Item -ItemType Directory -Force -Path $FinalCheckpointDir | Out-Null
+    Copy-RequiredFile -SourcePath $bestCheckpoint -TargetPath (Join-Path $FinalCheckpointDir "best.pt")
     if (-not $SkipOnnxExport) {
-        Invoke-TrainingPython @(
-            "backend/bot_trainer/v2/export_onnx.py",
-            "--checkpoint", (Join-Path $CheckpointDir "best.pt"),
-            "--output", $CandidateOnnx
-        )
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Copy-RequiredFile -SourcePath $bestOnnx -TargetPath $FinalCandidateOnnx
     }
 
-    if (-not $SkipEval) {
-        Invoke-TrainingPython @(
-            "backend/bot_trainer/v2/league_config.py",
-            "--pool", $OpponentPool,
-            "--output-dir", $OutputDir,
-            "--matches", "$EvalMatches",
-            "--seed", "$Seed",
-            "--max-actions", "$MaxActionsPerMatch",
-            "--mode", "eval",
-            "--candidate-onnx", $CandidateOnnx,
-            "--baseline-onnx", $BaselineOnnx
-        )
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-        & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $EvalConfig --output $EvalJsonl --jobs $ArenaJobs
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-        Invoke-TrainingPython @(
-            "backend/bot_trainer/v2/arena_summary.py",
-            "--input", $EvalJsonl,
-            "--output", $EvalSummary
-        )
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-        Invoke-TrainingPython @(
-            "backend/bot_trainer/v2/candidate_gate.py",
-            "--summary", $EvalSummary,
-            "--baseline-policy", "baseline_neural",
-            "--candidate-policy", "rl_candidate_neural",
-            "--output", $GateOutput
-        )
-        $gateExit = $LASTEXITCODE
-        if ($EnforceCandidateGate -and $gateExit -ne 0) {
-            exit $gateExit
-        }
-        if (-not $EnforceCandidateGate -and $gateExit -ne 0) {
-            Write-Warning "Candidate gate rejected this model. See $GateOutput"
-        }
+    # Copy eval results from the best iteration
+    $bestIterTag = "iter_{0:D3}" -f ($iterationHistory | Sort-Object { $_.score_margin } | Select-Object -Last 1).iteration
+    $bestIterEvalDir = Join-Path $OutputDir "$bestIterTag/eval"
+    if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
+        Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+    }
+    if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_gate.json" -PathType Leaf) {
+        Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
     }
 
-    Write-Host "RL training pipeline finished."
-    Write-Host "Checkpoint:  $(Join-Path $CheckpointDir "best.pt")"
-    Write-Host "Candidate:   $CandidateOnnx"
-    Write-Host "Evaluation:  $EvalJsonl"
-    Write-Host "Summary:     $EvalSummary"
+    # Write iteration history
+    $historyPath = Join-Path $OutputDir "iteration_history.json"
+    Write-Utf8NoBom -Path $historyPath -Content (($iterationHistory | ConvertTo-Json -Depth 8) + "`n")
+
+    $finalAccepted = ($iterationHistory | Where-Object { $_.accepted }) | Select-Object -First 1
+    if ($EnforceCandidateGate -and $null -eq $finalAccepted) {
+        Write-Warning "No iteration passed the candidate gate."
+        exit 1
+    }
+    if ((-not $EnforceCandidateGate) -and $null -eq $finalAccepted) {
+        Write-Warning "No iteration passed the candidate gate. Best score_margin=$bestScoreMargin. See $FinalGateOutput"
+    }
+
+    Write-Host ""
+    Write-Host "RL iterative self-play pipeline finished."
+    Write-Host "Iterations:     $Iterations"
+    Write-Host "Best iteration: $bestIterTag (score_margin=$bestScoreMargin)"
+    Write-Host "Checkpoint:     $bestCheckpoint"
+    Write-Host "Candidate:      $FinalCandidateOnnx"
+    Write-Host "History:        $historyPath"
 }
 finally {
     Pop-Location
