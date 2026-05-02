@@ -52,11 +52,18 @@ pub(crate) fn neural_decision_scores_for_model_path(
     if let Some(path) = model_path {
         return CACHED_SESSIONS
             .with(|sessions| {
-                sessions
+                let session = *sessions
                     .borrow_mut()
                     .entry(path.to_path_buf())
-                    .or_insert_with(|| OrtNeuralSession::new(path.to_path_buf()))
-                    .run(features)
+                    .or_insert_with(|| {
+                        // ORT Session destruction can block during arena worker teardown on
+                        // Windows. Arena processes are short-lived, so keep per-thread sessions
+                        // alive until process exit and let the OS reclaim them.
+                        Box::leak(Box::new(RefCell::new(OrtNeuralSession::new(
+                            path.to_path_buf(),
+                        ))))
+                    });
+                session.borrow_mut().run(features)
             })
             .ok();
     }
@@ -64,7 +71,7 @@ pub(crate) fn neural_decision_scores_for_model_path(
 }
 
 thread_local! {
-    static CACHED_SESSIONS: RefCell<HashMap<PathBuf, OrtNeuralSession>> =
+    static CACHED_SESSIONS: RefCell<HashMap<PathBuf, &'static RefCell<OrtNeuralSession>>> =
         RefCell::new(HashMap::new());
 }
 
@@ -380,7 +387,10 @@ mod tests {
 
         CACHED_SESSIONS.with(|sessions| {
             let sessions = sessions.borrow();
-            let session = sessions.get(&model_path).expect("session cached by path");
+            let session = sessions
+                .get(&model_path)
+                .expect("session cached by path")
+                .borrow();
             assert_eq!(session.load_attempts, 1);
             assert!(session.disabled);
         });
