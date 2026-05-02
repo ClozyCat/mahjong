@@ -19,7 +19,7 @@
     {
       "id": "sft_default",
       "mode": "neural",
-      "model_path": "backend/assets/history_models_v2/sft_default.onnx",
+      "model_path": "backend/assets/history_models/sft.onnx",
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 2

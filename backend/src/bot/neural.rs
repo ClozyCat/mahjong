@@ -7,6 +7,8 @@ use super::features::{
 };
 use ort::{session::Session, value::Tensor};
 use std::{
+    cell::RefCell,
+    collections::HashMap,
     env,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
@@ -48,9 +50,22 @@ pub(crate) fn neural_decision_scores_for_model_path(
 ) -> Option<NeuralDecisionScores> {
     let features = encode_bot_context_v2(context);
     if let Some(path) = model_path {
-        return OrtNeuralSession::new(path.to_path_buf()).run(features).ok();
+        return CACHED_SESSIONS
+            .with(|sessions| {
+                sessions
+                    .borrow_mut()
+                    .entry(path.to_path_buf())
+                    .or_insert_with(|| OrtNeuralSession::new(path.to_path_buf()))
+                    .run(features)
+            })
+            .ok();
     }
     shared_session().lock().ok()?.run(features).ok()
+}
+
+thread_local! {
+    static CACHED_SESSIONS: RefCell<HashMap<PathBuf, OrtNeuralSession>> =
+        RefCell::new(HashMap::new());
 }
 
 pub(crate) fn rank_masked_discards(
@@ -134,6 +149,8 @@ struct OrtNeuralSession {
     model_path: PathBuf,
     session: Option<Session>,
     disabled: bool,
+    #[cfg(test)]
+    load_attempts: usize,
 }
 
 impl OrtNeuralSession {
@@ -142,6 +159,8 @@ impl OrtNeuralSession {
             model_path,
             session: None,
             disabled: false,
+            #[cfg(test)]
+            load_attempts: 0,
         }
     }
 
@@ -150,6 +169,10 @@ impl OrtNeuralSession {
             return Err(());
         }
         if self.session.is_none() {
+            #[cfg(test)]
+            {
+                self.load_attempts += 1;
+            }
             self.session = match load_session(&self.model_path) {
                 Ok(session) => Some(session),
                 Err(_) => {
@@ -344,5 +367,22 @@ mod tests {
         assert_eq!(scores.self_kong_logits.len(), SELF_KONG_ACTION_COUNT);
         assert_eq!(scores.hu_logits.len(), 2);
         assert_eq!(scores.risk_logits.len(), TILE_KIND_COUNT);
+    }
+
+    #[test]
+    fn explicit_model_path_reuses_thread_local_session_after_load_failure() {
+        let model_path = PathBuf::from("missing-model-for-cache-test.onnx");
+        CACHED_SESSIONS.with(|sessions| sessions.borrow_mut().clear());
+
+        let context = base_context();
+        assert!(neural_decision_scores_for_model_path(&context, Some(&model_path)).is_none());
+        assert!(neural_decision_scores_for_model_path(&context, Some(&model_path)).is_none());
+
+        CACHED_SESSIONS.with(|sessions| {
+            let sessions = sessions.borrow();
+            let session = sessions.get(&model_path).expect("session cached by path");
+            assert_eq!(session.load_attempts, 1);
+            assert!(session.disabled);
+        });
     }
 }

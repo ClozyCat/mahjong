@@ -10,7 +10,7 @@ use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
     features::encode_bot_context_v2,
-    neural::neural_decision_scores_for_model_path,
+    neural::{NeuralDecisionScores, neural_decision_scores_for_model_path},
     reward::{
         RewardSnapshot, reward_snapshot_from_context, reward_snapshot_from_room, shaping_reward,
     },
@@ -552,6 +552,7 @@ fn trajectory_row_from_trace(
         &features,
         &action_head,
         action_index,
+        trace.neural_scores.as_ref(),
     )
     .unwrap_or((0.0, 0.0));
     Some(ArenaTrajectoryRow {
@@ -606,12 +607,20 @@ fn neural_policy_stats(
     features: &super::features::BotFeaturesV2,
     action_head: &str,
     action_index: i64,
+    trace_scores: Option<&NeuralDecisionScores>,
 ) -> Option<(f32, f32)> {
     if !matches!(policy.mode, ArenaPolicyMode::Neural) {
         return None;
     }
-    let model_path = policy.model_path.as_deref().map(std::path::Path::new);
-    let scores = neural_decision_scores_for_model_path(context, model_path)?;
+    let computed_scores;
+    let scores = match trace_scores {
+        Some(scores) => scores,
+        None => {
+            let model_path = policy.model_path.as_deref().map(std::path::Path::new);
+            computed_scores = neural_decision_scores_for_model_path(context, model_path)?;
+            &computed_scores
+        }
+    };
     let log_prob = match action_head {
         "discard" => masked_log_prob(
             &scores.discard_logits,
@@ -807,8 +816,11 @@ fn terminal_reward_for_seat(seat: &ArenaSeatMetrics) -> f32 {
 mod tests {
     use super::*;
     use crate::bot::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT};
+    use crate::bot::context::{BotPlayerContext, BotTileView, tile_counts34};
+    use crate::bot::neural::NeuralDecisionScores;
     use crate::core::state::{PlayerRoundState, RoundState};
     use crate::core::tile::Tile;
+    use crate::rules::standard::automation::BotDecisionTrace;
 
     #[test]
     fn arena_config_parses_policy_ids() {
@@ -1156,6 +1168,44 @@ mod tests {
     }
 
     #[test]
+    fn trajectory_row_reuses_trace_neural_scores_for_policy_stats() {
+        let context = bot_context_for_discards(&["w1", "w2"]);
+        let mut discard_logits = [0.0_f32; TILE_KIND_COUNT];
+        discard_logits[tile_index("w1").expect("w1 index")] = 2.0;
+        let trace = BotDecisionTrace {
+            decision_kind: "active_turn".to_string(),
+            action: BotAction {
+                seat_index: 0,
+                action_type: "discard".to_string(),
+                tile_ids: vec!["w1-0".to_string()],
+            },
+            context,
+            telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
+            neural_scores: Some(NeuralDecisionScores {
+                discard_logits,
+                claim_logits: [0.0; CLAIM_ACTION_COUNT],
+                self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
+                hu_logits: [0.0; 2],
+                value: 0.75,
+                risk_logits: [0.0; TILE_KIND_COUNT],
+            }),
+        };
+        let policy = ArenaBotPolicyConfig {
+            id: "learner".to_string(),
+            mode: ArenaPolicyMode::Neural,
+            model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
+            sample_actions: true,
+            temperature: 1.0,
+        };
+
+        let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
+
+        let expected = -(1.0_f32 + (-2.0_f32).exp()).ln();
+        assert!((row.log_prob - expected).abs() < 0.0001);
+        assert_eq!(row.value, 0.75);
+    }
+
+    #[test]
     fn terminal_rewards_mark_each_seat_last_row_done() {
         let mut rows = vec![
             trajectory_test_row(0, 0, 0.01),
@@ -1260,6 +1310,43 @@ mod tests {
             global_tile_planes: None,
             global_scalar_features: None,
             done: false,
+        }
+    }
+
+    fn bot_context_for_discards(tile_keys: &[&str]) -> BotContext {
+        let concealed_tiles = tile_keys
+            .iter()
+            .enumerate()
+            .map(|(index, tile_key)| BotTileView {
+                tile_id: format!("{tile_key}-{index}"),
+                tile_key: (*tile_key).to_string(),
+                is_flower: false,
+            })
+            .collect::<Vec<_>>();
+        BotContext {
+            seat_index: 0,
+            seat_count: 4,
+            dealer_seat: 0,
+            round_wind: Some("east".to_string()),
+            cumulative_scores: vec![0, 0, 0, 0],
+            wall_tiles_remaining: 18,
+            visible_tile_keys: Vec::new(),
+            opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
+            opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+            discard_history: Vec::new(),
+            kong_entries: Vec::new(),
+            player: BotPlayerContext {
+                concealed_tiles,
+                concealed_tile_counts: tile_counts34(tile_keys.iter().copied()),
+                meld_tile_key_groups: Vec::new(),
+                flower_count: 0,
+            },
+            restricted_discard_tile_key: None,
+            drawn_tile_id: Some("w2-1".to_string()),
+            self_kong_candidates: Vec::new(),
+            claim_options: Vec::new(),
+            last_discard_tile_key: None,
+            add_kong_risk_tiles: std::collections::HashSet::new(),
         }
     }
 

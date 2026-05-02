@@ -40,6 +40,7 @@ pub(crate) struct BotDecisionTrace {
     pub(crate) context: crate::bot::context::BotContext,
     pub(crate) action: BotAction,
     pub(crate) telemetry: crate::bot::policy::BotPolicyDecisionTelemetry,
+    pub(crate) neural_scores: Option<crate::bot::NeuralDecisionScores>,
 }
 
 pub fn next_bot_action_in_room_state(room: &RoomState) -> Result<Option<BotAction>, String> {
@@ -686,6 +687,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                                 context,
                                 action: decision.action,
                                 telemetry: decision.telemetry,
+                                neural_scores: decision.neural_scores,
                             });
                         }
                         Some(_) => {}
@@ -709,6 +711,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                 context,
                 action: decision.action,
                 telemetry: decision.telemetry,
+                neural_scores: decision.neural_scores,
             })
         }
         "claim_window" => match round.pending_action.as_ref()? {
@@ -741,6 +744,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                             context,
                             action: decision.action,
                             telemetry: decision.telemetry,
+                            neural_scores: decision.neural_scores,
                         });
                     }
                 }
@@ -767,6 +771,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     context,
                     action: decision.action,
                     telemetry: decision.telemetry,
+                    neural_scores: decision.neural_scores,
                 })
             }
             PendingAction::RobKongWindow(rob) => {
@@ -798,6 +803,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     context,
                     action: decision.action,
                     telemetry: decision.telemetry,
+                    neural_scores: decision.neural_scores,
                 })
             }
         },

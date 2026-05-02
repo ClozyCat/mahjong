@@ -8,6 +8,7 @@ pub(crate) mod reward;
 mod search;
 
 pub use context::BotAction;
+pub(crate) use neural::NeuralDecisionScores;
 pub(crate) use policy::bot_policy_config_from_env;
 pub use policy::{
     choose_active_turn_action, choose_active_turn_action_with_config, choose_claim_action,

@@ -35,6 +35,7 @@ pub(crate) struct BotPolicyDecisionTelemetry {
 pub(crate) struct BotPolicyDecision {
     pub(crate) action: BotAction,
     pub(crate) telemetry: BotPolicyDecisionTelemetry,
+    pub(crate) neural_scores: Option<NeuralDecisionScores>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -174,12 +175,20 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
                             same_as_heuristic_active_turn_action(context, &action);
-                        return Some(BotPolicyDecision { action, telemetry });
+                        return Some(BotPolicyDecision {
+                            action,
+                            telemetry,
+                            neural_scores: Some(scores),
+                        });
                     }
                 }
                 telemetry.used_fallback = true;
                 let action = choose_heuristic_active_turn_action(context)?;
-                return Some(BotPolicyDecision { action, telemetry });
+                return Some(BotPolicyDecision {
+                    action,
+                    telemetry,
+                    neural_scores: None,
+                });
             }
         }
 
@@ -189,14 +198,22 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
                 telemetry.used_neural_action = true;
                 telemetry.same_as_heuristic =
                     same_as_heuristic_active_turn_action(context, &action);
-                return Some(BotPolicyDecision { action, telemetry });
+                return Some(BotPolicyDecision {
+                    action,
+                    telemetry,
+                    neural_scores: Some(scores),
+                });
             }
         }
         telemetry.used_fallback = true;
     }
 
     let action = choose_heuristic_active_turn_action(context)?;
-    Some(BotPolicyDecision { action, telemetry })
+    Some(BotPolicyDecision {
+        action,
+        telemetry,
+        neural_scores: None,
+    })
 }
 
 pub fn choose_claim_action(context: &BotContext) -> Option<BotAction> {
@@ -338,12 +355,20 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
                             same_as_heuristic_claim_action(context, &action);
-                        return Some(BotPolicyDecision { action, telemetry });
+                        return Some(BotPolicyDecision {
+                            action,
+                            telemetry,
+                            neural_scores: Some(scores),
+                        });
                     }
                 }
                 telemetry.used_fallback = true;
                 let action = choose_heuristic_claim_action(context)?;
-                return Some(BotPolicyDecision { action, telemetry });
+                return Some(BotPolicyDecision {
+                    action,
+                    telemetry,
+                    neural_scores: None,
+                });
             }
         }
 
@@ -352,14 +377,22 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
             if let Some(action) = select_neural_only_claim(context, &scores) {
                 telemetry.used_neural_action = true;
                 telemetry.same_as_heuristic = same_as_heuristic_claim_action(context, &action);
-                return Some(BotPolicyDecision { action, telemetry });
+                return Some(BotPolicyDecision {
+                    action,
+                    telemetry,
+                    neural_scores: Some(scores),
+                });
             }
         }
         telemetry.used_fallback = true;
     }
 
     let action = choose_heuristic_claim_action(context)?;
-    Some(BotPolicyDecision { action, telemetry })
+    Some(BotPolicyDecision {
+        action,
+        telemetry,
+        neural_scores: None,
+    })
 }
 
 pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
@@ -386,6 +419,7 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
             used_fallback: false,
             same_as_heuristic: None,
         },
+        neural_scores: Some(scores),
     })
 }
 
@@ -413,6 +447,7 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
             same_as_heuristic: same_as_heuristic_claim_action(context, &action),
         },
         action,
+        neural_scores: Some(scores),
     })
 }
 
