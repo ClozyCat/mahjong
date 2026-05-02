@@ -9,21 +9,22 @@ param(
     [int]$Iterations = 5,
     [int]$IterationMatches = 500,
     [int]$TrajectoryProgressEvery = 20,
-    [int]$EvalMatches = 200,
+    [int]$EvalMatches = 1000,
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
-    [int]$Epochs = 2,
+    [int]$Epochs = 1,
     [int]$BatchSize = 4096,
-    [double]$LearningRate = 0.00001,
-    [double]$Gamma = 0.97,
+    [double]$LearningRate = 0.000003,
+    [double]$Gamma = 0.995,
     [double]$GaeLambda = 0.95,
     [double]$ClipEpsilon = 0.2,
     [double]$ValueClipEpsilon = 0.2,
     [double]$EntropyCoef = 0.02,
     [double]$EntropyEndCoef = 0.005,
     [int]$EntropyDecaySteps = 0,
-    [double]$KlCoef = 0.0,
+    [double]$KlCoef = 0.01,
     [double]$KlEndCoef = 0.0,
+    [double]$TargetKl = 0.03,
     [string]$Device = "auto",
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
@@ -34,9 +35,10 @@ param(
     [switch]$SkipOnnxExport,
     [switch]$SkipEval,
     [switch]$EnforceCandidateGate,
+    [switch]$AllowRlBaselineCheckpoint,
     [switch]$RecomputeOldPolicyStats,
     [ValidateSet("epoch", "final")]
-    [string]$CandidateSelectionMode = "final"
+    [string]$CandidateSelectionMode = "epoch"
 )
 
 $ErrorActionPreference = "Stop"
@@ -233,6 +235,16 @@ try {
         $BaselineOnnx `
         "Baseline ONNX model" `
         "Export the supervised model first, or pass -BaselineOnnx <existing .onnx file>."
+    $baselineGuardArgs = @(
+        "backend/bot_trainer/v2/baseline_guard.py",
+        "--checkpoint", $BaselineCheckpoint,
+        "--onnx", $BaselineOnnx
+    )
+    if ($AllowRlBaselineCheckpoint) {
+        $baselineGuardArgs += @("--allow-rl-checkpoint")
+    }
+    Invoke-TrainingPython $baselineGuardArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if (-not $SkipTests) {
         $pytestSiteDir = New-PytestWindowsSiteCustomize $TempDir
@@ -265,7 +277,8 @@ try {
     $currentCheckpoint = $BaselineCheckpoint
     $bestOnnx = $BaselineOnnx
     $bestCheckpoint = $BaselineCheckpoint
-    $bestScoreMargin = -999.0
+    $bestScoreMargin = 0.0
+    $bestIteration = 0
     $iterationHistory = @()
 
     for ($iter = 1; $iter -le $Iterations; $iter++) {
@@ -345,6 +358,7 @@ try {
             "--entropy-end-coef", "$EntropyEndCoef",
             "--kl-coef", "$KlCoef",
             "--kl-end-coef", "$KlEndCoef",
+            "--target-kl", "$TargetKl",
             "--output", $iterCheckpointDir,
             "--device", $Device
         )
@@ -359,6 +373,10 @@ try {
 
         # Step 3: Export ONNX
         $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
+        $selectedCheckpoint = $iterBestPt
+        $selectedOnnx = $iterCandidateOnnx
+        $selectedGate = $null
+        $selectedSummary = $null
         if (-not $SkipOnnxExport) {
             Invoke-TrainingPython @(
                 "backend/bot_trainer/v2/export_onnx.py",
@@ -368,20 +386,77 @@ try {
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
 
+        if (($CandidateSelectionMode -eq "epoch") -and (-not $SkipOnnxExport) -and (-not $SkipEval)) {
+            $candidateManifest = Join-Path $iterDir "candidate_manifest.json"
+            $candidateSelection = Join-Path $iterDir "candidate_selection.json"
+            $candidateEntries = @()
+            Get-ChildItem -LiteralPath $iterCheckpointDir -Filter "epoch_*.pt" |
+                Sort-Object Name |
+                ForEach-Object {
+                    $epochName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+                    $epochOnnx = Join-Path $iterDir "$epochName.onnx"
+                    $epochEvalDir = Join-Path $iterEvalDir $epochName
+                    Invoke-TrainingPython @(
+                        "backend/bot_trainer/v2/export_onnx.py",
+                        "--checkpoint", $_.FullName,
+                        "--output", $epochOnnx
+                    )
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                    $epochEval = Invoke-CandidateEvaluation `
+                        -CandidateModel $epochOnnx `
+                        -EvalDir $epochEvalDir `
+                        -EvalBaselineOnnx $BaselineOnnx
+                    $epochNumber = [int]$epochName.Replace("epoch_", "")
+                    $candidateEntries += [ordered]@{
+                        epoch = $epochNumber
+                        checkpoint = $_.FullName
+                        onnx = $epochOnnx
+                        summary = $epochEval.summary
+                        gate_path = $epochEval.gate
+                    }
+                }
+            Write-Utf8NoBom -Path $candidateManifest -Content ((@{ candidates = $candidateEntries } | ConvertTo-Json -Depth 12) + "`n")
+            Invoke-TrainingPython @(
+                "backend/bot_trainer/v2/candidate_selector.py",
+                "--manifest", $candidateManifest,
+                "--output", $candidateSelection
+            )
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $selection = Get-Content -LiteralPath $candidateSelection -Raw | ConvertFrom-Json
+            $selectedCheckpoint = [string]$selection.checkpoint
+            $selectedOnnx = [string]$selection.onnx
+            $selectedGate = [string]$selection.selected.gate
+            $selectedSummary = [string]$selection.selected.summary
+            Copy-RequiredFile -SourcePath $selectedOnnx -TargetPath $iterCandidateOnnx
+            if (-not [string]::IsNullOrWhiteSpace($selectedGate)) {
+                Copy-RequiredFile -SourcePath $selectedGate -TargetPath (Join-Path $iterEvalDir "candidate_gate.json")
+            }
+            if (-not [string]::IsNullOrWhiteSpace($selectedSummary)) {
+                Copy-RequiredFile -SourcePath $selectedSummary -TargetPath (Join-Path $iterEvalDir "candidate_eval_summary.json")
+            }
+        }
+
         # Step 4: Evaluate candidate vs original baseline
         $iterResult = [ordered]@{
             iteration = $iter
-            checkpoint = $iterBestPt
+            checkpoint = $selectedCheckpoint
             onnx = $iterCandidateOnnx
             accepted = $false
             score_margin = 0.0
         }
 
         if ((-not $SkipOnnxExport) -and (-not $SkipEval)) {
-            $evalResult = Invoke-CandidateEvaluation `
-                -CandidateModel $iterCandidateOnnx `
-                -EvalDir $iterEvalDir `
-                -EvalBaselineOnnx $BaselineOnnx
+            if ($CandidateSelectionMode -eq "epoch") {
+                $evalResult = [ordered]@{
+                    gate = (Join-Path $iterEvalDir "candidate_gate.json")
+                }
+            }
+            else {
+                $evalResult = Invoke-CandidateEvaluation `
+                    -CandidateModel $iterCandidateOnnx `
+                    -EvalDir $iterEvalDir `
+                    -EvalBaselineOnnx $BaselineOnnx
+            }
 
             $gateOutput = Get-Content -LiteralPath $evalResult.gate -Raw | ConvertFrom-Json
             $iterResult.accepted = [bool]$gateOutput.accepted
@@ -390,22 +465,22 @@ try {
 
             Write-Host ("  Iteration {0} result: score_margin={1} accepted={2}" -f $iter, $iterResult.score_margin, $iterResult.accepted)
 
-            # Update the rollout model if this iteration improved
-            if ($iterResult.score_margin -gt $bestScoreMargin) {
+            # Update the rollout model only when gate passes or the candidate improves best margin.
+            if ($iterResult.accepted -or ($iterResult.score_margin -gt $bestScoreMargin)) {
                 $bestScoreMargin = $iterResult.score_margin
-                $bestCheckpoint = $iterBestPt
+                $bestCheckpoint = $selectedCheckpoint
                 $bestOnnx = $iterCandidateOnnx
-                Write-Host ("  New best model (score_margin={0})" -f $iterResult.score_margin)
+                $bestIteration = $iter
+                $currentCheckpoint = $selectedCheckpoint
+                $currentOnnx = $iterCandidateOnnx
+                Write-Host ("  Rollout advanced to candidate (score_margin={0}, accepted={1})" -f $iterResult.score_margin, $iterResult.accepted)
+            }
+            else {
+                Write-Host ("  Rollout kept current best (best_score_margin={0})" -f $bestScoreMargin)
             }
         }
 
         $iterationHistory += $iterResult
-
-        # Next iteration uses the current iteration's model for rollout
-        $currentCheckpoint = $iterBestPt
-        if (-not $SkipOnnxExport) {
-            $currentOnnx = $iterCandidateOnnx
-        }
     }
 
     # Finalize: copy best results to top-level
@@ -421,18 +496,30 @@ try {
     }
 
     # Copy eval results from the best iteration
-    $bestIterTag = "iter_{0:D3}" -f ($iterationHistory | Sort-Object { $_.score_margin } | Select-Object -Last 1).iteration
-    $bestIterEvalDir = Join-Path $OutputDir "$bestIterTag/eval"
-    if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
-        Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+    $bestIterTag = if ($bestIteration -gt 0) { "iter_{0:D3}" -f $bestIteration } else { "baseline" }
+    if ($bestIteration -gt 0) {
+        $bestIterEvalDir = Join-Path $OutputDir "$bestIterTag/eval"
+        if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
+            Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+        }
+        if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_gate.json" -PathType Leaf) {
+            Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
+        }
     }
-    if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_gate.json" -PathType Leaf) {
-        Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
+    elseif ($iterationHistory.Count -gt 0) {
+        $lastIterTag = "iter_{0:D3}" -f $iterationHistory[-1].iteration
+        $lastIterEvalDir = Join-Path $OutputDir "$lastIterTag/eval"
+        if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
+            Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+        }
+        if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_gate.json" -PathType Leaf) {
+            Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
+        }
     }
 
     # Write iteration history
     $historyPath = Join-Path $OutputDir "iteration_history.json"
-    Write-Utf8NoBom -Path $historyPath -Content (($iterationHistory | ConvertTo-Json -Depth 8) + "`n")
+    Write-Utf8NoBom -Path $historyPath -Content ((@($iterationHistory) | ConvertTo-Json -Depth 8) + "`n")
 
     $finalAccepted = ($iterationHistory | Where-Object { $_.accepted }) | Select-Object -First 1
     if ($EnforceCandidateGate -and $null -eq $finalAccepted) {

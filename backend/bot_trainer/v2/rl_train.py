@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import torch
@@ -9,7 +10,14 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from model import ModelConfig, build_model, load_compatible_state_dict
-from rl_dataset import ArenaTrajectoryDataset
+from rl_dataset import ArenaTrajectoryDataset, trajectory_diagnostics
+
+
+DISCARD_BASE_RISK_WEIGHT = 0.90
+DISCARD_VALUE_RISK_RANGE = 0.55
+DISCARD_VALUE_SCALE = 8.0
+DISCARD_MIN_RISK_WEIGHT = 0.25
+DISCARD_MAX_RISK_WEIGHT = 1.45
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,8 +26,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--lr", type=float, default=1e-5)
-    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--lr", type=float, default=3e-6)
+    parser.add_argument("--gamma", type=float, default=0.995)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--policy-id", default=None)
     parser.add_argument("--clip-epsilon", type=float, default=0.2)
@@ -29,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--entropy-decay-steps", type=int, default=0)
     parser.add_argument("--kl-coef", type=float, default=0.01)
     parser.add_argument("--kl-end-coef", type=float, default=0.0)
+    parser.add_argument("--target-kl", type=float, default=0.03)
     parser.add_argument("--recompute-old-policy-stats", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="auto")
@@ -43,6 +52,34 @@ def masked_head_log_probs(
     masked = logits.masked_fill(~mask.bool(), -1.0e4)
     log_probs = F.log_softmax(masked, dim=1)
     return log_probs.gather(1, actions.long().unsqueeze(1)).squeeze(1)
+
+
+def risk_adjusted_discard_logits(outputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    discard_logits = outputs["discard_logits"]
+    risk_logits = outputs.get("risk_logits")
+    value = outputs.get("value")
+    if risk_logits is None or value is None:
+        return discard_logits
+    values = value.squeeze(-1)
+    normalized_value = torch.clamp(values / DISCARD_VALUE_SCALE, -1.0, 1.0)
+    risk_weight = torch.clamp(
+        DISCARD_BASE_RISK_WEIGHT - DISCARD_VALUE_RISK_RANGE * normalized_value,
+        DISCARD_MIN_RISK_WEIGHT,
+        DISCARD_MAX_RISK_WEIGHT,
+    ).unsqueeze(1)
+    risk_probability = torch.sigmoid(risk_logits)
+    adjusted = discard_logits - risk_weight * risk_probability
+    finite = torch.isfinite(discard_logits) & torch.isfinite(risk_logits)
+    return torch.where(finite, adjusted, discard_logits)
+
+
+def head_logits(
+    outputs: dict[str, torch.Tensor],
+    logits_key: str,
+) -> torch.Tensor:
+    if logits_key == "discard_logits":
+        return risk_adjusted_discard_logits(outputs)
+    return outputs[logits_key]
 
 
 def ppo_policy_loss(
@@ -79,7 +116,10 @@ def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
         f"entropy={metrics['entropy']:.6f} "
         f"entropy_coef={metrics['entropy_coef']:.6f} "
         f"kl_loss={metrics['kl_loss']:.6f} "
-        f"kl_coef={metrics['kl_coef']:.6f}"
+        f"kl_coef={metrics['kl_coef']:.6f} "
+        f"approx_kl={metrics.get('approx_kl', 0.0):.6f} "
+        f"clip_fraction={metrics.get('clip_fraction', 0.0):.6f} "
+        f"value_ev={metrics.get('value_explained_variance', 0.0):.6f}"
     )
 
 
@@ -95,6 +135,8 @@ def checkpoint_payload(
     return {
         "model_state": model.state_dict(),
         "model_config": model_config.to_dict(),
+        "training_source": "rl",
+        "created_at_utc": datetime.now(UTC).isoformat(),
         "rl_metrics": history,
     }
 
@@ -166,8 +208,9 @@ def select_action_log_probs(
     for head_index, logits_key, mask_key in heads:
         active = batch["action_head"] == head_index
         if torch.any(active):
+            logits = head_logits(outputs, logits_key)
             result[active] = masked_head_log_probs(
-                outputs[logits_key][active],
+                logits[active],
                 batch[mask_key][active],
                 batch["action_index"][active],
             )
@@ -195,7 +238,8 @@ def select_action_entropy(
     for head_index, logits_key, mask_key in heads:
         active = batch["action_head"] == head_index
         if torch.any(active):
-            masked = outputs[logits_key][active].masked_fill(
+            logits = head_logits(outputs, logits_key)
+            masked = logits[active].masked_fill(
                 ~batch[mask_key][active].bool(),
                 -1.0e4,
             )
@@ -222,12 +266,19 @@ def select_action_head_kl(
         active = batch["action_head"] == head_index
         if torch.any(active):
             result = result + masked_categorical_kl(
-                teacher_outputs[logits_key][active],
-                student_outputs[logits_key][active],
+                head_logits(teacher_outputs, logits_key)[active],
+                head_logits(student_outputs, logits_key)[active],
                 batch[mask_key][active],
             )
             count += 1
     return result / max(count, 1)
+
+
+def value_explained_variance(values: torch.Tensor, returns: torch.Tensor) -> torch.Tensor:
+    variance = torch.var(returns, unbiased=False)
+    if float(variance.detach().cpu()) <= 1.0e-8:
+        return torch.zeros((), device=values.device)
+    return 1.0 - torch.var(returns - values, unbiased=False) / (variance + 1.0e-8)
 
 
 def trajectory_stats_are_all_zero(dataset: ArenaTrajectoryDataset) -> bool:
@@ -268,6 +319,7 @@ def main() -> None:
             "Trajectory old policy stats are all zero. Regenerate trajectories with "
             "log_prob/value, or pass --recompute-old-policy-stats with the rollout checkpoint."
         )
+    diagnostics = trajectory_diagnostics(dataset.rows)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     model_config = model_config_from_checkpoint(args.checkpoint)
     model = build_model(model_config).to(device)
@@ -286,6 +338,7 @@ def main() -> None:
         f"epochs={args.epochs} batch_size={args.batch_size} device={device} "
         f"entropy_start={args.entropy_coef} entropy_end={args.entropy_end_coef}"
     )
+    print("RL trajectory diagnostics: " + json.dumps(diagnostics, ensure_ascii=False))
     entropy_decay_steps = args.entropy_decay_steps
     if entropy_decay_steps <= 0:
         entropy_decay_steps = max(args.epochs * max(len(loader), 1) - 1, 1)
@@ -299,6 +352,9 @@ def main() -> None:
         total_entropy_coef = 0.0
         total_kl_loss = 0.0
         total_kl_coef = 0.0
+        total_approx_kl = 0.0
+        total_clip_fraction = 0.0
+        total_value_explained_variance = 0.0
         batch_count = 0
         for batch in loader:
             batch = {key: value.to(device) for key, value in batch.items()}
@@ -335,6 +391,12 @@ def main() -> None:
                 advantages,
                 args.clip_epsilon,
             )
+            with torch.no_grad():
+                ratio = torch.exp(log_probs - old_log_probs)
+                approx_kl = (old_log_probs - log_probs).mean()
+                clip_fraction = (
+                    (torch.abs(ratio - 1.0) > args.clip_epsilon).float().mean()
+                )
             values = outputs["value"].squeeze(1)
             value_loss = clipped_value_loss(
                 values,
@@ -348,6 +410,7 @@ def main() -> None:
                 with torch.no_grad():
                     teacher_outputs = forward_model(teacher_model, batch)
                 kl_loss = select_action_head_kl(teacher_outputs, outputs, batch)
+            explained_variance = value_explained_variance(values.detach(), returns)
             loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -359,6 +422,9 @@ def main() -> None:
             total_entropy_coef += entropy_coef
             total_kl_loss += float(kl_loss.detach().cpu())
             total_kl_coef += kl_coef
+            total_approx_kl += float(approx_kl.detach().cpu())
+            total_clip_fraction += float(clip_fraction.detach().cpu())
+            total_value_explained_variance += float(explained_variance.detach().cpu())
             batch_count += 1
             global_step += 1
         epoch_metrics = {
@@ -370,6 +436,9 @@ def main() -> None:
             "entropy_coef": total_entropy_coef / max(batch_count, 1),
             "kl_loss": total_kl_loss / max(batch_count, 1),
             "kl_coef": total_kl_coef / max(batch_count, 1),
+            "approx_kl": total_approx_kl / max(batch_count, 1),
+            "clip_fraction": total_clip_fraction / max(batch_count, 1),
+            "value_explained_variance": total_value_explained_variance / max(batch_count, 1),
         }
         history.append(epoch_metrics)
         print(format_epoch_metrics(epoch_metrics, args.epochs))
@@ -377,9 +446,21 @@ def main() -> None:
             checkpoint_payload(model, model_config, history),
             args.output / epoch_checkpoint_name(epoch + 1),
         )
+        if args.target_kl > 0.0 and epoch_metrics["approx_kl"] > args.target_kl:
+            history[-1]["early_stop"] = 1.0
+            print(
+                "RL train early stop: "
+                f"approx_kl={epoch_metrics['approx_kl']:.6f} "
+                f"target_kl={args.target_kl:.6f}"
+            )
+            break
 
     checkpoint_path = args.output / "best.pt"
     torch.save(checkpoint_payload(model, model_config, history), checkpoint_path)
+    (args.output / "trajectory_diagnostics.json").write_text(
+        json.dumps(diagnostics, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     (args.output / "rl_metrics.json").write_text(
         json.dumps(history, indent=2),
         encoding="utf-8",

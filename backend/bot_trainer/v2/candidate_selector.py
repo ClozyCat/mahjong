@@ -71,6 +71,19 @@ def rank_key(summary: dict[str, Any]) -> tuple[float, ...]:
     )
 
 
+def choose_next_rollout(
+    current: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    if candidate.get("accepted"):
+        return candidate
+    current_margin = metric(current, "score_margin", float("-inf"))
+    candidate_margin = metric(candidate, "score_margin", float("-inf"))
+    if candidate_margin > current_margin:
+        return candidate
+    return current
+
+
 def select_best_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     if not candidates:
         raise ValueError("at least one candidate is required")

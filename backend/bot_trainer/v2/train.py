@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -506,6 +507,8 @@ def save_checkpoint(
             "metrics": metrics,
             "epoch": epoch,
             "model_config": model_config.to_dict(),
+            "training_source": "sft",
+            "created_at_utc": datetime.now(UTC).isoformat(),
         },
         path,
     )

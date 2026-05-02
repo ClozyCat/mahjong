@@ -137,10 +137,10 @@ pub(crate) fn fan_potential_for_tile_keys(
 pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f32 {
     let shanten_delta = before.shanten - after.shanten;
     let fan_delta = after.fan_potential - before.fan_potential;
-    let shanten_reward = shanten_delta.clamp(-1, 1) as f32 * 0.12;
-    let fan_reward = fan_delta.clamp(-1, 1) as f32 * 0.06;
+    let shanten_reward = shanten_delta.clamp(-1, 1) as f32 * 0.02;
+    let fan_reward = fan_delta.clamp(-1, 1) as f32 * 0.02;
     let tenpai_bonus = if before.shanten > 0 && after.shanten == 0 {
-        0.15
+        0.03
     } else {
         0.0
     };
@@ -197,6 +197,20 @@ mod tests {
 
         assert!(shaping_reward(before, after) > 0.0);
         assert!(shaping_reward(after, before) < 0.0);
+    }
+
+    #[test]
+    fn shaping_reward_is_weak_auxiliary_signal() {
+        let before = RewardSnapshot {
+            shanten: 1,
+            fan_potential: 1,
+        };
+        let after = RewardSnapshot {
+            shanten: 0,
+            fan_potential: 2,
+        };
+
+        assert!(shaping_reward(before, after).abs() <= 0.07);
     }
 
     fn string_keys(keys: &[&str]) -> Vec<String> {

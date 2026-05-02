@@ -11,6 +11,7 @@ use super::{
     context::{BotAction, BotContext, BotSelfKongKind},
     features::encode_bot_context_v2,
     neural::{NeuralDecisionScores, neural_decision_scores_for_model_path},
+    policy::risk_adjusted_discard_logits,
     reward::{
         RewardSnapshot, reward_snapshot_from_context, reward_snapshot_from_room, shaping_reward,
     },
@@ -622,11 +623,10 @@ fn neural_policy_stats(
         }
     };
     let log_prob = match action_head {
-        "discard" => masked_log_prob(
-            &scores.discard_logits,
-            &features.discard_mask,
-            action_index as usize,
-        )?,
+        "discard" => {
+            let discard_logits = risk_adjusted_discard_logits(scores);
+            masked_log_prob(&discard_logits, &features.discard_mask, action_index as usize)?
+        }
         "claim" => masked_log_prob(
             &scores.claim_logits,
             &features.claim_mask,
@@ -1203,6 +1203,51 @@ mod tests {
         let expected = -(1.0_f32 + (-2.0_f32).exp()).ln();
         assert!((row.log_prob - expected).abs() < 0.0001);
         assert_eq!(row.value, 0.75);
+    }
+
+    #[test]
+    fn trajectory_log_prob_uses_risk_adjusted_discard_logits() {
+        let context = bot_context_for_discards(&["w1", "t1"]);
+        let w1_index = tile_index("w1").expect("w1 index");
+        let mut risk_logits = [-5.0_f32; TILE_KIND_COUNT];
+        risk_logits[w1_index] = 5.0;
+        let scores = NeuralDecisionScores {
+            discard_logits: [0.0; TILE_KIND_COUNT],
+            claim_logits: [0.0; CLAIM_ACTION_COUNT],
+            self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
+            hu_logits: [0.0; 2],
+            value: -8.0,
+            risk_logits,
+        };
+        let trace = BotDecisionTrace {
+            decision_kind: "active_turn".to_string(),
+            action: BotAction {
+                seat_index: 0,
+                action_type: "discard".to_string(),
+                tile_ids: vec!["w1-0".to_string()],
+            },
+            context,
+            telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
+            neural_scores: Some(scores.clone()),
+        };
+        let policy = ArenaBotPolicyConfig {
+            id: "learner".to_string(),
+            mode: ArenaPolicyMode::Neural,
+            model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
+            sample_actions: true,
+            temperature: 1.0,
+        };
+
+        let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
+        let features = encode_bot_context_v2(&trace.context);
+        let adjusted = risk_adjusted_discard_logits(&scores);
+        let expected = masked_log_prob(&adjusted, &features.discard_mask, w1_index).expect("prob");
+        let raw_expected =
+            masked_log_prob(&scores.discard_logits, &features.discard_mask, w1_index)
+                .expect("raw prob");
+
+        assert!((row.log_prob - expected).abs() < 0.0001);
+        assert!((row.log_prob - raw_expected).abs() > 0.1);
     }
 
     #[test]

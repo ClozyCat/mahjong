@@ -16,6 +16,7 @@ const NEURAL_DISCARD_VALUE_RISK_RANGE: f32 = 0.55;
 const NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
 const NEURAL_DISCARD_MIN_RISK_WEIGHT: f32 = 0.25;
 const NEURAL_DISCARD_MAX_RISK_WEIGHT: f32 = 1.45;
+const NEURAL_HU_PASS_MARGIN: f32 = 3.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BotPolicyMode {
@@ -670,6 +671,9 @@ fn sample_neural_hu_choice(
     temperature: f32,
     rng: &mut StdRng,
 ) -> Option<NeuralHuChoice> {
+    if should_take_legal_hu(context, scores)? {
+        return Some(NeuralHuChoice::Hu);
+    }
     let features = crate::bot::features::encode_bot_context_v2(context);
     let selected = sample_masked_index(&scores.hu_logits, &features.hu_mask, temperature, rng)?;
     neural_hu_choice_for_index(selected)
@@ -688,11 +692,24 @@ fn select_neural_hu_choice(
     if !pass_logit.is_finite() || !hu_logit.is_finite() {
         return None;
     }
-    Some(if hu_logit > pass_logit {
-        NeuralHuChoice::Hu
-    } else {
+    Some(if pass_logit - hu_logit >= NEURAL_HU_PASS_MARGIN {
         NeuralHuChoice::Pass
+    } else {
+        NeuralHuChoice::Hu
     })
+}
+
+fn should_take_legal_hu(context: &BotContext, scores: &NeuralDecisionScores) -> Option<bool> {
+    let features = crate::bot::features::encode_bot_context_v2(context);
+    if !features.hu_mask[1] {
+        return Some(false);
+    }
+    let pass_logit = scores.hu_logits[0];
+    let hu_logit = scores.hu_logits[1];
+    if !pass_logit.is_finite() || !hu_logit.is_finite() {
+        return None;
+    }
+    Some(pass_logit - hu_logit < NEURAL_HU_PASS_MARGIN)
 }
 
 fn neural_hu_choice_for_index(index: usize) -> Option<NeuralHuChoice> {
@@ -740,7 +757,9 @@ fn select_neural_only_discard_plan(neural_scores: &[RankedTileScore]) -> Option<
     })
 }
 
-fn risk_adjusted_discard_logits(scores: &NeuralDecisionScores) -> [f32; TILE_KIND_COUNT] {
+pub(crate) fn risk_adjusted_discard_logits(
+    scores: &NeuralDecisionScores,
+) -> [f32; TILE_KIND_COUNT] {
     let risk_weight = neural_discard_risk_weight(scores.value);
     let mut adjusted = scores.discard_logits;
     for (index, logit) in adjusted.iter_mut().enumerate() {
@@ -1208,7 +1227,7 @@ mod tests {
     }
 
     #[test]
-    fn neural_hu_head_can_decline_available_hu() {
+    fn neural_hu_requires_strong_pass_margin() {
         let mut context = base_context();
         context.claim_options = vec![BotClaimOption {
             action_type: "hu".to_string(),
@@ -1217,6 +1236,22 @@ mod tests {
         let mut scores =
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [2.0, 1.0];
+
+        let decision = select_neural_hu_choice(&context, &scores).expect("hu decision");
+
+        assert_eq!(decision, NeuralHuChoice::Hu);
+    }
+
+    #[test]
+    fn neural_hu_head_can_decline_available_hu_with_strong_pass_margin() {
+        let mut context = base_context();
+        context.claim_options = vec![BotClaimOption {
+            action_type: "hu".to_string(),
+            tile_ids: Vec::new(),
+        }];
+        let mut scores =
+            neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
+        scores.hu_logits = [5.0, 1.0];
 
         let decision = select_neural_hu_choice(&context, &scores).expect("hu decision");
 

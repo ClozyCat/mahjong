@@ -1,9 +1,19 @@
 {
     "policies": [
         {
+            "id": "heuristic",
+            "mode": "heuristic",
+            "model_path": null
+        },
+        {
             "id": "ppo2",
             "mode": "neural",
             "model_path": "backend/assets/history_models/ppo2.onnx"
+        },
+        {
+            "id": "ppo3",
+            "mode": "neural",
+            "model_path": "backend/assets/history_models/ppo3.onnx"
         },
         {
             "id": "sft",

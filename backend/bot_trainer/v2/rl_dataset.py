@@ -81,6 +81,88 @@ def optional_int_tensor(value: Any) -> torch.Tensor:
     return torch.tensor(-1 if value is None else int(value), dtype=torch.long)
 
 
+def trajectory_diagnostics(rows: list[dict[str, Any]]) -> dict[str, float | int]:
+    terminal_abs = terminal_abs_sum(rows)
+    step_abs = abs_sum(rows, "step_reward")
+    diagnostics: dict[str, float | int] = {
+        "row_count": len(rows),
+        "terminal_reward_mean": terminal_mean_value(rows),
+        "step_reward_mean": mean_value(rows, "step_reward"),
+        "terminal_reward_abs_sum": terminal_abs,
+        "step_reward_abs_sum": step_abs,
+        "terminal_step_abs_ratio": terminal_abs / step_abs if step_abs > 0.0 else 0.0,
+        "shanten_improvement_count": lower_is_better_improvement_count(
+            rows,
+            "shanten_before",
+            "shanten_after",
+        ),
+        "fan_potential_improvement_count": higher_is_better_improvement_count(
+            rows,
+            "fan_potential_before",
+            "fan_potential_after",
+        ),
+    }
+    for action_head in ("discard", "claim", "self_kong", "hu"):
+        diagnostics[f"action_head_{action_head}"] = sum(
+            1 for row in rows if row.get("action_head") == action_head
+        )
+    return diagnostics
+
+
+def mean_value(rows: list[dict[str, Any]], key: str) -> float:
+    if not rows:
+        return 0.0
+    return sum(float(row.get(key, 0.0) or 0.0) for row in rows) / len(rows)
+
+
+def abs_sum(rows: list[dict[str, Any]], key: str) -> float:
+    return sum(abs(float(row.get(key, 0.0) or 0.0)) for row in rows)
+
+
+def terminal_mean_value(rows: list[dict[str, Any]]) -> float:
+    if not rows:
+        return 0.0
+    return sum(terminal_reward(row) for row in rows) / len(rows)
+
+
+def terminal_abs_sum(rows: list[dict[str, Any]]) -> float:
+    return sum(abs(terminal_reward(row)) for row in rows)
+
+
+def terminal_reward(row: dict[str, Any]) -> float:
+    if not bool(row.get("done")):
+        return 0.0
+    return float(row.get("terminal_reward", 0.0) or 0.0)
+
+
+def lower_is_better_improvement_count(
+    rows: list[dict[str, Any]],
+    before_key: str,
+    after_key: str,
+) -> int:
+    count = 0
+    for row in rows:
+        before = row.get(before_key)
+        after = row.get(after_key)
+        if before is not None and after is not None and int(after) < int(before):
+            count += 1
+    return count
+
+
+def higher_is_better_improvement_count(
+    rows: list[dict[str, Any]],
+    before_key: str,
+    after_key: str,
+) -> int:
+    count = 0
+    for row in rows:
+        before = row.get(before_key)
+        after = row.get(after_key)
+        if before is not None and after is not None and int(after) > int(before):
+            count += 1
+    return count
+
+
 def compute_returns(rewards: list[float], dones: list[bool], gamma: float) -> list[float]:
     returns = [0.0 for _ in rewards]
     running = 0.0

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from rl_dataset import (
     ArenaTrajectoryDataset,
     compute_discounted_returns_for_rows,
@@ -273,6 +275,217 @@ def test_league_config_rotates_learner_seat() -> None:
     assert len(configs) == 4
     assert [config["policies"].index(learner) for config in configs] == [0, 1, 2, 3]
     assert all(config["matches"] == 2 for config in configs)
+
+
+def test_rollout_override_keeps_neural_opponents_frozen() -> None:
+    from league_config import apply_rollout_model_override
+
+    pool = {
+        "learner": {
+            "id": "learner",
+            "mode": "neural",
+            "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+            "sample_actions": True,
+            "temperature": 1.0,
+        },
+        "opponents": [
+            {
+                "id": "sft_default",
+                "mode": "neural",
+                "model_path": "backend/assets/history_models/sft.onnx",
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 1,
+            },
+            {
+                "id": "heuristic",
+                "mode": "heuristic",
+                "model_path": None,
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 1,
+            },
+        ],
+    }
+
+    apply_rollout_model_override(pool, Path("runs/iter_001/candidate.onnx"))
+
+    assert pool["learner"]["model_path"] == "runs/iter_001/candidate.onnx"
+    assert pool["opponents"][0]["model_path"] == "backend/assets/history_models/sft.onnx"
+    assert pool["opponents"][1]["model_path"] is None
+
+
+def test_eval_config_uses_cyclic_rotation() -> None:
+    from league_config import build_eval_config
+
+    config = build_eval_config(
+        candidate_onnx=Path("candidate.onnx"),
+        baseline_onnx=Path("sft.onnx"),
+        matches=1000,
+        seed=20260502,
+        max_actions=2400,
+    )
+
+    assert config["seat_rotation"] == "cyclic"
+    assert config["seat_rotation_offset"] == 0
+    assert [policy["id"] for policy in config["policies"]] == [
+        "baseline_neural",
+        "rl_candidate_neural",
+    ]
+
+
+def test_baseline_guard_rejects_rl_checkpoint_as_sft(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    from baseline_guard import validate_baseline_checkpoint
+
+    checkpoint = tmp_path / "best.pt"
+    torch.save(
+        {
+            "model_state": {},
+            "model_config": {"tile_plane_count": 10, "scalar_feature_count": 12},
+            "rl_metrics": [],
+        },
+        checkpoint,
+    )
+
+    with pytest.raises(ValueError, match="RL checkpoint"):
+        validate_baseline_checkpoint(checkpoint, allow_rl_checkpoint=False)
+
+
+def test_rollout_state_keeps_previous_best_when_candidate_regresses() -> None:
+    from candidate_selector import choose_next_rollout
+
+    current = {
+        "checkpoint": "runs/iter_001/checkpoints/best.pt",
+        "onnx": "runs/iter_001/candidate.onnx",
+        "score_margin": 0.4,
+    }
+    candidate = {
+        "checkpoint": "runs/iter_002/checkpoints/best.pt",
+        "onnx": "runs/iter_002/candidate.onnx",
+        "score_margin": -0.2,
+        "accepted": False,
+    }
+
+    selected = choose_next_rollout(current, candidate)
+
+    assert selected == current
+
+
+def test_rollout_state_advances_when_candidate_is_accepted() -> None:
+    from candidate_selector import choose_next_rollout
+
+    current = {
+        "checkpoint": "runs/iter_001/checkpoints/best.pt",
+        "onnx": "runs/iter_001/candidate.onnx",
+        "score_margin": 0.4,
+    }
+    candidate = {
+        "checkpoint": "runs/iter_002/checkpoints/best.pt",
+        "onnx": "runs/iter_002/candidate.onnx",
+        "score_margin": 0.1,
+        "accepted": True,
+    }
+
+    selected = choose_next_rollout(current, candidate)
+
+    assert selected["checkpoint"] == candidate["checkpoint"]
+    assert selected["onnx"] == candidate["onnx"]
+
+
+def test_discard_log_probs_use_risk_adjusted_logits() -> None:
+    import math
+    import torch
+    from rl_train import select_action_log_probs
+
+    outputs = {
+        "discard_logits": torch.tensor([[0.0, 0.0] + [-100.0] * 32]),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.tensor([[-8.0]]),
+        "risk_logits": torch.tensor([[5.0, -5.0] + [0.0] * 32]),
+    }
+    batch = {
+        "reward": torch.tensor([0.0]),
+        "action_head": torch.tensor([0]),
+        "action_index": torch.tensor([0]),
+        "discard_mask": torch.tensor([[True, True] + [False] * 32]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "hu_mask": torch.tensor([[True, False]]),
+    }
+
+    log_prob = select_action_log_probs(outputs, batch)
+
+    risk_weight = 1.45
+    first = -risk_weight * (1.0 / (1.0 + math.exp(-5.0)))
+    second = -risk_weight * (1.0 / (1.0 + math.exp(5.0)))
+    expected = first - max(first, second) - math.log(
+        math.exp(first - max(first, second)) + math.exp(second - max(first, second))
+    )
+    assert log_prob.item() == pytest.approx(expected, abs=1e-5)
+
+
+def test_candidate_gate_rejects_excessive_claim_rate() -> None:
+    from candidate_gate import evaluate_candidate
+
+    summary = {
+        "policies": {
+            "baseline_neural": {
+                "avg_score_delta": 0.0,
+                "win_rate": 0.20,
+                "deal_in_rate": 0.10,
+                "avg_first_tenpai_turn": 8.0,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 20.0,
+                "avg_claims": 2.0,
+                "same_as_heuristic_rate": 0.40,
+            },
+            "rl_candidate_neural": {
+                "avg_score_delta": 1.5,
+                "win_rate": 0.21,
+                "deal_in_rate": 0.11,
+                "avg_first_tenpai_turn": 7.8,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 22.0,
+                "avg_claims": 6.0,
+                "same_as_heuristic_rate": 0.39,
+            },
+        }
+    }
+
+    result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
+
+    assert result["accepted"] is False
+    assert "claim_rate" in result["failures"]
+
+
+def test_trajectory_diagnostics_reports_reward_breakdown() -> None:
+    from rl_dataset import trajectory_diagnostics
+
+    rows = [
+        base_trajectory_row("learner", 0, reward=0.1, value=0.0, done=False),
+        {
+            **base_trajectory_row("learner", 0, reward=1.2, value=0.0, done=True),
+            "step_reward": 0.2,
+            "terminal_reward": 1.0,
+            "action_head": "claim",
+            "shanten_before": 2,
+            "shanten_after": 1,
+            "fan_potential_before": 1,
+            "fan_potential_after": 2,
+        },
+    ]
+
+    diagnostics = trajectory_diagnostics(rows)
+
+    assert diagnostics["row_count"] == 2
+    assert diagnostics["action_head_claim"] == 1
+    assert diagnostics["terminal_reward_mean"] == pytest.approx(0.5)
+    assert diagnostics["step_reward_abs_sum"] == pytest.approx(0.2)
+    assert diagnostics["shanten_improvement_count"] == 1
+    assert diagnostics["fan_potential_improvement_count"] == 1
 
 
 def test_candidate_gate_accepts_safe_improvement() -> None:

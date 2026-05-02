@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -72,6 +74,7 @@ def main() -> None:
         dummy_tile_planes,
         dummy_scalar_features,
     )
+    write_export_manifest(args.output, args.checkpoint, checkpoint, model_config)
     print(f"exported {args.output}")
 
 
@@ -103,6 +106,28 @@ def smoke_onnxruntime(
     for name, output, expected_shape in zip(OUTPUT_NAMES, outputs, expected_shapes, strict=True):
         if tuple(output.shape) != expected_shape:
             raise RuntimeError(f"{name} shape {tuple(output.shape)} != {expected_shape}")
+
+
+def write_export_manifest(
+    output: Path,
+    checkpoint_path: Path,
+    checkpoint: dict[str, object],
+    model_config: ModelConfig,
+) -> None:
+    manifest = {
+        "created_at_utc": datetime.now(UTC).isoformat(),
+        "onnx": output.as_posix(),
+        "checkpoint": checkpoint_path.as_posix(),
+        "training_source": checkpoint.get("training_source", "unknown"),
+        "checkpoint_created_at_utc": checkpoint.get("created_at_utc"),
+        "model_config": model_config.to_dict(),
+        "outputs": OUTPUT_NAMES,
+    }
+    manifest_path = output.with_suffix(output.suffix + ".manifest.json")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

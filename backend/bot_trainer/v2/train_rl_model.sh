@@ -10,21 +10,22 @@ ARENA_JOBS=0
 ITERATIONS=5
 ITERATION_MATCHES=500
 TRAJECTORY_PROGRESS_EVERY=20
-EVAL_MATCHES=200
+EVAL_MATCHES=1000
 SEED=20260429
 MAX_ACTIONS_PER_MATCH=2400
-EPOCHS=2
+EPOCHS=1
 BATCH_SIZE=256
-LEARNING_RATE=0.00001
-GAMMA=0.97
+LEARNING_RATE=0.000003
+GAMMA=0.995
 GAE_LAMBDA=0.95
 CLIP_EPSILON=0.2
 VALUE_CLIP_EPSILON=0.2
 ENTROPY_COEF=0.02
 ENTROPY_END_COEF=0.005
 ENTROPY_DECAY_STEPS=0
-KL_COEF=0.0
+KL_COEF=0.01
 KL_END_COEF=0.0
+TARGET_KL=0.03
 DEVICE=auto
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
 LEARNER_POLICY_ID="learner"
@@ -34,7 +35,9 @@ SKIP_TESTS=0
 SKIP_ONNX_EXPORT=0
 SKIP_EVAL=0
 ENFORCE_CANDIDATE_GATE=0
+ALLOW_RL_BASELINE_CHECKPOINT=0
 RECOMPUTE_OLD_POLICY_STATS=0
+CANDIDATE_SELECTION_MODE=epoch
 
 usage() {
     cat <<'EOF'
@@ -71,8 +74,9 @@ Options:
   --entropy-coef VALUE             PPO entropy coefficient.
   --entropy-end-coef VALUE         PPO final entropy coefficient after decay.
   --entropy-decay-steps N          Linear entropy decay steps. Use 0 for full training.
-  --kl-coef VALUE                  Supervised policy KL coefficient. Default 0.0.
+  --kl-coef VALUE                  Supervised policy KL coefficient. Default 0.01.
   --kl-end-coef VALUE              Final KL coefficient after decay.
+  --target-kl VALUE                Stop PPO epoch loop when approximate KL exceeds this value.
   --device DEVICE                  auto, cpu, cuda, etc.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
@@ -82,7 +86,9 @@ Options:
   --skip-onnx-export               Do not export candidate.onnx.
   --skip-eval                      Do not run baseline vs candidate arena evaluation.
   --enforce-candidate-gate         Exit non-zero when no iteration passes candidate gate.
+  --allow-rl-baseline-checkpoint   Allow intentionally continuing from an RL checkpoint.
   --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
+  --candidate-selection-mode MODE  epoch or final. Default epoch.
   -h, --help                       Show this help.
 EOF
 }
@@ -278,6 +284,11 @@ while [[ $# -gt 0 ]]; do
             KL_END_COEF="$2"
             shift 2
             ;;
+        --target-kl)
+            require_value "$1" "${2:-}"
+            TARGET_KL="$2"
+            shift 2
+            ;;
         --device)
             require_value "$1" "${2:-}"
             DEVICE="$2"
@@ -319,9 +330,18 @@ while [[ $# -gt 0 ]]; do
             ENFORCE_CANDIDATE_GATE=1
             shift
             ;;
+        --allow-rl-baseline-checkpoint)
+            ALLOW_RL_BASELINE_CHECKPOINT=1
+            shift
+            ;;
         --recompute-old-policy-stats)
             RECOMPUTE_OLD_POLICY_STATS=1
             shift
+            ;;
+        --candidate-selection-mode)
+            require_value "$1" "${2:-}"
+            CANDIDATE_SELECTION_MODE="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -337,6 +357,10 @@ done
 
 if [[ "$SELFPLAY_POLICY_MODE" != "heuristic" && "$SELFPLAY_POLICY_MODE" != "neural" ]]; then
     echo "--selfplay-policy-mode must be heuristic or neural." >&2
+    exit 2
+fi
+if [[ "$CANDIDATE_SELECTION_MODE" != "epoch" && "$CANDIDATE_SELECTION_MODE" != "final" ]]; then
+    echo "--candidate-selection-mode must be epoch or final." >&2
     exit 2
 fi
 
@@ -409,6 +433,16 @@ require_file \
     "Baseline ONNX model" \
     "Export the supervised model first, or pass --baseline-onnx <existing .onnx file>."
 
+baseline_guard_args=(
+    backend/bot_trainer/v2/baseline_guard.py
+    --checkpoint "$BASELINE_CHECKPOINT"
+    --onnx "$BASELINE_ONNX"
+)
+if (( ALLOW_RL_BASELINE_CHECKPOINT == 1 )); then
+    baseline_guard_args+=(--allow-rl-checkpoint)
+fi
+"${PYTHON_CMD[@]}" "${baseline_guard_args[@]}"
+
 if (( SKIP_TESTS == 0 )); then
     PYTHONPATH="$PYTEST_SITE_DIR${PYTHONPATH:+:$PYTHONPATH}" "${PYTHON_CMD[@]}" -m pytest \
         backend/bot_trainer/v2/test_rl_dataset.py \
@@ -424,7 +458,7 @@ current_onnx="$BASELINE_ONNX"
 current_checkpoint="$BASELINE_CHECKPOINT"
 best_onnx="$BASELINE_ONNX"
 best_checkpoint="$BASELINE_CHECKPOINT"
-best_score_margin="-999.0"
+best_score_margin="0.0"
 best_iter=0
 
 iteration_results=()
@@ -498,6 +532,7 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
         --entropy-end-coef "$ENTROPY_END_COEF"
         --kl-coef "$KL_COEF"
         --kl-end-coef "$KL_END_COEF"
+        --target-kl "$TARGET_KL"
         --output "$iter_checkpoint_dir"
         --device "$DEVICE"
     )
@@ -511,10 +546,88 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
 
     # ── Step 3: Export ONNX ──────────────────────────────────────────
     iter_best_pt="$iter_checkpoint_dir/best.pt"
+    selected_checkpoint="$iter_best_pt"
+    selected_onnx="$iter_candidate_onnx"
     if (( SKIP_ONNX_EXPORT == 0 )); then
         "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
             --checkpoint "$iter_best_pt" \
             --output "$iter_candidate_onnx"
+    fi
+
+    if [[ "$CANDIDATE_SELECTION_MODE" == "epoch" && $SKIP_ONNX_EXPORT == 0 && $SKIP_EVAL == 0 ]]; then
+        candidate_entries_jsonl="$iter_dir/candidate_entries.jsonl"
+        candidate_manifest="$iter_dir/candidate_manifest.json"
+        candidate_selection="$iter_dir/candidate_selection.json"
+        : > "$candidate_entries_jsonl"
+        for epoch_pt in "$iter_checkpoint_dir"/epoch_*.pt; do
+            [[ -e "$epoch_pt" ]] || continue
+            epoch_name="$(basename "$epoch_pt" .pt)"
+            epoch_number="${epoch_name#epoch_}"
+            epoch_onnx="$iter_dir/$epoch_name.onnx"
+            epoch_eval_dir="$iter_eval_dir/$epoch_name"
+            "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
+                --checkpoint "$epoch_pt" \
+                --output "$epoch_onnx"
+            run_candidate_eval "$epoch_onnx" "$epoch_eval_dir" "$BASELINE_ONNX"
+            "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$epoch_number" "$epoch_pt" "$epoch_onnx" "$RUN_EVAL_SUMMARY" "$RUN_EVAL_GATE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+entry = {
+    "epoch": int(sys.argv[2]),
+    "checkpoint": sys.argv[3],
+    "onnx": sys.argv[4],
+    "summary": sys.argv[5],
+    "gate_path": sys.argv[6],
+}
+with output.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+PY
+        done
+        "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$candidate_manifest" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+rows = [
+    json.loads(line)
+    for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+    if line.strip()
+]
+Path(sys.argv[2]).write_text(
+    json.dumps({"candidates": rows}, indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
+)
+PY
+        "${PYTHON_CMD[@]}" backend/bot_trainer/v2/candidate_selector.py \
+            --manifest "$candidate_manifest" \
+            --output "$candidate_selection"
+        readarray -t selection_fields < <("${PYTHON_CMD[@]}" - "$candidate_selection" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+selection = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+selected = selection["selected"]
+print(selection["checkpoint"])
+print(selection["onnx"])
+print(selected.get("gate") or "")
+print(selected.get("summary") or "")
+PY
+)
+        selected_checkpoint="${selection_fields[0]}"
+        selected_onnx="${selection_fields[1]}"
+        selected_gate="${selection_fields[2]}"
+        selected_summary="${selection_fields[3]}"
+        copy_required_file "$selected_onnx" "$iter_candidate_onnx"
+        if [[ -n "$selected_gate" ]]; then
+            copy_required_file "$selected_gate" "$iter_eval_dir/candidate_gate.json"
+        fi
+        if [[ -n "$selected_summary" ]]; then
+            copy_required_file "$selected_summary" "$iter_eval_dir/candidate_eval_summary.json"
+        fi
     fi
 
     # ── Step 4: Evaluate candidate vs original baseline ──────────────
@@ -522,7 +635,9 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
     iter_accepted=0
 
     if (( SKIP_ONNX_EXPORT == 0 && SKIP_EVAL == 0 )); then
-        run_candidate_eval "$iter_candidate_onnx" "$iter_eval_dir" "$BASELINE_ONNX"
+        if [[ "$CANDIDATE_SELECTION_MODE" == "final" ]]; then
+            run_candidate_eval "$iter_candidate_onnx" "$iter_eval_dir" "$BASELINE_ONNX"
+        fi
 
         iter_score_margin="$("${PYTHON_CMD[@]}" - "$iter_eval_dir/candidate_gate.json" <<'PY'
 import json
@@ -534,29 +649,35 @@ margin = gate["candidate"]["avg_score_delta"] - gate["baseline"]["avg_score_delt
 print(f"{margin:.4f}")
 PY
 )"
-        if (( RUN_EVAL_GATE_EXIT == 0 )); then
+        iter_accepted="$("${PYTHON_CMD[@]}" - "$iter_eval_dir/candidate_gate.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+gate = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print("1" if gate.get("accepted") else "0")
+PY
+)"
+        if (( iter_accepted == 1 )); then
             iter_accepted=1
         fi
 
         echo "  Iteration $iter result: score_margin=$iter_score_margin accepted=$iter_accepted"
 
-        # Update best model if improved
-        if "${PYTHON_CMD[@]}" -c "exit(0 if float('$iter_score_margin') > float('$best_score_margin') else 1)"; then
+        if (( iter_accepted == 1 )) || "${PYTHON_CMD[@]}" -c "exit(0 if float('$iter_score_margin') > float('$best_score_margin') else 1)"; then
             best_score_margin="$iter_score_margin"
-            best_checkpoint="$iter_best_pt"
+            best_checkpoint="$selected_checkpoint"
             best_onnx="$iter_candidate_onnx"
             best_iter="$iter"
-            echo "  → New best model (score_margin=$iter_score_margin)"
+            current_checkpoint="$selected_checkpoint"
+            current_onnx="$iter_candidate_onnx"
+            echo "  Rollout advanced to candidate (score_margin=$iter_score_margin, accepted=$iter_accepted)"
+        else
+            echo "  Rollout kept current best (best_score_margin=$best_score_margin)"
         fi
     fi
 
     iteration_results+=("$iter|$iter_score_margin|$iter_accepted")
-
-    # Next iteration uses this iteration's model for rollout
-    current_checkpoint="$iter_best_pt"
-    if (( SKIP_ONNX_EXPORT == 0 )); then
-        current_onnx="$iter_candidate_onnx"
-    fi
 done
 
 # ── Finalize: copy best results to top-level ──────────────────────────────
@@ -571,13 +692,29 @@ if (( SKIP_ONNX_EXPORT == 0 )); then
     copy_required_file "$best_onnx" "$FINAL_CANDIDATE_ONNX"
 fi
 
-printf -v best_iter_tag "iter_%03d" "$best_iter"
-best_iter_eval_dir="$OUTPUT_DIR/$best_iter_tag/eval"
-if [[ -f "$best_iter_eval_dir/candidate_eval_summary.json" ]]; then
-    copy_required_file "$best_iter_eval_dir/candidate_eval_summary.json" "$FINAL_EVAL_SUMMARY"
-fi
-if [[ -f "$best_iter_eval_dir/candidate_gate.json" ]]; then
-    copy_required_file "$best_iter_eval_dir/candidate_gate.json" "$FINAL_GATE_OUTPUT"
+if (( best_iter > 0 )); then
+    printf -v best_iter_tag "iter_%03d" "$best_iter"
+    best_iter_eval_dir="$OUTPUT_DIR/$best_iter_tag/eval"
+    if [[ -f "$best_iter_eval_dir/candidate_eval_summary.json" ]]; then
+        copy_required_file "$best_iter_eval_dir/candidate_eval_summary.json" "$FINAL_EVAL_SUMMARY"
+    fi
+    if [[ -f "$best_iter_eval_dir/candidate_gate.json" ]]; then
+        copy_required_file "$best_iter_eval_dir/candidate_gate.json" "$FINAL_GATE_OUTPUT"
+    fi
+else
+    best_iter_tag="baseline"
+    if (( ${#iteration_results[@]} > 0 )); then
+        last_index=$(( ${#iteration_results[@]} - 1 ))
+        last_iter="${iteration_results[$last_index]%%|*}"
+        printf -v last_iter_tag "iter_%03d" "$last_iter"
+        last_iter_eval_dir="$OUTPUT_DIR/$last_iter_tag/eval"
+        if [[ -f "$last_iter_eval_dir/candidate_eval_summary.json" ]]; then
+            copy_required_file "$last_iter_eval_dir/candidate_eval_summary.json" "$FINAL_EVAL_SUMMARY"
+        fi
+        if [[ -f "$last_iter_eval_dir/candidate_gate.json" ]]; then
+            copy_required_file "$last_iter_eval_dir/candidate_gate.json" "$FINAL_GATE_OUTPUT"
+        fi
+    fi
 fi
 
 # Write iteration history

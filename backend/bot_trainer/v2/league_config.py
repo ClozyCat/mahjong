@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 
+def model_path_text(path: Path) -> str:
+    return path.as_posix()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pool", type=Path, required=True)
@@ -86,32 +90,20 @@ def build_eval_config(
         "seed": seed,
         "max_actions_per_match": max_actions,
         "report_trajectories": False,
+        "seat_rotation": "cyclic",
+        "seat_rotation_offset": 0,
         "policies": [
             {
                 "id": "baseline_neural",
                 "mode": "neural",
-                "model_path": str(baseline_onnx),
+                "model_path": model_path_text(baseline_onnx),
                 "sample_actions": False,
                 "temperature": 1.0,
             },
             {
                 "id": "rl_candidate_neural",
                 "mode": "neural",
-                "model_path": str(candidate_onnx),
-                "sample_actions": False,
-                "temperature": 1.0,
-            },
-            {
-                "id": "baseline_neural",
-                "mode": "neural",
-                "model_path": str(baseline_onnx),
-                "sample_actions": False,
-                "temperature": 1.0,
-            },
-            {
-                "id": "rl_candidate_neural",
-                "mode": "neural",
-                "model_path": str(candidate_onnx),
+                "model_path": model_path_text(candidate_onnx),
                 "sample_actions": False,
                 "temperature": 1.0,
             },
@@ -122,9 +114,9 @@ def build_eval_config(
 def apply_rollout_model_override(pool: dict[str, Any], rollout_onnx: Path | None) -> None:
     if rollout_onnx is None:
         return
-    for policy in [pool["learner"], *pool["opponents"]]:
-        if policy.get("mode") == "neural":
-            policy["model_path"] = str(rollout_onnx)
+    learner = pool["learner"]
+    if learner.get("mode") == "neural":
+        learner["model_path"] = model_path_text(rollout_onnx)
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
