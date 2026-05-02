@@ -222,7 +222,8 @@ try {
     Write-Host "Device:              $Device"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
-    Write-Host "Arena jobs:          $(if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs })"
+    $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
+    Write-Host ("Arena jobs:          {0}" -f $arenaJobsLabel)
 
     Assert-FileExists `
         $BaselineCheckpoint `
@@ -259,7 +260,7 @@ try {
         }
     }
 
-    # ── Iterative Self-Play Loop ──────────────────────────────────────────
+    # Iterative Self-Play Loop
     $currentOnnx = $BaselineOnnx
     $currentCheckpoint = $BaselineCheckpoint
     $bestOnnx = $BaselineOnnx
@@ -278,11 +279,12 @@ try {
         $iterSeed = $Seed + ($iter - 1) * 1000000
 
         Write-Host ""
-        Write-Host "═══════════════════════════════════════════════════════════════"
-        Write-Host "  Iteration $iter / $Iterations  (rollout model: $(Split-Path -Leaf $currentOnnx))"
-        Write-Host "═══════════════════════════════════════════════════════════════"
+        $currentOnnxLeaf = Split-Path -Leaf $currentOnnx
+        Write-Host "==============================================================="
+        Write-Host ("  Iteration {0} / {1}  (rollout model: {2})" -f $iter, $Iterations, $currentOnnxLeaf)
+        Write-Host "==============================================================="
 
-        # ── Step 1: Generate trajectories with current best model ─────────
+        # Step 1: Generate trajectories with current best model
         New-Item -ItemType Directory -Force -Path $iterTrajectoryConfigDir | Out-Null
         Invoke-TrainingPython @(
             "backend/bot_trainer/v2/league_config.py",
@@ -326,7 +328,7 @@ try {
         }
         Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
 
-        # ── Step 2: PPO training from current checkpoint ──────────────────
+        # Step 2: PPO training from current checkpoint
         $rlTrainArgs = @(
             "backend/bot_trainer/v2/rl_train.py",
             "--trajectories", $iterTrajectoryJsonl,
@@ -355,7 +357,7 @@ try {
         Invoke-TrainingPython $rlTrainArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-        # ── Step 3: Export ONNX ───────────────────────────────────────────
+        # Step 3: Export ONNX
         $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
         if (-not $SkipOnnxExport) {
             Invoke-TrainingPython @(
@@ -366,7 +368,7 @@ try {
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
 
-        # ── Step 4: Evaluate candidate vs original baseline ───────────────
+        # Step 4: Evaluate candidate vs original baseline
         $iterResult = [ordered]@{
             iteration = $iter
             checkpoint = $iterBestPt
@@ -386,14 +388,14 @@ try {
             $scoreMargin = $gateOutput.candidate.avg_score_delta - $gateOutput.baseline.avg_score_delta
             $iterResult.score_margin = [math]::Round($scoreMargin, 4)
 
-            Write-Host "  Iteration $iter result: score_margin=$($iterResult.score_margin) accepted=$($iterResult.accepted)"
+            Write-Host ("  Iteration {0} result: score_margin={1} accepted={2}" -f $iter, $iterResult.score_margin, $iterResult.accepted)
 
             # Update the rollout model if this iteration improved
             if ($iterResult.score_margin -gt $bestScoreMargin) {
                 $bestScoreMargin = $iterResult.score_margin
                 $bestCheckpoint = $iterBestPt
                 $bestOnnx = $iterCandidateOnnx
-                Write-Host "  → New best model (score_margin=$($iterResult.score_margin))"
+                Write-Host ("  New best model (score_margin={0})" -f $iterResult.score_margin)
             }
         }
 
@@ -406,7 +408,7 @@ try {
         }
     }
 
-    # ── Finalize: copy best results to top-level ──────────────────────────
+    # Finalize: copy best results to top-level
     $FinalCandidateOnnx = Join-Path $OutputDir "candidate.onnx"
     $FinalCheckpointDir = Join-Path $OutputDir "checkpoints"
     $FinalEvalSummary = Join-Path $OutputDir "candidate_eval_summary.json"
@@ -444,7 +446,7 @@ try {
     Write-Host ""
     Write-Host "RL iterative self-play pipeline finished."
     Write-Host "Iterations:     $Iterations"
-    Write-Host "Best iteration: $bestIterTag (score_margin=$bestScoreMargin)"
+    Write-Host ("Best iteration: {0} (score_margin={1})" -f $bestIterTag, $bestScoreMargin)
     Write-Host "Checkpoint:     $bestCheckpoint"
     Write-Host "Candidate:      $FinalCandidateOnnx"
     Write-Host "History:        $historyPath"
