@@ -2,16 +2,30 @@ from __future__ import annotations
 
 import torch
 
-from model import ModelConfig, build_model, load_compatible_state_dict
+import model as model_module
+from model import ModelConfig, build_model
 
 
 def parameter_count(model: torch.nn.Module) -> int:
     return sum(parameter.numel() for parameter in model.parameters())
 
 
-def test_resnet_model_output_shapes() -> None:
-    model = build_model(ModelConfig(tile_plane_count=10, scalar_feature_count=10))
-    outputs = model(torch.zeros((2, 10, 34)), torch.zeros((2, 10)))
+def sequence_aware_config() -> ModelConfig:
+    return ModelConfig(
+        tile_plane_count=10,
+        scalar_feature_count=12,
+        discard_sequence_length=32,
+        discard_event_feature_count=40,
+    )
+
+
+def test_sequence_aware_model_output_shapes() -> None:
+    model = build_model(sequence_aware_config())
+    outputs = model(
+        torch.zeros((2, 10, 34)),
+        torch.zeros((2, 12)),
+        torch.zeros((2, 32, 40)),
+    )
 
     assert outputs["discard_logits"].shape == (2, 34)
     assert outputs["claim_logits"].shape == (2, 7)
@@ -19,33 +33,30 @@ def test_resnet_model_output_shapes() -> None:
     assert outputs["hu_logits"].shape == (2, 2)
     assert outputs["value"].shape == (2, 1)
     assert outputs["risk_logits"].shape == (2, 34)
+    assert outputs["fan_logits"].shape == (2, 1)
 
 
-def test_compatible_loader_skips_old_tile_encoder_tensors() -> None:
-    model = build_model(ModelConfig(tile_plane_count=10, scalar_feature_count=10))
-    state = model.state_dict()
-    old_state = {
-        key: value.clone()
-        for key, value in state.items()
-        if not key.startswith("tile_encoder.")
-    }
-    old_state["tile_encoder.1.weight"] = torch.zeros((512, 340))
-    old_state["tile_encoder.1.bias"] = torch.zeros((512,))
+def test_sequence_aware_model_uses_no_dropout() -> None:
+    model = build_model(sequence_aware_config())
 
-    skipped = load_compatible_state_dict(model, old_state)
-
-    assert "tile_encoder.1.weight" in skipped
-    assert "tile_encoder.1.bias" in skipped
-    assert "discard_head.weight" not in skipped
+    assert not any(isinstance(module, torch.nn.Dropout) for module in model.modules())
 
 
-def test_model_config_from_dict_defaults_old_checkpoints() -> None:
+def test_legacy_compatible_loader_is_removed() -> None:
+    assert not hasattr(model_module, "load_compatible_state_dict")
+
+
+def test_model_config_from_dict_reads_sequence_schema() -> None:
     config = ModelConfig.from_dict(
         {
             "tile_plane_count": 10,
-            "scalar_feature_count": 10,
+            "scalar_feature_count": 12,
+            "discard_sequence_length": 32,
+            "discard_event_feature_count": 40,
         }
     )
 
     assert config.tile_plane_count == 10
-    assert config.scalar_feature_count == 10
+    assert config.scalar_feature_count == 12
+    assert config.discard_sequence_length == 32
+    assert config.discard_event_feature_count == 40

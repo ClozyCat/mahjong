@@ -64,16 +64,16 @@ python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2
 
 ## Model Architecture
 
-The policy keeps the existing ONNX contract:
+The policy uses a sequence-aware ONNX contract:
 
-- inputs: `tile_planes` shaped `batch x 10 x 34`, `scalar_features` shaped `batch x 10`
+- inputs: `tile_planes` shaped `batch x 10 x 34`, `scalar_features` shaped `batch x 12`, `discard_sequence` shaped `batch x 32 x 40`
 - outputs: `discard_logits`, `claim_logits`, `self_kong_logits`, `hu_logits`, `value`, `risk_logits`
 
-The tile encoder is suit-aware: 万/条/筒 each pass through a shared 1D residual convolution encoder over rank order, while honors use a separate encoder. This preserves local sequence structure without letting convolutions treat suit boundaries such as `w9 -> t1` as adjacent ranks.
+`discard_sequence` is right-aligned and stores the latest 32 public discard events. Each event has 34 tile one-hot features, 4 relative-seat one-hot features, one slot-progress feature, and one latest-event marker.
 
-### Default Architecture
+The tile encoder is suit-aware: 万/条/筒 each pass through a shared 1D residual convolution encoder over rank order, while honors use a separate encoder. The four embeddings are fused by an MLP before reaching the heads, so cross-suit patterns are learned explicitly. Policy, value, and risk use separate trunks, and action/risk/fan heads use task-specific MLP adapters.
 
-The default architecture is the only supported training path: suited encoder `2` residual blocks, honor encoder `1` residual block, no SE, no FiLM, and no discard-order sequence input. The ONNX runtime contract always stays at two inputs.
+Old two-input checkpoints and ONNX files are not compatible with this architecture; train and export a fresh model after regenerating the v2 tensor cache.
 
 ## Arena Evaluation
 

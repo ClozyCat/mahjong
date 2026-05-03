@@ -7,10 +7,14 @@ import pytest
 
 from rl_dataset import (
     ArenaTrajectoryDataset,
+    DISCARD_EVENT_FEATURE_COUNT,
+    DISCARD_SEQUENCE_LENGTH,
     compute_discounted_returns_for_rows,
     compute_gae_for_rows,
     compute_returns,
 )
+
+DISCARD_SEQUENCE_SIZE = DISCARD_SEQUENCE_LENGTH * DISCARD_EVENT_FEATURE_COUNT
 
 
 def base_trajectory_row(
@@ -28,7 +32,8 @@ def base_trajectory_row(
         "policy_id": policy_id,
         "decision_kind": "active_turn",
         "tile_planes": [0.0] * 340,
-        "scalar_features": [0.0] * 10,
+        "scalar_features": [0.0] * 12,
+        "discard_sequence": [0.0] * DISCARD_SEQUENCE_SIZE,
         "discard_mask": [True] + [False] * 33,
         "claim_mask": [True] + [False] * 6,
         "self_kong_mask": [True, False, False],
@@ -59,7 +64,8 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
         "policy_id": "p",
         "decision_kind": "active_turn",
         "tile_planes": [0.0] * 340,
-        "scalar_features": [0.0] * 10,
+        "scalar_features": [0.0] * 12,
+        "discard_sequence": [0.0] * DISCARD_SEQUENCE_SIZE,
         "discard_mask": [True] + [False] * 33,
         "claim_mask": [True] + [False] * 6,
         "self_kong_mask": [True, False, False],
@@ -90,6 +96,11 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
     assert row["shanten_after"].item() == 0
     assert row["fan_potential_after"].item() == 3
     assert row["tile_planes"].shape == (10, 34)
+    assert row["scalar_features"].shape == (12,)
+    assert row["discard_sequence"].shape == (
+        DISCARD_SEQUENCE_LENGTH,
+        DISCARD_EVENT_FEATURE_COUNT,
+    )
     assert row["has_global_state"].item() is False
 
 

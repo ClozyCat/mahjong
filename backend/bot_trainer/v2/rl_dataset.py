@@ -7,6 +7,9 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
+DISCARD_SEQUENCE_LENGTH = 32
+DISCARD_EVENT_FEATURE_COUNT = 40
+
 
 class ArenaTrajectoryDataset(Dataset):
     def __init__(
@@ -43,6 +46,10 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
     return {
         "tile_planes": torch.tensor(row["tile_planes"], dtype=torch.float32).view(-1, 34),
         "scalar_features": torch.tensor(row["scalar_features"], dtype=torch.float32),
+        "discard_sequence": torch.tensor(
+            row["discard_sequence"],
+            dtype=torch.float32,
+        ).view(DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT),
         "discard_mask": torch.tensor(row["discard_mask"], dtype=torch.bool),
         "claim_mask": torch.tensor(row["claim_mask"], dtype=torch.bool),
         "self_kong_mask": torch.tensor(row["self_kong_mask"], dtype=torch.bool),

@@ -3,7 +3,8 @@ use super::action_space::{
 };
 use super::context::{BotContext, BotTileView};
 use super::features::{
-    BotFeaturesV2, encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
+    BotFeaturesV2, discard_event_feature_count_v2, discard_sequence_length_v2,
+    encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
 };
 use ort::{session::Session, value::Tensor};
 use std::{
@@ -206,6 +207,7 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
     let BotFeaturesV2 {
         tile_planes,
         scalar_features,
+        discard_sequence,
         self_kong_mask: _self_kong_mask,
         hu_mask: _hu_mask,
         ..
@@ -218,10 +220,20 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
     let scalar_features =
         Tensor::from_array(([1_usize, scalar_feature_count_v2()], scalar_features))
             .map_err(|_| ())?;
+    let discard_sequence = Tensor::from_array((
+        [
+            1_usize,
+            discard_sequence_length_v2(),
+            discard_event_feature_count_v2(),
+        ],
+        discard_sequence,
+    ))
+    .map_err(|_| ())?;
     let outputs = session
         .run(ort::inputs![
             "tile_planes" => tile_planes,
-            "scalar_features" => scalar_features
+            "scalar_features" => scalar_features,
+            "discard_sequence" => discard_sequence
         ])
         .map_err(|_| ())?;
 
@@ -263,7 +275,7 @@ mod tests {
     use super::*;
     use crate::bot::action_space::claim_action_index;
     use crate::projection::bot_view::{BotContextView, BotPlayerView, BotTileView};
-    use std::collections::HashSet;
+    use std::{collections::HashSet, fs};
 
     fn tile(tile_id: &str, tile_key: &str) -> BotTileView {
         BotTileView {
@@ -365,6 +377,9 @@ mod tests {
         if !model_path.exists() {
             return;
         }
+        if !local_model_manifest_is_sequence_aware(&model_path) {
+            return;
+        }
         let scores = OrtNeuralSession::new(model_path)
             .run(encode_bot_context_v2(&base_context()))
             .expect("local ONNX model should run");
@@ -394,5 +409,18 @@ mod tests {
             assert_eq!(session.load_attempts, 1);
             assert!(session.disabled);
         });
+    }
+
+    fn local_model_manifest_is_sequence_aware(model_path: &Path) -> bool {
+        let Some(file_name) = model_path.file_name().and_then(|value| value.to_str()) else {
+            return false;
+        };
+        let manifest_path = model_path.with_file_name(format!("{file_name}.manifest.json"));
+        fs::read_to_string(manifest_path)
+            .map(|content| {
+                content.contains("discard_sequence_length")
+                    && content.contains("discard_event_feature_count")
+            })
+            .unwrap_or(false)
     }
 }

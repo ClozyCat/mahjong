@@ -16,8 +16,10 @@ except ModuleNotFoundError:
 TILE_KIND_COUNT = 34
 TILE_PLANE_COUNT = 10
 SCALAR_FEATURE_COUNT = 12
+DISCARD_SEQUENCE_LENGTH = 32
+DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 5
+DISK_CACHE_VERSION = 6
 STANDARD_WIND_ORDER = ("east", "south", "west", "north")
 ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
@@ -175,6 +177,9 @@ class MahjongDecisionDataset(Dataset):
         
         # 应用于输入特征
         batch["tile_planes"] = batch["tile_planes"][:, :, mapping]
+        batch["discard_sequence"][:, :, :TILE_KIND_COUNT] = batch["discard_sequence"][
+            :, :, :TILE_KIND_COUNT
+        ][:, :, mapping]
         
         # 应用于掩码和目标
         batch["discard_mask"] = batch["discard_mask"][:, mapping]
@@ -197,6 +202,10 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
     return {
         "tile_planes": ((TILE_PLANE_COUNT, TILE_KIND_COUNT), np.dtype(np.float32)),
         "scalar_features": ((SCALAR_FEATURE_COUNT,), np.dtype(np.float32)),
+        "discard_sequence": (
+            (DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT),
+            np.dtype(np.float32),
+        ),
         "discard_mask": ((TILE_KIND_COUNT,), np.dtype(np.bool_)),
         "claim_mask": ((len(metadata["claim_actions"]),), np.dtype(np.bool_)),
         "self_kong_mask": ((len(metadata["self_kong_actions"]),), np.dtype(np.bool_)),
@@ -239,6 +248,8 @@ def expected_cache_manifest(dataset: MahjongDecisionDataset, num_samples: int | 
         "tile_kind_count": TILE_KIND_COUNT,
         "tile_plane_count": TILE_PLANE_COUNT,
         "scalar_feature_count": SCALAR_FEATURE_COUNT,
+        "discard_sequence_length": DISCARD_SEQUENCE_LENGTH,
+        "discard_event_feature_count": DISCARD_EVENT_FEATURE_COUNT,
         "claim_action_count": len(dataset.metadata["claim_actions"]),
         "self_kong_action_count": len(dataset.metadata["self_kong_actions"]),
     }
@@ -327,6 +338,7 @@ def encode_row(
     return {
         "tile_planes": encode_tile_planes(context, tile_to_index),
         "scalar_features": encode_scalar_features(context),
+        "discard_sequence": encode_discard_sequence(context, tile_to_index),
         "discard_mask": encode_discard_mask(row, tile_to_index),
         "claim_mask": encode_claim_mask(row, claim_to_index, tile_to_index),
         "self_kong_mask": encode_self_kong_mask(row, self_kong_to_index),
@@ -373,6 +385,30 @@ def encode_tile_planes(context: dict[str, Any], tile_to_index: dict[str, int]) -
     if last_discard in tile_to_index:
         planes[9, tile_to_index[last_discard]] = 1.0
     return planes
+
+
+def encode_discard_sequence(context: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:
+    sequence = np.zeros(
+        (DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT),
+        dtype=np.float32,
+    )
+    history = context.get("discard_history", [])
+    seat_index = int(context.get("seat_index", 0))
+    seat_count = max(1, int(context.get("seat_count", 4)))
+    retained = history[-DISCARD_SEQUENCE_LENGTH:]
+    start = DISCARD_SEQUENCE_LENGTH - len(retained)
+    for offset, event in enumerate(retained):
+        slot = start + offset
+        tile_index_value = tile_to_index.get(str(event.get("tile_key", "")))
+        if tile_index_value is not None:
+            sequence[slot, tile_index_value] = 1.0
+        event_seat = int(event.get("seat_index", seat_index))
+        relative_seat = (event_seat + seat_count - seat_index) % seat_count
+        if 0 <= relative_seat < 4:
+            sequence[slot, TILE_KIND_COUNT + relative_seat] = 1.0
+        sequence[slot, 38] = float(slot + 1) / float(DISCARD_SEQUENCE_LENGTH)
+        sequence[slot, 39] = 1.0 if offset == len(retained) - 1 else 0.0
+    return sequence
 
 
 def encode_scalar_features(context: dict[str, Any]) -> np.ndarray:

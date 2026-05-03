@@ -34,8 +34,9 @@ class OnnxWrapper(nn.Module):
         self,
         tile_planes: torch.Tensor,
         scalar_features: torch.Tensor,
+        discard_sequence: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
-        outputs = self.model(tile_planes, scalar_features)
+        outputs = self.model(tile_planes, scalar_features, discard_sequence)
         return tuple(outputs[name] for name in OUTPUT_NAMES)
 
 
@@ -50,10 +51,20 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     tile_plane_count = model.tile_plane_count
     scalar_count = model.scalar_feature_count
+    discard_sequence_length = model.discard_sequence_length
+    discard_event_feature_count = model.discard_event_feature_count
     dummy_tile_planes = torch.zeros((1, tile_plane_count, 34), dtype=torch.float32)
     dummy_scalar_features = torch.zeros((1, scalar_count), dtype=torch.float32)
-    export_inputs: tuple[torch.Tensor, ...] = (dummy_tile_planes, dummy_scalar_features)
-    input_names = ["tile_planes", "scalar_features"]
+    dummy_discard_sequence = torch.zeros(
+        (1, discard_sequence_length, discard_event_feature_count),
+        dtype=torch.float32,
+    )
+    export_inputs: tuple[torch.Tensor, ...] = (
+        dummy_tile_planes,
+        dummy_scalar_features,
+        dummy_discard_sequence,
+    )
+    input_names = ["tile_planes", "scalar_features", "discard_sequence"]
 
     torch.onnx.export(
         OnnxWrapper(model),
@@ -64,6 +75,7 @@ def main() -> None:
         dynamic_axes={
             "tile_planes": {0: "batch"},
             "scalar_features": {0: "batch"},
+            "discard_sequence": {0: "batch"},
             **{name: {0: "batch"} for name in OUTPUT_NAMES},
         },
         opset_version=args.opset,
@@ -73,6 +85,7 @@ def main() -> None:
         args.output,
         dummy_tile_planes,
         dummy_scalar_features,
+        dummy_discard_sequence,
     )
     write_export_manifest(args.output, args.checkpoint, checkpoint, model_config)
     print(f"exported {args.output}")
@@ -90,6 +103,7 @@ def smoke_onnxruntime(
     model_path: Path,
     tile_planes: torch.Tensor,
     scalar_features: torch.Tensor,
+    discard_sequence: torch.Tensor,
 ) -> None:
     try:
         import onnxruntime as ort
@@ -100,6 +114,7 @@ def smoke_onnxruntime(
     inputs = {
         "tile_planes": tile_planes.numpy(),
         "scalar_features": scalar_features.numpy(),
+        "discard_sequence": discard_sequence.numpy(),
     }
     outputs = session.run(OUTPUT_NAMES, inputs)
     expected_shapes = [(1, 34), (1, 7), (1, 3), (1, 2), (1, 1), (1, 34)]

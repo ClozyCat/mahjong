@@ -11,9 +11,9 @@
             "model_path": "backend/assets/history_models/ppo2.onnx"
         },
         {
-            "id": "ppo3",
+            "id": "ppo1",
             "mode": "neural",
-            "model_path": "backend/assets/history_models/ppo3.onnx"
+            "model_path": "backend/assets/history_models/ppo1.onnx"
         },
         {
             "id": "sft",

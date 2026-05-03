@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from model import ModelConfig, build_model, load_compatible_state_dict
+from model import ModelConfig, build_model
 from rl_dataset import ArenaTrajectoryDataset, trajectory_diagnostics
 
 
@@ -182,14 +182,12 @@ def load_checkpoint_if_present(model: torch.nn.Module, checkpoint: Path | None) 
         )
     payload = torch.load(checkpoint, map_location="cpu")
     state = payload.get("model_state", payload)
-    skipped = load_compatible_state_dict(model, state)
-    if skipped:
-        print(f"Skipped {len(skipped)} incompatible checkpoint tensor(s).")
+    model.load_state_dict(state)
 
 
 def model_config_from_checkpoint(checkpoint: Path | None) -> ModelConfig:
     if checkpoint is None or not checkpoint.exists():
-        return ModelConfig(tile_plane_count=10, scalar_feature_count=10)
+        return ModelConfig.from_dict({})
     payload = torch.load(checkpoint, map_location="cpu")
     return ModelConfig.from_dict(payload.get("model_config", {}))
 
@@ -221,7 +219,11 @@ def forward_model(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
-    return model(batch["tile_planes"].float(), batch["scalar_features"].float())
+    return model(
+        batch["tile_planes"].float(),
+        batch["scalar_features"].float(),
+        batch["discard_sequence"].float(),
+    )
 
 
 def select_action_entropy(

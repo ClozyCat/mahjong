@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dataset import IGNORE_INDEX, SCALAR_FEATURE_COUNT, encode_row
+from dataset import (
+    DISCARD_EVENT_FEATURE_COUNT,
+    DISCARD_SEQUENCE_LENGTH,
+    IGNORE_INDEX,
+    SCALAR_FEATURE_COUNT,
+    encode_row,
+)
 
 
 def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
@@ -15,8 +21,35 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
 
     assert encoded["tile_planes"].shape == (10, 34)
     assert encoded["scalar_features"].shape == (SCALAR_FEATURE_COUNT,)
+    assert encoded["discard_sequence"].shape == (
+        DISCARD_SEQUENCE_LENGTH,
+        DISCARD_EVENT_FEATURE_COUNT,
+    )
     assert encoded["discard_mask"].shape == (34,)
     assert encoded["discard_target"].item() == 0
+
+
+def test_discard_sequence_encodes_order_source_and_latest_marker(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["context"]["seat_index"] = 0
+    row["context"]["discard_history"] = [
+        {"seat_index": 1, "tile_key": "w3"},
+        {"seat_index": 2, "tile_key": "t5"},
+    ]
+
+    encoded = encode_row(row, metadata)
+    sequence = encoded["discard_sequence"]
+    previous = sequence[-2]
+    latest = sequence[-1]
+
+    assert previous[2].item() == 1.0
+    assert previous[34:38].tolist() == [0.0, 1.0, 0.0, 0.0]
+    assert previous[39].item() == 0.0
+    assert latest[13].item() == 1.0
+    assert latest[34:38].tolist() == [0.0, 0.0, 1.0, 0.0]
+    assert latest[39].item() == 1.0
 
 
 def test_scalar_features_use_standard_seat_wind_for_runtime_context(tmp_path: Path) -> None:
@@ -65,6 +98,11 @@ def test_dataset_reads_batches_from_disk_cache(tmp_path: Path) -> None:
     assert (tmp_path / "cache" / "train" / "tile_planes.npy").exists()
     assert batch["tile_planes"].shape == (1, 10, 34)
     assert batch["scalar_features"].shape == (1, SCALAR_FEATURE_COUNT)
+    assert batch["discard_sequence"].shape == (
+        1,
+        DISCARD_SEQUENCE_LENGTH,
+        DISCARD_EVENT_FEATURE_COUNT,
+    )
     assert batch["discard_target"].tolist() == [0]
     assert batch["discard_mask"].dtype == torch.bool
     assert loader_batch["discard_target"].tolist() == [0]
@@ -139,6 +177,44 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
     assert losses["value_loss"].item() > 1000.0
     assert losses["risk_loss"].item() > 100.0
     assert losses["loss"].item() < 0.1
+
+
+def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
+    from train import loss_weights_for_epoch
+
+    first = loss_weights_for_epoch(
+        epoch=1,
+        warmup_epochs=4,
+        claim_weight=1.0,
+        self_kong_weight=1.0,
+        hu_weight=1.0,
+        value_start=0.25,
+        value_target=0.75,
+        risk_start=0.25,
+        risk_target=1.0,
+        fan_start=0.25,
+        fan_target=0.5,
+    )
+    final = loss_weights_for_epoch(
+        epoch=4,
+        warmup_epochs=4,
+        claim_weight=1.0,
+        self_kong_weight=1.0,
+        hu_weight=1.0,
+        value_start=0.25,
+        value_target=0.75,
+        risk_start=0.25,
+        risk_target=1.0,
+        fan_start=0.25,
+        fan_target=0.5,
+    )
+
+    assert first["value_weight"] == 0.25
+    assert first["risk_weight"] == 0.25
+    assert first["fan_weight"] == 0.25
+    assert final["value_weight"] == 0.75
+    assert final["risk_weight"] == 1.0
+    assert final["fan_weight"] == 0.5
 
 
 def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:

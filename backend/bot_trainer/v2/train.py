@@ -16,7 +16,14 @@ try:
 except ModuleNotFoundError as exc:
     raise SystemExit("PyTorch is required: pip install torch") from exc
 
-from dataset import IGNORE_INDEX, MahjongDecisionDataset, SCALAR_FEATURE_COUNT, TILE_PLANE_COUNT
+from dataset import (
+    DISCARD_EVENT_FEATURE_COUNT,
+    DISCARD_SEQUENCE_LENGTH,
+    IGNORE_INDEX,
+    MahjongDecisionDataset,
+    SCALAR_FEATURE_COUNT,
+    TILE_PLANE_COUNT,
+)
 from model import ModelConfig, build_model
 
 CLAIM_ACTION_NAMES = ["pass", "hu", "pung", "kong", "chow_left", "chow_mid", "chow_right"]
@@ -73,19 +80,23 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
     print(f"device={device} amp={use_amp} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
-    loss_weights = {
-        "claim_weight": args.claim_loss_weight,
-        "self_kong_weight": args.self_kong_loss_weight,
-        "hu_weight": args.hu_loss_weight,
-        "value_weight": args.value_loss_weight,
-        "risk_weight": args.risk_loss_weight,
-        "fan_weight": args.fan_loss_weight,
-    }
-
     best_metric = math.inf
     best_metrics: dict[str, float] = {}
     
     for epoch in range(1, args.epochs + 1):
+        loss_weights = loss_weights_for_epoch(
+            epoch=epoch,
+            warmup_epochs=args.aux_loss_warmup_epochs,
+            claim_weight=args.claim_loss_weight,
+            self_kong_weight=args.self_kong_loss_weight,
+            hu_weight=args.hu_loss_weight,
+            value_start=args.value_loss_start_weight,
+            value_target=args.value_loss_weight,
+            risk_start=args.risk_loss_start_weight,
+            risk_target=args.risk_loss_weight,
+            fan_start=args.fan_loss_start_weight,
+            fan_target=args.fan_loss_weight,
+        )
         train_metrics = run_epoch(
             model, train_loader, optimizer, device, scaler, use_amp, 
             loss_weights=loss_weights,
@@ -152,15 +163,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--claim-loss-weight", type=float, default=1.0)
     parser.add_argument("--self-kong-loss-weight", type=float, default=1.0)
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
-    parser.add_argument("--value-loss-weight", type=float, default=0.25)
-    parser.add_argument("--risk-loss-weight", type=float, default=0.25)
-    parser.add_argument("--fan-loss-weight", type=float, default=0.25)
+    parser.add_argument("--value-loss-weight", type=float, default=0.75)
+    parser.add_argument("--risk-loss-weight", type=float, default=1.0)
+    parser.add_argument("--fan-loss-weight", type=float, default=0.5)
+    parser.add_argument("--value-loss-start-weight", type=float, default=0.25)
+    parser.add_argument("--risk-loss-start-weight", type=float, default=0.25)
+    parser.add_argument("--fan-loss-start-weight", type=float, default=0.25)
+    parser.add_argument("--aux-loss-warmup-epochs", type=int, default=4)
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
     return ModelConfig(
         tile_plane_count=TILE_PLANE_COUNT,
         scalar_feature_count=SCALAR_FEATURE_COUNT,
+        discard_sequence_length=DISCARD_SEQUENCE_LENGTH,
+        discard_event_feature_count=DISCARD_EVENT_FEATURE_COUNT,
     )
 
 def resolve_device(requested: str) -> torch.device:
@@ -292,6 +309,33 @@ def compute_losses(
         "fan_loss": fan_loss,
     }
 
+
+def loss_weights_for_epoch(
+    epoch: int,
+    warmup_epochs: int,
+    claim_weight: float,
+    self_kong_weight: float,
+    hu_weight: float,
+    value_start: float,
+    value_target: float,
+    risk_start: float,
+    risk_target: float,
+    fan_start: float,
+    fan_target: float,
+) -> dict[str, float]:
+    if warmup_epochs <= 1:
+        progress = 1.0
+    else:
+        progress = min(max(epoch - 1, 0), warmup_epochs - 1) / float(warmup_epochs - 1)
+    return {
+        "claim_weight": claim_weight,
+        "self_kong_weight": self_kong_weight,
+        "hu_weight": hu_weight,
+        "value_weight": value_start + (value_target - value_start) * progress,
+        "risk_weight": risk_start + (risk_target - risk_start) * progress,
+        "fan_weight": fan_start + (fan_target - fan_start) * progress,
+    }
+
 def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     active = target != IGNORE_INDEX
     if not torch.any(active):
@@ -304,7 +348,11 @@ def forward_model(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
-    return model(batch["tile_planes"].float(), batch["scalar_features"].float())
+    return model(
+        batch["tile_planes"].float(),
+        batch["scalar_features"].float(),
+        batch["discard_sequence"].float(),
+    )
 
 class MetricTotals:
     def __init__(self, device: torch.device) -> None:
@@ -468,6 +516,7 @@ def empty_metrics() -> dict[str, float]:
         "hu_loss": 0.0,
         "value_loss": 0.0,
         "risk_loss": 0.0,
+        "fan_loss": 0.0,
         "discard_top1": 0.0,
         "discard_top3": 0.0,
         "discard_top5": 0.0,

@@ -111,14 +111,23 @@ def validate_checkpoint_onnx_pair(
     if input_shapes:
         tile_shape = input_shapes.get("tile_planes") or []
         scalar_shape = input_shapes.get("scalar_features") or []
+        sequence_shape = input_shapes.get("discard_sequence") or []
         tile_plane_count = model_config.get("tile_plane_count")
         scalar_feature_count = model_config.get("scalar_feature_count")
+        discard_sequence_length = model_config.get("discard_sequence_length")
+        discard_event_feature_count = model_config.get("discard_event_feature_count")
         if tile_plane_count is not None and len(tile_shape) >= 2:
             if int(tile_shape[1]) != int(tile_plane_count):
                 raise ValueError("checkpoint/ONNX tile_plane_count mismatch")
         if scalar_feature_count is not None and len(scalar_shape) >= 2:
             if int(scalar_shape[1]) != int(scalar_feature_count):
                 raise ValueError("checkpoint/ONNX scalar_feature_count mismatch")
+        if discard_sequence_length is not None and len(sequence_shape) >= 2:
+            if int(sequence_shape[1]) != int(discard_sequence_length):
+                raise ValueError("checkpoint/ONNX discard_sequence_length mismatch")
+        if discard_event_feature_count is not None and len(sequence_shape) >= 3:
+            if int(sequence_shape[2]) != int(discard_event_feature_count):
+                raise ValueError("checkpoint/ONNX discard_event_feature_count mismatch")
     sidecar = onnx_info.get("sidecar")
     if sidecar:
         if sidecar.get("training_source") != checkpoint_info.get("training_source"):

@@ -6,11 +6,14 @@ use super::context::{BotContext, BotSelfKongKind, seat_wind_key};
 
 const TILE_PLANE_COUNT: usize = 10;
 const SCALAR_FEATURE_COUNT: usize = 12;
+const DISCARD_SEQUENCE_LENGTH: usize = 32;
+const DISCARD_EVENT_FEATURE_COUNT: usize = 40;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BotFeaturesV2 {
     pub(crate) tile_planes: Vec<f32>,
     pub(crate) scalar_features: Vec<f32>,
+    pub(crate) discard_sequence: Vec<f32>,
     pub(crate) discard_mask: [bool; TILE_KIND_COUNT],
     pub(crate) claim_mask: [bool; CLAIM_ACTION_COUNT],
     pub(crate) self_kong_mask: [bool; SELF_KONG_ACTION_COUNT],
@@ -21,6 +24,7 @@ pub(crate) fn encode_bot_context_v2(context: &BotContext) -> BotFeaturesV2 {
     BotFeaturesV2 {
         tile_planes: encode_tile_planes(context),
         scalar_features: encode_scalar_features(context),
+        discard_sequence: encode_discard_sequence(context),
         discard_mask: legal_discard_mask(context),
         claim_mask: legal_claim_mask(context),
         self_kong_mask: legal_self_kong_mask(context),
@@ -34,6 +38,14 @@ pub(crate) fn tile_plane_count_v2() -> usize {
 
 pub(crate) fn scalar_feature_count_v2() -> usize {
     SCALAR_FEATURE_COUNT
+}
+
+pub(crate) fn discard_sequence_length_v2() -> usize {
+    DISCARD_SEQUENCE_LENGTH
+}
+
+pub(crate) fn discard_event_feature_count_v2() -> usize {
+    DISCARD_EVENT_FEATURE_COUNT
 }
 
 fn encode_tile_planes(context: &BotContext) -> Vec<f32> {
@@ -89,6 +101,32 @@ fn encode_tile_planes(context: &BotContext) -> Vec<f32> {
     }
 
     planes
+}
+
+fn encode_discard_sequence(context: &BotContext) -> Vec<f32> {
+    let mut sequence = vec![0.0_f32; DISCARD_SEQUENCE_LENGTH * DISCARD_EVENT_FEATURE_COUNT];
+    let retained_len = context.discard_history.len().min(DISCARD_SEQUENCE_LENGTH);
+    let start_history = context.discard_history.len().saturating_sub(retained_len);
+    let start_slot = DISCARD_SEQUENCE_LENGTH - retained_len;
+    let seat_count = context.seat_count.max(1);
+
+    for (offset, event) in context.discard_history[start_history..].iter().enumerate() {
+        let slot = start_slot + offset;
+        let base = slot * DISCARD_EVENT_FEATURE_COUNT;
+        if let Some(index) = tile_index(&event.tile_key) {
+            sequence[base + index] = 1.0;
+        }
+        let relative_seat = (event.seat_index + seat_count - context.seat_index) % seat_count;
+        if relative_seat < 4 {
+            sequence[base + TILE_KIND_COUNT + relative_seat] = 1.0;
+        }
+        sequence[base + 38] = (slot + 1) as f32 / DISCARD_SEQUENCE_LENGTH as f32;
+        if offset + 1 == retained_len {
+            sequence[base + 39] = 1.0;
+        }
+    }
+
+    sequence
 }
 
 fn encode_scalar_features(context: &BotContext) -> Vec<f32> {
@@ -325,6 +363,10 @@ mod tests {
             tile_plane_count_v2() * TILE_KIND_COUNT
         );
         assert_eq!(encoded.scalar_features.len(), scalar_feature_count_v2());
+        assert_eq!(
+            encoded.discard_sequence.len(),
+            discard_sequence_length_v2() * discard_event_feature_count_v2()
+        );
         assert_eq!(encoded.claim_mask.len(), CLAIM_ACTION_COUNT);
         assert_eq!(encoded.self_kong_mask.len(), SELF_KONG_ACTION_COUNT);
         assert_eq!(encoded.hu_mask.len(), 2);
@@ -355,5 +397,31 @@ mod tests {
 
         assert_eq!(encoded.scalar_features[10], 3.0 / 3.0);
         assert_eq!(encoded.scalar_features[11], 0.0);
+    }
+
+    #[test]
+    fn discard_sequence_encodes_relative_source_and_latest_marker() {
+        let mut context = sample_context_with_tiles(&["w1", "t5", "red"]);
+        context.discard_history = vec![
+            crate::projection::bot_view::BotDiscardEventView {
+                seat_index: 1,
+                tile_key: "w3".to_string(),
+            },
+            crate::projection::bot_view::BotDiscardEventView {
+                seat_index: 2,
+                tile_key: "t5".to_string(),
+            },
+        ];
+
+        let encoded = encode_bot_context_v2(&context);
+        let previous = (DISCARD_SEQUENCE_LENGTH - 2) * DISCARD_EVENT_FEATURE_COUNT;
+        let latest = (DISCARD_SEQUENCE_LENGTH - 1) * DISCARD_EVENT_FEATURE_COUNT;
+
+        assert_eq!(encoded.discard_sequence[previous + tile_index("w3").unwrap()], 1.0);
+        assert_eq!(encoded.discard_sequence[previous + TILE_KIND_COUNT + 1], 1.0);
+        assert_eq!(encoded.discard_sequence[previous + 39], 0.0);
+        assert_eq!(encoded.discard_sequence[latest + tile_index("t5").unwrap()], 1.0);
+        assert_eq!(encoded.discard_sequence[latest + TILE_KIND_COUNT + 2], 1.0);
+        assert_eq!(encoded.discard_sequence[latest + 39], 1.0);
     }
 }
