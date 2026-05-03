@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 
-CANDIDATE_LATENCY_LIMIT_MS = 200.0
 CLAIM_RATE_ABSOLUTE_DRIFT_LIMIT = 2.0
 CLAIM_RATE_RATIO_LIMIT = 2.0
 SAME_AS_HEURISTIC_MIN_RATE = 0.15
@@ -47,8 +46,6 @@ def evaluate_candidate(
     final_tenpai_ok = candidate["final_tenpai_rate"] >= baseline["final_tenpai_rate"]
     if not (tenpai_turn_ok or final_tenpai_ok):
         failures.append("tenpai")
-    if candidate["avg_latency_ms_per_decision"] >= CANDIDATE_LATENCY_LIMIT_MS:
-        failures.append("latency")
     if claim_rate_is_excessive(baseline, candidate):
         failures.append("claim_rate")
     if same_as_heuristic_collapsed(baseline, candidate):

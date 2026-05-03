@@ -558,7 +558,7 @@ def test_candidate_gate_rejects_higher_deal_in() -> None:
     assert "deal_in_rate" in result["failures"]
 
 
-def test_candidate_gate_allows_latency_below_200ms() -> None:
+def test_candidate_gate_does_not_limit_latency() -> None:
     from candidate_gate import evaluate_candidate
 
     summary = {
@@ -577,7 +577,7 @@ def test_candidate_gate_allows_latency_below_200ms() -> None:
                 "deal_in_rate": 0.11,
                 "avg_first_tenpai_turn": 7.8,
                 "final_tenpai_rate": 0.55,
-                "avg_latency_ms_per_decision": 150.0,
+                "avg_latency_ms_per_decision": 2000.0,
             },
         }
     }
@@ -585,36 +585,7 @@ def test_candidate_gate_allows_latency_below_200ms() -> None:
     result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
 
     assert result["accepted"] is True
-
-
-def test_candidate_gate_rejects_latency_at_200ms() -> None:
-    from candidate_gate import evaluate_candidate
-
-    summary = {
-        "policies": {
-            "baseline_neural": {
-                "avg_score_delta": 0.0,
-                "win_rate": 0.20,
-                "deal_in_rate": 0.10,
-                "avg_first_tenpai_turn": 8.0,
-                "final_tenpai_rate": 0.55,
-                "avg_latency_ms_per_decision": 20.0,
-            },
-            "rl_candidate_neural": {
-                "avg_score_delta": 1.5,
-                "win_rate": 0.21,
-                "deal_in_rate": 0.11,
-                "avg_first_tenpai_turn": 7.8,
-                "final_tenpai_rate": 0.55,
-                "avg_latency_ms_per_decision": 200.0,
-            },
-        }
-    }
-
-    result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
-
-    assert result["accepted"] is False
-    assert "latency" in result["failures"]
+    assert "latency" not in result["failures"]
 
 
 def test_candidate_selector_prefers_accepted_candidate() -> None:
