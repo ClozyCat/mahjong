@@ -1124,6 +1124,8 @@ mod tests {
             table_code: "ROOM7P".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: (0..4)
                 .map(|seat_index| SeatState {
                     seat_index,

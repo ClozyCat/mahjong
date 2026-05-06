@@ -251,6 +251,8 @@ pub fn arena_room(table_code: &str) -> RoomState {
         table_code: table_code.to_string(),
         phase: "waiting".to_string(),
         mode: "normal".to_string(),
+        owner_user_id: None,
+        multiplier: 1,
         seats: (0..4)
             .map(|seat_index| SeatState {
                 seat_index,

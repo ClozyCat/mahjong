@@ -58,6 +58,8 @@ pub(crate) struct CreateTableResponsePayload {
     pub(crate) table_code: String,
     pub(crate) phase: String,
     pub(crate) mode: String,
+    pub(crate) owner_user_id: Option<i64>,
+    pub(crate) multiplier: i64,
     pub(crate) created_at: String,
     pub(crate) seats: Vec<SeatState>,
 }
@@ -215,6 +217,8 @@ pub(crate) fn leave_table_accepted_message(table_code: &str, seat_index: usize) 
 pub(crate) fn create_table_response(
     table_code: &str,
     mode: &str,
+    owner_user_id: Option<i64>,
+    multiplier: i64,
     created_at: &str,
     seats: Vec<SeatState>,
 ) -> Value {
@@ -222,6 +226,8 @@ pub(crate) fn create_table_response(
         table_code: table_code.to_string(),
         phase: "waiting".to_string(),
         mode: mode.to_string(),
+        owner_user_id,
+        multiplier,
         created_at: created_at.to_string(),
         seats,
     })
@@ -230,6 +236,8 @@ pub(crate) fn create_table_response(
             "table_code": table_code,
             "phase": "waiting",
             "mode": mode,
+            "owner_user_id": owner_user_id,
+            "multiplier": multiplier,
             "created_at": created_at,
             "seats": [],
         })

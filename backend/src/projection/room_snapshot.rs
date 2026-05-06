@@ -830,6 +830,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "settlement".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
@@ -896,6 +898,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -957,6 +961,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1011,6 +1017,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1052,6 +1060,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1094,6 +1104,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1135,6 +1147,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1183,6 +1197,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1257,6 +1273,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: phase.to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {

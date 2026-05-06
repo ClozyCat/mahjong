@@ -2432,6 +2432,8 @@ mod tests {
             table_code: "ROOM99".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {

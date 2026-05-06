@@ -24,8 +24,8 @@ use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_pe
 use super::users::{PublicUserView, public_user_view};
 use super::ws::websocket_handler;
 use super::{
-    AppContext, CreateTableRequest, Settings, initial_room_state, is_valid_table_code,
-    normalize_table_code, now_iso, parse_room_json, serialize_room_state,
+    AppContext, CreateTableRequest, Settings, initial_room_state_with_owner, is_valid_table_code,
+    normalize_table_code, now_iso, parse_room_json, room_phase, serialize_room_state,
 };
 use crate::core::state::RoomState;
 
@@ -60,6 +60,11 @@ struct UpdateMeRequest {
     avatar: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct UpdateMultiplierRequest {
+    multiplier: i64,
+}
+
 #[derive(Debug, Serialize)]
 struct AuthResponse {
     session_token: String,
@@ -89,6 +94,7 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/auth/logout", post(logout))
         .route("/api/me", get(get_me).patch(update_me))
         .route("/api/tables", post(create_table))
+        .route("/api/tables/{table_code}/multiplier", axum::routing::patch(update_table_multiplier))
         .route("/ws/{table_code}", get(websocket_handler))
         .with_state(app_state)
         .layer(build_cors_layer(&settings.cors_origins));
@@ -313,8 +319,13 @@ async fn update_me(
 
 async fn create_table(
     State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
     payload: Option<Json<CreateTableRequest>>,
 ) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
     let payload = payload.map(|value| value.0);
     let requested_code = match payload
         .as_ref()
@@ -330,8 +341,21 @@ async fn create_table(
         }
         value => value,
     };
+    let multiplier = match payload
+        .as_ref()
+        .and_then(|body| body.multiplier)
+        .unwrap_or(1)
+    {
+        1..=3 => payload
+            .as_ref()
+            .and_then(|body| body.multiplier)
+            .unwrap_or(1),
+        _ => return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_multiplier"),
+    };
 
-    let result = create_or_replace_table(&state, requested_code).await;
+    let result =
+        create_or_replace_table(&state, requested_code, authenticated_user.user_id, multiplier)
+            .await;
 
     match result {
         Ok((table_code, created_at, room)) => (
@@ -339,6 +363,8 @@ async fn create_table(
             Json(create_table_response(
                 &table_code,
                 "normal",
+                room.owner_user_id,
+                room.multiplier,
                 &created_at,
                 room.seats,
             )),
@@ -360,6 +386,8 @@ async fn create_table(
 async fn create_or_replace_table(
     state: &AppContext,
     requested_code: Option<String>,
+    owner_user_id: i64,
+    multiplier: i64,
 ) -> std::result::Result<(String, String, RoomState), CreateTableError> {
     let mut rooms = state.inner.rooms.write().await;
     let runtime_codes: HashSet<String> = rooms.keys().cloned().collect();
@@ -396,7 +424,7 @@ async fn create_or_replace_table(
     drop(rooms);
 
     let created_at = now_iso();
-    let room = initial_room_state(&table_code);
+    let room = initial_room_state_with_owner(&table_code, Some(owner_user_id), multiplier);
     let room_json = serialize_room_state(&room).map_err(CreateTableError::Internal)?;
     state
         .inner
@@ -418,6 +446,68 @@ async fn create_or_replace_table(
     }
 
     Ok((table_code, created_at, room))
+}
+
+async fn update_table_multiplier(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(table_code): axum::extract::Path<String>,
+    Json(payload): Json<UpdateMultiplierRequest>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    if !(1..=3).contains(&payload.multiplier) {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_multiplier");
+    }
+
+    let table_code = normalize_table_code(&table_code);
+    let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &table_code)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    }
+
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if runtime.room.owner_user_id != Some(authenticated_user.user_id) {
+        return json_error(StatusCode::FORBIDDEN, "only_owner_can_change_multiplier");
+    }
+    if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
+        return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
+    }
+
+    runtime.room.multiplier = payload.multiplier;
+    let room = runtime.room.clone();
+    let created_at = runtime.created_at.clone();
+    drop(runtime);
+
+    let room_json = match serialize_room_state(&room) {
+        Ok(room_json) => room_json,
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(&table_code, &created_at, &room_json)
+        .await
+    {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+    }
+
+    Json(json!({
+        "table_code": table_code,
+        "owner_user_id": room.owner_user_id,
+        "multiplier": room.multiplier,
+        "phase": room.phase,
+    }))
+    .into_response()
 }
 
 async fn require_authenticated_user(

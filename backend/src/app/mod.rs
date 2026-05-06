@@ -6,6 +6,8 @@ pub(crate) mod scheduler;
 pub(crate) mod server;
 #[cfg(test)]
 mod server_auth_tests;
+#[cfg(test)]
+mod server_table_tests;
 pub(crate) mod users;
 pub(crate) mod ws;
 
@@ -124,6 +126,7 @@ pub(crate) struct OutboundMessage {
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreateTableRequest {
     pub(crate) table_code: Option<String>,
+    pub(crate) multiplier: Option<i64>,
 }
 
 pub(crate) fn optional_env_value(key: &str) -> Option<String> {
@@ -183,10 +186,20 @@ pub(crate) fn serialize_payload<T: Serialize>(payload: &T) -> String {
 }
 
 pub(crate) fn initial_room_state(table_code: &str) -> RoomState {
+    initial_room_state_with_owner(table_code, None, 1)
+}
+
+pub(crate) fn initial_room_state_with_owner(
+    table_code: &str,
+    owner_user_id: Option<i64>,
+    multiplier: i64,
+) -> RoomState {
     RoomState {
         table_code: table_code.to_string(),
         phase: "waiting".to_string(),
         mode: "normal".to_string(),
+        owner_user_id,
+        multiplier,
         seats: Vec::new(),
         match_state: None,
         round_state: None,
@@ -662,6 +675,8 @@ mod tests {
             table_code: "ABCD".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),

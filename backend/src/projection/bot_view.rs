@@ -146,6 +146,8 @@ mod tests {
             table_code: "ROOM42".to_string(),
             phase: "playing".to_string(),
             mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
             seats: Vec::new(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
