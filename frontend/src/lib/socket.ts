@@ -36,6 +36,15 @@ export function createJoinTableMessage(nickname: string): ClientMessage {
   };
 }
 
+export function createWatchTableMessage(nickname: string): ClientMessage {
+  return {
+    type: 'watch_table',
+    payload: {
+      nickname,
+    },
+  };
+}
+
 export function createReconnectMessage(reconnectToken: string): ClientMessage {
   return {
     type: 'reconnect',

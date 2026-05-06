@@ -16,8 +16,6 @@ use crate::core::state::RoomState;
 use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state;
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
-
-#[cfg(feature = "spectator")]
 pub(crate) type SpectatorConnections = Vec<(u64, ConnectionHandle)>;
 
 pub(crate) struct RoomHandle {
@@ -38,7 +36,6 @@ pub(crate) struct RoomRuntime {
     pub(crate) created_at: String,
     pub(crate) room: RoomState,
     pub(crate) connections: HashMap<usize, SeatConnectionGroup>,
-    #[cfg(feature = "spectator")]
     pub(crate) spectator_connections: HashMap<u64, ConnectionHandle>,
     pub(crate) timeout_nonce: u64,
     pub(crate) continue_nonce: u64,
@@ -65,7 +62,6 @@ impl RoomRuntime {
             created_at,
             room,
             connections: HashMap::new(),
-            #[cfg(feature = "spectator")]
             spectator_connections: HashMap::new(),
             timeout_nonce: 0,
             continue_nonce: 0,
@@ -121,7 +117,6 @@ pub(crate) fn close_runtime(runtime: &mut RoomRuntime) {
         }
     }
     runtime.connections.clear();
-    #[cfg(feature = "spectator")]
     {
         for connection in runtime.spectator_connections.values() {
             connection.request_close();
@@ -235,10 +230,13 @@ pub(crate) fn add_seat_connection(
     user_id: Option<i64>,
     connection: &ConnectionHandle,
 ) {
-    let group = runtime.connections.entry(seat_index).or_insert_with(|| SeatConnectionGroup {
-        user_id,
-        connections: HashMap::new(),
-    });
+    let group = runtime
+        .connections
+        .entry(seat_index)
+        .or_insert_with(|| SeatConnectionGroup {
+            user_id,
+            connections: HashMap::new(),
+        });
     if group.user_id.is_none() && user_id.is_some() {
         group.user_id = user_id;
     }
@@ -326,8 +324,6 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
         })
         .collect()
 }
-
-#[cfg(feature = "spectator")]
 pub(crate) fn replace_spectator_connection(
     runtime: &mut RoomRuntime,
     spectator_id: u64,
@@ -342,8 +338,6 @@ pub(crate) fn replace_spectator_connection(
         }
     }
 }
-
-#[cfg(feature = "spectator")]
 pub(crate) fn snapshot_spectator_connections(runtime: &RoomRuntime) -> SpectatorConnections {
     runtime
         .spectator_connections
@@ -351,8 +345,6 @@ pub(crate) fn snapshot_spectator_connections(runtime: &RoomRuntime) -> Spectator
         .map(|(spectator_id, handle)| (*spectator_id, handle.clone()))
         .collect()
 }
-
-#[cfg(feature = "spectator")]
 pub(crate) fn remove_spectator_connection(
     runtime: &mut RoomRuntime,
     spectator_id: u64,

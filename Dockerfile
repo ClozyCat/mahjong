@@ -1,8 +1,5 @@
 FROM node:22-bookworm-slim AS frontend-builder
 
-ARG MAHJONG_ENABLE_SPECTATOR=true
-ENV MAHJONG_ENABLE_SPECTATOR=${MAHJONG_ENABLE_SPECTATOR}
-
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -15,7 +12,6 @@ RUN npm run build
 
 FROM rust:1.94-bookworm AS rust-backend-builder
 
-ARG MAHJONG_ENABLE_SPECTATOR=true
 ARG ONNXRUNTIME_VERSION=1.24.2
 
 WORKDIR /app/backend
@@ -37,11 +33,7 @@ RUN apt-get update \
     && tar -xzf /tmp/onnxruntime.tgz --strip-components=1 -C /opt/onnxruntime \
     && rm /tmp/onnxruntime.tgz
 COPY backend/ ./
-RUN if [ "$MAHJONG_ENABLE_SPECTATOR" = "true" ]; then \
-      cargo build --release --features spectator; \
-    else \
-      cargo build --release; \
-    fi
+RUN cargo build --release
 
 
 FROM debian:bookworm-slim AS backend-runtime

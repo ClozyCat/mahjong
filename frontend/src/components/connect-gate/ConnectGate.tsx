@@ -166,7 +166,7 @@ export function ConnectGate({
             </button>
           </div>
 
-          {__SPECTATOR_ENABLED__ && onWatch && (
+          {onWatch && (
             <div className="connect-gate__spectate-action">
               <button
                 type="button"

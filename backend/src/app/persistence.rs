@@ -56,6 +56,17 @@ pub(crate) struct TableInviteRecord {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct SpectatorRequestRecord {
+    pub(crate) id: i64,
+    pub(crate) table_code: String,
+    pub(crate) requester_user_id: i64,
+    pub(crate) owner_user_id: i64,
+    pub(crate) status: String,
+    pub(crate) created_at: String,
+    pub(crate) decided_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct UserRecord {
     pub(crate) user_id: i64,
     pub(crate) username: String,
@@ -229,6 +240,12 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_table_invites_invitee_status
             ON table_invites(invitee_user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_spectator_requests_owner_status
+            ON spectator_requests(owner_user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_spectator_requests_requester_table
+            ON spectator_requests(requester_user_id, table_code, status);
 
             CREATE INDEX IF NOT EXISTS idx_game_records_table_code
             ON game_records(table_code, ended_at);
@@ -407,6 +424,18 @@ impl Database {
                 accepted_at TEXT,
                 FOREIGN KEY(inviter_user_id) REFERENCES users(id),
                 FOREIGN KEY(invitee_user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS spectator_requests (
+                id INTEGER PRIMARY KEY,
+                table_code TEXT NOT NULL,
+                requester_user_id INTEGER NOT NULL,
+                owner_user_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                decided_at TEXT,
+                FOREIGN KEY(requester_user_id) REFERENCES users(id),
+                FOREIGN KEY(owner_user_id) REFERENCES users(id)
             );
             ",
         )?;
@@ -609,7 +638,10 @@ impl Database {
         Ok(())
     }
 
-    fn get_table_room_json_with_conn(conn: &Connection, table_code: &str) -> Result<Option<String>> {
+    fn get_table_room_json_with_conn(
+        conn: &Connection,
+        table_code: &str,
+    ) -> Result<Option<String>> {
         conn.query_row(
             "SELECT room_json FROM tables WHERE table_code = ?1",
             params![table_code],
@@ -799,6 +831,20 @@ impl Database {
             created_at: row.get(5)?,
             expires_at: row.get(6)?,
             accepted_at: row.get(7)?,
+        })
+    }
+
+    fn spectator_request_from_row(
+        row: &rusqlite::Row<'_>,
+    ) -> rusqlite::Result<SpectatorRequestRecord> {
+        Ok(SpectatorRequestRecord {
+            id: row.get(0)?,
+            table_code: row.get(1)?,
+            requester_user_id: row.get(2)?,
+            owner_user_id: row.get(3)?,
+            status: row.get(4)?,
+            created_at: row.get(5)?,
+            decided_at: row.get(6)?,
         })
     }
 
@@ -1129,7 +1175,13 @@ impl Database {
                 updated_at = ?5
             WHERE id = ?1
             ",
-            params![user_id, next_display_name, next_bio, next_avatar, updated_at],
+            params![
+                user_id,
+                next_display_name,
+                next_bio,
+                next_avatar,
+                updated_at
+            ],
         )?;
         self.get_user_by_id(user_id)
     }
@@ -1342,6 +1394,115 @@ impl Database {
             .query_map(params![user_id, now], Self::table_invite_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    fn create_spectator_request(
+        &self,
+        table_code: &str,
+        requester_user_id: i64,
+        owner_user_id: i64,
+        created_at: &str,
+    ) -> Result<SpectatorRequestRecord> {
+        self.conn.execute(
+            "
+            INSERT INTO spectator_requests (
+                table_code,
+                requester_user_id,
+                owner_user_id,
+                status,
+                created_at
+            )
+            VALUES (?1, ?2, ?3, 'pending', ?4)
+            ",
+            params![table_code, requester_user_id, owner_user_id, created_at],
+        )?;
+        let request_id = self.conn.last_insert_rowid();
+        self.get_spectator_request(request_id)?
+            .ok_or_else(|| anyhow!("created spectator request should exist"))
+    }
+
+    fn get_spectator_request(&self, request_id: i64) -> Result<Option<SpectatorRequestRecord>> {
+        self.conn
+            .query_row(
+                "
+                SELECT id, table_code, requester_user_id, owner_user_id, status, created_at, decided_at
+                FROM spectator_requests
+                WHERE id = ?1
+                ",
+                params![request_id],
+                Self::spectator_request_from_row,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn list_pending_spectator_requests_for_owner(
+        &self,
+        owner_user_id: i64,
+    ) -> Result<Vec<SpectatorRequestRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT id, table_code, requester_user_id, owner_user_id, status, created_at, decided_at
+            FROM spectator_requests
+            WHERE owner_user_id = ?1
+              AND status = 'pending'
+            ORDER BY created_at DESC
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![owner_user_id], Self::spectator_request_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn decide_spectator_request(
+        &self,
+        request_id: i64,
+        owner_user_id: i64,
+        approved: bool,
+        decided_at: &str,
+    ) -> Result<Option<SpectatorRequestRecord>> {
+        let status = if approved { "approved" } else { "rejected" };
+        let rows_affected = self.conn.execute(
+            "
+            UPDATE spectator_requests
+            SET status = ?3,
+                decided_at = ?4
+            WHERE id = ?1
+              AND owner_user_id = ?2
+              AND status = 'pending'
+            ",
+            params![request_id, owner_user_id, status, decided_at],
+        )?;
+        if rows_affected != 1 {
+            return Ok(None);
+        }
+        self.get_spectator_request(request_id)
+    }
+
+    fn has_approved_spectator_request(
+        &self,
+        table_code: &str,
+        requester_user_id: i64,
+    ) -> Result<bool> {
+        let approved = self
+            .conn
+            .query_row(
+                "
+                SELECT 1
+                FROM spectator_requests
+                WHERE table_code = ?1
+                  AND requester_user_id = ?2
+                  AND status = 'approved'
+                ORDER BY id DESC
+                LIMIT 1
+                ",
+                params![table_code, requester_user_id],
+                |_row| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        Ok(approved)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2037,7 +2198,13 @@ impl DbWorker {
         let room_json = room_json.to_string();
         let left_at = left_at.to_string();
         self.call(move |db| {
-            db.save_table_and_delete_tokens_for_seat(&table_code, &created_at, &room_json, seat_index, &left_at)
+            db.save_table_and_delete_tokens_for_seat(
+                &table_code,
+                &created_at,
+                &room_json,
+                seat_index,
+                &left_at,
+            )
         })
         .await
     }
@@ -2094,6 +2261,61 @@ impl DbWorker {
             .await
     }
 
+    pub(crate) async fn create_spectator_request(
+        &self,
+        table_code: &str,
+        requester_user_id: i64,
+        owner_user_id: i64,
+        created_at: &str,
+    ) -> Result<SpectatorRequestRecord> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        self.call(move |db| {
+            db.create_spectator_request(&table_code, requester_user_id, owner_user_id, &created_at)
+        })
+        .await
+    }
+
+    pub(crate) async fn get_spectator_request(
+        &self,
+        request_id: i64,
+    ) -> Result<Option<SpectatorRequestRecord>> {
+        self.call(move |db| db.get_spectator_request(request_id))
+            .await
+    }
+
+    pub(crate) async fn list_pending_spectator_requests_for_owner(
+        &self,
+        owner_user_id: i64,
+    ) -> Result<Vec<SpectatorRequestRecord>> {
+        self.call(move |db| db.list_pending_spectator_requests_for_owner(owner_user_id))
+            .await
+    }
+
+    pub(crate) async fn decide_spectator_request(
+        &self,
+        request_id: i64,
+        owner_user_id: i64,
+        approved: bool,
+        decided_at: &str,
+    ) -> Result<Option<SpectatorRequestRecord>> {
+        let decided_at = decided_at.to_string();
+        self.call(move |db| {
+            db.decide_spectator_request(request_id, owner_user_id, approved, &decided_at)
+        })
+        .await
+    }
+
+    pub(crate) async fn has_approved_spectator_request(
+        &self,
+        table_code: &str,
+        requester_user_id: i64,
+    ) -> Result<bool> {
+        let table_code = table_code.to_string();
+        self.call(move |db| db.has_approved_spectator_request(&table_code, requester_user_id))
+            .await
+    }
+
     pub(crate) async fn get_active_table_participant(
         &self,
         table_code: &str,
@@ -2139,8 +2361,10 @@ impl DbWorker {
     ) -> Result<()> {
         let table_code = table_code.to_string();
         let left_at = left_at.to_string();
-        self.call(move |db| db.mark_table_participant_left_by_seat(&table_code, seat_index, &left_at))
-            .await
+        self.call(move |db| {
+            db.mark_table_participant_left_by_seat(&table_code, seat_index, &left_at)
+        })
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2243,7 +2467,10 @@ impl DbWorker {
         .await
     }
 
-    pub(crate) async fn find_user_by_identifier(&self, identifier: &str) -> Result<Option<UserRecord>> {
+    pub(crate) async fn find_user_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> Result<Option<UserRecord>> {
         let identifier = identifier.to_string();
         self.call(move |db| db.find_user_by_identifier(&identifier))
             .await
@@ -2261,7 +2488,11 @@ impl DbWorker {
             .await
     }
 
-    pub(crate) async fn revoke_auth_session(&self, token_hash: &str, revoked_at: &str) -> Result<bool> {
+    pub(crate) async fn revoke_auth_session(
+        &self,
+        token_hash: &str,
+        revoked_at: &str,
+    ) -> Result<bool> {
         let token_hash = token_hash.to_string();
         let revoked_at = revoked_at.to_string();
         self.call(move |db| db.revoke_auth_session(&token_hash, &revoked_at))
@@ -2316,7 +2547,10 @@ impl DbWorker {
         .await
     }
 
-    pub(crate) async fn archive_round(&self, input: ArchiveRoundInput) -> Result<ArchiveRoundOutcome> {
+    pub(crate) async fn archive_round(
+        &self,
+        input: ArchiveRoundInput,
+    ) -> Result<ArchiveRoundOutcome> {
         self.call(move |db| db.archive_round(&input)).await
     }
 
@@ -2333,7 +2567,8 @@ impl DbWorker {
         user_id: i64,
         limit: usize,
     ) -> Result<Vec<GameSummaryRecord>> {
-        self.call(move |db| db.list_games_for_user(user_id, limit)).await
+        self.call(move |db| db.list_games_for_user(user_id, limit))
+            .await
     }
 
     pub(crate) async fn list_user_fan_stats(&self, user_id: i64) -> Result<Vec<UserFanStatRecord>> {

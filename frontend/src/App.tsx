@@ -26,6 +26,7 @@ import {
   createSetBotTakeoverMessage,
   createStartMatchMessage,
   createStartNextRoundMessage,
+  createWatchTableMessage,
   parseServerMessage,
   serializeClientMessage,
 } from './lib/socket';
@@ -389,8 +390,8 @@ export default function App() {
       socket.onopen = () => {
         void (async () => {
           const message =
-            __SPECTATOR_ENABLED__ && mode === 'spectator'
-              ? (await import('./features/spectator/socket')).createWatchTableMessage(nickname)
+            mode === 'spectator'
+              ? createWatchTableMessage(nickname)
               : reconnect && reconnectToken
                 ? createReconnectMessage(reconnectToken)
                 : createJoinTableMessage(nickname);
@@ -424,7 +425,7 @@ export default function App() {
           handleLeaveToLobby(current.tableCode);
           return;
         }
-        if (__SPECTATOR_ENABLED__ && current.clientMode === 'spectator') {
+        if (current.clientMode === 'spectator') {
           handleLeaveToLobby(current.tableCode, '观战连接已断开。');
           return;
         }
@@ -527,12 +528,11 @@ export default function App() {
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
   const canWatch =
-    __SPECTATOR_ENABLED__ &&
     state.connectionStatus !== 'connecting' &&
     state.connectionStatus !== 'reconnecting' &&
     normalizedRequestedTableCode.length > 0 &&
     tableCodeError === null;
-  const isSpectator = __SPECTATOR_ENABLED__ && state.clientMode === 'spectator';
+  const isSpectator = state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
     isSpectator
@@ -588,7 +588,7 @@ export default function App() {
   }, [dismissedLocalSelfHuPromptSignature, localSelfHuPromptSignature]);
 
   useEffect(() => {
-    if (!__SPECTATOR_ENABLED__ || !isSpectator || !state.roomSnapshot) {
+    if (!isSpectator || !state.roomSnapshot) {
       return;
     }
 
@@ -681,10 +681,6 @@ export default function App() {
   }
 
   function handleWatch() {
-    if (!__SPECTATOR_ENABLED__) {
-      return;
-    }
-
     if (!connectValue.tableCode.trim()) {
       setStatusMessage('观战前请先填写牌桌编号。');
       return;
@@ -1038,7 +1034,7 @@ export default function App() {
         }}
         onCreate={handleCreate}
         onJoin={handleJoin}
-        onWatch={__SPECTATOR_ENABLED__ ? handleWatch : undefined}
+        onWatch={handleWatch}
       />
     );
   }
@@ -1073,7 +1069,7 @@ export default function App() {
       onQuickChat={handleQuickChat}
       isSpectator={isSpectator}
       spectatorFocusName={spectatorFocusName}
-      onSwitchSpectatorPerspective={__SPECTATOR_ENABLED__ && isSpectator ? handleSwitchSpectatorPerspective : undefined}
+      onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}
     />
   );
 }

@@ -15,8 +15,8 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 
 use super::auth::{
-    AuthenticatedUser, bearer_token, beijing_local_date, generate_session_token,
-    hash_password, hash_session_token, verify_password,
+    AuthenticatedUser, bearer_token, beijing_local_date, generate_session_token, hash_password,
+    hash_session_token, verify_password,
 };
 use super::invites::{InviteAvailability, invite_availability, invite_expires_at};
 use super::persistence::{Database, DbWorker};
@@ -100,6 +100,17 @@ struct AcceptInviteResponse {
     status: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct SpectatorRequestResponse {
+    id: i64,
+    table_code: String,
+    requester_user_id: i64,
+    owner_user_id: i64,
+    status: String,
+    created_at: String,
+    decided_at: Option<String>,
+}
+
 pub(crate) async fn run() -> Result<()> {
     let settings = Settings::from_env()?;
     let db = DbWorker::start(Database::open(&settings.database_path)?)?;
@@ -128,10 +139,29 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/users/{user_id}/fans", get(list_user_fans))
         .route("/api/leaderboard", get(get_leaderboard))
         .route("/api/me/invites", get(get_my_invites))
+        .route("/api/me/spectator-requests", get(get_my_spectator_requests))
         .route("/api/tables", post(create_table))
-        .route("/api/tables/{table_code}/invites", post(create_table_invite))
-        .route("/api/tables/{table_code}/multiplier", axum::routing::patch(update_table_multiplier))
+        .route(
+            "/api/tables/{table_code}/invites",
+            post(create_table_invite),
+        )
+        .route(
+            "/api/tables/{table_code}/spectator-requests",
+            post(create_spectator_request),
+        )
+        .route(
+            "/api/tables/{table_code}/multiplier",
+            axum::routing::patch(update_table_multiplier),
+        )
         .route("/api/invites/{invite_id}/accept", post(accept_table_invite))
+        .route(
+            "/api/spectator-requests/{request_id}/approve",
+            post(approve_spectator_request),
+        )
+        .route(
+            "/api/spectator-requests/{request_id}/reject",
+            post(reject_spectator_request),
+        )
         .route("/ws/me", get(social_websocket_handler))
         .route("/ws/{table_code}", get(websocket_handler))
         .with_state(app_state)
@@ -313,7 +343,12 @@ async fn get_me(State(state): State<AppContext>, headers: axum::http::HeaderMap)
         Ok(user) => user,
         Err(response) => return response,
     };
-    match state.inner.db.get_user_by_id(authenticated_user.user_id).await {
+    match state
+        .inner
+        .db
+        .get_user_by_id(authenticated_user.user_id)
+        .await
+    {
         Ok(Some(user)) => Json(public_user_view(&user)).into_response(),
         Ok(None) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
@@ -357,13 +392,7 @@ async fn update_me(
 
 async fn list_games(State(state): State<AppContext>) -> Response {
     match state.inner.db.list_game_summaries(50).await {
-        Ok(games) => Json(
-            games
-                .iter()
-                .map(game_summary_view)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(games) => Json(games.iter().map(game_summary_view).collect::<Vec<_>>()).into_response(),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }
@@ -386,17 +415,19 @@ async fn list_user_games(
     State(state): State<AppContext>,
     axum::extract::Path(user_id): axum::extract::Path<i64>,
 ) -> Response {
-    if state.inner.db.get_user_by_id(user_id).await.ok().flatten().is_none() {
+    if state
+        .inner
+        .db
+        .get_user_by_id(user_id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
         return json_error(StatusCode::NOT_FOUND, "user_not_found");
     }
     match state.inner.db.list_games_for_user(user_id, 50).await {
-        Ok(games) => Json(
-            games
-                .iter()
-                .map(game_summary_view)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(games) => Json(games.iter().map(game_summary_view).collect::<Vec<_>>()).into_response(),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }
@@ -405,7 +436,15 @@ async fn list_user_fans(
     State(state): State<AppContext>,
     axum::extract::Path(user_id): axum::extract::Path<i64>,
 ) -> Response {
-    if state.inner.db.get_user_by_id(user_id).await.ok().flatten().is_none() {
+    if state
+        .inner
+        .db
+        .get_user_by_id(user_id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
         return json_error(StatusCode::NOT_FOUND, "user_not_found");
     }
     match state.inner.db.list_user_fan_stats(user_id).await {
@@ -457,9 +496,13 @@ async fn create_table(
         _ => return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_multiplier"),
     };
 
-    let result =
-        create_or_replace_table(&state, requested_code, authenticated_user.user_id, multiplier)
-            .await;
+    let result = create_or_replace_table(
+        &state,
+        requested_code,
+        authenticated_user.user_id,
+        multiplier,
+    )
+    .await;
 
     match result {
         Ok((table_code, created_at, room)) => (
@@ -728,6 +771,111 @@ async fn get_my_invites(
     }
 }
 
+async fn create_spectator_request(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(table_code): axum::extract::Path<String>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let table_code = normalize_table_code(&table_code);
+    let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &table_code)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    }
+
+    let runtime = room_handle.runtime.lock().await;
+    if runtime.room.owner_user_id == Some(authenticated_user.user_id) {
+        return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table");
+    }
+    drop(runtime);
+
+    match state
+        .inner
+        .db
+        .get_active_table_participant(&table_code, authenticated_user.user_id)
+        .await
+    {
+        Ok(Some(_)) => return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table"),
+        Ok(None) => {}
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+
+    let owner_user_id = match state.inner.db.get_table(&table_code).await {
+        Ok(Some(record)) => match parse_room_json(&record.room_json) {
+            Ok(room) => match room.owner_user_id {
+                Some(owner_user_id) => owner_user_id,
+                None => {
+                    return json_error(StatusCode::CONFLICT, "spectator_requires_owner_approval");
+                }
+            },
+            Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        },
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "table_not_found"),
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+
+    match state
+        .inner
+        .db
+        .create_spectator_request(
+            &table_code,
+            authenticated_user.user_id,
+            owner_user_id,
+            &now_iso(),
+        )
+        .await
+    {
+        Ok(request) => {
+            let payload = spectator_request_response(request.clone());
+            notify_user_connections(
+                &state,
+                owner_user_id,
+                json!({
+                    "type": "spectator_request_created",
+                    "payload": payload.clone(),
+                }),
+            )
+            .await;
+            (StatusCode::CREATED, Json(payload)).into_response()
+        }
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn get_my_spectator_requests(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    match state
+        .inner
+        .db
+        .list_pending_spectator_requests_for_owner(authenticated_user.user_id)
+        .await
+    {
+        Ok(requests) => Json(
+            requests
+                .into_iter()
+                .map(spectator_request_response)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
 async fn accept_table_invite(
     State(state): State<AppContext>,
     headers: axum::http::HeaderMap,
@@ -757,15 +905,21 @@ async fn accept_table_invite(
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 
-    let user = match state.inner.db.get_user_by_id(authenticated_user.user_id).await {
+    let user = match state
+        .inner
+        .db
+        .get_user_by_id(authenticated_user.user_id)
+        .await
+    {
         Ok(Some(user)) => user,
         Ok(None) => return json_error(StatusCode::UNAUTHORIZED, "auth_required"),
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     };
-    let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &invite.table_code)
-        .await
-        .ok()
-        .flatten()
+    let Some(room_handle) =
+        crate::app::room_runtime::ensure_room_loaded(&state, &invite.table_code)
+            .await
+            .ok()
+            .flatten()
     else {
         return json_error(StatusCode::NOT_FOUND, "table_not_found");
     };
@@ -840,6 +994,56 @@ async fn accept_table_invite(
     }
 }
 
+async fn approve_spectator_request(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(request_id): axum::extract::Path<i64>,
+) -> Response {
+    decide_spectator_request(state, headers, request_id, true).await
+}
+
+async fn reject_spectator_request(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(request_id): axum::extract::Path<i64>,
+) -> Response {
+    decide_spectator_request(state, headers, request_id, false).await
+}
+
+async fn decide_spectator_request(
+    state: AppContext,
+    headers: axum::http::HeaderMap,
+    request_id: i64,
+    approved: bool,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    match state
+        .inner
+        .db
+        .decide_spectator_request(request_id, authenticated_user.user_id, approved, &now_iso())
+        .await
+    {
+        Ok(Some(request)) => {
+            let payload = spectator_request_response(request.clone());
+            notify_user_connections(
+                &state,
+                request.requester_user_id,
+                json!({
+                    "type": "spectator_request_decided",
+                    "payload": payload.clone(),
+                }),
+            )
+            .await;
+            Json(payload).into_response()
+        }
+        Ok(None) => json_error(StatusCode::NOT_FOUND, "spectator_request_not_found"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
 async fn require_authenticated_user(
     state: &AppContext,
     headers: &axum::http::HeaderMap,
@@ -901,5 +1105,19 @@ fn table_invite_response(invite: super::persistence::TableInviteRecord) -> Table
         created_at: invite.created_at,
         expires_at: invite.expires_at,
         accepted_at: invite.accepted_at,
+    }
+}
+
+fn spectator_request_response(
+    request: super::persistence::SpectatorRequestRecord,
+) -> SpectatorRequestResponse {
+    SpectatorRequestResponse {
+        id: request.id,
+        table_code: request.table_code,
+        requester_user_id: request.requester_user_id,
+        owner_user_id: request.owner_user_id,
+        status: request.status,
+        created_at: request.created_at,
+        decided_at: request.decided_at,
     }
 }

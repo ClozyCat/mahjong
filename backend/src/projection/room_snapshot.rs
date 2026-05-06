@@ -170,8 +170,6 @@ pub fn room_snapshot_message(
         })
     })
 }
-
-#[cfg(feature = "spectator")]
 pub fn observer_room_snapshot_message(state: &RoomState) -> Value {
     let payload = PlayerRoomSnapshot {
         table_code: state.table_code.clone(),
@@ -433,8 +431,6 @@ fn private_round_state(
         players: private_players,
     })
 }
-
-#[cfg(feature = "spectator")]
 fn observer_round_state(state: &RoomState) -> Option<PlayerRoundView> {
     let round = state.round_state.as_ref()?;
     let private_players = round
@@ -493,8 +489,6 @@ fn observer_round_state(state: &RoomState) -> Option<PlayerRoundView> {
         players: private_players,
     })
 }
-
-#[cfg(feature = "spectator")]
 fn observer_pending_action(state: &RoomState) -> Option<PendingActionView> {
     let pending_timeout = state.pending_timeout.as_ref()?;
     match pending_timeout.kind.as_str() {
@@ -572,8 +566,6 @@ fn project_display_melds(
         })
         .collect()
 }
-
-#[cfg(feature = "spectator")]
 fn project_display_melds_for_observer(display_melds: &[DisplayMeldState]) -> Vec<DisplayMeldView> {
     display_melds
         .iter()
@@ -745,9 +737,6 @@ fn continue_action_snapshot(state: &RoomState) -> Option<ContinueActionView> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    #[cfg(feature = "spectator")]
     use super::observer_room_snapshot_message;
     use super::{build_pending_action_view, room_snapshot_message};
     use crate::core::state::PendingTimeout;
@@ -757,9 +746,9 @@ mod tests {
         RoundScoreTrackers, RoundSettlement, RoundState, SeatState, SettlementKongScoreDetailEntry,
         SettlementScoreDelta,
     };
-    #[cfg(feature = "spectator")]
     use crate::core::tile::Tile;
     use crate::projection::SeatProjectionSupport;
+    use std::collections::BTreeMap;
 
     #[test]
     fn playing_snapshot_hides_other_players_concealed_kong_tile_key() {
@@ -953,8 +942,6 @@ mod tests {
             Some("2026-04-20T12:00:30.000Z")
         );
     }
-
-    #[cfg(feature = "spectator")]
     #[test]
     fn observer_snapshot_exposes_all_concealed_tiles_without_prompt_options() {
         let mut state = RoomState {

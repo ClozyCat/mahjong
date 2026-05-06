@@ -5,12 +5,12 @@ pub(crate) mod protocol;
 pub(crate) mod records;
 pub(crate) mod room_runtime;
 pub(crate) mod scheduler;
-pub(crate) mod social_ws;
 pub(crate) mod server;
 #[cfg(test)]
 mod server_auth_tests;
 #[cfg(test)]
 mod server_table_tests;
+pub(crate) mod social_ws;
 pub(crate) mod users;
 pub(crate) mod ws;
 
@@ -33,7 +33,6 @@ use self::room_runtime::RoomHandle;
 use crate::core::state::{RoomState, SeatState};
 use crate::projection::match_result::match_result_message;
 use crate::projection::prompt::action_prompt_message;
-#[cfg(feature = "spectator")]
 use crate::projection::room_snapshot::observer_room_snapshot_message;
 use crate::projection::room_snapshot::room_snapshot_message;
 use crate::projection::support::build_seat_projection_support_for_state;
@@ -568,8 +567,6 @@ pub(crate) fn build_room_messages_for_seat(
         .map(|payload| connection.outbound(payload))
         .collect()
 }
-
-#[cfg(feature = "spectator")]
 pub(crate) fn build_room_messages_for_observer(
     room: &RoomState,
     connection: &ConnectionHandle,
@@ -583,8 +580,6 @@ pub(crate) fn build_room_messages_for_observer(
         .map(|payload| connection.outbound(payload))
         .collect()
 }
-
-#[cfg(feature = "spectator")]
 pub(crate) fn collect_observer_outbound_from_snapshot(
     room: &RoomState,
     connections: &[(u64, ConnectionHandle)],
@@ -694,11 +689,7 @@ pub(crate) async fn unregister_user_connection(
     );
 }
 
-pub(crate) async fn notify_user_connections<T>(
-    state: &AppContext,
-    user_id: i64,
-    payload: T,
-)
+pub(crate) async fn notify_user_connections<T>(state: &AppContext, user_id: i64, payload: T)
 where
     T: Serialize + Clone,
 {

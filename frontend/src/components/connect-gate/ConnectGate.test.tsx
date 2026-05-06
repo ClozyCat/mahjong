@@ -62,7 +62,7 @@ describe('ConnectGate', () => {
     expect(onJoin).toHaveBeenCalledTimes(1);
   });
 
-  (__SPECTATOR_ENABLED__ ? it : it.skip)('renders spectator entry only when enabled by props', async () => {
+  it('renders spectator entry and respects canWatch state', async () => {
     const user = userEvent.setup();
     const onWatch = vi.fn();
 
@@ -84,7 +84,7 @@ describe('ConnectGate', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: '观战牌桌' })).toBeNull();
+    expect(screen.getByRole('button', { name: '观战牌桌' })).toBeDisabled();
 
     rerender(
       <ConnectGate

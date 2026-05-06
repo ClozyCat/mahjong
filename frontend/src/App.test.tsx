@@ -518,7 +518,7 @@ describe('App', () => {
     expect(screen.getByText('牌桌不存在，请检查牌桌编号后重试。')).toBeInTheDocument();
   });
 
-  (__SPECTATOR_ENABLED__ ? it : it.skip)('returns to the lobby when a spectator leaves the table', async () => {
+  it('returns to the lobby when a spectator leaves the table', async () => {
     const user = userEvent.setup();
     const socket = await watchTable(user);
 
