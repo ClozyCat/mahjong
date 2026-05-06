@@ -22,11 +22,13 @@ use super::invites::{InviteAvailability, invite_availability, invite_expires_at}
 use super::persistence::{Database, DbWorker};
 use super::protocol::{create_table_response, detail_response};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
+use super::social_ws::social_websocket_handler;
 use super::users::{PublicUserView, public_user_view};
 use super::ws::websocket_handler;
 use super::{
     AppContext, CreateTableRequest, Settings, initial_room_state_with_owner, is_valid_table_code,
-    normalize_table_code, now_iso, parse_room_json, room_phase, serialize_room_state,
+    normalize_table_code, notify_user_connections, now_iso, parse_room_json, room_phase,
+    serialize_room_state,
 };
 use crate::core::state::RoomState;
 
@@ -77,7 +79,7 @@ struct AuthResponse {
     user: PublicUserView,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct TableInviteResponse {
     id: i64,
     table_code: String,
@@ -124,6 +126,7 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/tables/{table_code}/invites", post(create_table_invite))
         .route("/api/tables/{table_code}/multiplier", axum::routing::patch(update_table_multiplier))
         .route("/api/invites/{invite_id}/accept", post(accept_table_invite))
+        .route("/ws/me", get(social_websocket_handler))
         .route("/ws/{table_code}", get(websocket_handler))
         .with_state(app_state)
         .layer(build_cors_layer(&settings.cors_origins));
@@ -611,7 +614,19 @@ async fn create_table_invite(
         )
         .await
     {
-        Ok(invite) => (StatusCode::CREATED, Json(table_invite_response(invite))).into_response(),
+        Ok(invite) => {
+            let invite_response = table_invite_response(invite.clone());
+            notify_user_connections(
+                &state,
+                invite.invitee_user_id,
+                json!({
+                    "type": "table_invite_created",
+                    "payload": invite_response.clone(),
+                }),
+            )
+            .await;
+            (StatusCode::CREATED, Json(invite_response)).into_response()
+        }
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }

@@ -3,11 +3,14 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use serde_json::{Value, json};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use tokio::sync::{Notify, mpsc};
 use tower::ServiceExt;
 
 use super::persistence::{DbWorker, in_memory_database};
 use super::room_runtime::room_handle;
-use super::{AppContext, Settings, parse_room_json, server};
+use super::{AppContext, ConnectionHandle, Settings, parse_room_json, register_user_connection, server};
 
 fn test_settings() -> Settings {
     Settings {
@@ -101,6 +104,19 @@ async fn create_table(app: &Router, token: &str, multiplier: i64) -> Result<Stri
         .as_str()
         .expect("table code should exist")
         .to_string())
+}
+
+fn test_connection(id: u64) -> (ConnectionHandle, mpsc::Receiver<String>) {
+    let (sender, receiver) = mpsc::channel(8);
+    (
+        ConnectionHandle {
+            id,
+            sender,
+            close_requested: Arc::new(AtomicBool::new(false)),
+            close_notify: Arc::new(Notify::new()),
+        },
+        receiver,
+    )
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -529,5 +545,38 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
         .expect("participant should exist after accepting invite");
     assert_eq!(participant.table_code, table_code);
     assert_eq!(participant.user_id, guest_id);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_create_table_invite_pushes_realtime_notification() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100018", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100019", "Guest").await?;
+    let (connection, mut receiver) = test_connection(1001);
+
+    register_user_connection(&state, guest_id, connection).await;
+    let _ = receiver.recv().await;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+
+    let notification = receiver
+        .recv()
+        .await
+        .expect("guest should receive realtime invite notification");
+    let payload: Value = serde_json::from_str(&notification)?;
+    assert_eq!(payload["type"], "table_invite_created");
+    assert_eq!(payload["payload"]["table_code"], table_code);
+    assert_eq!(payload["payload"]["invitee_user_id"], guest_id);
     Ok(())
 }

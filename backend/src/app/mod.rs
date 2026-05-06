@@ -4,6 +4,7 @@ pub(crate) mod persistence;
 pub(crate) mod protocol;
 pub(crate) mod room_runtime;
 pub(crate) mod scheduler;
+pub(crate) mod social_ws;
 pub(crate) mod server;
 #[cfg(test)]
 mod server_auth_tests;
@@ -22,7 +23,7 @@ use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::{Notify, RwLock, mpsc};
 
 use self::persistence::DbWorker;
@@ -72,6 +73,7 @@ pub(crate) struct AppContext {
 pub(crate) struct AppState {
     pub(crate) db: DbWorker,
     pub(crate) rooms: RwLock<HashMap<String, Arc<RoomHandle>>>,
+    pub(crate) user_connections: RwLock<HashMap<i64, HashMap<u64, ConnectionHandle>>>,
 }
 
 impl AppContext {
@@ -81,6 +83,7 @@ impl AppContext {
             inner: Arc::new(AppState {
                 db,
                 rooms: RwLock::new(HashMap::new()),
+                user_connections: RwLock::new(HashMap::new()),
             }),
         }
     }
@@ -620,6 +623,105 @@ pub(crate) fn send_outbound(outbound: Vec<OutboundMessage>) {
             }
         }
     }
+}
+
+fn snapshot_user_connections_registry(
+    registry: &HashMap<i64, HashMap<u64, ConnectionHandle>>,
+) -> (Vec<i64>, Vec<ConnectionHandle>) {
+    let mut online_user_ids = registry.keys().copied().collect::<Vec<_>>();
+    online_user_ids.sort_unstable();
+
+    let handles = registry
+        .values()
+        .flat_map(|connections| connections.values().cloned())
+        .collect::<Vec<_>>();
+    (online_user_ids, handles)
+}
+
+fn user_presence_updated_message(online_user_ids: Vec<i64>) -> Value {
+    json!({
+        "type": "user_presence_updated",
+        "payload": {
+            "online_user_ids": online_user_ids
+        }
+    })
+}
+
+pub(crate) async fn register_user_connection(
+    state: &AppContext,
+    user_id: i64,
+    connection: ConnectionHandle,
+) {
+    let (online_user_ids, handles) = {
+        let mut registry = state.inner.user_connections.write().await;
+        registry
+            .entry(user_id)
+            .or_default()
+            .insert(connection.id, connection);
+        snapshot_user_connections_registry(&registry)
+    };
+    let payload = user_presence_updated_message(online_user_ids);
+    send_outbound(
+        handles
+            .into_iter()
+            .map(|handle| handle.outbound(payload.clone()))
+            .collect(),
+    );
+}
+
+pub(crate) async fn unregister_user_connection(
+    state: &AppContext,
+    user_id: i64,
+    connection_id: u64,
+) {
+    let (online_user_ids, handles) = {
+        let mut registry = state.inner.user_connections.write().await;
+        if let Some(connections) = registry.get_mut(&user_id) {
+            connections.remove(&connection_id);
+            if connections.is_empty() {
+                registry.remove(&user_id);
+            }
+        }
+        snapshot_user_connections_registry(&registry)
+    };
+    let payload = user_presence_updated_message(online_user_ids);
+    send_outbound(
+        handles
+            .into_iter()
+            .map(|handle| handle.outbound(payload.clone()))
+            .collect(),
+    );
+}
+
+pub(crate) async fn notify_user_connections<T>(
+    state: &AppContext,
+    user_id: i64,
+    payload: T,
+)
+where
+    T: Serialize + Clone,
+{
+    let handles = {
+        let registry = state.inner.user_connections.read().await;
+        registry
+            .get(&user_id)
+            .map(|connections| connections.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    send_outbound(
+        handles
+            .into_iter()
+            .map(|handle| handle.outbound(payload.clone()))
+            .collect(),
+    );
+}
+
+#[cfg(test)]
+pub(crate) async fn online_user_ids(state: &AppContext) -> Vec<i64> {
+    let registry = state.inner.user_connections.read().await;
+    let mut user_ids = registry.keys().copied().collect::<Vec<_>>();
+    user_ids.sort_unstable();
+    user_ids
 }
 
 #[cfg(test)]
