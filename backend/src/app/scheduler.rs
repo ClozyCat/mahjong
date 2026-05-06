@@ -233,6 +233,7 @@ async fn process_due_disconnect_timeout(
     seat_index: usize,
     expected_nonce: u64,
 ) {
+    let left_at = super::now_iso();
     let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
     };
@@ -269,7 +270,7 @@ async fn process_due_disconnect_timeout(
         close_runtime(&mut runtime);
         drop(runtime);
         unregister_room_handle(&state, &table_code, &room_handle).await;
-        state.inner.db.delete_table(&table_code).await.ok();
+        state.inner.db.delete_table(&table_code, &left_at).await.ok();
         return;
     }
 
@@ -282,7 +283,13 @@ async fn process_due_disconnect_timeout(
     if state
         .inner
         .db
-        .save_table_and_delete_tokens_for_seat(&table_code, &created_at, &room_json, seat_index)
+        .save_table_and_delete_tokens_for_seat(
+            &table_code,
+            &created_at,
+            &room_json,
+            seat_index,
+            &left_at,
+        )
         .await
         .is_err()
     {
@@ -414,7 +421,7 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         close_runtime(&mut runtime);
         drop(runtime);
         unregister_room_handle(&state, &table_code, &room_handle).await;
-        state.inner.db.delete_table(&table_code).await.ok();
+        state.inner.db.delete_table(&table_code, &super::now_iso()).await.ok();
         return;
     }
     abort_join_handle(&mut runtime.timeout_task);

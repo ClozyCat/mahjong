@@ -85,6 +85,24 @@ async fn register_user(
     Ok((token, user_id))
 }
 
+async fn create_table(app: &Router, token: &str, multiplier: i64) -> Result<String> {
+    let response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/tables",
+            token,
+            json!({ "multiplier": multiplier }),
+        ))
+        .await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = json_response(response).await;
+    Ok(body["table_code"]
+        .as_str()
+        .expect("table code should exist")
+        .to_string())
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn multiplier_create_table_stores_owner_and_multiplier() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
@@ -229,5 +247,287 @@ async fn multiplier_non_owner_cannot_change_table_setting() -> Result<()> {
     assert_eq!(update.status(), StatusCode::FORBIDDEN);
     let body = json_response(update).await;
     assert_eq!(body["detail"], "only_owner_can_change_multiplier");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_idle_user_invite_succeeds_and_is_visible_in_me_invites() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100006", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100007", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite_response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite_response.status(), StatusCode::CREATED);
+
+    let me_invites = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/invites",
+            &owner_token.replace("Owner", "Owner"),
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(me_invites.status(), StatusCode::OK);
+
+    let (_guest_token, _) = register_user(&app, &worker, "INVITE100008", "Spare").await?;
+    let guest_token = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/login",
+            json!({
+                "identifier": "Guest",
+                "password": "secret-123"
+            }),
+        ))
+        .await?;
+    let guest_token_body = json_response(guest_token).await;
+    let session_token = guest_token_body["session_token"]
+        .as_str()
+        .expect("guest login should return session")
+        .to_string();
+
+    let guest_invites = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/invites",
+            &session_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(guest_invites.status(), StatusCode::OK);
+    let invites_body = json_response(guest_invites).await;
+    assert_eq!(invites_body.as_array().map(Vec::len), Some(1));
+    assert_eq!(invites_body[0]["table_code"], table_code);
+    assert_eq!(invites_body[0]["status"], "pending");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_a_token, _owner_a_id) = register_user(&app, &worker, "INVITE100009", "OwnerA").await?;
+    let (owner_b_token, _owner_b_id) = register_user(&app, &worker, "INVITE100010", "OwnerB").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100011", "Guest").await?;
+
+    let table_a = create_table(&app, &owner_a_token, 1).await?;
+    let invite_a = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_a}/invites"),
+            &owner_a_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    let invite_a_body = json_response(invite_a).await;
+    let invite_a_id = invite_a_body["id"].as_i64().expect("invite id should exist");
+
+    let guest_login = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/login",
+            json!({
+                "identifier": "Guest",
+                "password": "secret-123"
+            }),
+        ))
+        .await?;
+    let guest_body = json_response(guest_login).await;
+    let guest_token = guest_body["session_token"]
+        .as_str()
+        .expect("guest login should return token")
+        .to_string();
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_a_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept.status(), StatusCode::OK);
+
+    let table_b = create_table(&app, &owner_b_token, 1).await?;
+    let invite_b = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_b}/invites"),
+            &owner_b_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite_b.status(), StatusCode::CREATED);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_a_token, _owner_a_id) = register_user(&app, &worker, "INVITE100012", "OwnerA").await?;
+    let (owner_b_token, _owner_b_id) = register_user(&app, &worker, "INVITE100013", "OwnerB").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100014", "Guest").await?;
+    let (_third_token, third_id) = register_user(&app, &worker, "INVITE100015", "Third").await?;
+
+    let table_a = create_table(&app, &owner_a_token, 1).await?;
+    let guest_invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_a}/invites"),
+            &owner_a_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    let guest_invite_body = json_response(guest_invite).await;
+    let guest_invite_id = guest_invite_body["id"].as_i64().expect("invite id should exist");
+    let third_invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_a}/invites"),
+            &owner_a_token,
+            json!({ "invitee_user_id": third_id }),
+        ))
+        .await?;
+    let third_invite_body = json_response(third_invite).await;
+    let third_invite_id = third_invite_body["id"].as_i64().expect("invite id should exist");
+
+    let guest_login = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/login",
+            json!({
+                "identifier": "Guest",
+                "password": "secret-123"
+            }),
+        ))
+        .await?;
+    let guest_body = json_response(guest_login).await;
+    let guest_token = guest_body["session_token"]
+        .as_str()
+        .expect("guest login should return token")
+        .to_string();
+    let third_login = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/login",
+            json!({
+                "identifier": "Third",
+                "password": "secret-123"
+            }),
+        ))
+        .await?;
+    let third_body = json_response(third_login).await;
+    let third_token = third_body["session_token"]
+        .as_str()
+        .expect("third login should return token")
+        .to_string();
+
+    let accept_guest = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{guest_invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept_guest.status(), StatusCode::OK);
+    let accept_third = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{third_invite_id}/accept"),
+            &third_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept_third.status(), StatusCode::OK);
+
+    let table_b = create_table(&app, &owner_b_token, 1).await?;
+    let invite_b = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_b}/invites"),
+            &owner_b_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite_b.status(), StatusCode::CONFLICT);
+    let body = json_response(invite_b).await;
+    assert_eq!(body["detail"], "target_player_busy");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_accept_creates_table_participant() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100016", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100017", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    let invite_body = json_response(invite).await;
+    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
+
+    let guest_login = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/login",
+            json!({
+                "identifier": "Guest",
+                "password": "secret-123"
+            }),
+        ))
+        .await?;
+    let guest_body = json_response(guest_login).await;
+    let guest_token = guest_body["session_token"]
+        .as_str()
+        .expect("guest login should return token")
+        .to_string();
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept.status(), StatusCode::OK);
+
+    let participant = worker
+        .get_active_table_participant(&table_code, guest_id)
+        .await?
+        .expect("participant should exist after accepting invite");
+    assert_eq!(participant.table_code, table_code);
+    assert_eq!(participant.user_id, guest_id);
     Ok(())
 }

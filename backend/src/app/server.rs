@@ -18,6 +18,7 @@ use super::auth::{
     AuthenticatedUser, bearer_token, beijing_local_date, generate_session_token,
     hash_password, hash_session_token, verify_password,
 };
+use super::invites::{InviteAvailability, invite_availability, invite_expires_at};
 use super::persistence::{Database, DbWorker};
 use super::protocol::{create_table_response, detail_response};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
@@ -65,10 +66,35 @@ struct UpdateMultiplierRequest {
     multiplier: i64,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateTableInviteRequest {
+    invitee_user_id: i64,
+}
+
 #[derive(Debug, Serialize)]
 struct AuthResponse {
     session_token: String,
     user: PublicUserView,
+}
+
+#[derive(Debug, Serialize)]
+struct TableInviteResponse {
+    id: i64,
+    table_code: String,
+    inviter_user_id: i64,
+    invitee_user_id: i64,
+    status: String,
+    created_at: String,
+    expires_at: String,
+    accepted_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AcceptInviteResponse {
+    invite_id: i64,
+    table_code: String,
+    seat_index: usize,
+    status: String,
 }
 
 pub(crate) async fn run() -> Result<()> {
@@ -93,8 +119,11 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
         .route("/api/me", get(get_me).patch(update_me))
+        .route("/api/me/invites", get(get_my_invites))
         .route("/api/tables", post(create_table))
+        .route("/api/tables/{table_code}/invites", post(create_table_invite))
         .route("/api/tables/{table_code}/multiplier", axum::routing::patch(update_table_multiplier))
+        .route("/api/invites/{invite_id}/accept", post(accept_table_invite))
         .route("/ws/{table_code}", get(websocket_handler))
         .with_state(app_state)
         .layer(build_cors_layer(&settings.cors_origins));
@@ -510,6 +539,220 @@ async fn update_table_multiplier(
     .into_response()
 }
 
+async fn create_table_invite(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(table_code): axum::extract::Path<String>,
+    Json(payload): Json<CreateTableInviteRequest>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let table_code = normalize_table_code(&table_code);
+    let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &table_code)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    }
+
+    if state
+        .inner
+        .db
+        .get_user_by_id(payload.invitee_user_id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return json_error(StatusCode::NOT_FOUND, "user_not_found");
+    }
+
+    let _persist_guard = room_handle.persist.lock().await;
+    let runtime = room_handle.runtime.lock().await;
+    if runtime.room.owner_user_id != Some(authenticated_user.user_id) {
+        return json_error(StatusCode::FORBIDDEN, "only_owner_can_invite");
+    }
+    if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
+        return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
+    }
+    if runtime.room.seats.len() >= crate::app::MAX_SEATS {
+        return json_error(StatusCode::CONFLICT, "table_full");
+    }
+    drop(runtime);
+
+    match invite_availability(&state, payload.invitee_user_id, &table_code).await {
+        Ok(InviteAvailability::TargetAlreadyInTable) => {
+            return json_error(StatusCode::CONFLICT, "target_already_in_table");
+        }
+        Ok(InviteAvailability::TargetPlayerBusy) => {
+            return json_error(StatusCode::CONFLICT, "target_player_busy");
+        }
+        Ok(InviteAvailability::Available) => {}
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+
+    let created_at = now_iso();
+    let expires_at = invite_expires_at();
+    match state
+        .inner
+        .db
+        .create_table_invite(
+            &table_code,
+            authenticated_user.user_id,
+            payload.invitee_user_id,
+            &created_at,
+            &expires_at,
+        )
+        .await
+    {
+        Ok(invite) => (StatusCode::CREATED, Json(table_invite_response(invite))).into_response(),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn get_my_invites(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    match state
+        .inner
+        .db
+        .list_available_table_invites_for_user(authenticated_user.user_id, &now_iso())
+        .await
+    {
+        Ok(invites) => Json(
+            invites
+                .into_iter()
+                .map(table_invite_response)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn accept_table_invite(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(invite_id): axum::extract::Path<i64>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let invite = match state.inner.db.get_table_invite(invite_id).await {
+        Ok(Some(invite)) => invite,
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "table_invite_invalid"),
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+    if invite.invitee_user_id != authenticated_user.user_id {
+        return json_error(StatusCode::FORBIDDEN, "table_invite_invalid");
+    }
+
+    match invite_availability(&state, authenticated_user.user_id, &invite.table_code).await {
+        Ok(InviteAvailability::TargetAlreadyInTable) => {
+            return json_error(StatusCode::CONFLICT, "target_already_in_table");
+        }
+        Ok(InviteAvailability::TargetPlayerBusy) => {
+            return json_error(StatusCode::CONFLICT, "target_player_busy");
+        }
+        Ok(InviteAvailability::Available) => {}
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+
+    let user = match state.inner.db.get_user_by_id(authenticated_user.user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+    let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &invite.table_code)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    }
+
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
+        return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
+    }
+    let Some(seat_index) = crate::app::random_open_seat_index(&runtime.room) else {
+        return json_error(StatusCode::CONFLICT, "table_full");
+    };
+
+    let player_session_id = crate::app::generate_player_session_id();
+    let reconnect_token = crate::app::generate_reconnect_token();
+    runtime.room.seats.push(crate::core::state::SeatState {
+        seat_index,
+        nickname: Some(user.display_name.clone()),
+        reconnect_token: Some(reconnect_token.clone()),
+        player_session_id: Some(player_session_id),
+        connected: false,
+        ready: false,
+        is_bot: false,
+        seat_type: "human".to_string(),
+        bot_persona: None,
+        bot_aggression: None,
+        disconnect_deadline_at: None,
+    });
+    runtime.room.seats.sort_by_key(|seat| seat.seat_index);
+    let room = runtime.room.clone();
+    let created_at = runtime.created_at.clone();
+    drop(runtime);
+
+    let room_json = match serialize_room_state(&room) {
+        Ok(room_json) => room_json,
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+    match state
+        .inner
+        .db
+        .accept_table_invite_and_reserve_seat(
+            invite_id,
+            authenticated_user.user_id,
+            &now_iso(),
+            &invite.table_code,
+            &room_json,
+            &created_at,
+            &reconnect_token,
+            seat_index,
+            player_session_id,
+            &user.display_name,
+        )
+        .await
+    {
+        Ok(invite) => (
+            StatusCode::OK,
+            Json(AcceptInviteResponse {
+                invite_id: invite.id,
+                table_code: invite.table_code,
+                seat_index,
+                status: invite.status,
+            }),
+        )
+            .into_response(),
+        Err(error) if error_matches(&error, "table_invite_invalid") => {
+            json_error(StatusCode::UNPROCESSABLE_ENTITY, "table_invite_invalid")
+        }
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
 async fn require_authenticated_user(
     state: &AppContext,
     headers: &axum::http::HeaderMap,
@@ -559,4 +802,17 @@ fn json_error(status: StatusCode, detail: &str) -> Response {
 
 fn error_matches(error: &anyhow::Error, expected: &str) -> bool {
     format!("{error:#}").contains(expected)
+}
+
+fn table_invite_response(invite: super::persistence::TableInviteRecord) -> TableInviteResponse {
+    TableInviteResponse {
+        id: invite.id,
+        table_code: invite.table_code,
+        inviter_user_id: invite.inviter_user_id,
+        invitee_user_id: invite.invitee_user_id,
+        status: invite.status,
+        created_at: invite.created_at,
+        expires_at: invite.expires_at,
+        accepted_at: invite.accepted_at,
+    }
 }

@@ -33,6 +33,29 @@ pub(crate) struct ReconnectTokenRecord {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct TableParticipantRecord {
+    pub(crate) table_code: String,
+    pub(crate) user_id: i64,
+    pub(crate) seat_index: usize,
+    pub(crate) role: String,
+    pub(crate) nickname_snapshot: String,
+    pub(crate) joined_at: String,
+    pub(crate) left_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TableInviteRecord {
+    pub(crate) id: i64,
+    pub(crate) table_code: String,
+    pub(crate) inviter_user_id: i64,
+    pub(crate) invitee_user_id: i64,
+    pub(crate) status: String,
+    pub(crate) created_at: String,
+    pub(crate) expires_at: String,
+    pub(crate) accepted_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct UserRecord {
     pub(crate) user_id: i64,
     pub(crate) username: String,
@@ -97,6 +120,15 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_user_point_events_user_id
             ON user_point_events(user_id);
+
+            CREATE INDEX IF NOT EXISTS idx_table_participants_user_id
+            ON table_participants(user_id);
+
+            CREATE INDEX IF NOT EXISTS idx_table_participants_table_code
+            ON table_participants(table_code);
+
+            CREATE INDEX IF NOT EXISTS idx_table_invites_invitee_status
+            ON table_invites(invitee_user_id, status);
             ",
         )?;
         Ok(())
@@ -237,6 +269,32 @@ impl Database {
                 created_at TEXT NOT NULL,
                 UNIQUE(user_id, reason, local_date),
                 FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS table_participants (
+                table_code TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                seat_index INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                nickname_snapshot TEXT NOT NULL,
+                joined_at TEXT NOT NULL,
+                left_at TEXT,
+                PRIMARY KEY(table_code, user_id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS table_invites (
+                id INTEGER PRIMARY KEY,
+                table_code TEXT NOT NULL,
+                inviter_user_id INTEGER NOT NULL,
+                invitee_user_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                accepted_at TEXT,
+                FOREIGN KEY(inviter_user_id) REFERENCES users(id),
+                FOREIGN KEY(invitee_user_id) REFERENCES users(id)
             );
             ",
         )?;
@@ -450,8 +508,17 @@ impl Database {
         Self::save_table_with_conn(&self.conn, table_code, created_at, room_json)
     }
 
-    fn delete_table(&self, table_code: &str) -> Result<()> {
+    fn delete_table(&self, table_code: &str, left_at: &str) -> Result<()> {
         self.with_transaction("delete table", |conn| {
+            conn.execute(
+                "
+                UPDATE table_participants
+                SET left_at = ?2
+                WHERE table_code = ?1
+                  AND left_at IS NULL
+                ",
+                params![table_code, left_at],
+            )?;
             Self::delete_tokens_for_table_with_conn(conn, table_code)?;
             Self::delete_table_row_with_conn(conn, table_code)?;
             Ok(())
@@ -504,6 +571,33 @@ impl Database {
             last_login_local_date: row.get(7)?,
             created_at: row.get(8)?,
             updated_at: row.get(9)?,
+        })
+    }
+
+    fn table_participant_from_row(
+        row: &rusqlite::Row<'_>,
+    ) -> rusqlite::Result<TableParticipantRecord> {
+        Ok(TableParticipantRecord {
+            table_code: row.get(0)?,
+            user_id: row.get(1)?,
+            seat_index: row.get::<_, i64>(2)? as usize,
+            role: row.get(3)?,
+            nickname_snapshot: row.get(4)?,
+            joined_at: row.get(5)?,
+            left_at: row.get(6)?,
+        })
+    }
+
+    fn table_invite_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TableInviteRecord> {
+        Ok(TableInviteRecord {
+            id: row.get(0)?,
+            table_code: row.get(1)?,
+            inviter_user_id: row.get(2)?,
+            invitee_user_id: row.get(3)?,
+            status: row.get(4)?,
+            created_at: row.get(5)?,
+            expires_at: row.get(6)?,
+            accepted_at: row.get(7)?,
         })
     }
 
@@ -760,6 +854,294 @@ impl Database {
         self.get_user_by_id(user_id)
     }
 
+    fn upsert_table_participant_with_conn(
+        conn: &Connection,
+        table_code: &str,
+        user_id: i64,
+        seat_index: usize,
+        role: &str,
+        nickname_snapshot: &str,
+        joined_at: &str,
+    ) -> Result<()> {
+        conn.execute(
+            "
+            INSERT INTO table_participants (
+                table_code,
+                user_id,
+                seat_index,
+                role,
+                nickname_snapshot,
+                joined_at,
+                left_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)
+            ON CONFLICT(table_code, user_id) DO UPDATE
+            SET seat_index = excluded.seat_index,
+                role = excluded.role,
+                nickname_snapshot = excluded.nickname_snapshot,
+                joined_at = excluded.joined_at,
+                left_at = NULL
+            ",
+            params![
+                table_code,
+                user_id,
+                seat_index as i64,
+                role,
+                nickname_snapshot,
+                joined_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn get_active_table_participant(
+        &self,
+        table_code: &str,
+        user_id: i64,
+    ) -> Result<Option<TableParticipantRecord>> {
+        self.conn
+            .query_row(
+                "
+                SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+                FROM table_participants
+                WHERE table_code = ?1
+                  AND user_id = ?2
+                  AND left_at IS NULL
+                ",
+                params![table_code, user_id],
+                Self::table_participant_from_row,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn list_active_table_participants_for_user(
+        &self,
+        user_id: i64,
+    ) -> Result<Vec<TableParticipantRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+            FROM table_participants
+            WHERE user_id = ?1
+              AND left_at IS NULL
+            ORDER BY joined_at ASC
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![user_id], Self::table_participant_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn count_active_other_human_participants(
+        &self,
+        table_code: &str,
+        excluded_user_id: i64,
+    ) -> Result<i64> {
+        self.conn
+            .query_row(
+                "
+                SELECT COUNT(*)
+                FROM table_participants
+                WHERE table_code = ?1
+                  AND left_at IS NULL
+                  AND role = 'player'
+                  AND user_id != ?2
+                ",
+                params![table_code, excluded_user_id],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    fn mark_table_participant_left_by_seat(
+        &self,
+        table_code: &str,
+        seat_index: usize,
+        left_at: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "
+            UPDATE table_participants
+            SET left_at = ?3
+            WHERE table_code = ?1
+              AND seat_index = ?2
+              AND left_at IS NULL
+            ",
+            params![table_code, seat_index as i64, left_at],
+        )?;
+        Ok(())
+    }
+
+    fn create_table_invite(
+        &self,
+        table_code: &str,
+        inviter_user_id: i64,
+        invitee_user_id: i64,
+        created_at: &str,
+        expires_at: &str,
+    ) -> Result<TableInviteRecord> {
+        self.conn.execute(
+            "
+            INSERT INTO table_invites (
+                table_code,
+                inviter_user_id,
+                invitee_user_id,
+                status,
+                created_at,
+                expires_at
+            )
+            VALUES (?1, ?2, ?3, 'pending', ?4, ?5)
+            ",
+            params![
+                table_code,
+                inviter_user_id,
+                invitee_user_id,
+                created_at,
+                expires_at
+            ],
+        )?;
+        let invite_id = self.conn.last_insert_rowid();
+        self.get_table_invite(invite_id)?
+            .ok_or_else(|| anyhow!("created invite should exist"))
+    }
+
+    fn get_table_invite(&self, invite_id: i64) -> Result<Option<TableInviteRecord>> {
+        self.conn
+            .query_row(
+                "
+                SELECT id, table_code, inviter_user_id, invitee_user_id, status, created_at, expires_at, accepted_at
+                FROM table_invites
+                WHERE id = ?1
+                ",
+                params![invite_id],
+                Self::table_invite_from_row,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn list_available_table_invites_for_user(
+        &self,
+        user_id: i64,
+        now: &str,
+    ) -> Result<Vec<TableInviteRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT id, table_code, inviter_user_id, invitee_user_id, status, created_at, expires_at, accepted_at
+            FROM table_invites
+            WHERE invitee_user_id = ?1
+              AND (
+                    (status = 'pending' AND expires_at > ?2)
+                 OR status = 'accepted'
+              )
+            ORDER BY created_at DESC
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![user_id, now], Self::table_invite_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn accept_table_invite_and_reserve_seat(
+        &self,
+        invite_id: i64,
+        invitee_user_id: i64,
+        accepted_at: &str,
+        table_code: &str,
+        room_json: &str,
+        created_at: &str,
+        token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+        nickname_snapshot: &str,
+    ) -> Result<TableInviteRecord> {
+        self.with_transaction("accept table invite and reserve seat", |conn| {
+            let updated = conn.execute(
+                "
+                UPDATE table_invites
+                SET status = 'accepted',
+                    accepted_at = ?3
+                WHERE id = ?1
+                  AND invitee_user_id = ?2
+                  AND status = 'pending'
+                  AND expires_at > ?3
+                ",
+                params![invite_id, invitee_user_id, accepted_at],
+            )?;
+            if updated != 1 {
+                return Err(anyhow!("table_invite_invalid"));
+            }
+
+            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Self::store_reconnect_token_with_conn(
+                conn,
+                token,
+                table_code,
+                seat_index,
+                player_session_id,
+            )?;
+            Self::upsert_table_participant_with_conn(
+                conn,
+                table_code,
+                invitee_user_id,
+                seat_index,
+                "player",
+                nickname_snapshot,
+                accepted_at,
+            )?;
+
+            conn.query_row(
+                "
+                SELECT id, table_code, inviter_user_id, invitee_user_id, status, created_at, expires_at, accepted_at
+                FROM table_invites
+                WHERE id = ?1
+                ",
+                params![invite_id],
+                Self::table_invite_from_row,
+            )
+            .map_err(Into::into)
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn save_table_and_store_reconnect_token_and_upsert_participant(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+        user_id: i64,
+        nickname_snapshot: &str,
+        joined_at: &str,
+    ) -> Result<()> {
+        self.with_transaction("save room reconnect token and participant", |conn| {
+            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Self::store_reconnect_token_with_conn(
+                conn,
+                token,
+                table_code,
+                seat_index,
+                player_session_id,
+            )?;
+            Self::upsert_table_participant_with_conn(
+                conn,
+                table_code,
+                user_id,
+                seat_index,
+                "player",
+                nickname_snapshot,
+                joined_at,
+            )?;
+            Ok(())
+        })
+    }
+
     fn save_table_and_store_reconnect_token(
         &self,
         table_code: &str,
@@ -816,9 +1198,20 @@ impl Database {
         created_at: &str,
         room_json: &str,
         seat_index: usize,
+        left_at: &str,
     ) -> Result<()> {
         self.with_transaction("save room and delete seat reconnect tokens", |conn| {
             Self::delete_tokens_for_seat_with_conn(conn, table_code, seat_index)?;
+            conn.execute(
+                "
+                UPDATE table_participants
+                SET left_at = ?3
+                WHERE table_code = ?1
+                  AND seat_index = ?2
+                  AND left_at IS NULL
+                ",
+                params![table_code, seat_index as i64, left_at],
+            )?;
             Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
             Ok(())
         })
@@ -925,9 +1318,11 @@ impl DbWorker {
             .await
     }
 
-    pub(crate) async fn delete_table(&self, table_code: &str) -> Result<()> {
+    pub(crate) async fn delete_table(&self, table_code: &str, left_at: &str) -> Result<()> {
         let table_code = table_code.to_string();
-        self.call(move |db| db.delete_table(&table_code)).await
+        let left_at = left_at.to_string();
+        self.call(move |db| db.delete_table(&table_code, &left_at))
+            .await
     }
 
     pub(crate) async fn get_reconnect_token(
@@ -1000,17 +1395,14 @@ impl DbWorker {
         created_at: &str,
         room_json: &str,
         seat_index: usize,
+        left_at: &str,
     ) -> Result<()> {
         let table_code = table_code.to_string();
         let created_at = created_at.to_string();
         let room_json = room_json.to_string();
+        let left_at = left_at.to_string();
         self.call(move |db| {
-            db.save_table_and_delete_tokens_for_seat(
-                &table_code,
-                &created_at,
-                &room_json,
-                seat_index,
-            )
+            db.save_table_and_delete_tokens_for_seat(&table_code, &created_at, &room_json, seat_index, &left_at)
         })
         .await
     }
@@ -1025,6 +1417,158 @@ impl DbWorker {
         let created_at = created_at.to_string();
         self.call(move |db| db.create_invite_code(&code, &created_at, expires_at.as_deref()))
             .await
+    }
+
+    pub(crate) async fn create_table_invite(
+        &self,
+        table_code: &str,
+        inviter_user_id: i64,
+        invitee_user_id: i64,
+        created_at: &str,
+        expires_at: &str,
+    ) -> Result<TableInviteRecord> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        let expires_at = expires_at.to_string();
+        self.call(move |db| {
+            db.create_table_invite(
+                &table_code,
+                inviter_user_id,
+                invitee_user_id,
+                &created_at,
+                &expires_at,
+            )
+        })
+        .await
+    }
+
+    pub(crate) async fn get_table_invite(
+        &self,
+        invite_id: i64,
+    ) -> Result<Option<TableInviteRecord>> {
+        self.call(move |db| db.get_table_invite(invite_id)).await
+    }
+
+    pub(crate) async fn list_available_table_invites_for_user(
+        &self,
+        user_id: i64,
+        now: &str,
+    ) -> Result<Vec<TableInviteRecord>> {
+        let now = now.to_string();
+        self.call(move |db| db.list_available_table_invites_for_user(user_id, &now))
+            .await
+    }
+
+    pub(crate) async fn get_active_table_participant(
+        &self,
+        table_code: &str,
+        user_id: i64,
+    ) -> Result<Option<TableParticipantRecord>> {
+        let table_code = table_code.to_string();
+        self.call(move |db| db.get_active_table_participant(&table_code, user_id))
+            .await
+    }
+
+    pub(crate) async fn list_active_table_participants_for_user(
+        &self,
+        user_id: i64,
+    ) -> Result<Vec<TableParticipantRecord>> {
+        self.call(move |db| db.list_active_table_participants_for_user(user_id))
+            .await
+    }
+
+    pub(crate) async fn count_active_other_human_participants(
+        &self,
+        table_code: &str,
+        excluded_user_id: i64,
+    ) -> Result<i64> {
+        let table_code = table_code.to_string();
+        self.call(move |db| db.count_active_other_human_participants(&table_code, excluded_user_id))
+            .await
+    }
+
+    pub(crate) async fn mark_table_participant_left_by_seat(
+        &self,
+        table_code: &str,
+        seat_index: usize,
+        left_at: &str,
+    ) -> Result<()> {
+        let table_code = table_code.to_string();
+        let left_at = left_at.to_string();
+        self.call(move |db| db.mark_table_participant_left_by_seat(&table_code, seat_index, &left_at))
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn accept_table_invite_and_reserve_seat(
+        &self,
+        invite_id: i64,
+        invitee_user_id: i64,
+        accepted_at: &str,
+        table_code: &str,
+        room_json: &str,
+        created_at: &str,
+        token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+        nickname_snapshot: &str,
+    ) -> Result<TableInviteRecord> {
+        let accepted_at = accepted_at.to_string();
+        let table_code = table_code.to_string();
+        let room_json = room_json.to_string();
+        let created_at = created_at.to_string();
+        let token = token.to_string();
+        let nickname_snapshot = nickname_snapshot.to_string();
+        self.call(move |db| {
+            db.accept_table_invite_and_reserve_seat(
+                invite_id,
+                invitee_user_id,
+                &accepted_at,
+                &table_code,
+                &room_json,
+                &created_at,
+                &token,
+                seat_index,
+                player_session_id,
+                &nickname_snapshot,
+            )
+        })
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn save_table_and_store_reconnect_token_and_upsert_participant(
+        &self,
+        table_code: &str,
+        created_at: &str,
+        room_json: &str,
+        token: &str,
+        seat_index: usize,
+        player_session_id: i64,
+        user_id: i64,
+        nickname_snapshot: &str,
+        joined_at: &str,
+    ) -> Result<()> {
+        let table_code = table_code.to_string();
+        let created_at = created_at.to_string();
+        let room_json = room_json.to_string();
+        let token = token.to_string();
+        let nickname_snapshot = nickname_snapshot.to_string();
+        let joined_at = joined_at.to_string();
+        self.call(move |db| {
+            db.save_table_and_store_reconnect_token_and_upsert_participant(
+                &table_code,
+                &created_at,
+                &room_json,
+                &token,
+                seat_index,
+                player_session_id,
+                user_id,
+                &nickname_snapshot,
+                &joined_at,
+            )
+        })
+        .await
     }
 
     pub(crate) async fn register_user(
@@ -1373,6 +1917,121 @@ mod tests {
         assert!(db.get_reconnect_token("token-1")?.is_none());
         assert!(db.get_reconnect_token("token-2")?.is_some());
         assert!(db.get_reconnect_token("token-3")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn save_table_and_delete_tokens_for_seat_marks_participant_left() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        db.conn.execute(
+            "
+            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
+            VALUES (1, 'owner', 'Owner', 'hash', '2026-04-06T00:00:00Z', '2026-04-06T00:00:00Z')
+            ",
+            [],
+        )?;
+
+        let room_json =
+            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
+        db.save_table_and_store_reconnect_token_and_upsert_participant(
+            "ROOM42",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "token-1",
+            0,
+            42,
+            1,
+            "Owner",
+            "2026-04-06T00:00:00Z",
+        )?;
+
+        db.save_table_and_delete_tokens_for_seat(
+            "ROOM42",
+            "2026-04-06T01:00:00Z",
+            &room_json,
+            0,
+            "2026-04-06T01:00:00Z",
+        )?;
+
+        assert!(db.get_active_table_participant("ROOM42", 1)?.is_none());
+        let left_at = db.conn.query_row(
+            "
+            SELECT left_at
+            FROM table_participants
+            WHERE table_code = 'ROOM42' AND user_id = 1
+            ",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )?;
+        assert_eq!(left_at.as_deref(), Some("2026-04-06T01:00:00Z"));
+        Ok(())
+    }
+
+    #[test]
+    fn delete_table_marks_all_active_participants_left() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        db.conn.execute(
+            "
+            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
+            VALUES
+                (1, 'owner', 'Owner', 'hash', '2026-04-06T00:00:00Z', '2026-04-06T00:00:00Z'),
+                (2, 'guest', 'Guest', 'hash', '2026-04-06T00:00:00Z', '2026-04-06T00:00:00Z')
+            ",
+            [],
+        )?;
+
+        let room_json =
+            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
+        db.save_table_and_store_reconnect_token_and_upsert_participant(
+            "ROOM42",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "token-1",
+            0,
+            42,
+            1,
+            "Owner",
+            "2026-04-06T00:00:00Z",
+        )?;
+        db.save_table_and_store_reconnect_token_and_upsert_participant(
+            "ROOM42",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "token-2",
+            1,
+            43,
+            2,
+            "Guest",
+            "2026-04-06T00:00:00Z",
+        )?;
+
+        db.delete_table("ROOM42", "2026-04-06T02:00:00Z")?;
+
+        assert!(db.get_table("ROOM42")?.is_none());
+        assert!(db.get_reconnect_token("token-1")?.is_none());
+        assert!(db.get_reconnect_token("token-2")?.is_none());
+
+        let left_times = db
+            .conn
+            .prepare(
+                "
+                SELECT left_at
+                FROM table_participants
+                WHERE table_code = 'ROOM42'
+                ORDER BY user_id ASC
+                ",
+            )?
+            .query_map([], |row| row.get::<_, Option<String>>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        assert_eq!(
+            left_times,
+            vec![
+                Some("2026-04-06T02:00:00Z".to_string()),
+                Some("2026-04-06T02:00:00Z".to_string()),
+            ]
+        );
         Ok(())
     }
 
