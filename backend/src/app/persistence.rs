@@ -69,6 +69,105 @@ pub(crate) struct UserRecord {
     pub(crate) updated_at: String,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ArchivedRoundPlayerInput {
+    pub(crate) user_id: i64,
+    pub(crate) seat_index: usize,
+    pub(crate) score_delta: i64,
+    pub(crate) point_delta: i64,
+    pub(crate) cumulative_score: i64,
+    pub(crate) is_winner: bool,
+    pub(crate) win_type: Option<String>,
+    pub(crate) nickname_snapshot: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArchivedFanStatInput {
+    pub(crate) user_id: i64,
+    pub(crate) fan_key: String,
+    pub(crate) fan_label: String,
+    pub(crate) count: i64,
+    pub(crate) last_seen_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArchiveRoundInput {
+    pub(crate) table_code: String,
+    pub(crate) owner_user_id: i64,
+    pub(crate) multiplier: i64,
+    pub(crate) started_at: String,
+    pub(crate) ended_at: String,
+    pub(crate) round_id: String,
+    pub(crate) settlement_json: String,
+    pub(crate) points_enabled: bool,
+    pub(crate) player_results: Vec<ArchivedRoundPlayerInput>,
+    pub(crate) fan_stats: Vec<ArchivedFanStatInput>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UserPointBalanceRecord {
+    pub(crate) user_id: i64,
+    pub(crate) delta: i64,
+    pub(crate) points: i64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArchiveRoundOutcome {
+    pub(crate) inserted: bool,
+    pub(crate) game_id: i64,
+    pub(crate) point_updates: Vec<UserPointBalanceRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GameSummaryRecord {
+    pub(crate) game_id: i64,
+    pub(crate) table_code: String,
+    pub(crate) owner_user_id: i64,
+    pub(crate) owner_display_name: String,
+    pub(crate) owner_points: i64,
+    pub(crate) multiplier: i64,
+    pub(crate) started_at: String,
+    pub(crate) ended_at: Option<String>,
+    pub(crate) round_count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GameRecordDetail {
+    pub(crate) summary: GameSummaryRecord,
+    pub(crate) final_room_json: Option<String>,
+    pub(crate) rounds: Vec<RoundRecordDetail>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundRecordDetail {
+    pub(crate) round_record_id: i64,
+    pub(crate) round_id: String,
+    pub(crate) ended_at: String,
+    pub(crate) settlement_json: String,
+    pub(crate) player_results: Vec<RoundPlayerResultRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundPlayerResultRecord {
+    pub(crate) user_id: i64,
+    pub(crate) seat_index: usize,
+    pub(crate) score_delta: i64,
+    pub(crate) point_delta: i64,
+    pub(crate) cumulative_score: i64,
+    pub(crate) is_winner: bool,
+    pub(crate) win_type: Option<String>,
+    pub(crate) nickname_snapshot: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UserFanStatRecord {
+    pub(crate) user_id: i64,
+    pub(crate) fan_key: String,
+    pub(crate) fan_label: String,
+    pub(crate) count: i64,
+    pub(crate) last_seen_at: String,
+}
+
 struct SqliteColumn {
     name: String,
     not_null: bool,
@@ -102,6 +201,7 @@ impl Database {
         self.ensure_tables_schema()?;
         self.ensure_reconnect_tokens_schema()?;
         self.create_user_auth_tables()?;
+        self.create_record_tables()?;
         self.ensure_indexes()?;
         Ok(())
     }
@@ -129,6 +229,18 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_table_invites_invitee_status
             ON table_invites(invitee_user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_game_records_table_code
+            ON game_records(table_code, ended_at);
+
+            CREATE INDEX IF NOT EXISTS idx_round_records_game_record_id
+            ON round_records(game_record_id);
+
+            CREATE INDEX IF NOT EXISTS idx_round_player_results_user_id
+            ON round_player_results(user_id);
+
+            CREATE INDEX IF NOT EXISTS idx_user_fan_stats_user_id
+            ON user_fan_stats(user_id);
             ",
         )?;
         Ok(())
@@ -301,6 +413,59 @@ impl Database {
         Ok(())
     }
 
+    fn create_record_tables(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS game_records (
+                id INTEGER PRIMARY KEY,
+                table_code TEXT NOT NULL,
+                owner_user_id INTEGER NOT NULL,
+                multiplier INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                final_room_json TEXT,
+                FOREIGN KEY(owner_user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS round_records (
+                id INTEGER PRIMARY KEY,
+                game_record_id INTEGER NOT NULL,
+                round_id TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                settlement_json TEXT NOT NULL,
+                UNIQUE(game_record_id, round_id),
+                FOREIGN KEY(game_record_id) REFERENCES game_records(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS round_player_results (
+                round_record_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                seat_index INTEGER NOT NULL,
+                score_delta INTEGER NOT NULL,
+                point_delta INTEGER NOT NULL,
+                cumulative_score INTEGER NOT NULL,
+                is_winner INTEGER NOT NULL,
+                win_type TEXT,
+                nickname_snapshot TEXT NOT NULL,
+                PRIMARY KEY(round_record_id, user_id),
+                FOREIGN KEY(round_record_id) REFERENCES round_records(id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS user_fan_stats (
+                user_id INTEGER NOT NULL,
+                fan_key TEXT NOT NULL,
+                fan_label TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                last_seen_at TEXT NOT NULL,
+                PRIMARY KEY(user_id, fan_key),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+            ",
+        )?;
+        Ok(())
+    }
+
     fn tables_schema_is_current(&self, columns: &[SqliteColumn]) -> bool {
         columns.len() == 3
             && columns
@@ -444,6 +609,35 @@ impl Database {
         Ok(())
     }
 
+    fn get_table_room_json_with_conn(conn: &Connection, table_code: &str) -> Result<Option<String>> {
+        conn.query_row(
+            "SELECT room_json FROM tables WHERE table_code = ?1",
+            params![table_code],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn finalize_open_game_records_with_conn(
+        conn: &Connection,
+        table_code: &str,
+        ended_at: &str,
+        final_room_json: Option<&str>,
+    ) -> Result<()> {
+        conn.execute(
+            "
+            UPDATE game_records
+            SET ended_at = COALESCE(ended_at, ?2),
+                final_room_json = COALESCE(?3, final_room_json)
+            WHERE table_code = ?1
+              AND ended_at IS NULL
+            ",
+            params![table_code, ended_at, final_room_json],
+        )?;
+        Ok(())
+    }
+
     fn store_reconnect_token_with_conn(
         conn: &Connection,
         token: &str,
@@ -510,6 +704,7 @@ impl Database {
 
     fn delete_table(&self, table_code: &str, left_at: &str) -> Result<()> {
         self.with_transaction("delete table", |conn| {
+            let final_room_json = Self::get_table_room_json_with_conn(conn, table_code)?;
             conn.execute(
                 "
                 UPDATE table_participants
@@ -518,6 +713,12 @@ impl Database {
                   AND left_at IS NULL
                 ",
                 params![table_code, left_at],
+            )?;
+            Self::finalize_open_game_records_with_conn(
+                conn,
+                table_code,
+                left_at,
+                final_room_json.as_deref(),
             )?;
             Self::delete_tokens_for_table_with_conn(conn, table_code)?;
             Self::delete_table_row_with_conn(conn, table_code)?;
@@ -599,6 +800,85 @@ impl Database {
             expires_at: row.get(6)?,
             accepted_at: row.get(7)?,
         })
+    }
+
+    fn game_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameSummaryRecord> {
+        Ok(GameSummaryRecord {
+            game_id: row.get(0)?,
+            table_code: row.get(1)?,
+            owner_user_id: row.get(2)?,
+            owner_display_name: row.get(3)?,
+            owner_points: row.get(4)?,
+            multiplier: row.get(5)?,
+            started_at: row.get(6)?,
+            ended_at: row.get(7)?,
+            round_count: row.get(8)?,
+        })
+    }
+
+    fn round_player_result_from_row(
+        row: &rusqlite::Row<'_>,
+    ) -> rusqlite::Result<RoundPlayerResultRecord> {
+        Ok(RoundPlayerResultRecord {
+            user_id: row.get(0)?,
+            seat_index: row.get::<_, i64>(1)? as usize,
+            score_delta: row.get(2)?,
+            point_delta: row.get(3)?,
+            cumulative_score: row.get(4)?,
+            is_winner: row.get::<_, i64>(5)? != 0,
+            win_type: row.get(6)?,
+            nickname_snapshot: row.get(7)?,
+        })
+    }
+
+    fn user_fan_stat_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserFanStatRecord> {
+        Ok(UserFanStatRecord {
+            user_id: row.get(0)?,
+            fan_key: row.get(1)?,
+            fan_label: row.get(2)?,
+            count: row.get(3)?,
+            last_seen_at: row.get(4)?,
+        })
+    }
+
+    fn get_or_create_open_game_record_with_conn(
+        conn: &Connection,
+        table_code: &str,
+        owner_user_id: i64,
+        multiplier: i64,
+        started_at: &str,
+    ) -> Result<i64> {
+        if let Some(game_id) = conn
+            .query_row(
+                "
+                SELECT id
+                FROM game_records
+                WHERE table_code = ?1
+                  AND ended_at IS NULL
+                ORDER BY id DESC
+                LIMIT 1
+                ",
+                params![table_code],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+        {
+            return Ok(game_id);
+        }
+
+        conn.execute(
+            "
+            INSERT INTO game_records (
+                table_code,
+                owner_user_id,
+                multiplier,
+                started_at
+            )
+            VALUES (?1, ?2, ?3, ?4)
+            ",
+            params![table_code, owner_user_id, multiplier, started_at],
+        )?;
+        Ok(conn.last_insert_rowid())
     }
 
     fn get_user_by_id_with_conn(conn: &Connection, user_id: i64) -> Result<Option<UserRecord>> {
@@ -934,6 +1214,25 @@ impl Database {
         Ok(rows)
     }
 
+    fn list_active_table_participants_for_table(
+        &self,
+        table_code: &str,
+    ) -> Result<Vec<TableParticipantRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+            FROM table_participants
+            WHERE table_code = ?1
+              AND left_at IS NULL
+            ORDER BY seat_index ASC
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![table_code], Self::table_participant_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     fn count_active_other_human_participants(
         &self,
         table_code: &str,
@@ -1217,6 +1516,342 @@ impl Database {
         })
     }
 
+    fn archive_round(&self, input: &ArchiveRoundInput) -> Result<ArchiveRoundOutcome> {
+        self.with_transaction("archive round", |conn| {
+            let game_id = Self::get_or_create_open_game_record_with_conn(
+                conn,
+                &input.table_code,
+                input.owner_user_id,
+                input.multiplier,
+                &input.started_at,
+            )?;
+            let inserted = conn.execute(
+                "
+                INSERT OR IGNORE INTO round_records (
+                    game_record_id,
+                    round_id,
+                    ended_at,
+                    settlement_json
+                )
+                VALUES (?1, ?2, ?3, ?4)
+                ",
+                params![
+                    game_id,
+                    input.round_id,
+                    input.ended_at,
+                    input.settlement_json
+                ],
+            )?;
+            if inserted == 0 {
+                return Ok(ArchiveRoundOutcome {
+                    inserted: false,
+                    game_id,
+                    point_updates: Vec::new(),
+                });
+            }
+
+            let round_record_id = conn.last_insert_rowid();
+            for result in &input.player_results {
+                conn.execute(
+                    "
+                    INSERT INTO round_player_results (
+                        round_record_id,
+                        user_id,
+                        seat_index,
+                        score_delta,
+                        point_delta,
+                        cumulative_score,
+                        is_winner,
+                        win_type,
+                        nickname_snapshot
+                    )
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    ",
+                    params![
+                        round_record_id,
+                        result.user_id,
+                        result.seat_index as i64,
+                        result.score_delta,
+                        result.point_delta,
+                        result.cumulative_score,
+                        if result.is_winner { 1 } else { 0 },
+                        result.win_type,
+                        result.nickname_snapshot
+                    ],
+                )?;
+            }
+
+            let mut point_updates = Vec::new();
+            if input.points_enabled {
+                for result in &input.player_results {
+                    if result.point_delta == 0 {
+                        continue;
+                    }
+                    conn.execute(
+                        "
+                        INSERT INTO user_point_events (
+                            user_id,
+                            delta,
+                            reason,
+                            local_date,
+                            source_table_code,
+                            source_round_id,
+                            created_at
+                        )
+                        VALUES (?1, ?2, 'round_settlement', NULL, ?3, ?4, ?5)
+                        ",
+                        params![
+                            result.user_id,
+                            result.point_delta,
+                            input.table_code,
+                            input.round_id,
+                            input.ended_at
+                        ],
+                    )?;
+                    conn.execute(
+                        "
+                        UPDATE users
+                        SET points = points + ?2,
+                            updated_at = ?3
+                        WHERE id = ?1
+                        ",
+                        params![result.user_id, result.point_delta, input.ended_at],
+                    )?;
+                    let points = conn.query_row(
+                        "SELECT points FROM users WHERE id = ?1",
+                        params![result.user_id],
+                        |row| row.get::<_, i64>(0),
+                    )?;
+                    point_updates.push(UserPointBalanceRecord {
+                        user_id: result.user_id,
+                        delta: result.point_delta,
+                        points,
+                    });
+                }
+            }
+
+            for fan_stat in &input.fan_stats {
+                conn.execute(
+                    "
+                    INSERT INTO user_fan_stats (
+                        user_id,
+                        fan_key,
+                        fan_label,
+                        count,
+                        last_seen_at
+                    )
+                    VALUES (?1, ?2, ?3, ?4, ?5)
+                    ON CONFLICT(user_id, fan_key) DO UPDATE
+                    SET fan_label = excluded.fan_label,
+                        count = user_fan_stats.count + excluded.count,
+                        last_seen_at = excluded.last_seen_at
+                    ",
+                    params![
+                        fan_stat.user_id,
+                        fan_stat.fan_key,
+                        fan_stat.fan_label,
+                        fan_stat.count,
+                        fan_stat.last_seen_at
+                    ],
+                )?;
+            }
+
+            Ok(ArchiveRoundOutcome {
+                inserted: true,
+                game_id,
+                point_updates,
+            })
+        })
+    }
+
+    fn list_game_summaries(&self, limit: usize) -> Result<Vec<GameSummaryRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT
+                game_records.id,
+                game_records.table_code,
+                game_records.owner_user_id,
+                users.display_name,
+                users.points,
+                game_records.multiplier,
+                game_records.started_at,
+                game_records.ended_at,
+                COUNT(round_records.id) AS round_count
+            FROM game_records
+            JOIN users ON users.id = game_records.owner_user_id
+            LEFT JOIN round_records ON round_records.game_record_id = game_records.id
+            GROUP BY game_records.id
+            ORDER BY COALESCE(game_records.ended_at, MAX(round_records.ended_at), game_records.started_at) DESC,
+                     game_records.id DESC
+            LIMIT ?1
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![limit as i64], Self::game_summary_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn get_game_detail(&self, game_id: i64) -> Result<Option<GameRecordDetail>> {
+        let summary = self
+            .conn
+            .query_row(
+                "
+                SELECT
+                    game_records.id,
+                    game_records.table_code,
+                    game_records.owner_user_id,
+                    users.display_name,
+                    users.points,
+                    game_records.multiplier,
+                    game_records.started_at,
+                    game_records.ended_at,
+                    COUNT(round_records.id) AS round_count,
+                    game_records.final_room_json
+                FROM game_records
+                JOIN users ON users.id = game_records.owner_user_id
+                LEFT JOIN round_records ON round_records.game_record_id = game_records.id
+                WHERE game_records.id = ?1
+                GROUP BY game_records.id
+                ",
+                params![game_id],
+                |row| {
+                    Ok((
+                        GameSummaryRecord {
+                            game_id: row.get(0)?,
+                            table_code: row.get(1)?,
+                            owner_user_id: row.get(2)?,
+                            owner_display_name: row.get(3)?,
+                            owner_points: row.get(4)?,
+                            multiplier: row.get(5)?,
+                            started_at: row.get(6)?,
+                            ended_at: row.get(7)?,
+                            round_count: row.get(8)?,
+                        },
+                        row.get::<_, Option<String>>(9)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((summary, final_room_json)) = summary else {
+            return Ok(None);
+        };
+
+        let mut rounds_statement = self.conn.prepare(
+            "
+            SELECT id, round_id, ended_at, settlement_json
+            FROM round_records
+            WHERE game_record_id = ?1
+            ORDER BY ended_at ASC, id ASC
+            ",
+        )?;
+        let round_rows = rounds_statement
+            .query_map(params![game_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        let mut rounds = Vec::with_capacity(round_rows.len());
+        for (round_record_id, round_id, ended_at, settlement_json) in round_rows {
+            let mut players_statement = self.conn.prepare(
+                "
+                SELECT user_id, seat_index, score_delta, point_delta, cumulative_score, is_winner, win_type, nickname_snapshot
+                FROM round_player_results
+                WHERE round_record_id = ?1
+                ORDER BY seat_index ASC, user_id ASC
+                ",
+            )?;
+            let player_results = players_statement
+                .query_map(params![round_record_id], Self::round_player_result_from_row)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rounds.push(RoundRecordDetail {
+                round_record_id,
+                round_id,
+                ended_at,
+                settlement_json,
+                player_results,
+            });
+        }
+
+        Ok(Some(GameRecordDetail {
+            summary,
+            final_room_json,
+            rounds,
+        }))
+    }
+
+    fn list_games_for_user(&self, user_id: i64, limit: usize) -> Result<Vec<GameSummaryRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT
+                game_records.id,
+                game_records.table_code,
+                game_records.owner_user_id,
+                users.display_name,
+                users.points,
+                game_records.multiplier,
+                game_records.started_at,
+                game_records.ended_at,
+                COUNT(round_records.id) AS round_count
+            FROM game_records
+            JOIN users ON users.id = game_records.owner_user_id
+            LEFT JOIN round_records ON round_records.game_record_id = game_records.id
+            WHERE EXISTS (
+                SELECT 1
+                FROM round_records user_round_records
+                JOIN round_player_results
+                  ON round_player_results.round_record_id = user_round_records.id
+                WHERE user_round_records.game_record_id = game_records.id
+                  AND round_player_results.user_id = ?1
+            )
+            GROUP BY game_records.id
+            ORDER BY COALESCE(game_records.ended_at, MAX(round_records.ended_at), game_records.started_at) DESC,
+                     game_records.id DESC
+            LIMIT ?2
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![user_id, limit as i64], Self::game_summary_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn list_user_fan_stats(&self, user_id: i64) -> Result<Vec<UserFanStatRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT user_id, fan_key, fan_label, count, last_seen_at
+            FROM user_fan_stats
+            WHERE user_id = ?1
+            ORDER BY count DESC, fan_key ASC
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![user_id], Self::user_fan_stat_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn list_users_by_points(&self, limit: usize) -> Result<Vec<UserRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT id, username, display_name, password_hash, avatar, bio, points,
+                   last_login_local_date, created_at, updated_at
+            FROM users
+            ORDER BY points DESC, created_at ASC, id ASC
+            LIMIT ?1
+            ",
+        )?;
+        let rows = statement
+            .query_map(params![limit as i64], Self::user_record_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub(crate) fn create_invite_code(
         &self,
         code: &str,
@@ -1477,6 +2112,15 @@ impl DbWorker {
             .await
     }
 
+    pub(crate) async fn list_active_table_participants_for_table(
+        &self,
+        table_code: &str,
+    ) -> Result<Vec<TableParticipantRecord>> {
+        let table_code = table_code.to_string();
+        self.call(move |db| db.list_active_table_participants_for_table(&table_code))
+            .await
+    }
+
     pub(crate) async fn count_active_other_human_participants(
         &self,
         table_code: &str,
@@ -1670,6 +2314,34 @@ impl DbWorker {
             )
         })
         .await
+    }
+
+    pub(crate) async fn archive_round(&self, input: ArchiveRoundInput) -> Result<ArchiveRoundOutcome> {
+        self.call(move |db| db.archive_round(&input)).await
+    }
+
+    pub(crate) async fn list_game_summaries(&self, limit: usize) -> Result<Vec<GameSummaryRecord>> {
+        self.call(move |db| db.list_game_summaries(limit)).await
+    }
+
+    pub(crate) async fn get_game_detail(&self, game_id: i64) -> Result<Option<GameRecordDetail>> {
+        self.call(move |db| db.get_game_detail(game_id)).await
+    }
+
+    pub(crate) async fn list_games_for_user(
+        &self,
+        user_id: i64,
+        limit: usize,
+    ) -> Result<Vec<GameSummaryRecord>> {
+        self.call(move |db| db.list_games_for_user(user_id, limit)).await
+    }
+
+    pub(crate) async fn list_user_fan_stats(&self, user_id: i64) -> Result<Vec<UserFanStatRecord>> {
+        self.call(move |db| db.list_user_fan_stats(user_id)).await
+    }
+
+    pub(crate) async fn list_users_by_points(&self, limit: usize) -> Result<Vec<UserRecord>> {
+        self.call(move |db| db.list_users_by_points(limit)).await
     }
 }
 

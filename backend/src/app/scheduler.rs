@@ -7,6 +7,7 @@ use crate::app::room_runtime::{
     should_terminate_unattended, snapshot_connections, unregister_room_handle,
 };
 use crate::app::{
+    records::archive_current_round_if_needed,
     AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
     convert_seat_to_bot, disconnect_deadline_for_seat, next_disconnect_deadline,
@@ -64,7 +65,8 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         return;
     };
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
@@ -78,6 +80,11 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     {
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
+    }
+    if let Err(error) =
+        archive_current_round_if_needed(&state, &room, &created_at, &crate::app::now_iso()).await
+    {
+        eprintln!("failed to archive timeout settlement for table {table_code}: {error:#}");
     }
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
@@ -395,6 +402,11 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
     {
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
+    }
+    if let Err(error) =
+        archive_current_round_if_needed(&state, &room, &created_at, &crate::app::now_iso()).await
+    {
+        eprintln!("failed to archive bot settlement for table {table_code}: {error:#}");
     }
     let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&messages));
     outbound.extend(snapshot_outbound);

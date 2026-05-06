@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 use super::auth::hash_session_token;
+use super::records::archive_current_round_if_needed;
 #[cfg(feature = "spectator")]
 use super::collect_observer_outbound_from_snapshot;
 use super::protocol::{
@@ -1188,7 +1189,8 @@ async fn handle_action_request(
     };
 
     let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
+    let room = runtime.room.clone();
+    let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
@@ -1201,6 +1203,11 @@ async fn handle_action_request(
     {
         restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
+    }
+    if let Err(error) =
+        archive_current_round_if_needed(&state, &room, &created_at, &super::now_iso()).await
+    {
+        eprintln!("failed to archive round for table {table_code}: {error:#}");
     }
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);

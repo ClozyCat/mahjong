@@ -21,6 +21,7 @@ use super::auth::{
 use super::invites::{InviteAvailability, invite_availability, invite_expires_at};
 use super::persistence::{Database, DbWorker};
 use super::protocol::{create_table_response, detail_response};
+use super::records::{fan_stat_view, game_detail_view, game_summary_view};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
 use super::social_ws::social_websocket_handler;
 use super::users::{PublicUserView, public_user_view};
@@ -121,6 +122,11 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
         .route("/api/me", get(get_me).patch(update_me))
+        .route("/api/games", get(list_games))
+        .route("/api/games/{game_id}", get(get_game))
+        .route("/api/users/{user_id}/games", get(list_user_games))
+        .route("/api/users/{user_id}/fans", get(list_user_fans))
+        .route("/api/leaderboard", get(get_leaderboard))
         .route("/api/me/invites", get(get_my_invites))
         .route("/api/tables", post(create_table))
         .route("/api/tables/{table_code}/invites", post(create_table_invite))
@@ -345,6 +351,72 @@ async fn update_me(
     {
         Ok(Some(user)) => Json(public_user_view(&user)).into_response(),
         Ok(None) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn list_games(State(state): State<AppContext>) -> Response {
+    match state.inner.db.list_game_summaries(50).await {
+        Ok(games) => Json(
+            games
+                .iter()
+                .map(game_summary_view)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn get_game(
+    State(state): State<AppContext>,
+    axum::extract::Path(game_id): axum::extract::Path<i64>,
+) -> Response {
+    match state.inner.db.get_game_detail(game_id).await {
+        Ok(Some(game)) => match game_detail_view(&game) {
+            Ok(view) => Json(view).into_response(),
+            Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        },
+        Ok(None) => json_error(StatusCode::NOT_FOUND, "game_not_found"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn list_user_games(
+    State(state): State<AppContext>,
+    axum::extract::Path(user_id): axum::extract::Path<i64>,
+) -> Response {
+    if state.inner.db.get_user_by_id(user_id).await.ok().flatten().is_none() {
+        return json_error(StatusCode::NOT_FOUND, "user_not_found");
+    }
+    match state.inner.db.list_games_for_user(user_id, 50).await {
+        Ok(games) => Json(
+            games
+                .iter()
+                .map(game_summary_view)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn list_user_fans(
+    State(state): State<AppContext>,
+    axum::extract::Path(user_id): axum::extract::Path<i64>,
+) -> Response {
+    if state.inner.db.get_user_by_id(user_id).await.ok().flatten().is_none() {
+        return json_error(StatusCode::NOT_FOUND, "user_not_found");
+    }
+    match state.inner.db.list_user_fan_stats(user_id).await {
+        Ok(fans) => Json(fans.iter().map(fan_stat_view).collect::<Vec<_>>()).into_response(),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn get_leaderboard(State(state): State<AppContext>) -> Response {
+    match state.inner.db.list_users_by_points(100).await {
+        Ok(users) => Json(users.iter().map(public_user_view).collect::<Vec<_>>()).into_response(),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }

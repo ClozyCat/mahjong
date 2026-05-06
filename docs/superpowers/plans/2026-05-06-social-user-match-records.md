@@ -417,6 +417,8 @@ Test:
 - each human participant gets one `round_player_result`;
 - point delta equals score delta times locked multiplier;
 - bot seats do not get point events;
+- if settlement contains an independent bot seat, all human `point_delta` values stay `0` and no user points are updated;
+- a human seat with bot takeover still counts as human for point settlement;
 - repeated archive for the same round does not double-apply points;
 - winning fan keys increment `user_fan_stats`.
 
@@ -430,7 +432,7 @@ Expected first run before implementation: fails because record repositories do n
 
 - [ ] **Step 2: Add record schema and repositories**
 
-Create `game_records`, `round_records`, `round_player_results`, `user_point_events`, and `user_fan_stats`. Provide transactional write helpers so record rows, point events, user point totals, and fan stats are committed together.
+Create `game_records`, `round_records`, `round_player_results`, `user_point_events`, and `user_fan_stats`. Provide transactional write helpers so record rows, point events, user point totals, and fan stats are committed together. When a settled room contains an independent bot seat, persist record rows but skip player point application for that round.
 
 - [ ] **Step 3: Hook settlement archival**
 
