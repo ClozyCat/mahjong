@@ -3,12 +3,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
+use serde::Serialize;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::app::scheduler::schedule_room_tasks;
 use crate::app::{
-    AppContext, ConnectionHandle, disconnect_deadline_iso, parse_room_json, serialize_room_state,
+    AppContext, ConnectionHandle, OutboundMessage, disconnect_deadline_iso, parse_room_json,
+    serialize_room_state,
 };
 use crate::core::state::RoomState;
 use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state;
@@ -26,10 +28,16 @@ pub(crate) struct RoomHandle {
 
 pub(crate) type RoomRef = Arc<RoomHandle>;
 
+#[derive(Clone)]
+pub(crate) struct SeatConnectionGroup {
+    pub(crate) user_id: Option<i64>,
+    pub(crate) connections: HashMap<u64, ConnectionHandle>,
+}
+
 pub(crate) struct RoomRuntime {
     pub(crate) created_at: String,
     pub(crate) room: RoomState,
-    pub(crate) connections: HashMap<usize, ConnectionHandle>,
+    pub(crate) connections: HashMap<usize, SeatConnectionGroup>,
     #[cfg(feature = "spectator")]
     pub(crate) spectator_connections: HashMap<u64, ConnectionHandle>,
     pub(crate) timeout_nonce: u64,
@@ -107,8 +115,10 @@ pub(crate) fn abort_room_tasks(runtime: &mut RoomRuntime) {
 }
 
 pub(crate) fn close_runtime(runtime: &mut RoomRuntime) {
-    for connection in runtime.connections.values() {
-        connection.request_close();
+    for group in runtime.connections.values() {
+        for connection in group.connections.values() {
+            connection.request_close();
+        }
     }
     runtime.connections.clear();
     #[cfg(feature = "spectator")]
@@ -219,23 +229,101 @@ pub(crate) fn mark_restored_room_disconnected(room: &mut RoomState) {
     }
 }
 
-pub(crate) fn replace_connection(
+pub(crate) fn add_seat_connection(
     runtime: &mut RoomRuntime,
     seat_index: usize,
+    user_id: Option<i64>,
     connection: &ConnectionHandle,
 ) {
-    if let Some(previous) = runtime.connections.insert(seat_index, connection.clone()) {
-        if previous.id != connection.id {
-            previous.request_close();
-        }
+    let group = runtime.connections.entry(seat_index).or_insert_with(|| SeatConnectionGroup {
+        user_id,
+        connections: HashMap::new(),
+    });
+    if group.user_id.is_none() && user_id.is_some() {
+        group.user_id = user_id;
     }
+    group.connections.insert(connection.id, connection.clone());
+}
+
+pub(crate) fn remove_seat_connection(
+    runtime: &mut RoomRuntime,
+    seat_index: usize,
+    connection_id: u64,
+) -> bool {
+    let Some(group) = runtime.connections.get_mut(&seat_index) else {
+        return false;
+    };
+    group.connections.remove(&connection_id);
+    let still_live = !group.connections.is_empty();
+    if !still_live {
+        runtime.connections.remove(&seat_index);
+    }
+    still_live
+}
+
+pub(crate) fn remove_all_seat_connections(
+    runtime: &mut RoomRuntime,
+    seat_index: usize,
+) -> Vec<ConnectionHandle> {
+    runtime
+        .connections
+        .remove(&seat_index)
+        .map(|group| group.connections.into_values().collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn snapshot_seat_connections(
+    runtime: &RoomRuntime,
+    seat_index: usize,
+) -> Vec<ConnectionHandle> {
+    runtime
+        .connections
+        .get(&seat_index)
+        .map(|group| group.connections.values().cloned().collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn seat_has_live_connections(runtime: &RoomRuntime, seat_index: usize) -> bool {
+    runtime
+        .connections
+        .get(&seat_index)
+        .is_some_and(|group| !group.connections.is_empty())
+}
+
+pub(crate) fn seat_group_contains_connection(
+    runtime: &RoomRuntime,
+    seat_index: usize,
+    connection_id: u64,
+) -> bool {
+    runtime
+        .connections
+        .get(&seat_index)
+        .is_some_and(|group| group.connections.contains_key(&connection_id))
+}
+
+pub(crate) fn broadcast_to_seat_group<T: Serialize + Clone>(
+    runtime: &RoomRuntime,
+    seat_index: usize,
+    payload: T,
+) -> Vec<OutboundMessage> {
+    snapshot_seat_connections(runtime, seat_index)
+        .into_iter()
+        .map(|handle| handle.outbound(payload.clone()))
+        .collect()
 }
 
 pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
     runtime
         .connections
         .iter()
-        .map(|(seat, handle)| (*seat, handle.clone()))
+        .flat_map(|(seat, group)| {
+            group
+                .connections
+                .values()
+                .cloned()
+                .map(|handle| (*seat, handle))
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 
@@ -292,4 +380,55 @@ pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
         .seats
         .iter()
         .all(|seat| seat.is_bot || seat.reconnect_token.is_none())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    use tokio::sync::{Notify, mpsc};
+
+    use super::{
+        RoomRuntime, add_seat_connection, remove_seat_connection, seat_group_contains_connection,
+        seat_has_live_connections, snapshot_connections, snapshot_seat_connections,
+    };
+    use crate::app::ConnectionHandle;
+    use crate::app::initial_room_state;
+
+    fn test_connection(id: u64) -> ConnectionHandle {
+        let (sender, _receiver) = mpsc::channel(4);
+        ConnectionHandle {
+            id,
+            sender,
+            close_requested: Arc::new(AtomicBool::new(false)),
+            close_notify: Arc::new(Notify::new()),
+        }
+    }
+
+    #[test]
+    fn multi_device_seat_group_tracks_multiple_connections() {
+        let mut runtime = RoomRuntime::new(
+            "2026-05-06T00:00:00Z".to_string(),
+            initial_room_state("ROOM42"),
+        );
+        let first = test_connection(1);
+        let second = test_connection(2);
+
+        add_seat_connection(&mut runtime, 0, Some(11), &first);
+        add_seat_connection(&mut runtime, 0, Some(11), &second);
+
+        assert!(seat_has_live_connections(&runtime, 0));
+        assert!(seat_group_contains_connection(&runtime, 0, 1));
+        assert!(seat_group_contains_connection(&runtime, 0, 2));
+        assert_eq!(snapshot_seat_connections(&runtime, 0).len(), 2);
+        assert_eq!(snapshot_connections(&runtime).len(), 2);
+
+        assert!(remove_seat_connection(&mut runtime, 0, 1));
+        assert!(seat_has_live_connections(&runtime, 0));
+        assert_eq!(snapshot_seat_connections(&runtime, 0).len(), 1);
+
+        assert!(!remove_seat_connection(&mut runtime, 0, 2));
+        assert!(!seat_has_live_connections(&runtime, 0));
+    }
 }

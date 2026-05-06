@@ -500,14 +500,14 @@ pub(crate) fn collect_join_outbound_from_snapshot(
 
     let presence = player_presence_message(table_code, seat_index, connected);
     for (other_seat, handle) in connections {
-        if *other_seat == seat_index {
+        if *other_seat == seat_index && handle.id == connection.id {
             continue;
         }
         outbound.push(handle.outbound(presence.clone()));
         outbound.extend(build_room_messages_for_seat(room, *other_seat, handle));
     }
     for (other_seat, handle) in connections {
-        if *other_seat == seat_index {
+        if *other_seat == seat_index && handle.id == connection.id {
             continue;
         }
         if let Some(prompt) = build_prompt_for_seat(room, *other_seat) {

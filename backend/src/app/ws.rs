@@ -20,9 +20,10 @@ use super::protocol::{
     leave_table_accepted_message, quick_chat_message,
 };
 use super::room_runtime::{
-    PendingStartMatch, close_runtime, ensure_room_loaded, replace_connection,
-    restore_room_snapshot, room_handle, room_has_only_bots, should_terminate_unattended,
-    snapshot_connections, unregister_room_handle,
+    PendingStartMatch, add_seat_connection, broadcast_to_seat_group, close_runtime,
+    ensure_room_loaded, remove_all_seat_connections, remove_seat_connection,
+    restore_room_snapshot, room_handle, room_has_only_bots, seat_group_contains_connection,
+    should_terminate_unattended, snapshot_connections, unregister_room_handle,
 };
 #[cfg(feature = "spectator")]
 use super::room_runtime::{
@@ -430,8 +431,7 @@ async fn assert_active_owned_seat(
         return None;
     }
     let runtime = room_handle.runtime.lock().await;
-    let current = runtime.connections.get(&seat_index)?;
-    if current.id == connection.id {
+    if seat_group_contains_connection(&runtime, seat_index, connection.id) {
         Some(seat_index)
     } else {
         None
@@ -508,7 +508,7 @@ async fn handle_join_table(
     if runtime
         .connections
         .values()
-        .any(|handle| handle.id == connection.id)
+        .any(|group| group.connections.contains_key(&connection.id))
     {
         return reject_to(connection, "seat_already_owned");
     }
@@ -613,7 +613,12 @@ async fn handle_join_table(
             &spectator_connections,
         ));
         let mut runtime = room_handle.runtime.lock().await;
-        replace_connection(&mut runtime, seat_index, connection);
+        add_seat_connection(
+            &mut runtime,
+            seat_index,
+            Some(authenticated_user.user_id),
+            connection,
+        );
         drop(runtime);
         schedule_room_tasks_detached(state, table_code.to_string());
         return MessageOutcome {
@@ -662,7 +667,12 @@ async fn handle_join_table(
         &spectator_connections,
     ));
     let mut runtime = room_handle.runtime.lock().await;
-    replace_connection(&mut runtime, seat_index, connection);
+    add_seat_connection(
+        &mut runtime,
+        seat_index,
+        Some(authenticated_user.user_id),
+        connection,
+    );
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -704,7 +714,7 @@ async fn handle_reconnect(
     if runtime
         .connections
         .values()
-        .any(|handle| handle.id == connection.id)
+        .any(|group| group.connections.contains_key(&connection.id))
     {
         return reject_to(connection, "seat_already_owned");
     }
@@ -780,7 +790,7 @@ async fn handle_reconnect(
         &spectator_connections,
     ));
     let mut runtime = room_handle.runtime.lock().await;
-    replace_connection(&mut runtime, token_record.seat_index, connection);
+    add_seat_connection(&mut runtime, token_record.seat_index, None, connection);
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
@@ -1308,8 +1318,11 @@ async fn handle_leave_table(
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     }
 
-    let mut outbound =
-        vec![connection.outbound(leave_table_accepted_message(table_code, seat_index))];
+    let leave_payload = leave_table_accepted_message(table_code, seat_index);
+    let mut outbound = broadcast_to_seat_group(&runtime, seat_index, leave_payload.clone());
+    if outbound.is_empty() {
+        outbound.push(connection.outbound(leave_payload));
+    }
 
     if phase == "waiting" {
         if room_seats(&runtime.room).is_empty() || room_has_only_bots(&runtime.room) {
@@ -1366,7 +1379,9 @@ async fn handle_leave_table(
                 return internal_error_to(connection, error);
             }
             let mut runtime = room_handle.runtime.lock().await;
-            runtime.connections.remove(&seat_index);
+            for handle in remove_all_seat_connections(&mut runtime, seat_index) {
+                handle.request_close();
+            }
             drop(runtime);
             schedule_room_tasks_detached(state, table_code.to_string());
             MessageOutcome {
@@ -1433,7 +1448,9 @@ async fn handle_leave_table(
             return internal_error_to(connection, error);
         }
         let mut runtime = room_handle.runtime.lock().await;
-        runtime.connections.remove(&seat_index);
+        for handle in remove_all_seat_connections(&mut runtime, seat_index) {
+            handle.request_close();
+        }
         drop(runtime);
         schedule_room_tasks_detached(state, table_code.to_string());
         MessageOutcome {
@@ -1467,10 +1484,10 @@ async fn handle_disconnect(
         return;
     }
     let previous_room = runtime.room.clone();
-    let Some(current_handle) = runtime.connections.get(&seat_index).cloned() else {
+    if !seat_group_contains_connection(&runtime, seat_index, connection_id) {
         return;
-    };
-    if current_handle.id != connection_id {
+    }
+    if remove_seat_connection(&mut runtime, seat_index, connection_id) {
         return;
     }
     set_seat_connected(
@@ -1513,14 +1530,7 @@ async fn handle_disconnect(
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    let mut runtime = room_handle.runtime.lock().await;
-    if runtime
-        .connections
-        .get(&seat_index)
-        .is_some_and(|handle| handle.id == connection_id)
-    {
-        runtime.connections.remove(&seat_index);
-    }
+    let runtime = room_handle.runtime.lock().await;
     drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
@@ -1552,7 +1562,10 @@ mod tests {
     use serde_json::Value;
     use tokio::sync::{Notify, mpsc};
 
-    use super::{ClientMessage, ConnectionRole, JoinTableRequest, handle_join_table, parse_client_message};
+    use super::{
+        ClientMessage, ConnectionRole, JoinTableRequest, ReadyRequest, handle_client_message,
+        handle_disconnect, handle_join_table, parse_client_message,
+    };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::room_runtime::room_handle;
@@ -1561,17 +1574,84 @@ mod tests {
     };
     use crate::core::state::SeatState;
 
-    fn test_connection_handle(capacity: usize) -> (ConnectionHandle, mpsc::Receiver<String>) {
+    fn test_connection_handle(id: u64, capacity: usize) -> (ConnectionHandle, mpsc::Receiver<String>) {
         let (sender, receiver) = mpsc::channel(capacity);
         (
             ConnectionHandle {
-                id: 1,
+                id,
                 sender,
                 close_requested: Arc::new(AtomicBool::new(false)),
                 close_notify: Arc::new(Notify::new()),
             },
             receiver,
         )
+    }
+
+    async fn build_reserved_participant_state(table_code: &str) -> Result<(AppContext, String)> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+
+        worker
+            .create_invite_code("INVITE200003", "2026-05-06T00:00:00Z", None)
+            .await?;
+        let owner_token = generate_session_token();
+        let owner = worker
+            .register_user(
+                "Owner",
+                "Owner",
+                &hash_password("secret-123")?,
+                "INVITE200003",
+                &hash_session_token(&owner_token),
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+
+        worker
+            .create_invite_code("INVITE200004", "2026-05-06T00:00:00Z", None)
+            .await?;
+        let guest_token = generate_session_token();
+        let guest = worker
+            .register_user(
+                "Guest",
+                "Guest",
+                &hash_password("secret-123")?,
+                "INVITE200004",
+                &hash_session_token(&guest_token),
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+
+        let mut room = initial_room_state_with_owner(table_code, Some(owner.user_id), 1);
+        room.seats.push(SeatState {
+            seat_index: 0,
+            nickname: Some("Guest".to_string()),
+            reconnect_token: Some("token-join".to_string()),
+            player_session_id: Some(88),
+            connected: false,
+            ready: false,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+        });
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table_and_store_reconnect_token_and_upsert_participant(
+                table_code,
+                "2026-05-06T00:00:00Z",
+                &room_json,
+                "token-join",
+                0,
+                88,
+                guest.user_id,
+                "Guest",
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+
+        Ok((AppContext::new(worker), guest_token))
     }
 
     #[test]
@@ -1676,7 +1756,7 @@ mod tests {
             .save_table("ROOM42", "2026-05-06T00:00:00Z", &room_json)
             .await?;
 
-        let (connection, _receiver) = test_connection_handle(4);
+        let (connection, _receiver) = test_connection_handle(1, 4);
         let outcome = handle_join_table(
             state,
             "ROOM42",
@@ -1695,71 +1775,8 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn invite_only_join_table_allows_reserved_participant() -> Result<()> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-        let worker = DbWorker::start(db)?;
-
-        worker
-            .create_invite_code("INVITE200003", "2026-05-06T00:00:00Z", None)
-            .await?;
-        let owner_token = generate_session_token();
-        let owner = worker
-            .register_user(
-                "Owner",
-                "Owner",
-                &hash_password("secret-123")?,
-                "INVITE200003",
-                &hash_session_token(&owner_token),
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        worker
-            .create_invite_code("INVITE200004", "2026-05-06T00:00:00Z", None)
-            .await?;
-        let guest_token = generate_session_token();
-        let guest = worker
-            .register_user(
-                "Guest",
-                "Guest",
-                &hash_password("secret-123")?,
-                "INVITE200004",
-                &hash_session_token(&guest_token),
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        let mut room = initial_room_state_with_owner("ROOM42", Some(owner.user_id), 1);
-        room.seats.push(SeatState {
-            seat_index: 0,
-            nickname: Some("Guest".to_string()),
-            reconnect_token: Some("token-join".to_string()),
-            player_session_id: Some(88),
-            connected: false,
-            ready: false,
-            is_bot: false,
-            seat_type: "human".to_string(),
-            bot_persona: None,
-            bot_aggression: None,
-            disconnect_deadline_at: None,
-        });
-        let room_json = serialize_room_state(&room)?;
-        worker
-            .save_table_and_store_reconnect_token_and_upsert_participant(
-                "ROOM42",
-                "2026-05-06T00:00:00Z",
-                &room_json,
-                "token-join",
-                0,
-                88,
-                guest.user_id,
-                "Guest",
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        let state = AppContext::new(worker.clone());
-        let (connection, _receiver) = test_connection_handle(8);
+        let (state, guest_token) = build_reserved_participant_state("ROOM42").await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
         let outcome = handle_join_table(
             state.clone(),
             "ROOM42",
@@ -1779,6 +1796,127 @@ mod tests {
             .expect("room should be loaded");
         let runtime = room_handle.runtime.lock().await;
         assert!(runtime.room.seats[0].connected);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn multi_device_join_table_allows_actions_from_both_connections() -> Result<()> {
+        let (state, guest_token) = build_reserved_participant_state("ROOM52").await?;
+        let (first_connection, _first_receiver) = test_connection_handle(1, 8);
+        let (second_connection, _second_receiver) = test_connection_handle(2, 8);
+
+        let first_join = handle_join_table(
+            state.clone(),
+            "ROOM52",
+            &first_connection,
+            JoinTableRequest {
+                session_token: guest_token.clone(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            first_join.role,
+            Some(ConnectionRole::Player { seat_index: 0 })
+        ));
+
+        let second_join = handle_join_table(
+            state.clone(),
+            "ROOM52",
+            &second_connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+        assert!(matches!(
+            second_join.role,
+            Some(ConnectionRole::Player { seat_index: 0 })
+        ));
+        assert!(second_join.outbound.iter().any(|message| message.connection.id == 1));
+        assert!(second_join.outbound.iter().any(|message| message.connection.id == 2));
+
+        let second_ready = handle_client_message(
+            state.clone(),
+            "ROOM52",
+            &second_connection,
+            ConnectionRole::Player { seat_index: 0 },
+            ClientMessage::Ready(ReadyRequest { ready: true }),
+        )
+        .await;
+        assert!(second_ready.outbound.iter().any(|message| message.connection.id == 1));
+        assert!(second_ready.outbound.iter().any(|message| message.connection.id == 2));
+
+        let first_ready = handle_client_message(
+            state.clone(),
+            "ROOM52",
+            &first_connection,
+            ConnectionRole::Player { seat_index: 0 },
+            ClientMessage::Ready(ReadyRequest { ready: false }),
+        )
+        .await;
+        assert!(first_ready.outbound.iter().any(|message| message.connection.id == 1));
+        assert!(first_ready.outbound.iter().any(|message| message.connection.id == 2));
+
+        let room_handle = room_handle(&state, "ROOM52")
+            .await
+            .expect("room should be loaded");
+        let runtime = room_handle.runtime.lock().await;
+        assert_eq!(
+            runtime
+                .connections
+                .get(&0)
+                .map(|group| group.connections.len()),
+            Some(2)
+        );
+        assert!(!runtime.room.seats[0].ready);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn multi_device_disconnect_only_marks_seat_offline_after_last_connection() -> Result<()> {
+        let (state, guest_token) = build_reserved_participant_state("ROOM62").await?;
+        let (first_connection, _first_receiver) = test_connection_handle(1, 8);
+        let (second_connection, _second_receiver) = test_connection_handle(2, 8);
+
+        let _ = handle_join_table(
+            state.clone(),
+            "ROOM62",
+            &first_connection,
+            JoinTableRequest {
+                session_token: guest_token.clone(),
+            },
+        )
+        .await;
+        let _ = handle_join_table(
+            state.clone(),
+            "ROOM62",
+            &second_connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+
+        handle_disconnect(state.clone(), "ROOM62", Some(0), 1).await;
+        let room_handle = room_handle(&state, "ROOM62")
+            .await
+            .expect("room should be loaded");
+        {
+            let runtime = room_handle.runtime.lock().await;
+            assert!(runtime.room.seats[0].connected);
+            assert_eq!(
+                runtime
+                    .connections
+                    .get(&0)
+                    .map(|group| group.connections.len()),
+                Some(1)
+            );
+        }
+
+        handle_disconnect(state.clone(), "ROOM62", Some(0), 2).await;
+        let runtime = room_handle.runtime.lock().await;
+        assert!(!runtime.room.seats[0].connected);
+        assert!(runtime.connections.get(&0).is_none());
         Ok(())
     }
 

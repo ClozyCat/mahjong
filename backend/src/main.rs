@@ -37,7 +37,7 @@ mod tests {
 
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::room_runtime::{
-        RoomRuntime, close_room_handle, mark_restored_room_disconnected, replace_connection,
+        RoomRuntime, add_seat_connection, close_room_handle, mark_restored_room_disconnected,
         restore_persisted_rooms, room_handle, room_has_only_bots,
     };
     use crate::app::{
@@ -81,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn replace_connection_closes_previous_socket() {
+    fn add_seat_connection_keeps_existing_socket_for_same_seat() {
         let (previous, _receiver) = test_connection_handle(1);
         let replacement = ConnectionHandle {
             id: 2,
@@ -90,12 +90,17 @@ mod tests {
             close_notify: Arc::new(Notify::new()),
         };
         let mut runtime = RoomRuntime::new(now_iso(), initial_room_state("ROOM42"));
-        runtime.connections = HashMap::from([(0, previous.clone())]);
+        add_seat_connection(&mut runtime, 0, Some(11), &previous);
+        add_seat_connection(&mut runtime, 0, Some(11), &replacement);
 
-        replace_connection(&mut runtime, 0, &replacement);
-
-        assert!(previous.should_close());
-        assert_eq!(runtime.connections.get(&0).map(|handle| handle.id), Some(2));
+        assert!(!previous.should_close());
+        assert_eq!(
+            runtime
+                .connections
+                .get(&0)
+                .map(|group| group.connections.len()),
+            Some(2)
+        );
     }
 
     #[test]
