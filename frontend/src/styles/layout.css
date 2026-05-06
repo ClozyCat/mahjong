@@ -138,3 +138,13 @@
     --battle-shell-bottom-gap: clamp(0.6rem, 1.3vh, 0.9rem);
   }
 }
+
+.auth-gate,
+.social-lobby {
+  min-height: 100dvh;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 36%),
+    radial-gradient(circle at bottom right, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 30%),
+    var(--desktop);
+}

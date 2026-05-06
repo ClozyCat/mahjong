@@ -2,6 +2,7 @@ export type Seat = 'bottom' | 'left' | 'top' | 'right';
 export type TableMode = 'normal';
 export type SeatType = 'human' | 'bot';
 export type ClientMode = 'player' | 'spectator';
+export type TableMultiplier = 1 | 2 | 3;
 
 export type MatchPhase =
   | 'loading'
@@ -25,12 +26,58 @@ export interface HealthResponse {
   status: string;
 }
 
+export interface PublicUser {
+  user_id: number;
+  username: string;
+  display_name: string;
+  points: number;
+  title: string;
+  display_label: string;
+  bio: string;
+  avatar?: string | null;
+}
+
+export interface AuthResponse {
+  session_token: string;
+  user: PublicUser;
+}
+
 export interface CreateTableResponse {
   table_code: string;
   phase: RoomPhase;
   mode?: TableMode;
+  owner_user_id?: number | null;
+  multiplier?: TableMultiplier;
   created_at: string;
   seats: SeatSnapshot[];
+}
+
+export interface TableInvite {
+  id: number;
+  table_code: string;
+  inviter_user_id: number;
+  invitee_user_id: number;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  accepted_at?: string | null;
+}
+
+export interface AcceptInviteResponse {
+  invite_id: number;
+  table_code: string;
+  seat_index: number;
+  status: string;
+}
+
+export interface SpectatorRequest {
+  id: number;
+  table_code: string;
+  requester_user_id: number;
+  owner_user_id: number;
+  status: string;
+  created_at: string;
+  decided_at?: string | null;
 }
 
 export interface SeatSnapshot {
@@ -276,9 +323,37 @@ export type ServerMessage =
   | QuickChatMessage
   | HeartbeatMessage;
 
+export interface UserPresenceUpdatedMessage {
+  type: 'user_presence_updated';
+  payload: {
+    online_user_ids: number[];
+  };
+}
+
+export interface TableInviteCreatedMessage {
+  type: 'table_invite_created';
+  payload: TableInvite;
+}
+
+export interface SpectatorRequestCreatedMessage {
+  type: 'spectator_request_created';
+  payload: SpectatorRequest;
+}
+
+export interface SpectatorRequestDecidedMessage {
+  type: 'spectator_request_decided';
+  payload: SpectatorRequest;
+}
+
+export type SocialServerMessage =
+  | UserPresenceUpdatedMessage
+  | TableInviteCreatedMessage
+  | SpectatorRequestCreatedMessage
+  | SpectatorRequestDecidedMessage;
+
 export type ClientMessage =
-  | { type: 'join_table'; payload: { nickname: string } }
-  | { type: 'watch_table'; payload: { nickname: string } }
+  | { type: 'join_table'; payload: { session_token: string } }
+  | { type: 'watch_table'; payload: { session_token: string; nickname?: string } }
   | { type: 'reconnect'; payload: { reconnect_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }

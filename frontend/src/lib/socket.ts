@@ -27,20 +27,21 @@ export function parseServerMessage(raw: string): ServerMessage | null {
   }
 }
 
-export function createJoinTableMessage(nickname: string): ClientMessage {
+export function createJoinTableMessage(sessionToken: string): ClientMessage {
   return {
     type: 'join_table',
     payload: {
-      nickname,
+      session_token: sessionToken,
     },
   };
 }
 
-export function createWatchTableMessage(nickname: string): ClientMessage {
+export function createWatchTableMessage(sessionToken: string, nickname?: string): ClientMessage {
   return {
     type: 'watch_table',
     payload: {
-      nickname,
+      session_token: sessionToken,
+      ...(nickname ? { nickname } : {}),
     },
   };
 }

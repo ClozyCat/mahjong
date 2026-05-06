@@ -358,6 +358,187 @@
   box-shadow: 0 0 8px var(--accent);
 }
 
+.auth-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-gate__panel,
+.social-lobby__panel,
+.social-lobby__dialog {
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-gate__panel {
+  width: min(100%, 28rem);
+  border-radius: 16px;
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-gate__header h1,
+.social-lobby__hero h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.auth-gate__eyebrow,
+.social-lobby__eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-gate__status,
+.social-lobby__meta,
+.social-lobby__hint,
+.social-lobby__message,
+.social-lobby__row span {
+  color: var(--muted);
+}
+
+.auth-gate__tabs,
+.social-lobby__multiplier,
+.social-lobby__actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.auth-gate__tabs button,
+.social-lobby__multiplier button,
+.social-lobby__ghost,
+.social-lobby__primary,
+.social-lobby__secondary,
+.social-lobby__row button,
+.auth-gate__primary {
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-soft) 80%, transparent);
+  color: var(--theme-paper-strong);
+  padding: 0.75rem 1rem;
+}
+
+.auth-gate__tabs button.is-active,
+.social-lobby__multiplier button.is-active,
+.social-lobby__multiplier button[aria-pressed='true'],
+.social-lobby__primary,
+.auth-gate__primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.auth-gate__form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.auth-gate__field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.auth-gate__field input {
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 65%, transparent);
+  color: var(--theme-paper-strong);
+}
+
+.social-lobby {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.social-lobby__hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.social-lobby__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.social-lobby__panel {
+  border-radius: 14px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.social-lobby__panel h2,
+.social-lobby__dialog h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.social-lobby__list,
+.social-lobby__ranking {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.social-lobby__row,
+.social-lobby__ranking li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.social-lobby__row > div,
+.social-lobby__ranking li {
+  min-width: 0;
+}
+
+.social-lobby__row strong,
+.social-lobby__ranking span {
+  display: block;
+}
+
+.social-lobby__empty {
+  color: var(--muted);
+}
+
+.social-lobby__dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.social-lobby__dialog {
+  width: min(100%, 24rem);
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .social-lobby__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .connect-gate__admin-link:hover {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   border-color: var(--accent);

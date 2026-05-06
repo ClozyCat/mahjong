@@ -234,35 +234,228 @@ function mockMobileBattleImmersiveApis() {
   return { lock, requestFullscreen, exitFullscreen };
 }
 
-async function joinTable(user: ReturnType<typeof userEvent.setup>) {
-  render(<App />);
+const AUTH_SESSION_TOKEN = 'auth-session-1';
+const DEFAULT_CURRENT_USER = {
+  user_id: 1,
+  username: 'player-a',
+  display_name: 'Player A',
+  points: 150,
+  title: '平民',
+  display_label: 'Player A（平民）',
+  bio: '',
+  avatar: null,
+};
+const DEFAULT_LEADERBOARD = [
+  DEFAULT_CURRENT_USER,
+  {
+    user_id: 2,
+    username: 'player-b',
+    display_name: 'Player B',
+    points: 90,
+    title: '平民',
+    display_label: 'Player B（平民）',
+    bio: '',
+    avatar: null,
+  },
+];
+const DEFAULT_PENDING_INVITE = {
+  id: 7,
+  table_code: 'ZXCVBN',
+  inviter_user_id: 2,
+  invitee_user_id: 1,
+  status: 'pending',
+  created_at: '2026-05-06T12:00:00Z',
+  expires_at: '2026-05-06T12:10:00Z',
+};
 
-  await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
-  await user.type(screen.getByLabelText(/昵称/), 'Player A');
-  await user.click(screen.getByRole('button', { name: '加入牌桌' }));
-
-  const socket = MockWebSocket.instances[0];
-  expect(socket).toBeDefined();
-  await act(async () => {
-    socket!.triggerOpen();
-  });
-
-  return socket!;
+function createMockResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 204 ? 'No Content' : 'OK',
+    json: async () => body,
+    text: async () => (body === undefined ? '' : JSON.stringify(body)),
+  } as Response;
 }
 
-async function watchTable(user: ReturnType<typeof userEvent.setup>) {
+function parseRequestBody(init?: RequestInit) {
+  if (!init?.body || typeof init.body !== 'string') {
+    return null;
+  }
+
+  return JSON.parse(init.body);
+}
+
+function seedStoredAuthSession(user = DEFAULT_CURRENT_USER) {
+  localStorage.setItem(
+    'mahjong:auth',
+    JSON.stringify({
+      sessionToken: AUTH_SESSION_TOKEN,
+      user,
+    }),
+  );
+}
+
+function createFetchMock(options?: {
+  me?: typeof DEFAULT_CURRENT_USER;
+  leaderboard?: typeof DEFAULT_LEADERBOARD;
+  invites?: typeof DEFAULT_PENDING_INVITE[];
+  createdTableCode?: string;
+}) {
+  const me = options?.me ?? DEFAULT_CURRENT_USER;
+  const leaderboard = options?.leaderboard ?? DEFAULT_LEADERBOARD;
+  const invites = options?.invites ?? [];
+  const createdTableCode = options?.createdTableCode ?? 'AB12CD';
+
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+
+    if (url.endsWith('/api/auth/login') && method === 'POST') {
+      return createMockResponse({
+        session_token: AUTH_SESSION_TOKEN,
+        user: me,
+      });
+    }
+
+    if (url.endsWith('/api/auth/register') && method === 'POST') {
+      const body = parseRequestBody(init);
+      const displayName = String(body?.display_name ?? me.display_name);
+      return createMockResponse({
+        session_token: AUTH_SESSION_TOKEN,
+        user: {
+          ...me,
+          username: displayName,
+          display_name: displayName,
+          display_label: `${displayName}（${me.title}）`,
+        },
+      });
+    }
+
+    if (url.endsWith('/api/auth/logout') && method === 'POST') {
+      return createMockResponse(undefined, 204);
+    }
+
+    if (url.endsWith('/api/me') && method === 'GET') {
+      return createMockResponse(me);
+    }
+
+    if (url.endsWith('/api/me/invites') && method === 'GET') {
+      return createMockResponse(invites);
+    }
+
+    if (url.endsWith('/api/leaderboard') && method === 'GET') {
+      return createMockResponse(leaderboard);
+    }
+
+    if (url.endsWith('/api/tables') && method === 'POST') {
+      return createMockResponse({
+        table_code: createdTableCode,
+        phase: 'waiting',
+        owner_user_id: me.user_id,
+        multiplier: parseRequestBody(init)?.multiplier ?? 1,
+        created_at: '2026-05-06T12:00:00Z',
+        seats: [],
+      });
+    }
+
+    if (/\/api\/tables\/[^/]+\/invites$/.test(url) && method === 'POST') {
+      const body = parseRequestBody(init);
+      return createMockResponse({
+        ...DEFAULT_PENDING_INVITE,
+        table_code: createdTableCode,
+        inviter_user_id: me.user_id,
+        invitee_user_id: Number(body?.invitee_user_id ?? DEFAULT_PENDING_INVITE.invitee_user_id),
+      });
+    }
+
+    if (/\/api\/invites\/\d+\/accept$/.test(url) && method === 'POST') {
+      return createMockResponse({
+        invite_id: DEFAULT_PENDING_INVITE.id,
+        table_code: DEFAULT_PENDING_INVITE.table_code,
+        seat_index: 1,
+        status: 'accepted',
+      });
+    }
+
+    throw new Error(`Unhandled fetch request: ${method} ${url}`);
+  });
+}
+
+function findFetchCall(fetchMock: ReturnType<typeof vi.fn>, path: string, method = 'GET') {
+  return fetchMock.mock.calls.find(
+    ([input, init]) => String(input).endsWith(path) && (init?.method ?? 'GET') === method,
+  );
+}
+
+function getMeSocket() {
+  return MockWebSocket.instances.find((socket) => socket.url.includes('/ws/me'));
+}
+
+function getRoomSocket(tableCode = 'AB12CD') {
+  return MockWebSocket.instances.find((socket) => socket.url.endsWith(`/ws/${tableCode}`));
+}
+
+function getRoomSockets(tableCode = 'AB12CD') {
+  return MockWebSocket.instances.filter((socket) => socket.url.endsWith(`/ws/${tableCode}`));
+}
+
+function expectSocialLobby() {
+  expect(screen.getByLabelText('Social lobby')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '创建牌局' })).toBeInTheDocument();
+}
+
+async function renderAuthenticatedLobby(
+  options?: Parameters<typeof createFetchMock>[0] & {
+    user?: typeof DEFAULT_CURRENT_USER;
+  },
+) {
+  const fetchMock = createFetchMock(options);
+  vi.stubGlobal('fetch', fetchMock);
+  seedStoredAuthSession(options?.user ?? options?.me ?? DEFAULT_CURRENT_USER);
+
   render(<App />);
 
-  await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
-  await user.click(screen.getByRole('button', { name: '观战牌桌' }));
+  await screen.findByRole('heading', { name: (options?.me ?? DEFAULT_CURRENT_USER).display_label });
+  await waitFor(() => {
+    expect(getMeSocket()).toBeDefined();
+  });
 
-  const socket = MockWebSocket.instances[0];
+  return { fetchMock };
+}
+
+async function joinTable(
+  user: ReturnType<typeof userEvent.setup>,
+  options?: Parameters<typeof renderAuthenticatedLobby>[0] & {
+    multiplier?: 1 | 2 | 3;
+  },
+) {
+  const lobby = await renderAuthenticatedLobby(options);
+
+  if (options?.multiplier && options.multiplier !== 1) {
+    await user.click(screen.getByRole('button', { name: `x${options.multiplier}` }));
+  }
+
+  await user.click(screen.getByRole('button', { name: '创建牌局' }));
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: '进入牌桌' })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole('button', { name: '进入牌桌' }));
+  await waitFor(() => {
+    expect(getRoomSocket(options?.createdTableCode ?? 'AB12CD')).toBeDefined();
+  });
+
+  const socket = getRoomSocket(options?.createdTableCode ?? 'AB12CD');
   expect(socket).toBeDefined();
   await act(async () => {
     socket!.triggerOpen();
   });
 
-  return socket!;
+  return {
+    ...lobby,
+    socket: socket!,
+  };
 }
 
 describe('App', () => {
@@ -297,13 +490,17 @@ describe('App', () => {
     const user = userEvent.setup();
     const { lock } = mockMobileBattleImmersiveApis();
 
-    render(<App />);
-
-    await user.type(screen.getByLabelText('牌桌编号'), 'AB12CD');
-    await user.type(screen.getByLabelText(/昵称/), 'Player A');
-    await user.click(screen.getByRole('button', { name: '加入牌桌' }));
+    await joinTable(user);
 
     expect(lock).not.toHaveBeenCalled();
+  });
+
+  it('shows login and registration tabs when unauthenticated', () => {
+    render(<App />);
+
+    expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '邀请码注册' })).toBeInTheDocument();
+    expect(screen.getByLabelText('账号或用户 ID')).toBeInTheDocument();
   });
 
   it('does not start background music from lobby interactions', () => {
@@ -324,7 +521,7 @@ describe('App', () => {
 
   it('lets a bot-takeover player start the match after all seats are bots', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -347,16 +544,100 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: '开始对局' }));
 
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'start_match', payload: {} },
     ]);
+  });
+
+  it('registers with invite code and then enters the social lobby', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await user.click(screen.getByRole('tab', { name: '邀请码注册' }));
+    await user.type(screen.getByLabelText('邀请码'), 'INVITE-1');
+    await user.type(screen.getByLabelText('昵称'), '新朋友');
+    await user.type(screen.getByLabelText('密码'), 'secret-123');
+    await user.click(screen.getByRole('button', { name: '注册并登录' }));
+
+    await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+
+    const registerCall = findFetchCall(fetchMock, '/api/auth/register', 'POST');
+    expect(registerCall).toBeDefined();
+    expect(parseRequestBody(registerCall?.[1])).toEqual({
+      invite_code: 'INVITE-1',
+      display_name: '新朋友',
+      password: 'secret-123',
+    });
+  });
+
+  it('shows the logged-in lobby and uses the selected multiplier when creating a table', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    expect(screen.getByRole('heading', { name: DEFAULT_CURRENT_USER.display_label })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'x3' }));
+    await user.click(screen.getByRole('button', { name: '创建牌局' }));
+
+    const createTableCall = findFetchCall(fetchMock, '/api/tables', 'POST');
+    expect(createTableCall).toBeDefined();
+    expect(parseRequestBody(createTableCall?.[1])).toEqual({ multiplier: 3 });
+  });
+
+  it('calls the invite API from the lobby', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: '创建牌局' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '进入牌桌' })).toBeEnabled();
+    });
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    await user.click(screen.getAllByRole('button', { name: '邀请' })[0]!);
+
+    const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
+    expect(inviteCall).toBeDefined();
+    expect(parseRequestBody(inviteCall?.[1])).toEqual({
+      invitee_user_id: 2,
+    });
+  });
+
+  it('opens the invitation dialog when /ws/me receives a new invite', async () => {
+    await renderAuthenticatedLobby();
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'table_invite_created',
+        payload: DEFAULT_PENDING_INVITE,
+      });
+    });
+
+    expect(screen.getByRole('dialog', { name: '牌局邀请' })).toBeInTheDocument();
+    expect(screen.getByText('牌桌 ZXCVBN 邀请你加入。')).toBeInTheDocument();
   });
 
   it('shows the aspect-ratio prompt for mobile portrait battle sessions', async () => {
     const user = userEvent.setup();
     mockMobileBattleImmersiveApis();
 
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -371,7 +652,7 @@ describe('App', () => {
   it('does not request fullscreen when a mobile user enters the battle screen or leave it', async () => {
     const user = userEvent.setup();
     const { requestFullscreen, exitFullscreen } = mockMobileBattleImmersiveApis();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -402,7 +683,7 @@ describe('App', () => {
   it('keeps mobile battle sessions out of forced landscape retries', async () => {
     const user = userEvent.setup();
     const { lock } = mockMobileBattleImmersiveApis();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     expect(lock).not.toHaveBeenCalled();
 
@@ -423,7 +704,7 @@ describe('App', () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -436,7 +717,7 @@ describe('App', () => {
 
     expect(confirmSpy).toHaveBeenCalledWith('若主动离开，则无法再次加入对局，是否确定离开牌桌？');
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'leave_table', payload: {} },
     ]);
   });
@@ -444,7 +725,7 @@ describe('App', () => {
   it('returns to the lobby as soon as leave_table_accepted arrives', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -465,14 +746,14 @@ describe('App', () => {
       });
     });
 
-    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+    expectSocialLobby();
     expect(screen.queryByLabelText('Mahjong table')).toBeNull();
   });
 
   it('returns to the lobby with guidance when leaving after the connection has already dropped', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -487,15 +768,13 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
-    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
-    expect(
-      screen.getByText('当前连接已断开，已返回大厅。若仍需进入该牌桌，可使用牌桌编号重新加入。'),
-    ).toBeInTheDocument();
+    expectSocialLobby();
+    expect(screen.getByText('当前连接已断开，已返回大厅。若仍需回到牌局，请等待房主重新邀请。')).toBeInTheDocument();
   });
 
   it('returns to the lobby when a stale room snapshot receives table_not_found', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -513,38 +792,18 @@ describe('App', () => {
       });
     });
 
-    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
+    expectSocialLobby();
     expect(screen.queryByLabelText('Mahjong table')).toBeNull();
-    expect(screen.getByText('牌桌不存在，请检查牌桌编号后重试。')).toBeInTheDocument();
-  });
-
-  it('returns to the lobby when a spectator leaves the table', async () => {
-    const user = userEvent.setup();
-    const socket = await watchTable(user);
-
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: createPlayingSnapshotPayload({
-          local_seat: null,
-          reconnect_token: null,
-        }),
-      });
-    });
-
-    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
-
-    expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Mahjong table')).toBeNull();
-    expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'watch_table', payload: { nickname: '观众' } },
-    ]);
+    expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
   });
 
   it('stops retrying cached reconnects after repeated socket closes', async () => {
     vi.useFakeTimers();
 
     try {
+      const fetchMock = createFetchMock();
+      vi.stubGlobal('fetch', fetchMock);
+      seedStoredAuthSession();
       localStorage.setItem(
         'mahjong:session',
         JSON.stringify({
@@ -556,13 +815,20 @@ describe('App', () => {
       );
 
       render(<App />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByRole('heading', { name: DEFAULT_CURRENT_USER.display_label })).toBeInTheDocument();
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await act(async () => {
           vi.advanceTimersByTime(1000);
         });
 
-        const socket = MockWebSocket.instances[attempt];
+        const socket = getRoomSockets()[attempt];
         expect(socket).toBeDefined();
 
         await act(async () => {
@@ -574,9 +840,9 @@ describe('App', () => {
         vi.advanceTimersByTime(1000);
       });
 
-      expect(MockWebSocket.instances).toHaveLength(3);
-      expect(screen.getByRole('button', { name: '加入牌桌' })).toBeInTheDocument();
-      expect(screen.getByText('未能恢复座位，请重新加入牌桌。')).toBeInTheDocument();
+      expect(getRoomSockets()).toHaveLength(3);
+      expectSocialLobby();
+      expect(screen.getByText('未能恢复座位，请返回大厅后重新进入可加入的牌局。')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -584,7 +850,7 @@ describe('App', () => {
 
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -657,14 +923,14 @@ describe('App', () => {
     expect(countSelectedTiles(document.body)).toBe(0);
 
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'pass', tile_ids: [] } },
     ]);
   });
 
   it('sends pass for a local self-hu prompt so the server can advance the turn', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
     const baseSnapshot = createPlayingSnapshotPayload();
 
     await act(async () => {
@@ -692,14 +958,14 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '过' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '和牌' })).not.toBeInTheDocument();
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'pass', tile_ids: [] } },
     ]);
   });
 
   it('sends a flower action directly from the local active turn', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
     const baseSnapshot = createPlayingSnapshotPayload();
 
     await act(async () => {
@@ -738,7 +1004,7 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-        { type: 'join_table', payload: { nickname: 'Player A' } },
+        { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
         { type: 'action_request', payload: { action_type: 'flower', tile_ids: ['f1#0'] } },
       ]);
     });
@@ -746,7 +1012,7 @@ describe('App', () => {
 
   it('sends ready_hand with the selected tile and immediately shows the ting callout instead of a normal discard spotlight', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
     const selectedTileId = 'b9#0';
     const baseSnapshot = createPlayingSnapshotPayload();
 
@@ -813,7 +1079,7 @@ describe('App', () => {
       expect(screen.getByText('听')).toBeInTheDocument();
       expect(screen.queryByLabelText('Latest discard spotlight')).toBeNull();
       expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-        { type: 'join_table', payload: { nickname: 'Player A' } },
+        { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
         { type: 'action_request', payload: { action_type: 'ready_hand', tile_ids: [selectedTileId] } },
       ]);
     });
@@ -821,7 +1087,7 @@ describe('App', () => {
 
   it('clears preselected claim tiles after the claim window times out and play resumes', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -960,7 +1226,7 @@ describe('App', () => {
 
   it('replaces the previous single selection with the first claim candidate when the claim window opens', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1100,7 +1366,7 @@ describe('App', () => {
 
   it('highlights matching non-hand tiles after selecting a hand tile', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1177,7 +1443,7 @@ describe('App', () => {
 
   it('lets the player choose a claim candidate pane before confirming chow', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1251,14 +1517,14 @@ describe('App', () => {
 
     expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'chow', tile_ids: ['w1#1', 'w2#2'] } },
     ]);
   });
 
   it('submits the default selected chow pair when the chow button is clicked directly', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1328,14 +1594,14 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '吃' }));
     expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'chow', tile_ids: ['w1#1', 'w2#2'] } },
     ]);
   });
 
   it('supports double-clicking a hand tile to discard immediately', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1407,14 +1673,14 @@ describe('App', () => {
     expect(screen.getByLabelText('Latest discard spotlight')).toBeInTheDocument();
     expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'discard', tile_ids: ['w2#2'] } },
     ]);
   });
 
   it('rolls back an optimistic discard if the server rejects it', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1500,7 +1766,7 @@ describe('App', () => {
 
   it('still allows sending kong from the local kong-response prompt', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1572,14 +1838,14 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '杠' }));
 
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'kong', tile_ids: ['w3#0', 'w3#1', 'w3#2', 'w3#3'] } },
     ]);
   });
 
   it('still allows a ready-hand player to claim kong from the claim window', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1653,14 +1919,14 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '杠' }));
 
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'kong', tile_ids: ['w3#1', 'w3#2', 'w3#3'] } },
     ]);
   });
 
   it('submits the matching claim action immediately when a candidate pane is double-clicked', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1731,7 +1997,7 @@ describe('App', () => {
 
     expect(countSelectedTiles(document.body)).toBe(0);
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
-      { type: 'join_table', payload: { nickname: 'Player A' } },
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'action_request', payload: { action_type: 'chow', tile_ids: ['w1#1', 'w2#2'] } },
     ]);
   });
@@ -1740,7 +2006,7 @@ describe('App', () => {
 
   it('renders a barrage line when a quick-chat broadcast arrives from the server', async () => {
     const user = userEvent.setup();
-    const socket = await joinTable(user);
+    const { socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({

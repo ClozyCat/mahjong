@@ -1,8 +1,17 @@
-import { startTransition, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type MutableRefObject } from 'react';
+import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type MutableRefObject } from 'react';
 
+import { AuthGate } from './components/auth/AuthGate';
 import { BattleScreen } from './components/battle-screen/BattleScreen';
-import { ConnectGate, type ConnectGateValue } from './components/connect-gate/ConnectGate';
-import { ApiError, createTable } from './lib/api';
+import { SocialLobby } from './components/lobby/SocialLobby';
+import {
+  clearStoredAuthSession,
+  getMe,
+  loadStoredAuthSession,
+  loginWithPassword,
+  logoutSession,
+  registerWithInvite,
+  saveStoredAuthSession,
+} from './lib/authApi';
 import { useSequentialBackgroundMusic } from './lib/backgroundMusic';
 import {
   getActionCandidateGroups,
@@ -30,6 +39,14 @@ import {
   parseServerMessage,
   serializeClientMessage,
 } from './lib/socket';
+import { buildMeSocketUrl, parseSocialServerMessage } from './lib/meSocket';
+import {
+  acceptTableInvite,
+  createSocialTable,
+  createTableInvite,
+  getLeaderboard,
+  getMyInvites,
+} from './lib/socialApi';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
 import {
   clearStoredSession,
@@ -40,9 +57,18 @@ import {
   loadStoredBgmEnabled,
   saveStoredBgmEnabled,
 } from './lib/storage';
-import { getTableCodeError, normalizeTableCode } from './lib/tableCode';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
-import type { BackendActionType, BattleActionId, ClaimActionId, QuickChatEmoji, SessionState } from './types/match';
+import type {
+  BackendActionType,
+  BattleActionId,
+  ClaimActionId,
+  ClientMode,
+  PublicUser,
+  QuickChatEmoji,
+  SessionState,
+  TableInvite,
+  TableMultiplier,
+} from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const MAX_CACHED_RECONNECT_CLOSES = 3;
@@ -54,7 +80,7 @@ const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'start_next_round',
   'restart_match',
 ]);
-type ClientMode = NonNullable<SessionState['clientMode']>;
+type AuthStatus = 'loading' | 'anonymous' | 'ready';
 
 function getRuntimeDefaultBaseUrls() {
   if (typeof window === 'undefined') {
@@ -78,23 +104,41 @@ function getDefaultConfig() {
     apiBaseUrl: env.VITE_API_BASE_URL ?? runtimeDefaults.apiBaseUrl,
     wsBaseUrl: env.VITE_WS_BASE_URL ?? runtimeDefaults.wsBaseUrl,
   };
-  const storedSession = loadStoredSession();
+  const storedRoomSession = loadStoredSession();
+  const storedAuthSession = loadStoredAuthSession();
 
   return {
     defaults,
-    storedSession,
+    storedAuthSession,
+    storedRoomSession,
   };
 }
 
 function getRejectedMessage(reason: string) {
   const lookup: Record<string, string> = {
-    table_not_found: '牌桌不存在，请检查牌桌编号后重试。',
+    table_not_found: '牌桌不存在或已关闭。',
     table_full: '牌桌已经坐满了，请换一个牌桌试试。',
-    invalid_reconnect_token: '上次的重连凭证已失效，需要重新加入牌桌。',
+    invalid_reconnect_token: '上次的重连凭证已失效，请返回大厅后重新进入可加入的牌局。',
     seat_occupied: '这个座位已经被占用，请选择其他空位。',
   };
 
   return lookup[reason] ?? '请求未被服务器接受，请按最新房间状态重试。';
+}
+
+function getSocialStatusCopy(detail: string) {
+  const lookup: Record<string, string> = {
+    auth_required: '登录状态已失效，请重新登录。',
+    invite_code_invalid: '邀请码无效或已被使用。',
+    invalid_credentials: '账号或密码错误。',
+    username_taken: '该账号名已被占用。',
+    target_player_busy: '该玩家正在牌局中，请稍后重试。',
+    target_already_in_table: '该玩家已在本牌局中。',
+    only_owner_can_invite: '只有房主可以邀请玩家。',
+    table_multiplier_locked: '牌局已开始，无法再修改或发起等待区邀请。',
+    table_not_found: '牌桌不存在或已关闭。',
+  };
+
+  return lookup[detail] ?? detail;
 }
 
 function closeSocket(socketRef: MutableRefObject<WebSocket | null>, heartbeatTimerRef: MutableRefObject<number | null>) {
@@ -217,37 +261,51 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
   );
 }
 
+function upsertInvite(current: TableInvite[], nextInvite: TableInvite) {
+  return [nextInvite, ...current.filter((invite) => invite.id !== nextInvite.id)];
+}
+
+function removeInviteById(current: TableInvite[], inviteId: number) {
+  return current.filter((invite) => invite.id !== inviteId);
+}
+
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
-  const { defaults, storedSession } = useMemo(getDefaultConfig, []);
+  const { defaults, storedAuthSession, storedRoomSession } = useMemo(getDefaultConfig, []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
     const nextThemeId = isThemeId(storedThemeId) ? getRandomThemeId(storedThemeId) : getRandomThemeId();
 
     return isThemeId(nextThemeId) ? nextThemeId : DEFAULT_THEME_ID;
   });
-  const [connectValue, setConnectValue] = useState<ConnectGateValue>({
-    tableCode: storedSession?.tableCode ?? '',
-    nickname: storedSession?.nickname ?? '',
-  });
   const [statusMessage, setStatusMessage] = useState<string | null>(
-    storedSession ? `检测到牌桌 ${storedSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
+    storedRoomSession ? `检测到牌桌 ${storedRoomSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
   );
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(storedAuthSession ? 'loading' : 'anonymous');
+  const [authSession, setAuthSession] = useState(storedAuthSession);
+  const [currentUser, setCurrentUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
+  const [leaderboard, setLeaderboard] = useState<PublicUser[]>([]);
+  const [onlineUserIds, setOnlineUserIds] = useState<number[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<TableInvite[]>([]);
+  const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
+  const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
+  const [lobbyMultiplier, setLobbyMultiplier] = useState<TableMultiplier>(1);
   const [state, dispatch] = useReducer(
     sessionReducer,
     undefined,
     (): SessionState => ({
       ...createInitialSessionState(),
       apiBaseUrl: defaults.apiBaseUrl,
-      wsBaseUrl: storedSession?.wsBaseUrl ?? defaults.wsBaseUrl,
-      tableCode: storedSession?.tableCode ?? '',
-      nickname: storedSession?.nickname ?? '',
-      reconnectToken: storedSession?.reconnectToken ?? null,
-      connectionStatus: storedSession ? 'reconnecting' : 'idle',
+      wsBaseUrl: storedRoomSession?.wsBaseUrl ?? defaults.wsBaseUrl,
+      tableCode: storedRoomSession?.tableCode ?? '',
+      nickname: storedAuthSession?.user.display_name ?? storedRoomSession?.nickname ?? '',
+      reconnectToken: storedRoomSession?.reconnectToken ?? null,
+      connectionStatus: 'idle',
     }),
   );
   const socketRef = useRef<WebSocket | null>(null);
+  const meSocketRef = useRef<WebSocket | null>(null);
   const heartbeatTimerRef = useRef<number | null>(null);
   const sessionRef = useRef(state);
   const leavingTableRef = useRef(false);
@@ -280,6 +338,151 @@ export default function App() {
   }, [state.roomSnapshot]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapAuth() {
+      if (!authSession?.sessionToken) {
+        setAuthStatus('anonymous');
+        setCurrentUser(null);
+        setLeaderboard([]);
+        setOnlineUserIds([]);
+        setPendingInvites([]);
+        setInviteDialog(null);
+        if (meSocketRef.current) {
+          meSocketRef.current.onclose = null;
+          meSocketRef.current.close();
+          meSocketRef.current = null;
+        }
+        return;
+      }
+
+      setAuthStatus('loading');
+
+      try {
+        const [me, nextInvites, nextLeaderboard] = await Promise.all([
+          getMe(defaults.apiBaseUrl, authSession.sessionToken),
+          getMyInvites(defaults.apiBaseUrl, authSession.sessionToken),
+          getLeaderboard(defaults.apiBaseUrl),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setCurrentUser(me);
+        setPendingInvites(nextInvites);
+        setLeaderboard(nextLeaderboard);
+        setAuthStatus('ready');
+        setStatusMessage((current) =>
+          current?.includes('历史会话') ? current : null,
+        );
+        saveStoredAuthSession({
+          sessionToken: authSession.sessionToken,
+          user: me,
+        });
+        setAuthSession((current) =>
+          current && current.sessionToken === authSession.sessionToken
+            ? {
+                sessionToken: current.sessionToken,
+                user: me,
+              }
+            : current,
+        );
+        dispatch({ type: 'set_credentials', nickname: me.display_name });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        clearStoredAuthSession();
+        clearStoredSession();
+        setAuthSession(null);
+        setCurrentUser(null);
+        setLeaderboard([]);
+        setOnlineUserIds([]);
+        setPendingInvites([]);
+        setInviteDialog(null);
+        setAuthStatus('anonymous');
+        setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '登录状态已失效，请重新登录。');
+      }
+    }
+
+    void bootstrapAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.sessionToken, defaults.apiBaseUrl]);
+
+  useEffect(() => {
+    if (authStatus !== 'ready' || !authSession?.sessionToken || !state.wsBaseUrl) {
+      return;
+    }
+
+    const socket = new WebSocket(buildMeSocketUrl(state.wsBaseUrl, authSession.sessionToken));
+    meSocketRef.current = socket;
+
+    socket.onmessage = (event) => {
+      const message = parseSocialServerMessage(String(event.data));
+      if (!message) {
+        return;
+      }
+
+      if (message.type === 'user_presence_updated') {
+        setOnlineUserIds(message.payload.online_user_ids);
+        return;
+      }
+
+      if (message.type === 'table_invite_created') {
+        setPendingInvites((current) => upsertInvite(current, message.payload));
+        setInviteDialog(message.payload);
+        return;
+      }
+
+      if (message.type === 'spectator_request_created') {
+        setStatusMessage(`收到牌桌 ${message.payload.table_code} 的观战申请。`);
+        return;
+      }
+
+      if (message.type === 'spectator_request_decided') {
+        setStatusMessage(
+          message.payload.status === 'approved'
+            ? `牌桌 ${message.payload.table_code} 已允许观战。`
+            : `牌桌 ${message.payload.table_code} 拒绝了观战申请。`,
+        );
+      }
+    };
+
+    socket.onclose = () => {
+      if (meSocketRef.current === socket) {
+        meSocketRef.current = null;
+      }
+    };
+
+    return () => {
+      socket.onclose = null;
+      socket.close();
+      if (meSocketRef.current === socket) {
+        meSocketRef.current = null;
+      }
+    };
+  }, [authSession?.sessionToken, authStatus, state.wsBaseUrl]);
+
+  useEffect(() => {
+    if (
+      authStatus !== 'ready' ||
+      state.connectionStatus !== 'idle' ||
+      !state.reconnectToken ||
+      !state.tableCode ||
+      state.roomSnapshot
+    ) {
+      return;
+    }
+
+    dispatch({ type: 'set_connection_status', status: 'reconnecting' });
+  }, [authStatus, state.connectionStatus, state.reconnectToken, state.roomSnapshot, state.tableCode]);
+
+  useEffect(() => {
     if (state.clientMode === 'spectator') {
       clearStoredSession();
       return;
@@ -288,7 +491,7 @@ export default function App() {
     if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
       saveStoredSession({
         tableCode: state.tableCode,
-        nickname: state.nickname || connectValue.nickname,
+        nickname: currentUser?.display_name ?? state.nickname,
         reconnectToken: state.reconnectToken,
         wsBaseUrl: state.wsBaseUrl,
       });
@@ -296,7 +499,7 @@ export default function App() {
     }
 
     clearStoredSession();
-  }, [connectValue.nickname, state.clientMode, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
+  }, [currentUser?.display_name, state.clientMode, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
@@ -352,12 +555,6 @@ export default function App() {
     if (message.type === 'room_snapshot') {
       reconnectCloseCountRef.current = 0;
       dispatch({ type: 'set_connection_status', status: 'connected' });
-      startTransition(() => {
-        setConnectValue((current) => ({
-          ...current,
-          tableCode: message.payload.table_code,
-        }));
-      });
       setStatusMessage(null);
     }
 
@@ -369,13 +566,14 @@ export default function App() {
       tableCode: string;
       nickname: string;
       wsBaseUrl: string;
+      sessionToken?: string | null;
       reconnectToken?: string | null;
       reconnect?: boolean;
       mode?: ClientMode;
     }) => {
       closeSocket(socketRef, heartbeatTimerRef);
 
-      const { tableCode, nickname, wsBaseUrl, reconnectToken, reconnect, mode = 'player' } = options;
+      const { tableCode, nickname, wsBaseUrl, sessionToken, reconnectToken, reconnect, mode = 'player' } = options;
       if (!reconnect) {
         reconnectCloseCountRef.current = 0;
       }
@@ -391,10 +589,10 @@ export default function App() {
         void (async () => {
           const message =
             mode === 'spectator'
-              ? createWatchTableMessage(nickname)
+              ? createWatchTableMessage(sessionToken ?? '', nickname)
               : reconnect && reconnectToken
                 ? createReconnectMessage(reconnectToken)
-                : createJoinTableMessage(nickname);
+                : createJoinTableMessage(sessionToken ?? '');
           socket.send(serializeClientMessage(message));
 
           heartbeatTimerRef.current = window.setInterval(() => {
@@ -435,7 +633,7 @@ export default function App() {
             !current.roomSnapshot &&
             reconnectCloseCountRef.current >= MAX_CACHED_RECONNECT_CLOSES
           ) {
-            handleFatalLobbyReset('未能恢复座位，请重新加入牌桌。', current.tableCode);
+            handleFatalLobbyReset('未能恢复座位，请返回大厅后重新进入可加入的牌局。', current.tableCode);
             return;
           }
           dispatch({ type: 'set_connection_status', status: 'reconnecting' });
@@ -464,7 +662,7 @@ export default function App() {
     const timeoutId = window.setTimeout(() => {
       openRoomSocket({
         tableCode: state.tableCode,
-        nickname: state.nickname || connectValue.nickname,
+        nickname: currentUser?.display_name ?? state.nickname,
         wsBaseUrl,
         reconnectToken: state.reconnectToken,
         reconnect: true,
@@ -474,7 +672,7 @@ export default function App() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [connectValue.nickname, openRoomSocket, state.connectionStatus, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
+  }, [currentUser?.display_name, openRoomSocket, state.connectionStatus, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
   useEffect(() => {
     return () => {
@@ -513,25 +711,10 @@ export default function App() {
   const isLocalSelfHuPromptDismissed =
     localSelfHuPromptSignature !== null && localSelfHuPromptSignature === dismissedLocalSelfHuPromptSignature;
   const hasLocalSelfHuPassOption = localSelfHuPromptSignature !== null && !isLocalSelfHuPromptDismissed;
-  const normalizedRequestedTableCode = normalizeTableCode(connectValue.tableCode);
-  const tableCodeError = getTableCodeError(connectValue.tableCode);
-  const hasNickname = connectValue.nickname.trim().length > 0;
-  const canCreate =
-    state.connectionStatus !== 'connecting' &&
-    state.connectionStatus !== 'reconnecting' &&
-    hasNickname &&
-    tableCodeError === null;
-  const canJoin =
-    state.connectionStatus !== 'connecting' &&
-    state.connectionStatus !== 'reconnecting' &&
-    hasNickname &&
-    normalizedRequestedTableCode.length > 0 &&
-    tableCodeError === null;
-  const canWatch =
-    state.connectionStatus !== 'connecting' &&
-    state.connectionStatus !== 'reconnecting' &&
-    normalizedRequestedTableCode.length > 0 &&
-    tableCodeError === null;
+  const lobbyBusy =
+    authStatus === 'loading' ||
+    state.connectionStatus === 'connecting' ||
+    state.connectionStatus === 'reconnecting';
   const isSpectator = state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
@@ -608,96 +791,148 @@ export default function App() {
     return true;
   }
 
-  async function handleCreate() {
-    if (!connectValue.nickname.trim()) {
-      setStatusMessage('请先输入昵称，再创建牌桌。');
-      return;
+  async function handleLogin(value: { identifier: string; password: string }) {
+    try {
+      setAuthStatus('loading');
+      setStatusMessage('正在登录...');
+      const response = await loginWithPassword(defaults.apiBaseUrl, value);
+      const nextSession = {
+        sessionToken: response.session_token,
+        user: response.user,
+      };
+      saveStoredAuthSession(nextSession);
+      setAuthSession(nextSession);
+      setCurrentUser(response.user);
+      dispatch({ type: 'set_credentials', nickname: response.user.display_name });
+      setStatusMessage(null);
+    } catch (error) {
+      clearStoredAuthSession();
+      setAuthSession(null);
+      setAuthStatus('anonymous');
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '登录失败。');
     }
+  }
 
-    if (tableCodeError) {
+  async function handleRegister(value: { inviteCode: string; displayName: string; password: string }) {
+    try {
+      setAuthStatus('loading');
+      setStatusMessage('正在注册...');
+      const response = await registerWithInvite(defaults.apiBaseUrl, value);
+      const nextSession = {
+        sessionToken: response.session_token,
+        user: response.user,
+      };
+      saveStoredAuthSession(nextSession);
+      setAuthSession(nextSession);
+      setCurrentUser(response.user);
+      dispatch({ type: 'set_credentials', nickname: response.user.display_name });
+      setStatusMessage(null);
+    } catch (error) {
+      clearStoredAuthSession();
+      setAuthSession(null);
+      setAuthStatus('anonymous');
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '注册失败。');
+    }
+  }
+
+  async function handleCreateLobbyTable() {
+    if (!authSession?.sessionToken || !currentUser) {
+      setStatusMessage('请先登录。');
       return;
     }
 
     try {
-      setStatusMessage('正在创建牌桌...');
+      setStatusMessage('正在创建牌局...');
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-      const requestedTableCode = normalizedRequestedTableCode;
-      const table = await createTable(
-        defaults.apiBaseUrl,
-        requestedTableCode || undefined,
-      );
-      startTransition(() => {
-        setConnectValue((current) => ({
-          ...current,
-          tableCode: table.table_code,
-        }));
-      });
-      openRoomSocket({
-        tableCode: table.table_code,
-        nickname: connectValue.nickname.trim(),
-        wsBaseUrl: defaults.wsBaseUrl,
-      });
+      const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken, lobbyMultiplier);
+      setActiveLobbyTableCode(table.table_code);
+      setStatusMessage(`已创建牌局 ${table.table_code}，可先邀请玩家再进入。`);
     } catch (error) {
-      if (
-        error instanceof ApiError &&
-        error.status === 409 &&
-        typeof error.detail === 'object' &&
-        error.detail !== null &&
-        'detail' in error.detail &&
-        (error.detail as { detail: unknown }).detail === 'table_code_exists'
-      ) {
-        const requestedTableCode = normalizedRequestedTableCode;
-        const shouldJoin = window.confirm(`牌桌编号 ${requestedTableCode} 已存在，是否直接加入该牌桌？`);
-        if (shouldJoin) {
-          handleJoin();
-          return;
-        }
-        setStatusMessage(`牌桌编号 ${requestedTableCode} 已存在，请更换编号或直接加入。`);
-        return;
-      }
-
-      setStatusMessage(error instanceof Error ? error.message : '创建牌桌失败。');
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建牌局失败。');
       dispatch({ type: 'set_connection_status', status: 'error' });
     }
   }
 
-  function handleJoin() {
-    if (!connectValue.tableCode.trim() || !connectValue.nickname.trim()) {
-      setStatusMessage('加入牌桌前请先填写牌桌编号和昵称。');
+  function handleEnterCreatedTable() {
+    if (!authSession?.sessionToken || !currentUser || !activeLobbyTableCode) {
       return;
     }
 
-    if (tableCodeError) {
-      return;
-    }
-
-    setStatusMessage('正在加入牌桌...');
+    setStatusMessage('正在进入牌桌...');
     dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
     openRoomSocket({
-      tableCode: normalizedRequestedTableCode,
-      nickname: connectValue.nickname.trim(),
+      tableCode: activeLobbyTableCode,
+      nickname: currentUser.display_name,
       wsBaseUrl: defaults.wsBaseUrl,
+      sessionToken: authSession.sessionToken,
     });
   }
 
-  function handleWatch() {
-    if (!connectValue.tableCode.trim()) {
-      setStatusMessage('观战前请先填写牌桌编号。');
+  async function handleInvitePlayer(userId: number) {
+    if (!authSession?.sessionToken || !activeLobbyTableCode) {
+      setStatusMessage('请先创建牌局。');
       return;
     }
 
-    if (tableCodeError) {
+    try {
+      await createTableInvite(defaults.apiBaseUrl, authSession.sessionToken, activeLobbyTableCode, userId);
+      setStatusMessage(`已向玩家 ${userId} 发出邀请。`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '邀请失败。');
+    }
+  }
+
+  async function handleAcceptInvite(invite: TableInvite) {
+    if (!authSession?.sessionToken || !currentUser) {
+      setStatusMessage('请先登录。');
       return;
     }
 
-    setStatusMessage('正在进入观战...');
-    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-    openRoomSocket({
-      tableCode: normalizedRequestedTableCode,
-      nickname: connectValue.nickname.trim() || '观众',
-      wsBaseUrl: defaults.wsBaseUrl,
-      mode: 'spectator',
-    });
+    try {
+      setStatusMessage(`正在进入牌桌 ${invite.table_code}...`);
+      const accepted = await acceptTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
+      setPendingInvites((current) => removeInviteById(current, invite.id));
+      setInviteDialog((current) => (current?.id === invite.id ? null : current));
+      setActiveLobbyTableCode(null);
+      dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
+      openRoomSocket({
+        tableCode: accepted.table_code,
+        nickname: currentUser.display_name,
+        wsBaseUrl: defaults.wsBaseUrl,
+        sessionToken: authSession.sessionToken,
+      });
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '接受邀请失败。');
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      if (authSession?.sessionToken) {
+        await logoutSession(defaults.apiBaseUrl, authSession.sessionToken);
+      }
+    } catch {
+      // Ignore logout transport failures and clear local state regardless.
+    }
+
+    clearStoredAuthSession();
+    clearStoredSession();
+    setAuthSession(null);
+    setCurrentUser(null);
+    setLeaderboard([]);
+    setOnlineUserIds([]);
+    setPendingInvites([]);
+    setInviteDialog(null);
+    setActiveLobbyTableCode(null);
+    setAuthStatus('anonymous');
+    setStatusMessage(null);
+    dispatch({ type: 'return_to_lobby', keepNickname: false, tableCode: '' });
+    closeSocket(socketRef, heartbeatTimerRef);
+    if (meSocketRef.current) {
+      meSocketRef.current.onclose = null;
+      meSocketRef.current.close();
+      meSocketRef.current = null;
+    }
   }
 
   function handleSwitchSpectatorPerspective() {
@@ -974,11 +1209,11 @@ export default function App() {
   }
 
   function handleCopyTableCode() {
-    if (!state.tableCode && !connectValue.tableCode) {
+    if (!state.tableCode && !activeLobbyTableCode) {
       return;
     }
 
-    const tableCode = state.tableCode || connectValue.tableCode;
+    const tableCode = state.tableCode || activeLobbyTableCode || '';
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(tableCode).catch(() => undefined);
     }
@@ -999,7 +1234,7 @@ export default function App() {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       handleLeaveToLobby(
         state.roomSnapshot?.payload.table_code ?? state.tableCode,
-        '当前连接已断开，已返回大厅。若仍需进入该牌桌，可使用牌桌编号重新加入。',
+        '当前连接已断开，已返回大厅。若仍需回到牌局，请等待房主重新邀请。',
       );
       return;
     }
@@ -1017,24 +1252,35 @@ export default function App() {
   });
 
   if (!state.roomSnapshot) {
+    if (authStatus !== 'ready' || !currentUser) {
+      return (
+        <AuthGate
+          status={authStatus === 'loading' ? 'loading' : statusMessage ? 'error' : 'idle'}
+          message={statusMessage}
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+        />
+      );
+    }
+
     return (
-      <ConnectGate
-        value={connectValue}
-        status={state.connectionStatus === 'connecting' || state.connectionStatus === 'reconnecting' ? 'connecting' : statusMessage ? 'error' : 'idle'}
+      <SocialLobby
+        currentUser={currentUser}
+        leaderboard={leaderboard}
+        onlineUserIds={onlineUserIds}
+        pendingInvites={pendingInvites}
+        activeTableCode={activeLobbyTableCode}
+        inviteDialog={inviteDialog}
+        multiplier={lobbyMultiplier}
+        busy={lobbyBusy}
         message={statusMessage}
-        themeLabel={getThemeLabel(themeId)}
-        tableCodeError={tableCodeError}
-        canCreate={canCreate}
-        canJoin={canJoin}
-        canWatch={canWatch}
-        onChange={(patch) => {
-          startTransition(() => {
-            setConnectValue((current) => ({ ...current, ...patch }));
-          });
-        }}
-        onCreate={handleCreate}
-        onJoin={handleJoin}
-        onWatch={handleWatch}
+        onMultiplierChange={setLobbyMultiplier}
+        onCreateTable={handleCreateLobbyTable}
+        onEnterTable={handleEnterCreatedTable}
+        onInvite={handleInvitePlayer}
+        onAcceptInvite={handleAcceptInvite}
+        onDismissInviteDialog={() => setInviteDialog(null)}
+        onLogout={handleLogout}
       />
     );
   }

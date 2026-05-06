@@ -561,12 +561,15 @@ git commit -m "feat(spectator): 默认启用房主审批观战"
 - Create: `frontend/src/lib/authApi.ts`
 - Create: `frontend/src/lib/socialApi.ts`
 - Create: `frontend/src/lib/meSocket.ts`
+- Modify: `frontend/src/App.test.tsx`
+- Modify: `frontend/src/lib/socket.ts`
+- Modify: `frontend/src/lib/socket.test.ts`
 - Modify: `frontend/src/types/match.ts`
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/src/styles/layout.css`
 - Modify: `frontend/src/styles/panels.css`
 
-- [ ] **Step 1: Write auth and lobby tests**
+- [x] **Step 1: Write auth and lobby tests**
 
 Test:
 
@@ -585,23 +588,23 @@ Push-Location frontend; npm test -- AuthGate.test.tsx SocialLobby.test.tsx App.t
 
 Expected first run before implementation: fails because components do not exist.
 
-- [ ] **Step 2: Implement auth API client**
+- [x] **Step 2: Implement auth API client**
 
 Add `register`, `login`, `logout`, `getMe`, and `updateMe` functions. Store session token in existing storage helpers or a new focused auth storage helper.
 
-- [ ] **Step 3: Implement `AuthGate`**
+- [x] **Step 3: Implement `AuthGate`**
 
 Render login and invite-code registration modes. Use normal text labels and buttons; do not expose password in logs or status messages.
 
-- [ ] **Step 4: Implement `SocialLobby`**
+- [x] **Step 4: Implement `SocialLobby`**
 
 Render current user, multiplier selector, create table button, online user list, invite buttons, pending invites, and public leaderboard summary.
 
-- [ ] **Step 5: Connect `/ws/me`**
+- [x] **Step 5: Connect `/ws/me`**
 
 Use `meSocket.ts` to receive invite, spectator request, and point update notifications. Keep reconnect logic separate from table WebSocket reconnect.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -614,7 +617,7 @@ Expected: tests and build exit 0.
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add frontend/src/components/auth frontend/src/components/lobby frontend/src/lib/authApi.ts frontend/src/lib/socialApi.ts frontend/src/lib/meSocket.ts frontend/src/types/match.ts frontend/src/App.tsx frontend/src/styles/layout.css frontend/src/styles/panels.css
+git add frontend/src/components/auth frontend/src/components/lobby frontend/src/lib/authApi.ts frontend/src/lib/socialApi.ts frontend/src/lib/meSocket.ts frontend/src/lib/socket.ts frontend/src/lib/socket.test.ts frontend/src/types/match.ts frontend/src/App.tsx frontend/src/App.test.tsx frontend/src/styles/layout.css frontend/src/styles/panels.css
 git commit -m "feat(frontend): 添加登录和社交大厅"
 ```
 
