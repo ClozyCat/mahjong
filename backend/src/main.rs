@@ -21,7 +21,7 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    backend::run_server().await
+    backend::run_from_env().await
 }
 
 #[cfg(test)]

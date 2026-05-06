@@ -1,3 +1,4 @@
+pub(crate) mod auth;
 pub(crate) mod persistence;
 pub(crate) mod protocol;
 pub(crate) mod room_runtime;

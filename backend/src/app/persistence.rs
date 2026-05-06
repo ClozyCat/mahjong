@@ -62,6 +62,7 @@ impl Database {
         )?;
         self.ensure_tables_schema()?;
         self.ensure_reconnect_tokens_schema()?;
+        self.create_user_auth_tables()?;
         self.ensure_indexes()?;
         Ok(())
     }
@@ -74,6 +75,9 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_reconnect_tokens_table_seat
             ON reconnect_tokens(table_code, seat_index);
+
+            CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
+            ON auth_sessions(user_id);
             ",
         )?;
         Ok(())
@@ -163,6 +167,44 @@ impl Database {
                 table_code TEXT NOT NULL,
                 seat_index INTEGER NOT NULL,
                 player_session_id INTEGER NOT NULL
+            );
+            ",
+        )?;
+        Ok(())
+    }
+
+    fn create_user_auth_tables(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                avatar TEXT,
+                bio TEXT NOT NULL DEFAULT '',
+                points INTEGER NOT NULL DEFAULT 0,
+                last_login_local_date TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS invite_codes (
+                code TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                used_at TEXT,
+                used_by_user_id INTEGER,
+                FOREIGN KEY(used_by_user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                revoked_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
             );
             ",
         )?;
@@ -481,6 +523,46 @@ impl Database {
             Ok(())
         })
     }
+
+    pub(crate) fn create_invite_code(
+        &self,
+        code: &str,
+        created_at: &str,
+        expires_at: Option<&str>,
+    ) -> Result<()> {
+        self.conn.execute(
+            "
+            INSERT INTO invite_codes (code, created_at, expires_at)
+            VALUES (?1, ?2, ?3)
+            ",
+            params![code, created_at, expires_at],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn consume_invite_code(
+        &self,
+        code: &str,
+        used_at: &str,
+        used_by_user_id: Option<i64>,
+    ) -> Result<()> {
+        let rows_affected = self.conn.execute(
+            "
+            UPDATE invite_codes
+            SET used_at = ?2,
+                used_by_user_id = ?3
+            WHERE code = ?1
+              AND used_at IS NULL
+              AND (expires_at IS NULL OR expires_at > ?2)
+            ",
+            params![code, used_at, used_by_user_id],
+        )?;
+        if rows_affected == 1 {
+            Ok(())
+        } else {
+            Err(anyhow!("invite_code_invalid"))
+        }
+    }
 }
 
 impl DbWorker {
@@ -632,6 +714,18 @@ impl DbWorker {
         })
         .await
     }
+
+    pub(crate) async fn create_invite_code(
+        &self,
+        code: &str,
+        created_at: &str,
+        expires_at: Option<String>,
+    ) -> Result<()> {
+        let code = code.to_string();
+        let created_at = created_at.to_string();
+        self.call(move |db| db.create_invite_code(&code, &created_at, expires_at.as_deref()))
+            .await
+    }
 }
 
 fn generate_table_code(existing_runtime_codes: &HashSet<String>, db: &Database) -> Result<String> {
@@ -684,6 +778,41 @@ mod tests {
         db.initialize()?;
 
         assert!(db.get_table("ROOM42")?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn initialize_creates_user_auth_tables() -> Result<()> {
+        let db = in_memory_database("")?;
+
+        db.initialize()?;
+
+        for table_name in ["users", "invite_codes", "auth_sessions"] {
+            let exists = db
+                .conn
+                .query_row(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    params![table_name],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            assert_eq!(exists.as_deref(), Some(table_name));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn invite_code_can_be_consumed_once() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+
+        db.create_invite_code("ABCD1234EFGH", "2026-05-06T00:00:00Z", None)?;
+        db.consume_invite_code("ABCD1234EFGH", "2026-05-06T01:00:00Z", None)?;
+
+        let second = db
+            .consume_invite_code("ABCD1234EFGH", "2026-05-06T02:00:00Z", None)
+            .expect_err("used code should be rejected");
+        assert!(format!("{second:#}").contains("invite_code_invalid"));
         Ok(())
     }
 
