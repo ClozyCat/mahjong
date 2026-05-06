@@ -4,6 +4,9 @@ pub(crate) mod protocol;
 pub(crate) mod room_runtime;
 pub(crate) mod scheduler;
 pub(crate) mod server;
+#[cfg(test)]
+mod server_auth_tests;
+pub(crate) mod users;
 pub(crate) mod ws;
 
 use std::collections::{HashMap, HashSet};

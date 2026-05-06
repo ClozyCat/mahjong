@@ -1,5 +1,7 @@
 use anyhow::Result;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use axum::http::{HeaderMap, header};
+use chrono::{DateTime, FixedOffset, Utc};
 use password_hash::SaltString;
 use rand::Rng;
 use sha2::{Digest, Sha256};
@@ -31,9 +33,25 @@ pub(crate) fn generate_session_token() -> String {
     generate_hex_token(32)
 }
 
+pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 pub(crate) fn hash_session_token(token: &str) -> String {
     let digest = Sha256::digest(token.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+pub(crate) fn beijing_local_date(now: DateTime<Utc>) -> String {
+    now.with_timezone(&FixedOffset::east_opt(8 * 60 * 60).expect("UTC+8 offset should exist"))
+        .date_naive()
+        .to_string()
 }
 
 pub(crate) fn generate_invite_code() -> String {
@@ -89,5 +107,18 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.len(), 12);
         assert!(first.chars().all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit()));
+    }
+
+    #[test]
+    fn beijing_local_date_uses_utc_plus_eight_midnight() {
+        let before_midnight = DateTime::parse_from_rfc3339("2026-05-06T15:59:59Z")
+            .expect("timestamp should parse")
+            .with_timezone(&Utc);
+        let after_midnight = DateTime::parse_from_rfc3339("2026-05-06T16:00:00Z")
+            .expect("timestamp should parse")
+            .with_timezone(&Utc);
+
+        assert_eq!(beijing_local_date(before_midnight), "2026-05-06");
+        assert_eq!(beijing_local_date(after_midnight), "2026-05-07");
     }
 }

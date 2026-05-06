@@ -8,13 +8,20 @@ use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::{SecondsFormat, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 
+use super::auth::{
+    AuthenticatedUser, bearer_token, beijing_local_date, generate_session_token,
+    hash_password, hash_session_token, verify_password,
+};
 use super::persistence::{Database, DbWorker};
 use super::protocol::{create_table_response, detail_response};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
+use super::users::{PublicUserView, public_user_view};
 use super::ws::websocket_handler;
 use super::{
     AppContext, CreateTableRequest, Settings, initial_room_state, is_valid_table_code,
@@ -28,25 +35,64 @@ enum CreateTableError {
     Internal(anyhow::Error),
 }
 
+#[derive(Debug, Deserialize)]
+struct RegisterRequest {
+    invite_code: String,
+    display_name: String,
+    password: String,
+    #[serde(default)]
+    username: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginRequest {
+    identifier: String,
+    password: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct UpdateMeRequest {
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    bio: Option<String>,
+    #[serde(default)]
+    avatar: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AuthResponse {
+    session_token: String,
+    user: PublicUserView,
+}
+
 pub(crate) async fn run() -> Result<()> {
     let settings = Settings::from_env()?;
     let db = DbWorker::start(Database::open(&settings.database_path)?)?;
     let app_state = AppContext::new(db);
     restore_persisted_rooms(&app_state).await;
 
-    let app = Router::new()
-        .route("/api/health", get(healthcheck))
-        .route("/api/tables", post(create_table))
-        .route("/ws/{table_code}", get(websocket_handler))
-        .with_state(app_state)
-        .layer(build_cors_layer(&settings.cors_origins));
-    let app = attach_frontend(app, settings.frontend_dir.as_deref());
+    let app = build_app(app_state, &settings);
 
     let listener = tokio::net::TcpListener::bind(&settings.bind_addr)
         .await
         .with_context(|| format!("failed to bind to {}", settings.bind_addr))?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
+    let app = Router::new()
+        .route("/api/health", get(healthcheck))
+        .route("/api/auth/register", post(register))
+        .route("/api/auth/login", post(login))
+        .route("/api/auth/logout", post(logout))
+        .route("/api/me", get(get_me).patch(update_me))
+        .route("/api/tables", post(create_table))
+        .route("/ws/{table_code}", get(websocket_handler))
+        .with_state(app_state)
+        .layer(build_cors_layer(&settings.cors_origins));
+    attach_frontend(app, settings.frontend_dir.as_deref())
 }
 
 fn attach_frontend(app: Router, frontend_dir: Option<&str>) -> Router {
@@ -72,8 +118,8 @@ fn attach_frontend(app: Router, frontend_dir: Option<&str>) -> Router {
 
 fn build_cors_layer(origins: &[String]) -> CorsLayer {
     let mut layer = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers([header::CONTENT_TYPE, header::ACCEPT]);
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::OPTIONS])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT]);
 
     let header_values: Vec<HeaderValue> = origins
         .iter()
@@ -89,6 +135,180 @@ fn build_cors_layer(origins: &[String]) -> CorsLayer {
 
 async fn healthcheck() -> Json<Value> {
     Json(json!({ "status": "ok" }))
+}
+
+async fn register(
+    State(state): State<AppContext>,
+    Json(payload): Json<RegisterRequest>,
+) -> Response {
+    let Some(invite_code) = normalized_required(&payload.invite_code) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_registration");
+    };
+    let Some(display_name) = normalized_required(&payload.display_name) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_registration");
+    };
+    let Some(password) = normalized_required(&payload.password) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_registration");
+    };
+    let username = payload
+        .username
+        .as_deref()
+        .and_then(normalized_optional)
+        .unwrap_or_else(|| display_name.clone());
+
+    let password_hash = match hash_password(&password) {
+        Ok(password_hash) => password_hash,
+        Err(error) => {
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+        }
+    };
+    let session_token = generate_session_token();
+    let token_hash = hash_session_token(&session_token);
+    let created_at = now_iso();
+
+    match state
+        .inner
+        .db
+        .register_user(
+            &username,
+            &display_name,
+            &password_hash,
+            &invite_code,
+            &token_hash,
+            &created_at,
+        )
+        .await
+    {
+        Ok(user) => (
+            StatusCode::CREATED,
+            Json(AuthResponse {
+                session_token,
+                user: public_user_view(&user),
+            }),
+        )
+            .into_response(),
+        Err(error) if error_matches(&error, "invite_code_invalid") => {
+            json_error(StatusCode::UNPROCESSABLE_ENTITY, "invite_code_invalid")
+        }
+        Err(error) if error_matches(&error, "username_taken") => {
+            json_error(StatusCode::CONFLICT, "username_taken")
+        }
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn login(State(state): State<AppContext>, Json(payload): Json<LoginRequest>) -> Response {
+    let Some(identifier) = normalized_required(&payload.identifier) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_credentials");
+    };
+    let Some(password) = normalized_required(&payload.password) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_credentials");
+    };
+
+    let user = match state.inner.db.find_user_by_identifier(&identifier).await {
+        Ok(Some(user)) if verify_password(&password, &user.password_hash) => user,
+        Ok(_) => return json_error(StatusCode::UNAUTHORIZED, "invalid_credentials"),
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+
+    let now = Utc::now();
+    let created_at = now.to_rfc3339_opts(SecondsFormat::Micros, true);
+    let local_date = beijing_local_date(now);
+    let session_token = generate_session_token();
+    let token_hash = hash_session_token(&session_token);
+    if let Err(error) = state
+        .inner
+        .db
+        .create_auth_session(&token_hash, user.user_id, &created_at)
+        .await
+    {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+    }
+    if let Err(error) = state
+        .inner
+        .db
+        .apply_daily_login_points(user.user_id, &local_date, &created_at)
+        .await
+    {
+        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+    }
+
+    match state.inner.db.get_user_by_id(user.user_id).await {
+        Ok(Some(user)) => (
+            StatusCode::OK,
+            Json(AuthResponse {
+                session_token,
+                user: public_user_view(&user),
+            }),
+        )
+            .into_response(),
+        Ok(None) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn logout(State(state): State<AppContext>, headers: axum::http::HeaderMap) -> Response {
+    let Some(token) = bearer_token(&headers) else {
+        return json_error(StatusCode::UNAUTHORIZED, "auth_required");
+    };
+    let token_hash = hash_session_token(&token);
+    match state
+        .inner
+        .db
+        .revoke_auth_session(&token_hash, &now_iso())
+        .await
+    {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn get_me(State(state): State<AppContext>, headers: axum::http::HeaderMap) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    match state.inner.db.get_user_by_id(authenticated_user.user_id).await {
+        Ok(Some(user)) => Json(public_user_view(&user)).into_response(),
+        Ok(None) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn update_me(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<UpdateMeRequest>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let Some(display_name) = normalized_patch_field(payload.display_name) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_profile_update");
+    };
+    let Some(bio) = normalized_patch_field(payload.bio) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_profile_update");
+    };
+    let avatar = payload.avatar.and_then(|value| normalized_optional(&value));
+
+    match state
+        .inner
+        .db
+        .update_user_profile(
+            authenticated_user.user_id,
+            display_name,
+            bio,
+            avatar,
+            &now_iso(),
+        )
+        .await
+    {
+        Ok(Some(user)) => Json(public_user_view(&user)).into_response(),
+        Ok(None) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
 }
 
 async fn create_table(
@@ -198,4 +418,55 @@ async fn create_or_replace_table(
     }
 
     Ok((table_code, created_at, room))
+}
+
+async fn require_authenticated_user(
+    state: &AppContext,
+    headers: &axum::http::HeaderMap,
+) -> std::result::Result<AuthenticatedUser, Response> {
+    let Some(token) = bearer_token(headers) else {
+        return Err(json_error(StatusCode::UNAUTHORIZED, "auth_required"));
+    };
+    let token_hash = hash_session_token(&token);
+    match state
+        .inner
+        .db
+        .get_authenticated_user(&token_hash, &now_iso())
+        .await
+    {
+        Ok(Some(user)) => Ok(user),
+        Ok(None) => Err(json_error(StatusCode::UNAUTHORIZED, "auth_required")),
+        Err(error) => Err(json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &error.to_string(),
+        )),
+    }
+}
+
+fn normalized_required(value: &str) -> Option<String> {
+    normalized_optional(value)
+}
+
+fn normalized_optional(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn normalized_patch_field(value: Option<String>) -> Option<Option<String>> {
+    match value {
+        Some(value) => normalized_optional(&value).map(Some),
+        None => Some(None),
+    }
+}
+
+fn json_error(status: StatusCode, detail: &str) -> Response {
+    (status, Json(detail_response(detail))).into_response()
+}
+
+fn error_matches(error: &anyhow::Error, expected: &str) -> bool {
+    format!("{error:#}").contains(expected)
 }

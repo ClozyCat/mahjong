@@ -8,6 +8,8 @@ use rand::Rng;
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::oneshot;
 
+use super::auth::AuthenticatedUser;
+
 type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
 
 pub(crate) struct Database {
@@ -28,6 +30,20 @@ pub(crate) struct ReconnectTokenRecord {
     pub(crate) table_code: String,
     pub(crate) seat_index: usize,
     pub(crate) player_session_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UserRecord {
+    pub(crate) user_id: i64,
+    pub(crate) username: String,
+    pub(crate) display_name: String,
+    pub(crate) password_hash: String,
+    pub(crate) avatar: Option<String>,
+    pub(crate) bio: String,
+    pub(crate) points: i64,
+    pub(crate) last_login_local_date: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
 }
 
 struct SqliteColumn {
@@ -78,6 +94,9 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
             ON auth_sessions(user_id);
+
+            CREATE INDEX IF NOT EXISTS idx_user_point_events_user_id
+            ON user_point_events(user_id);
             ",
         )?;
         Ok(())
@@ -204,6 +223,19 @@ impl Database {
                 created_at TEXT NOT NULL,
                 last_seen_at TEXT NOT NULL,
                 revoked_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS user_point_events (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                delta INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                local_date TEXT,
+                source_table_code TEXT,
+                source_round_id TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, reason, local_date),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
             ",
@@ -458,6 +490,274 @@ impl Database {
             )
             .optional()
             .map_err(Into::into)
+    }
+
+    fn user_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRecord> {
+        Ok(UserRecord {
+            user_id: row.get(0)?,
+            username: row.get(1)?,
+            display_name: row.get(2)?,
+            password_hash: row.get(3)?,
+            avatar: row.get(4)?,
+            bio: row.get(5)?,
+            points: row.get(6)?,
+            last_login_local_date: row.get(7)?,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+        })
+    }
+
+    fn get_user_by_id_with_conn(conn: &Connection, user_id: i64) -> Result<Option<UserRecord>> {
+        conn.query_row(
+            "
+            SELECT id, username, display_name, password_hash, avatar, bio, points,
+                   last_login_local_date, created_at, updated_at
+            FROM users
+            WHERE id = ?1
+            ",
+            params![user_id],
+            Self::user_record_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    fn get_user_by_id(&self, user_id: i64) -> Result<Option<UserRecord>> {
+        Self::get_user_by_id_with_conn(&self.conn, user_id)
+    }
+
+    fn find_user_by_identifier(&self, identifier: &str) -> Result<Option<UserRecord>> {
+        if let Ok(user_id) = identifier.parse::<i64>() {
+            return self
+                .conn
+                .query_row(
+                    "
+                    SELECT id, username, display_name, password_hash, avatar, bio, points,
+                           last_login_local_date, created_at, updated_at
+                    FROM users
+                    WHERE username = ?1 OR id = ?2
+                    ORDER BY CASE WHEN username = ?1 THEN 0 ELSE 1 END
+                    LIMIT 1
+                    ",
+                    params![identifier, user_id],
+                    Self::user_record_from_row,
+                )
+                .optional()
+                .map_err(Into::into);
+        }
+
+        self.conn
+            .query_row(
+                "
+                SELECT id, username, display_name, password_hash, avatar, bio, points,
+                       last_login_local_date, created_at, updated_at
+                FROM users
+                WHERE username = ?1
+                ",
+                params![identifier],
+                Self::user_record_from_row,
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    fn register_user(
+        &self,
+        username: &str,
+        display_name: &str,
+        password_hash: &str,
+        invite_code: &str,
+        token_hash: &str,
+        created_at: &str,
+    ) -> Result<UserRecord> {
+        self.with_transaction("register user", |conn| {
+            if let Err(error) = conn.execute(
+                "
+                INSERT INTO users (
+                    username,
+                    display_name,
+                    password_hash,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?4)
+                ",
+                params![username, display_name, password_hash, created_at],
+            ) {
+                if error
+                    .to_string()
+                    .contains("UNIQUE constraint failed: users.username")
+                {
+                    return Err(anyhow!("username_taken"));
+                }
+                return Err(error.into());
+            }
+
+            let user_id = conn.last_insert_rowid();
+            let consumed = conn.execute(
+                "
+                UPDATE invite_codes
+                SET used_at = ?2,
+                    used_by_user_id = ?3
+                WHERE code = ?1
+                  AND used_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > ?2)
+                ",
+                params![invite_code, created_at, user_id],
+            )?;
+            if consumed != 1 {
+                return Err(anyhow!("invite_code_invalid"));
+            }
+
+            conn.execute(
+                "
+                INSERT INTO auth_sessions (token_hash, user_id, created_at, last_seen_at)
+                VALUES (?1, ?2, ?3, ?3)
+                ",
+                params![token_hash, user_id, created_at],
+            )?;
+
+            Self::get_user_by_id_with_conn(conn, user_id)?
+                .ok_or_else(|| anyhow!("registered user should exist"))
+        })
+    }
+
+    fn create_auth_session(&self, token_hash: &str, user_id: i64, created_at: &str) -> Result<()> {
+        self.conn.execute(
+            "
+            INSERT INTO auth_sessions (token_hash, user_id, created_at, last_seen_at)
+            VALUES (?1, ?2, ?3, ?3)
+            ",
+            params![token_hash, user_id, created_at],
+        )?;
+        Ok(())
+    }
+
+    fn revoke_auth_session(&self, token_hash: &str, revoked_at: &str) -> Result<bool> {
+        let rows_affected = self.conn.execute(
+            "
+            UPDATE auth_sessions
+            SET revoked_at = ?2
+            WHERE token_hash = ?1
+              AND revoked_at IS NULL
+            ",
+            params![token_hash, revoked_at],
+        )?;
+        Ok(rows_affected == 1)
+    }
+
+    fn get_authenticated_user(
+        &self,
+        token_hash: &str,
+        seen_at: &str,
+    ) -> Result<Option<AuthenticatedUser>> {
+        let user = self
+            .conn
+            .query_row(
+                "
+                SELECT users.id, users.username, users.display_name
+                FROM auth_sessions
+                JOIN users ON users.id = auth_sessions.user_id
+                WHERE auth_sessions.token_hash = ?1
+                  AND auth_sessions.revoked_at IS NULL
+                ",
+                params![token_hash],
+                |row| {
+                    Ok(AuthenticatedUser {
+                        user_id: row.get(0)?,
+                        username: row.get(1)?,
+                        display_name: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+        if user.is_some() {
+            self.conn.execute(
+                "
+                UPDATE auth_sessions
+                SET last_seen_at = ?2
+                WHERE token_hash = ?1
+                  AND revoked_at IS NULL
+                ",
+                params![token_hash, seen_at],
+            )?;
+        }
+        Ok(user)
+    }
+
+    fn apply_daily_login_points(
+        &self,
+        user_id: i64,
+        local_date: &str,
+        created_at: &str,
+    ) -> Result<bool> {
+        self.with_transaction("apply daily login points", |conn| {
+            let last_login_local_date = conn
+                .query_row(
+                    "SELECT last_login_local_date FROM users WHERE id = ?1",
+                    params![user_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten();
+            if last_login_local_date.as_deref() == Some(local_date) {
+                return Ok(false);
+            }
+
+            conn.execute(
+                "
+                INSERT INTO user_point_events (
+                    user_id,
+                    delta,
+                    reason,
+                    local_date,
+                    created_at
+                )
+                VALUES (?1, 50, 'daily_login', ?2, ?3)
+                ",
+                params![user_id, local_date, created_at],
+            )?;
+            conn.execute(
+                "
+                UPDATE users
+                SET points = points + 50,
+                    last_login_local_date = ?2,
+                    updated_at = ?3
+                WHERE id = ?1
+                ",
+                params![user_id, local_date, created_at],
+            )?;
+            Ok(true)
+        })
+    }
+
+    fn update_user_profile(
+        &self,
+        user_id: i64,
+        display_name: Option<&str>,
+        bio: Option<&str>,
+        avatar: Option<&str>,
+        updated_at: &str,
+    ) -> Result<Option<UserRecord>> {
+        let Some(current) = self.get_user_by_id(user_id)? else {
+            return Ok(None);
+        };
+        let next_display_name = display_name.unwrap_or(&current.display_name);
+        let next_bio = bio.unwrap_or(&current.bio);
+        let next_avatar = avatar.or(current.avatar.as_deref());
+
+        self.conn.execute(
+            "
+            UPDATE users
+            SET display_name = ?2,
+                bio = ?3,
+                avatar = ?4,
+                updated_at = ?5
+            WHERE id = ?1
+            ",
+            params![user_id, next_display_name, next_bio, next_avatar, updated_at],
+        )?;
+        self.get_user_by_id(user_id)
     }
 
     fn save_table_and_store_reconnect_token(
@@ -725,6 +1025,107 @@ impl DbWorker {
         let created_at = created_at.to_string();
         self.call(move |db| db.create_invite_code(&code, &created_at, expires_at.as_deref()))
             .await
+    }
+
+    pub(crate) async fn register_user(
+        &self,
+        username: &str,
+        display_name: &str,
+        password_hash: &str,
+        invite_code: &str,
+        token_hash: &str,
+        created_at: &str,
+    ) -> Result<UserRecord> {
+        let username = username.to_string();
+        let display_name = display_name.to_string();
+        let password_hash = password_hash.to_string();
+        let invite_code = invite_code.to_string();
+        let token_hash = token_hash.to_string();
+        let created_at = created_at.to_string();
+        self.call(move |db| {
+            db.register_user(
+                &username,
+                &display_name,
+                &password_hash,
+                &invite_code,
+                &token_hash,
+                &created_at,
+            )
+        })
+        .await
+    }
+
+    pub(crate) async fn find_user_by_identifier(&self, identifier: &str) -> Result<Option<UserRecord>> {
+        let identifier = identifier.to_string();
+        self.call(move |db| db.find_user_by_identifier(&identifier))
+            .await
+    }
+
+    pub(crate) async fn create_auth_session(
+        &self,
+        token_hash: &str,
+        user_id: i64,
+        created_at: &str,
+    ) -> Result<()> {
+        let token_hash = token_hash.to_string();
+        let created_at = created_at.to_string();
+        self.call(move |db| db.create_auth_session(&token_hash, user_id, &created_at))
+            .await
+    }
+
+    pub(crate) async fn revoke_auth_session(&self, token_hash: &str, revoked_at: &str) -> Result<bool> {
+        let token_hash = token_hash.to_string();
+        let revoked_at = revoked_at.to_string();
+        self.call(move |db| db.revoke_auth_session(&token_hash, &revoked_at))
+            .await
+    }
+
+    pub(crate) async fn get_authenticated_user(
+        &self,
+        token_hash: &str,
+        seen_at: &str,
+    ) -> Result<Option<AuthenticatedUser>> {
+        let token_hash = token_hash.to_string();
+        let seen_at = seen_at.to_string();
+        self.call(move |db| db.get_authenticated_user(&token_hash, &seen_at))
+            .await
+    }
+
+    pub(crate) async fn apply_daily_login_points(
+        &self,
+        user_id: i64,
+        local_date: &str,
+        created_at: &str,
+    ) -> Result<bool> {
+        let local_date = local_date.to_string();
+        let created_at = created_at.to_string();
+        self.call(move |db| db.apply_daily_login_points(user_id, &local_date, &created_at))
+            .await
+    }
+
+    pub(crate) async fn get_user_by_id(&self, user_id: i64) -> Result<Option<UserRecord>> {
+        self.call(move |db| db.get_user_by_id(user_id)).await
+    }
+
+    pub(crate) async fn update_user_profile(
+        &self,
+        user_id: i64,
+        display_name: Option<String>,
+        bio: Option<String>,
+        avatar: Option<String>,
+        updated_at: &str,
+    ) -> Result<Option<UserRecord>> {
+        let updated_at = updated_at.to_string();
+        self.call(move |db| {
+            db.update_user_profile(
+                user_id,
+                display_name.as_deref(),
+                bio.as_deref(),
+                avatar.as_deref(),
+                &updated_at,
+            )
+        })
+        .await
     }
 }
 
