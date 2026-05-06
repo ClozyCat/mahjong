@@ -1,18 +1,27 @@
+#![cfg_attr(test, allow(dead_code, unused_imports))]
+
+#[cfg(test)]
 mod app;
+#[cfg(test)]
 mod bot;
+#[cfg(test)]
 mod core;
 #[cfg(test)]
 mod mahjong;
+#[cfg(test)]
 mod projection;
+#[cfg(test)]
 mod room_scoring;
+#[cfg(test)]
 mod rules;
+#[cfg(test)]
 mod scoring;
 
 use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    app::server::run().await
+    backend::run_server().await
 }
 
 #[cfg(test)]

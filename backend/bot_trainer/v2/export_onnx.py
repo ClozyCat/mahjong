@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ OUTPUT_NAMES = [
     "value",
     "risk_logits",
 ]
+INPUT_NAMES = ["tile_planes", "scalar_features", "discard_sequence"]
 
 
 class OnnxWrapper(nn.Module):
@@ -59,28 +61,33 @@ def main() -> None:
         (1, discard_sequence_length, discard_event_feature_count),
         dtype=torch.float32,
     )
+    export_model = OnnxWrapper(model).eval()
     export_inputs: tuple[torch.Tensor, ...] = (
         dummy_tile_planes,
         dummy_scalar_features,
         dummy_discard_sequence,
     )
-    input_names = ["tile_planes", "scalar_features", "discard_sequence"]
 
-    torch.onnx.export(
-        OnnxWrapper(model),
-        export_inputs,
-        args.output,
-        input_names=input_names,
-        output_names=OUTPUT_NAMES,
-        dynamic_axes={
-            "tile_planes": {0: "batch"},
-            "scalar_features": {0: "batch"},
-            "discard_sequence": {0: "batch"},
-            **{name: {0: "batch"} for name in OUTPUT_NAMES},
-        },
-        opset_version=args.opset,
-        dynamo=False,
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The tensor attributes .* were assigned during export.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"`isinstance\(treespec, LeafSpec\)` is deprecated.*",
+            category=FutureWarning,
+        )
+        torch.onnx.export(
+            export_model,
+            export_inputs,
+            args.output,
+            input_names=INPUT_NAMES,
+            output_names=OUTPUT_NAMES,
+            opset_version=args.opset,
+            dynamo=True,
+        )
     smoke_onnxruntime(
         args.output,
         dummy_tile_planes,
@@ -95,7 +102,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument("--opset", type=int, default=18)
     return parser.parse_args()
 
 
