@@ -2491,4 +2491,78 @@ describe('BattleScreen', () => {
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');
     expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
   });
+
+  it('keeps the table sidebar collapsed by default and reveals all tabs when opened', async () => {
+    const user = userEvent.setup();
+
+    renderBattleScreen(createBattleViewModel(), {
+      sidebarPlayers: [
+        {
+          key: 'bottom',
+          seatLabel: '东位',
+          displayLabel: 'Player A（平民）',
+          score: 25000,
+          liveDelta: 8,
+          points: 150,
+          connected: true,
+          profileUser: {
+            user_id: 1,
+            username: 'player-a',
+            display_name: 'Player A',
+            points: 150,
+            title: '平民',
+            display_label: 'Player A（平民）',
+            bio: '',
+            avatar: null,
+          },
+        },
+      ],
+      sidebarOnlineUsers: [
+        {
+          user_id: 1,
+          username: 'player-a',
+          display_name: 'Player A',
+          points: 150,
+          title: '平民',
+          display_label: 'Player A（平民）',
+          bio: '',
+          avatar: null,
+        },
+      ],
+      sidebarProfileUser: {
+        user_id: 1,
+        username: 'player-a',
+        display_name: 'Player A',
+        points: 150,
+        title: '平民',
+        display_label: 'Player A（平民）',
+        bio: '',
+        avatar: null,
+      },
+      sidebarSpectators: [],
+      sidebarSpectatorRequests: [
+        {
+          id: 5,
+          table_code: 'AB12CD',
+          requester_user_id: 2,
+          owner_user_id: 1,
+          status: 'pending',
+          created_at: '2026-05-06T12:00:00Z',
+          decided_at: null,
+        },
+      ],
+      isSidebarOwner: true,
+    });
+
+    expect(screen.getByRole('button', { name: '打开牌桌侧边栏' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Table sidebar' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '打开牌桌侧边栏' }));
+
+    expect(screen.getByRole('tab', { name: '本局玩家' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '在线玩家' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '玩家信息' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '观战者' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '观战申请' })).toBeInTheDocument();
+  });
 });

@@ -29,12 +29,13 @@ use tokio::sync::{Notify, RwLock, mpsc};
 
 use self::persistence::DbWorker;
 use self::protocol::player_presence_message;
-use self::room_runtime::RoomHandle;
+use self::room_runtime::{RoomHandle, SpectatorIdentity};
 use crate::core::state::{RoomState, SeatState};
 use crate::projection::match_result::match_result_message;
 use crate::projection::prompt::action_prompt_message;
-use crate::projection::room_snapshot::observer_room_snapshot_message;
-use crate::projection::room_snapshot::room_snapshot_message;
+use crate::projection::room_snapshot::{
+    observer_room_snapshot_message_with_spectators, room_snapshot_message_with_spectators,
+};
 use crate::projection::support::build_seat_projection_support_for_state;
 
 pub(crate) const MAX_SEATS: usize = 4;
@@ -413,6 +414,10 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
     Ok(seat_index)
 }
 
+fn is_standalone_bot_seat(seat: &SeatState) -> bool {
+    seat.seat_type == "bot"
+}
+
 pub(crate) fn remove_bot_from_waiting_room(room: &mut RoomState) -> Result<usize, &'static str> {
     if room_phase(room) != "waiting" || room_has_round_state(room) {
         return Err("room_already_started");
@@ -421,7 +426,7 @@ pub(crate) fn remove_bot_from_waiting_room(room: &mut RoomState) -> Result<usize
     let seat_index = room
         .seats
         .iter()
-        .filter(|seat| seat.is_bot)
+        .filter(|seat| is_standalone_bot_seat(seat))
         .map(|seat| seat.seat_index)
         .max()
         .ok_or("bot_not_found")?;
@@ -460,7 +465,7 @@ pub(crate) fn set_seat_bot_takeover(
     seat.connected = true;
     seat.disconnect_deadline_at = None;
     seat.is_bot = enabled;
-    seat.seat_type = if enabled { "bot" } else { "human" }.to_string();
+    seat.seat_type = "human".to_string();
     if enabled {
         seat.ready = true;
     }
@@ -486,6 +491,7 @@ pub(crate) fn set_seat_connected(
 
 pub(crate) fn collect_join_outbound_from_snapshot(
     room: &RoomState,
+    spectators: &[SpectatorIdentity],
     connections: &[(usize, ConnectionHandle)],
     table_code: &str,
     connection: &ConnectionHandle,
@@ -493,7 +499,7 @@ pub(crate) fn collect_join_outbound_from_snapshot(
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    outbound.extend(build_room_messages_for_seat(room, seat_index, connection));
+    outbound.extend(build_room_messages_for_seat(room, spectators, seat_index, connection));
     if let Some(prompt) = build_prompt_for_seat(room, seat_index) {
         outbound.push(connection.outbound(prompt));
     }
@@ -504,7 +510,7 @@ pub(crate) fn collect_join_outbound_from_snapshot(
             continue;
         }
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat(room, *other_seat, handle));
+        outbound.extend(build_room_messages_for_seat(room, spectators, *other_seat, handle));
     }
     for (other_seat, handle) in connections {
         if *other_seat == seat_index && handle.id == connection.id {
@@ -519,6 +525,7 @@ pub(crate) fn collect_join_outbound_from_snapshot(
 
 pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
     room: &RoomState,
+    spectators: &[SpectatorIdentity],
     connections: &[(usize, ConnectionHandle)],
     table_code: &str,
     seat_index: usize,
@@ -528,7 +535,7 @@ pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
     let presence = player_presence_message(table_code, seat_index, connected);
     for (target_seat, handle) in connections {
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat(room, *target_seat, handle));
+        outbound.extend(build_room_messages_for_seat(room, spectators, *target_seat, handle));
         if let Some(prompt) = build_prompt_for_seat(room, *target_seat) {
             outbound.push(handle.outbound(prompt));
         }
@@ -538,11 +545,12 @@ pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
 
 pub(crate) fn collect_snapshot_and_prompt_outbound_from_snapshot(
     room: &RoomState,
+    spectators: &[SpectatorIdentity],
     connections: &[(usize, ConnectionHandle)],
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
     for (seat_index, handle) in connections {
-        outbound.extend(build_room_messages_for_seat(room, *seat_index, handle));
+        outbound.extend(build_room_messages_for_seat(room, spectators, *seat_index, handle));
     }
     for (seat_index, handle) in connections {
         if let Some(prompt) = build_prompt_for_seat(room, *seat_index) {
@@ -554,11 +562,13 @@ pub(crate) fn collect_snapshot_and_prompt_outbound_from_snapshot(
 
 pub(crate) fn build_room_messages_for_seat(
     room: &RoomState,
+    spectators: &[SpectatorIdentity],
     local_seat: usize,
     connection: &ConnectionHandle,
 ) -> Vec<OutboundMessage> {
     let support = build_seat_projection_support_for_state(room, local_seat);
-    let mut payloads = vec![room_snapshot_message(room, local_seat, &support)];
+    let mut payloads =
+        vec![room_snapshot_message_with_spectators(room, spectators, local_seat, &support)];
     if let Some(result) = match_result_message(room) {
         payloads.push(result);
     }
@@ -569,9 +579,10 @@ pub(crate) fn build_room_messages_for_seat(
 }
 pub(crate) fn build_room_messages_for_observer(
     room: &RoomState,
+    spectators: &[SpectatorIdentity],
     connection: &ConnectionHandle,
 ) -> Vec<OutboundMessage> {
-    let mut payloads = vec![observer_room_snapshot_message(room)];
+    let mut payloads = vec![observer_room_snapshot_message_with_spectators(room, spectators)];
     if let Some(result) = match_result_message(room) {
         payloads.push(result);
     }
@@ -582,11 +593,12 @@ pub(crate) fn build_room_messages_for_observer(
 }
 pub(crate) fn collect_observer_outbound_from_snapshot(
     room: &RoomState,
+    spectators: &[SpectatorIdentity],
     connections: &[(u64, ConnectionHandle)],
 ) -> Vec<OutboundMessage> {
     connections
         .iter()
-        .flat_map(|(_, handle)| build_room_messages_for_observer(room, handle))
+        .flat_map(|(_, handle)| build_room_messages_for_observer(room, spectators, handle))
         .collect()
 }
 
@@ -719,7 +731,8 @@ pub(crate) async fn online_user_ids(state: &AppContext) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BOT_ACTION_DELAY_MS, optional_env_value, resolve_database_path, set_seat_bot_takeover,
+        BOT_ACTION_DELAY_MS, optional_env_value, remove_bot_from_waiting_room,
+        resolve_database_path, set_seat_bot_takeover,
     };
     use crate::core::state::{RoomState, SeatState};
 
@@ -794,7 +807,7 @@ mod tests {
         set_seat_bot_takeover(&mut room, 0, true).expect("takeover should turn on");
         let seat = room.seats.first().expect("seat should remain");
         assert!(seat.is_bot);
-        assert_eq!(seat.seat_type, "bot");
+        assert_eq!(seat.seat_type, "human");
         assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
         assert_eq!(seat.player_session_id, Some(42));
         assert!(seat.ready);
@@ -806,5 +819,55 @@ mod tests {
         assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
         assert_eq!(seat.player_session_id, Some(42));
         assert!(seat.connected);
+    }
+
+    #[test]
+    fn remove_bot_from_waiting_room_ignores_human_bot_takeover_seat() {
+        let mut room = RoomState {
+            table_code: "ABCD".to_string(),
+            phase: "waiting".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: vec![
+                SeatState {
+                    seat_index: 0,
+                    nickname: Some("Alice".to_string()),
+                    reconnect_token: Some("token-1".to_string()),
+                    player_session_id: Some(42),
+                    connected: true,
+                    ready: true,
+                    is_bot: true,
+                    seat_type: "human".to_string(),
+                    bot_persona: None,
+                    bot_aggression: None,
+                    disconnect_deadline_at: None,
+                },
+                SeatState {
+                    seat_index: 1,
+                    nickname: Some("Bot 1".to_string()),
+                    reconnect_token: None,
+                    player_session_id: Some(-2),
+                    connected: true,
+                    ready: true,
+                    is_bot: true,
+                    seat_type: "bot".to_string(),
+                    bot_persona: None,
+                    bot_aggression: None,
+                    disconnect_deadline_at: None,
+                },
+            ],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let removed = remove_bot_from_waiting_room(&mut room).expect("standalone bot should be removed");
+
+        assert_eq!(removed, 1);
+        assert_eq!(room.seats.len(), 1);
+        assert_eq!(room.seats[0].seat_index, 0);
+        assert_eq!(room.seats[0].seat_type, "human");
     }
 }

@@ -114,7 +114,7 @@ cargo test --manifest-path backend/Cargo.toml
 
 Expected: both commands exit 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add backend/Cargo.toml backend/src/main.rs backend/src/app/mod.rs backend/src/app/persistence.rs backend/src/app/auth.rs
@@ -630,6 +630,11 @@ git commit -m "feat(frontend): 添加登录和社交大厅"
 - Create: `frontend/src/components/table-sidebar/TableSidebar.test.tsx`
 - Create: `frontend/src/components/user-profile/UserProfilePanel.tsx`
 - Create: `frontend/src/components/user-profile/UserProfilePanel.test.tsx`
+- Modify: `backend/src/app/mod.rs`
+- Modify: `backend/src/app/room_runtime.rs`
+- Modify: `backend/src/app/scheduler.rs`
+- Modify: `backend/src/app/ws.rs`
+- Modify: `backend/src/projection/room_snapshot.rs`
 - Modify: `frontend/src/components/battle-screen/BattleScreen.tsx`
 - Modify: `frontend/src/components/battle-screen/TableStage.tsx`
 - Modify: `frontend/src/App.tsx`
@@ -638,7 +643,7 @@ git commit -m "feat(frontend): 添加登录和社交大厅"
 - Modify: `frontend/src/styles/table.css`
 - Modify: `frontend/src/styles/panels.css`
 
-- [ ] **Step 1: Write sidebar tests**
+- [x] **Step 1: Write sidebar tests**
 
 Test:
 
@@ -656,11 +661,11 @@ Push-Location frontend; npm test -- TableSidebar.test.tsx UserProfilePanel.test.
 
 Expected first run before implementation: fails because sidebar components do not exist.
 
-- [ ] **Step 2: Implement `UserProfilePanel`**
+- [x] **Step 2: Implement `UserProfilePanel`**
 
 Display public user label, points, title, fan stats, and recent games.
 
-- [ ] **Step 3: Implement `TableSidebar`**
+- [x] **Step 3: Implement `TableSidebar`**
 
 Use stable width and overlay behavior. Tabs:
 
@@ -670,15 +675,15 @@ Use stable width and overlay behavior. Tabs:
 - 观战者
 - 观战申请
 
-- [ ] **Step 4: Integrate into `BattleScreen`**
+- [x] **Step 4: Integrate into `BattleScreen`**
 
 Add a right-edge icon button that opens the sidebar. Keep the table layout stable and avoid resizing tile grids when the sidebar opens.
 
-- [ ] **Step 5: Add spectator request UI**
+- [x] **Step 5: Add spectator request UI**
 
 In lobby and sidebar, allow users to request to watch. In owner sidebar, show pending requests with approve/reject buttons.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 

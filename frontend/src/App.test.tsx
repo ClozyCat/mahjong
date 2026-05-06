@@ -344,8 +344,20 @@ function createFetchMock(options?: {
       return createMockResponse(invites);
     }
 
+    if (url.endsWith('/api/me/spectator-requests') && method === 'GET') {
+      return createMockResponse([]);
+    }
+
     if (url.endsWith('/api/leaderboard') && method === 'GET') {
       return createMockResponse(leaderboard);
+    }
+
+    if (/\/api\/users\/\d+\/fans$/.test(url) && method === 'GET') {
+      return createMockResponse([]);
+    }
+
+    if (/\/api\/users\/\d+\/games$/.test(url) && method === 'GET') {
+      return createMockResponse([]);
     }
 
     if (url.endsWith('/api/tables') && method === 'POST') {
@@ -530,7 +542,7 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
             { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
             { seat_index: 2, nickname: 'Bot 2', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
             { seat_index: 3, nickname: 'Bot 3', connected: true, ready: true, is_bot: true, seat_type: 'bot' },

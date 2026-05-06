@@ -37,6 +37,14 @@ export interface PublicUser {
   avatar?: string | null;
 }
 
+export interface UserBrief {
+  user_id: number;
+  display_name: string;
+  points: number;
+  title: string;
+  display_label: string;
+}
+
 export interface AuthResponse {
   session_token: string;
   user: PublicUser;
@@ -78,6 +86,29 @@ export interface SpectatorRequest {
   status: string;
   created_at: string;
   decided_at?: string | null;
+}
+
+export interface SpectatorSnapshot {
+  user_id: number;
+  display_name: string;
+}
+
+export interface GameSummary {
+  game_id: number;
+  table_code: string;
+  owner: UserBrief;
+  multiplier: number;
+  started_at: string;
+  ended_at?: string | null;
+  round_count: number;
+}
+
+export interface UserFanStat {
+  user_id: number;
+  fan_key: string;
+  fan_label: string;
+  count: number;
+  last_seen_at: string;
 }
 
 export interface SeatSnapshot {
@@ -187,7 +218,10 @@ export interface RoomSnapshotPayload {
   table_code: string;
   phase: RoomPhase;
   mode?: TableMode;
+  owner_user_id?: number | null;
+  multiplier?: TableMultiplier;
   seats: SeatSnapshot[];
+  spectators?: SpectatorSnapshot[];
   local_seat?: number | null;
   reconnect_token?: string | null;
   match_state?: MatchState | null;

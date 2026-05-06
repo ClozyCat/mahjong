@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,6 +18,19 @@ use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
 pub(crate) type SpectatorConnections = Vec<(u64, ConnectionHandle)>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpectatorIdentity {
+    pub(crate) user_id: i64,
+    pub(crate) display_name: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct SpectatorConnection {
+    pub(crate) user_id: i64,
+    pub(crate) display_name: String,
+    pub(crate) connection: ConnectionHandle,
+}
+
 pub(crate) struct RoomHandle {
     closed: AtomicBool,
     pub(crate) persist: Mutex<()>,
@@ -36,7 +49,7 @@ pub(crate) struct RoomRuntime {
     pub(crate) created_at: String,
     pub(crate) room: RoomState,
     pub(crate) connections: HashMap<usize, SeatConnectionGroup>,
-    pub(crate) spectator_connections: HashMap<u64, ConnectionHandle>,
+    pub(crate) spectator_connections: HashMap<u64, SpectatorConnection>,
     pub(crate) timeout_nonce: u64,
     pub(crate) continue_nonce: u64,
     pub(crate) start_match_nonce: u64,
@@ -118,8 +131,8 @@ pub(crate) fn close_runtime(runtime: &mut RoomRuntime) {
     }
     runtime.connections.clear();
     {
-        for connection in runtime.spectator_connections.values() {
-            connection.request_close();
+        for spectator in runtime.spectator_connections.values() {
+            spectator.connection.request_close();
         }
         runtime.spectator_connections.clear();
     }
@@ -327,14 +340,23 @@ pub(crate) fn snapshot_connections(runtime: &RoomRuntime) -> SeatConnections {
 pub(crate) fn replace_spectator_connection(
     runtime: &mut RoomRuntime,
     spectator_id: u64,
+    user_id: i64,
+    display_name: String,
     connection: &ConnectionHandle,
 ) {
     if let Some(previous) = runtime
         .spectator_connections
-        .insert(spectator_id, connection.clone())
+        .insert(
+            spectator_id,
+            SpectatorConnection {
+                user_id,
+                display_name,
+                connection: connection.clone(),
+            },
+        )
     {
-        if previous.id != connection.id {
-            previous.request_close();
+        if previous.connection.id != connection.id {
+            previous.connection.request_close();
         }
     }
 }
@@ -342,7 +364,22 @@ pub(crate) fn snapshot_spectator_connections(runtime: &RoomRuntime) -> Spectator
     runtime
         .spectator_connections
         .iter()
-        .map(|(spectator_id, handle)| (*spectator_id, handle.clone()))
+        .map(|(spectator_id, spectator)| (*spectator_id, spectator.connection.clone()))
+        .collect()
+}
+pub(crate) fn snapshot_spectator_identities(runtime: &RoomRuntime) -> Vec<SpectatorIdentity> {
+    let mut identities = BTreeMap::new();
+    for spectator in runtime.spectator_connections.values() {
+        identities
+            .entry(spectator.user_id)
+            .or_insert_with(|| spectator.display_name.clone());
+    }
+    identities
+        .into_iter()
+        .map(|(user_id, display_name)| SpectatorIdentity {
+            user_id,
+            display_name,
+        })
         .collect()
 }
 pub(crate) fn remove_spectator_connection(
@@ -353,14 +390,14 @@ pub(crate) fn remove_spectator_connection(
     if runtime
         .spectator_connections
         .get(&spectator_id)
-        .is_some_and(|handle| handle.id == connection_id)
+        .is_some_and(|spectator| spectator.connection.id == connection_id)
     {
         runtime.spectator_connections.remove(&spectator_id);
     }
 }
 
 pub(crate) fn room_has_only_bots(room: &RoomState) -> bool {
-    !room.seats.is_empty() && room.seats.iter().all(|seat| seat.is_bot)
+    !room.seats.is_empty() && room.seats.iter().all(|seat| seat.seat_type == "bot")
 }
 
 pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {

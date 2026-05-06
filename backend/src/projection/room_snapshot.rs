@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use crate::app::room_runtime::SpectatorIdentity;
 use crate::core::ids::Seat;
 use crate::core::state::{
     DisplayMeldOrientation, DisplayMeldState, DisplayMeldTileState, MatchState, PendingAction,
@@ -23,7 +24,10 @@ struct PlayerRoomSnapshot {
     table_code: String,
     phase: String,
     mode: String,
+    owner_user_id: Option<i64>,
+    multiplier: i64,
     seats: Vec<PublicSeatView>,
+    spectators: Vec<PublicSpectatorView>,
     local_seat: Seat,
     reconnect_token: Option<String>,
     match_state: Option<MatchState>,
@@ -39,6 +43,12 @@ struct PublicSeatView {
     ready: bool,
     is_bot: bool,
     seat_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PublicSpectatorView {
+    user_id: i64,
+    display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,11 +148,23 @@ pub fn room_snapshot_message(
     local_seat: Seat,
     support: &SeatProjectionSupport,
 ) -> Value {
+    room_snapshot_message_with_spectators(state, &[], local_seat, support)
+}
+
+pub(crate) fn room_snapshot_message_with_spectators(
+    state: &RoomState,
+    spectators: &[SpectatorIdentity],
+    local_seat: Seat,
+    support: &SeatProjectionSupport,
+) -> Value {
     let payload = PlayerRoomSnapshot {
         table_code: state.table_code.clone(),
         phase: state.phase.clone(),
         mode: state.mode.clone(),
+        owner_user_id: state.owner_user_id,
+        multiplier: state.multiplier,
         seats: public_seats(state),
+        spectators: public_spectators(spectators),
         local_seat,
         reconnect_token: reconnect_token(state, local_seat),
         match_state: state.match_state.clone(),
@@ -160,7 +182,10 @@ pub fn room_snapshot_message(
                 "table_code": state.table_code,
                 "phase": state.phase,
                 "mode": state.mode,
+                "owner_user_id": state.owner_user_id,
+                "multiplier": state.multiplier,
                 "seats": [],
+                "spectators": [],
                 "local_seat": local_seat,
                 "reconnect_token": Value::Null,
                 "match_state": Value::Null,
@@ -170,12 +195,23 @@ pub fn room_snapshot_message(
         })
     })
 }
+
 pub fn observer_room_snapshot_message(state: &RoomState) -> Value {
+    observer_room_snapshot_message_with_spectators(state, &[])
+}
+
+pub(crate) fn observer_room_snapshot_message_with_spectators(
+    state: &RoomState,
+    spectators: &[SpectatorIdentity],
+) -> Value {
     let payload = PlayerRoomSnapshot {
         table_code: state.table_code.clone(),
         phase: state.phase.clone(),
         mode: state.mode.clone(),
+        owner_user_id: state.owner_user_id,
+        multiplier: state.multiplier,
         seats: public_seats(state),
+        spectators: public_spectators(spectators),
         local_seat: usize::MAX,
         reconnect_token: None,
         match_state: state.match_state.clone(),
@@ -193,7 +229,10 @@ pub fn observer_room_snapshot_message(state: &RoomState) -> Value {
                 "table_code": state.table_code,
                 "phase": state.phase,
                 "mode": state.mode,
+                "owner_user_id": state.owner_user_id,
+                "multiplier": state.multiplier,
                 "seats": [],
+                "spectators": [],
                 "local_seat": Value::Null,
                 "reconnect_token": Value::Null,
                 "match_state": Value::Null,
@@ -346,6 +385,16 @@ fn public_seats(state: &RoomState) -> Vec<PublicSeatView> {
             ready: seat.ready,
             is_bot: seat.is_bot,
             seat_type: seat.seat_type.clone(),
+        })
+        .collect()
+}
+
+fn public_spectators(spectators: &[SpectatorIdentity]) -> Vec<PublicSpectatorView> {
+    spectators
+        .iter()
+        .map(|spectator| PublicSpectatorView {
+            user_id: spectator.user_id,
+            display_name: spectator.display_name.clone(),
         })
         .collect()
 }

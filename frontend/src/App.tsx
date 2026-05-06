@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type 
 
 import { AuthGate } from './components/auth/AuthGate';
 import { BattleScreen } from './components/battle-screen/BattleScreen';
+import type { TableSidebarPlayer, TableSidebarSpectator } from './components/table-sidebar/TableSidebar';
 import { SocialLobby } from './components/lobby/SocialLobby';
 import {
   clearStoredAuthSession,
@@ -42,10 +43,15 @@ import {
 import { buildMeSocketUrl, parseSocialServerMessage } from './lib/meSocket';
 import {
   acceptTableInvite,
+  approveSpectatorRequest,
   createSocialTable,
   createTableInvite,
   getLeaderboard,
   getMyInvites,
+  getMySpectatorRequests,
+  getUserFans,
+  getUserGames,
+  rejectSpectatorRequest,
 } from './lib/socialApi';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
 import {
@@ -63,11 +69,14 @@ import type {
   BattleActionId,
   ClaimActionId,
   ClientMode,
+  GameSummary,
   PublicUser,
   QuickChatEmoji,
   SessionState,
+  SpectatorRequest,
   TableInvite,
   TableMultiplier,
+  UserFanStat,
 } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -136,6 +145,9 @@ function getSocialStatusCopy(detail: string) {
     only_owner_can_invite: '只有房主可以邀请玩家。',
     table_multiplier_locked: '牌局已开始，无法再修改或发起等待区邀请。',
     table_not_found: '牌桌不存在或已关闭。',
+    spectator_requires_owner_approval: '观战需要房主同意。',
+    player_cannot_watch_own_table: '牌局内玩家不能申请观战本局。',
+    spectator_request_not_found: '观战申请不存在或已处理。',
   };
 
   return lookup[detail] ?? detail;
@@ -269,6 +281,23 @@ function removeInviteById(current: TableInvite[], inviteId: number) {
   return current.filter((invite) => invite.id !== inviteId);
 }
 
+function upsertSpectatorRequest(current: SpectatorRequest[], nextRequest: SpectatorRequest) {
+  return [nextRequest, ...current.filter((request) => request.id !== nextRequest.id)];
+}
+
+function removeSpectatorRequestById(current: SpectatorRequest[], requestId: number) {
+  return current.filter((request) => request.id !== requestId);
+}
+
+function getSeatLabel(seatIndex?: number | null) {
+  const windLabels = ['东位', '南位', '西位', '北位'];
+  if (typeof seatIndex !== 'number' || seatIndex < 0) {
+    return '未知座位';
+  }
+
+  return windLabels[seatIndex] ?? `${seatIndex + 1}号位`;
+}
+
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
@@ -288,9 +317,19 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState<PublicUser[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<number[]>([]);
   const [pendingInvites, setPendingInvites] = useState<TableInvite[]>([]);
+  const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
   const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
   const [lobbyMultiplier, setLobbyMultiplier] = useState<TableMultiplier>(1);
+  const [currentTableOwnerUserId, setCurrentTableOwnerUserId] = useState<number | null>(null);
+  const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
+  const [selectedProfileFallbackName, setSelectedProfileFallbackName] = useState<string | null>(
+    storedAuthSession?.user.display_name ?? null,
+  );
+  const [profileFanStats, setProfileFanStats] = useState<UserFanStat[]>([]);
+  const [profileRecentGames, setProfileRecentGames] = useState<GameSummary[]>([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     sessionReducer,
     undefined,
@@ -347,7 +386,14 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
+        setPendingSpectatorRequests([]);
         setInviteDialog(null);
+        setSelectedProfileUser(null);
+        setSelectedProfileFallbackName(null);
+        setProfileFanStats([]);
+        setProfileRecentGames([]);
+        setProfileMessage(null);
+        setCurrentTableOwnerUserId(null);
         if (meSocketRef.current) {
           meSocketRef.current.onclose = null;
           meSocketRef.current.close();
@@ -359,10 +405,11 @@ export default function App() {
       setAuthStatus('loading');
 
       try {
-        const [me, nextInvites, nextLeaderboard] = await Promise.all([
+        const [me, nextInvites, nextLeaderboard, nextSpectatorRequests] = await Promise.all([
           getMe(defaults.apiBaseUrl, authSession.sessionToken),
           getMyInvites(defaults.apiBaseUrl, authSession.sessionToken),
           getLeaderboard(defaults.apiBaseUrl),
+          getMySpectatorRequests(defaults.apiBaseUrl, authSession.sessionToken),
         ]);
 
         if (cancelled) {
@@ -371,7 +418,10 @@ export default function App() {
 
         setCurrentUser(me);
         setPendingInvites(nextInvites);
+        setPendingSpectatorRequests(nextSpectatorRequests);
         setLeaderboard(nextLeaderboard);
+        setSelectedProfileUser((current) => current ?? me);
+        setSelectedProfileFallbackName((current) => current ?? me.display_name);
         setAuthStatus('ready');
         setStatusMessage((current) =>
           current?.includes('历史会话') ? current : null,
@@ -401,7 +451,12 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
+        setPendingSpectatorRequests([]);
         setInviteDialog(null);
+        setSelectedProfileUser(null);
+        setSelectedProfileFallbackName(null);
+        setProfileFanStats([]);
+        setProfileRecentGames([]);
         setAuthStatus('anonymous');
         setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '登录状态已失效，请重新登录。');
       }
@@ -440,11 +495,13 @@ export default function App() {
       }
 
       if (message.type === 'spectator_request_created') {
+        setPendingSpectatorRequests((current) => upsertSpectatorRequest(current, message.payload));
         setStatusMessage(`收到牌桌 ${message.payload.table_code} 的观战申请。`);
         return;
       }
 
       if (message.type === 'spectator_request_decided') {
+        setPendingSpectatorRequests((current) => removeSpectatorRequestById(current, message.payload.id));
         setStatusMessage(
           message.payload.status === 'approved'
             ? `牌桌 ${message.payload.table_code} 已允许观战。`
@@ -467,6 +524,49 @@ export default function App() {
       }
     };
   }, [authSession?.sessionToken, authStatus, state.wsBaseUrl]);
+
+  useEffect(() => {
+    if (!selectedProfileUser) {
+      setProfileFanStats([]);
+      setProfileRecentGames([]);
+      setProfileMessage(selectedProfileFallbackName ? '该玩家暂无可用公开账号数据。' : null);
+      setProfileLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setProfileLoading(true);
+    setProfileMessage(null);
+
+    void Promise.all([
+      getUserFans(defaults.apiBaseUrl, selectedProfileUser.user_id),
+      getUserGames(defaults.apiBaseUrl, selectedProfileUser.user_id),
+    ])
+      .then(([fans, games]) => {
+        if (cancelled) {
+          return;
+        }
+
+        setProfileFanStats(fans);
+        setProfileRecentGames(games);
+        setProfileLoading(false);
+        setProfileMessage(null);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setProfileFanStats([]);
+        setProfileRecentGames([]);
+        setProfileLoading(false);
+        setProfileMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '公开资料加载失败。');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [defaults.apiBaseUrl, selectedProfileFallbackName, selectedProfileUser]);
 
   useEffect(() => {
     if (
@@ -504,6 +604,7 @@ export default function App() {
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
     reconnectCloseCountRef.current = 0;
+    setCurrentTableOwnerUserId(null);
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
@@ -515,6 +616,7 @@ export default function App() {
 
   const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
     reconnectCloseCountRef.current = 0;
+    setCurrentTableOwnerUserId(null);
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
@@ -726,7 +828,60 @@ export default function App() {
     typeof localSeatIndex === 'number'
       ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === localSeatIndex)
       : null;
+  const viewModel = createMatchViewModel(state, {
+    showLocalTurnKongPrompt: !isSpectator && hasLocalTurnKongPrompt,
+    showLocalSelfHuPassOption: !isSpectator && hasLocalSelfHuPassOption,
+    hideLocalSelfHuPrompt: !isSpectator && isLocalSelfHuPromptDismissed,
+    isSpectator,
+    perspectiveSeat: spectatorFocusSeat,
+  });
   const isLocalBotTakeoverEnabled = !isSpectator && Boolean(localSeatState?.is_bot);
+  const roomOwnerUserId = state.roomSnapshot?.payload.owner_user_id ?? currentTableOwnerUserId;
+  const onlineUsersForSidebar = leaderboard.filter((user) => onlineUserIds.includes(user.user_id));
+  const tableSidebarPlayers: TableSidebarPlayer[] = viewModel.players.map((player) => {
+    const matchedUser =
+      (currentUser && currentUser.display_name === player.name ? currentUser : null) ??
+      leaderboard.find((user) => user.display_name === player.name) ??
+      null;
+
+    return {
+      key: `${player.seat}:${player.absoluteSeat ?? -1}`,
+      seatLabel: getSeatLabel(player.absoluteSeat),
+      displayLabel: matchedUser?.display_label ?? player.name,
+      score: player.score,
+      liveDelta: player.liveDelta,
+      points: matchedUser?.points ?? null,
+      connected: player.connected,
+      isBotSeat: player.seatType === 'bot',
+      isBotControlled: player.isBotControlled,
+      profileUser: matchedUser,
+    };
+  });
+  const snapshotSpectators = state.roomSnapshot?.payload.spectators ?? [];
+  const tableSidebarSpectators: TableSidebarSpectator[] =
+    snapshotSpectators.length > 0
+      ? snapshotSpectators.map((spectator) => {
+          const matchedUser =
+            (currentUser && currentUser.user_id === spectator.user_id ? currentUser : null) ??
+            leaderboard.find((user) => user.user_id === spectator.user_id) ??
+            null;
+
+          return {
+            key: `spectator-${spectator.user_id}`,
+            label: matchedUser?.display_label ?? spectator.display_name,
+            subtitle: isSpectator && currentUser?.user_id === spectator.user_id ? '你正在观战该牌桌' : null,
+          };
+        })
+      : isSpectator && currentUser
+        ? [
+            {
+              key: `spectator-${currentUser.user_id}`,
+              label: currentUser.display_label,
+              subtitle: '你正在观战该牌桌',
+            },
+          ]
+        : [];
+  const isSidebarOwner = currentUser?.user_id !== undefined && roomOwnerUserId === currentUser.user_id;
   useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
 
   useEffect(() => {
@@ -803,6 +958,8 @@ export default function App() {
       saveStoredAuthSession(nextSession);
       setAuthSession(nextSession);
       setCurrentUser(response.user);
+      setSelectedProfileUser(response.user);
+      setSelectedProfileFallbackName(response.user.display_name);
       dispatch({ type: 'set_credentials', nickname: response.user.display_name });
       setStatusMessage(null);
     } catch (error) {
@@ -825,6 +982,8 @@ export default function App() {
       saveStoredAuthSession(nextSession);
       setAuthSession(nextSession);
       setCurrentUser(response.user);
+      setSelectedProfileUser(response.user);
+      setSelectedProfileFallbackName(response.user.display_name);
       dispatch({ type: 'set_credentials', nickname: response.user.display_name });
       setStatusMessage(null);
     } catch (error) {
@@ -846,6 +1005,7 @@ export default function App() {
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken, lobbyMultiplier);
       setActiveLobbyTableCode(table.table_code);
+      setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
       setStatusMessage(`已创建牌局 ${table.table_code}，可先邀请玩家再进入。`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建牌局失败。');
@@ -894,6 +1054,7 @@ export default function App() {
       setPendingInvites((current) => removeInviteById(current, invite.id));
       setInviteDialog((current) => (current?.id === invite.id ? null : current));
       setActiveLobbyTableCode(null);
+      setCurrentTableOwnerUserId(invite.inviter_user_id);
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       openRoomSocket({
         tableCode: accepted.table_code,
@@ -922,8 +1083,15 @@ export default function App() {
     setLeaderboard([]);
     setOnlineUserIds([]);
     setPendingInvites([]);
+    setPendingSpectatorRequests([]);
     setInviteDialog(null);
     setActiveLobbyTableCode(null);
+    setCurrentTableOwnerUserId(null);
+    setSelectedProfileUser(null);
+    setSelectedProfileFallbackName(null);
+    setProfileFanStats([]);
+    setProfileRecentGames([]);
+    setProfileMessage(null);
     setAuthStatus('anonymous');
     setStatusMessage(null);
     dispatch({ type: 'return_to_lobby', keepNickname: false, tableCode: '' });
@@ -932,6 +1100,41 @@ export default function App() {
       meSocketRef.current.onclose = null;
       meSocketRef.current.close();
       meSocketRef.current = null;
+    }
+  }
+
+  function handleSelectSidebarUser(user: PublicUser) {
+    setSelectedProfileUser(user);
+    setSelectedProfileFallbackName(user.display_name);
+  }
+
+  async function handleApproveSpectatorRequest(requestId: number) {
+    if (!authSession?.sessionToken) {
+      setStatusMessage('请先登录。');
+      return;
+    }
+
+    try {
+      await approveSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, requestId);
+      setPendingSpectatorRequests((current) => removeSpectatorRequestById(current, requestId));
+      setStatusMessage('已同意观战申请。');
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '处理观战申请失败。');
+    }
+  }
+
+  async function handleRejectSpectatorRequest(requestId: number) {
+    if (!authSession?.sessionToken) {
+      setStatusMessage('请先登录。');
+      return;
+    }
+
+    try {
+      await rejectSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, requestId);
+      setPendingSpectatorRequests((current) => removeSpectatorRequestById(current, requestId));
+      setStatusMessage('已拒绝观战申请。');
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '处理观战申请失败。');
     }
   }
 
@@ -1243,14 +1446,6 @@ export default function App() {
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
   }
 
-  const viewModel = createMatchViewModel(state, {
-    showLocalTurnKongPrompt: !isSpectator && hasLocalTurnKongPrompt,
-    showLocalSelfHuPassOption: !isSpectator && hasLocalSelfHuPassOption,
-    hideLocalSelfHuPrompt: !isSpectator && isLocalSelfHuPromptDismissed,
-    isSpectator,
-    perspectiveSeat: spectatorFocusSeat,
-  });
-
   if (!state.roomSnapshot) {
     if (authStatus !== 'ready' || !currentUser) {
       return (
@@ -1299,6 +1494,20 @@ export default function App() {
       onToggleVoice={() => setIsVoiceEnabled((current) => !current)}
       isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
       onToggleBotTakeover={handleSetBotTakeover}
+      sidebarPlayers={tableSidebarPlayers}
+      sidebarOnlineUsers={onlineUsersForSidebar}
+      sidebarSpectators={tableSidebarSpectators}
+      sidebarProfileUser={selectedProfileUser}
+      sidebarProfileFallbackName={selectedProfileFallbackName}
+      sidebarProfileFanStats={profileFanStats}
+      sidebarProfileRecentGames={profileRecentGames}
+      sidebarProfileLoading={profileLoading}
+      sidebarProfileMessage={profileMessage}
+      sidebarSpectatorRequests={pendingSpectatorRequests}
+      isSidebarOwner={isSidebarOwner}
+      onSidebarSelectUser={handleSelectSidebarUser}
+      onApproveSpectatorRequest={handleApproveSpectatorRequest}
+      onRejectSpectatorRequest={handleRejectSpectatorRequest}
       viewModel={viewModel}
       themeId={themeId}
       themeLabel={getThemeLabel(themeId)}

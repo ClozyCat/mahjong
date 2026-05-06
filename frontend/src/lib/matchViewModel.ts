@@ -19,6 +19,8 @@ import type {
   ResultPageView,
   ResultSeatView,
   Seat,
+  SeatSnapshot,
+  SeatType,
   SessionState,
   HandInsightView,
   WaitingControls,
@@ -486,6 +488,14 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
   return null;
 }
 
+function getSeatIdentityType(seat: Pick<SeatSnapshot, 'seat_type' | 'nickname'>): SeatType {
+  if (seat.seat_type === 'bot' || seat.seat_type === 'human') {
+    return seat.seat_type;
+  }
+
+  return typeof seat.nickname === 'string' && /^bot\b/i.test(seat.nickname) ? 'bot' : 'human';
+}
+
 function createWaitingControls(state: SessionState, options: MatchViewModelOptions = {}): WaitingControls | null {
   if (options.isSpectator) {
     return null;
@@ -499,7 +509,7 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   const localSeat = snapshot.local_seat;
   const localSeatState = typeof localSeat === 'number' ? snapshot.seats.find((seat) => seat.seat_index === localSeat) : null;
   const occupiedSeats = snapshot.seats.length;
-  const botCount = snapshot.seats.filter((seat) => seat.is_bot).length;
+  const botCount = snapshot.seats.filter((seat) => getSeatIdentityType(seat) === 'bot').length;
   const dealerSelection = createDealerSelection(state, options);
   const allReady =
     occupiedSeats === 4 &&
@@ -816,8 +826,9 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
       const relativeSeat = toRelativeSeat(localSeat, seat.seat_index);
       const privatePlayer = findPrivatePlayer(state, seat.seat_index);
       const seatKey = String(seat.seat_index);
-      const seatType = seat.seat_type ?? (seat.is_bot ? 'bot' : 'human');
+      const seatType = getSeatIdentityType(seat);
       const isBotSeat = seatType === 'bot';
+      const isBotControlled = Boolean(seat.is_bot);
 
       return {
         seat: relativeSeat,
@@ -832,7 +843,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         isActive: currentActor === seat.seat_index,
         isLocal: !options.isSpectator && typeof ownSeat === 'number' && seat.seat_index === ownSeat,
         connected: seat.connected,
-        isBotControlled: Boolean(seat.is_bot),
+        isBotControlled,
         ready: seat.ready,
         isReadyHand: Boolean(privatePlayer?.is_ready_hand),
         concealedCount: privatePlayer?.concealed_count ?? 0,
@@ -840,7 +851,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         melds: privatePlayer?.display_melds ?? normalizeDisplayMelds(privatePlayer?.melds),
         flowers: normalizeTileCodeList(privatePlayer?.flowers),
         statusText:
-          isBotSeat
+          isBotControlled
             ? 'Bot代打中'
             : !seat.connected
               ? '等待重连中'
@@ -1976,7 +1987,7 @@ function createContinueActionConfirmation(
   const requiredSeats = Array.isArray(continueAction.required_seats) ? continueAction.required_seats : [];
   const onlineSeats = Array.isArray(continueAction.online_seats) ? continueAction.online_seats : [];
   const occupiedHumanSeatCount = Array.isArray(snapshot?.seats)
-    ? snapshot.seats.filter((seat) => seat.is_bot !== true).length
+    ? snapshot.seats.filter((seat) => getSeatIdentityType(seat) !== 'bot').length
     : 0;
   const countdownDeadlineAt =
     typeof continueAction.auto_advance_deadline_at === 'string' ? continueAction.auto_advance_deadline_at : null;

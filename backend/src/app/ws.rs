@@ -27,6 +27,7 @@ use super::room_runtime::{
 };
 use super::room_runtime::{
     remove_spectator_connection, replace_spectator_connection, snapshot_spectator_connections,
+    snapshot_spectator_identities,
 };
 use super::scheduler::schedule_room_tasks_detached;
 use super::{
@@ -491,14 +492,29 @@ async fn handle_watch_table(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
-    replace_spectator_connection(&mut runtime, spectator_id, connection);
+    replace_spectator_connection(
+        &mut runtime,
+        spectator_id,
+        authenticated_user.user_id,
+        authenticated_user.display_name.clone(),
+        connection,
+    );
+    let connections = snapshot_connections(&runtime);
+    let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
 
     MessageOutcome {
-        outbound: collect_observer_outbound_from_snapshot(
-            &room,
-            &[(spectator_id, connection.clone())],
-        ),
+        outbound: {
+            let mut outbound =
+                collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+            outbound.extend(collect_observer_outbound_from_snapshot(
+                &room,
+                &spectator_identities,
+                &spectator_connections,
+            ));
+            outbound
+        },
         role: Some(ConnectionRole::Spectator { spectator_id }),
         clear_role: false,
         close_socket: false,
@@ -605,6 +621,7 @@ async fn handle_join_table(
             let room = runtime.room.clone();
             let connections = snapshot_connections(&runtime);
             let spectator_connections = snapshot_spectator_connections(&runtime);
+            let spectator_identities = snapshot_spectator_identities(&runtime);
             drop(runtime);
             let room_json = match serialize_room(&room) {
                 Ok(value) => value,
@@ -631,6 +648,7 @@ async fn handle_join_table(
             }
             let mut outbound = collect_join_outbound_from_snapshot(
                 &room,
+                &spectator_identities,
                 &connections,
                 table_code,
                 connection,
@@ -639,6 +657,7 @@ async fn handle_join_table(
             );
             outbound.extend(collect_observer_outbound_from_snapshot(
                 &room,
+                &spectator_identities,
                 &spectator_connections,
             ));
             let mut runtime = room_handle.runtime.lock().await;
@@ -664,6 +683,7 @@ async fn handle_join_table(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     if !persisted_with_new_participant {
         let room_json = match serialize_room(&room) {
@@ -682,6 +702,7 @@ async fn handle_join_table(
     }
     let mut outbound = collect_join_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &connections,
         table_code,
         connection,
@@ -690,6 +711,7 @@ async fn handle_join_table(
     );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     let mut runtime = room_handle.runtime.lock().await;
@@ -774,6 +796,7 @@ async fn handle_reconnect(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
@@ -801,6 +824,7 @@ async fn handle_reconnect(
     }
     let mut outbound = collect_join_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &connections,
         table_code,
         connection,
@@ -809,6 +833,7 @@ async fn handle_reconnect(
     );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     let mut runtime = room_handle.runtime.lock().await;
@@ -860,14 +885,17 @@ async fn handle_ready(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     if let Err(error) = state
@@ -926,14 +954,17 @@ async fn handle_adjust_bots(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     if let Err(error) = state
@@ -983,14 +1014,17 @@ async fn handle_set_bot_takeover(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     if let Err(error) = state
@@ -1120,14 +1154,17 @@ async fn handle_continue_action(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    let mut outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     if let Err(error) = state
@@ -1218,6 +1255,7 @@ async fn handle_action_request(
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     let mut broadcast_handles = connections
         .iter()
         .map(|(_, handle)| handle.clone())
@@ -1229,9 +1267,10 @@ async fn handle_action_request(
     );
     let room = runtime.room.clone();
     let mut snapshot_outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
     snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     drop(runtime);
@@ -1353,6 +1392,7 @@ async fn handle_leave_table(
                 .filter(|(other_seat, _)| *other_seat != seat_index)
                 .collect::<Vec<_>>();
             let spectator_connections = snapshot_spectator_connections(&runtime);
+            let spectator_identities = snapshot_spectator_identities(&runtime);
             drop(runtime);
             let room_json = match serialize_room(&room) {
                 Ok(value) => value,
@@ -1360,6 +1400,7 @@ async fn handle_leave_table(
             };
             outbound.extend(presence_and_snapshot_for_all_from_snapshot(
                 &room,
+                &spectator_identities,
                 &connections,
                 table_code,
                 seat_index,
@@ -1367,6 +1408,7 @@ async fn handle_leave_table(
             ));
             outbound.extend(collect_observer_outbound_from_snapshot(
                 &room,
+                &spectator_identities,
                 &spectator_connections,
             ));
             if let Err(error) = state
@@ -1423,6 +1465,7 @@ async fn handle_leave_table(
             .filter(|(other_seat, _)| *other_seat != seat_index)
             .collect::<Vec<_>>();
         let spectator_connections = snapshot_spectator_connections(&runtime);
+        let spectator_identities = snapshot_spectator_identities(&runtime);
         drop(runtime);
         let room_json = match serialize_room(&room) {
             Ok(value) => value,
@@ -1430,10 +1473,12 @@ async fn handle_leave_table(
         };
         outbound.extend(collect_snapshot_and_prompt_outbound_from_snapshot(
             &room,
+            &spectator_identities,
             &connections,
         ));
         outbound.extend(collect_observer_outbound_from_snapshot(
             &room,
+            &spectator_identities,
             &spectator_connections,
         ));
         if let Err(error) = state
@@ -1505,6 +1550,7 @@ async fn handle_disconnect(
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
     let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
@@ -1512,6 +1558,7 @@ async fn handle_disconnect(
     };
     let mut outbound = presence_and_snapshot_for_all_from_snapshot(
         &room,
+        &spectator_identities,
         &connections,
         table_code,
         seat_index,
@@ -1519,6 +1566,7 @@ async fn handle_disconnect(
     );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
+        &spectator_identities,
         &spectator_connections,
     ));
     if state
@@ -1550,6 +1598,20 @@ async fn handle_spectator_disconnect(
     }
     let mut runtime = room_handle.runtime.lock().await;
     remove_spectator_connection(&mut runtime, spectator_id, connection_id);
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
+    drop(runtime);
+
+    let mut outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &spectator_connections,
+    ));
+    send_outbound(outbound);
 }
 
 #[cfg(test)]

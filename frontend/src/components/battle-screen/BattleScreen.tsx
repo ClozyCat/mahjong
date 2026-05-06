@@ -1,6 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
-import type { BattleActionId, BattleViewModel, ClaimActionId, QuickChatEmoji } from '../../types/match';
+import type {
+  BattleActionId,
+  BattleViewModel,
+  ClaimActionId,
+  GameSummary,
+  PublicUser,
+  QuickChatEmoji,
+  SpectatorRequest,
+  UserFanStat,
+} from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
 import {
   getVoiceClipNameForAction,
@@ -14,6 +23,13 @@ import { ResultOverlay } from './ResultOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 import { TableStage } from './TableStage';
 import { SnakeOverlay } from './SnakeOverlay';
+import {
+  TableSidebar,
+  type TableSidebarPlayer,
+  type TableSidebarSpectator,
+  type TableSidebarTab,
+} from '../table-sidebar/TableSidebar';
+import { UserProfilePanel } from '../user-profile/UserProfilePanel';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
@@ -39,6 +55,20 @@ interface BattleScreenProps {
   isBotTakeoverEnabled?: boolean;
   onToggleVoice?: () => void;
   onToggleBotTakeover?: (enabled: boolean) => void;
+  sidebarPlayers?: TableSidebarPlayer[];
+  sidebarOnlineUsers?: PublicUser[];
+  sidebarSpectators?: TableSidebarSpectator[];
+  sidebarProfileUser?: PublicUser | null;
+  sidebarProfileFallbackName?: string | null;
+  sidebarProfileFanStats?: UserFanStat[];
+  sidebarProfileRecentGames?: GameSummary[];
+  sidebarProfileLoading?: boolean;
+  sidebarProfileMessage?: string | null;
+  sidebarSpectatorRequests?: SpectatorRequest[];
+  isSidebarOwner?: boolean;
+  onSidebarSelectUser?: (user: PublicUser) => void;
+  onApproveSpectatorRequest?: (requestId: number) => void;
+  onRejectSpectatorRequest?: (requestId: number) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -74,6 +104,20 @@ export function BattleScreen({
   isBotTakeoverEnabled = false,
   onToggleVoice,
   onToggleBotTakeover,
+  sidebarPlayers = [],
+  sidebarOnlineUsers = [],
+  sidebarSpectators = [],
+  sidebarProfileUser = null,
+  sidebarProfileFallbackName = null,
+  sidebarProfileFanStats = [],
+  sidebarProfileRecentGames = [],
+  sidebarProfileLoading = false,
+  sidebarProfileMessage = null,
+  sidebarSpectatorRequests = [],
+  isSidebarOwner = false,
+  onSidebarSelectUser,
+  onApproveSpectatorRequest,
+  onRejectSpectatorRequest,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -81,6 +125,8 @@ export function BattleScreen({
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const [isSnakeActive, setIsSnakeActive] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<TableSidebarTab>('players');
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
@@ -154,6 +200,11 @@ export function BattleScreen({
     }
 
     onAction(actionId);
+  }
+
+  function handleSidebarSelectUser(user: PublicUser) {
+    setSidebarTab('profile');
+    onSidebarSelectUser?.(user);
   }
 
   const battleStageStyle = {
@@ -433,6 +484,30 @@ export function BattleScreen({
               />
             </TableStage>
           </div>
+          <TableSidebar
+            isOpen={isSidebarOpen}
+            activeTab={sidebarTab}
+            tablePlayers={sidebarPlayers}
+            onlineUsers={sidebarOnlineUsers}
+            spectators={sidebarSpectators}
+            spectatorRequests={sidebarSpectatorRequests}
+            isOwner={isSidebarOwner}
+            profilePanel={
+              <UserProfilePanel
+                user={sidebarProfileUser}
+                fallbackName={sidebarProfileFallbackName}
+                fanStats={sidebarProfileFanStats}
+                recentGames={sidebarProfileRecentGames}
+                loading={sidebarProfileLoading}
+                message={sidebarProfileMessage}
+              />
+            }
+            onToggle={() => setIsSidebarOpen((current) => !current)}
+            onTabChange={setSidebarTab}
+            onSelectUser={handleSidebarSelectUser}
+            onApproveRequest={(requestId) => onApproveSpectatorRequest?.(requestId)}
+            onRejectRequest={(requestId) => onRejectSpectatorRequest?.(requestId)}
+          />
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (
             <ResultOverlay

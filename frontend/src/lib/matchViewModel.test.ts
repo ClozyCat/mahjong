@@ -692,6 +692,36 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('does not count a human bot-takeover seat as a standalone bot in the waiting room', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls).toMatchObject({
+      occupiedSeats: 3,
+      botCount: 1,
+      canAddBot: true,
+      canRemoveBot: true,
+    });
+    expect(viewModel.players.find((player) => player.name === 'Player A')).toMatchObject({
+      seatType: 'human',
+      isBotControlled: true,
+      statusText: 'Bot代打中',
+    });
+  });
+
   it('maps a local active turn into selectable discard controls', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 
@@ -1103,7 +1133,9 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: base.roomSnapshot!.payload.seats.map((seat) =>
-            seat.seat_index === 3 ? { ...seat, connected: true, is_bot: true } : { ...seat, is_bot: false },
+            seat.seat_index === 3
+              ? { ...seat, connected: true, is_bot: true, seat_type: 'human' }
+              : { ...seat, is_bot: false, seat_type: 'human' },
           ),
         },
       },
@@ -1351,11 +1383,11 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.result?.continueAction).toMatchObject({
       id: 'start_next_round',
-      label: '已确认 1/3',
+      label: '已确认 1/4',
       enabled: false,
       confirmation: {
         confirmedCount: 1,
-        requiredCount: 3,
+        requiredCount: 4,
         isLocalConfirmed: true,
       },
     });

@@ -1,10 +1,12 @@
 import type {
   AcceptInviteResponse,
   CreateTableResponse,
+  GameSummary,
   PublicUser,
   SpectatorRequest,
   TableInvite,
   TableMultiplier,
+  UserFanStat,
 } from '../types/match';
 
 function normalizeBaseUrl(baseUrl: string) {
@@ -56,6 +58,14 @@ export function getLeaderboard(baseUrl: string) {
   return requestJson<PublicUser[]>(`${normalizeBaseUrl(baseUrl)}/api/leaderboard`);
 }
 
+export function getUserGames(baseUrl: string, userId: number) {
+  return requestJson<GameSummary[]>(`${normalizeBaseUrl(baseUrl)}/api/users/${userId}/games`);
+}
+
+export function getUserFans(baseUrl: string, userId: number) {
+  return requestJson<UserFanStat[]>(`${normalizeBaseUrl(baseUrl)}/api/users/${userId}/fans`);
+}
+
 export function getMyInvites(baseUrl: string, sessionToken: string) {
   return requestJson<TableInvite[]>(`${normalizeBaseUrl(baseUrl)}/api/me/invites`, {
     headers: authHeaders(sessionToken),
@@ -95,4 +105,31 @@ export function getMySpectatorRequests(baseUrl: string, sessionToken: string) {
   return requestJson<SpectatorRequest[]>(`${normalizeBaseUrl(baseUrl)}/api/me/spectator-requests`, {
     headers: authHeaders(sessionToken),
   });
+}
+
+export function createSpectatorRequest(baseUrl: string, sessionToken: string, tableCode: string) {
+  return requestJson<SpectatorRequest>(`${normalizeBaseUrl(baseUrl)}/api/tables/${tableCode}/spectator-requests`, {
+    method: 'POST',
+    headers: authHeaders(sessionToken),
+  });
+}
+
+export function approveSpectatorRequest(baseUrl: string, sessionToken: string, requestId: number) {
+  return requestJson<SpectatorRequest>(
+    `${normalizeBaseUrl(baseUrl)}/api/spectator-requests/${requestId}/approve`,
+    {
+      method: 'POST',
+      headers: authHeaders(sessionToken),
+    },
+  );
+}
+
+export function rejectSpectatorRequest(baseUrl: string, sessionToken: string, requestId: number) {
+  return requestJson<SpectatorRequest>(
+    `${normalizeBaseUrl(baseUrl)}/api/spectator-requests/${requestId}/reject`,
+    {
+      method: 'POST',
+      headers: authHeaders(sessionToken),
+    },
+  );
 }
