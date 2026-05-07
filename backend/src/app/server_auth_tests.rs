@@ -80,7 +80,12 @@ async fn register_creates_user_and_session_and_me_can_update_display_name() -> R
 
     let me_response = app
         .clone()
-        .oneshot(authed_json_request(Method::GET, "/api/me", session_token, json!({})))
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me",
+            session_token,
+            json!({}),
+        ))
         .await?;
     assert_eq!(me_response.status(), StatusCode::OK);
 
@@ -111,7 +116,12 @@ async fn register_creates_user_and_session_and_me_can_update_display_name() -> R
     assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
 
     let rejected_me = app
-        .oneshot(authed_json_request(Method::GET, "/api/me", session_token, json!({})))
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me",
+            session_token,
+            json!({}),
+        ))
         .await?;
     assert_eq!(rejected_me.status(), StatusCode::UNAUTHORIZED);
     Ok(())

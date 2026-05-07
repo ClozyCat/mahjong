@@ -21,8 +21,9 @@ use super::protocol::{
 use super::records::archive_current_round_if_needed;
 use super::room_runtime::{
     PendingStartMatch, add_seat_connection, broadcast_to_seat_group, close_runtime,
-    ensure_room_loaded, remove_all_seat_connections, remove_seat_connection, restore_room_snapshot,
-    room_handle, room_has_only_bots, seat_group_contains_connection, should_terminate_unattended,
+    connection_current_seat, ensure_room_loaded, remap_connections_to_current_seats,
+    remove_all_seat_connections, remove_seat_connection, restore_room_snapshot, room_handle,
+    room_has_only_bots, seat_group_contains_connection, should_terminate_unattended,
     snapshot_connections, unregister_room_handle,
 };
 use super::room_runtime::{
@@ -424,6 +425,8 @@ async fn assert_active_owned_seat(
     let runtime = room_handle.runtime.lock().await;
     if seat_group_contains_connection(&runtime, seat_index, connection.id) {
         Some(seat_index)
+    } else if let Some(current_seat) = connection_current_seat(&runtime, connection.id) {
+        Some(current_seat)
     } else {
         None
     }
@@ -506,8 +509,11 @@ async fn handle_watch_table(
 
     MessageOutcome {
         outbound: {
-            let mut outbound =
-                collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+            let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+                &room,
+                &spectator_identities,
+                &connections,
+            );
             outbound.extend(collect_observer_outbound_from_snapshot(
                 &room,
                 &spectator_identities,
@@ -891,8 +897,11 @@ async fn handle_ready(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -960,8 +969,11 @@ async fn handle_adjust_bots(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -1020,8 +1032,11 @@ async fn handle_set_bot_takeover(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -1150,6 +1165,7 @@ async fn handle_continue_action(
     if let Err(reason) = continue_result {
         return reject_to(connection, &reason);
     }
+    remap_connections_to_current_seats(&mut runtime, &previous_room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
@@ -1160,8 +1176,11 @@ async fn handle_continue_action(
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -1266,8 +1285,11 @@ async fn handle_action_request(
             .map(|(_, handle)| handle.clone()),
     );
     let room = runtime.room.clone();
-    let mut snapshot_outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -1533,6 +1555,7 @@ async fn handle_disconnect(
         return;
     }
     let previous_room = runtime.room.clone();
+    let seat_index = connection_current_seat(&runtime, connection_id).unwrap_or(seat_index);
     if !seat_group_contains_connection(&runtime, seat_index, connection_id) {
         return;
     }
@@ -1604,8 +1627,11 @@ async fn handle_spectator_disconnect(
     let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
 
-    let mut outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,

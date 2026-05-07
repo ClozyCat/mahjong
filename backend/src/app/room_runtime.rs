@@ -312,6 +312,72 @@ pub(crate) fn seat_group_contains_connection(
         .is_some_and(|group| group.connections.contains_key(&connection_id))
 }
 
+pub(crate) fn connection_current_seat(runtime: &RoomRuntime, connection_id: u64) -> Option<usize> {
+    runtime.connections.iter().find_map(|(seat_index, group)| {
+        group
+            .connections
+            .contains_key(&connection_id)
+            .then_some(*seat_index)
+    })
+}
+
+pub(crate) fn remap_connections_to_current_seats(
+    runtime: &mut RoomRuntime,
+    previous_room: &RoomState,
+) {
+    let session_to_current_seat = runtime
+        .room
+        .seats
+        .iter()
+        .filter_map(|seat| {
+            seat.player_session_id
+                .map(|session| (session, seat.seat_index))
+        })
+        .collect::<HashMap<_, _>>();
+    let token_to_current_seat = runtime
+        .room
+        .seats
+        .iter()
+        .filter_map(|seat| {
+            seat.reconnect_token
+                .as_ref()
+                .map(|token| (token.clone(), seat.seat_index))
+        })
+        .collect::<HashMap<_, _>>();
+    let previous_seats = previous_room
+        .seats
+        .iter()
+        .map(|seat| (seat.seat_index, seat))
+        .collect::<HashMap<_, _>>();
+
+    let mut next_connections: HashMap<usize, SeatConnectionGroup> = HashMap::new();
+    for (previous_seat, group) in runtime.connections.drain() {
+        let next_seat = previous_seats
+            .get(&previous_seat)
+            .and_then(|seat| {
+                seat.player_session_id
+                    .and_then(|session| session_to_current_seat.get(&session).copied())
+                    .or_else(|| {
+                        seat.reconnect_token
+                            .as_ref()
+                            .and_then(|token| token_to_current_seat.get(token).copied())
+                    })
+            })
+            .unwrap_or(previous_seat);
+        let target = next_connections
+            .entry(next_seat)
+            .or_insert_with(|| SeatConnectionGroup {
+                user_id: group.user_id,
+                connections: HashMap::new(),
+            });
+        if target.user_id.is_none() {
+            target.user_id = group.user_id;
+        }
+        target.connections.extend(group.connections);
+    }
+    runtime.connections = next_connections;
+}
+
 pub(crate) fn broadcast_to_seat_group<T: Serialize + Clone>(
     runtime: &RoomRuntime,
     seat_index: usize,
@@ -344,17 +410,14 @@ pub(crate) fn replace_spectator_connection(
     display_name: String,
     connection: &ConnectionHandle,
 ) {
-    if let Some(previous) = runtime
-        .spectator_connections
-        .insert(
-            spectator_id,
-            SpectatorConnection {
-                user_id,
-                display_name,
-                connection: connection.clone(),
-            },
-        )
-    {
+    if let Some(previous) = runtime.spectator_connections.insert(
+        spectator_id,
+        SpectatorConnection {
+            user_id,
+            display_name,
+            connection: connection.clone(),
+        },
+    ) {
         if previous.connection.id != connection.id {
             previous.connection.request_close();
         }
@@ -419,11 +482,13 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        RoomRuntime, add_seat_connection, remove_seat_connection, seat_group_contains_connection,
-        seat_has_live_connections, snapshot_connections, snapshot_seat_connections,
+        RoomRuntime, add_seat_connection, remap_connections_to_current_seats,
+        remove_seat_connection, seat_group_contains_connection, seat_has_live_connections,
+        snapshot_connections, snapshot_seat_connections,
     };
     use crate::app::ConnectionHandle;
     use crate::app::initial_room_state;
+    use crate::core::state::SeatState;
 
     fn test_connection(id: u64) -> ConnectionHandle {
         let (sender, _receiver) = mpsc::channel(4);
@@ -459,5 +524,57 @@ mod tests {
 
         assert!(!remove_seat_connection(&mut runtime, 0, 2));
         assert!(!seat_has_live_connections(&runtime, 0));
+    }
+
+    #[test]
+    fn remaps_live_connections_when_players_change_seats() {
+        let mut previous_room = initial_room_state("ROOM42");
+        previous_room.seats = (0..4)
+            .map(|seat_index| SeatState {
+                seat_index,
+                player_session_id: Some(seat_index as i64 + 10),
+                reconnect_token: Some(format!("token-{seat_index}")),
+                connected: true,
+                ready: true,
+                seat_type: "human".to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let mut runtime =
+            RoomRuntime::new("2026-05-07T00:00:00Z".to_string(), previous_room.clone());
+        let first = test_connection(1);
+        let third = test_connection(3);
+        add_seat_connection(&mut runtime, 0, Some(100), &first);
+        add_seat_connection(&mut runtime, 2, Some(300), &third);
+
+        runtime.room.seats = vec![
+            SeatState {
+                seat_index: 0,
+                player_session_id: Some(11),
+                ..previous_room.seats[1].clone()
+            },
+            SeatState {
+                seat_index: 1,
+                player_session_id: Some(10),
+                ..previous_room.seats[0].clone()
+            },
+            SeatState {
+                seat_index: 2,
+                player_session_id: Some(13),
+                ..previous_room.seats[3].clone()
+            },
+            SeatState {
+                seat_index: 3,
+                player_session_id: Some(12),
+                ..previous_room.seats[2].clone()
+            },
+        ];
+
+        remap_connections_to_current_seats(&mut runtime, &previous_room);
+
+        assert!(seat_group_contains_connection(&runtime, 1, first.id));
+        assert!(seat_group_contains_connection(&runtime, 3, third.id));
+        assert!(!seat_group_contains_connection(&runtime, 0, first.id));
+        assert!(!seat_group_contains_connection(&runtime, 2, third.id));
     }
 }

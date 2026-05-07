@@ -629,7 +629,11 @@ fn neural_policy_stats(
     let log_prob = match action_head {
         "discard" => {
             let discard_logits = risk_adjusted_discard_logits(scores);
-            masked_log_prob(&discard_logits, &features.discard_mask, action_index as usize)?
+            masked_log_prob(
+                &discard_logits,
+                &features.discard_mask,
+                action_index as usize,
+            )?
         }
         "claim" => masked_log_prob(
             &scores.claim_logits,

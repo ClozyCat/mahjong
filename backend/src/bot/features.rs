@@ -417,10 +417,19 @@ mod tests {
         let previous = (DISCARD_SEQUENCE_LENGTH - 2) * DISCARD_EVENT_FEATURE_COUNT;
         let latest = (DISCARD_SEQUENCE_LENGTH - 1) * DISCARD_EVENT_FEATURE_COUNT;
 
-        assert_eq!(encoded.discard_sequence[previous + tile_index("w3").unwrap()], 1.0);
-        assert_eq!(encoded.discard_sequence[previous + TILE_KIND_COUNT + 1], 1.0);
+        assert_eq!(
+            encoded.discard_sequence[previous + tile_index("w3").unwrap()],
+            1.0
+        );
+        assert_eq!(
+            encoded.discard_sequence[previous + TILE_KIND_COUNT + 1],
+            1.0
+        );
         assert_eq!(encoded.discard_sequence[previous + 39], 0.0);
-        assert_eq!(encoded.discard_sequence[latest + tile_index("t5").unwrap()], 1.0);
+        assert_eq!(
+            encoded.discard_sequence[latest + tile_index("t5").unwrap()],
+            1.0
+        );
         assert_eq!(encoded.discard_sequence[latest + TILE_KIND_COUNT + 2], 1.0);
         assert_eq!(encoded.discard_sequence[latest + 39], 1.0);
     }

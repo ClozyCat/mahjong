@@ -443,6 +443,26 @@ fn start_round_in_room_state(
     room.continue_action = None;
 }
 
+fn seat_rotation_for_completed_wind(prevailing_wind: &str) -> Option<[usize; MAX_SEATS]> {
+    match prevailing_wind {
+        "east" | "west" => Some([1, 0, 3, 2]),
+        "south" => Some([2, 3, 1, 0]),
+        _ => None,
+    }
+}
+
+fn rotate_seats_after_wind_end(room: &mut RoomState, prevailing_wind: &str) {
+    let Some(old_to_new_seat) = seat_rotation_for_completed_wind(prevailing_wind) else {
+        return;
+    };
+    for seat in &mut room.seats {
+        if let Some(&next_seat) = old_to_new_seat.get(seat.seat_index) {
+            seat.seat_index = next_seat;
+        }
+    }
+    room.seats.sort_by_key(|seat| seat.seat_index);
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 fn settlement_uses_restart_match(room: &Value) -> bool {
@@ -808,7 +828,8 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
         .match_state
         .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let prevailing_wind = match_state.prevailing_wind.as_str();
+    let prevailing_wind = match_state.prevailing_wind.clone();
+    let prevailing_wind = prevailing_wind.as_str();
     let hand_number = match_state.hand_number as usize;
     let dealer_seat = match_state.dealer_seat;
     let current_wind_index = WIND_ORDER
@@ -845,6 +866,9 @@ fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
             next_dealer
         };
         match_state.match_finished = match_finished;
+        if !match_finished && next_hand_number == 1 {
+            rotate_seats_after_wind_end(state, prevailing_wind);
+        }
         Ok(())
     })?;
 
@@ -877,7 +901,8 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         .match_state
         .as_ref()
         .ok_or_else(|| "invalid_action".to_string())?;
-    let prevailing_wind = match_state.prevailing_wind.as_str();
+    let prevailing_wind = match_state.prevailing_wind.clone();
+    let prevailing_wind = prevailing_wind.as_str();
     let hand_number = match_state.hand_number as usize;
     let dealer_seat = match_state.dealer_seat;
     let current_wind_index = WIND_ORDER
@@ -914,6 +939,10 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
             next_dealer
         };
         match_state.match_finished = match_finished;
+    }
+
+    if !match_finished && next_hand_number == 1 {
+        rotate_seats_after_wind_end(room, prevailing_wind);
     }
 
     if match_finished {
@@ -1103,6 +1132,43 @@ mod tests {
         room
     }
 
+    fn settlement_room_at_wind_end(prevailing_wind: &str) -> RoomState {
+        let mut room = flower_action_room();
+        room.phase = "settlement".to_string();
+        room.pending_timeout = None;
+        room.continue_action = None;
+        room.match_state = Some(MatchState {
+            prevailing_wind: prevailing_wind.to_string(),
+            hand_number: 4,
+            dealer_seat: 3,
+            cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
+            match_finished: false,
+            last_completed_round_id: None,
+            statistics: Default::default(),
+        });
+        if let Some(round) = room.round_state.as_mut() {
+            round.phase = "settlement".to_string();
+            round.round_wind = prevailing_wind.to_string();
+            round.dealer_seat = 3;
+        }
+        room
+    }
+
+    fn nicknames_by_seat(room: &RoomState) -> Vec<String> {
+        let mut names = room
+            .seats
+            .iter()
+            .map(|seat| {
+                (
+                    seat.seat_index,
+                    seat.nickname.clone().expect("seat should have nickname"),
+                )
+            })
+            .collect::<Vec<_>>();
+        names.sort_by_key(|(seat, _)| *seat);
+        names.into_iter().map(|(_, name)| name).collect()
+    }
+
     #[test]
     fn flower_action_value_wrapper_matches_room_state_variant() {
         let expected_room = flower_action_room();
@@ -1157,6 +1223,57 @@ mod tests {
             Some("settlement")
         );
         assert!(room.pending_timeout.is_none());
+    }
+
+    #[test]
+    fn next_round_within_same_wind_keeps_seats() {
+        let mut room = settlement_room_at_wind_end("east");
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.hand_number = 3;
+        match_state.dealer_seat = 2;
+
+        complete_start_next_round_in_room_state(&mut room).expect("next round should start");
+
+        assert_eq!(nicknames_by_seat(&room), vec!["P0", "P1", "P2", "P3"]);
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "east");
+        assert_eq!(match_state.hand_number, 4);
+    }
+
+    #[test]
+    fn first_wind_end_swaps_east_south_and_west_north_seats() {
+        let mut room = settlement_room_at_wind_end("east");
+
+        complete_start_next_round_in_room_state(&mut room).expect("next wind should start");
+
+        assert_eq!(nicknames_by_seat(&room), vec!["P1", "P0", "P3", "P2"]);
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "south");
+        assert_eq!(match_state.hand_number, 1);
+    }
+
+    #[test]
+    fn second_wind_end_moves_east_south_opposite_west_to_south_north_to_east() {
+        let mut room = settlement_room_at_wind_end("south");
+
+        complete_start_next_round_in_room_state(&mut room).expect("next wind should start");
+
+        assert_eq!(nicknames_by_seat(&room), vec!["P3", "P2", "P0", "P1"]);
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "west");
+        assert_eq!(match_state.hand_number, 1);
+    }
+
+    #[test]
+    fn third_wind_end_swaps_east_south_and_west_north_seats() {
+        let mut room = settlement_room_at_wind_end("west");
+
+        complete_start_next_round_in_room_state(&mut room).expect("next wind should start");
+
+        assert_eq!(nicknames_by_seat(&room), vec!["P1", "P0", "P3", "P2"]);
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "north");
+        assert_eq!(match_state.hand_number, 1);
     }
 
     #[test]

@@ -3,16 +3,15 @@ use std::time::Duration;
 use chrono::Utc;
 
 use crate::app::room_runtime::{
-    abort_join_handle, close_runtime, restore_room_snapshot, room_handle, room_has_only_bots,
-    should_terminate_unattended, snapshot_connections, snapshot_spectator_connections,
-    snapshot_spectator_identities, unregister_room_handle,
+    abort_join_handle, close_runtime, remap_connections_to_current_seats, restore_room_snapshot,
+    room_handle, room_has_only_bots, should_terminate_unattended, snapshot_connections,
+    snapshot_spectator_connections, snapshot_spectator_identities, unregister_room_handle,
 };
 use crate::app::{
-    records::archive_current_round_if_needed,
-    AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles,
-    collect_observer_outbound_from_snapshot, collect_snapshot_and_prompt_outbound_from_snapshot,
-    continue_action_deadline, convert_seat_to_bot, disconnect_deadline_for_seat,
-    next_disconnect_deadline, pending_timeout_deadline, remove_seat_from_room,
+    AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles, collect_observer_outbound_from_snapshot,
+    collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
+    convert_seat_to_bot, disconnect_deadline_for_seat, next_disconnect_deadline,
+    pending_timeout_deadline, records::archive_current_round_if_needed, remove_seat_from_room,
     room_has_round_state, room_seats, send_outbound, serialize_room, sleep_until,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
@@ -147,6 +146,7 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     if !processed {
         return;
     }
+    remap_connections_to_current_seats(&mut runtime, &previous_room);
     let created_at = runtime.created_at.clone();
     let room_json = match serialize_room(&runtime.room) {
         Ok(value) => value,
@@ -223,8 +223,11 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
         let spectator_connections = snapshot_spectator_connections(&runtime);
         let spectator_identities = snapshot_spectator_identities(&runtime);
         drop(runtime);
-        let mut outbound =
-            collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+        let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+            &room,
+            &spectator_identities,
+            &connections,
+        );
         outbound.extend(collect_observer_outbound_from_snapshot(
             &room,
             &spectator_identities,
@@ -267,8 +270,11 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    let mut outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -321,7 +327,12 @@ async fn process_due_disconnect_timeout(
         close_runtime(&mut runtime);
         drop(runtime);
         unregister_room_handle(&state, &table_code, &room_handle).await;
-        state.inner.db.delete_table(&table_code, &left_at).await.ok();
+        state
+            .inner
+            .db
+            .delete_table(&table_code, &left_at)
+            .await
+            .ok();
         return;
     }
 
@@ -455,8 +466,11 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         Ok(value) => value,
         Err(_) => return,
     };
-    let mut snapshot_outbound =
-        collect_snapshot_and_prompt_outbound_from_snapshot(&room, &spectator_identities, &connections);
+    let mut snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
     snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
         &room,
         &spectator_identities,
@@ -502,7 +516,12 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         close_runtime(&mut runtime);
         drop(runtime);
         unregister_room_handle(&state, &table_code, &room_handle).await;
-        state.inner.db.delete_table(&table_code, &super::now_iso()).await.ok();
+        state
+            .inner
+            .db
+            .delete_table(&table_code, &super::now_iso())
+            .await
+            .ok();
         return;
     }
     abort_join_handle(&mut runtime.timeout_task);

@@ -359,7 +359,11 @@ mod tests {
 
     async fn test_app() -> Result<(Router, AppContext, DbWorker)> {
         let (state, worker) = test_state().await?;
-        Ok((server::build_app(state.clone(), &test_settings()), state, worker))
+        Ok((
+            server::build_app(state.clone(), &test_settings()),
+            state,
+            worker,
+        ))
     }
 
     async fn register_user(
@@ -384,7 +388,9 @@ mod tests {
         Ok(user.user_id)
     }
 
-    fn json_response(response: axum::response::Response) -> impl std::future::Future<Output = Value> {
+    fn json_response(
+        response: axum::response::Response,
+    ) -> impl std::future::Future<Output = Value> {
         async move {
             let bytes = to_bytes(response.into_body(), usize::MAX)
                 .await
@@ -525,10 +531,24 @@ mod tests {
             0,
             &["all_pungs"],
         );
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", owner_user_id, 0, "Owner")
-            .await?;
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", guest_user_id, 1, "Guest")
-            .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
 
         let outcome = archive_current_round_if_needed(
             &state,
@@ -583,10 +603,24 @@ mod tests {
             0,
             &["pure_straight"],
         );
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", owner_user_id, 0, "Owner")
-            .await?;
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", guest_user_id, 1, "Guest")
-            .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
 
         archive_current_round_if_needed(
             &state,
@@ -642,10 +676,24 @@ mod tests {
             0,
             &["mixed_one_suit"],
         );
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", owner_user_id, 0, "Owner")
-            .await?;
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", guest_user_id, 1, "Guest")
-            .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
 
         archive_current_round_if_needed(
             &state,
@@ -693,10 +741,24 @@ mod tests {
             0,
             &["all_sequences"],
         );
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", owner_user_id, 0, "Owner")
-            .await?;
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", guest_user_id, 1, "Guest")
-            .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
 
         archive_current_round_if_needed(
             &state,
@@ -730,10 +792,24 @@ mod tests {
             0,
             &["all_pungs"],
         );
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", owner_user_id, 0, "Owner")
-            .await?;
-        persist_participant(&worker, &room, "2026-05-06T00:00:00Z", guest_user_id, 1, "Guest")
-            .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
         let archive = archive_current_round_if_needed(
             &state,
             &room,
@@ -744,7 +820,10 @@ mod tests {
         .expect("archive should produce a game");
         let game_id = archive.game_id;
 
-        let games_response = app.clone().oneshot(json_request(Method::GET, "/api/games")).await?;
+        let games_response = app
+            .clone()
+            .oneshot(json_request(Method::GET, "/api/games"))
+            .await?;
         assert_eq!(games_response.status(), StatusCode::OK);
         let games_body = json_response(games_response).await;
         assert_eq!(games_body.as_array().map(Vec::len), Some(1));

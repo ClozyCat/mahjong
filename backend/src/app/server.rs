@@ -472,13 +472,8 @@ async fn create_table(
         }
         value => value,
     };
-    let result = create_or_replace_table(
-        &state,
-        requested_code,
-        authenticated_user.user_id,
-        1,
-    )
-    .await;
+    let result =
+        create_or_replace_table(&state, requested_code, authenticated_user.user_id, 1).await;
 
     match result {
         Ok((table_code, created_at, room)) => (
@@ -747,8 +742,7 @@ async fn get_my_invites(
                     }
                 }
 
-                match crate::app::room_runtime::ensure_room_loaded(&state, &invite.table_code)
-                    .await
+                match crate::app::room_runtime::ensure_room_loaded(&state, &invite.table_code).await
                 {
                     Ok(Some(room_handle)) if !room_handle.is_closed() => {
                         available_invites.push(invite);

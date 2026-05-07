@@ -13,8 +13,8 @@ use tokio::sync::{Notify, mpsc};
 use super::auth::{AuthenticatedUser, hash_session_token};
 use super::protocol::detail_response;
 use super::{
-    AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, now_iso,
-    register_user_connection, unregister_user_connection,
+    AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, now_iso, register_user_connection,
+    unregister_user_connection,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -259,7 +259,10 @@ mod tests {
         )
         .await;
 
-        let first_message = first_rx.recv().await.expect("first device should receive invite");
+        let first_message = first_rx
+            .recv()
+            .await
+            .expect("first device should receive invite");
         let second_message = second_rx
             .recv()
             .await

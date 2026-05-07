@@ -78,7 +78,10 @@ mod tests {
     fn password_hash_round_trip_rejects_wrong_password() {
         let password_hash = hash_password("correct horse battery staple").expect("hash");
 
-        assert!(verify_password("correct horse battery staple", &password_hash));
+        assert!(verify_password(
+            "correct horse battery staple",
+            &password_hash
+        ));
         assert!(!verify_password("wrong password", &password_hash));
     }
 
@@ -99,7 +102,10 @@ mod tests {
 
         assert_ne!(first, second);
         assert_eq!(first.len(), 12);
-        assert!(first.chars().all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit()));
+        assert!(
+            first
+                .chars()
+                .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+        );
     }
-
 }
