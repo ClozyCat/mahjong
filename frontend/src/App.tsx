@@ -893,7 +893,6 @@ export default function App() {
     }
 
     if (skipActiveTableLookupTokenRef.current === authSession.sessionToken) {
-      skipActiveTableLookupTokenRef.current = null;
       return;
     }
 
@@ -928,7 +927,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [authSession?.sessionToken, authStatus, currentUser?.display_name, currentUser?.user_id, defaults.apiBaseUrl, restoreActiveTable]);
+  }, [authSession?.sessionToken, authStatus, currentUser?.display_name, currentUser?.user_id, defaults.apiBaseUrl]);
 
   useEffect(() => {
     const activeRestore = activeTableRestoreRef.current;

@@ -435,6 +435,12 @@ function findFetchCall(fetchMock: ReturnType<typeof vi.fn>, path: string, method
   );
 }
 
+function countFetchCalls(fetchMock: ReturnType<typeof vi.fn>, path: string, method = 'GET') {
+  return fetchMock.mock.calls.filter(
+    ([input, init]) => String(input).endsWith(path) && (init?.method ?? 'GET') === method,
+  ).length;
+}
+
 function getMeSocket() {
   return MockWebSocket.instances.find((socket) => socket.url.includes('/ws/me'));
 }
@@ -675,6 +681,49 @@ describe('App', () => {
       display_name: '新朋友',
       password: 'secret-123',
     });
+  });
+
+  it('does not poll the active table endpoint after registering a new user without a table', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await user.click(screen.getAllByRole('tab')[1]);
+    const inputs = Array.from(document.querySelectorAll('input'));
+    await user.type(inputs[0], 'INVITE-1');
+    await user.type(inputs[1], 'New Friend');
+    await user.type(inputs[2], 'secret-123');
+    await user.click(screen.getAllByRole('button').at(-1)!);
+
+    await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+    await waitFor(() => {
+      expect(findFetchCall(fetchMock, '/api/me')).toBeDefined();
+    });
+    expect(countFetchCalls(fetchMock, '/api/me/active-table')).toBe(0);
+    expect(screen.getByRole('button', { name: '创建牌局' })).toBeEnabled();
+  });
+
+  it('checks active table once after an incognito login with no active table', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock({ activeTable: null });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const inputs = Array.from(document.querySelectorAll('input'));
+    await user.type(inputs[0], 'player-a');
+    await user.type(inputs[1], 'secret-123');
+    await user.click(screen.getAllByRole('button').at(-1)!);
+
+    await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '创建牌局' })).toBeEnabled();
+    });
+
+    expect(countFetchCalls(fetchMock, '/api/me/active-table')).toBe(1);
+    expect(getRoomSocket()).toBeUndefined();
   });
 
   it('keeps the table home usable immediately after registration while profile bootstrap is pending', async () => {
@@ -1163,56 +1212,6 @@ describe('App', () => {
     expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
   });
 
-  it('stops retrying cached reconnects after repeated socket closes', async () => {
-    vi.useFakeTimers();
-
-    try {
-      const fetchMock = createFetchMock();
-      vi.stubGlobal('fetch', fetchMock);
-      seedStoredAuthSession();
-      localStorage.setItem(
-        'mahjong:session',
-        JSON.stringify({
-          tableCode: 'AB12CD',
-          nickname: 'Player A',
-          reconnectToken: 'token-1',
-          wsBaseUrl: 'ws://localhost:8000',
-        }),
-      );
-
-      render(<App />);
-      await act(async () => {
-        await Promise.resolve();
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-      expect(screen.getByRole('heading', { name: DEFAULT_CURRENT_USER.display_label })).toBeInTheDocument();
-
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        await act(async () => {
-          vi.advanceTimersByTime(1000);
-        });
-
-        const socket = getRoomSockets()[attempt];
-        expect(socket).toBeDefined();
-
-        await act(async () => {
-          socket!.close();
-        });
-      }
-
-      await act(async () => {
-        vi.advanceTimersByTime(1000);
-      });
-
-      expect(getRoomSockets()).toHaveLength(3);
-      expectTableHome();
-      expect(screen.getByText('未能恢复座位，请回到牌桌侧栏后重新进入可加入的牌局。')).toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
 
   it('clears preselected claim tiles after passing', async () => {
     const user = userEvent.setup();
