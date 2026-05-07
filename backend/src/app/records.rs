@@ -231,11 +231,7 @@ fn archive_input_from_room(
             .copied()
             .unwrap_or(0);
         let is_winner = winning_seats.contains(&seat_index);
-        let point_delta = if points_enabled {
-            score_delta * room.multiplier
-        } else {
-            0
-        };
+        let point_delta = if points_enabled { score_delta } else { 0 };
         player_results.push(ArchivedRoundPlayerInput {
             user_id: participant.user_id,
             seat_index,
@@ -513,7 +509,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn records_archive_round_creates_results_and_applies_multiplier_points() -> Result<()> {
+    async fn records_archive_round_creates_results_without_multiplier_points() -> Result<()> {
         let (state, worker) = test_state().await?;
         let owner_user_id = register_user(&worker, "INVITE300001", "Owner").await?;
         let guest_user_id = register_user(&worker, "INVITE300002", "Guest").await?;
@@ -549,8 +545,8 @@ mod tests {
         assert_eq!(detail.summary.round_count, 1);
         let player_results = &detail.rounds[0].player_results;
         assert_eq!(player_results.len(), 2);
-        assert_eq!(player_results[0].point_delta, 24);
-        assert_eq!(player_results[1].point_delta, -24);
+        assert_eq!(player_results[0].point_delta, 8);
+        assert_eq!(player_results[1].point_delta, -8);
 
         let owner = worker
             .get_user_by_id(owner_user_id)
@@ -560,8 +556,8 @@ mod tests {
             .get_user_by_id(guest_user_id)
             .await?
             .expect("guest should exist");
-        assert_eq!(owner.points, INITIAL_USER_POINTS + 24);
-        assert_eq!(guest.points, INITIAL_USER_POINTS - 24);
+        assert_eq!(owner.points, INITIAL_USER_POINTS + 8);
+        assert_eq!(guest.points, INITIAL_USER_POINTS - 8);
 
         let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
         assert_eq!(fan_stats.len(), 1);
@@ -620,8 +616,8 @@ mod tests {
             .get_user_by_id(guest_user_id)
             .await?
             .expect("guest should exist");
-        assert_eq!(owner.points, INITIAL_USER_POINTS + 12);
-        assert_eq!(guest.points, INITIAL_USER_POINTS - 12);
+        assert_eq!(owner.points, INITIAL_USER_POINTS + 6);
+        assert_eq!(guest.points, INITIAL_USER_POINTS - 6);
 
         let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
         assert_eq!(fan_stats[0].count, 1);
@@ -712,8 +708,8 @@ mod tests {
 
         let detail = archived_detail(&worker).await?;
         let player_results = &detail.rounds[0].player_results;
-        assert_eq!(player_results[0].point_delta, 18);
-        assert_eq!(player_results[1].point_delta, -18);
+        assert_eq!(player_results[0].point_delta, 9);
+        assert_eq!(player_results[1].point_delta, -9);
         Ok(())
     }
 

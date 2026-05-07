@@ -1,4 +1,4 @@
-import type { PublicUser, TableInvite, TableMultiplier } from '../../types/match';
+import type { PublicUser, TableInvite } from '../../types/match';
 
 interface SocialLobbyProps {
   currentUser: PublicUser;
@@ -7,10 +7,8 @@ interface SocialLobbyProps {
   pendingInvites: TableInvite[];
   activeTableCode: string | null;
   inviteDialog: TableInvite | null;
-  multiplier: TableMultiplier;
   busy: boolean;
   message?: string | null;
-  onMultiplierChange: (multiplier: TableMultiplier) => void;
   onCreateTable: () => void;
   onEnterTable: () => void;
   onInvite: (userId: number) => void;
@@ -19,8 +17,6 @@ interface SocialLobbyProps {
   onLogout: () => void;
 }
 
-const MULTIPLIERS: TableMultiplier[] = [1, 2, 3];
-
 export function SocialLobby({
   currentUser,
   leaderboard,
@@ -28,10 +24,8 @@ export function SocialLobby({
   pendingInvites,
   activeTableCode,
   inviteDialog,
-  multiplier,
   busy,
   message,
-  onMultiplierChange,
   onCreateTable,
   onEnterTable,
   onInvite,
@@ -67,19 +61,6 @@ export function SocialLobby({
       <section className="social-lobby__grid">
         <div className="social-lobby__panel">
           <h2>创建牌局</h2>
-          <div className="social-lobby__multiplier" role="group" aria-label="牌局倍数">
-            {MULTIPLIERS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={multiplier === item}
-                className={multiplier === item ? 'is-active' : undefined}
-                onClick={() => onMultiplierChange(item)}
-              >
-                x{item}
-              </button>
-            ))}
-          </div>
           <div className="social-lobby__actions">
             <button type="button" className="social-lobby__primary" disabled={busy} onClick={onCreateTable}>
               创建牌局

@@ -1346,10 +1346,8 @@ impl Database {
             SELECT id, table_code, inviter_user_id, invitee_user_id, status, created_at, expires_at, accepted_at
             FROM table_invites
             WHERE invitee_user_id = ?1
-              AND (
-                    (status = 'pending' AND expires_at > ?2)
-                 OR status = 'accepted'
-              )
+              AND status = 'pending'
+              AND expires_at > ?2
             ORDER BY created_at DESC
             ",
         )?;

@@ -472,23 +472,11 @@ async fn create_table(
         }
         value => value,
     };
-    let multiplier = match payload
-        .as_ref()
-        .and_then(|body| body.multiplier)
-        .unwrap_or(1)
-    {
-        1..=3 => payload
-            .as_ref()
-            .and_then(|body| body.multiplier)
-            .unwrap_or(1),
-        _ => return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_multiplier"),
-    };
-
     let result = create_or_replace_table(
         &state,
         requested_code,
         authenticated_user.user_id,
-        multiplier,
+        1,
     )
     .await;
 
@@ -593,7 +581,7 @@ async fn update_table_multiplier(
         Ok(user) => user,
         Err(response) => return response,
     };
-    if !(1..=3).contains(&payload.multiplier) {
+    if payload.multiplier != 1 {
         return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_multiplier");
     }
 
@@ -618,7 +606,7 @@ async fn update_table_multiplier(
         return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
     }
 
-    runtime.room.multiplier = payload.multiplier;
+    runtime.room.multiplier = 1;
     let room = runtime.room.clone();
     let created_at = runtime.created_at.clone();
     drop(runtime);

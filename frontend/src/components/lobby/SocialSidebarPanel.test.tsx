@@ -30,7 +30,7 @@ const leaderboard = [
 ];
 
 describe('SocialSidebarPanel', () => {
-  it('shows current user and multiplier controls inside the sidebar', () => {
+  it('shows current user without multiplier controls inside the sidebar', () => {
     render(
       <SocialSidebarPanel
         currentUser={currentUser}
@@ -39,9 +39,7 @@ describe('SocialSidebarPanel', () => {
         pendingInvites={[]}
         activeTableCode={null}
         inviteDialog={null}
-        multiplier={2}
         busy={false}
-        onMultiplierChange={vi.fn()}
         onCreateTable={vi.fn()}
         onEnterTable={vi.fn()}
         onInvite={vi.fn()}
@@ -53,9 +51,8 @@ describe('SocialSidebarPanel', () => {
 
     expect(screen.getByRole('region', { name: '牌桌侧栏首页' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '阿明（平民）' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'x1' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'x2' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'x3' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
   });
 
   it('invokes invite callback for an online user', async () => {
@@ -70,9 +67,7 @@ describe('SocialSidebarPanel', () => {
         pendingInvites={[]}
         activeTableCode="ROOM42"
         inviteDialog={null}
-        multiplier={1}
         busy={false}
-        onMultiplierChange={vi.fn()}
         onCreateTable={vi.fn()}
         onEnterTable={vi.fn()}
         onInvite={onInvite}

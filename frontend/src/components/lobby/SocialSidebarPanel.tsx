@@ -1,4 +1,4 @@
-import type { PublicUser, TableInvite, TableMultiplier } from '../../types/match';
+import type { PublicUser, TableInvite } from '../../types/match';
 
 interface SocialSidebarPanelProps {
   currentUser: PublicUser;
@@ -7,10 +7,8 @@ interface SocialSidebarPanelProps {
   pendingInvites: TableInvite[];
   activeTableCode: string | null;
   inviteDialog: TableInvite | null;
-  multiplier: TableMultiplier;
   busy: boolean;
   message?: string | null;
-  onMultiplierChange: (multiplier: TableMultiplier) => void;
   onCreateTable: () => void;
   onEnterTable: () => void;
   onInvite: (userId: number) => void;
@@ -19,8 +17,6 @@ interface SocialSidebarPanelProps {
   onLogout: () => void;
 }
 
-const MULTIPLIERS: TableMultiplier[] = [1, 2, 3];
-
 export function SocialSidebarPanel({
   currentUser,
   leaderboard,
@@ -28,10 +24,8 @@ export function SocialSidebarPanel({
   pendingInvites,
   activeTableCode,
   inviteDialog,
-  multiplier,
   busy,
   message,
-  onMultiplierChange,
   onCreateTable,
   onEnterTable,
   onInvite,
@@ -76,19 +70,6 @@ export function SocialSidebarPanel({
 
       <section className="social-sidebar__section">
         <h3>创建牌局</h3>
-        <div className="social-sidebar__multiplier" role="group" aria-label="牌局倍数">
-          {MULTIPLIERS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              aria-pressed={multiplier === item}
-              className={multiplier === item ? 'is-active' : undefined}
-              onClick={() => onMultiplierChange(item)}
-            >
-              x{item}
-            </button>
-          ))}
-        </div>
         <div className="social-sidebar__actions">
           <button type="button" className="social-sidebar__primary" disabled={busy} onClick={onCreateTable}>
             创建牌局

@@ -131,7 +131,6 @@ pub(crate) struct OutboundMessage {
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreateTableRequest {
     pub(crate) table_code: Option<String>,
-    pub(crate) multiplier: Option<i64>,
 }
 
 pub(crate) fn optional_env_value(key: &str) -> Option<String> {

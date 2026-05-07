@@ -75,7 +75,6 @@ import type {
   SessionState,
   SpectatorRequest,
   TableInvite,
-  TableMultiplier,
   UserFanStat,
 } from './types/match';
 
@@ -274,11 +273,23 @@ function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
 }
 
 function upsertInvite(current: TableInvite[], nextInvite: TableInvite) {
+  if (!isPendingTableInvite(nextInvite)) {
+    return removeInviteById(current, nextInvite.id);
+  }
+
   return [nextInvite, ...current.filter((invite) => invite.id !== nextInvite.id)];
 }
 
 function removeInviteById(current: TableInvite[], inviteId: number) {
   return current.filter((invite) => invite.id !== inviteId);
+}
+
+function isPendingTableInvite(invite: TableInvite) {
+  return invite.status === 'pending';
+}
+
+function getPendingTableInvites(invites: TableInvite[]) {
+  return invites.filter(isPendingTableInvite);
 }
 
 function isStaleTableInviteError(error: unknown) {
@@ -324,7 +335,6 @@ export default function App() {
   const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
   const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
-  const [lobbyMultiplier, setLobbyMultiplier] = useState<TableMultiplier>(1);
   const [currentTableOwnerUserId, setCurrentTableOwnerUserId] = useState<number | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
   const [selectedProfileFallbackName, setSelectedProfileFallbackName] = useState<string | null>(
@@ -421,7 +431,7 @@ export default function App() {
         }
 
         setCurrentUser(me);
-        setPendingInvites(nextInvites);
+        setPendingInvites(getPendingTableInvites(nextInvites));
         setPendingSpectatorRequests(nextSpectatorRequests);
         setLeaderboard(nextLeaderboard);
         setSelectedProfileUser((current) => current ?? me);
@@ -494,7 +504,13 @@ export default function App() {
 
       if (message.type === 'table_invite_created') {
         setPendingInvites((current) => upsertInvite(current, message.payload));
-        setInviteDialog(message.payload);
+        setInviteDialog((current) => {
+          if (isPendingTableInvite(message.payload)) {
+            return message.payload;
+          }
+
+          return current?.id === message.payload.id ? null : current;
+        });
         return;
       }
 
@@ -1007,7 +1023,7 @@ export default function App() {
     try {
       setStatusMessage('正在创建牌局...');
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-      const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken, lobbyMultiplier);
+      const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken);
       setActiveLobbyTableCode(table.table_code);
       setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
       setStatusMessage(`已创建牌局 ${table.table_code}，正在进入牌桌...`);
@@ -1468,10 +1484,8 @@ export default function App() {
       pendingInvites={pendingInvites}
       activeTableCode={activeLobbyTableCode}
       inviteDialog={inviteDialog}
-      multiplier={lobbyMultiplier}
       busy={lobbyBusy}
       message={statusMessage}
-      onMultiplierChange={setLobbyMultiplier}
       onCreateTable={handleCreateLobbyTable}
       onEnterTable={handleEnterCreatedTable}
       onInvite={handleInvitePlayer}

@@ -30,7 +30,7 @@ const leaderboard = [
 ];
 
 describe('SocialLobby', () => {
-  it('shows current user label and multiplier controls', () => {
+  it('shows current user label without multiplier controls', () => {
     render(
       <SocialLobby
         currentUser={currentUser}
@@ -39,9 +39,7 @@ describe('SocialLobby', () => {
         pendingInvites={[]}
         activeTableCode={null}
         inviteDialog={null}
-        multiplier={2}
         busy={false}
-        onMultiplierChange={vi.fn()}
         onCreateTable={vi.fn()}
         onEnterTable={vi.fn()}
         onInvite={vi.fn()}
@@ -52,9 +50,8 @@ describe('SocialLobby', () => {
     );
 
     expect(screen.getByRole('heading', { name: '阿明（平民）' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'x1' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'x2' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'x3' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
   });
 
   it('invokes invite callback for an online user', async () => {
@@ -69,9 +66,7 @@ describe('SocialLobby', () => {
         pendingInvites={[]}
         activeTableCode="ROOM42"
         inviteDialog={null}
-        multiplier={1}
         busy={false}
-        onMultiplierChange={vi.fn()}
         onCreateTable={vi.fn()}
         onEnterTable={vi.fn()}
         onInvite={onInvite}

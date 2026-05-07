@@ -126,7 +126,7 @@ fn test_connection(id: u64) -> (ConnectionHandle, mpsc::Receiver<String>) {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn multiplier_create_table_stores_owner_and_multiplier() -> Result<()> {
+async fn multiplier_create_table_always_stores_default_multiplier() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
     let (token, user_id) = register_user(&app, &worker, "INVITE100001", "Owner").await?;
 
@@ -151,12 +151,12 @@ async fn multiplier_create_table_stores_owner_and_multiplier() -> Result<()> {
         .expect("table should be persisted");
     let room = parse_room_json(&table.room_json)?;
     assert_eq!(room.owner_user_id, Some(user_id));
-    assert_eq!(room.multiplier, 3);
+    assert_eq!(room.multiplier, 1);
     Ok(())
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn multiplier_owner_can_change_while_waiting() -> Result<()> {
+async fn multiplier_owner_can_only_keep_default_while_waiting() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
     let (token, _user_id) = register_user(&app, &worker, "INVITE100002", "Owner").await?;
 
@@ -180,7 +180,7 @@ async fn multiplier_owner_can_change_while_waiting() -> Result<()> {
             Method::PATCH,
             &format!("/api/tables/{table_code}/multiplier"),
             &token,
-            json!({ "multiplier": 2 }),
+            json!({ "multiplier": 1 }),
         ))
         .await?;
     assert_eq!(update.status(), StatusCode::OK);
@@ -190,12 +190,12 @@ async fn multiplier_owner_can_change_while_waiting() -> Result<()> {
         .await?
         .expect("table should be persisted");
     let room = parse_room_json(&table.room_json)?;
-    assert_eq!(room.multiplier, 2);
+    assert_eq!(room.multiplier, 1);
     Ok(())
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn multiplier_owner_cannot_change_after_start() -> Result<()> {
+async fn multiplier_owner_cannot_set_non_default_after_start() -> Result<()> {
     let (app, worker, state) = test_app().await?;
     let (token, _user_id) = register_user(&app, &worker, "INVITE100003", "Owner").await?;
 
@@ -231,14 +231,14 @@ async fn multiplier_owner_cannot_change_after_start() -> Result<()> {
             json!({ "multiplier": 3 }),
         ))
         .await?;
-    assert_eq!(update.status(), StatusCode::CONFLICT);
+    assert_eq!(update.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let body = json_response(update).await;
-    assert_eq!(body["detail"], "table_multiplier_locked");
+    assert_eq!(body["detail"], "invalid_multiplier");
     Ok(())
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn multiplier_non_owner_cannot_change_table_setting() -> Result<()> {
+async fn multiplier_non_owner_cannot_touch_default_table_setting() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
     let (owner_token, _owner_user_id) =
         register_user(&app, &worker, "INVITE100004", "Owner").await?;
@@ -265,7 +265,7 @@ async fn multiplier_non_owner_cannot_change_table_setting() -> Result<()> {
             Method::PATCH,
             &format!("/api/tables/{table_code}/multiplier"),
             &guest_token,
-            json!({ "multiplier": 3 }),
+            json!({ "multiplier": 1 }),
         ))
         .await?;
     assert_eq!(update.status(), StatusCode::FORBIDDEN);
@@ -404,14 +404,60 @@ async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Resu
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn invite_only_accepted_invites_are_omitted_from_me_invites() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100012", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100013", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    let invite_body = json_response(invite).await;
+    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
+
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept.status(), StatusCode::OK);
+
+    let me_invites = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/invites",
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(me_invites.status(), StatusCode::OK);
+    let invites_body = json_response(me_invites).await;
+    assert_eq!(invites_body.as_array().map(Vec::len), Some(0));
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
     let (owner_a_token, _owner_a_id) =
-        register_user(&app, &worker, "INVITE100012", "OwnerA").await?;
+        register_user(&app, &worker, "INVITE100014", "OwnerA").await?;
     let (owner_b_token, _owner_b_id) =
-        register_user(&app, &worker, "INVITE100013", "OwnerB").await?;
-    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100014", "Guest").await?;
-    let (_third_token, third_id) = register_user(&app, &worker, "INVITE100015", "Third").await?;
+        register_user(&app, &worker, "INVITE100015", "OwnerB").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100016", "Guest").await?;
+    let (_third_token, third_id) = register_user(&app, &worker, "INVITE100017", "Third").await?;
 
     let table_a = create_table(&app, &owner_a_token, 1).await?;
     let guest_invite = app

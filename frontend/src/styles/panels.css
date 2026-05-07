@@ -157,7 +157,6 @@ button.table-sidebar__toggle:active:not(:disabled) {
 .table-sidebar__row button,
 .table-sidebar__actions button,
 .auth-gate__tabs button,
-.social-lobby__multiplier button,
 .social-lobby__row button {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
@@ -348,14 +347,7 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.social-sidebar__multiplier {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.social-sidebar button,
-.social-sidebar__multiplier button {
+.social-sidebar button {
   border: 1px solid var(--glass-border);
   border-radius: 0.75rem;
   background: color-mix(in srgb, var(--theme-panel-bg-soft) 30%, transparent);
@@ -367,8 +359,7 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   transition: all 0.2s var(--ease-lux);
 }
 
-.social-sidebar button:hover:not(:disabled),
-.social-sidebar__multiplier button:hover:not(:disabled) {
+.social-sidebar button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--theme-panel-bg-soft) 60%, transparent);
   border-color: var(--accent);
 }
@@ -378,9 +369,7 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   cursor: not-allowed;
 }
 
-.social-sidebar__primary,
-.social-sidebar__multiplier button.is-active,
-.social-sidebar__multiplier button[aria-pressed='true'] {
+.social-sidebar__primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
@@ -857,14 +846,12 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
 }
 
 .auth-gate__tabs,
-.social-lobby__multiplier,
 .social-lobby__actions {
   display: flex;
   gap: 0.75rem;
 }
 
 .auth-gate__tabs button,
-.social-lobby__multiplier button,
 .social-lobby__ghost,
 .social-lobby__primary,
 .social-lobby__secondary,
@@ -880,8 +867,6 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
 }
 
 .auth-gate__tabs button.is-active,
-.social-lobby__multiplier button.is-active,
-.social-lobby__multiplier button[aria-pressed='true'],
 .social-lobby__primary,
 .auth-gate__primary {
   background: var(--accent);

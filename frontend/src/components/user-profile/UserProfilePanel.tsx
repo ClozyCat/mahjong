@@ -60,9 +60,7 @@ export function UserProfilePanel({
           {visibleGames.map((game) => (
             <li key={game.game_id} className="user-profile-panel__row user-profile-panel__row--stacked">
               <strong>{game.table_code}</strong>
-              <span>
-                x{game.multiplier} / {game.round_count} 局
-              </span>
+              <span>{game.round_count} 局</span>
             </li>
           ))}
         </ul>

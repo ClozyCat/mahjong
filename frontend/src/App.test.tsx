@@ -369,7 +369,7 @@ function createFetchMock(options?: {
         table_code: createdTableCode,
         phase: 'waiting',
         owner_user_id: me.user_id,
-        multiplier: parseRequestBody(init)?.multiplier ?? 1,
+        multiplier: 1,
         created_at: '2026-05-06T12:00:00Z',
         seats: [],
       });
@@ -448,15 +448,9 @@ async function renderAuthenticatedLobby(
 
 async function joinTable(
   user: ReturnType<typeof userEvent.setup>,
-  options?: Parameters<typeof renderAuthenticatedLobby>[0] & {
-    multiplier?: 1 | 2 | 3;
-  },
+  options?: Parameters<typeof renderAuthenticatedLobby>[0],
 ) {
   const lobby = await renderAuthenticatedLobby(options);
-
-  if (options?.multiplier && options.multiplier !== 1) {
-    await user.click(screen.getByRole('button', { name: `x${options.multiplier}` }));
-  }
 
   await user.click(screen.getByRole('button', { name: '创建牌局' }));
   await waitFor(() => {
@@ -590,18 +584,19 @@ describe('App', () => {
     });
   });
 
-  it('shows the logged-in table view and uses the selected multiplier when creating a table', async () => {
+  it('shows the logged-in table view and creates a default x1 table without multiplier controls', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
 
     expect(screen.getByRole('heading', { name: DEFAULT_CURRENT_USER.display_label })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'x3' }));
     await user.click(screen.getByRole('button', { name: '创建牌局' }));
 
     const createTableCall = findFetchCall(fetchMock, '/api/tables', 'POST');
     expect(createTableCall).toBeDefined();
-    expect(parseRequestBody(createTableCall?.[1])).toEqual({ multiplier: 3 });
+    expect(parseRequestBody(createTableCall?.[1])).toEqual({});
 
     await waitFor(() => {
       expect(getRoomSocket()).toBeDefined();
@@ -669,6 +664,20 @@ describe('App', () => {
 
     expect(screen.getByRole('region', { name: '牌局邀请' })).toBeInTheDocument();
     expect(screen.getByText('牌桌 ZXCVBN 邀请你加入。')).toBeInTheDocument();
+  });
+
+  it('hides already accepted invites from the sidebar pending list', async () => {
+    await renderAuthenticatedLobby({
+      invites: [
+        {
+          ...DEFAULT_PENDING_INVITE,
+          status: 'accepted',
+        },
+      ],
+    });
+
+    expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
+    expect(screen.getByText('暂无待处理邀请')).toBeInTheDocument();
   });
 
   it('removes a stale invite when accepting it reports the table no longer exists', async () => {

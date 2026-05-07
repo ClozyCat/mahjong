@@ -37,7 +37,7 @@ describe('UserProfilePanel', () => {
               title: '平民',
               display_label: '阿明（平民）',
             },
-            multiplier: 2,
+            multiplier: 1,
             started_at: '2026-05-06T10:00:00Z',
             ended_at: '2026-05-06T11:00:00Z',
             round_count: 8,
@@ -50,6 +50,7 @@ describe('UserProfilePanel', () => {
     expect(screen.getByText('碰碰和')).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByText('AB12CD')).toBeInTheDocument();
-    expect(screen.getByText('x2 / 8 局')).toBeInTheDocument();
+    expect(screen.getByText('8 局')).toBeInTheDocument();
+    expect(screen.queryByText(/x[123]/)).not.toBeInTheDocument();
   });
 });

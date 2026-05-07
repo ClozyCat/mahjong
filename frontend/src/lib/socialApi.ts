@@ -5,7 +5,6 @@ import type {
   PublicUser,
   SpectatorRequest,
   TableInvite,
-  TableMultiplier,
   UserFanStat,
 } from '../types/match';
 
@@ -43,14 +42,14 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function createSocialTable(baseUrl: string, sessionToken: string, multiplier: TableMultiplier) {
+export function createSocialTable(baseUrl: string, sessionToken: string) {
   return requestJson<CreateTableResponse>(`${normalizeBaseUrl(baseUrl)}/api/tables`, {
     method: 'POST',
     headers: {
       ...authHeaders(sessionToken),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ multiplier }),
+    body: JSON.stringify({}),
   });
 }
 
