@@ -277,7 +277,13 @@ function hasReplaceableBotSeat(snapshot: SessionState['roomSnapshot'], tableCode
     return false;
   }
 
-  return payload.seats.some((seat) => seat.seat_type === 'bot');
+  return payload.seats.some((seat) => {
+    if (seat.seat_type) {
+      return seat.seat_type === 'bot';
+    }
+
+    return Boolean(seat.is_bot);
+  });
 }
 
 function resolveSpectatorFocusSeat(state: SessionState) {

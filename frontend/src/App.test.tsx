@@ -871,6 +871,60 @@ describe('App', () => {
     });
   });
 
+  it('enables sidebar invites when the active waiting table reports bots with the legacy is_bot flag', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
+
+    const meSocket = getMeSocket();
+    const roomSocket = getRoomSocket();
+    expect(meSocket).toBeDefined();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true },
+          ],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    expect(inviteButton).toBeDefined();
+    expect(inviteButton).toBeEnabled();
+
+    await user.click(inviteButton!);
+
+    const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
+    expect(inviteCall).toBeDefined();
+    expect(parseRequestBody(inviteCall?.[1])).toEqual({
+      invitee_user_id: 2,
+    });
+  });
+
   it('requests spectator approval from all players and enters watch mode after approval', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby({
