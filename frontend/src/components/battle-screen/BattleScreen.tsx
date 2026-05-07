@@ -57,7 +57,9 @@ interface BattleScreenProps {
   sidebarPlayers?: TableSidebarPlayer[];
   sidebarOnlineUsers?: PublicUser[];
   sidebarOnlineUserIds?: number[];
+  sidebarCreatingTableCodes?: string[];
   sidebarCurrentUserId?: number | null;
+  sidebarCurrentUser?: PublicUser | null;
   sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
   sidebarDefaultOpen?: boolean;
@@ -70,6 +72,7 @@ interface BattleScreenProps {
   sidebarProfileMessage?: string | null;
   sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   onSidebarSelectUser?: (user: PublicUser) => void;
+  onSidebarShowCurrentUser?: () => void;
   onSidebarWatchUser?: (user: PublicUser) => void;
 }
 
@@ -109,7 +112,9 @@ export function BattleScreen({
   sidebarPlayers = [],
   sidebarOnlineUsers = [],
   sidebarOnlineUserIds = [],
+  sidebarCreatingTableCodes = [],
   sidebarCurrentUserId = null,
+  sidebarCurrentUser = null,
   sidebarSpectators = [],
   sidebarRoomPanel = null,
   sidebarDefaultOpen = false,
@@ -122,6 +127,7 @@ export function BattleScreen({
   sidebarProfileMessage = null,
   sidebarTabAlerts = {},
   onSidebarSelectUser,
+  onSidebarShowCurrentUser,
   onSidebarWatchUser,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
@@ -211,6 +217,17 @@ export function BattleScreen({
     setSidebarTab('profile');
     onSidebarSelectUser?.(user);
   }
+
+  function handleSidebarTabChange(tab: TableSidebarTab) {
+    setSidebarTab(tab);
+    if (tab === 'profile') {
+      onSidebarShowCurrentUser?.();
+    }
+  }
+
+  const showCurrentProfileAction = Boolean(
+    sidebarCurrentUser && (!sidebarProfileUser || sidebarProfileUser.user_id !== sidebarCurrentUser.user_id),
+  );
 
   const battleStageStyle = {
     '--table-stage-tile-scale': `${tableTileScale}`,
@@ -495,6 +512,7 @@ export function BattleScreen({
             tablePlayers={sidebarPlayers}
             onlineUsers={sidebarOnlineUsers}
             onlineUserIds={sidebarOnlineUserIds}
+            creatingTableCodes={sidebarCreatingTableCodes}
             currentUserId={sidebarCurrentUserId}
             spectators={sidebarSpectators}
             tabAlerts={sidebarTabAlerts}
@@ -507,10 +525,12 @@ export function BattleScreen({
                 recentGames={sidebarProfileRecentGames}
                 loading={sidebarProfileLoading}
                 message={sidebarProfileMessage}
+                showCurrentUserAction={showCurrentProfileAction}
+                onShowCurrentUser={onSidebarShowCurrentUser}
               />
             }
             onToggle={() => setIsSidebarOpen((current) => !current)}
-            onTabChange={setSidebarTab}
+            onTabChange={handleSidebarTabChange}
             onSelectUser={handleSidebarSelectUser}
             onWatchUser={onSidebarWatchUser}
           />

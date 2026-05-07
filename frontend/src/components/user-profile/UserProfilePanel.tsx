@@ -29,6 +29,8 @@ interface UserProfilePanelProps {
   recentGames: GameSummary[];
   loading?: boolean;
   message?: string | null;
+  showCurrentUserAction?: boolean;
+  onShowCurrentUser?: () => void;
 }
 
 export function UserProfilePanel({
@@ -38,6 +40,8 @@ export function UserProfilePanel({
   recentGames,
   loading = false,
   message = null,
+  showCurrentUserAction = false,
+  onShowCurrentUser,
 }: UserProfilePanelProps) {
   const [fanPage, setFanPage] = useState(0);
   const [gamePage, setGamePage] = useState(0);
@@ -75,6 +79,15 @@ export function UserProfilePanel({
           <h3>{heading}</h3>
           {user ? <p>{user.points} 分</p> : <p>未关联公开账号</p>}
         </div>
+        {showCurrentUserAction ? (
+          <button
+            type="button"
+            className="user-profile-panel__current-user-button"
+            onClick={onShowCurrentUser}
+          >
+            查看我的资料
+          </button>
+        ) : null}
       </header>
 
       <p className="user-profile-panel__bio">{bio}</p>

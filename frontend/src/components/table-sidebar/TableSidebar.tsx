@@ -23,7 +23,7 @@ export interface TableSidebarSpectator {
   subtitle?: string | null;
 }
 
-type AllPlayerStatusTone = 'online' | 'offline' | 'playing-human' | 'playing-bot';
+type AllPlayerStatusTone = 'online' | 'offline' | 'creating' | 'playing-human' | 'playing-bot';
 
 interface AllPlayerStatus {
   label: string;
@@ -36,6 +36,7 @@ interface TableSidebarProps {
   tablePlayers: TableSidebarPlayer[];
   onlineUsers: PublicUser[];
   onlineUserIds?: number[];
+  creatingTableCodes?: string[];
   currentUserId?: number | null;
   spectators: TableSidebarSpectator[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
@@ -103,13 +104,22 @@ function getAllPlayerStatus(
   user: PublicUser,
   onlineUserIdSet: Set<number>,
   activeTableUserCounts: Map<string, number>,
+  creatingTableCodeSet: Set<string>,
 ): AllPlayerStatus {
-  if (!onlineUserIdSet.has(user.user_id)) {
-    return { label: '离线', tone: 'offline' };
+  if (!user.active_table_code) {
+    if (!onlineUserIdSet.has(user.user_id)) {
+      return { label: '离线', tone: 'offline' };
+    }
+
+    return { label: '在线', tone: 'online' };
   }
 
-  if (!user.active_table_code) {
-    return { label: '在线', tone: 'online' };
+  if (creatingTableCodeSet.has(user.active_table_code)) {
+    return { label: '创建牌局中', tone: 'creating' };
+  }
+
+  if (!onlineUserIdSet.has(user.user_id)) {
+    return { label: '离线', tone: 'offline' };
   }
 
   const activeUserCount = activeTableUserCounts.get(user.active_table_code) ?? 0;
@@ -125,6 +135,7 @@ export function TableSidebar({
   tablePlayers,
   onlineUsers,
   onlineUserIds = [],
+  creatingTableCodes = [],
   currentUserId = null,
   spectators,
   tabAlerts = {},
@@ -141,6 +152,7 @@ export function TableSidebar({
   const resolvedActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
+  const creatingTableCodeSet = new Set(creatingTableCodes);
   const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
   const activeTableUserCounts = allUsers.reduce((counts, user) => {
     if (!user.active_table_code) {
@@ -232,7 +244,12 @@ export function TableSidebar({
                 {allUsers.map((user) => {
                   const isSelf = currentUserId === user.user_id;
                   const canWatch = Boolean(user.active_table_code && !isSelf && onWatchUser);
-                  const playerStatus = getAllPlayerStatus(user, onlineUserIdSet, activeTableUserCounts);
+                  const playerStatus = getAllPlayerStatus(
+                    user,
+                    onlineUserIdSet,
+                    activeTableUserCounts,
+                    creatingTableCodeSet,
+                  );
 
                   return (
                     <li key={user.user_id} className="table-sidebar__row">

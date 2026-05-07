@@ -195,6 +195,54 @@ describe('TableSidebar', () => {
     expect(within(rows[2]).getByText('与BOT对局中')).toBeInTheDocument();
   });
 
+  it('shows creating status for users in a waiting table', () => {
+    const users = [
+      {
+        user_id: 1,
+        username: 'alice',
+        display_name: '阿明',
+        points: 300,
+        title: '平民',
+        display_label: '阿明（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'WAIT01',
+      },
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'BOT01',
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        onlineUserIds={[1, 2]}
+        creatingTableCodes={['WAIT01']}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+      />,
+    );
+
+    const rows = screen.getAllByRole('listitem');
+
+    expect(within(rows[0]).getByText('创建牌局中')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('与BOT对局中')).toBeInTheDocument();
+  });
+
   it('enables watch only for other users with active tables', async () => {
     const user = userEvent.setup();
     const onWatchUser = vi.fn();

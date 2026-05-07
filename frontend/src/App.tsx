@@ -81,6 +81,7 @@ import type {
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const MAX_CACHED_RECONNECT_CLOSES = 3;
+const TABLE_SEAT_CAPACITY = 4;
 const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
 const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当前所在的牌桌。';
 const LEAVE_TABLE_CONFIRM_MESSAGE = '是否确定离开牌桌？';
@@ -271,10 +272,18 @@ function isWaitingInNonAllBotRoom(snapshot: SessionState['roomSnapshot']) {
   });
 }
 
-function hasReplaceableBotSeat(snapshot: SessionState['roomSnapshot'], tableCode: string | null) {
+function hasInviteableWaitingSeat(snapshot: SessionState['roomSnapshot'], tableCode: string | null) {
   const payload = snapshot?.payload;
   if (!payload || !tableCode || payload.table_code !== tableCode) {
     return false;
+  }
+
+  if (payload.phase !== 'waiting') {
+    return false;
+  }
+
+  if (payload.seats.length < TABLE_SEAT_CAPACITY) {
+    return true;
   }
 
   return payload.seats.some((seat) => {
@@ -345,6 +354,21 @@ function updateUserPoints(user: PublicUser | null, userId: number, points: numbe
 
 function updateLeaderboardUserPoints(leaderboard: PublicUser[], userId: number, points: number) {
   return leaderboard.map((user) => (user.user_id === userId ? { ...user, points } : user));
+}
+
+function updateUserActiveTableCode(user: PublicUser | null, userId: number, tableCode: string | null) {
+  if (!user || user.user_id !== userId) {
+    return user;
+  }
+
+  return {
+    ...user,
+    active_table_code: tableCode,
+  };
+}
+
+function updateLeaderboardUserActiveTableCode(leaderboard: PublicUser[], userId: number, tableCode: string | null) {
+  return leaderboard.map((user) => (user.user_id === userId ? { ...user, active_table_code: tableCode } : user));
 }
 
 function isStaleTableInviteError(error: unknown) {
@@ -751,6 +775,10 @@ export default function App() {
     activeTableRestoreRef.current = null;
     setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
+    if (currentUser) {
+      setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, null));
+      setLeaderboard((users) => updateLeaderboardUserActiveTableCode(users, currentUser.user_id, null));
+    }
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
@@ -1060,7 +1088,11 @@ export default function App() {
     state.connectionStatus === 'reconnecting';
   const isCreateTableBlockedByWaitingRoom = isWaitingInNonAllBotRoom(state.roomSnapshot);
   const isCreateTableDisabled = lobbyBusy || isCreateTableBlockedByWaitingRoom;
-  const canInvitePlayers = hasReplaceableBotSeat(state.roomSnapshot, activeLobbyTableCode);
+  const canInvitePlayers = hasInviteableWaitingSeat(state.roomSnapshot, activeLobbyTableCode);
+  const creatingTableCodes =
+    activeLobbyTableCode && state.roomSnapshot?.payload.table_code === activeLobbyTableCode && state.roomSnapshot.payload.phase === 'waiting'
+      ? [activeLobbyTableCode]
+      : [];
   const isSpectator = state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
@@ -1260,6 +1292,8 @@ export default function App() {
       const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken);
       setActiveLobbyTableCode(table.table_code);
       setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
+      setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code));
+      setLeaderboard((users) => updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code));
       setStatusMessage(`已创建牌局 ${table.table_code}，正在进入牌桌...`);
       openRoomSocket({
         tableCode: table.table_code,
@@ -1280,7 +1314,7 @@ export default function App() {
     }
 
     if (!canInvitePlayers) {
-      setStatusMessage('当前牌局没有可替换的 BOT 座位。');
+      setStatusMessage('当前牌局没有可邀请的空座位或 BOT 座位。');
       return;
     }
 
@@ -1363,6 +1397,15 @@ export default function App() {
   function handleSelectSidebarUser(user: PublicUser) {
     setSelectedProfileUser(user);
     setSelectedProfileFallbackName(user.display_name);
+  }
+
+  function handleShowCurrentSidebarProfile() {
+    if (!currentUser) {
+      return;
+    }
+
+    setSelectedProfileUser(currentUser);
+    setSelectedProfileFallbackName(currentUser.display_name);
   }
 
   async function handleApproveSpectatorRequest(requestId: number) {
@@ -1773,7 +1816,9 @@ export default function App() {
         sidebarPlayers={tableSidebarPlayers}
         sidebarOnlineUsers={leaderboard}
         sidebarOnlineUserIds={onlineUserIds}
+        sidebarCreatingTableCodes={creatingTableCodes}
         sidebarCurrentUserId={currentUser?.user_id ?? null}
+        sidebarCurrentUser={currentUser}
         sidebarSpectators={tableSidebarSpectators}
         sidebarProfileUser={selectedProfileUser}
         sidebarProfileFallbackName={selectedProfileFallbackName}
@@ -1785,6 +1830,7 @@ export default function App() {
           room: pendingInvites.length > 0 || (isSidebarOwner && pendingSpectatorRequests.length > 0),
         }}
         onSidebarSelectUser={handleSelectSidebarUser}
+        onSidebarShowCurrentUser={handleShowCurrentSidebarProfile}
         viewModel={viewModel}
         themeId={themeId}
         themeLabel={getThemeLabel(themeId)}

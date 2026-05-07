@@ -925,6 +925,91 @@ describe('App', () => {
     });
   });
 
+  it('enables sidebar invites when the active waiting table still has empty seats', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
+
+    const meSocket = getMeSocket();
+    const roomSocket = getRoomSocket();
+    expect(meSocket).toBeDefined();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    expect(inviteButton).toBeDefined();
+    expect(inviteButton).toBeEnabled();
+
+    await user.click(inviteButton!);
+
+    const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
+    expect(inviteCall).toBeDefined();
+    expect(parseRequestBody(inviteCall?.[1])).toEqual({
+      invitee_user_id: 2,
+    });
+  });
+
+  it('marks the creator as creating a table in the all players tab after creating a waiting table', async () => {
+    const user = userEvent.setup();
+    await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
+
+    const roomSocket = getRoomSocket();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
+
+    const currentUserRow = screen.getByText(/Player A（平民）/).closest('li');
+    expect(currentUserRow).not.toBeNull();
+    expect(within(currentUserRow!).getByText('创建牌局中')).toBeInTheDocument();
+  });
+
   it('requests spectator approval from all players and enters watch mode after approval', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby({
@@ -983,7 +1068,7 @@ describe('App', () => {
     });
   });
 
-  it('disables sidebar invites when the active table has no pure bot seats', async () => {
+  it('disables sidebar invites when the active table is full and has no replaceable bot seats', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
 
@@ -1007,6 +1092,9 @@ describe('App', () => {
           phase: 'waiting',
           seats: [
             { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Player B', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 3, nickname: 'Player D', connected: true, ready: true, is_bot: false, seat_type: 'human' },
           ],
           spectators: [],
           local_seat: 0,

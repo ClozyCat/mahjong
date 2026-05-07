@@ -1,9 +1,9 @@
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { BattleViewModel } from '../../types/match';
+import type { BattleViewModel, PublicUser } from '../../types/match';
 import { BattleScreen } from './BattleScreen';
 
 function setViewportSize(width: number, height: number) {
@@ -2586,5 +2586,85 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('tab', { name: '玩家信息' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '观战者' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: '观战申请' })).not.toBeInTheDocument();
+  });
+
+  it('returns the profile tab to the current user after viewing another player', async () => {
+    const user = userEvent.setup();
+    const currentUser: PublicUser = {
+      user_id: 1,
+      username: 'player-a',
+      display_name: 'Player A',
+      points: 150,
+      title: '平民',
+      display_label: 'Player A（平民）',
+      bio: '',
+      avatar: null,
+    };
+    const otherUser: PublicUser = {
+      user_id: 2,
+      username: 'player-b',
+      display_name: 'Player B',
+      points: 210,
+      title: '雀士',
+      display_label: 'Player B（雀士）',
+      bio: '',
+      avatar: null,
+    };
+
+    function ProfileSidebarHarness() {
+      const [selectedUser, setSelectedUser] = useState<PublicUser>(currentUser);
+
+      return (
+        <BattleScreen
+          viewModel={createBattleViewModel()}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+          sidebarDefaultOpen
+          sidebarPlayers={[
+            {
+              key: 'right',
+              seatLabel: '南位',
+              displayLabel: otherUser.display_label,
+              score: 25000,
+              liveDelta: 0,
+              points: otherUser.points,
+              connected: true,
+              profileUser: otherUser,
+            },
+          ]}
+          sidebarCurrentUser={currentUser}
+          sidebarProfileUser={selectedUser}
+          sidebarProfileFanStats={[]}
+          sidebarProfileRecentGames={[]}
+          onSidebarSelectUser={setSelectedUser}
+          onSidebarShowCurrentUser={() => setSelectedUser(currentUser)}
+        />
+      );
+    }
+
+    render(<ProfileSidebarHarness />);
+
+    await user.click(screen.getByRole('button', { name: '查看资料' }));
+
+    expect(screen.getByRole('heading', { name: 'Player B（雀士）' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看我的资料' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: '玩家信息' }));
+
+    expect(screen.getByRole('heading', { name: 'Player A（平民）' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: '本局玩家' }));
+    await user.click(screen.getByRole('button', { name: '查看资料' }));
+    await user.click(screen.getByRole('button', { name: '查看我的资料' }));
+
+    expect(screen.getByRole('heading', { name: 'Player A（平民）' })).toBeInTheDocument();
   });
 });
