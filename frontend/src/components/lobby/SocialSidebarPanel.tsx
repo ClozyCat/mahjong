@@ -78,13 +78,25 @@ export function SocialSidebarPanel({
       ) : null}
 
       <section className="social-sidebar__section">
-        <h3>创建牌局</h3>
+        <h3>牌局管理</h3>
         <div className="social-sidebar__actions">
-          <button type="button" className="social-sidebar__primary" disabled={isCreateTableDisabled} onClick={onCreateTable}>
-            创建牌局
-          </button>
+          {activeTableCode ? (
+            <div className="social-sidebar__status-box">
+              <span className="social-sidebar__status-label">当前牌桌</span>
+              <strong className="social-sidebar__status-value">{activeTableCode}</strong>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="social-sidebar__primary"
+              disabled={isCreateTableDisabled}
+              onClick={onCreateTable}
+            >
+              创建新牌局
+            </button>
+          )}
         </div>
-        <p>{activeTableCode ? `当前待开局牌桌：${activeTableCode}` : '创建后可在侧栏邀请在线玩家。'}</p>
+        {!activeTableCode && <p>创建后可在侧栏邀请在线玩家。</p>}
       </section>
 
       <section className="social-sidebar__section">

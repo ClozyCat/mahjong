@@ -87,7 +87,7 @@ export const TableChrome = memo(function TableChrome({
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-    
+
     setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
@@ -149,6 +149,7 @@ export const TableChrome = memo(function TableChrome({
             type="button"
             className="table-stage__leave-button"
             aria-label="快捷离开牌桌"
+            title="离开牌桌"
             onClick={onLeaveTable}
           >
             <svg className="table-stage__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

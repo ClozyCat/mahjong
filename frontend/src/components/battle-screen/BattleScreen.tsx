@@ -152,7 +152,7 @@ export function BattleScreen({
     );
   const visiblePreMatchActions = viewModel.dealerSelection ? [] : preMatchActions;
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
-  const occupiedSeatCount = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
+  const occupiedSeatCount = viewModel.players.filter((player) => player.seatType !== 'bot').length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
   const canIncreaseTableTileScale = tableTileScale < MAX_TABLE_TILE_SCALE;
   const shouldReturnLastDiscardToRiver =

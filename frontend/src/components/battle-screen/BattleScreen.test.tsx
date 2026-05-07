@@ -2248,6 +2248,40 @@ describe('BattleScreen', () => {
     expect(screen.getByText('round-123 | playing')).toBeInTheDocument();
   });
 
+  it('counts only human seats in the room seat counter while keeping bot takeover seats human', () => {
+    const basePlayers = createBattleViewModel().players;
+
+    renderBattleScreen(
+      createBattleViewModel({
+        players: [
+          {
+            ...basePlayers[0],
+            seatType: 'bot',
+            name: 'Bot 1',
+            isBotControlled: true,
+          },
+          {
+            ...basePlayers[1],
+            seatType: 'human',
+            isBotControlled: true,
+          },
+          {
+            ...basePlayers[2],
+            seatType: 'human',
+            isBotControlled: false,
+          },
+          {
+            ...basePlayers[3],
+            seatType: 'human',
+            isBotControlled: false,
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByText('房间座位数：3/4')).toBeInTheDocument();
+  });
+
   it('prompts for rotation when the table viewport is taller than it is wide', () => {
     const { container } = renderBattleScreenAtViewport(createBattleViewModel(), { width: 390, height: 844 });
 

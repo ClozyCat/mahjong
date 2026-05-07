@@ -460,6 +460,7 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
         .iter_mut()
         .find(|seat| seat.seat_index == seat_index)
     {
+        seat.nickname = Some(format!("Bot {seat_index}"));
         seat.connected = true;
         seat.ready = true;
         seat.is_bot = true;
@@ -771,7 +772,7 @@ pub(crate) async fn online_user_ids(state: &AppContext) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BOT_ACTION_DELAY_MS, optional_env_value, remove_bot_from_waiting_room,
+        BOT_ACTION_DELAY_MS, convert_seat_to_bot, optional_env_value, remove_bot_from_waiting_room,
         resolve_database_path, set_seat_bot_takeover,
     };
     use crate::core::state::{RoomState, SeatState};
@@ -859,6 +860,43 @@ mod tests {
         assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
         assert_eq!(seat.player_session_id, Some(42));
         assert!(seat.connected);
+    }
+
+    #[test]
+    fn convert_seat_to_bot_replaces_human_name_with_bot_name() {
+        let mut room = RoomState {
+            table_code: "ABCD".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: vec![SeatState {
+                seat_index: 2,
+                nickname: Some("Alice".to_string()),
+                reconnect_token: Some("token-1".to_string()),
+                player_session_id: Some(42),
+                connected: true,
+                ready: false,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        convert_seat_to_bot(&mut room, 2);
+
+        let seat = room.seats.first().expect("seat should remain");
+        assert_eq!(seat.nickname.as_deref(), Some("Bot 2"));
+        assert!(seat.is_bot);
+        assert_eq!(seat.seat_type, "bot");
+        assert!(seat.connected);
+        assert_eq!(seat.reconnect_token, None);
     }
 
     #[test]

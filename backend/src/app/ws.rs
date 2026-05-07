@@ -587,6 +587,7 @@ async fn handle_join_table(
             else {
                 return reject_to(connection, "table_invite_required");
             };
+            seat.nickname = Some(authenticated_user.display_name.clone());
             seat.connected = true;
             seat.disconnect_deadline_at = None;
             seat.is_bot = false;

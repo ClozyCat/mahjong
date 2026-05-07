@@ -1098,7 +1098,7 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith('若主动离开，则无法再次加入对局，是否确定离开牌桌？');
+    expect(confirmSpy).toHaveBeenCalledWith('是否确定离开牌桌？');
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'leave_table', payload: {} },

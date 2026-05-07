@@ -385,6 +385,30 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   color: #fff;
 }
 
+.social-sidebar__status-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.social-sidebar__status-label {
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--theme-paper) 60%, transparent);
+  font-weight: 600;
+}
+
+.social-sidebar__status-value {
+  font-size: 1rem;
+  color: var(--accent);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.05em;
+}
+
 .social-sidebar__logout {
   flex: 0 0 auto;
 }
