@@ -281,6 +281,10 @@ function removeInviteById(current: TableInvite[], inviteId: number) {
   return current.filter((invite) => invite.id !== inviteId);
 }
 
+function isStaleTableInviteError(error: unknown) {
+  return error instanceof Error && error.message === 'table_not_found';
+}
+
 function upsertSpectatorRequest(current: SpectatorRequest[], nextRequest: SpectatorRequest) {
   return [nextRequest, ...current.filter((request) => request.id !== nextRequest.id)];
 }
@@ -1006,7 +1010,13 @@ export default function App() {
       const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken, lobbyMultiplier);
       setActiveLobbyTableCode(table.table_code);
       setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
-      setStatusMessage(`已创建牌局 ${table.table_code}，可先邀请玩家再进入。`);
+      setStatusMessage(`已创建牌局 ${table.table_code}，正在进入牌桌...`);
+      openRoomSocket({
+        tableCode: table.table_code,
+        nickname: currentUser.display_name,
+        wsBaseUrl: defaults.wsBaseUrl,
+        sessionToken: authSession.sessionToken,
+      });
     } catch (error) {
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建牌局失败。');
       dispatch({ type: 'set_connection_status', status: 'error' });
@@ -1063,6 +1073,10 @@ export default function App() {
         sessionToken: authSession.sessionToken,
       });
     } catch (error) {
+      if (isStaleTableInviteError(error)) {
+        setPendingInvites((current) => removeInviteById(current, invite.id));
+        setInviteDialog((current) => (current?.id === invite.id ? null : current));
+      }
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '接受邀请失败。');
     }
   }
@@ -1495,6 +1509,10 @@ export default function App() {
         sidebarProfileLoading={profileLoading}
         sidebarProfileMessage={profileMessage}
         sidebarSpectatorRequests={pendingSpectatorRequests}
+        sidebarTabAlerts={{
+          room: pendingInvites.length > 0,
+          requests: isSidebarOwner && pendingSpectatorRequests.length > 0,
+        }}
         isSidebarOwner={isSidebarOwner}
         onSidebarSelectUser={handleSelectSidebarUser}
         onApproveSpectatorRequest={handleApproveSpectatorRequest}

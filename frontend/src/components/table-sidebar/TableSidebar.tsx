@@ -30,6 +30,7 @@ interface TableSidebarProps {
   onlineUsers: PublicUser[];
   spectators: TableSidebarSpectator[];
   spectatorRequests: SpectatorRequest[];
+  tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   isOwner: boolean;
   roomPanel?: ReactNode;
   profilePanel: ReactNode;
@@ -110,6 +111,7 @@ export function TableSidebar({
   onlineUsers,
   spectators,
   spectatorRequests,
+  tabAlerts = {},
   isOwner,
   roomPanel,
   profilePanel,
@@ -122,6 +124,7 @@ export function TableSidebar({
   const tabs: TableSidebarTab[] = roomPanel
     ? ['room', 'players', 'online', 'profile', 'spectators', 'requests']
     : ['players', 'online', 'profile', 'spectators', 'requests'];
+  const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
 
   return (
     <aside className={`table-sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Table sidebar shell">
@@ -142,6 +145,7 @@ export function TableSidebar({
             </svg>
           )}
         </span>
+        {hasAnyAlert ? <span className="table-sidebar__tab-alert" aria-hidden="true">!</span> : null}
       </button>
 
       {isOpen ? (
@@ -158,6 +162,7 @@ export function TableSidebar({
                 onClick={() => onTabChange(tabId)}
               >
                 <span className="table-sidebar__tab-icon">{TAB_CONFIG[tabId].icon}</span>
+                {tabAlerts[tabId] ? <span className="table-sidebar__tab-alert" aria-hidden="true">!</span> : null}
               </button>
             ))}
           </div>

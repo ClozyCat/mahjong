@@ -65,6 +65,31 @@ describe('TableSidebar', () => {
     expect(screen.getByText('room panel')).toBeInTheDocument();
   });
 
+  it('shows alert badges on tabs with pending work', () => {
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="room"
+        tablePlayers={[]}
+        onlineUsers={[]}
+        spectators={[]}
+        spectatorRequests={[]}
+        isOwner
+        roomPanel={<div>room panel</div>}
+        profilePanel={<div>profile</div>}
+        tabAlerts={{ room: true, requests: true }}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onApproveRequest={vi.fn()}
+        onRejectRequest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('tab', { name: '牌局' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+    expect(screen.getByRole('tab', { name: '观战申请' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+  });
+
   it('does not show approval buttons for non-owner viewers', () => {
     renderSidebar(false);
 

@@ -301,11 +301,15 @@ function createFetchMock(options?: {
   leaderboard?: typeof DEFAULT_LEADERBOARD;
   invites?: typeof DEFAULT_PENDING_INVITE[];
   createdTableCode?: string;
+  acceptInviteStatus?: number;
+  acceptInviteDetail?: string;
 }) {
   const me = options?.me ?? DEFAULT_CURRENT_USER;
   const leaderboard = options?.leaderboard ?? DEFAULT_LEADERBOARD;
   const invites = options?.invites ?? [];
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
+  const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
+  const acceptInviteDetail = options?.acceptInviteDetail;
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -382,6 +386,10 @@ function createFetchMock(options?: {
     }
 
     if (/\/api\/invites\/\d+\/accept$/.test(url) && method === 'POST') {
+      if (acceptInviteStatus < 200 || acceptInviteStatus >= 300) {
+        return createMockResponse({ detail: acceptInviteDetail ?? 'table_invite_invalid' }, acceptInviteStatus);
+      }
+
       return createMockResponse({
         invite_id: DEFAULT_PENDING_INVITE.id,
         table_code: DEFAULT_PENDING_INVITE.table_code,
@@ -451,11 +459,6 @@ async function joinTable(
   }
 
   await user.click(screen.getByRole('button', { name: '创建牌局' }));
-  await waitFor(() => {
-    expect(screen.getByRole('button', { name: '进入牌桌' })).toBeEnabled();
-  });
-
-  await user.click(screen.getByRole('button', { name: '进入牌桌' }));
   await waitFor(() => {
     expect(getRoomSocket(options?.createdTableCode ?? 'AB12CD')).toBeDefined();
   });
@@ -599,6 +602,10 @@ describe('App', () => {
     const createTableCall = findFetchCall(fetchMock, '/api/tables', 'POST');
     expect(createTableCall).toBeDefined();
     expect(parseRequestBody(createTableCall?.[1])).toEqual({ multiplier: 3 });
+
+    await waitFor(() => {
+      expect(getRoomSocket()).toBeDefined();
+    });
   });
 
   it('calls the invite API from the sidebar', async () => {
@@ -606,12 +613,29 @@ describe('App', () => {
     const { fetchMock } = await renderAuthenticatedLobby();
 
     await user.click(screen.getByRole('button', { name: '创建牌局' }));
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: '进入牌桌' })).toBeEnabled();
-    });
 
     const meSocket = getMeSocket();
     expect(meSocket).toBeDefined();
+    const roomSocket = getRoomSocket();
+    expect(roomSocket).toBeDefined();
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
     await act(async () => {
       meSocket!.triggerMessage({
         type: 'user_presence_updated',
@@ -645,6 +669,27 @@ describe('App', () => {
 
     expect(screen.getByRole('region', { name: '牌局邀请' })).toBeInTheDocument();
     expect(screen.getByText('牌桌 ZXCVBN 邀请你加入。')).toBeInTheDocument();
+  });
+
+  it('removes a stale invite when accepting it reports the table no longer exists', async () => {
+    const user = userEvent.setup();
+
+    await renderAuthenticatedLobby({
+      invites: [DEFAULT_PENDING_INVITE],
+      acceptInviteStatus: 404,
+      acceptInviteDetail: 'table_not_found',
+    });
+
+    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '接受' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
+    expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
+    expect(screen.getByText('暂无待处理邀请')).toBeInTheDocument();
   });
 
   it('shows the aspect-ratio prompt for mobile portrait battle sessions', async () => {

@@ -343,6 +343,8 @@ mod tests {
     use std::collections::BTreeMap;
     use tower::ServiceExt;
 
+    const INITIAL_USER_POINTS: i64 = 600;
+
     fn test_settings() -> Settings {
         Settings {
             bind_addr: "127.0.0.1:0".to_string(),
@@ -558,8 +560,8 @@ mod tests {
             .get_user_by_id(guest_user_id)
             .await?
             .expect("guest should exist");
-        assert_eq!(owner.points, 24);
-        assert_eq!(guest.points, -24);
+        assert_eq!(owner.points, INITIAL_USER_POINTS + 24);
+        assert_eq!(guest.points, INITIAL_USER_POINTS - 24);
 
         let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
         assert_eq!(fan_stats.len(), 1);
@@ -618,8 +620,8 @@ mod tests {
             .get_user_by_id(guest_user_id)
             .await?
             .expect("guest should exist");
-        assert_eq!(owner.points, 12);
-        assert_eq!(guest.points, -12);
+        assert_eq!(owner.points, INITIAL_USER_POINTS + 12);
+        assert_eq!(guest.points, INITIAL_USER_POINTS - 12);
 
         let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
         assert_eq!(fan_stats[0].count, 1);
@@ -670,8 +672,8 @@ mod tests {
             .get_user_by_id(guest_user_id)
             .await?
             .expect("guest should exist");
-        assert_eq!(owner.points, 0);
-        assert_eq!(guest.points, 0);
+        assert_eq!(owner.points, INITIAL_USER_POINTS);
+        assert_eq!(guest.points, INITIAL_USER_POINTS);
 
         let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
         assert_eq!(fan_stats[0].count, 1);

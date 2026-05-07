@@ -600,6 +600,43 @@ async fn invite_only_create_table_invite_pushes_realtime_notification() -> Resul
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn invite_only_my_invites_omits_deleted_tables() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100040", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100041", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+
+    worker
+        .delete_table(&table_code, "2026-05-06T12:30:00Z")
+        .await?;
+
+    let my_invites = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/invites",
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(my_invites.status(), StatusCode::OK);
+    let body = json_response(my_invites).await;
+    assert_eq!(body.as_array().map(Vec::len), Some(0));
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn spectator_non_player_request_creates_pending_request_and_owner_can_approve() -> Result<()>
 {
     let (app, worker, _state) = test_app().await?;

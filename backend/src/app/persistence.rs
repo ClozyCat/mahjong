@@ -10,6 +10,8 @@ use tokio::sync::oneshot;
 
 use super::auth::AuthenticatedUser;
 
+const INITIAL_USER_POINTS: i64 = 600;
+
 type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
 
 pub(crate) struct Database {
@@ -363,7 +365,7 @@ impl Database {
                 password_hash TEXT NOT NULL,
                 avatar TEXT,
                 bio TEXT NOT NULL DEFAULT '',
-                points INTEGER NOT NULL DEFAULT 0,
+                points INTEGER NOT NULL DEFAULT 600,
                 last_login_local_date TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -997,12 +999,19 @@ impl Database {
                     username,
                     display_name,
                     password_hash,
+                    points,
                     created_at,
                     updated_at
                 )
-                VALUES (?1, ?2, ?3, ?4, ?4)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?5)
                 ",
-                params![username, display_name, password_hash, created_at],
+                params![
+                    username,
+                    display_name,
+                    password_hash,
+                    INITIAL_USER_POINTS,
+                    created_at
+                ],
             ) {
                 if error
                     .to_string()
@@ -1103,52 +1112,6 @@ impl Database {
             )?;
         }
         Ok(user)
-    }
-
-    fn apply_daily_login_points(
-        &self,
-        user_id: i64,
-        local_date: &str,
-        created_at: &str,
-    ) -> Result<bool> {
-        self.with_transaction("apply daily login points", |conn| {
-            let last_login_local_date = conn
-                .query_row(
-                    "SELECT last_login_local_date FROM users WHERE id = ?1",
-                    params![user_id],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()?
-                .flatten();
-            if last_login_local_date.as_deref() == Some(local_date) {
-                return Ok(false);
-            }
-
-            conn.execute(
-                "
-                INSERT INTO user_point_events (
-                    user_id,
-                    delta,
-                    reason,
-                    local_date,
-                    created_at
-                )
-                VALUES (?1, 50, 'daily_login', ?2, ?3)
-                ",
-                params![user_id, local_date, created_at],
-            )?;
-            conn.execute(
-                "
-                UPDATE users
-                SET points = points + 50,
-                    last_login_local_date = ?2,
-                    updated_at = ?3
-                WHERE id = ?1
-                ",
-                params![user_id, local_date, created_at],
-            )?;
-            Ok(true)
-        })
     }
 
     fn update_user_profile(
@@ -2507,18 +2470,6 @@ impl DbWorker {
         let token_hash = token_hash.to_string();
         let seen_at = seen_at.to_string();
         self.call(move |db| db.get_authenticated_user(&token_hash, &seen_at))
-            .await
-    }
-
-    pub(crate) async fn apply_daily_login_points(
-        &self,
-        user_id: i64,
-        local_date: &str,
-        created_at: &str,
-    ) -> Result<bool> {
-        let local_date = local_date.to_string();
-        let created_at = created_at.to_string();
-        self.call(move |db| db.apply_daily_login_points(user_id, &local_date, &created_at))
             .await
     }
 

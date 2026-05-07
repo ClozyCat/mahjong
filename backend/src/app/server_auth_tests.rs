@@ -76,6 +76,7 @@ async fn register_creates_user_and_session_and_me_can_update_display_name() -> R
         .as_str()
         .expect("register should return a session token");
     assert_eq!(register_body["user"]["display_name"], "Alice");
+    assert_eq!(register_body["user"]["points"], 600);
 
     let me_response = app
         .clone()
@@ -155,7 +156,7 @@ async fn register_rejects_reused_invite_code() -> Result<()> {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn login_daily_points_awards_only_first_login_per_beijing_date() -> Result<()> {
+async fn login_does_not_award_daily_points() -> Result<()> {
     let (app, worker) = test_app().await?;
     worker
         .create_invite_code("INVITE000003", "2026-05-06T00:00:00Z", None)
@@ -188,7 +189,7 @@ async fn login_daily_points_awards_only_first_login_per_beijing_date() -> Result
         .await?;
     assert_eq!(first_login.status(), StatusCode::OK);
     let first_body = json_response(first_login).await;
-    assert_eq!(first_body["user"]["points"], 50);
+    assert_eq!(first_body["user"]["points"], 600);
 
     let second_login = app
         .oneshot(json_request(
@@ -202,6 +203,6 @@ async fn login_daily_points_awards_only_first_login_per_beijing_date() -> Result
         .await?;
     assert_eq!(second_login.status(), StatusCode::OK);
     let second_body = json_response(second_login).await;
-    assert_eq!(second_body["user"]["points"], 50);
+    assert_eq!(second_body["user"]["points"], 600);
     Ok(())
 }

@@ -8,15 +8,14 @@ use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 
 use super::auth::{
-    AuthenticatedUser, bearer_token, beijing_local_date, generate_session_token, hash_password,
-    hash_session_token, verify_password,
+    AuthenticatedUser, bearer_token, generate_session_token, hash_password, hash_session_token,
+    verify_password,
 };
 use super::invites::{InviteAvailability, invite_availability, invite_expires_at};
 use super::persistence::{Database, DbWorker};
@@ -285,9 +284,7 @@ async fn login(State(state): State<AppContext>, Json(payload): Json<LoginRequest
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     };
 
-    let now = Utc::now();
-    let created_at = now.to_rfc3339_opts(SecondsFormat::Micros, true);
-    let local_date = beijing_local_date(now);
+    let created_at = now_iso();
     let session_token = generate_session_token();
     let token_hash = hash_session_token(&session_token);
     if let Err(error) = state
@@ -298,15 +295,6 @@ async fn login(State(state): State<AppContext>, Json(payload): Json<LoginRequest
     {
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
     }
-    if let Err(error) = state
-        .inner
-        .db
-        .apply_daily_login_points(user.user_id, &local_date, &created_at)
-        .await
-    {
-        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
-    }
-
     match state.inner.db.get_user_by_id(user.user_id).await {
         Ok(Some(user)) => (
             StatusCode::OK,
@@ -760,13 +748,38 @@ async fn get_my_invites(
         .list_available_table_invites_for_user(authenticated_user.user_id, &now_iso())
         .await
     {
-        Ok(invites) => Json(
-            invites
-                .into_iter()
-                .map(table_invite_response)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(invites) => {
+            let mut available_invites = Vec::new();
+            for invite in invites {
+                match state.inner.db.get_table(&invite.table_code).await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => continue,
+                    Err(error) => {
+                        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+                    }
+                }
+
+                match crate::app::room_runtime::ensure_room_loaded(&state, &invite.table_code)
+                    .await
+                {
+                    Ok(Some(room_handle)) if !room_handle.is_closed() => {
+                        available_invites.push(invite);
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+                    }
+                }
+            }
+
+            Json(
+                available_invites
+                    .into_iter()
+                    .map(table_invite_response)
+                    .collect::<Vec<_>>(),
+            )
+            .into_response()
+        }
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }

@@ -68,6 +68,7 @@ interface BattleScreenProps {
   sidebarProfileLoading?: boolean;
   sidebarProfileMessage?: string | null;
   sidebarSpectatorRequests?: SpectatorRequest[];
+  sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   isSidebarOwner?: boolean;
   onSidebarSelectUser?: (user: PublicUser) => void;
   onApproveSpectatorRequest?: (requestId: number) => void;
@@ -120,6 +121,7 @@ export function BattleScreen({
   sidebarProfileLoading = false,
   sidebarProfileMessage = null,
   sidebarSpectatorRequests = [],
+  sidebarTabAlerts = {},
   isSidebarOwner = false,
   onSidebarSelectUser,
   onApproveSpectatorRequest,
@@ -497,6 +499,7 @@ export function BattleScreen({
             onlineUsers={sidebarOnlineUsers}
             spectators={sidebarSpectators}
             spectatorRequests={sidebarSpectatorRequests}
+            tabAlerts={sidebarTabAlerts}
             isOwner={isSidebarOwner}
             roomPanel={sidebarRoomPanel}
             profilePanel={
