@@ -40,13 +40,68 @@ interface TableSidebarProps {
   onRejectRequest: (requestId: number) => void;
 }
 
-const DEFAULT_TAB_ITEMS: Array<{ id: TableSidebarTab; label: string }> = [
-  { id: 'players', label: '本局玩家' },
-  { id: 'online', label: '在线玩家' },
-  { id: 'profile', label: '玩家信息' },
-  { id: 'spectators', label: '观战者' },
-  { id: 'requests', label: '观战申请' },
-];
+const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = {
+  room: {
+    label: '牌局',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <line x1="3" y1="9" x2="21" y2="9" />
+        <line x1="9" y1="21" x2="9" y2="9" />
+      </svg>
+    ),
+  },
+  players: {
+    label: '本局玩家',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+  },
+  online: {
+    label: '在线玩家',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="2" y1="12" x2="22" y2="12" />
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      </svg>
+    ),
+  },
+  profile: {
+    label: '玩家信息',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    ),
+  },
+  spectators: {
+    label: '观战者',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    ),
+  },
+  requests: {
+    label: '观战申请',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <line x1="19" y1="8" x2="19" y2="14" />
+        <line x1="22" y1="11" x2="16" y2="11" />
+      </svg>
+    ),
+  },
+};
 
 export function TableSidebar({
   isOpen,
@@ -64,7 +119,9 @@ export function TableSidebar({
   onApproveRequest,
   onRejectRequest,
 }: TableSidebarProps) {
-  const tabItems = roomPanel ? [{ id: 'room' as const, label: '牌局' }, ...DEFAULT_TAB_ITEMS] : DEFAULT_TAB_ITEMS;
+  const tabs: TableSidebarTab[] = roomPanel
+    ? ['room', 'players', 'online', 'profile', 'spectators', 'requests']
+    : ['players', 'online', 'profile', 'spectators', 'requests'];
 
   return (
     <aside className={`table-sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Table sidebar shell">
@@ -77,11 +134,11 @@ export function TableSidebar({
         <span className="table-sidebar__toggle-icon">
           {isOpen ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6" />
+              <polyline points="15 18 9 12 15 6" />
             </svg>
           ) : (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
+              <polyline points="9 18 15 12 9 6" />
             </svg>
           )}
         </span>
@@ -90,16 +147,17 @@ export function TableSidebar({
       {isOpen ? (
         <div className="table-sidebar__panel" role="complementary" aria-label="Table sidebar">
           <div className="table-sidebar__tabs" role="tablist" aria-label="牌桌侧栏标签">
-            {tabItems.map((tab) => (
+            {tabs.map((tabId) => (
               <button
-                key={tab.id}
+                key={tabId}
                 type="button"
                 role="tab"
-                aria-selected={activeTab === tab.id}
-                className={activeTab === tab.id ? 'is-active' : undefined}
-                onClick={() => onTabChange(tab.id)}
+                aria-selected={activeTab === tabId}
+                title={TAB_CONFIG[tabId].label}
+                className={activeTab === tabId ? 'is-active' : undefined}
+                onClick={() => onTabChange(tabId)}
               >
-                {tab.label}
+                <span className="table-sidebar__tab-icon">{TAB_CONFIG[tabId].icon}</span>
               </button>
             ))}
           </div>

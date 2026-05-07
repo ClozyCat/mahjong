@@ -37,7 +37,7 @@
 
 .table-sidebar {
   position: absolute;
-  inset: 0 0 0 auto;
+  inset: 0 auto 0 0;
   z-index: 14;
   pointer-events: none;
 }
@@ -45,7 +45,7 @@
 .table-sidebar__toggle {
   position: absolute;
   top: 50%;
-  right: 0.6rem;
+  left: 0.6rem;
   transform: translateY(-50%);
   z-index: 3;
   pointer-events: auto;
@@ -57,19 +57,20 @@
   justify-content: center;
   border: 1.5px solid color-mix(in srgb, var(--theme-paper) 18%, transparent);
   border-radius: 999px;
-  background: linear-gradient(
-    to bottom,
-    rgba(30, 30, 30, 0.85),
-    rgba(15, 15, 15, 0.95)
-  );
-  backdrop-filter: blur(20px) saturate(140%);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(140%);
   color: var(--theme-paper-strong);
   cursor: pointer;
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.4),
-    inset 0 1px 1px rgba(255, 255, 255, 0.1),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.3);
-  transition: all 0.4s var(--ease-spring);
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: 
+    transform 0.4s var(--ease-spring),
+    right 0.4s var(--ease-spring),
+    background 0.4s var(--ease-spring),
+    box-shadow 0.4s var(--ease-spring),
+    opacity 1s var(--ease-lux) 3s;
+  opacity: 0.35;
 }
 
 .table-sidebar__toggle-icon {
@@ -81,23 +82,26 @@
 }
 
 .table-sidebar.is-open .table-sidebar__toggle {
-  right: calc(min(24rem, calc(100vw - 2rem)) + 1rem);
+  left: calc(min(28rem, calc(100vw - 2rem)) + 1rem);
 }
 
 .table-sidebar__toggle:hover,
-button.table-sidebar__toggle:hover:not(:disabled) {
-  background: linear-gradient(
-    to bottom,
-    rgba(45, 45, 45, 0.9),
-    rgba(25, 25, 25, 0.98)
-  );
-  border-color: var(--accent);
+button.table-sidebar__toggle:hover:not(:disabled),
+.table-sidebar.is-open .table-sidebar__toggle {
+  opacity: 1;
+  transition: 
+    transform 0.4s var(--ease-spring),
+    right 0.4s var(--ease-spring),
+    background 0.4s var(--ease-spring),
+    box-shadow 0.4s var(--ease-spring),
+    opacity 0.2s var(--ease-lux) 0s;
+  background: rgba(0, 0, 0, 0.65);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--accent);
   transform: translateY(-50%) scaleX(1.1);
   box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.5),
-    0 0 15px color-mix(in srgb, var(--accent) 25%, transparent),
-    inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 15px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .table-sidebar__toggle:hover .table-sidebar__toggle-icon {
@@ -108,51 +112,60 @@ button.table-sidebar__toggle:hover:not(:disabled) {
 .table-sidebar__toggle:active,
 button.table-sidebar__toggle:active:not(:disabled) {
   transform: translateY(-50%) scale(0.94);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.3),
-    inset 0 2px 8px rgba(0, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: none;
 }
 
 .table-sidebar__panel {
   position: absolute;
   top: 0.8rem;
-  right: 0.8rem;
+  left: 0.8rem;
   bottom: 0.8rem;
   z-index: 2;
-  width: min(24rem, calc(100vw - 2rem));
-  display: grid;
-  grid-template-rows: auto 1fr;
+  width: min(28rem, calc(100vw - 2rem));
+  display: flex;
   gap: 0.8rem;
-  padding: 1.25rem;
-  border-radius: 1.25rem;
+  padding: 0.85rem;
+  border-radius: 1.5rem;
   pointer-events: auto;
-  animation: slide-in-right 0.4s var(--ease-lux) forwards;
+  animation: slide-in-left 0.4s var(--ease-lux) forwards;
+}
+
+.table-sidebar__content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.4rem;
 }
 
 .table-sidebar__tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.6rem;
+  border-right: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  background: rgba(0, 0, 0, 0.2);
 }
 
+.table-sidebar__tab-icon {
+  display: flex;
+  width: 1.35rem;
+  height: 1.35rem;
+}
 .table-sidebar__tabs button,
 .table-sidebar__row button,
 .table-sidebar__actions button,
 .auth-gate__tabs button,
 .social-lobby__multiplier button,
 .social-lobby__row button {
-  border: 1px solid var(--glass-border);
-  border-radius: 0.75rem;
-  background: linear-gradient(180deg, 
-    rgba(255, 255, 255, 0.05) 0%,
-    rgba(255, 255, 255, 0.02) 50%,
-    rgba(0, 0, 0, 0.05) 100%
-  ), color-mix(in srgb, var(--theme-panel-bg-soft) 30%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
   color: var(--theme-paper-strong);
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s var(--ease-lux);
+  box-shadow: none;
+  transition: all 0.25s var(--ease-lux);
+  font-size: 0.8rem;
 }
 
 .table-sidebar__tabs button:hover,
@@ -160,32 +173,28 @@ button.table-sidebar__toggle:active:not(:disabled) {
 .social-lobby__row button:hover,
 button.table-sidebar__tabs button:hover:not(:disabled),
 button.table-sidebar__row button:hover:not(:disabled) {
-  background: linear-gradient(180deg, 
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(255, 255, 255, 0.04) 50%,
-    rgba(0, 0, 0, 0.08) 100%
-  ), color-mix(in srgb, var(--theme-panel-bg-soft) 60%, transparent);
-  border-color: var(--accent);
+  background: rgba(0, 0, 0, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   transform: translateY(-1px);
-  box-shadow: 
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 4px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .table-sidebar__tabs button {
-  min-height: 2rem;
-  padding: 0.35rem 0.7rem;
+  width: 2.8rem;
+  height: 2.8rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
 }
 
-.table-sidebar__tabs .is-active {
-  background: linear-gradient(180deg, 
-    color-mix(in srgb, var(--accent) 30%, transparent) 0%,
-    color-mix(in srgb, var(--accent) 15%, transparent) 100%
-  );
-  border-color: var(--accent);
-  box-shadow: 
-    inset 0 1px 3px rgba(0, 0, 0, 0.4),
-    0 0 10px color-mix(in srgb, var(--accent) 20%, transparent);
+.table-sidebar__tabs button.is-active,
+button.table-sidebar__tabs button.is-active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .table-sidebar__content {
@@ -207,8 +216,18 @@ button.table-sidebar__row button:hover:not(:disabled) {
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
-  padding: 0.7rem 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.85rem;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s var(--ease-lux);
+}
+
+.table-sidebar__row:hover,
+.user-profile-panel__row:hover {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .table-sidebar__row--stacked,
@@ -396,7 +415,8 @@ button.table-sidebar__row button:hover:not(:disabled) {
 
   .table-sidebar__toggle {
     top: auto;
-    right: max(0.75rem, env(safe-area-inset-right));
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: auto;
     bottom: max(0.75rem, env(safe-area-inset-bottom));
     transform: none;
     width: 3.2rem;
@@ -407,7 +427,8 @@ button.table-sidebar__row button:hover:not(:disabled) {
 
   .table-sidebar.is-open .table-sidebar__toggle {
     top: max(0.75rem, env(safe-area-inset-top));
-    right: max(0.75rem, env(safe-area-inset-right));
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: auto;
     bottom: auto;
     transform: none;
   }
@@ -420,10 +441,19 @@ button.table-sidebar__row button:hover:not(:disabled) {
     width: 100vw;
     max-height: none;
     border-radius: 0;
+    flex-direction: column-reverse;
     padding:
       calc(max(0.75rem, env(safe-area-inset-top)) + 3rem)
       1rem
       max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .table-sidebar__tabs {
+    flex-direction: row;
+    justify-content: center;
+    border-left: 0;
+    border-top: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+    padding-top: 0.75rem;
   }
 }
 
@@ -1670,13 +1700,10 @@ button.table-sidebar__row button:hover:not(:disabled) {
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
-  padding: 0.45rem 0.72rem;
-  border-radius: 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 6%, transparent);
-  background: var(--result-overlay-row-surface);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 3%, transparent),
-    0 4px 12px var(--theme-shadow-soft);
+  padding: 0.65rem 0.85rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--theme-paper) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 5%, transparent);
   transition: all 0.2s var(--ease-lux);
 }
 
