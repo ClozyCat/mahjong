@@ -16,8 +16,8 @@ FROM ${DOCKER_REGISTRY}rust:1.94-bookworm AS rust-backend-builder
 
 ARG ONNXRUNTIME_VERSION=1.24.2
 ARG GITHUB_RELEASE_PROXY=https://gh-proxy.com/
-ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com/debian
-ARG DEBIAN_SECURITY_MIRROR=https://mirrors.cloud.tencent.com/debian-security
+ARG DEBIAN_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+ARG DEBIAN_SECURITY_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian-security
 
 WORKDIR /app/backend
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
@@ -44,8 +44,8 @@ RUN cargo build --release
 
 FROM ${DOCKER_REGISTRY}debian:bookworm-slim AS backend-runtime
 
-ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com/debian
-ARG DEBIAN_SECURITY_MIRROR=https://mirrors.cloud.tencent.com/debian-security
+ARG DEBIAN_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+ARG DEBIAN_SECURITY_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian-security
 
 WORKDIR /app
 
@@ -54,10 +54,10 @@ COPY --from=rust-backend-builder /app/backend/assets/models /app/assets/models
 COPY --from=rust-backend-builder /opt/onnxruntime/lib /app/lib
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 
-# [修改 2] 运行时：将 Debian 12 (Bookworm) 的 apt 源替换为腾讯云镜像源
+# [修改 2] 运行时：将 Debian 12 (Bookworm) 的 apt 源替换为国内镜像源
 RUN sed -i "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g; s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g; s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends curl libgomp1 libstdc++6 \
+    && apt-get install -y --no-install-recommends ca-certificates curl libgomp1 libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /bin/bash appuser \
     && mkdir -p /data \
