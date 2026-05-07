@@ -441,6 +441,13 @@ function createFetchMock(options?: {
       });
     }
 
+    if (/\/api\/invites\/\d+\/reject$/.test(url) && method === 'POST') {
+      return createMockResponse({
+        ...DEFAULT_PENDING_INVITE,
+        status: 'rejected',
+      });
+    }
+
     throw new Error(`Unhandled fetch request: ${method} ${url}`);
   });
 }
@@ -579,6 +586,22 @@ describe('App', () => {
     } finally {
       audioMock.restore();
     }
+  });
+
+  it('restores and persists the voice switch preference', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mahjong:voice', 'false');
+
+    await renderAuthenticatedLobby();
+    await user.click(screen.getByRole('button', { name: '展开牌桌快捷设置' }));
+
+    const settings = screen.getByRole('group', { name: '牌桌快捷设置' });
+    const voiceButton = within(settings).getByRole('button', { name: '语音开关' });
+    expect(voiceButton).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(voiceButton);
+
+    expect(localStorage.getItem('mahjong:voice')).toBe('true');
   });
 
   it('lets a bot-takeover player start the match after all seats are bots', async () => {
@@ -976,6 +999,128 @@ describe('App', () => {
     });
   });
 
+  it('enables sidebar invites during play when a standalone bot seat can be replaced', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
+
+    const meSocket = getMeSocket();
+    const roomSocket = getRoomSocket();
+    expect(meSocket).toBeDefined();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'playing',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 3, nickname: 'Player D', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+          ],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    expect(inviteButton).toBeDefined();
+    expect(inviteButton).toBeEnabled();
+
+    await user.click(inviteButton!);
+
+    const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
+    expect(inviteCall).toBeDefined();
+    expect(parseRequestBody(inviteCall?.[1])).toEqual({
+      invitee_user_id: 2,
+    });
+  });
+
+  it('marks sent invites as already invited and disables the button until rejected', async () => {
+    const user = userEvent.setup();
+    await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
+
+    const meSocket = getMeSocket();
+    const roomSocket = getRoomSocket();
+    expect(meSocket).toBeDefined();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'playing',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+          ],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: '邀请' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '已邀请' })).toBeDisabled();
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'table_invite_decided',
+        payload: {
+          ...DEFAULT_PENDING_INVITE,
+          inviter_user_id: 1,
+          invitee_user_id: 2,
+          status: 'rejected',
+        },
+      });
+    });
+
+    const rejectedButton = screen.getByRole('button', { name: '已被拒绝' });
+    expect(rejectedButton).toBeEnabled();
+
+    await user.click(rejectedButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '已邀请' })).toBeDisabled();
+    });
+  });
+
   it('marks the creator as creating a table in the all players tab after creating a waiting table', async () => {
     const user = userEvent.setup();
     await renderAuthenticatedLobby();
@@ -1226,6 +1371,22 @@ describe('App', () => {
     expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
     expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
     expect(screen.getByText('暂无待处理邀请')).toBeInTheDocument();
+  });
+
+  it('lets users reject a pending table invite', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby({
+      invites: [DEFAULT_PENDING_INVITE],
+    });
+
+    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '拒绝' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
+    });
+    expect(findFetchCall(fetchMock, '/api/invites/7/reject', 'POST')).toBeDefined();
   });
 
   it('shows the aspect-ratio prompt for mobile portrait battle sessions', async () => {

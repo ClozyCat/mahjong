@@ -111,6 +111,17 @@ export function acceptTableInvite(baseUrl: string, sessionToken: string, inviteI
   });
 }
 
+export function rejectTableInvite(baseUrl: string, sessionToken: string, inviteId: number) {
+  return requestJson<TableInvite>(`${normalizeBaseUrl(baseUrl)}/api/invites/${inviteId}/reject`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(sessionToken),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+}
+
 export function getMySpectatorRequests(baseUrl: string, sessionToken: string) {
   return requestJson<SpectatorRequest[]>(`${normalizeBaseUrl(baseUrl)}/api/me/spectator-requests`, {
     headers: authHeaders(sessionToken),

@@ -401,6 +401,11 @@ export interface TableInviteCreatedMessage {
   payload: TableInvite;
 }
 
+export interface TableInviteDecidedMessage {
+  type: 'table_invite_decided';
+  payload: TableInvite;
+}
+
 export interface SpectatorRequestCreatedMessage {
   type: 'spectator_request_created';
   payload: SpectatorRequest;
@@ -415,6 +420,7 @@ export type SocialServerMessage =
   | UserPresenceUpdatedMessage
   | UserPointsUpdatedMessage
   | TableInviteCreatedMessage
+  | TableInviteDecidedMessage
   | SpectatorRequestCreatedMessage
   | SpectatorRequestDecidedMessage;
 

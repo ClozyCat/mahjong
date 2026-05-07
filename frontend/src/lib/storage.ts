@@ -1,6 +1,7 @@
 const SESSION_KEY = 'mahjong:session';
 const THEME_KEY = 'mahjong:theme';
 const BGM_KEY = 'mahjong:bgm';
+const VOICE_KEY = 'mahjong:voice';
 
 export interface StoredSession {
   tableCode: string;
@@ -52,4 +53,12 @@ export function loadStoredBgmEnabled(): boolean {
 
 export function saveStoredBgmEnabled(enabled: boolean) {
   localStorage.setItem(BGM_KEY, enabled ? 'true' : 'false');
+}
+
+export function loadStoredVoiceEnabled(): boolean {
+  return localStorage.getItem(VOICE_KEY) !== 'false';
+}
+
+export function saveStoredVoiceEnabled(enabled: boolean) {
+  localStorage.setItem(VOICE_KEY, enabled ? 'true' : 'false');
 }

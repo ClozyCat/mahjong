@@ -161,6 +161,7 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
             axum::routing::patch(update_table_multiplier),
         )
         .route("/api/invites/{invite_id}/accept", post(accept_table_invite))
+        .route("/api/invites/{invite_id}/reject", post(reject_table_invite))
         .route(
             "/api/spectator-requests/{request_id}/approve",
             post(approve_spectator_request),
@@ -733,10 +734,7 @@ async fn create_table_invite(
     if runtime.room.owner_user_id != Some(authenticated_user.user_id) {
         return json_error(StatusCode::FORBIDDEN, "only_owner_can_invite");
     }
-    if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
-        return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
-    }
-    if crate::app::random_bot_seat_index(&runtime.room).is_none() {
+    if inviteable_seat_index(&runtime.room).is_none() {
         return json_error(StatusCode::CONFLICT, "table_full");
     }
     drop(runtime);
@@ -990,31 +988,45 @@ async fn accept_table_invite(
 
     let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
-    if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
-        return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
-    }
-    let Some(seat_index) = crate::app::random_bot_seat_index(&runtime.room) else {
+    let Some((seat_index, replaces_existing_seat)) = inviteable_seat_index(&runtime.room) else {
         return json_error(StatusCode::CONFLICT, "table_full");
     };
 
     let player_session_id = crate::app::generate_player_session_id();
     let reconnect_token = crate::app::generate_reconnect_token();
-    if let Some(seat) = runtime
-        .room
-        .seats
-        .iter_mut()
-        .find(|seat| seat.seat_index == seat_index)
-    {
-        seat.nickname = Some(user.display_name.clone());
-        seat.reconnect_token = Some(reconnect_token.clone());
-        seat.player_session_id = Some(player_session_id);
-        seat.connected = false;
-        seat.ready = false;
-        seat.is_bot = false;
-        seat.seat_type = "human".to_string();
-        seat.bot_persona = None;
-        seat.bot_aggression = None;
-        seat.disconnect_deadline_at = None;
+    if replaces_existing_seat {
+        if let Some(seat) = runtime
+            .room
+            .seats
+            .iter_mut()
+            .find(|seat| seat.seat_index == seat_index)
+        {
+            seat.nickname = Some(user.display_name.clone());
+            seat.reconnect_token = Some(reconnect_token.clone());
+            seat.player_session_id = Some(player_session_id);
+            seat.connected = false;
+            seat.ready = false;
+            seat.is_bot = false;
+            seat.seat_type = "human".to_string();
+            seat.bot_persona = None;
+            seat.bot_aggression = None;
+            seat.disconnect_deadline_at = None;
+        }
+    } else {
+        runtime.room.seats.push(crate::core::state::SeatState {
+            seat_index,
+            nickname: Some(user.display_name.clone()),
+            reconnect_token: Some(reconnect_token.clone()),
+            player_session_id: Some(player_session_id),
+            connected: false,
+            ready: false,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+        });
+        runtime.room.seats.sort_by_key(|seat| seat.seat_index);
     }
     let room = runtime.room.clone();
     let created_at = runtime.created_at.clone();
@@ -1072,6 +1084,39 @@ async fn reject_spectator_request(
     axum::extract::Path(request_id): axum::extract::Path<i64>,
 ) -> Response {
     decide_spectator_request(state, headers, request_id, false).await
+}
+
+async fn reject_table_invite(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(invite_id): axum::extract::Path<i64>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    match state
+        .inner
+        .db
+        .reject_table_invite(invite_id, authenticated_user.user_id, &now_iso())
+        .await
+    {
+        Ok(Some(invite)) => {
+            let payload = table_invite_response(invite.clone());
+            notify_user_connections(
+                &state,
+                invite.inviter_user_id,
+                json!({
+                    "type": "table_invite_decided",
+                    "payload": payload.clone(),
+                }),
+            )
+            .await;
+            Json(payload).into_response()
+        }
+        Ok(None) => json_error(StatusCode::NOT_FOUND, "table_invite_invalid"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
 }
 
 async fn decide_spectator_request(
@@ -1157,6 +1202,18 @@ fn json_error(status: StatusCode, detail: &str) -> Response {
 
 fn error_matches(error: &anyhow::Error, expected: &str) -> bool {
     format!("{error:#}").contains(expected)
+}
+
+fn inviteable_seat_index(room: &crate::core::state::RoomState) -> Option<(usize, bool)> {
+    if let Some(seat_index) = crate::app::random_bot_seat_index(room) {
+        return Some((seat_index, true));
+    }
+
+    if room_phase(room) == "waiting" && room.round_state.is_none() {
+        return crate::app::random_open_seat_index(room).map(|seat_index| (seat_index, false));
+    }
+
+    None
 }
 
 fn table_invite_response(invite: super::persistence::TableInviteRecord) -> TableInviteResponse {

@@ -85,7 +85,7 @@ export function UserProfilePanel({
             className="user-profile-panel__current-user-button"
             onClick={onShowCurrentUser}
           >
-            查看我的资料
+            回到我的信息
           </button>
         ) : null}
       </header>

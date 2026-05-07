@@ -169,6 +169,27 @@ async fn add_bot_takeover_human_to_table(
     Ok(())
 }
 
+async fn set_table_phase(
+    state: &AppContext,
+    worker: &DbWorker,
+    table_code: &str,
+    phase: &str,
+) -> Result<()> {
+    let handle = room_handle(state, table_code)
+        .await
+        .expect("room should be loaded");
+    let _persist_guard = handle.persist.lock().await;
+    let mut runtime = handle.runtime.lock().await;
+    runtime.room.phase = phase.to_string();
+    let created_at = runtime.created_at.clone();
+    let room_json = serialize_room_state(&runtime.room)?;
+    drop(runtime);
+    worker
+        .save_table(table_code, &created_at, &room_json)
+        .await?;
+    Ok(())
+}
+
 fn test_connection(id: u64) -> (ConnectionHandle, mpsc::Receiver<String>) {
     let (sender, receiver) = mpsc::channel(8);
     (
@@ -397,12 +418,41 @@ async fn invite_only_idle_user_invite_succeeds_and_is_visible_in_me_invites() ->
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn invite_only_create_requires_replaceable_bot_seat() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+async fn invite_only_create_requires_open_or_replaceable_seat() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100050", "Owner").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100051", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bot_takeover_human_to_table(&state, &worker, &table_code).await?;
+    {
+        let handle = room_handle(&state, &table_code)
+            .await
+            .expect("room should be loaded");
+        let _persist_guard = handle.persist.lock().await;
+        let mut runtime = handle.runtime.lock().await;
+        for seat_index in 1..4 {
+            runtime.room.seats.push(SeatState {
+                seat_index,
+                nickname: Some(format!("Player {seat_index}")),
+                reconnect_token: Some(format!("token-{seat_index}")),
+                player_session_id: Some(100 + seat_index as i64),
+                connected: true,
+                ready: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+            });
+        }
+        let created_at = runtime.created_at.clone();
+        let room_json = serialize_room_state(&runtime.room)?;
+        drop(runtime);
+        worker
+            .save_table(&table_code, &created_at, &room_json)
+            .await?;
+    }
     let invite = app
         .clone()
         .oneshot(authed_json_request(
@@ -420,13 +470,89 @@ async fn invite_only_create_requires_replaceable_bot_seat() -> Result<()> {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn invite_only_bot_takeover_human_seat_is_not_replaceable() -> Result<()> {
+async fn invite_only_create_allows_empty_waiting_seat() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100054", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100055", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    let body = json_response(invite).await;
+    assert_eq!(body["table_code"], table_code);
+    assert_eq!(body["status"], "pending");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_create_allows_playing_table_with_replaceable_bot() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100056", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100057", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
+    set_table_phase(&state, &worker, &table_code, "playing").await?;
+
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_full_bot_takeover_human_seat_is_not_replaceable() -> Result<()> {
     let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100052", "Owner").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100053", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
     add_bot_takeover_human_to_table(&state, &worker, &table_code).await?;
+    {
+        let handle = room_handle(&state, &table_code)
+            .await
+            .expect("room should be loaded");
+        let _persist_guard = handle.persist.lock().await;
+        let mut runtime = handle.runtime.lock().await;
+        for seat_index in 1..4 {
+            runtime.room.seats.push(SeatState {
+                seat_index,
+                nickname: Some(format!("Player {seat_index}")),
+                reconnect_token: Some(format!("token-{seat_index}")),
+                player_session_id: Some(200 + seat_index as i64),
+                connected: true,
+                ready: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+            });
+        }
+        let created_at = runtime.created_at.clone();
+        let room_json = serialize_room_state(&runtime.room)?;
+        drop(runtime);
+        worker
+            .save_table(&table_code, &created_at, &room_json)
+            .await?;
+    }
 
     let invite = app
         .clone()
@@ -739,6 +865,140 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
     assert!(!seat.is_bot);
     assert_eq!(seat.nickname.as_deref(), Some("Guest"));
     assert!(seat.reconnect_token.is_some());
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_accept_uses_empty_waiting_seat() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100058", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100059", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    let invite_body = json_response(invite).await;
+    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
+
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+
+    assert_eq!(accept.status(), StatusCode::OK);
+    let accept_body = json_response(accept).await;
+    let seat_index = accept_body["seat_index"]
+        .as_u64()
+        .expect("seat index should exist") as usize;
+    assert!(seat_index < 4);
+    let participant = worker
+        .get_active_table_participant(&table_code, guest_id)
+        .await?
+        .expect("participant should exist after accepting invite");
+    assert_eq!(participant.seat_index, seat_index);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_accept_allows_playing_table_with_replaceable_bot() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100060", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100061", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    let invite_body = json_response(invite).await;
+    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
+    set_table_phase(&state, &worker, &table_code, "playing").await?;
+
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+
+    assert_eq!(accept.status(), StatusCode::OK);
+    let participant = worker
+        .get_active_table_participant(&table_code, guest_id)
+        .await?
+        .expect("participant should exist after accepting invite");
+    assert_eq!(participant.seat_index, 0);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_reject_marks_invite_and_notifies_inviter() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, owner_id) = register_user(&app, &worker, "INVITE100062", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100063", "Guest").await?;
+    let (connection, mut receiver) = test_connection(1002);
+
+    register_user_connection(&state, owner_id, connection).await;
+    let _ = receiver.recv().await;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    let invite_body = json_response(invite).await;
+    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
+
+    let reject = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/reject"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+
+    assert_eq!(reject.status(), StatusCode::OK);
+    let body = json_response(reject).await;
+    assert_eq!(body["status"], "rejected");
+
+    let notification = receiver
+        .recv()
+        .await
+        .expect("owner should receive realtime invite decision");
+    let payload: Value = serde_json::from_str(&notification)?;
+    assert_eq!(payload["type"], "table_invite_decided");
+    assert_eq!(payload["payload"]["id"], invite_id);
+    assert_eq!(payload["payload"]["status"], "rejected");
     Ok(())
 }
 

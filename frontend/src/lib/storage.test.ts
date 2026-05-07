@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clearStoredSession,
+  loadStoredVoiceEnabled,
   loadStoredSession,
   loadStoredThemeId,
+  saveStoredVoiceEnabled,
   saveStoredSession,
   saveStoredThemeId,
 } from './storage';
@@ -75,5 +77,17 @@ describe('storage helpers', () => {
     saveStoredThemeId('qiu-xiang');
 
     expect(loadStoredThemeId()).toBe('qiu-xiang');
+  });
+
+  it('defaults voice playback to enabled when no preference is stored', () => {
+    expect(loadStoredVoiceEnabled()).toBe(true);
+  });
+
+  it('round-trips stored voice playback preferences', () => {
+    saveStoredVoiceEnabled(false);
+    expect(loadStoredVoiceEnabled()).toBe(false);
+
+    saveStoredVoiceEnabled(true);
+    expect(loadStoredVoiceEnabled()).toBe(true);
   });
 });

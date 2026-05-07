@@ -1,5 +1,7 @@
 import type { PublicUser, SpectatorRequest, TableInvite } from '../../types/match';
 
+export type SentInviteStatus = 'pending' | 'rejected';
+
 interface SocialSidebarPanelProps {
   currentUser: PublicUser;
   leaderboard: PublicUser[];
@@ -11,11 +13,13 @@ interface SocialSidebarPanelProps {
   busy: boolean;
   isCreateTableDisabled: boolean;
   canInvitePlayers: boolean;
+  inviteStatusesByUserId: Record<number, SentInviteStatus>;
   isOwner: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
   onAcceptInvite: (invite: TableInvite) => void;
+  onRejectInvite: (invite: TableInvite) => void;
   onApproveSpectatorRequest: (requestId: number) => void;
   onRejectSpectatorRequest: (requestId: number) => void;
   onDismissInviteDialog: () => void;
@@ -33,11 +37,13 @@ export function SocialSidebarPanel({
   busy,
   isCreateTableDisabled,
   canInvitePlayers,
+  inviteStatusesByUserId,
   isOwner,
   message,
   onCreateTable,
   onInvite,
   onAcceptInvite,
+  onRejectInvite,
   onApproveSpectatorRequest,
   onRejectSpectatorRequest,
   onDismissInviteDialog,
@@ -69,6 +75,9 @@ export function SocialSidebarPanel({
           <div className="social-sidebar__actions">
             <button type="button" className="social-sidebar__primary" onClick={() => onAcceptInvite(inviteDialog)}>
               接受邀请
+            </button>
+            <button type="button" onClick={() => onRejectInvite(inviteDialog)}>
+              拒绝
             </button>
             <button type="button" onClick={onDismissInviteDialog}>
               稍后处理
@@ -109,9 +118,14 @@ export function SocialSidebarPanel({
                 <strong className="table-sidebar__row-name">{invite.table_code}</strong>
                 <span className="table-sidebar__stat">邀请时间 {invite.created_at}</span>
               </div>
-              <button type="button" onClick={() => onAcceptInvite(invite)}>
-                接受
-              </button>
+              <div className="table-sidebar__actions">
+                <button type="button" onClick={() => onAcceptInvite(invite)}>
+                  接受
+                </button>
+                <button type="button" onClick={() => onRejectInvite(invite)}>
+                  拒绝
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -121,17 +135,24 @@ export function SocialSidebarPanel({
         <h3>在线玩家</h3>
         <ul className="table-sidebar__list">
           {onlineUsers.length === 0 ? <li className="table-sidebar__empty">暂无在线玩家</li> : null}
-          {onlineUsers.map((user) => (
-            <li key={user.user_id} className="table-sidebar__row">
-              <div className="table-sidebar__row-info">
-                <strong className="table-sidebar__row-name">{user.display_label}</strong>
-                <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
-              </div>
-              <button type="button" disabled={!canInvitePlayers || busy} onClick={() => onInvite(user.user_id)}>
-                邀请
-              </button>
-            </li>
-          ))}
+          {onlineUsers.map((user) => {
+            const inviteStatus = inviteStatusesByUserId[user.user_id];
+            const inviteLabel =
+              inviteStatus === 'pending' ? '已邀请' : inviteStatus === 'rejected' ? '已被拒绝' : '邀请';
+            const isInviteDisabled = busy || !canInvitePlayers || inviteStatus === 'pending';
+
+            return (
+              <li key={user.user_id} className="table-sidebar__row">
+                <div className="table-sidebar__row-info">
+                  <strong className="table-sidebar__row-name">{user.display_label}</strong>
+                  <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
+                </div>
+                <button type="button" disabled={isInviteDisabled} onClick={() => onInvite(user.user_id)}>
+                  {inviteLabel}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </section>
 

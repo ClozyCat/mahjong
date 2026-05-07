@@ -2655,7 +2655,7 @@ describe('BattleScreen', () => {
     await user.click(screen.getByRole('button', { name: '查看资料' }));
 
     expect(screen.getByRole('heading', { name: 'Player B（雀士）' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '查看我的资料' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '回到我的信息' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: '玩家信息' }));
 
@@ -2663,7 +2663,7 @@ describe('BattleScreen', () => {
 
     await user.click(screen.getByRole('tab', { name: '本局玩家' }));
     await user.click(screen.getByRole('button', { name: '查看资料' }));
-    await user.click(screen.getByRole('button', { name: '查看我的资料' }));
+    await user.click(screen.getByRole('button', { name: '回到我的信息' }));
 
     expect(screen.getByRole('heading', { name: 'Player A（平民）' })).toBeInTheDocument();
   });

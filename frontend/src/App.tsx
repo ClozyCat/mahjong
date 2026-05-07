@@ -53,6 +53,7 @@ import {
   getMySpectatorRequests,
   getUserFans,
   getUserGames,
+  rejectTableInvite,
   rejectSpectatorRequest,
 } from './lib/socialApi';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
@@ -63,6 +64,8 @@ import {
   saveStoredThemeId,
   loadStoredBgmEnabled,
   saveStoredBgmEnabled,
+  loadStoredVoiceEnabled,
+  saveStoredVoiceEnabled,
 } from './lib/storage';
 import { DEFAULT_THEME_ID, getNextThemeId, getRandomThemeId, getThemeLabel, isThemeId } from './lib/themes';
 import type {
@@ -93,6 +96,7 @@ const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'restart_match',
 ]);
 type AuthStatus = 'loading' | 'anonymous' | 'ready';
+type SentInviteStatus = 'pending' | 'rejected';
 type RoomSocketOptions = {
   tableCode: string;
   nickname: string;
@@ -136,7 +140,7 @@ function getDefaultConfig() {
 function getRejectedMessage(reason: string) {
   const lookup: Record<string, string> = {
     table_not_found: '牌桌不存在或已关闭。',
-    table_full: '牌桌已经坐满了，请换一个牌桌试试。',
+    table_full: '本牌局人数已满。',
     invalid_reconnect_token: '上次的重连凭证已失效，请回到牌桌侧栏后重新进入可加入的牌局。',
     seat_occupied: '这个座位已经被占用，请选择其他空位。',
   };
@@ -153,7 +157,7 @@ function getSocialStatusCopy(detail: string) {
     target_player_busy: '该玩家正在牌局中，请稍后重试。',
     target_already_in_table: '该玩家已在本牌局中。',
     only_owner_can_invite: '只有房主可以邀请玩家。',
-    table_multiplier_locked: '牌局已开始，无法再修改或发起等待区邀请。',
+    table_multiplier_locked: '牌局已开始，无法再修改牌局设置。',
     table_not_found: '牌桌不存在或已关闭。',
     spectator_requires_owner_approval: '观战需要房主同意。',
     player_cannot_watch_own_table: '牌局内玩家不能申请观战本局。',
@@ -272,27 +276,29 @@ function isWaitingInNonAllBotRoom(snapshot: SessionState['roomSnapshot']) {
   });
 }
 
-function hasInviteableWaitingSeat(snapshot: SessionState['roomSnapshot'], tableCode: string | null) {
+function isStandaloneBotSeat(seat: { seat_type?: string; is_bot?: boolean }) {
+  if (seat.seat_type) {
+    return seat.seat_type === 'bot';
+  }
+
+  return Boolean(seat.is_bot);
+}
+
+function hasInviteableTableSeat(snapshot: SessionState['roomSnapshot'], tableCode: string | null) {
   const payload = snapshot?.payload;
   if (!payload || !tableCode || payload.table_code !== tableCode) {
     return false;
   }
 
-  if (payload.phase !== 'waiting') {
-    return false;
-  }
-
-  if (payload.seats.length < TABLE_SEAT_CAPACITY) {
+  if (payload.seats.some(isStandaloneBotSeat)) {
     return true;
   }
 
-  return payload.seats.some((seat) => {
-    if (seat.seat_type) {
-      return seat.seat_type === 'bot';
-    }
+  if (payload.phase === 'waiting' && payload.seats.length < TABLE_SEAT_CAPACITY) {
+    return true;
+  }
 
-    return Boolean(seat.is_bot);
-  });
+  return false;
 }
 
 function resolveSpectatorFocusSeat(state: SessionState) {
@@ -394,7 +400,7 @@ function getSeatLabel(seatIndex?: number | null) {
 
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => loadStoredVoiceEnabled());
   const { defaults, storedAuthSession } = useMemo(getDefaultConfig, []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
@@ -409,6 +415,7 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState<PublicUser[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<number[]>([]);
   const [pendingInvites, setPendingInvites] = useState<TableInvite[]>([]);
+  const [sentInviteStatusesByUserId, setSentInviteStatusesByUserId] = useState<Record<number, SentInviteStatus>>({});
   const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
   const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
@@ -481,6 +488,7 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
+        setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests([]);
         setInviteDialog(null);
         setSelectedProfileUser(null);
@@ -516,6 +524,7 @@ export default function App() {
 
         setCurrentUser(me);
         setPendingInvites(getPendingTableInvites(nextInvites));
+        setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests(nextSpectatorRequests);
         setLeaderboard(nextLeaderboard);
         setSelectedProfileUser((current) => current ?? me);
@@ -639,6 +648,26 @@ export default function App() {
 
           return current?.id === message.payload.id ? null : current;
         });
+        return;
+      }
+
+      if (message.type === 'table_invite_decided') {
+        setPendingInvites((current) => upsertInvite(current, message.payload));
+        setInviteDialog((current) => (current?.id === message.payload.id ? null : current));
+        if (currentUser.user_id === message.payload.inviter_user_id) {
+          setSentInviteStatusesByUserId((current) => {
+            if (message.payload.status === 'rejected') {
+              return {
+                ...current,
+                [message.payload.invitee_user_id]: 'rejected',
+              };
+            }
+
+            const next = { ...current };
+            delete next[message.payload.invitee_user_id];
+            return next;
+          });
+        }
         return;
       }
 
@@ -1088,7 +1117,7 @@ export default function App() {
     state.connectionStatus === 'reconnecting';
   const isCreateTableBlockedByWaitingRoom = isWaitingInNonAllBotRoom(state.roomSnapshot);
   const isCreateTableDisabled = lobbyBusy || isCreateTableBlockedByWaitingRoom;
-  const canInvitePlayers = hasInviteableWaitingSeat(state.roomSnapshot, activeLobbyTableCode);
+  const canInvitePlayers = hasInviteableTableSeat(state.roomSnapshot, activeLobbyTableCode);
   const creatingTableCodes =
     activeLobbyTableCode && state.roomSnapshot?.payload.table_code === activeLobbyTableCode && state.roomSnapshot.payload.phase === 'waiting'
       ? [activeLobbyTableCode]
@@ -1291,6 +1320,7 @@ export default function App() {
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken);
       setActiveLobbyTableCode(table.table_code);
+      setSentInviteStatusesByUserId({});
       setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
       setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code));
       setLeaderboard((users) => updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code));
@@ -1319,7 +1349,11 @@ export default function App() {
     }
 
     try {
-      await createTableInvite(defaults.apiBaseUrl, authSession.sessionToken, activeLobbyTableCode, userId);
+      const invite = await createTableInvite(defaults.apiBaseUrl, authSession.sessionToken, activeLobbyTableCode, userId);
+      setSentInviteStatusesByUserId((current) => ({
+        ...current,
+        [invite.invitee_user_id]: 'pending',
+      }));
       setStatusMessage(`已向玩家 ${userId} 发出邀请。`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '邀请失败。');
@@ -1355,6 +1389,26 @@ export default function App() {
     }
   }
 
+  async function handleRejectInvite(invite: TableInvite) {
+    if (!authSession?.sessionToken) {
+      setStatusMessage('请先登录。');
+      return;
+    }
+
+    try {
+      await rejectTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
+      setPendingInvites((current) => removeInviteById(current, invite.id));
+      setInviteDialog((current) => (current?.id === invite.id ? null : current));
+      setStatusMessage(`已拒绝牌桌 ${invite.table_code} 的邀请。`);
+    } catch (error) {
+      if (isStaleTableInviteError(error)) {
+        setPendingInvites((current) => removeInviteById(current, invite.id));
+        setInviteDialog((current) => (current?.id === invite.id ? null : current));
+      }
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '拒绝邀请失败。');
+    }
+  }
+
   async function handleLogout() {
     try {
       if (authSession?.sessionToken) {
@@ -1371,6 +1425,7 @@ export default function App() {
     setLeaderboard([]);
     setOnlineUserIds([]);
     setPendingInvites([]);
+    setSentInviteStatusesByUserId({});
     setPendingSpectatorRequests([]);
     setInviteDialog(null);
     setActiveLobbyTableCode(null);
@@ -1783,11 +1838,13 @@ export default function App() {
       busy={lobbyBusy}
       isCreateTableDisabled={isCreateTableDisabled}
       canInvitePlayers={canInvitePlayers}
+      inviteStatusesByUserId={sentInviteStatusesByUserId}
       isOwner={isSidebarOwner}
       message={statusMessage}
       onCreateTable={handleCreateLobbyTable}
       onInvite={handleInvitePlayer}
       onAcceptInvite={handleAcceptInvite}
+      onRejectInvite={handleRejectInvite}
       onApproveSpectatorRequest={handleApproveSpectatorRequest}
       onRejectSpectatorRequest={handleRejectSpectatorRequest}
       onDismissInviteDialog={() => setInviteDialog(null)}
@@ -1807,7 +1864,13 @@ export default function App() {
           })
         }
         isVoiceEnabled={isVoiceEnabled}
-        onToggleVoice={() => setIsVoiceEnabled((current) => !current)}
+        onToggleVoice={() =>
+          setIsVoiceEnabled((current) => {
+            const next = !current;
+            saveStoredVoiceEnabled(next);
+            return next;
+          })
+        }
         isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
         onToggleBotTakeover={handleSetBotTakeover}
         sidebarRoomPanel={sidebarRoomPanel}

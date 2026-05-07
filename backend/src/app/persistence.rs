@@ -1456,6 +1456,29 @@ impl Database {
         Ok(rows)
     }
 
+    fn reject_table_invite(
+        &self,
+        invite_id: i64,
+        invitee_user_id: i64,
+        rejected_at: &str,
+    ) -> Result<Option<TableInviteRecord>> {
+        let rows_affected = self.conn.execute(
+            "
+            UPDATE table_invites
+            SET status = 'rejected'
+            WHERE id = ?1
+              AND invitee_user_id = ?2
+              AND status = 'pending'
+              AND expires_at > ?3
+            ",
+            params![invite_id, invitee_user_id, rejected_at],
+        )?;
+        if rows_affected != 1 {
+            return Ok(None);
+        }
+        self.get_table_invite(invite_id)
+    }
+
     fn create_spectator_request(
         &self,
         table_code: &str,
@@ -2402,6 +2425,17 @@ impl DbWorker {
     ) -> Result<Vec<TableInviteRecord>> {
         let now = now.to_string();
         self.call(move |db| db.list_available_table_invites_for_user(user_id, &now))
+            .await
+    }
+
+    pub(crate) async fn reject_table_invite(
+        &self,
+        invite_id: i64,
+        invitee_user_id: i64,
+        rejected_at: &str,
+    ) -> Result<Option<TableInviteRecord>> {
+        let rejected_at = rejected_at.to_string();
+        self.call(move |db| db.reject_table_invite(invite_id, invitee_user_id, &rejected_at))
             .await
     }
 

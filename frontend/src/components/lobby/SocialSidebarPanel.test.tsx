@@ -40,10 +40,12 @@ const defaultProps = {
   busy: false,
   isCreateTableDisabled: false,
   canInvitePlayers: false,
+  inviteStatusesByUserId: {},
   isOwner: false,
   onCreateTable: vi.fn(),
   onInvite: vi.fn(),
   onAcceptInvite: vi.fn(),
+  onRejectInvite: vi.fn(),
   onApproveSpectatorRequest: vi.fn(),
   onRejectSpectatorRequest: vi.fn(),
   onDismissInviteDialog: vi.fn(),
@@ -103,6 +105,77 @@ describe('SocialSidebarPanel', () => {
     await user.click(inviteButton!);
 
     expect(onInvite).not.toHaveBeenCalled();
+  });
+
+  it('shows pending sent invites as disabled already invited buttons', async () => {
+    const user = userEvent.setup();
+    const onInvite = vi.fn();
+
+    render(
+      <SocialSidebarPanel
+        {...defaultProps}
+        activeTableCode="ROOM42"
+        canInvitePlayers={true}
+        inviteStatusesByUserId={{ 2: 'pending' }}
+        onInvite={onInvite}
+      />,
+    );
+
+    const invitedButton = screen.getByRole('button', { name: '已邀请' });
+    expect(invitedButton).toBeDisabled();
+
+    await user.click(invitedButton);
+
+    expect(onInvite).not.toHaveBeenCalled();
+  });
+
+  it('lets rejected sent invites be sent again from the rejected button', async () => {
+    const user = userEvent.setup();
+    const onInvite = vi.fn();
+
+    render(
+      <SocialSidebarPanel
+        {...defaultProps}
+        activeTableCode="ROOM42"
+        canInvitePlayers={true}
+        inviteStatusesByUserId={{ 2: 'rejected' }}
+        onInvite={onInvite}
+      />,
+    );
+
+    const rejectedButton = screen.getByRole('button', { name: '已被拒绝' });
+    expect(rejectedButton).toBeEnabled();
+
+    await user.click(rejectedButton);
+
+    expect(onInvite).toHaveBeenCalledWith(2);
+  });
+
+  it('lets invitees reject pending table invites', async () => {
+    const user = userEvent.setup();
+    const onRejectInvite = vi.fn();
+
+    render(
+      <SocialSidebarPanel
+        {...defaultProps}
+        pendingInvites={[
+          {
+            id: 9,
+            table_code: 'ROOM42',
+            inviter_user_id: 2,
+            invitee_user_id: 1,
+            status: 'pending',
+            created_at: '2026-05-06T12:00:00Z',
+            expires_at: '2026-05-06T12:10:00Z',
+          },
+        ]}
+        onRejectInvite={onRejectInvite}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '拒绝' }));
+
+    expect(onRejectInvite).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }));
   });
 
   it('lets the owner approve and reject spectator requests from the room tab panel', async () => {
