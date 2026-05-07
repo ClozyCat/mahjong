@@ -65,14 +65,14 @@
     0 8px 24px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: 
-    transform 0.4s var(--ease-lux),
-    left 0.4s var(--ease-lux),
-    background 0.4s var(--ease-lux),
-    border-color 0.4s var(--ease-lux),
-    color 0.4s var(--ease-lux),
-    box-shadow 0.4s var(--ease-lux),
-    opacity 1s var(--ease-lux) 3s;
-  opacity: 0.3;
+    transform 0.1s ease-out,
+    left 0.15s ease-out,
+    background 0.1s ease-out,
+    border-color 0.1s ease-out,
+    color 0.1s ease-out,
+    box-shadow 0.1s ease-out,
+    opacity 0.2s ease-out;
+  opacity: 0.6;
 }
 
 .table-sidebar__toggle-icon {
@@ -80,7 +80,7 @@
   width: 1.1rem;
   height: 1.1rem;
   opacity: 0.8;
-  transition: transform 0.4s var(--ease-lux), opacity 0.3s;
+  transition: transform 0.1s ease-out, opacity 0.1s ease-out;
 }
 
 .table-sidebar.is-open .table-sidebar__toggle {
@@ -92,13 +92,13 @@ button.table-sidebar__toggle:hover:not(:disabled),
 .table-sidebar.is-open .table-sidebar__toggle {
   opacity: 1;
   transition: 
-    transform 0.4s var(--ease-lux),
-    left 0.4s var(--ease-lux),
-    background 0.4s var(--ease-lux),
-    border-color 0.4s var(--ease-lux),
-    color 0.4s var(--ease-lux),
-    box-shadow 0.4s var(--ease-lux),
-    opacity 0.2s var(--ease-lux) 0s;
+    transform 0.1s ease-out,
+    left 0.15s ease-out,
+    background 0.1s ease-out,
+    border-color 0.1s ease-out,
+    color 0.1s ease-out,
+    box-shadow 0.1s ease-out,
+    opacity 0.1s ease-out;
   background: rgba(0, 0, 0, 0.55);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--accent);
@@ -115,10 +115,9 @@ button.table-sidebar__toggle:hover:not(:disabled),
 
 .table-sidebar__toggle:active,
 button.table-sidebar__toggle:active:not(:disabled) {
-  transform: translateY(-50%) scale(0.96);
-  background: rgba(0, 0, 0, 0.65);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: translateY(-50%) scale(0.97);
+  background: rgba(0, 0, 0, 0.7);
+  box-shadow: none;
 }
 
 .table-sidebar__panel {
@@ -133,7 +132,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
   padding: 0.85rem;
   border-radius: 1.5rem;
   pointer-events: auto;
-  animation: slide-in-left 0.4s var(--ease-lux) forwards;
+  animation: slide-in-left 0.2s ease-out forwards;
 }
 
 .table-sidebar__content {
@@ -194,9 +193,7 @@ button.table-sidebar__row button:hover:not(:disabled) {
   border-radius: 50%;
 }
 
-.table-sidebar__toggle {
-  position: relative;
-}
+
 
 .table-sidebar__tab-alert {
   position: absolute;
@@ -426,7 +423,7 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   border: 1px solid var(--glass-border);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px), (max-height: 540px) {
   .table-sidebar {
     position: fixed;
     inset: 0;
@@ -436,30 +433,23 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   .table-sidebar__toggle,
   .table-sidebar__toggle:hover,
   button.table-sidebar__toggle:hover:not(:disabled),
-  .table-sidebar.is-open .table-sidebar__toggle {
-    top: auto;
-    left: max(0.75rem, env(safe-area-inset-left));
-    right: auto;
-    bottom: max(0.75rem, env(safe-area-inset-bottom));
-    transform: none;
+  .table-sidebar.is-open .table-sidebar__toggle,
+  .table-sidebar.is-open .table-sidebar__toggle:hover {
+    position: absolute;
+    top: auto !important;
+    bottom: max(0.8rem, env(safe-area-inset-bottom)) !important;
+    left: max(0.8rem, env(safe-area-inset-left)) !important;
+    right: auto !important;
+    transform: none !important;
     width: 3.2rem;
     min-height: 3.2rem;
     border-radius: 50%;
-    z-index: 4;
+    z-index: 10;
   }
 
   .table-sidebar__toggle:active,
   button.table-sidebar__toggle:active:not(:disabled) {
-    transform: scale(0.96);
-  }
-
-  .table-sidebar.is-open .table-sidebar__toggle,
-  .table-sidebar.is-open .table-sidebar__toggle:hover {
-    left: max(0.75rem, env(safe-area-inset-left));
-    bottom: max(0.75rem, env(safe-area-inset-bottom));
-    top: auto;
-    right: auto;
-    transform: none;
+    transform: scale(0.95) !important;
   }
 
   .table-sidebar__panel {
@@ -472,7 +462,7 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
     border-radius: 0;
     flex-direction: column-reverse;
     padding:
-      calc(max(0.75rem, env(safe-area-inset-top)) + 3rem)
+      calc(max(0.75rem, env(safe-area-inset-top)) + 0.8rem)
       1rem
       max(1rem, env(safe-area-inset-bottom));
   }
