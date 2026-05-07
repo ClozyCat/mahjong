@@ -1,4 +1,5 @@
 import type { PublicUser, TableInvite } from '../../types/match';
+import { formatBeijingDateTime } from '../../lib/dateTime';
 
 interface SocialLobbyProps {
   currentUser: PublicUser;
@@ -88,7 +89,7 @@ export function SocialLobby({
                 <div>
                   <strong>{invite.table_code}</strong>
                   <span>{getInviteCopy(invite, leaderboard)}</span>
-                  <span>邀请时间 {invite.created_at}</span>
+                  <span>邀请时间 {formatBeijingDateTime(invite.created_at)}</span>
                 </div>
                 <button type="button" onClick={() => onAcceptInvite(invite)}>
                   接受邀请

@@ -182,6 +182,7 @@ describe('SocialSidebarPanel', () => {
 
     await user.click(screen.getByRole('button', { name: '拒绝' }));
 
+    expect(screen.getByText('邀请时间 2026-05-06 20:00:00')).toBeInTheDocument();
     expect(onRejectInvite).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }));
   });
 

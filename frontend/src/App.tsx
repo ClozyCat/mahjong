@@ -398,6 +398,10 @@ function getSeatLabel(seatIndex?: number | null) {
   return windLabels[seatIndex] ?? `${seatIndex + 1}号位`;
 }
 
+function getUserDisplayName(users: PublicUser[], userId: number) {
+  return users.find((user) => user.user_id === userId)?.display_name ?? `用户 #${userId}`;
+}
+
 function removeDismissedInviteAlertId(current: Set<number>, inviteId: number) {
   if (!current.has(inviteId)) {
     return current;
@@ -1401,7 +1405,7 @@ export default function App() {
         ...current,
         [invite.invitee_user_id]: 'pending',
       }));
-      setStatusMessage(`已向玩家 ${userId} 发出邀请。`);
+      setStatusMessage(`已向${getUserDisplayName(leaderboard, invite.invitee_user_id)}发出邀请。`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '邀请失败。');
     }

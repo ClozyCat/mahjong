@@ -79,4 +79,36 @@ describe('SocialLobby', () => {
     await user.click(screen.getByRole('button', { name: '邀请' }));
     expect(onInvite).toHaveBeenCalledWith(2);
   });
+
+  it('shows pending invite time as Beijing time without raw ISO separators', () => {
+    render(
+      <SocialLobby
+        currentUser={currentUser}
+        leaderboard={leaderboard}
+        onlineUserIds={[1, 2]}
+        pendingInvites={[
+          {
+            id: 9,
+            table_code: 'ROOM42',
+            inviter_user_id: 2,
+            invitee_user_id: 1,
+            status: 'pending',
+            created_at: '2026-05-06T12:00:00Z',
+            expires_at: '2026-05-06T12:10:00Z',
+          },
+        ]}
+        activeTableCode={null}
+        inviteDialog={null}
+        busy={false}
+        isCreateTableDisabled={false}
+        onCreateTable={vi.fn()}
+        onInvite={vi.fn()}
+        onAcceptInvite={vi.fn()}
+        onDismissInviteDialog={vi.fn()}
+        onLogout={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('邀请时间 2026-05-06 20:00:00')).toBeInTheDocument();
+  });
 });

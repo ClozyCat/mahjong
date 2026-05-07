@@ -892,6 +892,7 @@ describe('App', () => {
     expect(parseRequestBody(inviteCall?.[1])).toEqual({
       invitee_user_id: 2,
     });
+    expect(screen.getByText('已向Player B发出邀请。')).toBeInTheDocument();
   });
 
   it('enables sidebar invites when the active waiting table reports bots with the legacy is_bot flag', async () => {

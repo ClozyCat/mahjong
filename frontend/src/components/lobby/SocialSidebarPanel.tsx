@@ -1,4 +1,5 @@
 import type { PublicUser, SpectatorRequest, TableInvite } from '../../types/match';
+import { formatBeijingDateTime } from '../../lib/dateTime';
 
 export type SentInviteStatus = 'pending' | 'rejected';
 
@@ -166,7 +167,7 @@ export function SocialSidebarMessagesPanel({
               <div className="table-sidebar__row-info">
                 <strong className="table-sidebar__row-name">{invite.table_code}</strong>
                 <span className="table-sidebar__stat">{getInviteCopy(invite, inviteCreatorLabelsByUserId)}</span>
-                <span className="table-sidebar__stat">邀请时间 {invite.created_at}</span>
+                <span className="table-sidebar__stat">邀请时间 {formatBeijingDateTime(invite.created_at)}</span>
               </div>
               <div className="table-sidebar__actions">
                 <button type="button" onClick={() => onAcceptInvite(invite)}>
