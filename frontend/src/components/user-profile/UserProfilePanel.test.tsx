@@ -42,6 +42,7 @@ describe('UserProfilePanel', () => {
             started_at: '2026-05-06T10:00:00Z',
             ended_at: '2026-05-06T11:00:00Z',
             round_count: 8,
+            opponent_names: ['小李', '小王', '小陈'],
           },
         ]}
       />,
@@ -52,8 +53,9 @@ describe('UserProfilePanel', () => {
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '历史牌局' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '最近牌局' })).not.toBeInTheDocument();
-    expect(screen.getByText('AB12CD')).toBeInTheDocument();
-    expect(screen.getByText('8 局')).toBeInTheDocument();
+    expect(screen.getByText('05/06 19:00')).toBeInTheDocument();
+    expect(screen.getByText('总 8 局')).toBeInTheDocument();
+    expect(screen.getByText('小李、小王、小陈')).toBeInTheDocument();
     expect(screen.getByText('暂无公开简介')).toBeInTheDocument();
     expect(screen.queryByText(/x[123]/)).not.toBeInTheDocument();
   });
@@ -98,25 +100,41 @@ describe('UserProfilePanel', () => {
         user={publicUser()}
         fanStats={[]}
         recentGames={[
-          gameWithSummary(null, { game_id: 11, table_code: 'GAME01' }),
-          gameWithSummary(null, { game_id: 12, table_code: 'GAME02' }),
-          gameWithSummary(null, { game_id: 13, table_code: 'GAME03' }),
-          gameWithSummary(null, { game_id: 14, table_code: 'GAME04' }),
+          gameWithSummary(null, {
+            game_id: 11,
+            table_code: 'GAME01',
+            opponent_names: ['对手1'],
+          }),
+          gameWithSummary(null, {
+            game_id: 12,
+            table_code: 'GAME02',
+            opponent_names: ['对手2'],
+          }),
+          gameWithSummary(null, {
+            game_id: 13,
+            table_code: 'GAME03',
+            opponent_names: ['对手3'],
+          }),
+          gameWithSummary(null, {
+            game_id: 14,
+            table_code: 'GAME04',
+            opponent_names: ['对手4'],
+          }),
         ]}
       />,
     );
 
-    expect(screen.getByText('GAME01')).toBeInTheDocument();
-    expect(screen.getByText('GAME03')).toBeInTheDocument();
-    expect(screen.queryByText('GAME04')).not.toBeInTheDocument();
+    expect(screen.getByText('对手1')).toBeInTheDocument();
+    expect(screen.getByText('对手3')).toBeInTheDocument();
+    expect(screen.queryByText('对手4')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '历史牌局分页下一页' }));
 
-    expect(screen.queryByText('GAME01')).not.toBeInTheDocument();
-    expect(screen.getByText('GAME04')).toBeInTheDocument();
+    expect(screen.queryByText('对手1')).not.toBeInTheDocument();
+    expect(screen.getByText('对手4')).toBeInTheDocument();
   });
 
-  it('shows the final result popover when hovering a recent game', () => {
+  it('shows score delta and opponent names directly in a history row', () => {
     render(
       <UserProfilePanel
         user={{
@@ -131,27 +149,26 @@ describe('UserProfilePanel', () => {
         }}
         fanStats={[]}
         recentGames={[
-          gameWithSummary({
-            round_count: 8,
-            win_count: 3,
-            self_draw_win_count: 2,
-            discard_win_count: 1,
-            deal_in_count: 1,
-            total_score_delta: 28,
-            average_cumulative_score: 14,
-            high_score_round_count: 2,
-          }),
+          gameWithSummary(
+            {
+              round_count: 8,
+              win_count: 3,
+              self_draw_win_count: 2,
+              discard_win_count: 1,
+              deal_in_count: 1,
+              total_score_delta: 28,
+              average_cumulative_score: 14,
+              high_score_round_count: 2,
+            },
+            { opponent_names: ['Guest A', 'Guest B', 'Guest C'] },
+          ),
         ]}
       />,
     );
 
-    expect(screen.queryByRole('tooltip', { name: 'AB12CD 最终结果' })).not.toBeInTheDocument();
-
-    fireEvent.mouseEnter(screen.getByText('AB12CD').closest('li')!);
-
-    expect(screen.getByRole('tooltip', { name: 'AB12CD 最终结果' })).toBeInTheDocument();
     expect(screen.getByText('+28')).toBeInTheDocument();
-    expect(screen.getByText('3 胜 / 1 放铳')).toBeInTheDocument();
+    expect(screen.getByText('Guest A、Guest B、Guest C')).toBeInTheDocument();
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
   it('generates a deal-in bio from recent player summaries', () => {
@@ -183,7 +200,7 @@ describe('UserProfilePanel', () => {
 
 function gameWithSummary(
   playerSummary: Partial<NonNullable<GameSummary['player_summary']>> | null,
-  overrides: Partial<Pick<GameSummary, 'game_id' | 'table_code' | 'round_count'>> = {},
+  overrides: Partial<Pick<GameSummary, 'game_id' | 'table_code' | 'round_count' | 'opponent_names'>> = {},
 ): GameSummary {
   return {
     game_id: overrides.game_id ?? 11,
@@ -193,6 +210,7 @@ function gameWithSummary(
     started_at: '2026-05-06T10:00:00Z',
     ended_at: '2026-05-06T11:00:00Z',
     round_count: overrides.round_count ?? 8,
+    opponent_names: overrides.opponent_names ?? [],
     player_summary: playerSummary ? { ...emptyPlayerSummary(), ...playerSummary } : null,
   };
 }

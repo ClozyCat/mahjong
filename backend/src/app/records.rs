@@ -31,6 +31,7 @@ pub(crate) struct GameSummaryView {
     pub(crate) started_at: String,
     pub(crate) ended_at: Option<String>,
     pub(crate) round_count: i64,
+    pub(crate) opponent_names: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) player_summary: Option<UserGamePlayerSummaryView>,
 }
@@ -113,6 +114,7 @@ pub(crate) fn game_summary_view(summary: &GameSummaryRecord) -> GameSummaryView 
         started_at: summary.started_at.clone(),
         ended_at: summary.ended_at.clone(),
         round_count: summary.round_count,
+        opponent_names: summary.opponent_names.clone(),
         player_summary: summary
             .player_summary
             .as_ref()
@@ -961,6 +963,7 @@ mod tests {
         assert_eq!(user_games_response.status(), StatusCode::OK);
         let user_games_body = json_response(user_games_response).await;
         assert_eq!(user_games_body[0]["game_id"], game_id);
+        assert_eq!(user_games_body[0]["opponent_names"][0], "Guest");
         assert_eq!(user_games_body[0]["player_summary"]["round_count"], 1);
         assert_eq!(user_games_body[0]["player_summary"]["win_count"], 1);
         assert_eq!(user_games_body[0]["player_summary"]["deal_in_count"], 0);

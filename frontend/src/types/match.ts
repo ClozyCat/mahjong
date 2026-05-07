@@ -108,6 +108,7 @@ export interface GameSummary {
   started_at: string;
   ended_at?: string | null;
   round_count: number;
+  opponent_names: string[];
   player_summary?: UserGamePlayerSummary | null;
 }
 

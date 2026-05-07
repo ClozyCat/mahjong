@@ -39,7 +39,6 @@ export function UserProfilePanel({
   loading = false,
   message = null,
 }: UserProfilePanelProps) {
-  const [activeResultGameId, setActiveResultGameId] = useState<number | null>(null);
   const [fanPage, setFanPage] = useState(0);
   const [gamePage, setGamePage] = useState(0);
   const fanPageCount = getPageCount(fanStats.length, FAN_STATS_PAGE_SIZE);
@@ -50,7 +49,6 @@ export function UserProfilePanel({
   useEffect(() => {
     setFanPage(0);
     setGamePage(0);
-    setActiveResultGameId(null);
   }, [user?.user_id, fallbackName]);
 
   useEffect(() => {
@@ -59,7 +57,6 @@ export function UserProfilePanel({
 
   useEffect(() => {
     setGamePage((currentPage) => Math.min(currentPage, gamePageCount - 1));
-    setActiveResultGameId(null);
   }, [gamePageCount, safeGamePage]);
 
   if (!user && !fallbackName) {
@@ -111,16 +108,18 @@ export function UserProfilePanel({
           {visibleGames.map((game) => (
             <li
               key={game.game_id}
-              className="user-profile-panel__row user-profile-panel__row--stacked user-profile-panel__game-row"
-              tabIndex={0}
-              onMouseEnter={() => setActiveResultGameId(game.game_id)}
-              onMouseLeave={() => setActiveResultGameId(null)}
-              onFocus={() => setActiveResultGameId(game.game_id)}
-              onBlur={() => setActiveResultGameId(null)}
+              className="user-profile-panel__row user-profile-panel__row--stacked user-profile-panel__history-row"
             >
-              <strong>{game.table_code}</strong>
-              <span>{game.round_count} 局</span>
-              {activeResultGameId === game.game_id ? <GameResultPopover game={game} /> : null}
+              <div className="user-profile-panel__history-main">
+                <strong>{formatGameTime(game)}</strong>
+                <span>{formatRoundCount(game)}</span>
+              </div>
+              <div className="user-profile-panel__history-meta">
+                <strong className={scoreDeltaClassName(game.player_summary?.total_score_delta ?? 0)}>
+                  {formatScoreDelta(game.player_summary?.total_score_delta ?? 0)}
+                </strong>
+                <span>{formatOpponentNames(game.opponent_names ?? [])}</span>
+              </div>
             </li>
           ))}
         </ul>
@@ -173,43 +172,44 @@ function PaginationControls({
   );
 }
 
-function GameResultPopover({ game }: { game: GameSummary }) {
-  const summary = game.player_summary;
-
-  return (
-    <aside
-      role="tooltip"
-      aria-label={`${game.table_code} 最终结果`}
-      className="user-profile-panel__game-popover"
-    >
-      <div className="user-profile-panel__game-popover-head">
-        <span>最终结果</span>
-        <strong>{summary ? formatScoreDelta(summary.total_score_delta) : '--'}</strong>
-      </div>
-      <dl className="user-profile-panel__game-popover-stats">
-        <div>
-          <dt>战绩</dt>
-          <dd>{summary ? `${summary.win_count} 胜 / ${summary.deal_in_count} 放铳` : '暂无'}</dd>
-        </div>
-        <div>
-          <dt>胡牌</dt>
-          <dd>
-            {summary
-              ? `${summary.self_draw_win_count} 自摸 / ${summary.discard_win_count} 荣和`
-              : '暂无'}
-          </dd>
-        </div>
-        <div>
-          <dt>均分</dt>
-          <dd>{summary ? summary.average_cumulative_score : '--'}</dd>
-        </div>
-      </dl>
-    </aside>
-  );
-}
-
 function formatScoreDelta(delta: number) {
   return delta > 0 ? `+${delta}` : String(delta);
+}
+
+function scoreDeltaClassName(delta: number) {
+  if (delta > 0) {
+    return 'user-profile-panel__score-delta user-profile-panel__score-delta--positive';
+  }
+  if (delta < 0) {
+    return 'user-profile-panel__score-delta user-profile-panel__score-delta--negative';
+  }
+  return 'user-profile-panel__score-delta';
+}
+
+function formatGameTime(game: GameSummary) {
+  const rawTime = game.ended_at ?? game.started_at;
+  const date = new Date(rawTime);
+  if (Number.isNaN(date.getTime())) return rawTime;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function formatRoundCount(game: GameSummary) {
+  const playerRoundCount = game.player_summary?.round_count;
+  const totalRoundCount = game.round_count;
+  if (typeof playerRoundCount === 'number' && playerRoundCount !== totalRoundCount) {
+    return `总 ${totalRoundCount} 局（参与 ${playerRoundCount} 局）`;
+  }
+  return `总 ${totalRoundCount} 局`;
+}
+
+function formatOpponentNames(names: string[]) {
+  return names.length > 0 ? names.slice(0, 3).join('、') : '暂无对手';
 }
 
 function formatFanStatLabel(fan: UserFanStat) {

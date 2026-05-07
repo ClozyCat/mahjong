@@ -158,6 +158,17 @@ button.table-sidebar__toggle:active:not(:disabled) {
   font-size: 0.75rem;
 }
 
+.table-sidebar__row button,
+.social-lobby__row button {
+  padding: 0.5rem 1.2rem;
+  min-height: 2.4rem;
+  min-width: 5.2rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .table-sidebar__tabs button:hover {
   background: color-mix(in srgb, var(--theme-paper) 8%, transparent);
   color: var(--accent);
@@ -274,13 +285,6 @@ button.table-sidebar__toggle:active:not(:disabled) {
   transition: all 0.3s var(--ease-lux);
 }
 
-.table-sidebar__row:hover,
-.user-profile-panel__row:hover {
-  background: color-mix(in srgb, var(--theme-paper) 6%, transparent);
-  border-color: var(--glass-border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
 
 .table-sidebar__row--stacked,
 .user-profile-panel__row--stacked {
@@ -416,9 +420,9 @@ button.table-sidebar__toggle:active:not(:disabled) {
 
 .table-sidebar__row-actions {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
   justify-items: stretch;
-  min-width: 5.25rem;
+  min-width: 6.8rem;
 }
 
 .table-sidebar__row-actions button {
@@ -438,11 +442,17 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .social-sidebar__header,
-.social-sidebar__actions,
 .social-sidebar__ranking li {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.social-sidebar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 0.75rem;
 }
 
@@ -518,9 +528,26 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .social-sidebar__primary {
-  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--theme-border-strong));
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 85%, black));
+  color: white;
+  border-radius: 999px;
+  padding: 0.45rem 1.2rem;
+  font-weight: 700;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 24%, transparent);
+  transition: transform 0.3s var(--ease-spring), box-shadow 0.3s var(--ease-spring), background 0.3s ease;
+}
+
+.social-sidebar__primary:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--accent) 34%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
   border-color: var(--accent);
-  color: #fff;
+}
+
+.social-sidebar__primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
 }
 
 .social-sidebar__status-box {
@@ -633,85 +660,47 @@ button.table-sidebar__toggle:active:not(:disabled) {
   text-align: center;
 }
 
-.user-profile-panel__game-row {
-  position: relative;
-  cursor: help;
-  outline: none;
-}
-
-.user-profile-panel__game-row:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.user-profile-panel__game-popover {
-  position: absolute;
-  z-index: 35;
-  right: calc(100% + 0.65rem);
-  top: 50%;
-  width: min(18rem, 72vw);
-  transform: translateY(-50%);
-  padding: 0.85rem;
-  border-radius: 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-border));
-  background: color-mix(in srgb, var(--theme-panel-bg) 92%, #05070b);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
-  color: var(--theme-paper-strong);
-  pointer-events: none;
-}
-
-.user-profile-panel__game-popover::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: -0.45rem;
-  width: 0.75rem;
-  height: 0.75rem;
-  transform: translateY(-50%) rotate(45deg);
-  border-top: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-border));
-  border-right: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-border));
-  background: inherit;
-}
-
-.user-profile-panel__game-popover-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-  margin-bottom: 0.7rem;
-}
-
-.user-profile-panel__game-popover-head span,
-.user-profile-panel__game-popover-stats dt {
-  color: color-mix(in srgb, var(--theme-paper) 64%, transparent);
-  font-size: 0.74rem;
-}
-
-.user-profile-panel__game-popover-head strong {
-  font-size: 1.25rem;
-}
-
-.user-profile-panel__game-popover-stats {
+.user-profile-panel__history-row {
   display: grid;
-  gap: 0.55rem;
-  margin: 0;
-}
-
-.user-profile-panel__game-popover-stats div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  grid-template-columns: minmax(6.5rem, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
   gap: 0.8rem;
 }
 
-.user-profile-panel__game-popover-stats dt,
-.user-profile-panel__game-popover-stats dd {
-  margin: 0;
+.user-profile-panel__history-main,
+.user-profile-panel__history-meta {
+  min-width: 0;
 }
 
-.user-profile-panel__game-popover-stats dd {
-  color: var(--theme-paper-strong);
-  font-weight: 700;
+.user-profile-panel__history-main strong,
+.user-profile-panel__history-meta strong {
+  display: block;
+}
+
+.user-profile-panel__history-meta {
+  display: grid;
+  justify-items: end;
+  text-align: right;
+}
+
+.user-profile-panel__history-meta span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-profile-panel__score-delta {
+  color: color-mix(in srgb, var(--theme-paper-strong) 86%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.user-profile-panel__score-delta--positive {
+  color: #22c55e;
+}
+
+.user-profile-panel__score-delta--negative {
+  color: #f87171;
 }
 
 @media (max-width: 760px), (max-height: 540px) {
@@ -732,9 +721,10 @@ button.table-sidebar__toggle:active:not(:disabled) {
     left: max(0.8rem, env(safe-area-inset-left)) !important;
     right: auto !important;
     transform: none !important;
-    width: 3.2rem;
-    min-height: 3.2rem;
+    width: 3.2rem !important;
+    height: 3.2rem !important;
     border-radius: 50%;
+    flex-shrink: 0;
     z-index: 10;
   }
 
@@ -1295,16 +1285,6 @@ button.table-sidebar__toggle:active:not(:disabled) {
   transition: transform 0.3s var(--ease-lux);
 }
 
-.social-lobby__panel:hover {
-  transform: translateY(-4px);
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 18%, transparent), transparent 45%),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--theme-paper) 6%, transparent),
-      transparent 15%,
-      rgba(0, 0, 0, 0.05)),
-    var(--glass-obsidian);
-}
 
 .social-lobby__panel h2,
 .social-lobby__dialog h2 {

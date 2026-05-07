@@ -144,6 +144,7 @@ pub(crate) struct GameSummaryRecord {
     pub(crate) started_at: String,
     pub(crate) ended_at: Option<String>,
     pub(crate) round_count: i64,
+    pub(crate) opponent_names: Vec<String>,
     pub(crate) player_summary: Option<UserGamePlayerSummaryRecord>,
 }
 
@@ -942,6 +943,7 @@ impl Database {
             started_at: row.get(6)?,
             ended_at: row.get(7)?,
             round_count: row.get(8)?,
+            opponent_names: Vec::new(),
             player_summary: None,
         })
     }
@@ -1946,6 +1948,7 @@ impl Database {
                             started_at: row.get(6)?,
                             ended_at: row.get(7)?,
                             round_count: row.get(8)?,
+                            opponent_names: Vec::new(),
                             player_summary: None,
                         },
                         row.get::<_, Option<String>>(9)?,
@@ -2053,6 +2056,27 @@ impl Database {
         Ok(summary.build())
     }
 
+    fn opponent_names_for_user_game(&self, user_id: i64, game_id: i64) -> Result<Vec<String>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT MIN(round_player_results.nickname_snapshot) AS nickname_snapshot
+            FROM round_records
+            JOIN round_player_results
+              ON round_player_results.round_record_id = round_records.id
+            WHERE round_records.game_record_id = ?1
+              AND round_player_results.user_id != ?2
+            GROUP BY round_player_results.user_id
+            ORDER BY MIN(round_player_results.seat_index) ASC,
+                     round_player_results.user_id ASC
+            LIMIT 3
+            ",
+        )?;
+        let names = statement
+            .query_map(params![game_id, user_id], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(names)
+    }
+
     fn list_games_for_user(&self, user_id: i64, limit: usize) -> Result<Vec<GameSummaryRecord>> {
         let mut statement = self.conn.prepare(
             "
@@ -2069,15 +2093,21 @@ impl Database {
             FROM game_records
             JOIN users ON users.id = game_records.owner_user_id
             LEFT JOIN round_records ON round_records.game_record_id = game_records.id
-            WHERE game_records.ended_at IS NOT NULL
-              AND game_records.final_room_json LIKE '%\"match_finished\":true%'
-              AND EXISTS (
+            WHERE EXISTS (
                 SELECT 1
                 FROM round_records user_round_records
                 JOIN round_player_results
                   ON round_player_results.round_record_id = user_round_records.id
                 WHERE user_round_records.game_record_id = game_records.id
                   AND round_player_results.user_id = ?1
+            )
+              AND EXISTS (
+                SELECT 1
+                FROM round_records opponent_round_records
+                JOIN round_player_results opponent_results
+                  ON opponent_results.round_record_id = opponent_round_records.id
+                WHERE opponent_round_records.game_record_id = game_records.id
+                  AND opponent_results.user_id != ?1
             )
             GROUP BY game_records.id
             ORDER BY COALESCE(game_records.ended_at, MAX(round_records.ended_at), game_records.started_at) DESC,
@@ -2091,6 +2121,7 @@ impl Database {
         let mut games = rows;
         for game in &mut games {
             game.player_summary = Some(self.user_game_player_summary(user_id, game.game_id)?);
+            game.opponent_names = self.opponent_names_for_user_game(user_id, game.game_id)?;
         }
         Ok(games)
     }
@@ -3050,7 +3081,7 @@ mod tests {
     }
 
     #[test]
-    fn list_games_for_user_returns_only_completed_matches() -> Result<()> {
+    fn list_games_for_user_returns_all_played_human_games() -> Result<()> {
         let db = in_memory_database("")?;
         db.initialize()?;
         db.conn.execute(
@@ -3087,12 +3118,21 @@ mod tests {
         )?;
 
         let user_games = db.list_games_for_user(1, 10)?;
-        assert_eq!(user_games.len(), 1);
-        assert_eq!(user_games[0].table_code, "DONE01");
+        let table_codes = user_games
+            .iter()
+            .map(|game| game.table_code.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(table_codes, vec!["LEFT01", "DONE01", "OPEN01"]);
+        assert!(
+            user_games
+                .iter()
+                .all(|game| game.opponent_names == vec!["Guest"])
+        );
         assert_eq!(
-            user_games[0]
-                .player_summary
-                .as_ref()
+            user_games
+                .iter()
+                .find(|game| game.table_code == "OPEN01")
+                .and_then(|game| game.player_summary.as_ref())
                 .map(|summary| summary.round_count),
             Some(1)
         );
@@ -3146,6 +3186,23 @@ mod tests {
                 nickname_snapshot
             )
             VALUES (?1, 1, 0, 16, 0, 16, 1, 'self_draw', 'Owner')
+            ",
+            params![game_id],
+        )?;
+        db.conn.execute(
+            "
+            INSERT INTO round_player_results (
+                round_record_id,
+                user_id,
+                seat_index,
+                score_delta,
+                point_delta,
+                cumulative_score,
+                is_winner,
+                win_type,
+                nickname_snapshot
+            )
+            VALUES (?1, 2, 1, -16, 0, -16, 0, NULL, 'Guest')
             ",
             params![game_id],
         )?;
