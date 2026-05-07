@@ -105,9 +105,9 @@ export function SocialSidebarPanel({
           {pendingInvites.length === 0 ? <li className="table-sidebar__empty">暂无待处理邀请</li> : null}
           {pendingInvites.map((invite) => (
             <li key={invite.id} className="table-sidebar__row table-sidebar__row--stacked">
-              <div>
-                <strong>{invite.table_code}</strong>
-                <span>邀请时间 {invite.created_at}</span>
+              <div className="table-sidebar__row-info">
+                <strong className="table-sidebar__row-name">{invite.table_code}</strong>
+                <span className="table-sidebar__stat">邀请时间 {invite.created_at}</span>
               </div>
               <button type="button" onClick={() => onAcceptInvite(invite)}>
                 接受
@@ -123,9 +123,9 @@ export function SocialSidebarPanel({
           {onlineUsers.length === 0 ? <li className="table-sidebar__empty">暂无在线玩家</li> : null}
           {onlineUsers.map((user) => (
             <li key={user.user_id} className="table-sidebar__row">
-              <div>
-                <strong>{user.display_label}</strong>
-                <span>{user.points} 分</span>
+              <div className="table-sidebar__row-info">
+                <strong className="table-sidebar__row-name">{user.display_label}</strong>
+                <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
               </div>
               <button type="button" disabled={!canInvitePlayers || busy} onClick={() => onInvite(user.user_id)}>
                 邀请
@@ -143,9 +143,9 @@ export function SocialSidebarPanel({
           {isOwner
             ? spectatorRequests.map((request) => (
                 <li key={request.id} className="table-sidebar__row table-sidebar__row--stacked">
-                  <div>
-                    <strong>用户 #{request.requester_user_id}</strong>
-                    <span>申请观战 {request.table_code}</span>
+                  <div className="table-sidebar__row-info">
+                    <strong className="table-sidebar__row-name">用户 #{request.requester_user_id}</strong>
+                    <span className="table-sidebar__stat">申请观战 {request.table_code}</span>
                   </div>
                   <div className="table-sidebar__actions">
                     <button type="button" onClick={() => onApproveSpectatorRequest(request.id)}>

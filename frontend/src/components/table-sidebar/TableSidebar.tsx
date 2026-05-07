@@ -165,13 +165,21 @@ export function TableSidebar({
                 {tablePlayers.length === 0 ? <li className="table-sidebar__empty">尚未开局</li> : null}
                 {tablePlayers.map((player) => (
                   <li key={player.key} className="table-sidebar__row table-sidebar__row--stacked">
-                    <div>
-                      <strong>
+                    <div className="table-sidebar__row-info">
+                      <strong className="table-sidebar__row-name">
                         {player.seatLabel} {player.displayLabel}
                       </strong>
-                      <span>
-                        分数 {player.score} / 局外积分 {player.points ?? '--'} / {player.connected ? '在线' : '离线'}
-                      </span>
+                      <div className="table-sidebar__row-stats">
+                        <span className="table-sidebar__stat">
+                          <small>分数</small> {player.score}
+                        </span>
+                        <span className="table-sidebar__stat">
+                          <small>积分</small> {player.points ?? '--'}
+                        </span>
+                        <span className={`table-sidebar__connection ${player.connected ? 'is-online' : 'is-offline'}`}>
+                          {player.connected ? '在线' : '离线'}
+                        </span>
+                      </div>
                     </div>
                     {player.profileUser ? (
                       <button type="button" onClick={() => onSelectUser(player.profileUser!)}>
@@ -192,14 +200,14 @@ export function TableSidebar({
 
                   return (
                     <li key={user.user_id} className="table-sidebar__row">
-                      <div>
-                        <strong>
+                      <div className="table-sidebar__row-info">
+                        <strong className="table-sidebar__row-name">
                           {user.display_label}
                           {onlineUserIdSet.has(user.user_id) ? (
-                            <span className="table-sidebar__online-label">online</span>
+                            <span className="table-sidebar__online-badge">online</span>
                           ) : null}
                         </strong>
-                        <span>{user.points} 分</span>
+                        <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
                       </div>
                       <div className="table-sidebar__row-actions">
                         <button type="button" onClick={() => onSelectUser(user)}>
