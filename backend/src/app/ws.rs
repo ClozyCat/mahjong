@@ -589,6 +589,8 @@ async fn handle_join_table(
             };
             seat.connected = true;
             seat.disconnect_deadline_at = None;
+            seat.is_bot = false;
+            seat.seat_type = "human".to_string();
             (participant.seat_index, false)
         } else if runtime.room.owner_user_id == Some(authenticated_user.user_id)
             && room_phase(&runtime.room) == "waiting"
@@ -796,6 +798,8 @@ async fn handle_reconnect(
         seat.reconnect_token = Some(new_token.clone());
         seat.connected = true;
         seat.disconnect_deadline_at = None;
+        seat.is_bot = false;
+        seat.seat_type = "human".to_string();
     }
     let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();

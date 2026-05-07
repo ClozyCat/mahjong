@@ -374,6 +374,11 @@ pub(crate) fn random_open_seat_index(room: &RoomState) -> Option<usize> {
     random_open_seat_index_with_rng(room, &mut rng)
 }
 
+pub(crate) fn random_bot_seat_index(room: &RoomState) -> Option<usize> {
+    let mut rng = rand::rng();
+    random_bot_seat_index_with_rng(room, &mut rng)
+}
+
 pub(crate) fn random_open_seat_index_with_rng<R: Rng + ?Sized>(
     room: &RoomState,
     rng: &mut R,
@@ -386,6 +391,22 @@ pub(crate) fn random_open_seat_index_with_rng<R: Rng + ?Sized>(
         return None;
     }
     Some(open_seats[rng.random_range(0..open_seats.len())])
+}
+
+pub(crate) fn random_bot_seat_index_with_rng<R: Rng + ?Sized>(
+    room: &RoomState,
+    rng: &mut R,
+) -> Option<usize> {
+    let bot_seats: Vec<_> = room
+        .seats
+        .iter()
+        .filter(|seat| is_standalone_bot_seat(seat))
+        .map(|seat| seat.seat_index)
+        .collect();
+    if bot_seats.is_empty() {
+        return None;
+    }
+    Some(bot_seats[rng.random_range(0..bot_seats.len())])
 }
 
 pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'static str> {

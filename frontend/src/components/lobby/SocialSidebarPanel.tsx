@@ -9,6 +9,7 @@ interface SocialSidebarPanelProps {
   inviteDialog: TableInvite | null;
   busy: boolean;
   isCreateTableDisabled: boolean;
+  canInvitePlayers: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
@@ -26,6 +27,7 @@ export function SocialSidebarPanel({
   inviteDialog,
   busy,
   isCreateTableDisabled,
+  canInvitePlayers,
   message,
   onCreateTable,
   onInvite,
@@ -106,7 +108,7 @@ export function SocialSidebarPanel({
                 <strong>{user.display_label}</strong>
                 <span>{user.points} 分</span>
               </div>
-              <button type="button" disabled={!activeTableCode || busy} onClick={() => onInvite(user.user_id)}>
+              <button type="button" disabled={!canInvitePlayers || busy} onClick={() => onInvite(user.user_id)}>
                 邀请
               </button>
             </li>

@@ -252,7 +252,22 @@ function isWaitingInNonAllBotRoom(snapshot: SessionState['roomSnapshot']) {
     return false;
   }
 
-  return payload.seats.some((seat) => !seat.is_bot);
+  return payload.seats.some((seat) => {
+    if (seat.seat_type) {
+      return seat.seat_type !== 'bot';
+    }
+
+    return !seat.is_bot;
+  });
+}
+
+function hasReplaceableBotSeat(snapshot: SessionState['roomSnapshot'], tableCode: string | null) {
+  const payload = snapshot?.payload;
+  if (!payload || !tableCode || payload.table_code !== tableCode) {
+    return false;
+  }
+
+  return payload.seats.some((seat) => seat.seat_type === 'bot');
 }
 
 function resolveSpectatorFocusSeat(state: SessionState) {
@@ -299,6 +314,21 @@ function isPendingTableInvite(invite: TableInvite) {
 
 function getPendingTableInvites(invites: TableInvite[]) {
   return invites.filter(isPendingTableInvite);
+}
+
+function updateUserPoints(user: PublicUser | null, userId: number, points: number) {
+  if (!user || user.user_id !== userId) {
+    return user;
+  }
+
+  return {
+    ...user,
+    points,
+  };
+}
+
+function updateLeaderboardUserPoints(leaderboard: PublicUser[], userId: number, points: number) {
+  return leaderboard.map((user) => (user.user_id === userId ? { ...user, points } : user));
 }
 
 function isStaleTableInviteError(error: unknown) {
@@ -499,6 +529,18 @@ export default function App() {
 
     const socket = new WebSocket(buildMeSocketUrl(state.wsBaseUrl, authSession.sessionToken));
     meSocketRef.current = socket;
+    let closed = false;
+
+    async function refreshLeaderboardFromPresence() {
+      try {
+        const nextLeaderboard = await getLeaderboard(defaults.apiBaseUrl);
+        if (!closed && meSocketRef.current === socket) {
+          setLeaderboard(nextLeaderboard);
+        }
+      } catch {
+        // Presence still updates from websocket; keep the last known user details if refresh fails.
+      }
+    }
 
     socket.onmessage = (event) => {
       const message = parseSocialServerMessage(String(event.data));
@@ -508,6 +550,26 @@ export default function App() {
 
       if (message.type === 'user_presence_updated') {
         setOnlineUserIds(message.payload.online_user_ids);
+        void refreshLeaderboardFromPresence();
+        return;
+      }
+
+      if (message.type === 'user_points_updated') {
+        const { user_id: userId, points } = message.payload;
+        setCurrentUser((current) => updateUserPoints(current, userId, points));
+        setSelectedProfileUser((current) => updateUserPoints(current, userId, points));
+        setLeaderboard((current) => updateLeaderboardUserPoints(current, userId, points));
+        setAuthSession((current) =>
+          current && current.user.user_id === userId
+            ? {
+                ...current,
+                user: {
+                  ...current.user,
+                  points,
+                },
+              }
+            : current,
+        );
         return;
       }
 
@@ -546,13 +608,14 @@ export default function App() {
     };
 
     return () => {
+      closed = true;
       socket.onclose = null;
       socket.close();
       if (meSocketRef.current === socket) {
         meSocketRef.current = null;
       }
     };
-  }, [authSession?.sessionToken, authStatus, state.wsBaseUrl]);
+  }, [authSession?.sessionToken, authStatus, defaults.apiBaseUrl, state.wsBaseUrl]);
 
   useEffect(() => {
     if (!selectedProfileUser) {
@@ -849,6 +912,7 @@ export default function App() {
     state.connectionStatus === 'reconnecting';
   const isCreateTableBlockedByWaitingRoom = isWaitingInNonAllBotRoom(state.roomSnapshot);
   const isCreateTableDisabled = lobbyBusy || isCreateTableBlockedByWaitingRoom;
+  const canInvitePlayers = hasReplaceableBotSeat(state.roomSnapshot, activeLobbyTableCode);
   const isSpectator = state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
@@ -869,7 +933,6 @@ export default function App() {
   });
   const isLocalBotTakeoverEnabled = !isSpectator && Boolean(localSeatState?.is_bot);
   const roomOwnerUserId = state.roomSnapshot?.payload.owner_user_id ?? currentTableOwnerUserId;
-  const onlineUsersForSidebar = leaderboard.filter((user) => onlineUserIds.includes(user.user_id));
   const tableSidebarPlayers: TableSidebarPlayer[] = viewModel.players.map((player) => {
     const matchedUser =
       (currentUser && currentUser.display_name === player.name ? currentUser : null) ??
@@ -1058,6 +1121,11 @@ export default function App() {
   async function handleInvitePlayer(userId: number) {
     if (!authSession?.sessionToken || !activeLobbyTableCode) {
       setStatusMessage('请先创建牌局。');
+      return;
+    }
+
+    if (!canInvitePlayers) {
+      setStatusMessage('当前牌局没有可替换的 BOT 座位。');
       return;
     }
 
@@ -1487,6 +1555,7 @@ export default function App() {
       inviteDialog={inviteDialog}
       busy={lobbyBusy}
       isCreateTableDisabled={isCreateTableDisabled}
+      canInvitePlayers={canInvitePlayers}
       message={statusMessage}
       onCreateTable={handleCreateLobbyTable}
       onInvite={handleInvitePlayer}
@@ -1515,7 +1584,8 @@ export default function App() {
         sidebarDefaultOpen={options.defaultSidebarOpen}
         sidebarInitialTab={options.initialSidebarTab}
         sidebarPlayers={tableSidebarPlayers}
-        sidebarOnlineUsers={onlineUsersForSidebar}
+        sidebarOnlineUsers={leaderboard}
+        sidebarOnlineUserIds={onlineUserIds}
         sidebarSpectators={tableSidebarSpectators}
         sidebarProfileUser={selectedProfileUser}
         sidebarProfileFallbackName={selectedProfileFallbackName}

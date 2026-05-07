@@ -10,9 +10,9 @@ use crate::app::room_runtime::{
 use crate::app::{
     AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles, collect_observer_outbound_from_snapshot,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
-    convert_seat_to_bot, disconnect_deadline_for_seat, next_disconnect_deadline,
-    pending_timeout_deadline, records::archive_current_round_if_needed, remove_seat_from_room,
-    room_has_round_state, room_seats, send_outbound, serialize_room, sleep_until,
+    disconnect_deadline_for_seat, next_disconnect_deadline, pending_timeout_deadline,
+    records::archive_current_round_if_needed, room_has_round_state, room_seats, send_outbound,
+    serialize_room, set_seat_bot_takeover, sleep_until,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
@@ -313,11 +313,10 @@ async fn process_due_disconnect_timeout(
         return;
     }
 
-    if room_has_round_state(&runtime.room) {
-        convert_seat_to_bot(&mut runtime.room, seat_index);
+    if set_seat_bot_takeover(&mut runtime.room, seat_index, true).is_ok()
+        && room_has_round_state(&runtime.room)
+    {
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
-    } else {
-        remove_seat_from_room(&mut runtime.room, seat_index);
     }
     let should_close =
         room_seats(&runtime.room).is_empty() || should_terminate_unattended(&runtime);
@@ -596,4 +595,75 @@ pub(crate) fn schedule_room_tasks_detached(state: AppContext, table_code: String
     tokio::spawn(async move {
         schedule_room_tasks(state, table_code).await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use anyhow::Result;
+
+    use super::process_due_disconnect_timeout;
+    use crate::app::persistence::{DbWorker, in_memory_database};
+    use crate::app::room_runtime::{RoomHandle, RoomRuntime};
+    use crate::app::{AppContext, initial_room_state_with_owner, serialize_room};
+    use crate::core::state::SeatState;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn disconnect_timeout_enables_bot_takeover_without_replacing_human_seat() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let state = AppContext::new(worker.clone());
+
+        let mut room = initial_room_state_with_owner("ROOMT1", Some(1), 1);
+        room.seats.push(SeatState {
+            seat_index: 0,
+            nickname: Some("Player".to_string()),
+            reconnect_token: Some("reconnect-token".to_string()),
+            player_session_id: Some(100),
+            connected: false,
+            ready: true,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: Some("2026-05-06T00:00:00Z".to_string()),
+        });
+
+        let created_at = "2026-05-06T00:00:00Z";
+        let room_json = serialize_room(&room)?;
+        worker.save_table("ROOMT1", created_at, &room_json).await?;
+
+        let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(
+            created_at.to_string(),
+            room,
+        )));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("ROOMT1".to_string(), room_handle.clone());
+
+        let expected_nonce = {
+            let runtime = room_handle.runtime.lock().await;
+            runtime.disconnect_nonce
+        };
+        process_due_disconnect_timeout(state, "ROOMT1".to_string(), 0, expected_nonce).await;
+
+        let runtime = room_handle.runtime.lock().await;
+        let seat = runtime
+            .room
+            .seats
+            .iter()
+            .find(|seat| seat.seat_index == 0)
+            .expect("original human seat should remain");
+        assert_eq!(seat.seat_type, "human");
+        assert!(seat.is_bot);
+        assert_eq!(seat.reconnect_token.as_deref(), Some("reconnect-token"));
+        assert!(seat.disconnect_deadline_at.is_none());
+        assert!(!room_handle.is_closed());
+        Ok(())
+    }
 }

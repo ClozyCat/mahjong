@@ -41,6 +41,7 @@ describe('SocialSidebarPanel', () => {
         inviteDialog={null}
         busy={false}
         isCreateTableDisabled={false}
+        canInvitePlayers={false}
         onCreateTable={vi.fn()}
         onInvite={vi.fn()}
         onAcceptInvite={vi.fn()}
@@ -69,6 +70,7 @@ describe('SocialSidebarPanel', () => {
         inviteDialog={null}
         busy={false}
         isCreateTableDisabled={false}
+        canInvitePlayers={true}
         onCreateTable={vi.fn()}
         onInvite={onInvite}
         onAcceptInvite={vi.fn()}
@@ -79,5 +81,37 @@ describe('SocialSidebarPanel', () => {
 
     await user.click(screen.getByRole('button', { name: '邀请' }));
     expect(onInvite).toHaveBeenCalledWith(2);
+  });
+
+  it('disables invite buttons when the active table has no replaceable bot seats', async () => {
+    const user = userEvent.setup();
+    const onInvite = vi.fn();
+
+    render(
+      <SocialSidebarPanel
+        currentUser={currentUser}
+        leaderboard={leaderboard}
+        onlineUserIds={[1, 2]}
+        pendingInvites={[]}
+        activeTableCode="ROOM42"
+        inviteDialog={null}
+        busy={false}
+        isCreateTableDisabled={false}
+        canInvitePlayers={false}
+        onCreateTable={vi.fn()}
+        onInvite={onInvite}
+        onAcceptInvite={vi.fn()}
+        onDismissInviteDialog={vi.fn()}
+        onLogout={vi.fn()}
+      />,
+    );
+
+    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    expect(inviteButton).toBeDefined();
+    expect(inviteButton).toBeDisabled();
+
+    await user.click(inviteButton!);
+
+    expect(onInvite).not.toHaveBeenCalled();
   });
 });

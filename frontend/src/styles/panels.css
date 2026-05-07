@@ -267,6 +267,14 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   display: block;
 }
 
+.table-sidebar__row .table-sidebar__online-label {
+  display: inline-block;
+  margin-left: 0.45rem;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .table-sidebar__row span,
 .user-profile-panel__row span,
 .user-profile-panel__bio,
@@ -421,6 +429,46 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   border-radius: 0.85rem;
   background: color-mix(in srgb, var(--theme-panel-bg-soft) 40%, transparent);
   border: 1px solid var(--glass-border);
+}
+
+.user-profile-panel__pagination {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1fr minmax(4.5rem, auto);
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-profile-panel__pagination button {
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--theme-panel-bg-soft) 34%, transparent);
+  color: var(--theme-paper-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.2s var(--ease-lux),
+    border-color 0.2s var(--ease-lux),
+    opacity 0.2s var(--ease-lux);
+}
+
+.user-profile-panel__pagination button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theme-panel-bg-soft) 62%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--glass-border));
+}
+
+.user-profile-panel__pagination button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.user-profile-panel__pagination span {
+  color: color-mix(in srgb, var(--theme-paper) 68%, transparent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .user-profile-panel__game-row {

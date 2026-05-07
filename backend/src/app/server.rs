@@ -670,7 +670,7 @@ async fn create_table_invite(
     if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
         return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
     }
-    if runtime.room.seats.len() >= crate::app::MAX_SEATS {
+    if crate::app::random_bot_seat_index(&runtime.room).is_none() {
         return json_error(StatusCode::CONFLICT, "table_full");
     }
     drop(runtime);
@@ -927,26 +927,29 @@ async fn accept_table_invite(
     if room_phase(&runtime.room) != "waiting" || runtime.room.round_state.is_some() {
         return json_error(StatusCode::CONFLICT, "table_multiplier_locked");
     }
-    let Some(seat_index) = crate::app::random_open_seat_index(&runtime.room) else {
+    let Some(seat_index) = crate::app::random_bot_seat_index(&runtime.room) else {
         return json_error(StatusCode::CONFLICT, "table_full");
     };
 
     let player_session_id = crate::app::generate_player_session_id();
     let reconnect_token = crate::app::generate_reconnect_token();
-    runtime.room.seats.push(crate::core::state::SeatState {
-        seat_index,
-        nickname: Some(user.display_name.clone()),
-        reconnect_token: Some(reconnect_token.clone()),
-        player_session_id: Some(player_session_id),
-        connected: false,
-        ready: false,
-        is_bot: false,
-        seat_type: "human".to_string(),
-        bot_persona: None,
-        bot_aggression: None,
-        disconnect_deadline_at: None,
-    });
-    runtime.room.seats.sort_by_key(|seat| seat.seat_index);
+    if let Some(seat) = runtime
+        .room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == seat_index)
+    {
+        seat.nickname = Some(user.display_name.clone());
+        seat.reconnect_token = Some(reconnect_token.clone());
+        seat.player_session_id = Some(player_session_id);
+        seat.connected = false;
+        seat.ready = false;
+        seat.is_bot = false;
+        seat.seat_type = "human".to_string();
+        seat.bot_persona = None;
+        seat.bot_aggression = None;
+        seat.disconnect_deadline_at = None;
+    }
     let room = runtime.room.clone();
     let created_at = runtime.created_at.clone();
     drop(runtime);

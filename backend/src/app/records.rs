@@ -196,13 +196,8 @@ pub(crate) fn fan_stat_view(record: &UserFanStatRecord) -> FanStatView {
     }
 }
 
-fn independent_bot_present(
-    room: &RoomState,
-    participants_by_seat: &HashMap<usize, &TableParticipantRecord>,
-) -> bool {
-    room.seats
-        .iter()
-        .any(|seat| seat.is_bot && !participants_by_seat.contains_key(&seat.seat_index))
+fn pure_bot_seat_present(room: &RoomState) -> bool {
+    room.seats.iter().any(|seat| seat.seat_type == "bot")
 }
 
 fn fan_keys_by_winner(settlement: &RoundSettlement) -> HashMap<usize, Vec<String>> {
@@ -242,7 +237,7 @@ fn archive_input_from_room(
         .iter()
         .map(|participant| (participant.seat_index, participant))
         .collect::<HashMap<_, _>>();
-    let points_enabled = !independent_bot_present(room, &participants_by_seat);
+    let points_enabled = !pure_bot_seat_present(room);
     let winner_fans = fan_keys_by_winner(settlement);
     let winning_seats = settlement
         .winning_seats()
@@ -335,23 +330,25 @@ pub(crate) async fn archive_current_round_if_needed(
 
     let outcome = state.inner.db.archive_round(input).await?;
     if outcome.inserted {
+        let recipient_user_ids = participants
+            .iter()
+            .map(|participant| participant.user_id)
+            .collect::<std::collections::BTreeSet<_>>();
         for update in &outcome.point_updates {
-            notify_user_connections(
-                state,
-                update.user_id,
-                json!({
-                    "type": "user_points_updated",
-                    "payload": {
-                        "user_id": update.user_id,
-                        "delta": update.delta,
-                        "points": update.points,
-                        "reason": "round_settlement",
-                        "source_table_code": room.table_code,
-                        "source_round_id": room.round_state.as_ref().map(|round| round.round_id.clone()),
-                    }
-                }),
-            )
-            .await;
+            let payload = json!({
+                "type": "user_points_updated",
+                "payload": {
+                    "user_id": update.user_id,
+                    "delta": update.delta,
+                    "points": update.points,
+                    "reason": "round_settlement",
+                    "source_table_code": room.table_code,
+                    "source_round_id": room.round_state.as_ref().map(|round| round.round_id.clone()),
+                }
+            });
+            for recipient_user_id in &recipient_user_ids {
+                notify_user_connections(state, *recipient_user_id, payload.clone()).await;
+            }
         }
     }
     Ok(Some(outcome))
@@ -509,6 +506,12 @@ mod tests {
             bot_aggression: None,
             disconnect_deadline_at: None,
         }
+    }
+
+    fn bot_takeover_seat(seat_index: usize, nickname: &str, reconnect_token: &str) -> SeatState {
+        let mut seat = seat(seat_index, nickname, Some(reconnect_token), true);
+        seat.seat_type = "human".to_string();
+        seat
     }
 
     async fn persist_participant(
@@ -758,6 +761,78 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn point_events_skip_points_when_bot_seat_has_participant_record() -> Result<()> {
+        let (state, worker) = test_state().await?;
+        let owner_user_id = register_user(&worker, "INVITE300011", "Owner").await?;
+        let guest_user_id = register_user(&worker, "INVITE300012", "Guest").await?;
+        let bot_user_id = register_user(&worker, "INVITE300013", "Bot User").await?;
+        let room = base_room(
+            "ROOMREC6",
+            2,
+            vec![
+                seat(0, "Owner", Some("owner-token"), false),
+                seat(1, "Guest", Some("guest-token"), false),
+                seat(2, "Bot 2", None, true),
+            ],
+            &[(0, 7), (1, -7), (2, 0)],
+            &[(0, 107), (1, 93), (2, 100)],
+            0,
+            &["all_sequences"],
+        );
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            bot_user_id,
+            2,
+            "Bot User",
+        )
+        .await?;
+
+        archive_current_round_if_needed(
+            &state,
+            &room,
+            "2026-05-06T00:00:00Z",
+            "2026-05-06T01:00:00Z",
+        )
+        .await?;
+
+        let detail = archived_detail(&worker).await?;
+        let player_results = &detail.rounds[0].player_results;
+        assert!(player_results.iter().all(|result| result.point_delta == 0));
+
+        let owner = worker
+            .get_user_by_id(owner_user_id)
+            .await?
+            .expect("owner should exist");
+        let guest = worker
+            .get_user_by_id(guest_user_id)
+            .await?
+            .expect("guest should exist");
+        assert_eq!(owner.points, INITIAL_USER_POINTS);
+        assert_eq!(guest.points, INITIAL_USER_POINTS);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn point_events_treat_bot_takeover_human_seat_as_human() -> Result<()> {
         let (state, worker) = test_state().await?;
         let owner_user_id = register_user(&worker, "INVITE300007", "Owner").await?;
@@ -766,7 +841,7 @@ mod tests {
             "ROOMREC4",
             2,
             vec![
-                seat(0, "Owner", Some("owner-token"), true),
+                bot_takeover_seat(0, "Owner", "owner-token"),
                 seat(1, "Guest", Some("guest-token"), false),
             ],
             &[(0, 9), (1, -9)],

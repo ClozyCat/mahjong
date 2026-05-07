@@ -3054,7 +3054,12 @@ mod tests {
             "LEFT01",
             r#"{"phase":"settlement","match_state":{"match_finished":false}}"#,
         )?;
-        insert_finished_game_fixture(&db, 3, "OPEN01", r#"{"phase":"playing","match_state":{"match_finished":false}}"#)?;
+        insert_finished_game_fixture(
+            &db,
+            3,
+            "OPEN01",
+            r#"{"phase":"playing","match_state":{"match_finished":false}}"#,
+        )?;
         db.conn.execute(
             "UPDATE game_records SET ended_at = NULL, final_room_json = NULL WHERE id = 3",
             [],

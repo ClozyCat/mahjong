@@ -376,6 +376,18 @@ export interface UserPresenceUpdatedMessage {
   };
 }
 
+export interface UserPointsUpdatedMessage {
+  type: 'user_points_updated';
+  payload: {
+    user_id: number;
+    delta: number;
+    points: number;
+    reason: 'round_settlement' | string;
+    source_table_code?: string | null;
+    source_round_id?: string | null;
+  };
+}
+
 export interface TableInviteCreatedMessage {
   type: 'table_invite_created';
   payload: TableInvite;
@@ -393,6 +405,7 @@ export interface SpectatorRequestDecidedMessage {
 
 export type SocialServerMessage =
   | UserPresenceUpdatedMessage
+  | UserPointsUpdatedMessage
   | TableInviteCreatedMessage
   | SpectatorRequestCreatedMessage
   | SpectatorRequestDecidedMessage;

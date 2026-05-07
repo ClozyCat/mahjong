@@ -11,8 +11,10 @@ use tower::ServiceExt;
 use super::persistence::{DbWorker, in_memory_database};
 use super::room_runtime::room_handle;
 use super::{
-    AppContext, ConnectionHandle, Settings, parse_room_json, register_user_connection, server,
+    AppContext, ConnectionHandle, Settings, add_bot_to_waiting_room, parse_room_json,
+    register_user_connection, serialize_room_state, server,
 };
+use crate::core::state::SeatState;
 
 fn test_settings() -> Settings {
     Settings {
@@ -110,6 +112,61 @@ async fn create_table(app: &Router, token: &str, multiplier: i64) -> Result<Stri
         .as_str()
         .expect("table code should exist")
         .to_string())
+}
+
+async fn add_bots_to_table(
+    state: &AppContext,
+    worker: &DbWorker,
+    table_code: &str,
+    count: usize,
+) -> Result<()> {
+    let handle = room_handle(state, table_code)
+        .await
+        .expect("room should be loaded");
+    let _persist_guard = handle.persist.lock().await;
+    let mut runtime = handle.runtime.lock().await;
+    for _ in 0..count {
+        add_bot_to_waiting_room(&mut runtime.room).expect("bot seat should be added");
+    }
+    let created_at = runtime.created_at.clone();
+    let room_json = serialize_room_state(&runtime.room)?;
+    drop(runtime);
+    worker
+        .save_table(table_code, &created_at, &room_json)
+        .await?;
+    Ok(())
+}
+
+async fn add_bot_takeover_human_to_table(
+    state: &AppContext,
+    worker: &DbWorker,
+    table_code: &str,
+) -> Result<()> {
+    let handle = room_handle(state, table_code)
+        .await
+        .expect("room should be loaded");
+    let _persist_guard = handle.persist.lock().await;
+    let mut runtime = handle.runtime.lock().await;
+    runtime.room.seats.push(SeatState {
+        seat_index: 0,
+        nickname: Some("Hosted Player".to_string()),
+        reconnect_token: Some("hosted-token".to_string()),
+        player_session_id: Some(42),
+        connected: true,
+        ready: true,
+        is_bot: true,
+        seat_type: "human".to_string(),
+        bot_persona: None,
+        bot_aggression: None,
+        disconnect_deadline_at: None,
+    });
+    let created_at = runtime.created_at.clone();
+    let room_json = serialize_room_state(&runtime.room)?;
+    drop(runtime);
+    worker
+        .save_table(table_code, &created_at, &room_json)
+        .await?;
+    Ok(())
 }
 
 fn test_connection(id: u64) -> (ConnectionHandle, mpsc::Receiver<String>) {
@@ -276,11 +333,12 @@ async fn multiplier_non_owner_cannot_touch_default_table_setting() -> Result<()>
 
 #[tokio::test(flavor = "current_thread")]
 async fn invite_only_idle_user_invite_succeeds_and_is_visible_in_me_invites() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100006", "Owner").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100007", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
     let invite_response = app
         .clone()
         .oneshot(authed_json_request(
@@ -339,8 +397,56 @@ async fn invite_only_idle_user_invite_succeeds_and_is_visible_in_me_invites() ->
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Result<()> {
+async fn invite_only_create_requires_replaceable_bot_seat() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100050", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100051", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+
+    assert_eq!(invite.status(), StatusCode::CONFLICT);
+    let body = json_response(invite).await;
+    assert_eq!(body["detail"], "table_full");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_bot_takeover_human_seat_is_not_replaceable() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100052", "Owner").await?;
+    let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100053", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bot_takeover_human_to_table(&state, &worker, &table_code).await?;
+
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+
+    assert_eq!(invite.status(), StatusCode::CONFLICT);
+    let body = json_response(invite).await;
+    assert_eq!(body["detail"], "table_full");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
     let (owner_a_token, _owner_a_id) =
         register_user(&app, &worker, "INVITE100009", "OwnerA").await?;
     let (owner_b_token, _owner_b_id) =
@@ -348,6 +454,7 @@ async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Resu
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100011", "Guest").await?;
 
     let table_a = create_table(&app, &owner_a_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_a, 1).await?;
     let invite_a = app
         .clone()
         .oneshot(authed_json_request(
@@ -390,6 +497,7 @@ async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Resu
     assert_eq!(accept.status(), StatusCode::OK);
 
     let table_b = create_table(&app, &owner_b_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_b, 1).await?;
     let invite_b = app
         .clone()
         .oneshot(authed_json_request(
@@ -405,11 +513,12 @@ async fn invite_only_user_in_self_plus_bots_table_can_still_be_invited() -> Resu
 
 #[tokio::test(flavor = "current_thread")]
 async fn invite_only_accepted_invites_are_omitted_from_me_invites() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100012", "Owner").await?;
     let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100013", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
     let invite = app
         .clone()
         .oneshot(authed_json_request(
@@ -451,7 +560,7 @@ async fn invite_only_accepted_invites_are_omitted_from_me_invites() -> Result<()
 
 #[tokio::test(flavor = "current_thread")]
 async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_a_token, _owner_a_id) =
         register_user(&app, &worker, "INVITE100014", "OwnerA").await?;
     let (owner_b_token, _owner_b_id) =
@@ -460,6 +569,7 @@ async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
     let (_third_token, third_id) = register_user(&app, &worker, "INVITE100017", "Third").await?;
 
     let table_a = create_table(&app, &owner_a_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_a, 2).await?;
     let guest_invite = app
         .clone()
         .oneshot(authed_json_request(
@@ -542,6 +652,7 @@ async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
     assert_eq!(accept_third.status(), StatusCode::OK);
 
     let table_b = create_table(&app, &owner_b_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_b, 1).await?;
     let invite_b = app
         .clone()
         .oneshot(authed_json_request(
@@ -559,11 +670,12 @@ async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
 
 #[tokio::test(flavor = "current_thread")]
 async fn invite_only_accept_creates_table_participant() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100016", "Owner").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100017", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
     let invite = app
         .clone()
         .oneshot(authed_json_request(
@@ -602,6 +714,8 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
         ))
         .await?;
     assert_eq!(accept.status(), StatusCode::OK);
+    let accept_body = json_response(accept).await;
+    assert_eq!(accept_body["seat_index"], 0);
 
     let participant = worker
         .get_active_table_participant(&table_code, guest_id)
@@ -609,6 +723,22 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
         .expect("participant should exist after accepting invite");
     assert_eq!(participant.table_code, table_code);
     assert_eq!(participant.user_id, guest_id);
+
+    let table = worker
+        .get_table(&table_code)
+        .await?
+        .expect("table should exist after accepting invite");
+    let room = parse_room_json(&table.room_json)?;
+    assert_eq!(room.seats.len(), 1);
+    let seat = room
+        .seats
+        .iter()
+        .find(|seat| seat.seat_index == 0)
+        .expect("replaced seat should exist");
+    assert_eq!(seat.seat_type, "human");
+    assert!(!seat.is_bot);
+    assert_eq!(seat.nickname.as_deref(), Some("Guest"));
+    assert!(seat.reconnect_token.is_some());
     Ok(())
 }
 
@@ -623,6 +753,7 @@ async fn invite_only_create_table_invite_pushes_realtime_notification() -> Resul
     let _ = receiver.recv().await;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
     let invite = app
         .clone()
         .oneshot(authed_json_request(
@@ -647,11 +778,12 @@ async fn invite_only_create_table_invite_pushes_realtime_notification() -> Resul
 
 #[tokio::test(flavor = "current_thread")]
 async fn invite_only_my_invites_omits_deleted_tables() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100040", "Owner").await?;
     let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100041", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
     let invite = app
         .clone()
         .oneshot(authed_json_request(
@@ -741,11 +873,12 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
 
 #[tokio::test(flavor = "current_thread")]
 async fn spectator_player_cannot_request_to_watch_same_table() -> Result<()> {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100022", "Owner").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100023", "Guest").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
     let invite = app
         .clone()
         .oneshot(authed_json_request(

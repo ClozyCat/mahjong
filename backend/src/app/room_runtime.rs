@@ -229,7 +229,7 @@ pub(crate) async fn unregister_room_handle(
 pub(crate) fn mark_restored_room_disconnected(room: &mut RoomState) {
     let deadline = disconnect_deadline_iso();
     for seat in &mut room.seats {
-        if seat.is_bot {
+        if seat.seat_type == "bot" {
             continue;
         }
         seat.connected = false;
@@ -471,7 +471,7 @@ pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
         .room
         .seats
         .iter()
-        .all(|seat| seat.is_bot || seat.reconnect_token.is_none())
+        .all(|seat| seat.seat_type == "bot" || seat.reconnect_token.is_none())
 }
 
 #[cfg(test)]

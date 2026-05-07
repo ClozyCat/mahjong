@@ -48,12 +48,72 @@ describe('UserProfilePanel', () => {
     );
 
     expect(screen.getByRole('heading', { name: '阿明（平民）' })).toBeInTheDocument();
-    expect(screen.getByText('碰碰和')).toBeInTheDocument();
+    expect(screen.getByText('对对和')).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '历史牌局' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '最近牌局' })).not.toBeInTheDocument();
     expect(screen.getByText('AB12CD')).toBeInTheDocument();
     expect(screen.getByText('8 局')).toBeInTheDocument();
     expect(screen.getByText('暂无公开简介')).toBeInTheDocument();
     expect(screen.queryByText(/x[123]/)).not.toBeInTheDocument();
+  });
+
+  it('paginates fan stats with five rows per page', () => {
+    render(
+      <UserProfilePanel
+        user={publicUser()}
+        fanStats={[
+          {
+            user_id: 1,
+            fan_key: 'all_pungs',
+            fan_label: 'all_pungs',
+            count: 4,
+            last_seen_at: '2026-05-06T12:00:00Z',
+          },
+          ...Array.from({ length: 5 }, (_, index) => ({
+            user_id: 1,
+            fan_key: `custom_fan_${index + 2}`,
+            fan_label: `自定义番${index + 2}`,
+            count: index + 2,
+            last_seen_at: '2026-05-06T12:00:00Z',
+          })),
+        ]}
+        recentGames={[]}
+      />,
+    );
+
+    expect(screen.getByText('对对和')).toBeInTheDocument();
+    expect(screen.getByText('自定义番5')).toBeInTheDocument();
+    expect(screen.queryByText('自定义番6')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '番种统计分页下一页' }));
+
+    expect(screen.queryByText('对对和')).not.toBeInTheDocument();
+    expect(screen.getByText('自定义番6')).toBeInTheDocument();
+  });
+
+  it('paginates history games with three rows per page', () => {
+    render(
+      <UserProfilePanel
+        user={publicUser()}
+        fanStats={[]}
+        recentGames={[
+          gameWithSummary(null, { game_id: 11, table_code: 'GAME01' }),
+          gameWithSummary(null, { game_id: 12, table_code: 'GAME02' }),
+          gameWithSummary(null, { game_id: 13, table_code: 'GAME03' }),
+          gameWithSummary(null, { game_id: 14, table_code: 'GAME04' }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('GAME01')).toBeInTheDocument();
+    expect(screen.getByText('GAME03')).toBeInTheDocument();
+    expect(screen.queryByText('GAME04')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '历史牌局分页下一页' }));
+
+    expect(screen.queryByText('GAME01')).not.toBeInTheDocument();
+    expect(screen.getByText('GAME04')).toBeInTheDocument();
   });
 
   it('shows the final result popover when hovering a recent game', () => {
@@ -123,22 +183,30 @@ describe('UserProfilePanel', () => {
 
 function gameWithSummary(
   playerSummary: Partial<NonNullable<GameSummary['player_summary']>> | null,
+  overrides: Partial<Pick<GameSummary, 'game_id' | 'table_code' | 'round_count'>> = {},
 ): GameSummary {
   return {
-    game_id: 11,
-    table_code: 'AB12CD',
-    owner: {
-      user_id: 1,
-      display_name: '阿明',
-      points: 320,
-      title: '平民',
-      display_label: '阿明（平民）',
-    },
+    game_id: overrides.game_id ?? 11,
+    table_code: overrides.table_code ?? 'AB12CD',
+    owner: publicUser(),
     multiplier: 1,
     started_at: '2026-05-06T10:00:00Z',
     ended_at: '2026-05-06T11:00:00Z',
-    round_count: 8,
+    round_count: overrides.round_count ?? 8,
     player_summary: playerSummary ? { ...emptyPlayerSummary(), ...playerSummary } : null,
+  };
+}
+
+function publicUser() {
+  return {
+    user_id: 1,
+    username: 'alice',
+    display_name: '阿明',
+    points: 320,
+    title: '平民',
+    display_label: '阿明（平民）',
+    bio: '喜欢朋友局。',
+    avatar: null,
   };
 }
 
@@ -160,7 +228,7 @@ function fanStats(): UserFanStat[] {
     {
       user_id: 1,
       fan_key: 'all_pungs',
-      fan_label: '碰碰和',
+      fan_label: 'all_pungs',
       count: 4,
       last_seen_at: '2026-05-06T12:00:00Z',
     },

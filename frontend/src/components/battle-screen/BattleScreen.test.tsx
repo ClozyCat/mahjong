@@ -2560,7 +2560,7 @@ describe('BattleScreen', () => {
     await user.click(screen.getByRole('button', { name: '打开牌桌侧边栏' }));
 
     expect(screen.getByRole('tab', { name: '本局玩家' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '在线玩家' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '所有玩家' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '玩家信息' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '观战者' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '观战申请' })).toBeInTheDocument();

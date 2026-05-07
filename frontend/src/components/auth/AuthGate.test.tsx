@@ -9,7 +9,7 @@ describe('AuthGate', () => {
     render(<AuthGate status="idle" onLogin={vi.fn()} onRegister={vi.fn()} />);
 
     expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByLabelText('账号或用户 ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('账号昵称')).toBeInTheDocument();
     expect(screen.getByLabelText('密码')).toBeInTheDocument();
   });
 

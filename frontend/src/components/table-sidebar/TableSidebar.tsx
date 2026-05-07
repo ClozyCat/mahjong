@@ -28,6 +28,7 @@ interface TableSidebarProps {
   activeTab: TableSidebarTab;
   tablePlayers: TableSidebarPlayer[];
   onlineUsers: PublicUser[];
+  onlineUserIds?: number[];
   spectators: TableSidebarSpectator[];
   spectatorRequests: SpectatorRequest[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
@@ -64,7 +65,7 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
     ),
   },
   online: {
-    label: '在线玩家',
+    label: '所有玩家',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -109,6 +110,7 @@ export function TableSidebar({
   activeTab,
   tablePlayers,
   onlineUsers,
+  onlineUserIds = [],
   spectators,
   spectatorRequests,
   tabAlerts = {},
@@ -125,6 +127,8 @@ export function TableSidebar({
     ? ['room', 'players', 'online', 'profile', 'spectators', 'requests']
     : ['players', 'online', 'profile', 'spectators', 'requests'];
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
+  const onlineUserIdSet = new Set(onlineUserIds);
+  const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
 
   return (
     <aside className={`table-sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Table sidebar shell">
@@ -195,11 +199,16 @@ export function TableSidebar({
 
             {activeTab === 'online' ? (
               <ul className="table-sidebar__list">
-                {onlineUsers.length === 0 ? <li className="table-sidebar__empty">暂无在线玩家</li> : null}
-                {onlineUsers.map((user) => (
+                {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
+                {allUsers.map((user) => (
                   <li key={user.user_id} className="table-sidebar__row">
                     <div>
-                      <strong>{user.display_label}</strong>
+                      <strong>
+                        {user.display_label}
+                        {onlineUserIdSet.has(user.user_id) ? (
+                          <span className="table-sidebar__online-label">online</span>
+                        ) : null}
+                      </strong>
                       <span>{user.points} 分</span>
                     </div>
                     <button type="button" onClick={() => onSelectUser(user)}>

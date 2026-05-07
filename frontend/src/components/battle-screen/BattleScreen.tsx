@@ -57,6 +57,7 @@ interface BattleScreenProps {
   onToggleBotTakeover?: (enabled: boolean) => void;
   sidebarPlayers?: TableSidebarPlayer[];
   sidebarOnlineUsers?: PublicUser[];
+  sidebarOnlineUserIds?: number[];
   sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
   sidebarDefaultOpen?: boolean;
@@ -110,6 +111,7 @@ export function BattleScreen({
   onToggleBotTakeover,
   sidebarPlayers = [],
   sidebarOnlineUsers = [],
+  sidebarOnlineUserIds = [],
   sidebarSpectators = [],
   sidebarRoomPanel = null,
   sidebarDefaultOpen = false,
@@ -497,6 +499,7 @@ export function BattleScreen({
             activeTab={sidebarTab}
             tablePlayers={sidebarPlayers}
             onlineUsers={sidebarOnlineUsers}
+            onlineUserIds={sidebarOnlineUserIds}
             spectators={sidebarSpectators}
             spectatorRequests={sidebarSpectatorRequests}
             tabAlerts={sidebarTabAlerts}

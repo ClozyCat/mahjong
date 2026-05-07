@@ -267,6 +267,7 @@ const DEFAULT_PENDING_INVITE = {
   created_at: '2026-05-06T12:00:00Z',
   expires_at: '2026-05-06T12:10:00Z',
 };
+type MockPublicUser = typeof DEFAULT_CURRENT_USER;
 
 function createMockResponse(body: unknown, status = 200): Response {
   return {
@@ -298,7 +299,8 @@ function seedStoredAuthSession(user = DEFAULT_CURRENT_USER) {
 
 function createFetchMock(options?: {
   me?: typeof DEFAULT_CURRENT_USER;
-  leaderboard?: typeof DEFAULT_LEADERBOARD;
+  leaderboard?: MockPublicUser[];
+  leaderboardResponses?: MockPublicUser[][];
   invites?: typeof DEFAULT_PENDING_INVITE[];
   createdTableCode?: string;
   acceptInviteStatus?: number;
@@ -306,6 +308,7 @@ function createFetchMock(options?: {
 }) {
   const me = options?.me ?? DEFAULT_CURRENT_USER;
   const leaderboard = options?.leaderboard ?? DEFAULT_LEADERBOARD;
+  const leaderboardResponses = options?.leaderboardResponses ? [...options.leaderboardResponses] : null;
   const invites = options?.invites ?? [];
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
   const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
@@ -353,7 +356,7 @@ function createFetchMock(options?: {
     }
 
     if (url.endsWith('/api/leaderboard') && method === 'GET') {
-      return createMockResponse(leaderboard);
+      return createMockResponse(leaderboardResponses?.shift() ?? leaderboard);
     }
 
     if (/\/api\/users\/\d+\/fans$/.test(url) && method === 'GET') {
@@ -511,7 +514,7 @@ describe('App', () => {
 
     expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '邀请码注册' })).toBeInTheDocument();
-    expect(screen.getByLabelText('账号或用户 ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('账号昵称')).toBeInTheDocument();
   });
 
   it('does not start background music from table-home interactions', () => {
@@ -591,6 +594,37 @@ describe('App', () => {
     expect(createTableCalls).toHaveLength(1);
   });
 
+  it('treats bot-takeover human seats as human when disabling table creation', async () => {
+    const user = userEvent.setup();
+    const { socket, fetchMock } = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+          ],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+        },
+      });
+    });
+
+    const createButton = screen.getByRole('button', { name: '创建牌局' });
+    expect(createButton).toBeDisabled();
+
+    await user.click(createButton);
+
+    const createTableCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith('/api/tables') && init?.method === 'POST',
+    );
+    expect(createTableCalls).toHaveLength(1);
+  });
+
   it('registers with invite code and then enters the table view', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();
@@ -651,7 +685,7 @@ describe('App', () => {
         payload: {
           table_code: 'AB12CD',
           phase: 'waiting',
-          seats: [],
+          seats: [{ seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' }],
           spectators: [],
           local_seat: 0,
           reconnect_token: 'token-1',
@@ -678,6 +712,108 @@ describe('App', () => {
     expect(parseRequestBody(inviteCall?.[1])).toEqual({
       invitee_user_id: 2,
     });
+  });
+
+  it('disables sidebar invites when the active table has no pure bot seats', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    const createButton = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.trim() === '创建牌局');
+    expect(createButton).toBeDefined();
+    await user.click(createButton!);
+
+    const meSocket = getMeSocket();
+    const roomSocket = getRoomSocket();
+    expect(meSocket).toBeDefined();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
+          ],
+          spectators: [],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    expect(inviteButton).toBeDefined();
+    expect(inviteButton).toBeDisabled();
+
+    await user.click(inviteButton!);
+
+    const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
+    expect(inviteCall).toBeUndefined();
+  });
+
+  it('refreshes online player details when presence updates reference new users', async () => {
+    const refreshedUser = DEFAULT_LEADERBOARD[1]!;
+    const { fetchMock } = await renderAuthenticatedLobby({
+      leaderboardResponses: [[DEFAULT_CURRENT_USER], [DEFAULT_CURRENT_USER, refreshedUser]],
+    });
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, refreshedUser.user_id],
+        },
+      });
+    });
+
+    expect(await screen.findAllByText(refreshedUser.display_label)).not.toHaveLength(0);
+    const leaderboardCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
+    );
+    expect(leaderboardCalls).toHaveLength(2);
+  });
+
+  it('applies point updates from /ws/me without waiting for a leaderboard refresh', async () => {
+    await renderAuthenticatedLobby();
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_points_updated',
+        payload: {
+          user_id: DEFAULT_CURRENT_USER.user_id,
+          delta: 8,
+          points: 158,
+          reason: 'round_settlement',
+          source_table_code: 'AB12CD',
+          source_round_id: 'round-1',
+        },
+      });
+    });
+
+    expect(screen.getByText('积分 158')).toBeInTheDocument();
   });
 
   it('shows the invitation notice when /ws/me receives a new invite', async () => {
