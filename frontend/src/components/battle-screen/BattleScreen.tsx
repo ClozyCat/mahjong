@@ -57,6 +57,7 @@ interface BattleScreenProps {
   sidebarPlayers?: TableSidebarPlayer[];
   sidebarOnlineUsers?: PublicUser[];
   sidebarOnlineUserIds?: number[];
+  sidebarCurrentUserId?: number | null;
   sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
   sidebarDefaultOpen?: boolean;
@@ -69,6 +70,7 @@ interface BattleScreenProps {
   sidebarProfileMessage?: string | null;
   sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   onSidebarSelectUser?: (user: PublicUser) => void;
+  onSidebarWatchUser?: (user: PublicUser) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -107,6 +109,7 @@ export function BattleScreen({
   sidebarPlayers = [],
   sidebarOnlineUsers = [],
   sidebarOnlineUserIds = [],
+  sidebarCurrentUserId = null,
   sidebarSpectators = [],
   sidebarRoomPanel = null,
   sidebarDefaultOpen = false,
@@ -119,6 +122,7 @@ export function BattleScreen({
   sidebarProfileMessage = null,
   sidebarTabAlerts = {},
   onSidebarSelectUser,
+  onSidebarWatchUser,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -491,6 +495,7 @@ export function BattleScreen({
             tablePlayers={sidebarPlayers}
             onlineUsers={sidebarOnlineUsers}
             onlineUserIds={sidebarOnlineUserIds}
+            currentUserId={sidebarCurrentUserId}
             spectators={sidebarSpectators}
             tabAlerts={sidebarTabAlerts}
             roomPanel={sidebarRoomPanel}
@@ -507,6 +512,7 @@ export function BattleScreen({
             onToggle={() => setIsSidebarOpen((current) => !current)}
             onTabChange={setSidebarTab}
             onSelectUser={handleSidebarSelectUser}
+            onWatchUser={onSidebarWatchUser}
           />
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (

@@ -1330,6 +1330,21 @@ impl Database {
         Ok(rows)
     }
 
+    fn list_active_table_participants(&self) -> Result<Vec<TableParticipantRecord>> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+            FROM table_participants
+            WHERE left_at IS NULL
+            ORDER BY joined_at ASC
+            ",
+        )?;
+        let rows = statement
+            .query_map([], Self::table_participant_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     fn count_active_other_human_participants(
         &self,
         table_code: &str,
@@ -2439,6 +2454,12 @@ impl DbWorker {
         let table_code = table_code.to_string();
         self.call(move |db| db.list_active_table_participants_for_table(&table_code))
             .await
+    }
+
+    pub(crate) async fn list_active_table_participants(
+        &self,
+    ) -> Result<Vec<TableParticipantRecord>> {
+        self.call(|db| db.list_active_table_participants()).await
     }
 
     pub(crate) async fn count_active_other_human_participants(

@@ -29,6 +29,7 @@ interface TableSidebarProps {
   tablePlayers: TableSidebarPlayer[];
   onlineUsers: PublicUser[];
   onlineUserIds?: number[];
+  currentUserId?: number | null;
   spectators: TableSidebarSpectator[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   roomPanel?: ReactNode;
@@ -36,6 +37,7 @@ interface TableSidebarProps {
   onToggle: () => void;
   onTabChange: (tab: TableSidebarTab) => void;
   onSelectUser: (user: PublicUser) => void;
+  onWatchUser?: (user: PublicUser) => void;
 }
 
 const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = {
@@ -96,6 +98,7 @@ export function TableSidebar({
   tablePlayers,
   onlineUsers,
   onlineUserIds = [],
+  currentUserId = null,
   spectators,
   tabAlerts = {},
   roomPanel,
@@ -103,6 +106,7 @@ export function TableSidebar({
   onToggle,
   onTabChange,
   onSelectUser,
+  onWatchUser,
 }: TableSidebarProps) {
   const tabs: TableSidebarTab[] = roomPanel
     ? ['room', 'players', 'online', 'profile', 'spectators']
@@ -182,22 +186,43 @@ export function TableSidebar({
             {resolvedActiveTab === 'online' ? (
               <ul className="table-sidebar__list">
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
-                {allUsers.map((user) => (
-                  <li key={user.user_id} className="table-sidebar__row">
-                    <div>
-                      <strong>
-                        {user.display_label}
-                        {onlineUserIdSet.has(user.user_id) ? (
-                          <span className="table-sidebar__online-label">online</span>
-                        ) : null}
-                      </strong>
-                      <span>{user.points} 分</span>
-                    </div>
-                    <button type="button" onClick={() => onSelectUser(user)}>
-                      查看资料
-                    </button>
-                  </li>
-                ))}
+                {allUsers.map((user) => {
+                  const isSelf = currentUserId === user.user_id;
+                  const canWatch = Boolean(user.active_table_code && !isSelf && onWatchUser);
+
+                  return (
+                    <li key={user.user_id} className="table-sidebar__row">
+                      <div>
+                        <strong>
+                          {user.display_label}
+                          {onlineUserIdSet.has(user.user_id) ? (
+                            <span className="table-sidebar__online-label">online</span>
+                          ) : null}
+                        </strong>
+                        <span>{user.points} 分</span>
+                      </div>
+                      <div className="table-sidebar__row-actions">
+                        <button type="button" onClick={() => onSelectUser(user)}>
+                          查看资料
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!canWatch}
+                          title={
+                            canWatch
+                              ? `申请观战 ${user.active_table_code}`
+                              : isSelf
+                                ? '不能观战自己的牌局'
+                                : '该玩家当前不在牌局中'
+                          }
+                          onClick={() => onWatchUser?.(user)}
+                        >
+                          观战
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
 

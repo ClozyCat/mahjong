@@ -35,6 +35,7 @@ export interface PublicUser {
   display_label: string;
   bio: string;
   avatar?: string | null;
+  active_table_code?: string | null;
 }
 
 export interface UserBrief {

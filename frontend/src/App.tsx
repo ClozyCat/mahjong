@@ -45,6 +45,7 @@ import {
   acceptTableInvite,
   approveSpectatorRequest,
   createSocialTable,
+  createSpectatorRequest,
   createTableInvite,
   getLeaderboard,
   getMyActiveTable,
@@ -91,6 +92,15 @@ const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'restart_match',
 ]);
 type AuthStatus = 'loading' | 'anonymous' | 'ready';
+type RoomSocketOptions = {
+  tableCode: string;
+  nickname: string;
+  wsBaseUrl: string;
+  sessionToken?: string | null;
+  reconnectToken?: string | null;
+  reconnect?: boolean;
+  mode?: ClientMode;
+};
 
 function getRuntimeDefaultBaseUrls() {
   if (typeof window === 'undefined') {
@@ -402,6 +412,7 @@ export default function App() {
   const leavingTableRef = useRef(false);
   const reconnectCloseCountRef = useRef(0);
   const activeTableRestoreRef = useRef<{ tableCode: string; sessionToken: string; nickname: string } | null>(null);
+  const openRoomSocketRef = useRef<((options: RoomSocketOptions) => void) | null>(null);
   const skipActiveTableLookupTokenRef = useRef<string | null>(null);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
@@ -538,10 +549,11 @@ export default function App() {
   }, [authSession?.sessionToken, defaults.apiBaseUrl]);
 
   useEffect(() => {
-    if (authStatus !== 'ready' || !authSession?.sessionToken || !state.wsBaseUrl) {
+    if (authStatus !== 'ready' || !authSession?.sessionToken || !currentUser || !state.wsBaseUrl) {
       return;
     }
 
+    const currentDisplayName = currentUser.display_name;
     const socket = new WebSocket(buildMeSocketUrl(state.wsBaseUrl, authSession.sessionToken));
     meSocketRef.current = socket;
     let closed = false;
@@ -613,6 +625,15 @@ export default function App() {
             ? `牌桌 ${message.payload.table_code} 已允许观战。`
             : `牌桌 ${message.payload.table_code} 拒绝了观战申请。`,
         );
+        if (message.payload.status === 'approved' && authSession?.sessionToken) {
+          openRoomSocketRef.current?.({
+            tableCode: message.payload.table_code,
+            nickname: currentDisplayName,
+            wsBaseUrl: defaults.wsBaseUrl,
+            sessionToken: authSession.sessionToken,
+            mode: 'spectator',
+          });
+        }
       }
     };
 
@@ -630,7 +651,15 @@ export default function App() {
         meSocketRef.current = null;
       }
     };
-  }, [authSession?.sessionToken, authStatus, defaults.apiBaseUrl, state.wsBaseUrl]);
+  }, [
+    authSession?.sessionToken,
+    authStatus,
+    currentUser?.display_name,
+    currentUser?.user_id,
+    defaults.apiBaseUrl,
+    defaults.wsBaseUrl,
+    state.wsBaseUrl,
+  ]);
 
   useEffect(() => {
     if (!selectedProfileUser) {
@@ -776,15 +805,7 @@ export default function App() {
   });
 
   const openRoomSocket = useEffectEvent(
-    (options: {
-      tableCode: string;
-      nickname: string;
-      wsBaseUrl: string;
-      sessionToken?: string | null;
-      reconnectToken?: string | null;
-      reconnect?: boolean;
-      mode?: ClientMode;
-    }) => {
+    (options: RoomSocketOptions) => {
       closeSocket(socketRef, heartbeatTimerRef);
 
       const { tableCode, nickname, wsBaseUrl, sessionToken, reconnectToken, reconnect, mode = 'player' } = options;
@@ -868,6 +889,7 @@ export default function App() {
       };
     },
   );
+  openRoomSocketRef.current = openRoomSocket;
 
   const restoreActiveTable = useEffectEvent((tableCode: string, sessionToken: string, nickname: string) => {
     activeTableRestoreRef.current = { tableCode, sessionToken, nickname };
@@ -1367,6 +1389,31 @@ export default function App() {
     }
   }
 
+  async function handleWatchSidebarUser(user: PublicUser) {
+    if (!authSession?.sessionToken || !currentUser) {
+      setStatusMessage('请先登录。');
+      return;
+    }
+
+    if (user.user_id === currentUser.user_id) {
+      setStatusMessage('不能观战自己的牌局。');
+      return;
+    }
+
+    if (!user.active_table_code) {
+      setStatusMessage('该玩家当前不在牌局中。');
+      return;
+    }
+
+    try {
+      setStatusMessage(`正在申请观战 ${user.active_table_code}...`);
+      await createSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, user.active_table_code);
+      setStatusMessage(`已申请观战 ${user.active_table_code}，等待房主同意。`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '申请观战失败。');
+    }
+  }
+
   function handleSwitchSpectatorPerspective() {
     const seats = getOccupiedSpectatorSeats(state.roomSnapshot);
     if (seats.length === 0) {
@@ -1720,6 +1767,7 @@ export default function App() {
         sidebarPlayers={tableSidebarPlayers}
         sidebarOnlineUsers={leaderboard}
         sidebarOnlineUserIds={onlineUserIds}
+        sidebarCurrentUserId={currentUser?.user_id ?? null}
         sidebarSpectators={tableSidebarSpectators}
         sidebarProfileUser={selectedProfileUser}
         sidebarProfileFallbackName={selectedProfileFallbackName}
@@ -1745,6 +1793,7 @@ export default function App() {
         onAddBot={() => handleAdjustBots(1)}
         onRemoveBot={() => handleAdjustBots(-1)}
         onQuickChat={handleQuickChat}
+        onSidebarWatchUser={handleWatchSidebarUser}
         isSpectator={isSpectator}
         spectatorFocusName={spectatorFocusName}
         onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}

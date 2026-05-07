@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -23,7 +23,7 @@ use super::protocol::{create_table_response, detail_response};
 use super::records::{fan_stat_view, game_detail_view, game_summary_view};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
 use super::social_ws::social_websocket_handler;
-use super::users::{PublicUserView, public_user_view};
+use super::users::{PublicUserView, public_user_view, public_user_view_with_active_table};
 use super::ws::websocket_handler;
 use super::{
     AppContext, CreateTableRequest, Settings, initial_room_state_with_owner, is_valid_table_code,
@@ -366,14 +366,19 @@ async fn get_my_active_table(
         .list_active_table_participants_for_user(authenticated_user.user_id)
         .await
     {
-        Ok(participants) => Json(participants.into_iter().last().map(|participant| {
-            ActiveTableResponse {
-                table_code: participant.table_code,
-                seat_index: participant.seat_index,
-                role: participant.role,
-            }
-        }))
-        .into_response(),
+        Ok(participants) => {
+            Json(
+                participants
+                    .into_iter()
+                    .last()
+                    .map(|participant| ActiveTableResponse {
+                        table_code: participant.table_code,
+                        seat_index: participant.seat_index,
+                        role: participant.role,
+                    }),
+            )
+            .into_response()
+        }
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }
@@ -478,7 +483,33 @@ async fn list_user_fans(
 
 async fn get_leaderboard(State(state): State<AppContext>) -> Response {
     match state.inner.db.list_users_by_points(100).await {
-        Ok(users) => Json(users.iter().map(public_user_view).collect::<Vec<_>>()).into_response(),
+        Ok(users) => {
+            let active_tables = match state.inner.db.list_active_table_participants().await {
+                Ok(participants) => {
+                    participants
+                        .into_iter()
+                        .fold(HashMap::new(), |mut by_user, participant| {
+                            by_user.insert(participant.user_id, participant.table_code);
+                            by_user
+                        })
+                }
+                Err(error) => {
+                    return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+                }
+            };
+            Json(
+                users
+                    .iter()
+                    .map(|user| {
+                        public_user_view_with_active_table(
+                            user,
+                            active_tables.get(&user.user_id).cloned(),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .into_response()
+        }
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }

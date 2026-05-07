@@ -132,4 +132,73 @@ describe('TableSidebar', () => {
     expect(within(screen.getAllByRole('listitem')[0]).getByText('online')).toBeInTheDocument();
     expect(within(screen.getAllByRole('listitem')[1]).queryByText('online')).not.toBeInTheDocument();
   });
+
+  it('enables watch only for other users with active tables', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 1,
+        username: 'alice',
+        display_name: '阿明',
+        points: 300,
+        title: '平民',
+        display_label: '阿明（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'SELF01',
+      },
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'ROOM42',
+      },
+      {
+        user_id: 3,
+        username: 'chen',
+        display_name: '阿成',
+        points: 80,
+        title: '平民',
+        display_label: '阿成（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: null,
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        currentUserId={1}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const rows = screen.getAllByRole('listitem');
+    const selfWatchButton = within(rows[0]).getByRole('button', { name: '观战' });
+    const activeWatchButton = within(rows[1]).getByRole('button', { name: '观战' });
+    const inactiveWatchButton = within(rows[2]).getByRole('button', { name: '观战' });
+
+    expect(selfWatchButton).toBeDisabled();
+    expect(activeWatchButton).toBeEnabled();
+    expect(inactiveWatchButton).toBeDisabled();
+
+    await user.click(activeWatchButton);
+
+    expect(onWatchUser).toHaveBeenCalledWith(users[1]);
+  });
 });

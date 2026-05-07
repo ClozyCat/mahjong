@@ -12,6 +12,7 @@ pub(crate) struct PublicUserView {
     pub(crate) display_label: String,
     pub(crate) bio: String,
     pub(crate) avatar: Option<String>,
+    pub(crate) active_table_code: Option<String>,
 }
 
 pub(crate) fn title_for_points(points: i64) -> &'static str {
@@ -38,6 +39,17 @@ pub(crate) fn public_user_view(user: &UserRecord) -> PublicUserView {
         display_label: display_label(&user.display_name, user.points),
         bio: user.bio.clone(),
         avatar: user.avatar.clone(),
+        active_table_code: None,
+    }
+}
+
+pub(crate) fn public_user_view_with_active_table(
+    user: &UserRecord,
+    active_table_code: Option<String>,
+) -> PublicUserView {
+    PublicUserView {
+        active_table_code,
+        ..public_user_view(user)
     }
 }
 
