@@ -74,7 +74,17 @@ export function TableSidebar({
         aria-label={isOpen ? '收起牌桌侧边栏' : '打开牌桌侧边栏'}
         onClick={onToggle}
       >
-        {isOpen ? '收起' : '侧栏'}
+        <span className="table-sidebar__toggle-icon">
+          {isOpen ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          )}
+        </span>
       </button>
 
       {isOpen ? (
