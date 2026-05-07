@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use super::persistence::{
     ArchiveRoundInput, ArchiveRoundOutcome, ArchivedFanStatInput, ArchivedRoundPlayerInput,
     GameRecordDetail, GameSummaryRecord, RoundPlayerResultRecord, TableParticipantRecord,
-    UserFanStatRecord,
+    UserFanStatRecord, UserGamePlayerSummaryRecord,
 };
 use super::users::{display_label, title_for_points};
 use super::{AppContext, notify_user_connections};
@@ -31,6 +31,20 @@ pub(crate) struct GameSummaryView {
     pub(crate) started_at: String,
     pub(crate) ended_at: Option<String>,
     pub(crate) round_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) player_summary: Option<UserGamePlayerSummaryView>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct UserGamePlayerSummaryView {
+    pub(crate) round_count: i64,
+    pub(crate) win_count: i64,
+    pub(crate) self_draw_win_count: i64,
+    pub(crate) discard_win_count: i64,
+    pub(crate) deal_in_count: i64,
+    pub(crate) total_score_delta: i64,
+    pub(crate) average_cumulative_score: i64,
+    pub(crate) high_score_round_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -99,6 +113,25 @@ pub(crate) fn game_summary_view(summary: &GameSummaryRecord) -> GameSummaryView 
         started_at: summary.started_at.clone(),
         ended_at: summary.ended_at.clone(),
         round_count: summary.round_count,
+        player_summary: summary
+            .player_summary
+            .as_ref()
+            .map(user_game_player_summary_view),
+    }
+}
+
+fn user_game_player_summary_view(
+    summary: &UserGamePlayerSummaryRecord,
+) -> UserGamePlayerSummaryView {
+    UserGamePlayerSummaryView {
+        round_count: summary.round_count,
+        win_count: summary.win_count,
+        self_draw_win_count: summary.self_draw_win_count,
+        discard_win_count: summary.discard_win_count,
+        deal_in_count: summary.deal_in_count,
+        total_score_delta: summary.total_score_delta,
+        average_cumulative_score: summary.average_cumulative_score,
+        high_score_round_count: summary.high_score_round_count,
     }
 }
 
@@ -846,6 +879,24 @@ mod tests {
         assert_eq!(user_games_response.status(), StatusCode::OK);
         let user_games_body = json_response(user_games_response).await;
         assert_eq!(user_games_body[0]["game_id"], game_id);
+        assert_eq!(user_games_body[0]["player_summary"]["round_count"], 1);
+        assert_eq!(user_games_body[0]["player_summary"]["win_count"], 1);
+        assert_eq!(user_games_body[0]["player_summary"]["deal_in_count"], 0);
+        assert_eq!(
+            user_games_body[0]["player_summary"]["high_score_round_count"],
+            1
+        );
+
+        let guest_games_response = app
+            .clone()
+            .oneshot(json_request(
+                Method::GET,
+                &format!("/api/users/{guest_user_id}/games"),
+            ))
+            .await?;
+        assert_eq!(guest_games_response.status(), StatusCode::OK);
+        let guest_games_body = json_response(guest_games_response).await;
+        assert_eq!(guest_games_body[0]["player_summary"]["deal_in_count"], 1);
 
         let fans_response = app
             .clone()

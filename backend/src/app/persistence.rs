@@ -9,8 +9,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::oneshot;
 
 use super::auth::AuthenticatedUser;
+use crate::core::state::RoundSettlement;
 
 const INITIAL_USER_POINTS: i64 = 600;
+const HIGH_CUMULATIVE_SCORE_THRESHOLD: i64 = 80;
 
 type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
 
@@ -142,6 +144,85 @@ pub(crate) struct GameSummaryRecord {
     pub(crate) started_at: String,
     pub(crate) ended_at: Option<String>,
     pub(crate) round_count: i64,
+    pub(crate) player_summary: Option<UserGamePlayerSummaryRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UserGamePlayerSummaryRecord {
+    pub(crate) round_count: i64,
+    pub(crate) win_count: i64,
+    pub(crate) self_draw_win_count: i64,
+    pub(crate) discard_win_count: i64,
+    pub(crate) deal_in_count: i64,
+    pub(crate) total_score_delta: i64,
+    pub(crate) average_cumulative_score: i64,
+    pub(crate) high_score_round_count: i64,
+}
+
+#[derive(Default)]
+struct UserGamePlayerSummaryBuilder {
+    round_count: i64,
+    win_count: i64,
+    self_draw_win_count: i64,
+    discard_win_count: i64,
+    deal_in_count: i64,
+    total_score_delta: i64,
+    cumulative_score_total: i64,
+    high_score_round_count: i64,
+}
+
+impl UserGamePlayerSummaryBuilder {
+    fn add_round(
+        &mut self,
+        seat_index: usize,
+        score_delta: i64,
+        cumulative_score: i64,
+        is_winner: bool,
+        win_type: Option<&str>,
+        settlement_json: &str,
+    ) -> Result<()> {
+        self.round_count += 1;
+        self.total_score_delta += score_delta;
+        self.cumulative_score_total += cumulative_score;
+        if cumulative_score >= HIGH_CUMULATIVE_SCORE_THRESHOLD {
+            self.high_score_round_count += 1;
+        }
+        if is_winner {
+            self.win_count += 1;
+            match win_type {
+                Some("self_draw") => self.self_draw_win_count += 1,
+                Some("discard") => self.discard_win_count += 1,
+                _ => {}
+            }
+        }
+        self.deal_in_count += deal_in_count_for_round(seat_index, settlement_json)?;
+        Ok(())
+    }
+
+    fn build(self) -> UserGamePlayerSummaryRecord {
+        UserGamePlayerSummaryRecord {
+            round_count: self.round_count,
+            win_count: self.win_count,
+            self_draw_win_count: self.self_draw_win_count,
+            discard_win_count: self.discard_win_count,
+            deal_in_count: self.deal_in_count,
+            total_score_delta: self.total_score_delta,
+            average_cumulative_score: average_score(self.cumulative_score_total, self.round_count),
+            high_score_round_count: self.high_score_round_count,
+        }
+    }
+}
+
+fn average_score(total: i64, count: i64) -> i64 {
+    if count == 0 { 0 } else { total / count }
+}
+
+fn deal_in_count_for_round(seat_index: usize, settlement_json: &str) -> Result<i64> {
+    let settlement = serde_json::from_str::<RoundSettlement>(settlement_json)?;
+    if settlement.discarder_seat != Some(seat_index) {
+        return Ok(0);
+    }
+    Ok(settlement.winning_seats().len() as i64)
 }
 
 #[derive(Debug, Clone)]
@@ -861,6 +942,7 @@ impl Database {
             started_at: row.get(6)?,
             ended_at: row.get(7)?,
             round_count: row.get(8)?,
+            player_summary: None,
         })
     }
 
@@ -1849,6 +1931,7 @@ impl Database {
                             started_at: row.get(6)?,
                             ended_at: row.get(7)?,
                             round_count: row.get(8)?,
+                            player_summary: None,
                         },
                         row.get::<_, Option<String>>(9)?,
                     ))
@@ -1907,6 +1990,54 @@ impl Database {
         }))
     }
 
+    fn user_game_player_summary(
+        &self,
+        user_id: i64,
+        game_id: i64,
+    ) -> Result<UserGamePlayerSummaryRecord> {
+        let mut statement = self.conn.prepare(
+            "
+            SELECT
+                round_player_results.seat_index,
+                round_player_results.score_delta,
+                round_player_results.cumulative_score,
+                round_player_results.is_winner,
+                round_player_results.win_type,
+                round_records.settlement_json
+            FROM round_records
+            JOIN round_player_results
+              ON round_player_results.round_record_id = round_records.id
+            WHERE round_records.game_record_id = ?1
+              AND round_player_results.user_id = ?2
+            ORDER BY round_records.ended_at ASC, round_records.id ASC
+            ",
+        )?;
+        let mut summary = UserGamePlayerSummaryBuilder::default();
+        let rows = statement.query_map(params![game_id, user_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as usize,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)? != 0,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })?;
+        for row in rows {
+            let (seat_index, score_delta, cumulative_score, is_winner, win_type, settlement_json) =
+                row?;
+            summary.add_round(
+                seat_index,
+                score_delta,
+                cumulative_score,
+                is_winner,
+                win_type.as_deref(),
+                &settlement_json,
+            )?;
+        }
+        Ok(summary.build())
+    }
+
     fn list_games_for_user(&self, user_id: i64, limit: usize) -> Result<Vec<GameSummaryRecord>> {
         let mut statement = self.conn.prepare(
             "
@@ -1940,7 +2071,11 @@ impl Database {
         let rows = statement
             .query_map(params![user_id, limit as i64], Self::game_summary_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
+        let mut games = rows;
+        for game in &mut games {
+            game.player_summary = Some(self.user_game_player_summary(user_id, game.game_id)?);
+        }
+        Ok(games)
     }
 
     fn list_user_fan_stats(&self, user_id: i64) -> Result<Vec<UserFanStatRecord>> {

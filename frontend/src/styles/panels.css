@@ -65,12 +65,12 @@
     0 8px 24px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: 
-    transform 0.4s var(--ease-spring),
-    left 0.4s var(--ease-spring),
-    background 0.4s var(--ease-spring),
-    border-color 0.4s var(--ease-spring),
-    color 0.4s var(--ease-spring),
-    box-shadow 0.4s var(--ease-spring),
+    transform 0.4s var(--ease-lux),
+    left 0.4s var(--ease-lux),
+    background 0.4s var(--ease-lux),
+    border-color 0.4s var(--ease-lux),
+    color 0.4s var(--ease-lux),
+    box-shadow 0.4s var(--ease-lux),
     opacity 1s var(--ease-lux) 3s;
   opacity: 0.3;
 }
@@ -80,7 +80,7 @@
   width: 1.1rem;
   height: 1.1rem;
   opacity: 0.8;
-  transition: transform 0.4s var(--ease-spring), opacity 0.3s;
+  transition: transform 0.4s var(--ease-lux), opacity 0.3s;
 }
 
 .table-sidebar.is-open .table-sidebar__toggle {
@@ -92,12 +92,12 @@ button.table-sidebar__toggle:hover:not(:disabled),
 .table-sidebar.is-open .table-sidebar__toggle {
   opacity: 1;
   transition: 
-    transform 0.4s var(--ease-spring),
-    left 0.4s var(--ease-spring),
-    background 0.4s var(--ease-spring),
-    border-color 0.4s var(--ease-spring),
-    color 0.4s var(--ease-spring),
-    box-shadow 0.4s var(--ease-spring),
+    transform 0.4s var(--ease-lux),
+    left 0.4s var(--ease-lux),
+    background 0.4s var(--ease-lux),
+    border-color 0.4s var(--ease-lux),
+    color 0.4s var(--ease-lux),
+    box-shadow 0.4s var(--ease-lux),
     opacity 0.2s var(--ease-lux) 0s;
   background: rgba(0, 0, 0, 0.55);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
@@ -455,10 +455,10 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
 
   .table-sidebar.is-open .table-sidebar__toggle,
   .table-sidebar.is-open .table-sidebar__toggle:hover {
-    top: max(0.75rem, env(safe-area-inset-top));
     left: max(0.75rem, env(safe-area-inset-left));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    top: auto;
     right: auto;
-    bottom: auto;
     transform: none;
   }
 
