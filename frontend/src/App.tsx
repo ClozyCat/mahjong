@@ -467,6 +467,16 @@ export default function App() {
   const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
   const [dismissedLocalSelfHuPromptSignature, setDismissedLocalSelfHuPromptSignature] = useState<string | null>(null);
+  const inviteCreatorLabelsByUserId = useMemo(() => {
+    const labelsByUserId: Record<number, string> = {};
+    for (const user of leaderboard) {
+      labelsByUserId[user.user_id] = user.display_label;
+    }
+    if (currentUser) {
+      labelsByUserId[currentUser.user_id] = currentUser.display_label;
+    }
+    return labelsByUserId;
+  }, [currentUser, leaderboard]);
 
   useEffect(() => {
     sessionRef.current = state;
@@ -646,6 +656,25 @@ export default function App() {
                 user: {
                   ...current.user,
                   points,
+                },
+              }
+            : current,
+        );
+        return;
+      }
+
+      if (message.type === 'user_active_table_updated') {
+        const { user_id: userId, active_table_code: tableCode } = message.payload;
+        setCurrentUser((current) => updateUserActiveTableCode(current, userId, tableCode));
+        setSelectedProfileUser((current) => updateUserActiveTableCode(current, userId, tableCode));
+        setLeaderboard((current) => updateLeaderboardUserActiveTableCode(current, userId, tableCode));
+        setAuthSession((current) =>
+          current && current.user.user_id === userId
+            ? {
+                ...current,
+                user: {
+                  ...current.user,
+                  active_table_code: tableCode,
                 },
               }
             : current,
@@ -1884,6 +1913,7 @@ export default function App() {
       pendingInvites={pendingInvites}
       spectatorRequests={pendingSpectatorRequests}
       isOwner={isSidebarOwner}
+      inviteCreatorLabelsByUserId={inviteCreatorLabelsByUserId}
       message={statusMessage}
       onAcceptInvite={handleAcceptInvite}
       onRejectInvite={handleRejectInvite}

@@ -185,6 +185,43 @@ describe('SocialSidebarPanel', () => {
     expect(onRejectInvite).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }));
   });
 
+  it('shows invite copy with inviter and table code', () => {
+    render(
+      <SocialSidebarMessagesPanel
+        pendingInvites={[
+          {
+            id: 9,
+            table_code: 'ROOM42',
+            inviter_user_id: 2,
+            invitee_user_id: 1,
+            status: 'pending',
+            created_at: '2026-05-06T12:00:00Z',
+            expires_at: '2026-05-06T12:10:00Z',
+          },
+        ]}
+        inviteDialog={{
+          id: 9,
+          table_code: 'ROOM42',
+          inviter_user_id: 2,
+          invitee_user_id: 1,
+          status: 'pending',
+          created_at: '2026-05-06T12:00:00Z',
+          expires_at: '2026-05-06T12:10:00Z',
+        }}
+        spectatorRequests={[]}
+        isOwner={false}
+        inviteCreatorLabelsByUserId={{ 2: '阿强（平民）' }}
+        onAcceptInvite={vi.fn()}
+        onRejectInvite={vi.fn()}
+        onApproveSpectatorRequest={vi.fn()}
+        onRejectSpectatorRequest={vi.fn()}
+        onDismissInviteDialog={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('阿强（平民）创建的牌桌ROOM42邀请你加入。')).toHaveLength(2);
+  });
+
   it('lets the owner approve and reject spectator requests from the room tab panel', async () => {
     const user = userEvent.setup();
     const onApproveSpectatorRequest = vi.fn();

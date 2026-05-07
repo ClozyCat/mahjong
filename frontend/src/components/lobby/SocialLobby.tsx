@@ -17,6 +17,14 @@ interface SocialLobbyProps {
   onLogout: () => void;
 }
 
+function getInviteCreatorLabel(invite: TableInvite, leaderboard: PublicUser[]) {
+  return leaderboard.find((user) => user.user_id === invite.inviter_user_id)?.display_label ?? `用户 #${invite.inviter_user_id}`;
+}
+
+function getInviteCopy(invite: TableInvite, leaderboard: PublicUser[]) {
+  return `${getInviteCreatorLabel(invite, leaderboard)}创建的牌桌${invite.table_code}邀请你加入。`;
+}
+
 export function SocialLobby({
   currentUser,
   leaderboard,
@@ -79,6 +87,7 @@ export function SocialLobby({
               <li key={invite.id} className="social-lobby__row">
                 <div>
                   <strong>{invite.table_code}</strong>
+                  <span>{getInviteCopy(invite, leaderboard)}</span>
                   <span>邀请时间 {invite.created_at}</span>
                 </div>
                 <button type="button" onClick={() => onAcceptInvite(invite)}>
@@ -128,7 +137,7 @@ export function SocialLobby({
         <div className="social-lobby__dialog-backdrop" role="presentation">
           <div className="social-lobby__dialog" role="dialog" aria-modal="true" aria-label="牌局邀请">
             <h2>收到牌局邀请</h2>
-            <p>牌桌 {inviteDialog.table_code} 邀请你加入。</p>
+            <p>{getInviteCopy(inviteDialog, leaderboard)}</p>
             <div className="social-lobby__actions">
               <button type="button" className="social-lobby__primary" onClick={() => onAcceptInvite(inviteDialog)}>
                 接受邀请

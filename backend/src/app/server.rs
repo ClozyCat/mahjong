@@ -27,8 +27,8 @@ use super::users::{PublicUserView, public_user_view, public_user_view_with_activ
 use super::ws::websocket_handler;
 use super::{
     AppContext, CreateTableRequest, Settings, initial_room_state_with_owner, is_valid_table_code,
-    normalize_table_code, notify_user_connections, now_iso, parse_room_json, room_phase,
-    serialize_room_state,
+    normalize_table_code, notify_all_user_connections, notify_user_connections, now_iso,
+    parse_room_json, room_phase, serialize_room_state, user_active_table_updated_message,
 };
 use crate::core::state::RoomState;
 
@@ -1053,16 +1053,26 @@ async fn accept_table_invite(
         )
         .await
     {
-        Ok(invite) => (
-            StatusCode::OK,
-            Json(AcceptInviteResponse {
-                invite_id: invite.id,
-                table_code: invite.table_code,
-                seat_index,
-                status: invite.status,
-            }),
-        )
-            .into_response(),
+        Ok(invite) => {
+            notify_all_user_connections(
+                &state,
+                user_active_table_updated_message(
+                    authenticated_user.user_id,
+                    Some(&invite.table_code),
+                ),
+            )
+            .await;
+            (
+                StatusCode::OK,
+                Json(AcceptInviteResponse {
+                    invite_id: invite.id,
+                    table_code: invite.table_code,
+                    seat_index,
+                    status: invite.status,
+                }),
+            )
+                .into_response()
+        }
         Err(error) if error_matches(&error, "table_invite_invalid") => {
             json_error(StatusCode::UNPROCESSABLE_ENTITY, "table_invite_invalid")
         }

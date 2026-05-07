@@ -36,10 +36,11 @@ use super::{
     add_bot_to_waiting_room, collect_join_outbound_from_snapshot,
     collect_snapshot_and_prompt_outbound_from_snapshot, convert_seat_to_bot,
     generate_player_session_id, generate_reconnect_token, generate_short_hex, normalize_table_code,
-    occupied_seats, presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
-    remove_bot_from_waiting_room, remove_seat_from_room, room_has_round_state, room_phase,
-    room_player_session_id, room_seats, seat_exists, seat_matches_reconnect_credentials,
-    send_outbound, serialize_room, set_seat_bot_takeover, set_seat_connected,
+    notify_all_user_connections, occupied_seats, presence_and_snapshot_for_all_from_snapshot,
+    random_open_seat_index, remove_bot_from_waiting_room, remove_seat_from_room,
+    room_has_round_state, room_phase, room_player_session_id, room_seats, seat_exists,
+    seat_matches_reconnect_credentials, send_outbound, serialize_room, set_seat_bot_takeover,
+    set_seat_connected, user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::SeatState;
@@ -655,6 +656,11 @@ async fn handle_join_table(
                 restore_room_snapshot(&room_handle, previous_room).await;
                 return internal_error_to(connection, error);
             }
+            notify_all_user_connections(
+                &state,
+                user_active_table_updated_message(authenticated_user.user_id, Some(table_code)),
+            )
+            .await;
             let mut outbound = collect_join_outbound_from_snapshot(
                 &room,
                 &spectator_identities,
@@ -1377,6 +1383,18 @@ async fn handle_leave_table(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let leaving_user_id = state
+        .inner
+        .db
+        .list_active_table_participants_for_table(table_code)
+        .await
+        .ok()
+        .and_then(|participants| {
+            participants
+                .into_iter()
+                .find(|participant| participant.seat_index == seat_index)
+                .map(|participant| participant.user_id)
+        });
     let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
@@ -1405,6 +1423,13 @@ async fn handle_leave_table(
             drop(runtime);
             unregister_room_handle(&state, table_code, &room_handle).await;
             state.inner.db.delete_table(table_code, &left_at).await.ok();
+            if let Some(user_id) = leaving_user_id {
+                notify_all_user_connections(
+                    &state,
+                    user_active_table_updated_message(user_id, None),
+                )
+                .await;
+            }
             schedule_room_tasks_detached(state, table_code.to_string());
             MessageOutcome {
                 outbound,
@@ -1453,6 +1478,13 @@ async fn handle_leave_table(
                 restore_room_snapshot(&room_handle, previous_room).await;
                 return internal_error_to(connection, error);
             }
+            if let Some(user_id) = leaving_user_id {
+                notify_all_user_connections(
+                    &state,
+                    user_active_table_updated_message(user_id, None),
+                )
+                .await;
+            }
             let mut runtime = room_handle.runtime.lock().await;
             for handle in remove_all_seat_connections(&mut runtime, seat_index) {
                 handle.request_close();
@@ -1478,6 +1510,10 @@ async fn handle_leave_table(
         drop(runtime);
         unregister_room_handle(&state, table_code, &room_handle).await;
         state.inner.db.delete_table(table_code, &left_at).await.ok();
+        if let Some(user_id) = leaving_user_id {
+            notify_all_user_connections(&state, user_active_table_updated_message(user_id, None))
+                .await;
+        }
         schedule_room_tasks_detached(state, table_code.to_string());
         MessageOutcome {
             outbound,
@@ -1522,6 +1558,10 @@ async fn handle_leave_table(
         {
             restore_room_snapshot(&room_handle, previous_room).await;
             return internal_error_to(connection, error);
+        }
+        if let Some(user_id) = leaving_user_id {
+            notify_all_user_connections(&state, user_active_table_updated_message(user_id, None))
+                .await;
         }
         let mut runtime = room_handle.runtime.lock().await;
         for handle in remove_all_seat_connections(&mut runtime, seat_index) {

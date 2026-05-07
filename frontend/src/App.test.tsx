@@ -1321,6 +1321,62 @@ describe('App', () => {
     expect(screen.getByText('积分 158')).toBeInTheDocument();
   });
 
+  it('applies active table updates in all players without waiting for a leaderboard refresh', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const leaderboardCalls = fetchMock.mock.calls.filter(
+        ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
+      );
+      expect(leaderboardCalls).toHaveLength(2);
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_active_table_updated',
+        payload: {
+          user_id: 2,
+          active_table_code: 'ROOM42',
+        },
+      });
+    });
+
+    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
+
+    const playerRow = screen.getByText(/Player B（平民）/).closest('li');
+    expect(playerRow).not.toBeNull();
+    expect(within(playerRow!).getByText('与BOT对局中')).toBeInTheDocument();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_active_table_updated',
+        payload: {
+          user_id: 2,
+          active_table_code: null,
+        },
+      });
+    });
+
+    expect(within(playerRow!).getByText('在线')).toBeInTheDocument();
+    const leaderboardCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
+    );
+    expect(leaderboardCalls).toHaveLength(2);
+  });
+
   it('shows the invitation notice when /ws/me receives a new invite', async () => {
     await renderAuthenticatedLobby();
 
@@ -1340,7 +1396,7 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('tab', { name: '消息' }));
 
     expect(screen.getByRole('region', { name: '牌局邀请' })).toBeInTheDocument();
-    expect(screen.getByText('牌桌 ZXCVBN 邀请你加入。')).toBeInTheDocument();
+    expect(screen.getAllByText('Player B（平民）创建的牌桌ZXCVBN邀请你加入。')).not.toHaveLength(0);
   });
 
   it('keeps dismissed invite messages visible without a sidebar alert', async () => {

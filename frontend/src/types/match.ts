@@ -396,6 +396,14 @@ export interface UserPointsUpdatedMessage {
   };
 }
 
+export interface UserActiveTableUpdatedMessage {
+  type: 'user_active_table_updated';
+  payload: {
+    user_id: number;
+    active_table_code: string | null;
+  };
+}
+
 export interface TableInviteCreatedMessage {
   type: 'table_invite_created';
   payload: TableInvite;
@@ -419,6 +427,7 @@ export interface SpectatorRequestDecidedMessage {
 export type SocialServerMessage =
   | UserPresenceUpdatedMessage
   | UserPointsUpdatedMessage
+  | UserActiveTableUpdatedMessage
   | TableInviteCreatedMessage
   | TableInviteDecidedMessage
   | SpectatorRequestCreatedMessage

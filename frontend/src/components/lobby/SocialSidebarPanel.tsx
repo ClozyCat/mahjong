@@ -22,12 +22,21 @@ interface SocialSidebarMessagesPanelProps {
   pendingInvites: TableInvite[];
   spectatorRequests: SpectatorRequest[];
   isOwner: boolean;
+  inviteCreatorLabelsByUserId?: Record<number, string>;
   message?: string | null;
   onAcceptInvite: (invite: TableInvite) => void;
   onRejectInvite: (invite: TableInvite) => void;
   onApproveSpectatorRequest: (requestId: number) => void;
   onRejectSpectatorRequest: (requestId: number) => void;
   onDismissInviteDialog: () => void;
+}
+
+function getInviteCreatorLabel(invite: TableInvite, labelsByUserId: Record<number, string>) {
+  return labelsByUserId[invite.inviter_user_id] ?? `用户 #${invite.inviter_user_id}`;
+}
+
+function getInviteCopy(invite: TableInvite, labelsByUserId: Record<number, string>) {
+  return `${getInviteCreatorLabel(invite, labelsByUserId)}创建的牌桌${invite.table_code}邀请你加入。`;
 }
 
 export function SocialSidebarPanel({
@@ -118,6 +127,7 @@ export function SocialSidebarMessagesPanel({
   pendingInvites,
   spectatorRequests,
   isOwner,
+  inviteCreatorLabelsByUserId = {},
   message,
   onAcceptInvite,
   onRejectInvite,
@@ -132,7 +142,7 @@ export function SocialSidebarMessagesPanel({
       {inviteDialog ? (
         <section className="social-sidebar__notice" aria-label="牌局邀请">
           <strong>收到牌局邀请</strong>
-          <span>牌桌 {inviteDialog.table_code} 邀请你加入。</span>
+          <span>{getInviteCopy(inviteDialog, inviteCreatorLabelsByUserId)}</span>
           <div className="social-sidebar__actions">
             <button type="button" className="social-sidebar__primary" onClick={() => onAcceptInvite(inviteDialog)}>
               接受邀请
@@ -155,6 +165,7 @@ export function SocialSidebarMessagesPanel({
             <li key={invite.id} className="table-sidebar__row table-sidebar__row--stacked">
               <div className="table-sidebar__row-info">
                 <strong className="table-sidebar__row-name">{invite.table_code}</strong>
+                <span className="table-sidebar__stat">{getInviteCopy(invite, inviteCreatorLabelsByUserId)}</span>
                 <span className="table-sidebar__stat">邀请时间 {invite.created_at}</span>
               </div>
               <div className="table-sidebar__actions">

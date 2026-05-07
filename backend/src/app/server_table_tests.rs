@@ -797,8 +797,12 @@ async fn invite_only_user_with_other_human_in_table_is_busy() -> Result<()> {
 #[tokio::test(flavor = "current_thread")]
 async fn invite_only_accept_creates_table_participant() -> Result<()> {
     let (app, worker, state) = test_app().await?;
-    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100016", "Owner").await?;
+    let (owner_token, owner_id) = register_user(&app, &worker, "INVITE100016", "Owner").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100017", "Guest").await?;
+    let (connection, mut receiver) = test_connection(1003);
+
+    register_user_connection(&state, owner_id, connection).await;
+    let _ = receiver.recv().await;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
     add_bots_to_table(&state, &worker, &table_code, 1).await?;
@@ -842,6 +846,15 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
     assert_eq!(accept.status(), StatusCode::OK);
     let accept_body = json_response(accept).await;
     assert_eq!(accept_body["seat_index"], 0);
+
+    let notification = receiver
+        .recv()
+        .await
+        .expect("social listeners should receive active table updates");
+    let payload: Value = serde_json::from_str(&notification)?;
+    assert_eq!(payload["type"], "user_active_table_updated");
+    assert_eq!(payload["payload"]["user_id"], guest_id);
+    assert_eq!(payload["payload"]["active_table_code"], table_code);
 
     let participant = worker
         .get_active_table_participant(&table_code, guest_id)

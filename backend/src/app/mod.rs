@@ -696,6 +696,19 @@ fn user_presence_updated_message(online_user_ids: Vec<i64>) -> Value {
     })
 }
 
+pub(crate) fn user_active_table_updated_message(
+    user_id: i64,
+    active_table_code: Option<&str>,
+) -> Value {
+    json!({
+        "type": "user_active_table_updated",
+        "payload": {
+            "user_id": user_id,
+            "active_table_code": active_table_code
+        }
+    })
+}
+
 pub(crate) async fn register_user_connection(
     state: &AppContext,
     user_id: i64,
@@ -752,6 +765,25 @@ where
             .get(&user_id)
             .map(|connections| connections.values().cloned().collect::<Vec<_>>())
             .unwrap_or_default()
+    };
+    send_outbound(
+        handles
+            .into_iter()
+            .map(|handle| handle.outbound(payload.clone()))
+            .collect(),
+    );
+}
+
+pub(crate) async fn notify_all_user_connections<T>(state: &AppContext, payload: T)
+where
+    T: Serialize + Clone,
+{
+    let handles = {
+        let registry = state.inner.user_connections.read().await;
+        registry
+            .values()
+            .flat_map(|connections| connections.values().cloned())
+            .collect::<Vec<_>>()
     };
     send_outbound(
         handles
