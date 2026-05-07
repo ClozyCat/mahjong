@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import type {
   BattleActionId,
@@ -58,6 +58,9 @@ interface BattleScreenProps {
   sidebarPlayers?: TableSidebarPlayer[];
   sidebarOnlineUsers?: PublicUser[];
   sidebarSpectators?: TableSidebarSpectator[];
+  sidebarRoomPanel?: ReactNode;
+  sidebarDefaultOpen?: boolean;
+  sidebarInitialTab?: TableSidebarTab;
   sidebarProfileUser?: PublicUser | null;
   sidebarProfileFallbackName?: string | null;
   sidebarProfileFanStats?: UserFanStat[];
@@ -107,6 +110,9 @@ export function BattleScreen({
   sidebarPlayers = [],
   sidebarOnlineUsers = [],
   sidebarSpectators = [],
+  sidebarRoomPanel = null,
+  sidebarDefaultOpen = false,
+  sidebarInitialTab = 'players',
   sidebarProfileUser = null,
   sidebarProfileFallbackName = null,
   sidebarProfileFanStats = [],
@@ -125,8 +131,8 @@ export function BattleScreen({
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const [isSnakeActive, setIsSnakeActive] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<TableSidebarTab>('players');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(sidebarDefaultOpen);
+  const [sidebarTab, setSidebarTab] = useState<TableSidebarTab>(sidebarInitialTab);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
@@ -492,6 +498,7 @@ export function BattleScreen({
             spectators={sidebarSpectators}
             spectatorRequests={sidebarSpectatorRequests}
             isOwner={isSidebarOwner}
+            roomPanel={sidebarRoomPanel}
             profilePanel={
               <UserProfilePanel
                 user={sidebarProfileUser}

@@ -412,8 +412,10 @@ function getRoomSockets(tableCode = 'AB12CD') {
   return MockWebSocket.instances.filter((socket) => socket.url.endsWith(`/ws/${tableCode}`));
 }
 
-function expectSocialLobby() {
-  expect(screen.getByLabelText('Social lobby')).toBeInTheDocument();
+function expectTableHome() {
+  expect(screen.getByLabelText('Mahjong table')).toBeInTheDocument();
+  expect(screen.getByRole('complementary', { name: 'Table sidebar' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '牌桌侧栏首页' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '创建牌局' })).toBeInTheDocument();
 }
 
@@ -515,7 +517,7 @@ describe('App', () => {
     expect(screen.getByLabelText('账号或用户 ID')).toBeInTheDocument();
   });
 
-  it('does not start background music from lobby interactions', () => {
+  it('does not start background music from table-home interactions', () => {
     localStorage.setItem('mahjong:bgm', 'true');
     const audioMock = mockBackgroundMusicPlayback();
 
@@ -561,7 +563,7 @@ describe('App', () => {
     ]);
   });
 
-  it('registers with invite code and then enters the social lobby', async () => {
+  it('registers with invite code and then enters the table view', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();
     vi.stubGlobal('fetch', fetchMock);
@@ -585,7 +587,7 @@ describe('App', () => {
     });
   });
 
-  it('shows the logged-in lobby and uses the selected multiplier when creating a table', async () => {
+  it('shows the logged-in table view and uses the selected multiplier when creating a table', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
 
@@ -599,7 +601,7 @@ describe('App', () => {
     expect(parseRequestBody(createTableCall?.[1])).toEqual({ multiplier: 3 });
   });
 
-  it('calls the invite API from the lobby', async () => {
+  it('calls the invite API from the sidebar', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
 
@@ -628,7 +630,7 @@ describe('App', () => {
     });
   });
 
-  it('opens the invitation dialog when /ws/me receives a new invite', async () => {
+  it('shows the invitation notice when /ws/me receives a new invite', async () => {
     await renderAuthenticatedLobby();
 
     const meSocket = getMeSocket();
@@ -641,7 +643,7 @@ describe('App', () => {
       });
     });
 
-    expect(screen.getByRole('dialog', { name: '牌局邀请' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '牌局邀请' })).toBeInTheDocument();
     expect(screen.getByText('牌桌 ZXCVBN 邀请你加入。')).toBeInTheDocument();
   });
 
@@ -734,7 +736,7 @@ describe('App', () => {
     ]);
   });
 
-  it('returns to the lobby as soon as leave_table_accepted arrives', async () => {
+  it('returns to the table home as soon as leave_table_accepted arrives', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { socket } = await joinTable(user);
@@ -758,11 +760,10 @@ describe('App', () => {
       });
     });
 
-    expectSocialLobby();
-    expect(screen.queryByLabelText('Mahjong table')).toBeNull();
+    expectTableHome();
   });
 
-  it('returns to the lobby with guidance when leaving after the connection has already dropped', async () => {
+  it('returns to the table home with guidance when leaving after the connection has already dropped', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { socket } = await joinTable(user);
@@ -780,11 +781,11 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
-    expectSocialLobby();
-    expect(screen.getByText('当前连接已断开，已返回大厅。若仍需回到牌局，请等待房主重新邀请。')).toBeInTheDocument();
+    expectTableHome();
+    expect(screen.getByText('当前连接已断开，已回到牌桌界面。若仍需回到牌局，请等待房主重新邀请。')).toBeInTheDocument();
   });
 
-  it('returns to the lobby when a stale room snapshot receives table_not_found', async () => {
+  it('returns to the table home when a stale room snapshot receives table_not_found', async () => {
     const user = userEvent.setup();
     const { socket } = await joinTable(user);
 
@@ -804,8 +805,7 @@ describe('App', () => {
       });
     });
 
-    expectSocialLobby();
-    expect(screen.queryByLabelText('Mahjong table')).toBeNull();
+    expectTableHome();
     expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
   });
 
@@ -853,8 +853,8 @@ describe('App', () => {
       });
 
       expect(getRoomSockets()).toHaveLength(3);
-      expectSocialLobby();
-      expect(screen.getByText('未能恢复座位，请返回大厅后重新进入可加入的牌局。')).toBeInTheDocument();
+      expectTableHome();
+      expect(screen.getByText('未能恢复座位，请回到牌桌侧栏后重新进入可加入的牌局。')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

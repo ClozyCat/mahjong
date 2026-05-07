@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import type { PublicUser, SpectatorRequest } from '../../types/match';
 
-export type TableSidebarTab = 'players' | 'online' | 'profile' | 'spectators' | 'requests';
+export type TableSidebarTab = 'room' | 'players' | 'online' | 'profile' | 'spectators' | 'requests';
 
 export interface TableSidebarPlayer {
   key: string;
@@ -31,6 +31,7 @@ interface TableSidebarProps {
   spectators: TableSidebarSpectator[];
   spectatorRequests: SpectatorRequest[];
   isOwner: boolean;
+  roomPanel?: ReactNode;
   profilePanel: ReactNode;
   onToggle: () => void;
   onTabChange: (tab: TableSidebarTab) => void;
@@ -39,7 +40,7 @@ interface TableSidebarProps {
   onRejectRequest: (requestId: number) => void;
 }
 
-const TAB_ITEMS: Array<{ id: TableSidebarTab; label: string }> = [
+const DEFAULT_TAB_ITEMS: Array<{ id: TableSidebarTab; label: string }> = [
   { id: 'players', label: '本局玩家' },
   { id: 'online', label: '在线玩家' },
   { id: 'profile', label: '玩家信息' },
@@ -55,6 +56,7 @@ export function TableSidebar({
   spectators,
   spectatorRequests,
   isOwner,
+  roomPanel,
   profilePanel,
   onToggle,
   onTabChange,
@@ -62,6 +64,8 @@ export function TableSidebar({
   onApproveRequest,
   onRejectRequest,
 }: TableSidebarProps) {
+  const tabItems = roomPanel ? [{ id: 'room' as const, label: '牌局' }, ...DEFAULT_TAB_ITEMS] : DEFAULT_TAB_ITEMS;
+
   return (
     <aside className={`table-sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Table sidebar shell">
       <button
@@ -76,7 +80,7 @@ export function TableSidebar({
       {isOpen ? (
         <div className="table-sidebar__panel" role="complementary" aria-label="Table sidebar">
           <div className="table-sidebar__tabs" role="tablist" aria-label="牌桌侧栏标签">
-            {TAB_ITEMS.map((tab) => (
+            {tabItems.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -91,6 +95,8 @@ export function TableSidebar({
           </div>
 
           <div className="table-sidebar__content">
+            {activeTab === 'room' ? roomPanel : null}
+
             {activeTab === 'players' ? (
               <ul className="table-sidebar__list">
                 {tablePlayers.map((player) => (

@@ -189,7 +189,7 @@ docker exec mahjong-backend backend admin create-invite --count 5
 docker compose exec backend backend admin create-invite --count 5
 ```
 
-命令会逐行输出一次性邀请码。把邀请码发给玩家后，玩家可自行注册昵称和密码，注册成功后自动登录进入大厅。
+命令会逐行输出一次性邀请码。把邀请码发给玩家后，玩家可自行注册昵称和密码，注册成功后自动登录进入牌桌界面。
 
 ## 5. Caddy 反向代理与 HTTPS
 
@@ -265,7 +265,7 @@ mahjong.example.com
 
 1. 打开 `https://mahjong.example.com`
 2. 打开浏览器开发者工具，确认前端资源正常加载
-3. 用邀请码注册第一个账号并进入大厅
+3. 用邀请码注册第一个账号并进入牌桌界面
 4. 创建牌桌，确认 `POST https://api.example.com/api/tables` 返回 `201`
 5. 确认浏览器成功建立 `wss://api.example.com/ws/{table_code}`
 6. 在开局前修改一次倍数，确认只允许 `x1` / `x2` / `x3`

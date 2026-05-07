@@ -35,6 +35,36 @@ function renderSidebar(isOwner: boolean) {
 }
 
 describe('TableSidebar', () => {
+  it('keeps the collapse toggle available while the sidebar panel is open', async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="room"
+        tablePlayers={[]}
+        onlineUsers={[]}
+        spectators={[]}
+        spectatorRequests={[]}
+        isOwner
+        roomPanel={<div>room panel</div>}
+        profilePanel={<div>profile</div>}
+        onToggle={onToggle}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onApproveRequest={vi.fn()}
+        onRejectRequest={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '收起牌桌侧边栏' }));
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('tab', { name: '牌局' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('room panel')).toBeInTheDocument();
+  });
+
   it('does not show approval buttons for non-owner viewers', () => {
     renderSidebar(false);
 

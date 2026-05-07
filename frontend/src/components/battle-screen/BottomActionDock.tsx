@@ -364,7 +364,7 @@ export function BottomActionDock({
                 })}
               </div>
             ) : (
-              <div className="action-dock__empty">牌桌进入对局后，手牌和操作按钮会显示在这里。</div>
+              <div className="action-dock__empty" aria-hidden="true" />
             )}
             <div className="action-dock__info-rail">
               {handInsightControl ? (

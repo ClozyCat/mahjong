@@ -3,7 +3,7 @@ import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type 
 import { AuthGate } from './components/auth/AuthGate';
 import { BattleScreen } from './components/battle-screen/BattleScreen';
 import type { TableSidebarPlayer, TableSidebarSpectator } from './components/table-sidebar/TableSidebar';
-import { SocialLobby } from './components/lobby/SocialLobby';
+import { SocialSidebarPanel } from './components/lobby/SocialSidebarPanel';
 import {
   clearStoredAuthSession,
   getMe,
@@ -127,7 +127,7 @@ function getRejectedMessage(reason: string) {
   const lookup: Record<string, string> = {
     table_not_found: '牌桌不存在或已关闭。',
     table_full: '牌桌已经坐满了，请换一个牌桌试试。',
-    invalid_reconnect_token: '上次的重连凭证已失效，请返回大厅后重新进入可加入的牌局。',
+    invalid_reconnect_token: '上次的重连凭证已失效，请回到牌桌侧栏后重新进入可加入的牌局。',
     seat_occupied: '这个座位已经被占用，请选择其他空位。',
   };
 
@@ -735,7 +735,7 @@ export default function App() {
             !current.roomSnapshot &&
             reconnectCloseCountRef.current >= MAX_CACHED_RECONNECT_CLOSES
           ) {
-            handleFatalLobbyReset('未能恢复座位，请返回大厅后重新进入可加入的牌局。', current.tableCode);
+            handleFatalLobbyReset('未能恢复座位，请回到牌桌侧栏后重新进入可加入的牌局。', current.tableCode);
             return;
           }
           dispatch({ type: 'set_connection_status', status: 'reconnecting' });
@@ -1437,13 +1437,87 @@ export default function App() {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       handleLeaveToLobby(
         state.roomSnapshot?.payload.table_code ?? state.tableCode,
-        '当前连接已断开，已返回大厅。若仍需回到牌局，请等待房主重新邀请。',
+        '当前连接已断开，已回到牌桌界面。若仍需回到牌局，请等待房主重新邀请。',
       );
       return;
     }
 
     leavingTableRef.current = true;
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
+  }
+
+  const sidebarRoomPanel = currentUser ? (
+    <SocialSidebarPanel
+      currentUser={currentUser}
+      leaderboard={leaderboard}
+      onlineUserIds={onlineUserIds}
+      pendingInvites={pendingInvites}
+      activeTableCode={activeLobbyTableCode}
+      inviteDialog={inviteDialog}
+      multiplier={lobbyMultiplier}
+      busy={lobbyBusy}
+      message={statusMessage}
+      onMultiplierChange={setLobbyMultiplier}
+      onCreateTable={handleCreateLobbyTable}
+      onEnterTable={handleEnterCreatedTable}
+      onInvite={handleInvitePlayer}
+      onAcceptInvite={handleAcceptInvite}
+      onDismissInviteDialog={() => setInviteDialog(null)}
+      onLogout={handleLogout}
+    />
+  ) : null;
+
+  function renderBattleScreen(options: { defaultSidebarOpen?: boolean; initialSidebarTab?: 'room' | 'players' } = {}) {
+    return (
+      <BattleScreen
+        isBgmEnabled={isBgmEnabled}
+        onToggleBgm={() =>
+          setIsBgmEnabled((current) => {
+            const next = !current;
+            saveStoredBgmEnabled(next);
+            return next;
+          })
+        }
+        isVoiceEnabled={isVoiceEnabled}
+        onToggleVoice={() => setIsVoiceEnabled((current) => !current)}
+        isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
+        onToggleBotTakeover={handleSetBotTakeover}
+        sidebarRoomPanel={sidebarRoomPanel}
+        sidebarDefaultOpen={options.defaultSidebarOpen}
+        sidebarInitialTab={options.initialSidebarTab}
+        sidebarPlayers={tableSidebarPlayers}
+        sidebarOnlineUsers={onlineUsersForSidebar}
+        sidebarSpectators={tableSidebarSpectators}
+        sidebarProfileUser={selectedProfileUser}
+        sidebarProfileFallbackName={selectedProfileFallbackName}
+        sidebarProfileFanStats={profileFanStats}
+        sidebarProfileRecentGames={profileRecentGames}
+        sidebarProfileLoading={profileLoading}
+        sidebarProfileMessage={profileMessage}
+        sidebarSpectatorRequests={pendingSpectatorRequests}
+        isSidebarOwner={isSidebarOwner}
+        onSidebarSelectUser={handleSelectSidebarUser}
+        onApproveSpectatorRequest={handleApproveSpectatorRequest}
+        onRejectSpectatorRequest={handleRejectSpectatorRequest}
+        viewModel={viewModel}
+        themeId={themeId}
+        themeLabel={getThemeLabel(themeId)}
+        onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
+        onTileSelect={handleTileSelect}
+        onTileDoubleClick={handleTileDoubleClick}
+        onClaimCandidateSelect={handleClaimCandidateSelect}
+        onClaimCandidateActivate={handleClaimCandidateActivate}
+        onAction={handleAction}
+        onCopyTableCode={handleCopyTableCode}
+        onLeaveTable={handleLeaveTable}
+        onAddBot={() => handleAdjustBots(1)}
+        onRemoveBot={() => handleAdjustBots(-1)}
+        onQuickChat={handleQuickChat}
+        isSpectator={isSpectator}
+        spectatorFocusName={spectatorFocusName}
+        onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}
+      />
+    );
   }
 
   if (!state.roomSnapshot) {
@@ -1458,73 +1532,8 @@ export default function App() {
       );
     }
 
-    return (
-      <SocialLobby
-        currentUser={currentUser}
-        leaderboard={leaderboard}
-        onlineUserIds={onlineUserIds}
-        pendingInvites={pendingInvites}
-        activeTableCode={activeLobbyTableCode}
-        inviteDialog={inviteDialog}
-        multiplier={lobbyMultiplier}
-        busy={lobbyBusy}
-        message={statusMessage}
-        onMultiplierChange={setLobbyMultiplier}
-        onCreateTable={handleCreateLobbyTable}
-        onEnterTable={handleEnterCreatedTable}
-        onInvite={handleInvitePlayer}
-        onAcceptInvite={handleAcceptInvite}
-        onDismissInviteDialog={() => setInviteDialog(null)}
-        onLogout={handleLogout}
-      />
-    );
+    return renderBattleScreen({ defaultSidebarOpen: true, initialSidebarTab: 'room' });
   }
 
-  return (
-    <BattleScreen
-      isBgmEnabled={isBgmEnabled}
-      onToggleBgm={() =>
-        setIsBgmEnabled((current) => {
-          const next = !current;
-          saveStoredBgmEnabled(next);
-          return next;
-        })
-      }
-      isVoiceEnabled={isVoiceEnabled}
-      onToggleVoice={() => setIsVoiceEnabled((current) => !current)}
-      isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
-      onToggleBotTakeover={handleSetBotTakeover}
-      sidebarPlayers={tableSidebarPlayers}
-      sidebarOnlineUsers={onlineUsersForSidebar}
-      sidebarSpectators={tableSidebarSpectators}
-      sidebarProfileUser={selectedProfileUser}
-      sidebarProfileFallbackName={selectedProfileFallbackName}
-      sidebarProfileFanStats={profileFanStats}
-      sidebarProfileRecentGames={profileRecentGames}
-      sidebarProfileLoading={profileLoading}
-      sidebarProfileMessage={profileMessage}
-      sidebarSpectatorRequests={pendingSpectatorRequests}
-      isSidebarOwner={isSidebarOwner}
-      onSidebarSelectUser={handleSelectSidebarUser}
-      onApproveSpectatorRequest={handleApproveSpectatorRequest}
-      onRejectSpectatorRequest={handleRejectSpectatorRequest}
-      viewModel={viewModel}
-      themeId={themeId}
-      themeLabel={getThemeLabel(themeId)}
-      onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
-      onTileSelect={handleTileSelect}
-      onTileDoubleClick={handleTileDoubleClick}
-      onClaimCandidateSelect={handleClaimCandidateSelect}
-      onClaimCandidateActivate={handleClaimCandidateActivate}
-      onAction={handleAction}
-      onCopyTableCode={handleCopyTableCode}
-      onLeaveTable={handleLeaveTable}
-      onAddBot={() => handleAdjustBots(1)}
-      onRemoveBot={() => handleAdjustBots(-1)}
-      onQuickChat={handleQuickChat}
-      isSpectator={isSpectator}
-      spectatorFocusName={spectatorFocusName}
-      onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}
-    />
-  );
+  return renderBattleScreen();
 }

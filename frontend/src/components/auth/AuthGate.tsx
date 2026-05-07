@@ -28,14 +28,14 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
   const [displayName, setDisplayName] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const disabled = status === 'loading';
-  const statusText = message ?? (disabled ? '正在处理请求...' : '登录后即可进入社交大厅。');
+  const statusText = message ?? (disabled ? '正在处理请求...' : '登录后即可进入牌桌。');
 
   return (
     <main className="auth-gate" aria-label="Auth gate">
       <div className="auth-gate__panel">
         <header className="auth-gate__header">
           <p className="auth-gate__eyebrow">Account</p>
-          <h1>朋友局大厅</h1>
+          <h1>朋友局牌桌</h1>
           <p className="auth-gate__status" role="status">
             {statusText}
           </p>
