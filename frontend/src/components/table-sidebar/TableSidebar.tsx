@@ -172,6 +172,7 @@ export function TableSidebar({
 
             {activeTab === 'players' ? (
               <ul className="table-sidebar__list">
+                {tablePlayers.length === 0 ? <li className="table-sidebar__empty">尚未开局</li> : null}
                 {tablePlayers.map((player) => (
                   <li key={player.key} className="table-sidebar__row table-sidebar__row--stacked">
                     <div>

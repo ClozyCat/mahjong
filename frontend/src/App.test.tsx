@@ -848,6 +848,40 @@ describe('App', () => {
     expectTableHome();
   });
 
+  it('clears the waiting table hint after the creator leaves before match start', async () => {
+    const user = userEvent.setup();
+    const { socket } = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'leave_table_accepted',
+        payload: {
+          table_code: 'AB12CD',
+          seat_index: 0,
+        },
+      });
+    });
+
+    expectTableHome();
+    expect(screen.queryByText(/当前待开局牌桌/)).not.toBeInTheDocument();
+  });
+
   it('returns to the table home with guidance when leaving after the connection has already dropped', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);

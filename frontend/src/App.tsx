@@ -633,6 +633,7 @@ export default function App() {
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
     reconnectCloseCountRef.current = 0;
+    setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
     clearStoredSession();
     dispatch({
