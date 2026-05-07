@@ -10,7 +10,6 @@ interface SocialLobbyProps {
   busy: boolean;
   message?: string | null;
   onCreateTable: () => void;
-  onEnterTable: () => void;
   onInvite: (userId: number) => void;
   onAcceptInvite: (invite: TableInvite) => void;
   onDismissInviteDialog: () => void;
@@ -27,7 +26,6 @@ export function SocialLobby({
   busy,
   message,
   onCreateTable,
-  onEnterTable,
   onInvite,
   onAcceptInvite,
   onDismissInviteDialog,
@@ -64,14 +62,6 @@ export function SocialLobby({
           <div className="social-lobby__actions">
             <button type="button" className="social-lobby__primary" disabled={busy} onClick={onCreateTable}>
               创建牌局
-            </button>
-            <button
-              type="button"
-              className="social-lobby__secondary"
-              disabled={!activeTableCode || busy}
-              onClick={onEnterTable}
-            >
-              进入牌桌
             </button>
           </div>
           <p className="social-lobby__hint">

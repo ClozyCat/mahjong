@@ -10,7 +10,6 @@ interface SocialSidebarPanelProps {
   busy: boolean;
   message?: string | null;
   onCreateTable: () => void;
-  onEnterTable: () => void;
   onInvite: (userId: number) => void;
   onAcceptInvite: (invite: TableInvite) => void;
   onDismissInviteDialog: () => void;
@@ -27,7 +26,6 @@ export function SocialSidebarPanel({
   busy,
   message,
   onCreateTable,
-  onEnterTable,
   onInvite,
   onAcceptInvite,
   onDismissInviteDialog,
@@ -73,9 +71,6 @@ export function SocialSidebarPanel({
         <div className="social-sidebar__actions">
           <button type="button" className="social-sidebar__primary" disabled={busy} onClick={onCreateTable}>
             创建牌局
-          </button>
-          <button type="button" disabled={!activeTableCode || busy} onClick={onEnterTable}>
-            进入牌桌
           </button>
         </div>
         <p>{activeTableCode ? `当前待开局牌桌：${activeTableCode}` : '创建后可在侧栏邀请在线玩家。'}</p>

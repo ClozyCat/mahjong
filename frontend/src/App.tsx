@@ -1039,21 +1039,6 @@ export default function App() {
     }
   }
 
-  function handleEnterCreatedTable() {
-    if (!authSession?.sessionToken || !currentUser || !activeLobbyTableCode) {
-      return;
-    }
-
-    setStatusMessage('正在进入牌桌...');
-    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-    openRoomSocket({
-      tableCode: activeLobbyTableCode,
-      nickname: currentUser.display_name,
-      wsBaseUrl: defaults.wsBaseUrl,
-      sessionToken: authSession.sessionToken,
-    });
-  }
-
   async function handleInvitePlayer(userId: number) {
     if (!authSession?.sessionToken || !activeLobbyTableCode) {
       setStatusMessage('请先创建牌局。');
@@ -1487,7 +1472,6 @@ export default function App() {
       busy={lobbyBusy}
       message={statusMessage}
       onCreateTable={handleCreateLobbyTable}
-      onEnterTable={handleEnterCreatedTable}
       onInvite={handleInvitePlayer}
       onAcceptInvite={handleAcceptInvite}
       onDismissInviteDialog={() => setInviteDialog(null)}
