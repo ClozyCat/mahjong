@@ -35,7 +35,7 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
       <div className="auth-gate__panel">
         <header className="auth-gate__header">
           <p className="auth-gate__eyebrow">Account</p>
-          <h1>朋友局牌桌</h1>
+          <h1>国标麻将听牌版</h1>
           <p className="auth-gate__status" role="status">
             {statusText}
           </p>
@@ -74,7 +74,7 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
             }}
           >
             <label className="auth-gate__field">
-              <span>账号或用户 ID</span>
+              <span>账号昵称</span>
               <input
                 value={identifier}
                 onChange={(event) => setIdentifier(event.target.value)}
