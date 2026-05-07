@@ -173,6 +173,24 @@ docker logs --tail=100 mahjong-backend
 {"status":"ok"}
 ```
 
+### 4.7 初始化邀请码
+
+当前版本上线后，前端首页默认是登录 / 邀请码注册，不再给普通用户提供“输入房间号直接加入牌桌”的入口。
+
+首次部署完成后，先在服务器上生成邀请码：
+
+```bash
+docker exec mahjong-backend backend admin create-invite --count 5
+```
+
+如果你后续改成用 `docker compose` 管理后端容器，也可以改为：
+
+```bash
+docker compose exec backend backend admin create-invite --count 5
+```
+
+命令会逐行输出一次性邀请码。把邀请码发给玩家后，玩家可自行注册昵称和密码，注册成功后自动登录进入大厅。
+
 ## 5. Caddy 反向代理与 HTTPS
 
 编辑 `/etc/caddy/Caddyfile`：
@@ -247,11 +265,14 @@ mahjong.example.com
 
 1. 打开 `https://mahjong.example.com`
 2. 打开浏览器开发者工具，确认前端资源正常加载
-3. 在页面里创建牌桌
-4. 确认 `POST https://api.example.com/api/tables` 返回 `201`
+3. 用邀请码注册第一个账号并进入大厅
+4. 创建牌桌，确认 `POST https://api.example.com/api/tables` 返回 `201`
 5. 确认浏览器成功建立 `wss://api.example.com/ws/{table_code}`
-6. 再开一个浏览器标签页，用同一个牌桌号加入
-7. 确认房间状态、准备状态、开局都能同步
+6. 在开局前修改一次倍数，确认只允许 `x1` / `x2` / `x3`
+7. 用第二个账号登录，确认能收到实时邀请弹窗并进入牌局
+8. 开局后再次检查倍数控件，确认已锁定
+9. 用第三个账号申请观战，确认需要房主审批后才能进入
+10. 打开牌桌右侧侧边栏，确认能看到本局玩家、在线玩家、玩家信息、观战者和观战申请
 
 如果失败，优先检查这三项：
 
@@ -359,6 +380,6 @@ cp /opt/mahjong-data/mahjong.db /opt/mahjong-data/mahjong-$(date +%F-%H%M%S).db
 2. 先把后端在服务器上跑通，并用 `https://api.example.com/api/health` 验证
 3. 再去配置 Cloudflare Pages
 4. 最后在 Pages 里填 `VITE_API_BASE_URL` 和 `VITE_WS_BASE_URL`
-5. 用正式域名完成一次“创建牌桌 -> 加入牌桌 -> 开局”的全链路联调
+5. 用正式域名完成一次“邀请码注册 -> 创建牌桌 -> 邀请入桌 -> 开局 -> 观战审批”的全链路联调
 
 如果后续你想把“后端 docker run”也整理成仓库内可直接复用的 `docker-compose.backend.yml`，可以再补一版更适合长期运维的服务器部署文件。

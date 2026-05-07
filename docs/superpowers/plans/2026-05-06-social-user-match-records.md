@@ -745,7 +745,7 @@ Start the app locally and verify:
 Search for removed build-time controls:
 
 ```powershell
-rg "__SPECTATOR_ENABLED__|feature = \"spectator\"|MAHJONG_ENABLE_SPECTATOR" backend frontend Dockerfile docker-compose.yml
+rg "__SPECTATOR_ENABLED__|feature = \"spectator\"|MAHJONG_ENABLE_SPECTATOR" backend frontend Dockerfile docker-compose.yml docker-compose.prebuilt.yml .env.example DEPLOYMENT_SOP.md DEPLOYMENT_SOP_PAGES_SERVER.md
 ```
 
 Expected: no matches except historical docs or tests that explicitly explain removal.
@@ -756,7 +756,7 @@ Expected: no matches except historical docs or tests that explicitly explain rem
 git status --short
 ```
 
-Expected: no unintended untracked files. Generated local caches may remain ignored.
+Expected: no unintended untracked files. Local cache artifacts such as `frontend/tsconfig.app.tsbuildinfo` or skill `__pycache__` files may remain outside this task's commit scope.
 
 - [ ] **Step 6: Final commit for documentation updates**
 
