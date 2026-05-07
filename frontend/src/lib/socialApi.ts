@@ -1,5 +1,6 @@
 import type {
   AcceptInviteResponse,
+  ActiveTableResponse,
   CreateTableResponse,
   GameSummary,
   PublicUser,
@@ -39,6 +40,10 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
     throw new Error(detailText);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return (await response.json()) as T;
 }
 
@@ -55,6 +60,12 @@ export function createSocialTable(baseUrl: string, sessionToken: string) {
 
 export function getLeaderboard(baseUrl: string) {
   return requestJson<PublicUser[]>(`${normalizeBaseUrl(baseUrl)}/api/leaderboard`);
+}
+
+export function getMyActiveTable(baseUrl: string, sessionToken: string) {
+  return requestJson<ActiveTableResponse | null>(`${normalizeBaseUrl(baseUrl)}/api/me/active-table`, {
+    headers: authHeaders(sessionToken),
+  });
 }
 
 export function getUserGames(baseUrl: string, userId: number) {

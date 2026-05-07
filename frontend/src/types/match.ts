@@ -60,6 +60,12 @@ export interface CreateTableResponse {
   seats: SeatSnapshot[];
 }
 
+export interface ActiveTableResponse {
+  table_code: string;
+  seat_index: number;
+  role: string;
+}
+
 export interface TableInvite {
   id: number;
   table_code: string;

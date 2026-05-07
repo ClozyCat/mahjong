@@ -79,6 +79,13 @@ struct AuthResponse {
     user: PublicUserView,
 }
 
+#[derive(Debug, Serialize)]
+struct ActiveTableResponse {
+    table_code: String,
+    seat_index: usize,
+    role: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct TableInviteResponse {
     id: i64,
@@ -132,6 +139,7 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
         .route("/api/me", get(get_me).patch(update_me))
+        .route("/api/me/active-table", get(get_my_active_table))
         .route("/api/games", get(list_games))
         .route("/api/games/{game_id}", get(get_game))
         .route("/api/users/{user_id}/games", get(list_user_games))
@@ -339,6 +347,33 @@ async fn get_me(State(state): State<AppContext>, headers: axum::http::HeaderMap)
     {
         Ok(Some(user)) => Json(public_user_view(&user)).into_response(),
         Ok(None) => json_error(StatusCode::UNAUTHORIZED, "auth_required"),
+        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+}
+
+async fn get_my_active_table(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    match state
+        .inner
+        .db
+        .list_active_table_participants_for_user(authenticated_user.user_id)
+        .await
+    {
+        Ok(participants) => Json(participants.into_iter().last().map(|participant| {
+            ActiveTableResponse {
+                table_code: participant.table_code,
+                seat_index: participant.seat_index,
+                role: participant.role,
+            }
+        }))
+        .into_response(),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }

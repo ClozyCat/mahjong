@@ -47,6 +47,7 @@ import {
   createSocialTable,
   createTableInvite,
   getLeaderboard,
+  getMyActiveTable,
   getMyInvites,
   getMySpectatorRequests,
   getUserFans,
@@ -56,7 +57,6 @@ import {
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
 import {
   clearStoredSession,
-  loadStoredSession,
   loadStoredThemeId,
   saveStoredSession,
   saveStoredThemeId,
@@ -80,6 +80,8 @@ import type {
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const MAX_CACHED_RECONNECT_CLOSES = 3;
+const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
+const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当前所在的牌桌。';
 const LEAVE_TABLE_CONFIRM_MESSAGE = '若主动离开，则无法再次加入对局，是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
@@ -112,13 +114,11 @@ function getDefaultConfig() {
     apiBaseUrl: env.VITE_API_BASE_URL ?? runtimeDefaults.apiBaseUrl,
     wsBaseUrl: env.VITE_WS_BASE_URL ?? runtimeDefaults.wsBaseUrl,
   };
-  const storedRoomSession = loadStoredSession();
   const storedAuthSession = loadStoredAuthSession();
 
   return {
     defaults,
     storedAuthSession,
-    storedRoomSession,
   };
 }
 
@@ -355,16 +355,14 @@ function getSeatLabel(seatIndex?: number | null) {
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
-  const { defaults, storedAuthSession, storedRoomSession } = useMemo(getDefaultConfig, []);
+  const { defaults, storedAuthSession } = useMemo(getDefaultConfig, []);
   const [themeId, setThemeId] = useState(() => {
     const storedThemeId = loadStoredThemeId();
     const nextThemeId = isThemeId(storedThemeId) ? getRandomThemeId(storedThemeId) : getRandomThemeId();
 
     return isThemeId(nextThemeId) ? nextThemeId : DEFAULT_THEME_ID;
   });
-  const [statusMessage, setStatusMessage] = useState<string | null>(
-    storedRoomSession ? `检测到牌桌 ${storedRoomSession.tableCode} 的历史会话，正在尝试恢复座位。` : null,
-  );
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus>(storedAuthSession ? 'loading' : 'anonymous');
   const [authSession, setAuthSession] = useState(storedAuthSession);
   const [currentUser, setCurrentUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
@@ -383,16 +381,17 @@ export default function App() {
   const [profileRecentGames, setProfileRecentGames] = useState<GameSummary[]>([]);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [isActiveTableLookupPending, setIsActiveTableLookupPending] = useState(false);
   const [state, dispatch] = useReducer(
     sessionReducer,
     undefined,
     (): SessionState => ({
       ...createInitialSessionState(),
       apiBaseUrl: defaults.apiBaseUrl,
-      wsBaseUrl: storedRoomSession?.wsBaseUrl ?? defaults.wsBaseUrl,
-      tableCode: storedRoomSession?.tableCode ?? '',
-      nickname: storedAuthSession?.user.display_name ?? storedRoomSession?.nickname ?? '',
-      reconnectToken: storedRoomSession?.reconnectToken ?? null,
+      wsBaseUrl: defaults.wsBaseUrl,
+      tableCode: '',
+      nickname: storedAuthSession?.user.display_name ?? '',
+      reconnectToken: null,
       connectionStatus: 'idle',
     }),
   );
@@ -402,6 +401,8 @@ export default function App() {
   const sessionRef = useRef(state);
   const leavingTableRef = useRef(false);
   const reconnectCloseCountRef = useRef(0);
+  const activeTableRestoreRef = useRef<{ tableCode: string; sessionToken: string; nickname: string } | null>(null);
+  const skipActiveTableLookupTokenRef = useRef<string | null>(null);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
   const previousHadRoomSnapshotRef = useRef(false);
@@ -447,6 +448,9 @@ export default function App() {
         setProfileRecentGames([]);
         setProfileMessage(null);
         setCurrentTableOwnerUserId(null);
+        setIsActiveTableLookupPending(false);
+        activeTableRestoreRef.current = null;
+        skipActiveTableLookupTokenRef.current = null;
         if (meSocketRef.current) {
           meSocketRef.current.onclose = null;
           meSocketRef.current.close();
@@ -455,7 +459,7 @@ export default function App() {
         return;
       }
 
-      setAuthStatus('loading');
+      setAuthStatus(currentUser ? 'ready' : 'loading');
 
       try {
         const [me, nextInvites, nextLeaderboard, nextSpectatorRequests] = await Promise.all([
@@ -476,9 +480,17 @@ export default function App() {
         setSelectedProfileUser((current) => current ?? me);
         setSelectedProfileFallbackName((current) => current ?? me.display_name);
         setAuthStatus('ready');
-        setStatusMessage((current) =>
-          current?.includes('历史会话') ? current : null,
-        );
+        setStatusMessage((current) => {
+          if (
+            current === ACTIVE_TABLE_LOOKUP_MESSAGE ||
+            current === ACTIVE_TABLE_RETRY_MESSAGE ||
+            current?.includes('正在重连')
+          ) {
+            return current;
+          }
+
+          return null;
+        });
         saveStoredAuthSession({
           sessionToken: authSession.sessionToken,
           user: me,
@@ -510,6 +522,9 @@ export default function App() {
         setSelectedProfileFallbackName(null);
         setProfileFanStats([]);
         setProfileRecentGames([]);
+        setIsActiveTableLookupPending(false);
+        activeTableRestoreRef.current = null;
+        skipActiveTableLookupTokenRef.current = null;
         setAuthStatus('anonymous');
         setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '登录状态已失效，请重新登录。');
       }
@@ -690,12 +705,15 @@ export default function App() {
       return;
     }
 
-    clearStoredSession();
+    if (state.tableCode) {
+      clearStoredSession();
+    }
   }, [currentUser?.display_name, state.clientMode, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
     reconnectCloseCountRef.current = 0;
+    activeTableRestoreRef.current = null;
     setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
     clearStoredSession();
@@ -709,6 +727,7 @@ export default function App() {
 
   const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
     reconnectCloseCountRef.current = 0;
+    activeTableRestoreRef.current = null;
     setCurrentTableOwnerUserId(null);
     clearStoredSession();
     dispatch({
@@ -772,6 +791,9 @@ export default function App() {
       if (!reconnect) {
         reconnectCloseCountRef.current = 0;
       }
+      if (mode === 'player' && sessionToken) {
+        activeTableRestoreRef.current = { tableCode, sessionToken, nickname };
+      }
       dispatch({ type: 'set_client_mode', clientMode: mode });
       dispatch({ type: 'set_connection_status', status: reconnect ? 'reconnecting' : 'connecting' });
       dispatch({ type: 'set_credentials', tableCode, nickname });
@@ -822,6 +844,12 @@ export default function App() {
           handleLeaveToLobby(current.tableCode, '观战连接已断开。');
           return;
         }
+        const activeRestore = activeTableRestoreRef.current;
+        if (activeRestore && activeRestore.tableCode === current.tableCode) {
+          dispatch({ type: 'set_connection_status', status: 'reconnecting' });
+          setStatusMessage(ACTIVE_TABLE_RETRY_MESSAGE);
+          return;
+        }
         if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {
           reconnectCloseCountRef.current += 1;
           if (
@@ -841,9 +869,101 @@ export default function App() {
     },
   );
 
+  const restoreActiveTable = useEffectEvent((tableCode: string, sessionToken: string, nickname: string) => {
+    activeTableRestoreRef.current = { tableCode, sessionToken, nickname };
+    reconnectCloseCountRef.current = 0;
+    setActiveLobbyTableCode(tableCode);
+    setStatusMessage(`检测到你正在牌桌 ${tableCode}，正在重连...`);
+    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
+    dispatch({ type: 'set_client_mode', clientMode: 'player' });
+    dispatch({ type: 'set_credentials', tableCode, nickname });
+    dispatch({ type: 'set_connection_status', status: 'reconnecting' });
+    openRoomSocket({
+      tableCode,
+      nickname,
+      wsBaseUrl: defaults.wsBaseUrl,
+      sessionToken,
+      reconnect: true,
+    });
+  });
+
   useEffect(() => {
+    if (authStatus !== 'ready' || !authSession?.sessionToken || !currentUser) {
+      return;
+    }
+
+    if (skipActiveTableLookupTokenRef.current === authSession.sessionToken) {
+      skipActiveTableLookupTokenRef.current = null;
+      return;
+    }
+
+    const sessionToken = authSession.sessionToken;
+    const displayName = currentUser.display_name;
+    let cancelled = false;
+    setIsActiveTableLookupPending(true);
+    setStatusMessage((current) => current ?? ACTIVE_TABLE_LOOKUP_MESSAGE);
+
+    getMyActiveTable(defaults.apiBaseUrl, sessionToken)
+      .then((activeTable) => {
+        if (cancelled) {
+          return;
+        }
+        if (activeTable) {
+          restoreActiveTable(activeTable.table_code, sessionToken, displayName);
+          return;
+        }
+        setStatusMessage((current) => (current === ACTIVE_TABLE_LOOKUP_MESSAGE ? null : current));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsActiveTableLookupPending(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.sessionToken, authStatus, currentUser?.display_name, currentUser?.user_id, defaults.apiBaseUrl, restoreActiveTable]);
+
+  useEffect(() => {
+    const activeRestore = activeTableRestoreRef.current;
     if (
       state.connectionStatus !== 'reconnecting' ||
+      !activeRestore ||
+      activeRestore.tableCode !== state.tableCode ||
+      !state.wsBaseUrl ||
+      socketRef.current
+    ) {
+      return;
+    }
+
+    const { tableCode, nickname, sessionToken } = activeRestore;
+    const wsBaseUrl = state.wsBaseUrl;
+    const timeoutId = window.setTimeout(() => {
+      openRoomSocket({
+        tableCode,
+        nickname,
+        wsBaseUrl,
+        sessionToken,
+        reconnect: true,
+      });
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [openRoomSocket, state.connectionStatus, state.tableCode, state.wsBaseUrl]);
+
+  useEffect(() => {
+    const activeRestore = activeTableRestoreRef.current;
+    if (
+      state.connectionStatus !== 'reconnecting' ||
+      (activeRestore && activeRestore.tableCode === state.tableCode) ||
       !state.reconnectToken ||
       !state.tableCode ||
       !state.wsBaseUrl ||
@@ -908,6 +1028,7 @@ export default function App() {
   const hasLocalSelfHuPassOption = localSelfHuPromptSignature !== null && !isLocalSelfHuPromptDismissed;
   const lobbyBusy =
     authStatus === 'loading' ||
+    isActiveTableLookupPending ||
     state.connectionStatus === 'connecting' ||
     state.connectionStatus === 'reconnecting';
   const isCreateTableBlockedByWaitingRoom = isWaitingInNonAllBotRoom(state.roomSnapshot);
@@ -1056,6 +1177,7 @@ export default function App() {
       setSelectedProfileUser(response.user);
       setSelectedProfileFallbackName(response.user.display_name);
       dispatch({ type: 'set_credentials', nickname: response.user.display_name });
+      setAuthStatus('ready');
       setStatusMessage(null);
     } catch (error) {
       clearStoredAuthSession();
@@ -1074,12 +1196,18 @@ export default function App() {
         sessionToken: response.session_token,
         user: response.user,
       };
+      skipActiveTableLookupTokenRef.current = nextSession.sessionToken;
+      activeTableRestoreRef.current = null;
+      clearStoredSession();
+      dispatch({ type: 'return_to_lobby', keepNickname: false, tableCode: '' });
+      closeSocket(socketRef, heartbeatTimerRef);
       saveStoredAuthSession(nextSession);
       setAuthSession(nextSession);
       setCurrentUser(response.user);
       setSelectedProfileUser(response.user);
       setSelectedProfileFallbackName(response.user.display_name);
       dispatch({ type: 'set_credentials', nickname: response.user.display_name });
+      setAuthStatus('ready');
       setStatusMessage(null);
     } catch (error) {
       clearStoredAuthSession();
@@ -1186,6 +1314,9 @@ export default function App() {
     setInviteDialog(null);
     setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
+    setIsActiveTableLookupPending(false);
+    activeTableRestoreRef.current = null;
+    skipActiveTableLookupTokenRef.current = null;
     setSelectedProfileUser(null);
     setSelectedProfileFallbackName(null);
     setProfileFanStats([]);

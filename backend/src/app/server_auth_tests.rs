@@ -216,3 +216,88 @@ async fn login_does_not_award_daily_points() -> Result<()> {
     assert_eq!(second_body["user"]["points"], 600);
     Ok(())
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn get_my_active_table_returns_latest_active_participant() -> Result<()> {
+    let (app, worker) = test_app().await?;
+    worker
+        .create_invite_code("INVITE000004", "2026-05-06T00:00:00Z", None)
+        .await?;
+
+    let register_response = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/register",
+            json!({
+                "invite_code": "INVITE000004",
+                "display_name": "Erin",
+                "password": "secret-123",
+            }),
+        ))
+        .await?;
+    assert_eq!(register_response.status(), StatusCode::CREATED);
+    let register_body = json_response(register_response).await;
+    let session_token = register_body["session_token"]
+        .as_str()
+        .expect("register should return a session token");
+    let user_id = register_body["user"]["user_id"]
+        .as_i64()
+        .expect("register should return a user id");
+
+    let no_active_response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/active-table",
+            session_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(no_active_response.status(), StatusCode::OK);
+    let no_active_body = json_response(no_active_response).await;
+    assert!(no_active_body.is_null());
+
+    let create_response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/tables",
+            session_token,
+            json!({ "table_code": "LIVE99" }),
+        ))
+        .await?;
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let table = worker
+        .get_table("LIVE99")
+        .await?
+        .expect("created table should be persisted");
+    worker
+        .save_table_and_store_reconnect_token_and_upsert_participant(
+            "LIVE99",
+            &table.created_at,
+            &table.room_json,
+            "token-live-99",
+            2,
+            42,
+            user_id,
+            "Erin",
+            "2026-05-06T12:00:00Z",
+        )
+        .await?;
+
+    let active_response = app
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/active-table",
+            session_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(active_response.status(), StatusCode::OK);
+    let active_body = json_response(active_response).await;
+    assert_eq!(active_body["table_code"], "LIVE99");
+    assert_eq!(active_body["seat_index"], 2);
+    assert_eq!(active_body["role"], "player");
+    Ok(())
+}

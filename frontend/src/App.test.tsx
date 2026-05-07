@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -297,6 +297,18 @@ function seedStoredAuthSession(user = DEFAULT_CURRENT_USER) {
   );
 }
 
+function seedStoredRoomSession() {
+  localStorage.setItem(
+    'mahjong:session',
+    JSON.stringify({
+      tableCode: 'OLD123',
+      nickname: 'Old Player',
+      reconnectToken: 'old-reconnect-token',
+      wsBaseUrl: 'ws://localhost:8000',
+    }),
+  );
+}
+
 function createFetchMock(options?: {
   me?: typeof DEFAULT_CURRENT_USER;
   leaderboard?: MockPublicUser[];
@@ -305,6 +317,8 @@ function createFetchMock(options?: {
   createdTableCode?: string;
   acceptInviteStatus?: number;
   acceptInviteDetail?: string;
+  deferMeResponse?: boolean;
+  activeTable?: { table_code: string; seat_index: number; role: string } | null;
 }) {
   const me = options?.me ?? DEFAULT_CURRENT_USER;
   const leaderboard = options?.leaderboard ?? DEFAULT_LEADERBOARD;
@@ -313,6 +327,8 @@ function createFetchMock(options?: {
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
   const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
   const acceptInviteDetail = options?.acceptInviteDetail;
+  const deferMeResponse = options?.deferMeResponse ?? false;
+  const activeTable = options?.activeTable ?? null;
 
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -344,11 +360,19 @@ function createFetchMock(options?: {
     }
 
     if (url.endsWith('/api/me') && method === 'GET') {
+      if (deferMeResponse) {
+        return new Promise(() => undefined);
+      }
+
       return createMockResponse(me);
     }
 
     if (url.endsWith('/api/me/invites') && method === 'GET') {
       return createMockResponse(invites);
+    }
+
+    if (url.endsWith('/api/me/active-table') && method === 'GET') {
+      return createMockResponse(activeTable);
     }
 
     if (url.endsWith('/api/me/spectator-requests') && method === 'GET') {
@@ -444,6 +468,9 @@ async function renderAuthenticatedLobby(
   await screen.findByRole('heading', { name: (options?.me ?? DEFAULT_CURRENT_USER).display_label });
   await waitFor(() => {
     expect(getMeSocket()).toBeDefined();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /创建牌局/u })).toBeEnabled();
   });
 
   return { fetchMock };
@@ -648,6 +675,77 @@ describe('App', () => {
       display_name: '新朋友',
       password: 'secret-123',
     });
+  });
+
+  it('keeps the table home usable immediately after registration while profile bootstrap is pending', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock({ deferMeResponse: true });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await user.click(screen.getAllByRole('tab')[1]);
+    const inputs = Array.from(document.querySelectorAll('input'));
+    await user.type(inputs[0], 'INVITE-1');
+    await user.type(inputs[1], 'New Friend');
+    await user.type(inputs[2], 'secret-123');
+    await user.click(screen.getAllByRole('button').at(-1)!);
+
+    expect(await screen.findByRole('region', { name: /牌桌侧栏首页/u })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /创建牌局/u })).toBeEnabled();
+  });
+
+  it('clears stale room reconnection state after registration so the table home stays usable', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    seedStoredRoomSession();
+
+    render(<App />);
+
+    await user.click(screen.getAllByRole('tab')[1]);
+    const inputs = Array.from(document.querySelectorAll('input'));
+    await user.type(inputs[0], 'INVITE-1');
+    await user.type(inputs[1], 'New Friend');
+    await user.type(inputs[2], 'secret-123');
+    await user.click(screen.getAllByRole('button').at(-1)!);
+
+    expect(await screen.findByRole('region', { name: /牌桌侧栏首页/u })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /创建牌局/u })).toBeEnabled();
+    expect(getRoomSocket('OLD123')).toBeUndefined();
+    expect(localStorage.getItem('mahjong:session')).toBeNull();
+  });
+
+  it('restores the current user active table after login instead of the stale local room session', async () => {
+    const fetchMock = createFetchMock({
+      activeTable: { table_code: 'LIVE99', seat_index: 2, role: 'player' },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    seedStoredRoomSession();
+
+    render(<App />);
+
+    const inputs = Array.from(document.querySelectorAll('input'));
+    fireEvent.change(inputs[0], { target: { value: 'Player A' } });
+    fireEvent.change(inputs[1], { target: { value: 'secret-123' } });
+    fireEvent.click(screen.getAllByRole('button').at(-1)!);
+
+    await waitFor(() => {
+      expect(getRoomSocket('LIVE99')).toBeDefined();
+    });
+
+    expect(getRoomSocket('OLD123')).toBeUndefined();
+    expect(screen.getByText(/正在重连/u)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /创建牌局/u })).toBeDisabled();
+
+    const socket = getRoomSocket('LIVE99')!;
+    act(() => {
+      socket.triggerOpen();
+    });
+
+    expect(socket.sentMessages[0]).toContain('join_table');
+    expect(socket.sentMessages[0]).toContain(AUTH_SESSION_TOKEN);
+    expect(socket.sentMessages[0]).not.toContain('reconnect');
   });
 
   it('shows the logged-in table view and creates a default x1 table without multiplier controls', async () => {
