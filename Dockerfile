@@ -15,6 +15,7 @@ RUN npm run build
 FROM ${DOCKER_REGISTRY}rust:1.94-bookworm AS rust-backend-builder
 
 ARG ONNXRUNTIME_VERSION=1.24.2
+ARG GITHUB_RELEASE_PROXY=https://gh-proxy.com/
 ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.cloud.tencent.com/debian-security
 
@@ -33,7 +34,7 @@ RUN sed -i "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g;
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" -o /tmp/onnxruntime.tgz \
+    && curl -fL --show-error --retry 5 --retry-delay 2 --connect-timeout 20 --max-time 300 "${GITHUB_RELEASE_PROXY}https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz" -o /tmp/onnxruntime.tgz \
     && mkdir -p /opt/onnxruntime \
     && tar -xzf /tmp/onnxruntime.tgz --strip-components=1 -C /opt/onnxruntime \
     && rm /tmp/onnxruntime.tgz
