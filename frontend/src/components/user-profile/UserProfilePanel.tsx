@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import type {
   GameSummary,
   PublicUser,
@@ -33,6 +35,8 @@ export function UserProfilePanel({
   loading = false,
   message = null,
 }: UserProfilePanelProps) {
+  const [activeResultGameId, setActiveResultGameId] = useState<number | null>(null);
+
   if (!user && !fallbackName) {
     return <p className="user-profile-panel__empty">请选择一名玩家查看公开资料</p>;
   }
@@ -74,15 +78,63 @@ export function UserProfilePanel({
         <ul className="user-profile-panel__list">
           {visibleGames.length === 0 ? <li className="user-profile-panel__empty">暂无牌局记录</li> : null}
           {visibleGames.map((game) => (
-            <li key={game.game_id} className="user-profile-panel__row user-profile-panel__row--stacked">
+            <li
+              key={game.game_id}
+              className="user-profile-panel__row user-profile-panel__row--stacked user-profile-panel__game-row"
+              tabIndex={0}
+              onMouseEnter={() => setActiveResultGameId(game.game_id)}
+              onMouseLeave={() => setActiveResultGameId(null)}
+              onFocus={() => setActiveResultGameId(game.game_id)}
+              onBlur={() => setActiveResultGameId(null)}
+            >
               <strong>{game.table_code}</strong>
               <span>{game.round_count} 局</span>
+              {activeResultGameId === game.game_id ? <GameResultPopover game={game} /> : null}
             </li>
           ))}
         </ul>
       </section>
     </section>
   );
+}
+
+function GameResultPopover({ game }: { game: GameSummary }) {
+  const summary = game.player_summary;
+
+  return (
+    <aside
+      role="tooltip"
+      aria-label={`${game.table_code} 最终结果`}
+      className="user-profile-panel__game-popover"
+    >
+      <div className="user-profile-panel__game-popover-head">
+        <span>最终结果</span>
+        <strong>{summary ? formatScoreDelta(summary.total_score_delta) : '--'}</strong>
+      </div>
+      <dl className="user-profile-panel__game-popover-stats">
+        <div>
+          <dt>战绩</dt>
+          <dd>{summary ? `${summary.win_count} 胜 / ${summary.deal_in_count} 放铳` : '暂无'}</dd>
+        </div>
+        <div>
+          <dt>胡牌</dt>
+          <dd>
+            {summary
+              ? `${summary.self_draw_win_count} 自摸 / ${summary.discard_win_count} 荣和`
+              : '暂无'}
+          </dd>
+        </div>
+        <div>
+          <dt>均分</dt>
+          <dd>{summary ? summary.average_cumulative_score : '--'}</dd>
+        </div>
+      </dl>
+    </aside>
+  );
+}
+
+function formatScoreDelta(delta: number) {
+  return delta > 0 ? `+${delta}` : String(delta);
 }
 
 export function generatePublicBio(recentGames: GameSummary[], fanStats: UserFanStat[]) {

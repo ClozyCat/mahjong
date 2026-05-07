@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { GameSummary, UserFanStat } from '../../types/match';
@@ -54,6 +54,44 @@ describe('UserProfilePanel', () => {
     expect(screen.getByText('8 局')).toBeInTheDocument();
     expect(screen.getByText('暂无公开简介')).toBeInTheDocument();
     expect(screen.queryByText(/x[123]/)).not.toBeInTheDocument();
+  });
+
+  it('shows the final result popover when hovering a recent game', () => {
+    render(
+      <UserProfilePanel
+        user={{
+          user_id: 1,
+          username: 'alice',
+          display_name: '阿明',
+          points: 320,
+          title: '平民',
+          display_label: '阿明（平民）',
+          bio: '',
+          avatar: null,
+        }}
+        fanStats={[]}
+        recentGames={[
+          gameWithSummary({
+            round_count: 8,
+            win_count: 3,
+            self_draw_win_count: 2,
+            discard_win_count: 1,
+            deal_in_count: 1,
+            total_score_delta: 28,
+            average_cumulative_score: 14,
+            high_score_round_count: 2,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole('tooltip', { name: 'AB12CD 最终结果' })).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByText('AB12CD').closest('li')!);
+
+    expect(screen.getByRole('tooltip', { name: 'AB12CD 最终结果' })).toBeInTheDocument();
+    expect(screen.getByText('+28')).toBeInTheDocument();
+    expect(screen.getByText('3 胜 / 1 放铳')).toBeInTheDocument();
   });
 
   it('generates a deal-in bio from recent player summaries', () => {

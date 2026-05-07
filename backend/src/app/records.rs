@@ -813,7 +813,7 @@ mod tests {
         let (app, state, worker) = test_app().await?;
         let owner_user_id = register_user(&worker, "INVITE300009", "Owner").await?;
         let guest_user_id = register_user(&worker, "INVITE300010", "Guest").await?;
-        let room = base_room(
+        let mut room = base_room(
             "ROOMREC5",
             1,
             vec![
@@ -825,6 +825,10 @@ mod tests {
             0,
             &["all_pungs"],
         );
+        room.phase = "finished".to_string();
+        if let Some(match_state) = &mut room.match_state {
+            match_state.match_finished = true;
+        }
         persist_participant(
             &worker,
             &room,
@@ -852,6 +856,9 @@ mod tests {
         .await?
         .expect("archive should produce a game");
         let game_id = archive.game_id;
+        worker
+            .delete_table(&room.table_code, "2026-05-06T01:05:00Z")
+            .await?;
 
         let games_response = app
             .clone()

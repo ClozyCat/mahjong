@@ -2054,7 +2054,9 @@ impl Database {
             FROM game_records
             JOIN users ON users.id = game_records.owner_user_id
             LEFT JOIN round_records ON round_records.game_record_id = game_records.id
-            WHERE EXISTS (
+            WHERE game_records.ended_at IS NOT NULL
+              AND game_records.final_room_json LIKE '%\"match_finished\":true%'
+              AND EXISTS (
                 SELECT 1
                 FROM round_records user_round_records
                 JOIN round_player_results
@@ -3023,6 +3025,104 @@ mod tests {
                 Some("2026-04-06T02:00:00Z".to_string()),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn list_games_for_user_returns_only_completed_matches() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        db.conn.execute(
+            "
+            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
+            VALUES
+                (1, 'owner', 'Owner', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z'),
+                (2, 'guest', 'Guest', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z')
+            ",
+            [],
+        )?;
+
+        insert_finished_game_fixture(
+            &db,
+            1,
+            "DONE01",
+            r#"{"phase":"finished","match_state":{"match_finished":true}}"#,
+        )?;
+        insert_finished_game_fixture(
+            &db,
+            2,
+            "LEFT01",
+            r#"{"phase":"settlement","match_state":{"match_finished":false}}"#,
+        )?;
+        insert_finished_game_fixture(&db, 3, "OPEN01", r#"{"phase":"playing","match_state":{"match_finished":false}}"#)?;
+        db.conn.execute(
+            "UPDATE game_records SET ended_at = NULL, final_room_json = NULL WHERE id = 3",
+            [],
+        )?;
+
+        let user_games = db.list_games_for_user(1, 10)?;
+        assert_eq!(user_games.len(), 1);
+        assert_eq!(user_games[0].table_code, "DONE01");
+        assert_eq!(
+            user_games[0]
+                .player_summary
+                .as_ref()
+                .map(|summary| summary.round_count),
+            Some(1)
+        );
+        Ok(())
+    }
+
+    fn insert_finished_game_fixture(
+        db: &Database,
+        game_id: i64,
+        table_code: &str,
+        final_room_json: &str,
+    ) -> Result<()> {
+        db.conn.execute(
+            "
+            INSERT INTO game_records (
+                id,
+                table_code,
+                owner_user_id,
+                multiplier,
+                started_at,
+                ended_at,
+                final_room_json
+            )
+            VALUES (?1, ?2, 1, 1, '2026-05-06T10:00:00Z', '2026-05-06T11:00:00Z', ?3)
+            ",
+            params![game_id, table_code, final_room_json],
+        )?;
+        db.conn.execute(
+            "
+            INSERT INTO round_records (id, game_record_id, round_id, ended_at, settlement_json)
+            VALUES (?1, ?2, ?3, '2026-05-06T10:30:00Z', ?4)
+            ",
+            params![
+                game_id,
+                game_id,
+                format!("{table_code}-round-1"),
+                r#"{"win_type":"self_draw","winning_details":[{"winner_seat":0}]}"#
+            ],
+        )?;
+        db.conn.execute(
+            "
+            INSERT INTO round_player_results (
+                round_record_id,
+                user_id,
+                seat_index,
+                score_delta,
+                point_delta,
+                cumulative_score,
+                is_winner,
+                win_type,
+                nickname_snapshot
+            )
+            VALUES (?1, 1, 0, 16, 0, 16, 1, 'self_draw', 'Owner')
+            ",
+            params![game_id],
+        )?;
         Ok(())
     }
 

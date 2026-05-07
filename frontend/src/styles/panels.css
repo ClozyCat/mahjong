@@ -423,6 +423,87 @@ button.table-sidebar__tabs button.is-active:not(:disabled) {
   border: 1px solid var(--glass-border);
 }
 
+.user-profile-panel__game-row {
+  position: relative;
+  cursor: help;
+  outline: none;
+}
+
+.user-profile-panel__game-row:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.user-profile-panel__game-popover {
+  position: absolute;
+  z-index: 35;
+  right: calc(100% + 0.65rem);
+  top: 50%;
+  width: min(18rem, 72vw);
+  transform: translateY(-50%);
+  padding: 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-border));
+  background: color-mix(in srgb, var(--theme-panel-bg) 92%, #05070b);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  color: var(--theme-paper-strong);
+  pointer-events: none;
+}
+
+.user-profile-panel__game-popover::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -0.45rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  transform: translateY(-50%) rotate(45deg);
+  border-top: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-border));
+  border-right: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-border));
+  background: inherit;
+}
+
+.user-profile-panel__game-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.user-profile-panel__game-popover-head span,
+.user-profile-panel__game-popover-stats dt {
+  color: color-mix(in srgb, var(--theme-paper) 64%, transparent);
+  font-size: 0.74rem;
+}
+
+.user-profile-panel__game-popover-head strong {
+  font-size: 1.25rem;
+}
+
+.user-profile-panel__game-popover-stats {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.user-profile-panel__game-popover-stats div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.user-profile-panel__game-popover-stats dt,
+.user-profile-panel__game-popover-stats dd {
+  margin: 0;
+}
+
+.user-profile-panel__game-popover-stats dd {
+  color: var(--theme-paper-strong);
+  font-weight: 700;
+}
+
 @media (max-width: 760px), (max-height: 540px) {
   .table-sidebar {
     position: fixed;
