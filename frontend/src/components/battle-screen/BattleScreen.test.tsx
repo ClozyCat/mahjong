@@ -2574,6 +2574,8 @@ describe('BattleScreen', () => {
         avatar: null,
       },
       sidebarSpectators: [],
+      sidebarRoomPanel: <div>room</div>,
+      sidebarMessagesPanel: <div>messages</div>,
     });
 
     expect(screen.getByRole('button', { name: '打开牌桌侧边栏' })).toBeInTheDocument();
@@ -2582,6 +2584,7 @@ describe('BattleScreen', () => {
     await user.click(screen.getByRole('button', { name: '打开牌桌侧边栏' }));
 
     expect(screen.getByRole('tab', { name: '本局玩家' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '消息' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '所有玩家' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '玩家信息' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '观战者' })).toBeInTheDocument();
@@ -2652,7 +2655,7 @@ describe('BattleScreen', () => {
 
     render(<ProfileSidebarHarness />);
 
-    await user.click(screen.getByRole('button', { name: '查看资料' }));
+    await user.click(screen.getByRole('button', { name: '查看信息' }));
 
     expect(screen.getByRole('heading', { name: 'Player B（雀士）' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '回到我的信息' })).toBeInTheDocument();
@@ -2662,7 +2665,7 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('heading', { name: 'Player A（平民）' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: '本局玩家' }));
-    await user.click(screen.getByRole('button', { name: '查看资料' }));
+    await user.click(screen.getByRole('button', { name: '查看信息' }));
     await user.click(screen.getByRole('button', { name: '回到我的信息' }));
 
     expect(screen.getByRole('heading', { name: 'Player A（平民）' })).toBeInTheDocument();

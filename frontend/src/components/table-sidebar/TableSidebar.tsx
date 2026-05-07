@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import type { PublicUser } from '../../types/match';
 
-export type TableSidebarTab = 'room' | 'players' | 'online' | 'profile' | 'spectators';
+export type TableSidebarTab = 'room' | 'messages' | 'players' | 'online' | 'profile' | 'spectators';
 
 export interface TableSidebarPlayer {
   key: string;
@@ -41,6 +41,7 @@ interface TableSidebarProps {
   spectators: TableSidebarSpectator[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   roomPanel?: ReactNode;
+  messagesPanel?: ReactNode;
   profilePanel: ReactNode;
   onToggle: () => void;
   onTabChange: (tab: TableSidebarTab) => void;
@@ -56,6 +57,14 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
         <line x1="3" y1="9" x2="21" y2="9" />
         <line x1="9" y1="21" x2="9" y2="9" />
+      </svg>
+    ),
+  },
+  messages: {
+    label: '消息',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
       </svg>
     ),
   },
@@ -140,15 +149,21 @@ export function TableSidebar({
   spectators,
   tabAlerts = {},
   roomPanel,
+  messagesPanel,
   profilePanel,
   onToggle,
   onTabChange,
   onSelectUser,
   onWatchUser,
 }: TableSidebarProps) {
-  const tabs: TableSidebarTab[] = roomPanel
-    ? ['room', 'players', 'online', 'profile', 'spectators']
-    : ['players', 'online', 'profile', 'spectators'];
+  const tabs: TableSidebarTab[] = [
+    ...(roomPanel ? (['room'] as const) : []),
+    ...(messagesPanel ? (['messages'] as const) : []),
+    'players',
+    'online',
+    'profile',
+    'spectators',
+  ];
   const resolvedActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
@@ -195,6 +210,7 @@ export function TableSidebar({
                 role="tab"
                 aria-selected={resolvedActiveTab === tabId}
                 title={TAB_CONFIG[tabId].label}
+                aria-label={TAB_CONFIG[tabId].label}
                 className={resolvedActiveTab === tabId ? 'is-active' : undefined}
                 onClick={() => onTabChange(tabId)}
               >
@@ -206,6 +222,8 @@ export function TableSidebar({
 
           <div className="table-sidebar__content">
             {resolvedActiveTab === 'room' ? roomPanel : null}
+
+            {resolvedActiveTab === 'messages' ? messagesPanel : null}
 
             {resolvedActiveTab === 'players' ? (
               <ul className="table-sidebar__list">
@@ -230,7 +248,7 @@ export function TableSidebar({
                     </div>
                     {player.profileUser ? (
                       <button type="button" onClick={() => onSelectUser(player.profileUser!)}>
-                        查看资料
+                        查看信息
                       </button>
                     ) : null}
                   </li>
@@ -264,7 +282,7 @@ export function TableSidebar({
                       </div>
                       <div className="table-sidebar__row-actions">
                         <button type="button" onClick={() => onSelectUser(user)}>
-                          查看资料
+                          查看信息
                         </button>
                         <button
                           type="button"

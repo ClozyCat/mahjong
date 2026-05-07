@@ -1334,11 +1334,41 @@ describe('App', () => {
       });
     });
 
+    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: '消息' }));
+
     expect(screen.getByRole('region', { name: '牌局邀请' })).toBeInTheDocument();
     expect(screen.getByText('牌桌 ZXCVBN 邀请你加入。')).toBeInTheDocument();
   });
 
+  it('keeps dismissed invite messages visible without a sidebar alert', async () => {
+    const user = userEvent.setup();
+    await renderAuthenticatedLobby();
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'table_invite_created',
+        payload: DEFAULT_PENDING_INVITE,
+      });
+    });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
+    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+
+    await user.click(screen.getByRole('button', { name: '稍后处理' }));
+
+    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
+    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toBeNull();
+  });
+
   it('hides already accepted invites from the sidebar pending list', async () => {
+    const user = userEvent.setup();
     await renderAuthenticatedLobby({
       invites: [
         {
@@ -1347,6 +1377,8 @@ describe('App', () => {
         },
       ],
     });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
 
     expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
     expect(screen.getByText('暂无待处理邀请')).toBeInTheDocument();
@@ -1360,6 +1392,8 @@ describe('App', () => {
       acceptInviteStatus: 404,
       acceptInviteDetail: 'table_not_found',
     });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
 
     expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
 
@@ -1378,6 +1412,8 @@ describe('App', () => {
     const { fetchMock } = await renderAuthenticatedLobby({
       invites: [DEFAULT_PENDING_INVITE],
     });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
 
     expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
 

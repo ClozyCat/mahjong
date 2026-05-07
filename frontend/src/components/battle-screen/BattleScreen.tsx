@@ -62,6 +62,7 @@ interface BattleScreenProps {
   sidebarCurrentUser?: PublicUser | null;
   sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
+  sidebarMessagesPanel?: ReactNode;
   sidebarDefaultOpen?: boolean;
   sidebarInitialTab?: TableSidebarTab;
   sidebarProfileUser?: PublicUser | null;
@@ -117,6 +118,7 @@ export function BattleScreen({
   sidebarCurrentUser = null,
   sidebarSpectators = [],
   sidebarRoomPanel = null,
+  sidebarMessagesPanel = null,
   sidebarDefaultOpen = false,
   sidebarInitialTab = 'players',
   sidebarProfileUser = null,
@@ -517,6 +519,7 @@ export function BattleScreen({
             spectators={sidebarSpectators}
             tabAlerts={sidebarTabAlerts}
             roomPanel={sidebarRoomPanel}
+            messagesPanel={sidebarMessagesPanel}
             profilePanel={
               <UserProfilePanel
                 user={sidebarProfileUser}

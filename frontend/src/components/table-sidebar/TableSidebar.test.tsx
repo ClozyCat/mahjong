@@ -17,6 +17,7 @@ describe('TableSidebar', () => {
         onlineUsers={[]}
         spectators={[]}
         roomPanel={<div>room panel</div>}
+        messagesPanel={<div>messages panel</div>}
         profilePanel={<div>profile</div>}
         onToggle={onToggle}
         onTabChange={vi.fn()}
@@ -28,27 +29,31 @@ describe('TableSidebar', () => {
 
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('tab', { name: '牌局' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '消息' })).toBeInTheDocument();
     expect(screen.getByText('room panel')).toBeInTheDocument();
   });
 
-  it('shows alert badges on tabs with pending work', () => {
+  it('shows alert badges on the messages tab with pending work', () => {
     render(
       <TableSidebar
         isOpen
-        activeTab="room"
+        activeTab="messages"
         tablePlayers={[]}
         onlineUsers={[]}
         spectators={[]}
         roomPanel={<div>room panel</div>}
+        messagesPanel={<div>messages panel</div>}
         profilePanel={<div>profile</div>}
-        tabAlerts={{ room: true }}
+        tabAlerts={{ messages: true }}
         onToggle={vi.fn()}
         onTabChange={vi.fn()}
         onSelectUser={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole('tab', { name: '牌局' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+    expect(screen.getByRole('tab', { name: '牌局' }).querySelector('.table-sidebar__tab-alert')).toBeNull();
+    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+    expect(screen.getByText('messages panel')).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: '观战申请' })).not.toBeInTheDocument();
   });
 

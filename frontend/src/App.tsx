@@ -3,7 +3,7 @@ import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type 
 import { AuthGate } from './components/auth/AuthGate';
 import { BattleScreen } from './components/battle-screen/BattleScreen';
 import type { TableSidebarPlayer, TableSidebarSpectator } from './components/table-sidebar/TableSidebar';
-import { SocialSidebarPanel } from './components/lobby/SocialSidebarPanel';
+import { SocialSidebarMessagesPanel, SocialSidebarPanel } from './components/lobby/SocialSidebarPanel';
 import {
   clearStoredAuthSession,
   getMe,
@@ -398,6 +398,16 @@ function getSeatLabel(seatIndex?: number | null) {
   return windLabels[seatIndex] ?? `${seatIndex + 1}号位`;
 }
 
+function removeDismissedInviteAlertId(current: Set<number>, inviteId: number) {
+  if (!current.has(inviteId)) {
+    return current;
+  }
+
+  const next = new Set(current);
+  next.delete(inviteId);
+  return next;
+}
+
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => loadStoredVoiceEnabled());
@@ -418,6 +428,7 @@ export default function App() {
   const [sentInviteStatusesByUserId, setSentInviteStatusesByUserId] = useState<Record<number, SentInviteStatus>>({});
   const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
   const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
+  const [dismissedInviteAlertIds, setDismissedInviteAlertIds] = useState<Set<number>>(() => new Set());
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
   const [currentTableOwnerUserId, setCurrentTableOwnerUserId] = useState<number | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
@@ -488,6 +499,7 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
+        setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests([]);
         setInviteDialog(null);
@@ -524,6 +536,7 @@ export default function App() {
 
         setCurrentUser(me);
         setPendingInvites(getPendingTableInvites(nextInvites));
+        setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests(nextSpectatorRequests);
         setLeaderboard(nextLeaderboard);
@@ -566,6 +579,7 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
+        setDismissedInviteAlertIds(new Set());
         setPendingSpectatorRequests([]);
         setInviteDialog(null);
         setSelectedProfileUser(null);
@@ -641,6 +655,9 @@ export default function App() {
 
       if (message.type === 'table_invite_created') {
         setPendingInvites((current) => upsertInvite(current, message.payload));
+        if (!isPendingTableInvite(message.payload)) {
+          setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, message.payload.id));
+        }
         setInviteDialog((current) => {
           if (isPendingTableInvite(message.payload)) {
             return message.payload;
@@ -653,6 +670,7 @@ export default function App() {
 
       if (message.type === 'table_invite_decided') {
         setPendingInvites((current) => upsertInvite(current, message.payload));
+        setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, message.payload.id));
         setInviteDialog((current) => (current?.id === message.payload.id ? null : current));
         if (currentUser.user_id === message.payload.inviter_user_id) {
           setSentInviteStatusesByUserId((current) => {
@@ -1370,6 +1388,7 @@ export default function App() {
       setStatusMessage(`正在进入牌桌 ${invite.table_code}...`);
       const accepted = await acceptTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
       setPendingInvites((current) => removeInviteById(current, invite.id));
+      setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
       setInviteDialog((current) => (current?.id === invite.id ? null : current));
       setActiveLobbyTableCode(null);
       setCurrentTableOwnerUserId(invite.inviter_user_id);
@@ -1383,6 +1402,7 @@ export default function App() {
     } catch (error) {
       if (isStaleTableInviteError(error)) {
         setPendingInvites((current) => removeInviteById(current, invite.id));
+        setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
         setInviteDialog((current) => (current?.id === invite.id ? null : current));
       }
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '接受邀请失败。');
@@ -1398,15 +1418,25 @@ export default function App() {
     try {
       await rejectTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
       setPendingInvites((current) => removeInviteById(current, invite.id));
+      setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
       setInviteDialog((current) => (current?.id === invite.id ? null : current));
       setStatusMessage(`已拒绝牌桌 ${invite.table_code} 的邀请。`);
     } catch (error) {
       if (isStaleTableInviteError(error)) {
         setPendingInvites((current) => removeInviteById(current, invite.id));
+        setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
         setInviteDialog((current) => (current?.id === invite.id ? null : current));
       }
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '拒绝邀请失败。');
     }
+  }
+
+  function handleDismissInviteDialog() {
+    if (inviteDialog) {
+      setDismissedInviteAlertIds((current) => new Set(current).add(inviteDialog.id));
+    }
+
+    setInviteDialog(null);
   }
 
   async function handleLogout() {
@@ -1425,6 +1455,7 @@ export default function App() {
     setLeaderboard([]);
     setOnlineUserIds([]);
     setPendingInvites([]);
+    setDismissedInviteAlertIds(new Set());
     setSentInviteStatusesByUserId({});
     setPendingSpectatorRequests([]);
     setInviteDialog(null);
@@ -1826,29 +1857,39 @@ export default function App() {
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
   }
 
+  const hasMessageAlert =
+    pendingInvites.some((invite) => !dismissedInviteAlertIds.has(invite.id)) ||
+    (isSidebarOwner && pendingSpectatorRequests.length > 0);
+
   const sidebarRoomPanel = currentUser ? (
     <SocialSidebarPanel
       currentUser={currentUser}
       leaderboard={leaderboard}
       onlineUserIds={onlineUserIds}
-      pendingInvites={pendingInvites}
-      spectatorRequests={pendingSpectatorRequests}
       activeTableCode={activeLobbyTableCode}
-      inviteDialog={inviteDialog}
       busy={lobbyBusy}
       isCreateTableDisabled={isCreateTableDisabled}
       canInvitePlayers={canInvitePlayers}
       inviteStatusesByUserId={sentInviteStatusesByUserId}
-      isOwner={isSidebarOwner}
       message={statusMessage}
       onCreateTable={handleCreateLobbyTable}
       onInvite={handleInvitePlayer}
+      onLogout={handleLogout}
+    />
+  ) : null;
+
+  const sidebarMessagesPanel = currentUser ? (
+    <SocialSidebarMessagesPanel
+      inviteDialog={inviteDialog}
+      pendingInvites={pendingInvites}
+      spectatorRequests={pendingSpectatorRequests}
+      isOwner={isSidebarOwner}
+      message={statusMessage}
       onAcceptInvite={handleAcceptInvite}
       onRejectInvite={handleRejectInvite}
       onApproveSpectatorRequest={handleApproveSpectatorRequest}
       onRejectSpectatorRequest={handleRejectSpectatorRequest}
-      onDismissInviteDialog={() => setInviteDialog(null)}
-      onLogout={handleLogout}
+      onDismissInviteDialog={handleDismissInviteDialog}
     />
   ) : null;
 
@@ -1874,6 +1915,7 @@ export default function App() {
         isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
         onToggleBotTakeover={handleSetBotTakeover}
         sidebarRoomPanel={sidebarRoomPanel}
+        sidebarMessagesPanel={sidebarMessagesPanel}
         sidebarDefaultOpen={options.defaultSidebarOpen}
         sidebarInitialTab={options.initialSidebarTab}
         sidebarPlayers={tableSidebarPlayers}
@@ -1890,7 +1932,7 @@ export default function App() {
         sidebarProfileLoading={profileLoading}
         sidebarProfileMessage={profileMessage}
         sidebarTabAlerts={{
-          room: pendingInvites.length > 0 || (isSidebarOwner && pendingSpectatorRequests.length > 0),
+          messages: hasMessageAlert,
         }}
         onSidebarSelectUser={handleSelectSidebarUser}
         onSidebarShowCurrentUser={handleShowCurrentSidebarProfile}

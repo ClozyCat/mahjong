@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SocialSidebarPanel } from './SocialSidebarPanel';
+import { SocialSidebarMessagesPanel, SocialSidebarPanel } from './SocialSidebarPanel';
 
 const currentUser = {
   user_id: 1,
@@ -64,7 +64,8 @@ describe('SocialSidebarPanel', () => {
     expect(screen.getByRole('heading', { name: '阿明（平民）' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '待处理观战申请' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '待处理邀请' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '待处理观战申请' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '积分榜' })).not.toBeInTheDocument();
   });
 
@@ -156,8 +157,7 @@ describe('SocialSidebarPanel', () => {
     const onRejectInvite = vi.fn();
 
     render(
-      <SocialSidebarPanel
-        {...defaultProps}
+      <SocialSidebarMessagesPanel
         pendingInvites={[
           {
             id: 9,
@@ -169,7 +169,14 @@ describe('SocialSidebarPanel', () => {
             expires_at: '2026-05-06T12:10:00Z',
           },
         ]}
+        inviteDialog={null}
+        spectatorRequests={[]}
+        isOwner={false}
+        onAcceptInvite={vi.fn()}
         onRejectInvite={onRejectInvite}
+        onApproveSpectatorRequest={vi.fn()}
+        onRejectSpectatorRequest={vi.fn()}
+        onDismissInviteDialog={vi.fn()}
       />,
     );
 
@@ -184,8 +191,9 @@ describe('SocialSidebarPanel', () => {
     const onRejectSpectatorRequest = vi.fn();
 
     render(
-      <SocialSidebarPanel
-        {...defaultProps}
+      <SocialSidebarMessagesPanel
+        inviteDialog={null}
+        pendingInvites={[]}
         isOwner
         spectatorRequests={[
           {
@@ -198,8 +206,11 @@ describe('SocialSidebarPanel', () => {
             decided_at: null,
           },
         ]}
+        onAcceptInvite={vi.fn()}
+        onRejectInvite={vi.fn()}
         onApproveSpectatorRequest={onApproveSpectatorRequest}
         onRejectSpectatorRequest={onRejectSpectatorRequest}
+        onDismissInviteDialog={vi.fn()}
       />,
     );
 

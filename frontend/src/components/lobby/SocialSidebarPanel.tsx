@@ -6,47 +6,42 @@ interface SocialSidebarPanelProps {
   currentUser: PublicUser;
   leaderboard: PublicUser[];
   onlineUserIds: number[];
-  pendingInvites: TableInvite[];
-  spectatorRequests: SpectatorRequest[];
   activeTableCode: string | null;
-  inviteDialog: TableInvite | null;
   busy: boolean;
   isCreateTableDisabled: boolean;
   canInvitePlayers: boolean;
   inviteStatusesByUserId: Record<number, SentInviteStatus>;
-  isOwner: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
+  onLogout: () => void;
+}
+
+interface SocialSidebarMessagesPanelProps {
+  inviteDialog: TableInvite | null;
+  pendingInvites: TableInvite[];
+  spectatorRequests: SpectatorRequest[];
+  isOwner: boolean;
+  message?: string | null;
   onAcceptInvite: (invite: TableInvite) => void;
   onRejectInvite: (invite: TableInvite) => void;
   onApproveSpectatorRequest: (requestId: number) => void;
   onRejectSpectatorRequest: (requestId: number) => void;
   onDismissInviteDialog: () => void;
-  onLogout: () => void;
 }
 
 export function SocialSidebarPanel({
   currentUser,
   leaderboard,
   onlineUserIds,
-  pendingInvites,
-  spectatorRequests,
   activeTableCode,
-  inviteDialog,
   busy,
   isCreateTableDisabled,
   canInvitePlayers,
   inviteStatusesByUserId,
-  isOwner,
   message,
   onCreateTable,
   onInvite,
-  onAcceptInvite,
-  onRejectInvite,
-  onApproveSpectatorRequest,
-  onRejectSpectatorRequest,
-  onDismissInviteDialog,
   onLogout,
 }: SocialSidebarPanelProps) {
   const onlineUsers = leaderboard.filter(
@@ -67,24 +62,6 @@ export function SocialSidebarPanel({
       </header>
 
       {message ? <p className="social-sidebar__message">{message}</p> : null}
-
-      {inviteDialog ? (
-        <section className="social-sidebar__notice" aria-label="牌局邀请">
-          <strong>收到牌局邀请</strong>
-          <span>牌桌 {inviteDialog.table_code} 邀请你加入。</span>
-          <div className="social-sidebar__actions">
-            <button type="button" className="social-sidebar__primary" onClick={() => onAcceptInvite(inviteDialog)}>
-              接受邀请
-            </button>
-            <button type="button" onClick={() => onRejectInvite(inviteDialog)}>
-              拒绝
-            </button>
-            <button type="button" onClick={onDismissInviteDialog}>
-              稍后处理
-            </button>
-          </div>
-        </section>
-      ) : null}
 
       <section className="social-sidebar__section">
         <h3>牌局管理</h3>
@@ -109,29 +86,6 @@ export function SocialSidebarPanel({
       </section>
 
       <section className="social-sidebar__section">
-        <h3>待处理邀请</h3>
-        <ul className="table-sidebar__list">
-          {pendingInvites.length === 0 ? <li className="table-sidebar__empty">暂无待处理邀请</li> : null}
-          {pendingInvites.map((invite) => (
-            <li key={invite.id} className="table-sidebar__row table-sidebar__row--stacked">
-              <div className="table-sidebar__row-info">
-                <strong className="table-sidebar__row-name">{invite.table_code}</strong>
-                <span className="table-sidebar__stat">邀请时间 {invite.created_at}</span>
-              </div>
-              <div className="table-sidebar__actions">
-                <button type="button" onClick={() => onAcceptInvite(invite)}>
-                  接受
-                </button>
-                <button type="button" onClick={() => onRejectInvite(invite)}>
-                  拒绝
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="social-sidebar__section">
         <h3>在线玩家</h3>
         <ul className="table-sidebar__list">
           {onlineUsers.length === 0 ? <li className="table-sidebar__empty">暂无在线玩家</li> : null}
@@ -153,6 +107,66 @@ export function SocialSidebarPanel({
               </li>
             );
           })}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+export function SocialSidebarMessagesPanel({
+  inviteDialog,
+  pendingInvites,
+  spectatorRequests,
+  isOwner,
+  message,
+  onAcceptInvite,
+  onRejectInvite,
+  onApproveSpectatorRequest,
+  onRejectSpectatorRequest,
+  onDismissInviteDialog,
+}: SocialSidebarMessagesPanelProps) {
+  return (
+    <div className="social-sidebar" role="region" aria-label="消息中心">
+      {message ? <p className="social-sidebar__message">{message}</p> : null}
+
+      {inviteDialog ? (
+        <section className="social-sidebar__notice" aria-label="牌局邀请">
+          <strong>收到牌局邀请</strong>
+          <span>牌桌 {inviteDialog.table_code} 邀请你加入。</span>
+          <div className="social-sidebar__actions">
+            <button type="button" className="social-sidebar__primary" onClick={() => onAcceptInvite(inviteDialog)}>
+              接受邀请
+            </button>
+            <button type="button" onClick={() => onRejectInvite(inviteDialog)}>
+              拒绝
+            </button>
+            <button type="button" onClick={onDismissInviteDialog}>
+              稍后处理
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="social-sidebar__section">
+        <h3>待处理邀请</h3>
+        <ul className="table-sidebar__list">
+          {pendingInvites.length === 0 ? <li className="table-sidebar__empty">暂无待处理邀请</li> : null}
+          {pendingInvites.map((invite) => (
+            <li key={invite.id} className="table-sidebar__row table-sidebar__row--stacked">
+              <div className="table-sidebar__row-info">
+                <strong className="table-sidebar__row-name">{invite.table_code}</strong>
+                <span className="table-sidebar__stat">邀请时间 {invite.created_at}</span>
+              </div>
+              <div className="table-sidebar__actions">
+                <button type="button" onClick={() => onAcceptInvite(invite)}>
+                  接受
+                </button>
+                <button type="button" onClick={() => onRejectInvite(invite)}>
+                  拒绝
+                </button>
+              </div>
+            </li>
+          ))}
         </ul>
       </section>
 
