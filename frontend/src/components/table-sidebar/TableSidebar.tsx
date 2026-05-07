@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
-import type { PublicUser, SpectatorRequest } from '../../types/match';
+import type { PublicUser } from '../../types/match';
 
-export type TableSidebarTab = 'room' | 'players' | 'online' | 'profile' | 'spectators' | 'requests';
+export type TableSidebarTab = 'room' | 'players' | 'online' | 'profile' | 'spectators';
 
 export interface TableSidebarPlayer {
   key: string;
@@ -30,16 +30,12 @@ interface TableSidebarProps {
   onlineUsers: PublicUser[];
   onlineUserIds?: number[];
   spectators: TableSidebarSpectator[];
-  spectatorRequests: SpectatorRequest[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
-  isOwner: boolean;
   roomPanel?: ReactNode;
   profilePanel: ReactNode;
   onToggle: () => void;
   onTabChange: (tab: TableSidebarTab) => void;
   onSelectUser: (user: PublicUser) => void;
-  onApproveRequest: (requestId: number) => void;
-  onRejectRequest: (requestId: number) => void;
 }
 
 const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = {
@@ -92,17 +88,6 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
       </svg>
     ),
   },
-  requests: {
-    label: '观战申请',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <line x1="19" y1="8" x2="19" y2="14" />
-        <line x1="22" y1="11" x2="16" y2="11" />
-      </svg>
-    ),
-  },
 };
 
 export function TableSidebar({
@@ -112,20 +97,16 @@ export function TableSidebar({
   onlineUsers,
   onlineUserIds = [],
   spectators,
-  spectatorRequests,
   tabAlerts = {},
-  isOwner,
   roomPanel,
   profilePanel,
   onToggle,
   onTabChange,
   onSelectUser,
-  onApproveRequest,
-  onRejectRequest,
 }: TableSidebarProps) {
   const tabs: TableSidebarTab[] = roomPanel
-    ? ['room', 'players', 'online', 'profile', 'spectators', 'requests']
-    : ['players', 'online', 'profile', 'spectators', 'requests'];
+    ? ['room', 'players', 'online', 'profile', 'spectators']
+    : ['players', 'online', 'profile', 'spectators'];
   const resolvedActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
@@ -231,31 +212,6 @@ export function TableSidebar({
                     {spectator.subtitle ? <span>{spectator.subtitle}</span> : null}
                   </li>
                 ))}
-              </ul>
-            ) : null}
-
-            {resolvedActiveTab === 'requests' ? (
-              <ul className="table-sidebar__list">
-                {!isOwner ? <li className="table-sidebar__empty">仅房主可审批观战申请</li> : null}
-                {isOwner && spectatorRequests.length === 0 ? <li className="table-sidebar__empty">暂无待审批申请</li> : null}
-                {isOwner
-                  ? spectatorRequests.map((request) => (
-                      <li key={request.id} className="table-sidebar__row table-sidebar__row--stacked">
-                        <div>
-                          <strong>用户 #{request.requester_user_id}</strong>
-                          <span>申请观战 {request.table_code}</span>
-                        </div>
-                        <div className="table-sidebar__actions">
-                          <button type="button" onClick={() => onApproveRequest(request.id)}>
-                            同意
-                          </button>
-                          <button type="button" onClick={() => onRejectRequest(request.id)}>
-                            拒绝
-                          </button>
-                        </div>
-                      </li>
-                    ))
-                  : null}
               </ul>
             ) : null}
           </div>

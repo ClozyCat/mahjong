@@ -7,7 +7,6 @@ import type {
   GameSummary,
   PublicUser,
   QuickChatEmoji,
-  SpectatorRequest,
   UserFanStat,
 } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
@@ -68,12 +67,8 @@ interface BattleScreenProps {
   sidebarProfileRecentGames?: GameSummary[];
   sidebarProfileLoading?: boolean;
   sidebarProfileMessage?: string | null;
-  sidebarSpectatorRequests?: SpectatorRequest[];
   sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
-  isSidebarOwner?: boolean;
   onSidebarSelectUser?: (user: PublicUser) => void;
-  onApproveSpectatorRequest?: (requestId: number) => void;
-  onRejectSpectatorRequest?: (requestId: number) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -122,12 +117,8 @@ export function BattleScreen({
   sidebarProfileRecentGames = [],
   sidebarProfileLoading = false,
   sidebarProfileMessage = null,
-  sidebarSpectatorRequests = [],
   sidebarTabAlerts = {},
-  isSidebarOwner = false,
   onSidebarSelectUser,
-  onApproveSpectatorRequest,
-  onRejectSpectatorRequest,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -501,9 +492,7 @@ export function BattleScreen({
             onlineUsers={sidebarOnlineUsers}
             onlineUserIds={sidebarOnlineUserIds}
             spectators={sidebarSpectators}
-            spectatorRequests={sidebarSpectatorRequests}
             tabAlerts={sidebarTabAlerts}
-            isOwner={isSidebarOwner}
             roomPanel={sidebarRoomPanel}
             profilePanel={
               <UserProfilePanel
@@ -518,8 +507,6 @@ export function BattleScreen({
             onToggle={() => setIsSidebarOpen((current) => !current)}
             onTabChange={setSidebarTab}
             onSelectUser={handleSidebarSelectUser}
-            onApproveRequest={(requestId) => onApproveSpectatorRequest?.(requestId)}
-            onRejectRequest={(requestId) => onRejectSpectatorRequest?.(requestId)}
           />
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (

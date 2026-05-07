@@ -1681,15 +1681,19 @@ export default function App() {
       leaderboard={leaderboard}
       onlineUserIds={onlineUserIds}
       pendingInvites={pendingInvites}
+      spectatorRequests={pendingSpectatorRequests}
       activeTableCode={activeLobbyTableCode}
       inviteDialog={inviteDialog}
       busy={lobbyBusy}
       isCreateTableDisabled={isCreateTableDisabled}
       canInvitePlayers={canInvitePlayers}
+      isOwner={isSidebarOwner}
       message={statusMessage}
       onCreateTable={handleCreateLobbyTable}
       onInvite={handleInvitePlayer}
       onAcceptInvite={handleAcceptInvite}
+      onApproveSpectatorRequest={handleApproveSpectatorRequest}
+      onRejectSpectatorRequest={handleRejectSpectatorRequest}
       onDismissInviteDialog={() => setInviteDialog(null)}
       onLogout={handleLogout}
     />
@@ -1723,15 +1727,10 @@ export default function App() {
         sidebarProfileRecentGames={profileRecentGames}
         sidebarProfileLoading={profileLoading}
         sidebarProfileMessage={profileMessage}
-        sidebarSpectatorRequests={pendingSpectatorRequests}
         sidebarTabAlerts={{
-          room: pendingInvites.length > 0,
-          requests: isSidebarOwner && pendingSpectatorRequests.length > 0,
+          room: pendingInvites.length > 0 || (isSidebarOwner && pendingSpectatorRequests.length > 0),
         }}
-        isSidebarOwner={isSidebarOwner}
         onSidebarSelectUser={handleSelectSidebarUser}
-        onApproveSpectatorRequest={handleApproveSpectatorRequest}
-        onRejectSpectatorRequest={handleRejectSpectatorRequest}
         viewModel={viewModel}
         themeId={themeId}
         themeLabel={getThemeLabel(themeId)}

@@ -29,24 +29,32 @@ const leaderboard = [
   },
 ];
 
+const defaultProps = {
+  currentUser,
+  leaderboard,
+  onlineUserIds: [1, 2],
+  pendingInvites: [],
+  spectatorRequests: [],
+  activeTableCode: null,
+  inviteDialog: null,
+  busy: false,
+  isCreateTableDisabled: false,
+  canInvitePlayers: false,
+  isOwner: false,
+  onCreateTable: vi.fn(),
+  onInvite: vi.fn(),
+  onAcceptInvite: vi.fn(),
+  onApproveSpectatorRequest: vi.fn(),
+  onRejectSpectatorRequest: vi.fn(),
+  onDismissInviteDialog: vi.fn(),
+  onLogout: vi.fn(),
+};
+
 describe('SocialSidebarPanel', () => {
   it('shows current user without multiplier controls inside the sidebar', () => {
     render(
       <SocialSidebarPanel
-        currentUser={currentUser}
-        leaderboard={leaderboard}
-        onlineUserIds={[1, 2]}
-        pendingInvites={[]}
-        activeTableCode={null}
-        inviteDialog={null}
-        busy={false}
-        isCreateTableDisabled={false}
-        canInvitePlayers={false}
-        onCreateTable={vi.fn()}
-        onInvite={vi.fn()}
-        onAcceptInvite={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
-        onLogout={vi.fn()}
+        {...defaultProps}
       />,
     );
 
@@ -54,6 +62,8 @@ describe('SocialSidebarPanel', () => {
     expect(screen.getByRole('heading', { name: '阿明（平民）' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '待处理观战申请' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '积分榜' })).not.toBeInTheDocument();
   });
 
   it('invokes invite callback for an online user', async () => {
@@ -62,20 +72,10 @@ describe('SocialSidebarPanel', () => {
 
     render(
       <SocialSidebarPanel
-        currentUser={currentUser}
-        leaderboard={leaderboard}
-        onlineUserIds={[1, 2]}
-        pendingInvites={[]}
+        {...defaultProps}
         activeTableCode="ROOM42"
-        inviteDialog={null}
-        busy={false}
-        isCreateTableDisabled={false}
         canInvitePlayers={true}
-        onCreateTable={vi.fn()}
         onInvite={onInvite}
-        onAcceptInvite={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
-        onLogout={vi.fn()}
       />,
     );
 
@@ -89,20 +89,10 @@ describe('SocialSidebarPanel', () => {
 
     render(
       <SocialSidebarPanel
-        currentUser={currentUser}
-        leaderboard={leaderboard}
-        onlineUserIds={[1, 2]}
-        pendingInvites={[]}
+        {...defaultProps}
         activeTableCode="ROOM42"
-        inviteDialog={null}
-        busy={false}
-        isCreateTableDisabled={false}
         canInvitePlayers={false}
-        onCreateTable={vi.fn()}
         onInvite={onInvite}
-        onAcceptInvite={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
-        onLogout={vi.fn()}
       />,
     );
 
@@ -113,5 +103,40 @@ describe('SocialSidebarPanel', () => {
     await user.click(inviteButton!);
 
     expect(onInvite).not.toHaveBeenCalled();
+  });
+
+  it('lets the owner approve and reject spectator requests from the room tab panel', async () => {
+    const user = userEvent.setup();
+    const onApproveSpectatorRequest = vi.fn();
+    const onRejectSpectatorRequest = vi.fn();
+
+    render(
+      <SocialSidebarPanel
+        {...defaultProps}
+        isOwner
+        spectatorRequests={[
+          {
+            id: 3,
+            table_code: 'AB12CD',
+            requester_user_id: 7,
+            owner_user_id: 1,
+            status: 'pending',
+            created_at: '2026-05-06T12:00:00Z',
+            decided_at: null,
+          },
+        ]}
+        onApproveSpectatorRequest={onApproveSpectatorRequest}
+        onRejectSpectatorRequest={onRejectSpectatorRequest}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: '待处理观战申请' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '积分榜' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '同意' }));
+    await user.click(screen.getByRole('button', { name: '拒绝' }));
+
+    expect(onApproveSpectatorRequest).toHaveBeenCalledWith(3);
+    expect(onRejectSpectatorRequest).toHaveBeenCalledWith(3);
   });
 });

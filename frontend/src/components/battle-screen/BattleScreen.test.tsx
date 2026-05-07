@@ -2540,18 +2540,6 @@ describe('BattleScreen', () => {
         avatar: null,
       },
       sidebarSpectators: [],
-      sidebarSpectatorRequests: [
-        {
-          id: 5,
-          table_code: 'AB12CD',
-          requester_user_id: 2,
-          owner_user_id: 1,
-          status: 'pending',
-          created_at: '2026-05-06T12:00:00Z',
-          decided_at: null,
-        },
-      ],
-      isSidebarOwner: true,
     });
 
     expect(screen.getByRole('button', { name: '打开牌桌侧边栏' })).toBeInTheDocument();
@@ -2563,6 +2551,6 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('tab', { name: '所有玩家' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '玩家信息' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '观战者' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '观战申请' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '观战申请' })).not.toBeInTheDocument();
   });
 });

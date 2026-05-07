@@ -1,19 +1,23 @@
-import type { PublicUser, TableInvite } from '../../types/match';
+import type { PublicUser, SpectatorRequest, TableInvite } from '../../types/match';
 
 interface SocialSidebarPanelProps {
   currentUser: PublicUser;
   leaderboard: PublicUser[];
   onlineUserIds: number[];
   pendingInvites: TableInvite[];
+  spectatorRequests: SpectatorRequest[];
   activeTableCode: string | null;
   inviteDialog: TableInvite | null;
   busy: boolean;
   isCreateTableDisabled: boolean;
   canInvitePlayers: boolean;
+  isOwner: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
   onAcceptInvite: (invite: TableInvite) => void;
+  onApproveSpectatorRequest: (requestId: number) => void;
+  onRejectSpectatorRequest: (requestId: number) => void;
   onDismissInviteDialog: () => void;
   onLogout: () => void;
 }
@@ -23,22 +27,25 @@ export function SocialSidebarPanel({
   leaderboard,
   onlineUserIds,
   pendingInvites,
+  spectatorRequests,
   activeTableCode,
   inviteDialog,
   busy,
   isCreateTableDisabled,
   canInvitePlayers,
+  isOwner,
   message,
   onCreateTable,
   onInvite,
   onAcceptInvite,
+  onApproveSpectatorRequest,
+  onRejectSpectatorRequest,
   onDismissInviteDialog,
   onLogout,
 }: SocialSidebarPanelProps) {
   const onlineUsers = leaderboard.filter(
     (user) => user.user_id !== currentUser.user_id && onlineUserIds.includes(user.user_id),
   );
-  const topUsers = leaderboard.slice(0, 8);
 
   return (
     <div className="social-sidebar" role="region" aria-label="牌桌侧栏首页">
@@ -117,15 +124,29 @@ export function SocialSidebarPanel({
       </section>
 
       <section className="social-sidebar__section">
-        <h3>积分榜</h3>
-        <ol className="social-sidebar__ranking">
-          {topUsers.map((user) => (
-            <li key={user.user_id}>
-              <span>{user.display_label}</span>
-              <strong>{user.points}</strong>
-            </li>
-          ))}
-        </ol>
+        <h3>待处理观战申请</h3>
+        <ul className="table-sidebar__list">
+          {!isOwner ? <li className="table-sidebar__empty">仅房主可审批观战申请</li> : null}
+          {isOwner && spectatorRequests.length === 0 ? <li className="table-sidebar__empty">暂无待审批申请</li> : null}
+          {isOwner
+            ? spectatorRequests.map((request) => (
+                <li key={request.id} className="table-sidebar__row table-sidebar__row--stacked">
+                  <div>
+                    <strong>用户 #{request.requester_user_id}</strong>
+                    <span>申请观战 {request.table_code}</span>
+                  </div>
+                  <div className="table-sidebar__actions">
+                    <button type="button" onClick={() => onApproveSpectatorRequest(request.id)}>
+                      同意
+                    </button>
+                    <button type="button" onClick={() => onRejectSpectatorRequest(request.id)}>
+                      拒绝
+                    </button>
+                  </div>
+                </li>
+              ))
+            : null}
+        </ul>
       </section>
     </div>
   );
