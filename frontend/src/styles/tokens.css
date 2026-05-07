@@ -35,6 +35,16 @@
   --halo-thickness: 2px;
   --halo-offset: -4px;
   --halo-glow: 4px;
+
+  /* ---- Glassmorphism system (Translucent Obsidian) ---- */
+  --glass-blur: blur(20px) saturate(160%);
+  --glass-blur-strong: blur(32px) saturate(180%);
+  --glass-border: color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  --glass-border-strong: color-mix(in srgb, var(--theme-paper) 20%, transparent);
+  --glass-obsidian: rgba(10, 14, 14, 0.72);
+  --glass-obsidian-deep: rgba(6, 8, 8, 0.84);
+  --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  --glass-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
 * {

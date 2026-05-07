@@ -46,16 +46,21 @@ export function SocialLobby({
 
   return (
     <main className="social-lobby" aria-label="Social lobby">
-      <section className="social-lobby__hero">
-        <div>
-          <p className="social-lobby__eyebrow">Lobby</p>
+      <header className="social-lobby__hero">
+        <div className="social-lobby__brand">
+          <p className="social-lobby__eyebrow">Social Hub</p>
           <h1>{currentUser.display_label}</h1>
-          <p className="social-lobby__meta">当前积分 {currentUser.points}</p>
+          <div className="social-lobby__meta">
+            <span className="social-lobby__points-badge">
+              积分 <strong>{currentUser.points}</strong>
+            </span>
+            <span className="social-lobby__status-indicator">在线</span>
+          </div>
         </div>
-        <button type="button" className="social-lobby__ghost" onClick={onLogout}>
-          退出登录
+        <button type="button" className="social-lobby__logout-btn" onClick={onLogout}>
+          退出账号
         </button>
-      </section>
+      </header>
 
       {message ? <p className="social-lobby__message">{message}</p> : null}
 
