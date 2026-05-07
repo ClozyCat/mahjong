@@ -639,6 +639,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '注册并登录' }));
 
     await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+    expectTableHome();
 
     const registerCall = findFetchCall(fetchMock, '/api/auth/register', 'POST');
     expect(registerCall).toBeDefined();

@@ -90,6 +90,30 @@ describe('TableSidebar', () => {
     expect(screen.getByRole('tab', { name: '观战申请' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
   });
 
+  it('falls back to a visible tab when the requested room tab is unavailable', () => {
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="room"
+        tablePlayers={[]}
+        onlineUsers={[]}
+        spectators={[]}
+        spectatorRequests={[]}
+        isOwner
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onApproveRequest={vi.fn()}
+        onRejectRequest={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('tab', { name: '牌局' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '本局玩家' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('尚未开局')).toBeInTheDocument();
+  });
+
   it('shows all users by points and updates online labels from presence', () => {
     const users = [
       {

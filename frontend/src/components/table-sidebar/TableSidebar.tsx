@@ -126,6 +126,7 @@ export function TableSidebar({
   const tabs: TableSidebarTab[] = roomPanel
     ? ['room', 'players', 'online', 'profile', 'spectators', 'requests']
     : ['players', 'online', 'profile', 'spectators', 'requests'];
+  const resolvedActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
   const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
@@ -160,9 +161,9 @@ export function TableSidebar({
                 key={tabId}
                 type="button"
                 role="tab"
-                aria-selected={activeTab === tabId}
+                aria-selected={resolvedActiveTab === tabId}
                 title={TAB_CONFIG[tabId].label}
-                className={activeTab === tabId ? 'is-active' : undefined}
+                className={resolvedActiveTab === tabId ? 'is-active' : undefined}
                 onClick={() => onTabChange(tabId)}
               >
                 <span className="table-sidebar__tab-icon">{TAB_CONFIG[tabId].icon}</span>
@@ -172,9 +173,9 @@ export function TableSidebar({
           </div>
 
           <div className="table-sidebar__content">
-            {activeTab === 'room' ? roomPanel : null}
+            {resolvedActiveTab === 'room' ? roomPanel : null}
 
-            {activeTab === 'players' ? (
+            {resolvedActiveTab === 'players' ? (
               <ul className="table-sidebar__list">
                 {tablePlayers.length === 0 ? <li className="table-sidebar__empty">尚未开局</li> : null}
                 {tablePlayers.map((player) => (
@@ -197,7 +198,7 @@ export function TableSidebar({
               </ul>
             ) : null}
 
-            {activeTab === 'online' ? (
+            {resolvedActiveTab === 'online' ? (
               <ul className="table-sidebar__list">
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
                 {allUsers.map((user) => (
@@ -219,9 +220,9 @@ export function TableSidebar({
               </ul>
             ) : null}
 
-            {activeTab === 'profile' ? profilePanel : null}
+            {resolvedActiveTab === 'profile' ? profilePanel : null}
 
-            {activeTab === 'spectators' ? (
+            {resolvedActiveTab === 'spectators' ? (
               <ul className="table-sidebar__list">
                 {spectators.length === 0 ? <li className="table-sidebar__empty">暂无观战者信息</li> : null}
                 {spectators.map((spectator) => (
@@ -233,7 +234,7 @@ export function TableSidebar({
               </ul>
             ) : null}
 
-            {activeTab === 'requests' ? (
+            {resolvedActiveTab === 'requests' ? (
               <ul className="table-sidebar__list">
                 {!isOwner ? <li className="table-sidebar__empty">仅房主可审批观战申请</li> : null}
                 {isOwner && spectatorRequests.length === 0 ? <li className="table-sidebar__empty">暂无待审批申请</li> : null}
