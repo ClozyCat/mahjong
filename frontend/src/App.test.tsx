@@ -560,6 +560,37 @@ describe('App', () => {
     ]);
   });
 
+  it('disables creating another table while waiting in a non-all-bot room', async () => {
+    const user = userEvent.setup();
+    const { socket, fetchMock } = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: false, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+          ],
+          local_seat: 0,
+          reconnect_token: 'token-1',
+        },
+      });
+    });
+
+    const createButton = screen.getByRole('button', { name: '创建牌局' });
+    expect(createButton).toBeDisabled();
+
+    await user.click(createButton);
+
+    const createTableCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith('/api/tables') && init?.method === 'POST',
+    );
+    expect(createTableCalls).toHaveLength(1);
+  });
+
   it('registers with invite code and then enters the table view', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();

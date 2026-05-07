@@ -246,6 +246,15 @@ function getOccupiedSpectatorSeats(snapshot: SessionState['roomSnapshot']) {
   return snapshot?.payload.seats.map((seat) => seat.seat_index).sort((left, right) => left - right) ?? [];
 }
 
+function isWaitingInNonAllBotRoom(snapshot: SessionState['roomSnapshot']) {
+  const payload = snapshot?.payload;
+  if (!payload || payload.phase !== 'waiting' || payload.seats.length === 0) {
+    return false;
+  }
+
+  return payload.seats.some((seat) => !seat.is_bot);
+}
+
 function resolveSpectatorFocusSeat(state: SessionState) {
   const seats = getOccupiedSpectatorSeats(state.roomSnapshot);
   if (seats.length === 0) {
@@ -837,6 +846,8 @@ export default function App() {
     authStatus === 'loading' ||
     state.connectionStatus === 'connecting' ||
     state.connectionStatus === 'reconnecting';
+  const isCreateTableBlockedByWaitingRoom = isWaitingInNonAllBotRoom(state.roomSnapshot);
+  const isCreateTableDisabled = lobbyBusy || isCreateTableBlockedByWaitingRoom;
   const isSpectator = state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
   const spectatorFocusName =
@@ -1017,6 +1028,10 @@ export default function App() {
   async function handleCreateLobbyTable() {
     if (!authSession?.sessionToken || !currentUser) {
       setStatusMessage('请先登录。');
+      return;
+    }
+    if (isCreateTableBlockedByWaitingRoom) {
+      setStatusMessage('当前牌局正在等待开局，不能重复创建牌局。');
       return;
     }
 
@@ -1470,6 +1485,7 @@ export default function App() {
       activeTableCode={activeLobbyTableCode}
       inviteDialog={inviteDialog}
       busy={lobbyBusy}
+      isCreateTableDisabled={isCreateTableDisabled}
       message={statusMessage}
       onCreateTable={handleCreateLobbyTable}
       onInvite={handleInvitePlayer}

@@ -8,6 +8,7 @@ interface SocialLobbyProps {
   activeTableCode: string | null;
   inviteDialog: TableInvite | null;
   busy: boolean;
+  isCreateTableDisabled: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
@@ -24,6 +25,7 @@ export function SocialLobby({
   activeTableCode,
   inviteDialog,
   busy,
+  isCreateTableDisabled,
   message,
   onCreateTable,
   onInvite,
@@ -60,7 +62,7 @@ export function SocialLobby({
         <div className="social-lobby__panel">
           <h2>创建牌局</h2>
           <div className="social-lobby__actions">
-            <button type="button" className="social-lobby__primary" disabled={busy} onClick={onCreateTable}>
+            <button type="button" className="social-lobby__primary" disabled={isCreateTableDisabled} onClick={onCreateTable}>
               创建牌局
             </button>
           </div>

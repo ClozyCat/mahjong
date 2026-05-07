@@ -8,6 +8,7 @@ interface SocialSidebarPanelProps {
   activeTableCode: string | null;
   inviteDialog: TableInvite | null;
   busy: boolean;
+  isCreateTableDisabled: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
@@ -24,6 +25,7 @@ export function SocialSidebarPanel({
   activeTableCode,
   inviteDialog,
   busy,
+  isCreateTableDisabled,
   message,
   onCreateTable,
   onInvite,
@@ -69,7 +71,7 @@ export function SocialSidebarPanel({
       <section className="social-sidebar__section">
         <h3>创建牌局</h3>
         <div className="social-sidebar__actions">
-          <button type="button" className="social-sidebar__primary" disabled={busy} onClick={onCreateTable}>
+          <button type="button" className="social-sidebar__primary" disabled={isCreateTableDisabled} onClick={onCreateTable}>
             创建牌局
           </button>
         </div>
