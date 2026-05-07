@@ -364,6 +364,39 @@ button.table-sidebar__toggle:active:not(:disabled) {
   color: color-mix(in srgb, var(--theme-paper) 60%, transparent);
 }
 
+.table-sidebar__player-status {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 0 0.6rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.2;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table-sidebar__player-status--online {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.table-sidebar__player-status--playing-human {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.table-sidebar__player-status--playing-bot {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.13);
+}
+
+.table-sidebar__player-status--offline {
+  color: color-mix(in srgb, var(--theme-paper) 52%, transparent);
+  background: color-mix(in srgb, var(--theme-paper) 8%, transparent);
+}
+
 .table-sidebar__empty,
 .user-profile-panel__empty {
   padding: 3rem 1rem;

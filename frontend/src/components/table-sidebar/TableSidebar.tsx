@@ -23,6 +23,13 @@ export interface TableSidebarSpectator {
   subtitle?: string | null;
 }
 
+type AllPlayerStatusTone = 'online' | 'offline' | 'playing-human' | 'playing-bot';
+
+interface AllPlayerStatus {
+  label: string;
+  tone: AllPlayerStatusTone;
+}
+
 interface TableSidebarProps {
   isOpen: boolean;
   activeTab: TableSidebarTab;
@@ -92,6 +99,26 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
   },
 };
 
+function getAllPlayerStatus(
+  user: PublicUser,
+  onlineUserIdSet: Set<number>,
+  activeTableUserCounts: Map<string, number>,
+): AllPlayerStatus {
+  if (!onlineUserIdSet.has(user.user_id)) {
+    return { label: '离线', tone: 'offline' };
+  }
+
+  if (!user.active_table_code) {
+    return { label: '在线', tone: 'online' };
+  }
+
+  const activeUserCount = activeTableUserCounts.get(user.active_table_code) ?? 0;
+
+  return activeUserCount > 1
+    ? { label: '与玩家对局中', tone: 'playing-human' }
+    : { label: '与BOT对局中', tone: 'playing-bot' };
+}
+
 export function TableSidebar({
   isOpen,
   activeTab,
@@ -115,6 +142,14 @@ export function TableSidebar({
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
   const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
+  const activeTableUserCounts = allUsers.reduce((counts, user) => {
+    if (!user.active_table_code) {
+      return counts;
+    }
+
+    counts.set(user.active_table_code, (counts.get(user.active_table_code) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
 
   return (
     <aside className={`table-sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Table sidebar shell">
@@ -197,15 +232,16 @@ export function TableSidebar({
                 {allUsers.map((user) => {
                   const isSelf = currentUserId === user.user_id;
                   const canWatch = Boolean(user.active_table_code && !isSelf && onWatchUser);
+                  const playerStatus = getAllPlayerStatus(user, onlineUserIdSet, activeTableUserCounts);
 
                   return (
                     <li key={user.user_id} className="table-sidebar__row">
                       <div className="table-sidebar__row-info">
                         <strong className="table-sidebar__row-name">
                           {user.display_label}
-                          {onlineUserIdSet.has(user.user_id) ? (
-                            <span className="table-sidebar__online-badge">online</span>
-                          ) : null}
+                          <span className={`table-sidebar__player-status table-sidebar__player-status--${playerStatus.tone}`}>
+                            {playerStatus.label}
+                          </span>
                         </strong>
                         <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
                       </div>

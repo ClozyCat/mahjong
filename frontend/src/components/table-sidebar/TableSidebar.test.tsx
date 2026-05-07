@@ -72,7 +72,7 @@ describe('TableSidebar', () => {
     expect(screen.getByText('尚未开局')).toBeInTheDocument();
   });
 
-  it('shows all users by points and updates online labels from presence', () => {
+  it('shows all users by points and updates player status labels from presence', () => {
     const users = [
       {
         user_id: 2,
@@ -83,6 +83,7 @@ describe('TableSidebar', () => {
         display_label: '阿强（平民）',
         bio: '',
         avatar: null,
+        active_table_code: null,
       },
       {
         user_id: 3,
@@ -93,6 +94,7 @@ describe('TableSidebar', () => {
         display_label: '阿成（雀士）',
         bio: '',
         avatar: null,
+        active_table_code: null,
       },
       {
         user_id: 4,
@@ -103,6 +105,7 @@ describe('TableSidebar', () => {
         display_label: '阿丹（平民）',
         bio: '',
         avatar: null,
+        active_table_code: null,
       },
     ];
     const baseProps = {
@@ -124,13 +127,72 @@ describe('TableSidebar', () => {
     expect(within(rows[0]).getByText(/阿成（雀士）/)).toBeInTheDocument();
     expect(within(rows[1]).getByText(/阿强（平民）/)).toBeInTheDocument();
     expect(within(rows[2]).getByText(/阿丹（平民）/)).toBeInTheDocument();
-    expect(within(rows[1]).getByText('online')).toBeInTheDocument();
-    expect(within(rows[0]).queryByText('online')).not.toBeInTheDocument();
+    expect(within(rows[1]).getByText('在线')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('离线')).toBeInTheDocument();
 
     rerender(<TableSidebar {...baseProps} onlineUserIds={[3]} />);
 
-    expect(within(screen.getAllByRole('listitem')[0]).getByText('online')).toBeInTheDocument();
-    expect(within(screen.getAllByRole('listitem')[1]).queryByText('online')).not.toBeInTheDocument();
+    expect(within(screen.getAllByRole('listitem')[0]).getByText('在线')).toBeInTheDocument();
+    expect(within(screen.getAllByRole('listitem')[1]).getByText('离线')).toBeInTheDocument();
+  });
+
+  it('splits online in-table status between player and bot games', () => {
+    const users = [
+      {
+        user_id: 1,
+        username: 'alice',
+        display_name: '阿明',
+        points: 300,
+        title: '平民',
+        display_label: '阿明（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'HUMAN01',
+      },
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'HUMAN01',
+      },
+      {
+        user_id: 3,
+        username: 'chen',
+        display_name: '阿成',
+        points: 80,
+        title: '平民',
+        display_label: '阿成（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'BOT01',
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        onlineUserIds={[1, 2, 3]}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+      />,
+    );
+
+    const rows = screen.getAllByRole('listitem');
+
+    expect(within(rows[0]).getByText('与玩家对局中')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('与玩家对局中')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('与BOT对局中')).toBeInTheDocument();
   });
 
   it('enables watch only for other users with active tables', async () => {
