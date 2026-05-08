@@ -75,7 +75,8 @@ Bundle ready:
 
 Server deploy steps:
   1. Upload this folder to the server.
-  2. Copy .env.example to .env and adjust APP_PORT / MAHJONG_DATABASE_URL if needed.
+  2. Copy .env.example to .env and adjust APP_PORT / MAHJONG_DATA_DIR if needed.
+     MAHJONG_DATA_DIR should point to the external hard drive data directory.
   3. Run:
      docker load -i mahjong-images.tar
      docker compose up -d

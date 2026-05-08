@@ -8,7 +8,7 @@
 
 - `frontend`：`nginx` 容器，负责提供前端静态文件，并反向代理 `/api` 和 `/ws`
 - `backend`：Rust `axum` 容器
-- `mahjong-data`：Docker 命名卷，用于持久化 SQLite 数据库文件
+- `MAHJONG_DATA_DIR`：宿主机数据目录，挂载到后端容器 `/data`，用于持久化 SQLite 数据库文件；生产环境建议设置到外部硬盘路径
 
 ## 1. 服务器准备
 
@@ -87,6 +87,7 @@ cp .env.example .env
 
 - 前端对外端口：`80`
 - 数据库：`sqlite+pysqlite:////data/mahjong.db`
+- 数据目录：`/opt/mahjong-data`
 - 后端镜像：`mahjong-backend:latest`
 - 前端镜像：`mahjong-frontend:latest`
 - 观战：默认启用，不需要额外环境变量开关
@@ -96,9 +97,42 @@ cp .env.example .env
 ```env
 APP_PORT=8080
 MAHJONG_DATABASE_URL=sqlite+pysqlite:////data/mahjong.db
+MAHJONG_DATA_DIR=/mnt/external-disk/mahjong-data
 BACKEND_IMAGE=mahjong-backend:2026-04-07
 FRONTEND_IMAGE=mahjong-frontend:2026-04-07
 ```
+
+`MAHJONG_DATA_DIR` 是宿主机路径。正式部署时建议把它指向外部硬盘内的目录，并在启动前创建好：
+
+```bash
+sudo mkdir -p /mnt/external-disk/mahjong-data
+sudo chown -R $USER:$USER /mnt/external-disk/mahjong-data
+```
+
+如果暂时不用外部硬盘，可以保留默认的 `/opt/mahjong-data`：
+
+```bash
+sudo mkdir -p /opt/mahjong-data
+sudo chown -R $USER:$USER /opt/mahjong-data
+```
+
+注意：SQLite 依赖文件锁，`MAHJONG_DATA_DIR` 建议使用本机直连硬盘目录，避免放到不可靠的网络共享目录。
+
+如果服务器上已经用旧版 Docker 命名卷部署过，首次切换到外部硬盘目录前需要迁移旧数据库：
+
+```bash
+set -a; [ -f .env ] && . ./.env; set +a
+docker compose down
+sudo mkdir -p "${MAHJONG_DATA_DIR:-/opt/mahjong-data}"
+sudo chown -R $USER:$USER "${MAHJONG_DATA_DIR:-/opt/mahjong-data}"
+docker run --rm \
+  -v mahjong_mahjong-data:/from:ro \
+  -v "${MAHJONG_DATA_DIR:-/opt/mahjong-data}:/to" \
+  alpine sh -c 'test ! -f /from/mahjong.db || cp /from/mahjong.db /to/mahjong.db'
+docker compose up -d
+```
+
+如果旧部署使用了不同的 `COMPOSE_PROJECT_NAME`，把 `mahjong_mahjong-data` 改成对应的旧卷名。可以用 `docker volume ls` 查看。
 
 ### 2.4 首次部署
 
@@ -184,13 +218,13 @@ docker compose up -d
 在更新前，建议先导出一份数据库文件，避免异常时无法回退：
 
 ```bash
-docker run --rm \
-  -v mahjong_mahjong-data:/from \
-  -v $(pwd)/backups:/to \
-  alpine sh -c 'cp /from/mahjong.db /to/mahjong-$(date +%F-%H%M%S).db'
+set -a; [ -f .env ] && . ./.env; set +a
+mkdir -p backups
+cp "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db" \
+  "backups/mahjong-$(date +%F-%H%M%S).db"
 ```
 
-如果你的 Compose 项目名不是 `mahjong`，把卷名改成 `实际项目名_mahjong-data`。
+如果 `.env` 中把 `MAHJONG_DATA_DIR` 设置到了外部硬盘路径，上面的命令会直接读取该路径。
 
 ## 4. 验证
 
@@ -223,10 +257,8 @@ docker compose up -d
 
 ```bash
 docker compose down
-docker run --rm \
-  -v mahjong_mahjong-data:/data \
-  -v $(pwd)/backups:/backup \
-  alpine sh -c 'cp /backup/mahjong-YYYY-MM-DD-HHMMSS.db /data/mahjong.db'
+set -a; [ -f .env ] && . ./.env; set +a
+cp backups/mahjong-YYYY-MM-DD-HHMMSS.db "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
 docker compose up -d
 ```
 
@@ -266,11 +298,11 @@ docker compose logs -f backend
 docker compose logs -f frontend
 ```
 
-查看数据卷：
+查看数据库文件：
 
 ```bash
-docker volume ls
-docker volume inspect mahjong_mahjong-data
+set -a; [ -f .env ] && . ./.env; set +a
+ls -lh "${MAHJONG_DATA_DIR:-/opt/mahjong-data}/mahjong.db"
 ```
 
 进入后端容器：

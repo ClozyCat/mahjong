@@ -13,7 +13,9 @@ services:
       MAHJONG_BOT_MODEL_PATH: ${MAHJONG_BOT_MODEL_PATH:-/app/assets/models/mahjong_policy_net.onnx}
       MAHJONG_BOT_STRENGTH: ${MAHJONG_BOT_STRENGTH:-strong}
     volumes:
-      - mahjong-data:/data
+      - type: bind
+        source: ${MAHJONG_DATA_DIR:-/opt/mahjong-data}
+        target: /data
     expose:
       - "8000"
     healthcheck:
@@ -36,6 +38,3 @@ services:
     ports:
       - "127.0.0.1:${APP_PORT:-80}:80"    # 监听 IPv4 的 localhost
       - "[::1]:${APP_PORT:-80}:80"        # 监听 IPv6 的 localhost
-
-volumes:
-  mahjong-data:
