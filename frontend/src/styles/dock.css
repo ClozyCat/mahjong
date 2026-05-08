@@ -419,7 +419,8 @@
   display: flex;
   flex-direction: row;
   align-items: flex-start;
-  gap: 1.2rem;
+  gap: 1rem;
+  min-width: auto;
   width: max-content;
   max-width: calc(100vw - 2rem);
   max-height: 75dvh;
@@ -440,18 +441,18 @@
 }
 
 .action-dock__ready-hand-popover--horizontal .action-dock__hand-insight-section {
-  min-width: 6.8rem;
+  min-width: 5.2rem;
   gap: 0.35rem;
 }
 
 .action-dock__ready-hand-popover--horizontal .action-dock__hand-insight-section:last-child {
-  min-width: 10.5rem;
+  min-width: 8.5rem;
 }
 
 .action-dock__ready-hand-popover--horizontal .action-dock__hand-insight-section + .action-dock__hand-insight-section {
   padding-top: 0;
   border-top: 0;
-  padding-left: 1.2rem;
+  padding-left: 1rem;
   border-left: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
 }
 
