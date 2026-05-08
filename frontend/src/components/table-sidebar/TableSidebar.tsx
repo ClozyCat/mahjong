@@ -247,7 +247,7 @@ export function TableSidebar({
                   <li key={player.key} className="table-sidebar__row table-sidebar__row--stacked">
                     <div className="table-sidebar__row-info">
                       <strong className="table-sidebar__row-name">
-                        {player.seatLabel} {player.displayLabel}
+                        {player.displayLabel}
                       </strong>
                       <div className="table-sidebar__row-stats">
                         <span className="table-sidebar__stat">

@@ -77,6 +77,38 @@ describe('TableSidebar', () => {
     expect(screen.getByText('尚未开局')).toBeInTheDocument();
   });
 
+  it('shows in-table players by display label without seat wind labels', () => {
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="players"
+        tablePlayers={[
+          {
+            key: 'east',
+            seatLabel: '东位',
+            displayLabel: '阿明（雀士）',
+            score: 25000,
+            liveDelta: 0,
+            points: 320,
+            connected: true,
+          },
+        ]}
+        onlineUsers={[]}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByRole('listitem');
+
+    expect(within(row).getByText('阿明（雀士）')).toBeInTheDocument();
+    expect(within(row).queryByText('东位')).not.toBeInTheDocument();
+    expect(within(row).queryByText('东位 阿明（雀士）')).not.toBeInTheDocument();
+  });
+
   it('shows all users by points and updates player status labels from presence', () => {
     const users = [
       {
