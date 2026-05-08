@@ -398,6 +398,7 @@ function HandInsightWinningFanItem({
     arrowTop: number;
   } | null>(null);
   const anchorRef = useRef<HTMLDivElement | null>(null);
+  const labelRef = useRef<HTMLSpanElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const entry = isPinned ? getFanGuideEntry(item.fanKey) : null;
 
@@ -408,7 +409,7 @@ function HandInsightWinningFanItem({
     }
 
     const updatePosition = () => {
-      const anchorRect = anchorRef.current?.getBoundingClientRect();
+      const anchorRect = labelRef.current?.getBoundingClientRect() ?? anchorRef.current?.getBoundingClientRect();
       if (!anchorRect) return;
 
       const popoverRect = popoverRef.current?.getBoundingClientRect();
@@ -439,7 +440,7 @@ function HandInsightWinningFanItem({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <span>{getFanLabel(item.fanKey)}</span>
+      <span ref={labelRef}>{getFanLabel(item.fanKey)}</span>
       <strong>{item.fanValue}番</strong>
 
       {isPinned && isHovered && entry &&

@@ -327,6 +327,87 @@ describe('BottomActionDock', () => {
     expect(screen.getByText('平和')).toBeInTheDocument();
   });
 
+  it('anchors pinned winning fan detail popover to the fan label instead of the full insight row', async () => {
+    const user = userEvent.setup();
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const makeRect = (left: number, top: number, width: number, height: number) =>
+      ({
+        x: left,
+        y: top,
+        left,
+        top,
+        width,
+        height,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value(this: HTMLElement) {
+        if (this.classList.contains('action-dock__fan-detail-popover')) {
+          return makeRect(0, 0, 224, 120);
+        }
+
+        if (this.classList.contains('action-dock__hand-insight-winning-fan')) {
+          return makeRect(100, 200, 260, 28);
+        }
+
+        if (this.tagName === 'SPAN' && this.textContent === '平和') {
+          return makeRect(120, 204, 40, 18);
+        }
+
+        return originalGetBoundingClientRect.call(this);
+      },
+    });
+
+    try {
+      render(
+        <BottomActionDock
+          hand={localHand}
+          handInsight={{
+            source: 'current',
+            discardTileId: null,
+            discardTileCode: null,
+            isTenpai: false,
+            waits: [],
+            winningFans: [{ fanKey: 'all_chows', fanValue: 2 }],
+          }}
+          claimCandidates={[]}
+          actions={[{ id: 'hu', label: '和牌', enabled: true, emphasis: 'high' }]}
+          isElevated
+          promptCue={null}
+          deadlineAt={null}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onAction={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole('button', { name: '查看当前和牌番型' }));
+
+      const fanRow = screen.getByText('平和').closest('.action-dock__hand-insight-winning-fan');
+      expect(fanRow).not.toBeNull();
+
+      fireEvent.mouseEnter(fanRow!);
+
+      await waitFor(() => {
+        const popover = document.body.querySelector('.action-dock__fan-detail-popover') as HTMLElement | null;
+
+        expect(popover).not.toBeNull();
+        expect(popover).toHaveStyle({ left: '174px' });
+      });
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: originalGetBoundingClientRect,
+      });
+    }
+  });
+
   it('hides the dock countdown when only other players are responding', () => {
     render(
       <BottomActionDock
