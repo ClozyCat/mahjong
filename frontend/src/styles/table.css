@@ -582,6 +582,7 @@
 
 .table-stage__barrage-message {
   --table-stage-barrage-top: 50%;
+  --table-stage-barrage-duration: 14000ms;
   position: absolute;
   top: var(--table-stage-barrage-top);
   left: calc(100% + 1.5rem);
@@ -602,7 +603,7 @@
     0 4px 12px rgba(0, 0, 0, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transform: translateY(-50%);
-  animation: table-stage-barrage-sweep 9000ms linear forwards;
+  animation: table-stage-barrage-sweep var(--table-stage-barrage-duration) linear forwards;
 }
 
 .table-stage[data-fx='lowFx'] .table-stage__river {

@@ -1601,6 +1601,61 @@ describe('TableStage', () => {
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
 
+  it('keeps quick-chat barrage visible longer than the previous nine-second sweep', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = render(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+      />,
+    );
+
+    rerender(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        quickChatEvent={{
+          key: 'quick-chat-longer-1',
+          actorSeat: 'bottom',
+          targetSeat: 'right',
+          actorName: 'Player A',
+          targetName: 'Player B',
+          emoji: '🀄',
+          text: 'Player A -> Player B : longer',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Player A -> Player B : longer')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(9000);
+    });
+
+    expect(screen.getByText('Player A -> Player B : longer')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.queryByText('Player A -> Player B : longer')).not.toBeInTheDocument();
+  });
+
   it('renders system broadcast barrage text above the table felt and below the tiles layer', () => {
     const { rerender } = render(
       <TableStage
