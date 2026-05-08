@@ -327,8 +327,9 @@ describe('BottomActionDock', () => {
     expect(screen.getByText('平和')).toBeInTheDocument();
   });
 
-  it('anchors pinned winning fan detail popover to the fan label instead of the full insight row', async () => {
+  it('anchors pinned winning fan detail popover next to the fan label on desktop screens', async () => {
     const user = userEvent.setup();
+    const originalInnerWidth = window.innerWidth;
     const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
     const makeRect = (left: number, top: number, width: number, height: number) =>
       ({
@@ -351,16 +352,17 @@ describe('BottomActionDock', () => {
         }
 
         if (this.classList.contains('action-dock__hand-insight-winning-fan')) {
-          return makeRect(100, 200, 260, 28);
+          return makeRect(400, 200, 260, 28);
         }
 
         if (this.tagName === 'SPAN' && this.textContent === '平和') {
-          return makeRect(120, 204, 40, 18);
+          return makeRect(420, 204, 40, 18);
         }
 
         return originalGetBoundingClientRect.call(this);
       },
     });
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
 
     try {
       render(
@@ -398,9 +400,10 @@ describe('BottomActionDock', () => {
         const popover = document.body.querySelector('.action-dock__fan-detail-popover') as HTMLElement | null;
 
         expect(popover).not.toBeNull();
-        expect(popover).toHaveStyle({ left: '174px' });
+        expect(popover).toHaveStyle({ left: '474px' });
       });
     } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
       Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
         configurable: true,
         value: originalGetBoundingClientRect,

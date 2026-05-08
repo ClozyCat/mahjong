@@ -557,8 +557,9 @@ function getHandInsightPopoverPosition(anchorRect: DOMRect, popoverWidth: number
   const arrowSize = 12;
   const arrowMargin = 16;
 
+  const canPlaceRight = anchorRect.right + popoverWidth + offset <= window.innerWidth - margin;
   const canPlaceLeft = anchorRect.left - popoverWidth - offset >= margin;
-  const placement: 'left' | 'right' = canPlaceLeft ? 'left' : 'right';
+  const placement: 'left' | 'right' = canPlaceRight || !canPlaceLeft ? 'right' : 'left';
 
   const left =
     placement === 'left'
