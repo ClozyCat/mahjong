@@ -541,6 +541,7 @@ export interface BattleActionView {
 export interface PlayerView {
   seat: Seat;
   absoluteSeat?: number;
+  userId?: number | null;
   name: string;
   seatType?: SeatType;
   score: number;

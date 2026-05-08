@@ -62,6 +62,7 @@ export const SeatZone = memo(function SeatZone({
               className="table-stage__stat-plate table-stage__stat-plate--seat"
               data-player-name={player.name}
               data-absolute-seat={player.absoluteSeat}
+              data-player-color-slot={player.colorSlot}
             >
               <FanIcon className="table-stage__stat-icon" />
               <span className="table-stage__stat-value">{scene.windLabel}</span>

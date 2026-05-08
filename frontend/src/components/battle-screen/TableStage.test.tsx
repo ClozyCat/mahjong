@@ -819,6 +819,55 @@ describe('TableStage', () => {
     expect(rightSeatLabel).toHaveTextContent('B');
   });
 
+  it('keeps the player name color slot with the same player after wind rotation moves seats', () => {
+    const { container, rerender } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'bottom', absoluteSeat: 0, name: 'Player A', melds: [] },
+          { seat: 'right', absoluteSeat: 1, name: 'Player B', melds: [] },
+        ]}
+      />,
+    );
+    const getColorSlot = (playerName: string) =>
+      container.querySelector(`.table-stage__stat-plate--seat[data-player-name="${playerName}"]`)?.getAttribute('data-player-color-slot');
+    const playerAColorSlot = getColorSlot('Player A');
+    const playerBColorSlot = getColorSlot('Player B');
+
+    expect(playerAColorSlot).toBeTruthy();
+    expect(playerBColorSlot).toBeTruthy();
+    expect(playerAColorSlot).not.toBe(playerBColorSlot);
+
+    rerender(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'right', absoluteSeat: 1, name: 'Player A', melds: [] },
+          { seat: 'bottom', absoluteSeat: 0, name: 'Player B', melds: [] },
+        ]}
+      />,
+    );
+
+    expect(getColorSlot('Player A')).toBe(playerAColorSlot);
+    expect(getColorSlot('Player B')).toBe(playerBColorSlot);
+  });
+
   it('shows east in the center while the dealer selection wheel spins', () => {
     const { container } = render(
       <TableStage

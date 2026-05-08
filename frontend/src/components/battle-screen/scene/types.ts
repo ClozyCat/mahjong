@@ -4,7 +4,9 @@ import type { PlayerView } from '../../../types/match';
 import type { TableLayoutProfile } from './layoutProfiles';
 
 export type TableStagePlayer = Pick<PlayerView, 'seat' | 'name' | 'melds'> &
-  Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>>;
+  Partial<Omit<PlayerView, 'seat' | 'name' | 'melds'>> & {
+    colorSlot?: number;
+  };
 
 export type TableFxMode = 'fullFx' | 'lowFx';
 

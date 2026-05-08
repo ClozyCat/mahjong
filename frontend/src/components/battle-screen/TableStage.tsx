@@ -23,6 +23,39 @@ import { useBattleViewport } from './scene/useBattleViewport';
 
 export type { TableStagePlayer } from './scene/types';
 
+const PLAYER_COLOR_SLOT_COUNT = 4;
+
+function getPlayerIdentityKey(player: TableStagePlayer) {
+  if (typeof player.userId === 'number') {
+    return `user:${player.userId}`;
+  }
+
+  const name = player.name.trim();
+  if (name) {
+    return `name:${name}`;
+  }
+
+  return `seat:${player.absoluteSeat ?? player.seat}`;
+}
+
+function withPlayerColorSlots(players: TableStagePlayer[], colorSlotsByPlayer: Map<string, number>) {
+  const usedSlots = new Set<number>();
+
+  return players.map((player) => {
+    const identityKey = getPlayerIdentityKey(player);
+    let colorSlot = colorSlotsByPlayer.get(identityKey);
+
+    if (typeof colorSlot !== 'number' || usedSlots.has(colorSlot)) {
+      colorSlot = Array.from({ length: PLAYER_COLOR_SLOT_COUNT }, (_, index) => index)
+        .find((slot) => !usedSlots.has(slot)) ?? (colorSlotsByPlayer.size % PLAYER_COLOR_SLOT_COUNT);
+      colorSlotsByPlayer.set(identityKey, colorSlot);
+    }
+
+    usedSlots.add(colorSlot);
+    return { ...player, colorSlot };
+  });
+}
+
 interface TableStageProps {
   discards: Record<Seat, string[]>;
   selectedTileCode?: string | null;
@@ -133,11 +166,13 @@ export function TableStage({
   children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
+  const playerColorSlotsRef = useRef(new Map<string, number>());
   const viewport = useBattleViewport(containerRef);
   const shouldShowAspectRatioPrompt = viewport.width < viewport.height;
+  const playersWithColorSlots = withPlayerColorSlots(players, playerColorSlotsRef.current);
   const scene = buildTableSceneModel({
     viewport,
-    players,
+    players: playersWithColorSlots,
     tileScale,
     occupiedSeatCount,
     seatCapacity,

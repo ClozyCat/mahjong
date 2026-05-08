@@ -202,6 +202,30 @@ fn pure_bot_seat_present(room: &RoomState) -> bool {
     room.seats.iter().any(|seat| seat.seat_type == "bot")
 }
 
+fn current_seat_by_participant(
+    room: &RoomState,
+    participants: &[TableParticipantRecord],
+) -> HashMap<i64, usize> {
+    let room_seats_by_user = room
+        .seats
+        .iter()
+        .filter_map(|seat| seat.user_id.map(|user_id| (user_id, seat.seat_index)))
+        .collect::<HashMap<_, _>>();
+
+    participants
+        .iter()
+        .map(|participant| {
+            (
+                participant.user_id,
+                room_seats_by_user
+                    .get(&participant.user_id)
+                    .copied()
+                    .unwrap_or(participant.seat_index),
+            )
+        })
+        .collect()
+}
+
 fn fan_keys_by_winner(settlement: &RoundSettlement) -> HashMap<usize, Vec<String>> {
     let mut by_seat = HashMap::new();
     if !settlement.winning_details.is_empty() {
@@ -235,9 +259,18 @@ fn archive_input_from_room(
         return Ok(None);
     };
 
+    let current_seat_by_user = current_seat_by_participant(room, participants);
     let participants_by_seat = participants
         .iter()
-        .map(|participant| (participant.seat_index, participant))
+        .map(|participant| {
+            (
+                current_seat_by_user
+                    .get(&participant.user_id)
+                    .copied()
+                    .unwrap_or(participant.seat_index),
+                participant,
+            )
+        })
         .collect::<HashMap<_, _>>();
     let points_enabled = !pure_bot_seat_present(room);
     let winner_fans = fan_keys_by_winner(settlement);
@@ -253,7 +286,10 @@ fn archive_input_from_room(
 
     let mut player_results = Vec::new();
     for participant in participants {
-        let seat_index = participant.seat_index;
+        let seat_index = current_seat_by_user
+            .get(&participant.user_id)
+            .copied()
+            .unwrap_or(participant.seat_index);
         let score_delta = settlement
             .score_delta
             .total_delta_by_seat
@@ -636,6 +672,71 @@ mod tests {
         assert_eq!(fan_stats.len(), 1);
         assert_eq!(fan_stats[0].fan_key, "all_pungs");
         assert_eq!(fan_stats[0].count, 1);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn archive_uses_current_room_seats_after_wind_rotation() -> Result<()> {
+        let (state, worker) = test_state().await?;
+        let owner_user_id = register_user(&worker, "INVITE300021", "Owner").await?;
+        let guest_user_id = register_user(&worker, "INVITE300022", "Guest").await?;
+        let mut guest_seat = seat(0, "Guest", Some("guest-token"), false);
+        guest_seat.user_id = Some(guest_user_id);
+        let mut owner_seat = seat(1, "Owner", Some("owner-token"), false);
+        owner_seat.user_id = Some(owner_user_id);
+        let mut room = base_room(
+            "ROOMREC_ROTATED",
+            1,
+            vec![guest_seat, owner_seat],
+            &[(0, 8), (1, -8)],
+            &[(0, 108), (1, 92)],
+            0,
+            &["all_pungs"],
+        );
+        room.owner_user_id = Some(owner_user_id);
+
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            guest_user_id,
+            1,
+            "Guest",
+        )
+        .await?;
+
+        archive_current_round_if_needed(
+            &state,
+            &room,
+            "2026-05-06T00:00:00Z",
+            "2026-05-06T01:00:00Z",
+        )
+        .await?
+        .expect("settlement should archive");
+
+        let owner = worker
+            .get_user_by_id(owner_user_id)
+            .await?
+            .expect("owner should exist");
+        let guest = worker
+            .get_user_by_id(guest_user_id)
+            .await?
+            .expect("guest should exist");
+        assert_eq!(owner.points, INITIAL_USER_POINTS - 8);
+        assert_eq!(guest.points, INITIAL_USER_POINTS + 8);
+
+        let fan_stats = worker.list_user_fan_stats(guest_user_id).await?;
+        assert_eq!(fan_stats.len(), 1);
+        assert_eq!(fan_stats[0].fan_key, "all_pungs");
         Ok(())
     }
 

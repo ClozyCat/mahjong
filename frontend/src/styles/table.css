@@ -760,22 +760,22 @@
   min-width: clamp(2.4rem, 6vw, 3.2rem);
 }
 
-.table-stage__stat-plate--seat[data-absolute-seat='0'] {
+.table-stage__stat-plate--seat[data-player-color-slot='0'] {
   --stat-accent: #FF5733;
   /* Red */
 }
 
-.table-stage__stat-plate--seat[data-absolute-seat='1'] {
+.table-stage__stat-plate--seat[data-player-color-slot='1'] {
   --stat-accent: #2E86AB;
   /* Blue */
 }
 
-.table-stage__stat-plate--seat[data-absolute-seat='2'] {
+.table-stage__stat-plate--seat[data-player-color-slot='2'] {
   --stat-accent: #F2C14E;
   /* Green */
 }
 
-.table-stage__stat-plate--seat[data-absolute-seat='3'] {
+.table-stage__stat-plate--seat[data-player-color-slot='3'] {
   --stat-accent: #8367C7;
   /* Purple */
 }
@@ -824,7 +824,7 @@
   transform: translateX(-50%);
   width: max-content;
   background: var(--table-center-ring-bg);
-  color: var(--theme-paper-strong);
+  color: color-mix(in srgb, var(--stat-accent) 74%, var(--theme-paper-strong));
   padding: 0.24rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.82rem;

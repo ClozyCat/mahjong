@@ -833,6 +833,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
       return {
         seat: relativeSeat,
         absoluteSeat: seat.seat_index,
+        userId: seat.user_id ?? null,
         name: seat.nickname,
         seatType,
         score: displayedScores[seatKey] ?? 0,
