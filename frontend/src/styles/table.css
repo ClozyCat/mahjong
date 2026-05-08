@@ -252,7 +252,8 @@
   gap: clamp(0.05rem, 0.15vw, 0.1rem);
   color: var(--table-center-ring-ink);
   font-family: 'Noto Serif TC', 'Noto Serif Traditional Chinese', serif;
-  /* Removed manual font metric adjustment to ensure perfect flexbox centering */
+  /* Added manual font metric adjustment to compensate for Noto Serif's high baseline */
+  transform: translateY(-5%);
 }
 
 .table-stage__center-indicator-count {
