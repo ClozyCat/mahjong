@@ -605,8 +605,20 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   z-index: 2000;
   pointer-events: none;
-  animation: tooltip-fade-in 0.25s var(--ease-lux) forwards;
+  animation: action-dock-fan-detail-popover-enter 0.25s var(--ease-lux) forwards;
   will-change: transform, opacity;
+}
+
+@keyframes action-dock-fan-detail-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .action-dock__fan-detail-popover::before {
