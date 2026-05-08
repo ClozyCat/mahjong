@@ -11,3 +11,4 @@ node_modules/
 *.log
 backend/bot_trainer/datasets
 .venv/
+*.pyc

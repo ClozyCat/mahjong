@@ -38,7 +38,10 @@ struct PlayerRoomSnapshot {
 #[derive(Debug, Clone, Serialize)]
 struct PublicSeatView {
     seat_index: Seat,
+    user_id: Option<i64>,
     nickname: Option<String>,
+    points: Option<i64>,
+    title: Option<String>,
     connected: bool,
     ready: bool,
     is_bot: bool,
@@ -69,6 +72,8 @@ struct PlayerRoundView {
 struct PlayerSeatView {
     seat_index: Seat,
     nickname: Option<String>,
+    points: Option<i64>,
+    title: Option<String>,
     connected: bool,
     is_ready_hand: bool,
     concealed_count: usize,
@@ -380,7 +385,10 @@ fn public_seats(state: &RoomState) -> Vec<PublicSeatView> {
         .iter()
         .map(|seat| PublicSeatView {
             seat_index: seat.seat_index,
+            user_id: seat.user_id,
             nickname: seat.nickname.clone(),
+            points: seat.points,
+            title: seat.title.clone(),
             connected: seat.connected,
             ready: seat.ready,
             is_bot: seat.is_bot,
@@ -438,6 +446,8 @@ fn private_round_state(
             PlayerSeatView {
                 seat_index: player.seat,
                 nickname: seat_info.and_then(|seat| seat.nickname.clone()),
+                points: seat_info.and_then(|seat| seat.points),
+                title: seat_info.and_then(|seat| seat.title.clone()),
                 connected: seat_info.map(|seat| seat.connected).unwrap_or(false),
                 is_ready_hand: player.is_ready_hand,
                 concealed_count: player.concealed_tiles.len(),
@@ -493,6 +503,8 @@ fn observer_round_state(state: &RoomState) -> Option<PlayerRoundView> {
             PlayerSeatView {
                 seat_index: player.seat,
                 nickname: seat_info.and_then(|seat| seat.nickname.clone()),
+                points: seat_info.and_then(|seat| seat.points),
+                title: seat_info.and_then(|seat| seat.title.clone()),
                 connected: seat_info.map(|seat| seat.connected).unwrap_or(false),
                 is_ready_hand: player.is_ready_hand,
                 concealed_count: player.concealed_tiles.len(),

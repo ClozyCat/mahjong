@@ -133,7 +133,10 @@ export interface UserFanStat {
 
 export interface SeatSnapshot {
   seat_index: number;
+  user_id?: number | null;
   nickname: string;
+  points?: number | null;
+  title?: string | null;
   connected: boolean;
   ready: boolean;
   is_bot?: boolean;
@@ -185,6 +188,8 @@ export interface ScoreState {
 export interface PrivatePlayerState {
   seat_index: number;
   nickname: string;
+  points?: number | null;
+  title?: string | null;
   connected: boolean;
   is_ready_hand?: boolean;
   concealed_count: number;
@@ -322,6 +327,10 @@ export interface PlayerPresenceMessage {
     table_code: string;
     seat_index: number;
     connected: boolean;
+    user_id?: number | null;
+    nickname?: string | null;
+    points?: number | null;
+    title?: string | null;
   };
 }
 
@@ -389,7 +398,11 @@ export interface UserPointsUpdatedMessage {
   payload: {
     user_id: number;
     delta: number;
+    old_points?: number;
     points: number;
+    old_title?: string;
+    title?: string;
+    display_name?: string;
     reason: 'round_settlement' | string;
     source_table_code?: string | null;
     source_round_id?: string | null;
@@ -496,6 +509,7 @@ export interface SessionState {
   recentRoundEvents?: RoundEventMessage[];
   latestReplacementTileId?: string | null;
   latestQuickChatMessage?: QuickChatMessage | null;
+  latestSystemBroadcast?: SystemBroadcastEventView | null;
   lastRejectedAction: ActionRejectedMessage | null;
   reconnectToken: string | null;
   optimisticDiscard?: OptimisticDiscardState | null;
@@ -720,6 +734,11 @@ export interface QuickChatEventView {
   text: string;
 }
 
+export interface SystemBroadcastEventView {
+  key: string;
+  text: string;
+}
+
 export interface DealerSelectionView {
   key: string;
   dealerSeat: Seat;
@@ -765,5 +784,6 @@ export interface BattleViewModel {
   actionEffects?: ActionEffectView[];
   dealerSelection: DealerSelectionView | null;
   quickChatEvent?: QuickChatEventView | null;
+  systemBroadcastEvent?: SystemBroadcastEventView | null;
   toasts: ToastMessage[];
 }

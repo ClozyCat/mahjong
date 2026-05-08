@@ -348,6 +348,7 @@ pub fn apply_hu_settlement_output(
                     json!({
                         "type": "claim_made",
                         "seat": winning_seat,
+                        "from": settlement.discarder_seat,
                         "claim_type": "hu",
                         "tile_id": discarded_tile.get("tile_id").cloned().unwrap_or(Value::Null),
                     }),
@@ -610,6 +611,7 @@ pub fn apply_hu_settlement_output_in_room_state(
                     json!({
                         "type": "claim_made",
                         "seat": winning_seat,
+                        "from": settlement.discarder_seat,
                         "claim_type": "hu",
                         "tile_id": discarded_tile
                             .as_ref()

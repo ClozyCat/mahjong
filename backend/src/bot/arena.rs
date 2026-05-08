@@ -256,7 +256,10 @@ pub fn arena_room(table_code: &str) -> RoomState {
         seats: (0..4)
             .map(|seat_index| SeatState {
                 seat_index,
+                user_id: None,
                 nickname: Some(format!("Arena Bot {seat_index}")),
+                points: None,
+                title: None,
                 reconnect_token: None,
                 player_session_id: Some(-((seat_index as i64) + 1)),
                 connected: true,

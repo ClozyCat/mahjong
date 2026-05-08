@@ -57,6 +57,7 @@ import {
   rejectSpectatorRequest,
 } from './lib/socialApi';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
+import { titleForPoints } from './lib/systemBroadcastCopy';
 import {
   clearStoredSession,
   loadStoredThemeId,
@@ -347,19 +348,22 @@ function getPendingTableInvites(invites: TableInvite[]) {
   return invites.filter(isPendingTableInvite);
 }
 
-function updateUserPoints(user: PublicUser | null, userId: number, points: number) {
+function updateUserPoints(user: PublicUser | null, userId: number, points: number, title?: string) {
   if (!user || user.user_id !== userId) {
     return user;
   }
 
+  const nextTitle = title ?? titleForPoints(points);
   return {
     ...user,
     points,
+    title: nextTitle,
+    display_label: `${user.display_name}（${nextTitle}）`,
   };
 }
 
-function updateLeaderboardUserPoints(leaderboard: PublicUser[], userId: number, points: number) {
-  return leaderboard.map((user) => (user.user_id === userId ? { ...user, points } : user));
+function updateLeaderboardUserPoints(leaderboard: PublicUser[], userId: number, points: number, title?: string) {
+  return leaderboard.map((user) => updateUserPoints(user, userId, points, title) ?? user);
 }
 
 function updateUserActiveTableCode(user: PublicUser | null, userId: number, tableCode: string | null) {
@@ -649,18 +653,16 @@ export default function App() {
       }
 
       if (message.type === 'user_points_updated') {
-        const { user_id: userId, points } = message.payload;
-        setCurrentUser((current) => updateUserPoints(current, userId, points));
-        setSelectedProfileUser((current) => updateUserPoints(current, userId, points));
-        setLeaderboard((current) => updateLeaderboardUserPoints(current, userId, points));
+        const { user_id: userId, points, title } = message.payload;
+        dispatch({ type: 'user_points_updated', message });
+        setCurrentUser((current) => updateUserPoints(current, userId, points, title));
+        setSelectedProfileUser((current) => updateUserPoints(current, userId, points, title));
+        setLeaderboard((current) => updateLeaderboardUserPoints(current, userId, points, title));
         setAuthSession((current) =>
           current && current.user.user_id === userId
             ? {
                 ...current,
-                user: {
-                  ...current.user,
-                  points,
-                },
+                user: updateUserPoints(current.user, userId, points, title) ?? current.user,
               }
             : current,
         );

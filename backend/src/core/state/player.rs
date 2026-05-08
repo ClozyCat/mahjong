@@ -11,7 +11,10 @@ use super::{array, bool_or, i64_opt, string_opt, usize_or};
 #[serde(default)]
 pub struct SeatState {
     pub seat_index: Seat,
+    pub user_id: Option<i64>,
     pub nickname: Option<String>,
+    pub points: Option<i64>,
+    pub title: Option<String>,
     pub reconnect_token: Option<String>,
     pub player_session_id: Option<i64>,
     pub connected: bool,

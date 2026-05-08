@@ -329,7 +329,10 @@ mod tests {
             multiplier: 3,
             seats: vec![SeatState {
                 seat_index: 0,
+                user_id: None,
                 nickname: Some("Alice".to_string()),
+                points: None,
+                title: None,
                 reconnect_token: Some("token-1".to_string()),
                 player_session_id: Some(1),
                 connected: true,

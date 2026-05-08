@@ -149,7 +149,10 @@ async fn add_bot_takeover_human_to_table(
     let mut runtime = handle.runtime.lock().await;
     runtime.room.seats.push(SeatState {
         seat_index: 0,
+        user_id: None,
         nickname: Some("Hosted Player".to_string()),
+        points: None,
+        title: None,
         reconnect_token: Some("hosted-token".to_string()),
         player_session_id: Some(42),
         connected: true,
@@ -434,7 +437,10 @@ async fn invite_only_create_requires_open_or_replaceable_seat() -> Result<()> {
         for seat_index in 1..4 {
             runtime.room.seats.push(SeatState {
                 seat_index,
+                user_id: None,
                 nickname: Some(format!("Player {seat_index}")),
+                points: None,
+                title: None,
                 reconnect_token: Some(format!("token-{seat_index}")),
                 player_session_id: Some(100 + seat_index as i64),
                 connected: true,
@@ -534,7 +540,10 @@ async fn invite_only_full_bot_takeover_human_seat_is_not_replaceable() -> Result
         for seat_index in 1..4 {
             runtime.room.seats.push(SeatState {
                 seat_index,
+                user_id: None,
                 nickname: Some(format!("Player {seat_index}")),
+                points: None,
+                title: None,
                 reconnect_token: Some(format!("token-{seat_index}")),
                 player_session_id: Some(200 + seat_index as i64),
                 connected: true,

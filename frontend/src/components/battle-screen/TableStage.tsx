@@ -9,6 +9,7 @@ import type {
   QuickChatEmoji,
   QuickChatEventView,
   Seat,
+  SystemBroadcastEventView,
 } from '../../types/match';
 
 import { CenterIndicator } from './scene/CenterIndicator';
@@ -41,6 +42,7 @@ interface TableStageProps {
   deadlineAt?: string | null;
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
+  systemBroadcastEvent?: SystemBroadcastEventView | null;
   players?: TableStagePlayer[];
   settlementCenterCalloutLabel?: string | null;
   tableCode?: string;
@@ -95,6 +97,7 @@ export function TableStage({
   deadlineAt = null,
   actionEffect = null,
   quickChatEvent = null,
+  systemBroadcastEvent = null,
   players = [],
   settlementCenterCalloutLabel = null,
   tableCode = '',
@@ -218,6 +221,7 @@ export function TableStage({
             promptCue={promptCue}
             actionEffect={actionEffect}
             quickChatEvent={quickChatEvent}
+            systemBroadcastEvent={systemBroadcastEvent}
           />
           {shouldShowAspectRatioPrompt ? (
             <div

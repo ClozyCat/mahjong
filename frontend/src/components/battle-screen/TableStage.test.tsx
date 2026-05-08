@@ -1600,4 +1600,41 @@ describe('TableStage', () => {
     expect(screen.getByText('Player A -> Player B : 🀄')).toBeInTheDocument();
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
+
+  it('renders system broadcast barrage text above the table felt and below the tiles layer', () => {
+    const { rerender } = render(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+      />,
+    );
+
+    rerender(
+      <TableStage
+        discards={{
+          top: ['w1'],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        systemBroadcastEvent={{
+          key: 'system-1',
+          text: '📣系统播报：小A（概率论博导）宣布听牌。',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('📣系统播报：小A（概率论博导）宣布听牌。')).toBeInTheDocument();
+    expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
+  });
 });

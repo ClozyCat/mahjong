@@ -619,7 +619,10 @@ mod tests {
         let mut room = initial_room_state_with_owner("ROOMT1", Some(1), 1);
         room.seats.push(SeatState {
             seat_index: 0,
+            user_id: None,
             nickname: Some("Player".to_string()),
+            points: None,
+            title: None,
             reconnect_token: Some("reconnect-token".to_string()),
             player_session_id: Some(100),
             connected: false,

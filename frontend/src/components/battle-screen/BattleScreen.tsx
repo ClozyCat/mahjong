@@ -453,6 +453,7 @@ export function BattleScreen({
               deadlineAt={viewModel.deadlineAt}
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
+              systemBroadcastEvent={viewModel.systemBroadcastEvent}
               players={viewModel.players}
               settlementCenterCalloutLabel={visibleSettlementCenterCalloutLabel}
               tableCode={viewModel.tableCode}

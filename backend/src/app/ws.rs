@@ -31,6 +31,7 @@ use super::room_runtime::{
     snapshot_spectator_identities,
 };
 use super::scheduler::schedule_room_tasks_detached;
+use super::users::title_for_points;
 use super::{
     AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, OutboundMessage,
     add_bot_to_waiting_room, collect_join_outbound_from_snapshot,
@@ -577,6 +578,16 @@ async fn handle_join_table(
         Ok(participant) => participant,
         Err(error) => return internal_error_to(connection, error),
     };
+    let Some(user) = state
+        .inner
+        .db
+        .get_user_by_id(authenticated_user.user_id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return reject_to(connection, "table_invite_required");
+    };
 
     let (seat_index, persisted_with_new_participant) =
         if let Some(participant) = existing_participant {
@@ -588,7 +599,10 @@ async fn handle_join_table(
             else {
                 return reject_to(connection, "table_invite_required");
             };
-            seat.nickname = Some(authenticated_user.display_name.clone());
+            seat.user_id = Some(user.user_id);
+            seat.nickname = Some(user.display_name.clone());
+            seat.points = Some(user.points);
+            seat.title = Some(title_for_points(user.points).to_string());
             seat.connected = true;
             seat.disconnect_deadline_at = None;
             seat.is_bot = false;
@@ -598,16 +612,6 @@ async fn handle_join_table(
             && room_phase(&runtime.room) == "waiting"
             && !room_has_round_state(&runtime.room)
         {
-            let Some(user) = state
-                .inner
-                .db
-                .get_user_by_id(authenticated_user.user_id)
-                .await
-                .ok()
-                .flatten()
-            else {
-                return reject_to(connection, "table_invite_required");
-            };
             let Some(seat_index) = random_open_seat_index(&runtime.room) else {
                 return reject_to(connection, "table_full");
             };
@@ -615,7 +619,10 @@ async fn handle_join_table(
             let reconnect_token = generate_reconnect_token();
             runtime.room.seats.push(SeatState {
                 seat_index,
+                user_id: Some(user.user_id),
                 nickname: Some(user.display_name.clone()),
+                points: Some(user.points),
+                title: Some(title_for_points(user.points).to_string()),
                 reconnect_token: Some(reconnect_token.clone()),
                 player_session_id: Some(player_session_id),
                 connected: true,
@@ -1761,7 +1768,10 @@ mod tests {
         let mut room = initial_room_state_with_owner(table_code, Some(owner.user_id), 1);
         room.seats.push(SeatState {
             seat_index: 0,
+            user_id: Some(guest.user_id),
             nickname: Some("Guest".to_string()),
+            points: Some(600),
+            title: Some("正分守门员".to_string()),
             reconnect_token: Some("token-join".to_string()),
             player_session_id: Some(88),
             connected: false,
@@ -1843,7 +1853,10 @@ mod tests {
         let mut room = initial_room_state_with_owner(table_code, Some(owner.user_id), 1);
         room.seats.push(SeatState {
             seat_index: 0,
+            user_id: Some(guest.user_id),
             nickname: Some("GuestWatch".to_string()),
+            points: Some(600),
+            title: Some("正分守门员".to_string()),
             reconnect_token: Some("watch-token".to_string()),
             player_session_id: Some(91),
             connected: true,

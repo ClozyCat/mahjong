@@ -337,12 +337,23 @@ pub(crate) async fn archive_current_round_if_needed(
             .map(|participant| participant.user_id)
             .collect::<std::collections::BTreeSet<_>>();
         for update in &outcome.point_updates {
+            let previous_points = update.points - update.delta;
+            let participant = participants
+                .iter()
+                .find(|participant| participant.user_id == update.user_id);
+            let display_name = participant
+                .map(|participant| participant.nickname_snapshot.clone())
+                .unwrap_or_else(|| format!("用户 #{}", update.user_id));
             let payload = json!({
                 "type": "user_points_updated",
                 "payload": {
                     "user_id": update.user_id,
                     "delta": update.delta,
+                    "old_points": previous_points,
                     "points": update.points,
+                    "old_title": title_for_points(previous_points),
+                    "title": title_for_points(update.points),
+                    "display_name": display_name,
                     "reason": "round_settlement",
                     "source_table_code": room.table_code,
                     "source_round_id": room.round_state.as_ref().map(|round| round.round_id.clone()),
@@ -497,7 +508,10 @@ mod tests {
     ) -> SeatState {
         SeatState {
             seat_index,
+            user_id: None,
             nickname: Some(nickname.to_string()),
+            points: None,
+            title: None,
             reconnect_token: reconnect_token.map(ToString::to_string),
             player_session_id: Some((seat_index as i64) + 1),
             connected: true,

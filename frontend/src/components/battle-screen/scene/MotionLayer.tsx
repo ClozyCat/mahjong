@@ -1,6 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import type { ActionEffectView, BattlePromptView, QuickChatEventView, Seat } from '../../../types/match';
+import type {
+  ActionEffectView,
+  BattlePromptView,
+  QuickChatEventView,
+  Seat,
+  SystemBroadcastEventView,
+} from '../../../types/match';
 import { MahjongTile } from '../MahjongTile';
 import { SETTLEMENT_CALLOUT_DURATION_CSS, SETTLEMENT_CALLOUT_LINGER_MS } from '../settlementTiming';
 
@@ -17,6 +23,7 @@ interface MotionLayerProps {
   promptCue?: BattlePromptView | null;
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
+  systemBroadcastEvent?: SystemBroadcastEventView | null;
 }
 
 const ACTION_CALLOUT_COPY = {
@@ -177,6 +184,7 @@ export const MotionLayer = memo(function MotionLayer({
   promptCue = null,
   actionEffect = null,
   quickChatEvent = null,
+  systemBroadcastEvent = null,
 }: MotionLayerProps) {
   const lastDiscardPosition = useMemo(
     () => findLastDiscardPosition(discards, lastDiscard, lastDiscardSeat),
@@ -214,6 +222,7 @@ export const MotionLayer = memo(function MotionLayer({
   const trackedSpotlightKeyRef = useRef<string | null>(null);
   const consumedActionCalloutKeyRef = useRef<string | null>(null);
   const consumedQuickChatKeyRef = useRef<string | null>(quickChatEvent?.key ?? null);
+  const consumedSystemBroadcastKeyRef = useRef<string | null>(systemBroadcastEvent?.key ?? null);
   const barrageRemovalTimersRef = useRef<Map<string, number>>(new Map());
   const spotlightSeat = lastDiscardPosition?.seat ?? null;
   const spotlightTile =
@@ -389,6 +398,28 @@ export const MotionLayer = memo(function MotionLayer({
 
     barrageRemovalTimersRef.current.set(quickChatEvent.key, timer);
   }, [quickChatEvent]);
+
+  useEffect(() => {
+    if (!systemBroadcastEvent?.key || consumedSystemBroadcastKeyRef.current === systemBroadcastEvent.key) {
+      return;
+    }
+
+    consumedSystemBroadcastKeyRef.current = systemBroadcastEvent.key;
+    const nextBarrageMessage: BarrageMessage = {
+      key: systemBroadcastEvent.key,
+      text: systemBroadcastEvent.text,
+      topPercent: getRandomBarrageTopPercent(),
+    };
+
+    setBarrageMessages((current) => [...current, nextBarrageMessage]);
+
+    const timer = window.setTimeout(() => {
+      setBarrageMessages((current) => current.filter((message) => message.key !== systemBroadcastEvent.key));
+      barrageRemovalTimersRef.current.delete(systemBroadcastEvent.key);
+    }, QUICK_CHAT_BARRAGE_LINGER_MS);
+
+    barrageRemovalTimersRef.current.set(systemBroadcastEvent.key, timer);
+  }, [systemBroadcastEvent]);
 
   return (
     <>

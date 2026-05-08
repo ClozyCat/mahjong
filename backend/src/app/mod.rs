@@ -419,7 +419,10 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
     };
     room.seats.push(SeatState {
         seat_index,
+        user_id: None,
         nickname: Some(format!("Bot {seat_index}")),
+        points: None,
+        title: None,
         reconnect_token: None,
         player_session_id: Some(-((seat_index as i64) + 1)),
         connected: true,
@@ -460,7 +463,10 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
         .iter_mut()
         .find(|seat| seat.seat_index == seat_index)
     {
+        seat.user_id = None;
         seat.nickname = Some(format!("Bot {seat_index}"));
+        seat.points = None;
+        seat.title = None;
         seat.connected = true;
         seat.ready = true;
         seat.is_bot = true;
@@ -527,7 +533,17 @@ pub(crate) fn collect_join_outbound_from_snapshot(
         outbound.push(connection.outbound(prompt));
     }
 
-    let presence = player_presence_message(table_code, seat_index, connected);
+    let seat_profile = room.seats.iter().find(|seat| seat.seat_index == seat_index);
+    let presence = player_presence_message(
+        table_code,
+        seat_index,
+        connected,
+        seat_profile.and_then(|seat| seat.user_id),
+        seat_profile.and_then(|seat| seat.nickname.as_deref()),
+        seat_profile.and_then(|seat| seat.points),
+        seat_profile.and_then(|seat| seat.title.as_deref()),
+    );
+    outbound.push(connection.outbound(presence.clone()));
     for (other_seat, handle) in connections {
         if *other_seat == seat_index && handle.id == connection.id {
             continue;
@@ -560,7 +576,16 @@ pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    let presence = player_presence_message(table_code, seat_index, connected);
+    let seat_profile = room.seats.iter().find(|seat| seat.seat_index == seat_index);
+    let presence = player_presence_message(
+        table_code,
+        seat_index,
+        connected,
+        seat_profile.and_then(|seat| seat.user_id),
+        seat_profile.and_then(|seat| seat.nickname.as_deref()),
+        seat_profile.and_then(|seat| seat.points),
+        seat_profile.and_then(|seat| seat.title.as_deref()),
+    );
     for (target_seat, handle) in connections {
         outbound.push(handle.outbound(presence.clone()));
         outbound.extend(build_room_messages_for_seat(
@@ -860,7 +885,10 @@ mod tests {
             multiplier: 1,
             seats: vec![SeatState {
                 seat_index: 0,
+                user_id: None,
                 nickname: Some("Alice".to_string()),
+                points: None,
+                title: None,
                 reconnect_token: Some("token-1".to_string()),
                 player_session_id: Some(42),
                 connected: true,
@@ -904,7 +932,10 @@ mod tests {
             multiplier: 1,
             seats: vec![SeatState {
                 seat_index: 2,
+                user_id: Some(7),
                 nickname: Some("Alice".to_string()),
+                points: Some(650),
+                title: Some("概率论博导".to_string()),
                 reconnect_token: Some("token-1".to_string()),
                 player_session_id: Some(42),
                 connected: true,
@@ -942,7 +973,10 @@ mod tests {
             seats: vec![
                 SeatState {
                     seat_index: 0,
+                    user_id: None,
                     nickname: Some("Alice".to_string()),
+                    points: None,
+                    title: None,
                     reconnect_token: Some("token-1".to_string()),
                     player_session_id: Some(42),
                     connected: true,
@@ -955,7 +989,10 @@ mod tests {
                 },
                 SeatState {
                     seat_index: 1,
+                    user_id: None,
                     nickname: Some("Bot 1".to_string()),
+                    points: None,
+                    title: None,
                     reconnect_token: None,
                     player_session_id: Some(-2),
                     connected: true,

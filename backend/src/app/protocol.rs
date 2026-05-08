@@ -20,6 +20,14 @@ struct PlayerPresencePayload {
     table_code: String,
     seat_index: usize,
     connected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nickname: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    points: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -108,6 +116,10 @@ pub(crate) fn player_presence_message(
     table_code: &str,
     seat_index: usize,
     connected: bool,
+    user_id: Option<i64>,
+    nickname: Option<&str>,
+    points: Option<i64>,
+    title: Option<&str>,
 ) -> Value {
     serde_json::to_value(PayloadEnvelope {
         kind: "player_presence",
@@ -115,6 +127,10 @@ pub(crate) fn player_presence_message(
             table_code: table_code.to_string(),
             seat_index,
             connected,
+            user_id,
+            nickname: nickname.map(ToOwned::to_owned),
+            points,
+            title: title.map(ToOwned::to_owned),
         },
     })
     .unwrap_or_else(|_| {
@@ -124,6 +140,10 @@ pub(crate) fn player_presence_message(
                 "table_code": table_code,
                 "seat_index": seat_index,
                 "connected": connected,
+                "user_id": user_id,
+                "nickname": nickname,
+                "points": points,
+                "title": title,
             }
         })
     })

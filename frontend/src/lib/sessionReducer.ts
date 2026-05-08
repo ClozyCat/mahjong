@@ -8,9 +8,16 @@ import type {
   SeatSnapshot,
   ServerMessage,
   SessionState,
+  SystemBroadcastEventView,
   ToastMessage,
+  UserPointsUpdatedMessage,
 } from '../types/match';
 import { getRoundEventCopy } from './roundEventCopy';
+import {
+  createPresenceSystemBroadcast,
+  createRoundEventSystemBroadcast,
+  createTitleChangeSystemBroadcast,
+} from './systemBroadcastCopy';
 
 export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
@@ -23,6 +30,7 @@ export type SessionAction =
   | { type: 'set_selected_tiles'; tileIds: string[]; mode: SessionState['selectionMode'] }
   | { type: 'reset_transient_feedback' }
   | { type: 'return_to_lobby'; tableCode?: string; keepNickname?: boolean }
+  | { type: 'user_points_updated'; message: UserPointsUpdatedMessage }
   | { type: 'ws_message'; message: ServerMessage };
 
 const ACTION_REJECTION_COPY: Record<string, string> = {
@@ -52,6 +60,13 @@ function createToast(kind: ToastMessage['kind'], text: string): ToastMessage {
   };
 }
 
+function createSystemBroadcast(text: string): SystemBroadcastEventView {
+  return {
+    key: `system-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+  };
+}
+
 function appendToast(state: SessionState, kind: ToastMessage['kind'], text: string): ToastMessage[] {
   const previous = state.toasts.at(-1);
 
@@ -62,9 +77,37 @@ function appendToast(state: SessionState, kind: ToastMessage['kind'], text: stri
   return [...state.toasts, createToast(kind, text)];
 }
 
-function getPresenceCopy(message: { seat_index: number; connected: boolean }, seats?: SeatSnapshot[]) {
-  const nickname = seats?.find((seat) => seat.seat_index === message.seat_index)?.nickname ?? `玩家${message.seat_index + 1}`;
+function getPresenceCopy(message: { seat_index: number; connected: boolean; nickname?: string | null }, seats?: SeatSnapshot[]) {
+  const nickname = message.nickname ?? seats?.find((seat) => seat.seat_index === message.seat_index)?.nickname ?? `玩家${message.seat_index + 1}`;
   return `${nickname}${message.connected ? '已连接' : '已断开连接'}`;
+}
+
+function updateSeatPointSnapshot(snapshot: RoomSnapshotMessage | null, message: UserPointsUpdatedMessage) {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  const { user_id: userId, points, title } = message.payload;
+  const updateSeat = <T extends { user_id?: number | null; points?: number | null; title?: string | null }>(seat: T): T =>
+    seat.user_id === userId ? { ...seat, points, title: title ?? seat.title } : seat;
+  const updatePrivatePlayer = <T extends { seat_index: number; points?: number | null; title?: string | null }>(player: T): T => {
+    const publicSeat = snapshot.payload.seats.find((seat) => seat.seat_index === player.seat_index);
+    return publicSeat?.user_id === userId ? { ...player, points, title: title ?? player.title } : player;
+  };
+
+  return {
+    ...snapshot,
+    payload: {
+      ...snapshot.payload,
+      seats: snapshot.payload.seats.map(updateSeat),
+      private_state: snapshot.payload.private_state
+        ? {
+            ...snapshot.payload.private_state,
+            players: snapshot.payload.private_state.players.map(updatePrivatePlayer),
+          }
+        : snapshot.payload.private_state,
+    },
+  };
 }
 
 function getActionRejectedCopy(reason: string) {
@@ -365,6 +408,7 @@ export function createInitialSessionState(): SessionState {
     latestRoundEvent: null,
     recentRoundEvents: [],
     latestQuickChatMessage: null,
+    latestSystemBroadcast: null,
     lastRejectedAction: null,
     reconnectToken: null,
     optimisticDiscard: null,
@@ -445,6 +489,11 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         message.payload.event,
         state.roomSnapshot?.payload.seats,
       );
+      const systemBroadcastText = createRoundEventSystemBroadcast(
+        message.payload.event_type,
+        message.payload.event,
+        state.roomSnapshot?.payload.seats,
+      );
 
       const localSeat = state.roomSnapshot?.payload.local_seat;
       const nextReplacementTileId =
@@ -462,6 +511,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
           state.roomSnapshot,
         ),
         latestReplacementTileId: nextReplacementTileId,
+        latestSystemBroadcast: systemBroadcastText ? createSystemBroadcast(systemBroadcastText) : state.latestSystemBroadcast,
         toasts: appendToast(state, 'event', text),
       };
     }
@@ -470,15 +520,21 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         ...state,
         latestQuickChatMessage: message,
       };
-    case 'player_presence':
+    case 'player_presence': {
+      const presenceBroadcastText = createPresenceSystemBroadcast(
+        message.payload,
+        state.roomSnapshot?.payload.seats,
+      );
       return {
         ...state,
+        latestSystemBroadcast: presenceBroadcastText ? createSystemBroadcast(presenceBroadcastText) : state.latestSystemBroadcast,
         toasts: appendToast(
           state,
           'presence',
           getPresenceCopy(message.payload, state.roomSnapshot?.payload.seats),
         ),
       };
+    }
     case 'action_rejected':
       return {
         ...state,
@@ -564,6 +620,21 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         nickname: action.keepNickname === false ? '' : state.nickname,
         tableCode: action.tableCode ?? state.tableCode,
       };
+    case 'user_points_updated': {
+      const nextRoomSnapshot = updateSeatPointSnapshot(state.roomSnapshot, action.message);
+      const sourceTableCode = action.message.payload.source_table_code;
+      const isCurrentTableUpdate =
+        Boolean(sourceTableCode) && sourceTableCode === (state.roomSnapshot?.payload.table_code ?? state.tableCode);
+      const systemBroadcastText = isCurrentTableUpdate
+        ? createTitleChangeSystemBroadcast(action.message.payload)
+        : null;
+
+      return {
+        ...state,
+        roomSnapshot: nextRoomSnapshot,
+        latestSystemBroadcast: systemBroadcastText ? createSystemBroadcast(systemBroadcastText) : state.latestSystemBroadcast,
+      };
+    }
     case 'ws_message':
       return applyServerMessage(state, action.message);
     default:

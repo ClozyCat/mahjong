@@ -23,7 +23,9 @@ use super::protocol::{create_table_response, detail_response};
 use super::records::{fan_stat_view, game_detail_view, game_summary_view};
 use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
 use super::social_ws::social_websocket_handler;
-use super::users::{PublicUserView, public_user_view, public_user_view_with_active_table};
+use super::users::{
+    PublicUserView, public_user_view, public_user_view_with_active_table, title_for_points,
+};
 use super::ws::websocket_handler;
 use super::{
     AppContext, CreateTableRequest, Settings, initial_room_state_with_owner, is_valid_table_code,
@@ -1001,7 +1003,10 @@ async fn accept_table_invite(
             .iter_mut()
             .find(|seat| seat.seat_index == seat_index)
         {
+            seat.user_id = Some(user.user_id);
             seat.nickname = Some(user.display_name.clone());
+            seat.points = Some(user.points);
+            seat.title = Some(title_for_points(user.points).to_string());
             seat.reconnect_token = Some(reconnect_token.clone());
             seat.player_session_id = Some(player_session_id);
             seat.connected = false;
@@ -1015,7 +1020,10 @@ async fn accept_table_invite(
     } else {
         runtime.room.seats.push(crate::core::state::SeatState {
             seat_index,
+            user_id: Some(user.user_id),
             nickname: Some(user.display_name.clone()),
+            points: Some(user.points),
+            title: Some(title_for_points(user.points).to_string()),
             reconnect_token: Some(reconnect_token.clone()),
             player_session_id: Some(player_session_id),
             connected: false,

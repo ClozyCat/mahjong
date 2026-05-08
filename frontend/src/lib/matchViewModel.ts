@@ -1893,6 +1893,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     actionEffects: createActionEffects(state, options),
     dealerSelection,
     quickChatEvent: createQuickChatEvent(state, options),
+    systemBroadcastEvent: state.latestSystemBroadcast ?? null,
     toasts: state.toasts,
   };
 }

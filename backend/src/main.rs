@@ -455,7 +455,10 @@ mod tests {
         let mut room = initial_room_state("ROOM42");
         room.seats.push(SeatState {
             seat_index: 0,
+            user_id: None,
             nickname: Some("Alice".to_string()),
+            points: None,
+            title: None,
             reconnect_token: Some("token-1".to_string()),
             player_session_id: Some(42),
             connected: true,
@@ -501,7 +504,10 @@ mod tests {
         let mut room = initial_room_state("ROOMBOT");
         room.seats.push(SeatState {
             seat_index: 0,
+            user_id: None,
             nickname: Some("Bot 1".to_string()),
+            points: None,
+            title: None,
             reconnect_token: None,
             player_session_id: Some(-1),
             connected: true,
