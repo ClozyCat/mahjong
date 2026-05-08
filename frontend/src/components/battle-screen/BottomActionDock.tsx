@@ -573,8 +573,8 @@ function getHandInsightPopoverPosition(anchorRect: DOMRect, popoverWidth: number
 
   const anchorCenterY = anchorRect.top + anchorRect.height / 2;
   const arrowTop = Math.min(
-    Math.max(arrowMargin, anchorCenterY - top - arrowSize / 2),
-    popoverHeight - arrowSize - arrowMargin
+    Math.max(arrowMargin, anchorCenterY - top),
+    popoverHeight - arrowMargin
   );
 
   return { top, left, placement, arrowTop };

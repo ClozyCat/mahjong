@@ -401,6 +401,7 @@ describe('BottomActionDock', () => {
 
         expect(popover).not.toBeNull();
         expect(popover).toHaveStyle({ left: '474px' });
+        expect(popover?.style.getPropertyValue('--fan-detail-arrow-top')).toBe('60px');
       });
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
