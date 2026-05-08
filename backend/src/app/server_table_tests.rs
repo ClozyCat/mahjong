@@ -421,6 +421,74 @@ async fn invite_only_idle_user_invite_succeeds_and_is_visible_in_me_invites() ->
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn invite_only_latest_pending_invite_from_same_inviter_replaces_older_one() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100090", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100091", "Guest").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
+
+    let first_invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(first_invite.status(), StatusCode::CREATED);
+    let first_invite_body = json_response(first_invite).await;
+    let first_invite_id = first_invite_body["id"]
+        .as_i64()
+        .expect("first invite id should exist");
+
+    let second_invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            &owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(second_invite.status(), StatusCode::CREATED);
+    let second_invite_body = json_response(second_invite).await;
+    let second_invite_id = second_invite_body["id"]
+        .as_i64()
+        .expect("second invite id should exist");
+    assert_ne!(first_invite_id, second_invite_id);
+
+    let guest_invites = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/invites",
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(guest_invites.status(), StatusCode::OK);
+    let invites_body = json_response(guest_invites).await;
+    assert_eq!(invites_body.as_array().map(Vec::len), Some(1));
+    assert_eq!(invites_body[0]["id"], second_invite_id);
+    assert_eq!(invites_body[0]["status"], "pending");
+
+    let stale_accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{first_invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(stale_accept.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn invite_only_create_requires_open_or_replaceable_seat() -> Result<()> {
     let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100050", "Owner").await?;
@@ -1150,6 +1218,72 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
             .has_approved_spectator_request(&table_code, viewer_id)
             .await?
     );
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn spectator_latest_pending_request_from_same_requester_replaces_older_one() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100092", "Owner").await?;
+    let (viewer_token, viewer_id) = register_user(&app, &worker, "INVITE100093", "Viewer").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let first_request = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/spectator-requests"),
+            &viewer_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(first_request.status(), StatusCode::CREATED);
+    let first_request_body = json_response(first_request).await;
+    let first_request_id = first_request_body["id"]
+        .as_i64()
+        .expect("first request id should exist");
+
+    let second_request = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/spectator-requests"),
+            &viewer_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(second_request.status(), StatusCode::CREATED);
+    let second_request_body = json_response(second_request).await;
+    let second_request_id = second_request_body["id"]
+        .as_i64()
+        .expect("second request id should exist");
+    assert_ne!(first_request_id, second_request_id);
+
+    let owner_requests = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/spectator-requests",
+            &owner_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(owner_requests.status(), StatusCode::OK);
+    let owner_requests_body = json_response(owner_requests).await;
+    assert_eq!(owner_requests_body.as_array().map(Vec::len), Some(1));
+    assert_eq!(owner_requests_body[0]["id"], second_request_id);
+    assert_eq!(owner_requests_body[0]["requester_user_id"], viewer_id);
+
+    let stale_approve = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/spectator-requests/{first_request_id}/approve"),
+            &owner_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(stale_approve.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
 

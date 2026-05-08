@@ -1412,6 +1412,108 @@ describe('App', () => {
     expect(screen.getAllByText('Player B（平民）创建的牌桌ZXCVBN邀请你加入。')).not.toHaveLength(0);
   });
 
+  it('keeps only the latest pending invite from the same inviter', async () => {
+    const user = userEvent.setup();
+    await renderAuthenticatedLobby({
+      invites: [
+        {
+          ...DEFAULT_PENDING_INVITE,
+          id: 8,
+          table_code: 'LATEST',
+          created_at: '2026-05-06T12:01:00Z',
+        },
+        {
+          ...DEFAULT_PENDING_INVITE,
+          id: 7,
+          table_code: 'OLDER1',
+          created_at: '2026-05-06T12:00:00Z',
+        },
+      ],
+    });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
+
+    expect(screen.getByText('LATEST')).toBeInTheDocument();
+    expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
+  });
+
+  it('replaces an existing invite notice when the same inviter sends a newer invite', async () => {
+    const user = userEvent.setup();
+    await renderAuthenticatedLobby();
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'table_invite_created',
+        payload: {
+          ...DEFAULT_PENDING_INVITE,
+          id: 7,
+          table_code: 'OLDER1',
+          created_at: '2026-05-06T12:00:00Z',
+        },
+      });
+      meSocket!.triggerMessage({
+        type: 'table_invite_created',
+        payload: {
+          ...DEFAULT_PENDING_INVITE,
+          id: 8,
+          table_code: 'LATEST',
+          created_at: '2026-05-06T12:01:00Z',
+        },
+      });
+    });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
+
+    expect(screen.getByRole('region', { name: '牌局邀请' })).toHaveTextContent('LATEST');
+    expect(screen.getByText('LATEST')).toBeInTheDocument();
+    expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
+  });
+
+  it('keeps only the latest pending spectator request from the same requester', async () => {
+    const user = userEvent.setup();
+    await renderAuthenticatedLobby();
+
+    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'spectator_request_created',
+        payload: {
+          id: 11,
+          table_code: 'OLDER1',
+          requester_user_id: 2,
+          owner_user_id: 1,
+          status: 'pending',
+          created_at: '2026-05-06T12:00:00Z',
+          decided_at: null,
+        },
+      });
+      meSocket!.triggerMessage({
+        type: 'spectator_request_created',
+        payload: {
+          id: 12,
+          table_code: 'LATEST',
+          requester_user_id: 2,
+          owner_user_id: 1,
+          status: 'pending',
+          created_at: '2026-05-06T12:01:00Z',
+          decided_at: null,
+        },
+      });
+    });
+
+    await user.click(screen.getByRole('tab', { name: '消息' }));
+
+    expect(screen.getByText('申请观战 LATEST')).toBeInTheDocument();
+    expect(screen.queryByText('申请观战 OLDER1')).not.toBeInTheDocument();
+  });
+
   it('keeps dismissed invite messages visible without a sidebar alert', async () => {
     const user = userEvent.setup();
     await renderAuthenticatedLobby();

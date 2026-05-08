@@ -1363,27 +1363,39 @@ impl Database {
         created_at: &str,
         expires_at: &str,
     ) -> Result<TableInviteRecord> {
-        self.conn.execute(
-            "
-            INSERT INTO table_invites (
-                table_code,
-                inviter_user_id,
-                invitee_user_id,
-                status,
-                created_at,
-                expires_at
-            )
-            VALUES (?1, ?2, ?3, 'pending', ?4, ?5)
-            ",
-            params![
-                table_code,
-                inviter_user_id,
-                invitee_user_id,
-                created_at,
-                expires_at
-            ],
-        )?;
-        let invite_id = self.conn.last_insert_rowid();
+        let invite_id = self.with_transaction("create table invite", |conn| {
+            conn.execute(
+                "
+                UPDATE table_invites
+                SET status = 'superseded'
+                WHERE inviter_user_id = ?1
+                  AND invitee_user_id = ?2
+                  AND status = 'pending'
+                ",
+                params![inviter_user_id, invitee_user_id],
+            )?;
+            conn.execute(
+                "
+                INSERT INTO table_invites (
+                    table_code,
+                    inviter_user_id,
+                    invitee_user_id,
+                    status,
+                    created_at,
+                    expires_at
+                )
+                VALUES (?1, ?2, ?3, 'pending', ?4, ?5)
+                ",
+                params![
+                    table_code,
+                    inviter_user_id,
+                    invitee_user_id,
+                    created_at,
+                    expires_at
+                ],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })?;
         self.get_table_invite(invite_id)?
             .ok_or_else(|| anyhow!("created invite should exist"))
     }
@@ -1454,20 +1466,32 @@ impl Database {
         owner_user_id: i64,
         created_at: &str,
     ) -> Result<SpectatorRequestRecord> {
-        self.conn.execute(
-            "
-            INSERT INTO spectator_requests (
-                table_code,
-                requester_user_id,
-                owner_user_id,
-                status,
-                created_at
-            )
-            VALUES (?1, ?2, ?3, 'pending', ?4)
-            ",
-            params![table_code, requester_user_id, owner_user_id, created_at],
-        )?;
-        let request_id = self.conn.last_insert_rowid();
+        let request_id = self.with_transaction("create spectator request", |conn| {
+            conn.execute(
+                "
+                UPDATE spectator_requests
+                SET status = 'superseded'
+                WHERE requester_user_id = ?1
+                  AND owner_user_id = ?2
+                  AND status = 'pending'
+                ",
+                params![requester_user_id, owner_user_id],
+            )?;
+            conn.execute(
+                "
+                INSERT INTO spectator_requests (
+                    table_code,
+                    requester_user_id,
+                    owner_user_id,
+                    status,
+                    created_at
+                )
+                VALUES (?1, ?2, ?3, 'pending', ?4)
+                ",
+                params![table_code, requester_user_id, owner_user_id, created_at],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })?;
         self.get_spectator_request(request_id)?
             .ok_or_else(|| anyhow!("created spectator request should exist"))
     }

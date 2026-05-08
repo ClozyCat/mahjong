@@ -333,7 +333,12 @@ function upsertInvite(current: TableInvite[], nextInvite: TableInvite) {
     return removeInviteById(current, nextInvite.id);
   }
 
-  return [nextInvite, ...current.filter((invite) => invite.id !== nextInvite.id)];
+  return [
+    nextInvite,
+    ...current.filter(
+      (invite) => invite.id !== nextInvite.id && invite.inviter_user_id !== nextInvite.inviter_user_id,
+    ),
+  ];
 }
 
 function removeInviteById(current: TableInvite[], inviteId: number) {
@@ -345,7 +350,9 @@ function isPendingTableInvite(invite: TableInvite) {
 }
 
 function getPendingTableInvites(invites: TableInvite[]) {
-  return invites.filter(isPendingTableInvite);
+  return invites
+    .filter(isPendingTableInvite)
+    .reduceRight<TableInvite[]>((current, invite) => upsertInvite(current, invite), []);
 }
 
 function updateUserPoints(user: PublicUser | null, userId: number, points: number, title?: string) {
@@ -386,11 +393,26 @@ function isStaleTableInviteError(error: unknown) {
 }
 
 function upsertSpectatorRequest(current: SpectatorRequest[], nextRequest: SpectatorRequest) {
-  return [nextRequest, ...current.filter((request) => request.id !== nextRequest.id)];
+  return [
+    nextRequest,
+    ...current.filter(
+      (request) => request.id !== nextRequest.id && request.requester_user_id !== nextRequest.requester_user_id,
+    ),
+  ];
 }
 
 function removeSpectatorRequestById(current: SpectatorRequest[], requestId: number) {
   return current.filter((request) => request.id !== requestId);
+}
+
+function isPendingSpectatorRequest(request: SpectatorRequest) {
+  return request.status === 'pending';
+}
+
+function getPendingSpectatorRequests(requests: SpectatorRequest[]) {
+  return requests
+    .filter(isPendingSpectatorRequest)
+    .reduceRight<SpectatorRequest[]>((current, request) => upsertSpectatorRequest(current, request), []);
 }
 
 function addRequestedSpectatorTableCode(current: Set<string>, tableCode: string) {
@@ -574,7 +596,7 @@ export default function App() {
         setPendingInvites(getPendingTableInvites(nextInvites));
         setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
-        setPendingSpectatorRequests(nextSpectatorRequests);
+        setPendingSpectatorRequests(getPendingSpectatorRequests(nextSpectatorRequests));
         setRequestedSpectatorTableCodes(new Set());
         setLeaderboard(nextLeaderboard);
         setSelectedProfileUser((current) => current ?? me);
