@@ -703,6 +703,78 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
   });
 
+  it('labels settlement seats from the current seat map after seat rotation', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        players: [
+          {
+            ...createBattleViewModel().players[0],
+            seat: 'left',
+            absoluteSeat: 0,
+            name: 'Player Left',
+          },
+          {
+            ...createBattleViewModel().players[3],
+            seat: 'bottom',
+            absoluteSeat: 1,
+            name: 'Player B',
+            isLocal: true,
+          },
+          {
+            ...createBattleViewModel().players[2],
+            seat: 'right',
+            absoluteSeat: 2,
+            name: 'Player A',
+            isLocal: false,
+          },
+          {
+            ...createBattleViewModel().players[1],
+            seat: 'top',
+            absoluteSeat: 3,
+            name: 'Player Top',
+          },
+        ],
+        result: {
+          title: '本局结算',
+          summary: '荣和，等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          winnerAbsoluteSeat: 1,
+          discarderSeat: 'left',
+          discarderAbsoluteSeat: 0,
+          winType: 'discard',
+          winTypeLabel: '荣和',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          scoreDeltaBySeat: {
+            right: 8,
+            left: -8,
+          },
+          seats: [
+            { seat: 'right', absoluteSeat: 1, name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'left', absoluteSeat: 0, name: 'Player Left', score: 24292, delta: -8 },
+          ],
+          continueAction: {
+            id: 'start_next_round',
+            label: '下一局',
+            enabled: true,
+          },
+        },
+      }),
+    );
+
+    const playerBRow = Array.from(document.body.querySelectorAll('.result-overlay__seat-row'))
+      .find((row) => row.textContent?.includes('Player B'));
+
+    expect(screen.getByText(/胜者 Player B（本家）/)).toBeInTheDocument();
+    expect(playerBRow).not.toBeNull();
+    expect(playerBRow).toHaveTextContent('本家');
+    expect(playerBRow).not.toHaveTextContent('右家');
+  });
+
   it('renders the settlement overlay through a top-layer portal', () => {
     const { container } = renderBattleScreen(
       createBattleViewModel({

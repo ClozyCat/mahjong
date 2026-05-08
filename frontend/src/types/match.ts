@@ -651,6 +651,7 @@ export interface HandInsightView {
 
 export interface ResultSeatView {
   seat: Seat;
+  absoluteSeat?: number;
   name: string;
   score: number;
   delta: number | null;
@@ -666,7 +667,9 @@ export interface ResultSeatView {
 export interface ResultPageView {
   fanTotal: number | null;
   winnerSeat: Seat | null;
+  winnerAbsoluteSeat?: number | null;
   discarderSeat: Seat | null;
+  discarderAbsoluteSeat?: number | null;
   winType: string | null;
   winTypeLabel: string | null;
   flowerCount: number;
@@ -682,7 +685,9 @@ export interface ResultView {
   summary: string;
   fanTotal: number | null;
   winnerSeat: Seat | null;
+  winnerAbsoluteSeat?: number | null;
   discarderSeat: Seat | null;
+  discarderAbsoluteSeat?: number | null;
   winType: string | null;
   winTypeLabel: string | null;
   provisional: boolean;

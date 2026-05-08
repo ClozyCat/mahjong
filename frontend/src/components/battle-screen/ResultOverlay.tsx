@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { BattleActionId, ResultView, ResultSeatView, Seat, ResultPageView } from '../../types/match';
+import type { BattleActionId, PlayerView, ResultView, ResultSeatView, Seat, ResultPageView } from '../../types/match';
 import { getFanGuideEntry, getFanLabel } from './fanGuide';
 import { FanGuideCard, getFanColor } from './FanGuideCard';
 import { MahjongTile } from './MahjongTile';
@@ -11,10 +11,11 @@ interface ResultOverlayProps {
   result: ResultView;
   settlementKey: string;
   settlementHands?: Partial<Record<Seat, string[]>> | null;
+  players?: Pick<PlayerView, 'seat' | 'absoluteSeat'>[];
   onAction: (actionId: BattleActionId) => void;
 }
 
-export function ResultOverlay({ result, settlementKey, settlementHands, onAction }: ResultOverlayProps) {
+export function ResultOverlay({ result, settlementKey, settlementHands, players = [], onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeResultPageIndex, setActiveResultPageIndex] = useState(0);
   const [activeScorePageIndex, setActiveScorePageIndex] = useState(0);
@@ -55,6 +56,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, onAction
   const resultPages = getResultPages(result);
   const activeResultPage = resultPages[activeResultPageIndex] ?? null;
   const hasFanPanel = activeResultPage?.fanTotal !== null || (activeResultPage?.fanBreakdown.length ?? 0) > 0;
+  const seatLabelByAbsoluteSeat = getSeatLabelByAbsoluteSeat(players);
 
   useEffect(() => {
     if (previousSettlementKeyRef.current === settlementKey) {
@@ -318,7 +320,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, onAction
             onMouseEnter={() => clearOverlayPopoverCloseTimer(closeSeatStatsTimerRef)}
             onMouseLeave={scheduleSeatStatsClose}
           >
-            <SeatStatsTooltip seat={activeSeatStats.seat} />
+            <SeatStatsTooltip seat={activeSeatStats.seat} seatLabelByAbsoluteSeat={seatLabelByAbsoluteSeat} />
           </div>,
           document.body,
         )
@@ -348,6 +350,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, onAction
               onPageChange={setActiveResultPageIndex}
               onHoverFan={scheduleFanGuideOpen}
               onLeaveFan={scheduleFanGuideClose}
+              seatLabelByAbsoluteSeat={seatLabelByAbsoluteSeat}
             />
           )}
 
@@ -361,6 +364,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, onAction
             onPageChange={setActiveScorePageIndex}
             onHoverSeat={scheduleSeatStatsOpen}
             onLeaveSeat={scheduleSeatStatsClose}
+            seatLabelByAbsoluteSeat={seatLabelByAbsoluteSeat}
           />
         </div>
 
@@ -401,7 +405,8 @@ const FanBreakdownSection = memo(({
   activeIndex,
   onPageChange,
   onHoverFan,
-  onLeaveFan
+  onLeaveFan,
+  seatLabelByAbsoluteSeat
 }: {
   result: ResultView;
   pages: ResultPageView[];
@@ -409,14 +414,29 @@ const FanBreakdownSection = memo(({
   onPageChange: (index: number | ((curr: number) => number)) => void;
   onHoverFan: (key: string, fanKey: string, el: HTMLDivElement) => void;
   onLeaveFan: () => void;
+  seatLabelByAbsoluteSeat: SeatLabelByAbsoluteSeat;
 }) => {
   const activePage = pages[activeIndex];
   const winTypeLabel = activePage?.winTypeLabel ?? (activePage?.winType ? WIN_TYPE_LABELS[activePage.winType] : null);
   
   const metaItems = [
     winTypeLabel,
-    activePage?.winnerSeat ? `胜者 ${formatResultActor(activePage.winnerSeat, result.seats)}` : null,
-    activePage?.discarderSeat ? `放铳 ${formatResultActor(activePage.discarderSeat, result.seats)}` : null,
+    activePage?.winnerSeat
+      ? `胜者 ${formatResultActor(
+          activePage.winnerSeat,
+          result.seats,
+          seatLabelByAbsoluteSeat,
+          activePage.winnerAbsoluteSeat,
+        )}`
+      : null,
+    activePage?.discarderSeat
+      ? `放铳 ${formatResultActor(
+          activePage.discarderSeat,
+          result.seats,
+          seatLabelByAbsoluteSeat,
+          activePage.discarderAbsoluteSeat,
+        )}`
+      : null,
   ].filter(Boolean);
 
   return (
@@ -507,7 +527,8 @@ const ScoreSection = memo(({
   winType,
   onPageChange,
   onHoverSeat,
-  onLeaveSeat
+  onLeaveSeat,
+  seatLabelByAbsoluteSeat
 }: {
   seats: ResultSeatView[];
   activeIndex: number;
@@ -518,6 +539,7 @@ const ScoreSection = memo(({
   onPageChange: (index: number | ((curr: number) => number)) => void;
   onHoverSeat: (key: string, seat: ResultSeatView, el: HTMLDivElement) => void;
   onLeaveSeat: () => void;
+  seatLabelByAbsoluteSeat: SeatLabelByAbsoluteSeat;
 }) => {
   return (
     <div className={`result-overlay__score-panel${hasFanPanel ? '' : ' result-overlay__score-panel--full'}`}>
@@ -553,6 +575,7 @@ const ScoreSection = memo(({
             winType={winType}
             onHover={onHoverSeat}
             onLeave={onLeaveSeat}
+            seatLabel={getResultSeatLabel(seat, seatLabelByAbsoluteSeat)}
           />
         ))}
       </div>
@@ -567,7 +590,8 @@ const SeatRow = memo(({
   isWinner,
   winType,
   onHover,
-  onLeave
+  onLeave,
+  seatLabel
 }: {
   seat: ResultSeatView;
   isActive: boolean;
@@ -576,6 +600,7 @@ const SeatRow = memo(({
   winType: string | null;
   onHover: (key: string, seat: ResultSeatView, el: HTMLDivElement) => void;
   onLeave: () => void;
+  seatLabel: string;
 }) => {
   const hasStats = Boolean(seat.stats && seat.stats.scoreHistory.length > 0);
   const deltaClass = !seat.delta ? 'neutral' : seat.delta > 0 ? 'positive' : 'negative';
@@ -591,7 +616,7 @@ const SeatRow = memo(({
       <div className="result-overlay__seat-main">
         <div className="result-overlay__seat-info">
           <span className="result-overlay__seat-name">{seat.name}</span>
-          <span className="result-overlay__seat-tag">{getRelativeSeatLabel(seat.seat)}</span>
+          <span className="result-overlay__seat-tag">{seatLabel}</span>
         </div>
         <strong className="result-overlay__seat-score">{seat.score}</strong>
         <span className={`result-overlay__seat-delta result-overlay__seat-delta--${deltaClass}`}>
@@ -640,8 +665,26 @@ const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
   right: '右家',
 };
 
+type SeatLabelByAbsoluteSeat = ReadonlyMap<number, string>;
+
 function getRelativeSeatLabel(seat: Seat) {
   return RELATIVE_SEAT_LABELS[seat];
+}
+
+function getSeatLabelByAbsoluteSeat(players: Pick<PlayerView, 'seat' | 'absoluteSeat'>[]): SeatLabelByAbsoluteSeat {
+  return new Map(
+    players
+      .filter((player): player is Pick<PlayerView, 'seat'> & { absoluteSeat: number } =>
+        typeof player.absoluteSeat === 'number',
+      )
+      .map((player) => [player.absoluteSeat, getRelativeSeatLabel(player.seat)]),
+  );
+}
+
+function getResultSeatLabel(seat: Pick<ResultSeatView, 'seat' | 'absoluteSeat'>, labels: SeatLabelByAbsoluteSeat) {
+  return typeof seat.absoluteSeat === 'number'
+    ? labels.get(seat.absoluteSeat) ?? getRelativeSeatLabel(seat.seat)
+    : getRelativeSeatLabel(seat.seat);
 }
 
 function getResultPages(result: ResultView): ResultPageView[] {
@@ -649,7 +692,9 @@ function getResultPages(result: ResultView): ResultPageView[] {
   return [{
     fanTotal: result.fanTotal,
     winnerSeat: result.winnerSeat,
+    winnerAbsoluteSeat: result.winnerAbsoluteSeat,
     discarderSeat: result.discarderSeat,
+    discarderAbsoluteSeat: result.discarderAbsoluteSeat,
     winType: result.winType,
     winTypeLabel: result.winTypeLabel,
     flowerCount: result.flowerCount,
@@ -657,9 +702,20 @@ function getResultPages(result: ResultView): ResultPageView[] {
   }];
 }
 
-function formatResultActor(seat: Seat, seats: ResultSeatView[]) {
-  const label = getRelativeSeatLabel(seat);
-  const view = seats.find(s => s.seat === seat);
+function formatResultActor(
+  seat: Seat,
+  seats: ResultSeatView[],
+  labels: SeatLabelByAbsoluteSeat,
+  absoluteSeat?: number | null,
+) {
+  const view = typeof absoluteSeat === 'number'
+    ? seats.find(s => s.absoluteSeat === absoluteSeat) ?? seats.find(s => s.seat === seat)
+    : seats.find(s => s.seat === seat);
+  const label = view
+    ? getResultSeatLabel(view, labels)
+    : typeof absoluteSeat === 'number'
+      ? labels.get(absoluteSeat) ?? getRelativeSeatLabel(seat)
+      : getRelativeSeatLabel(seat);
   return view?.name ? `${view.name}（${label}）` : label;
 }
 
@@ -677,17 +733,24 @@ function clearOverlayPopoverCloseTimer(timerRef: React.MutableRefObject<number |
   if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
 }
 
-function SeatStatsTooltip({ seat }: { seat: ResultSeatView }) {
+function SeatStatsTooltip({
+  seat,
+  seatLabelByAbsoluteSeat,
+}: {
+  seat: ResultSeatView;
+  seatLabelByAbsoluteSeat: SeatLabelByAbsoluteSeat;
+}) {
   if (!seat.stats) return null;
   const completed = seat.stats.completedRoundCount;
   const winRate = `${(Math.round(seat.stats.winRate * 1000) / 10).toFixed(1).replace(/\.0$/, '')}%`;
+  const seatLabel = getResultSeatLabel(seat, seatLabelByAbsoluteSeat);
 
   return (
     <article className="result-overlay__seat-tooltip-card">
       <div className="result-overlay__seat-tooltip-head">
         <span className="result-overlay__seat-tooltip-eyebrow">本牌局统计</span>
         <strong>{seat.name}</strong>
-        <span className="result-overlay__seat-tooltip-seat">{getRelativeSeatLabel(seat.seat)}</span>
+        <span className="result-overlay__seat-tooltip-seat">{seatLabel}</span>
       </div>
       <div className="result-overlay__seat-tooltip-metrics">
         <div className="result-overlay__seat-tooltip-metric">

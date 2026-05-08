@@ -548,6 +548,7 @@ export function BattleScreen({
               result={visibleResult}
               settlementKey={settlementResetKey}
               settlementHands={viewModel.settlementHands}
+              players={viewModel.players}
               onAction={onAction}
             />
           ) : null}

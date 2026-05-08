@@ -1217,7 +1217,9 @@ function createResultPages(result: MatchResultPayload, localSeat: number): Resul
     .map((detail) => ({
       fanTotal: detail.fan_total,
       winnerSeat: toRelativeSeat(localSeat, detail.winner_seat),
+      winnerAbsoluteSeat: detail.winner_seat,
       discarderSeat: typeof result.discarder_seat === 'number' ? toRelativeSeat(localSeat, result.discarder_seat) : null,
+      discarderAbsoluteSeat: typeof result.discarder_seat === 'number' ? result.discarder_seat : null,
       winType: result.win_type,
       winTypeLabel: detail.display_win_label ?? WIN_TYPE_LABELS[result.win_type] ?? result.win_type,
       flowerCount: detail.flower_count,
@@ -1333,6 +1335,7 @@ function createResultSeats(
       const seatKey = String(seat.seat_index);
       return {
         seat: toRelativeSeat(localSeat, seat.seat_index),
+        absoluteSeat: seat.seat_index,
         name: seat.nickname,
         score: scores[seatKey] ?? 0,
         delta: scoreDeltaBySeat ? (scoreDeltaBySeat[seatKey] ?? 0) : null,
@@ -1373,9 +1376,15 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
       winnerSeat:
         primaryPage?.winnerSeat ??
         (typeof result.winner_seat === 'number' ? toRelativeSeat(localSeat, result.winner_seat) : null),
+      winnerAbsoluteSeat:
+        primaryPage?.winnerAbsoluteSeat ??
+        (typeof result.winner_seat === 'number' ? result.winner_seat : null),
       discarderSeat:
         primaryPage?.discarderSeat ??
         (typeof result.discarder_seat === 'number' ? toRelativeSeat(localSeat, result.discarder_seat) : null),
+      discarderAbsoluteSeat:
+        primaryPage?.discarderAbsoluteSeat ??
+        (typeof result.discarder_seat === 'number' ? result.discarder_seat : null),
       winType: result.win_type,
       winTypeLabel: primaryPage?.winTypeLabel ?? getWinTypeLabel(result),
       provisional: result.score_delta.provisional,
