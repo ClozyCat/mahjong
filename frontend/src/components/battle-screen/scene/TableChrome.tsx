@@ -373,8 +373,8 @@ function PinnedFanOverlay({
 
     const nextX = event.clientX - dragStartPos.current.x;
     const nextY = event.clientY - dragStartPos.current.y;
-    const x = Math.max(0, Math.min(window.innerWidth - 100, nextX));
-    const y = Math.max(0, Math.min(window.innerHeight - 100, nextY));
+    const x = Math.max(0, Math.min(window.innerWidth - 40, nextX));
+    const y = Math.max(0, Math.min(window.innerHeight - 40, nextY));
     setPosition({ x, y });
   };
 
