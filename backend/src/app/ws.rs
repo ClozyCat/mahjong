@@ -465,6 +465,7 @@ async fn handle_watch_table(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let room_is_playing = room_phase(&runtime.room) == "playing";
     if runtime.room.owner_user_id == Some(authenticated_user.user_id) {
         return reject_to(connection, "player_cannot_watch_own_table");
     }
@@ -481,6 +482,9 @@ async fn handle_watch_table(
         Ok(Some(_)) => return reject_to(connection, "player_cannot_watch_own_table"),
         Ok(None) => {}
         Err(error) => return internal_error_to(connection, error),
+    }
+    if !room_is_playing {
+        return reject_to(connection, "table_not_started");
     }
     match state
         .inner
@@ -665,7 +669,11 @@ async fn handle_join_table(
             }
             notify_all_user_connections(
                 &state,
-                user_active_table_updated_message(authenticated_user.user_id, Some(table_code)),
+                user_active_table_updated_message(
+                    authenticated_user.user_id,
+                    Some(table_code),
+                    Some(&room.phase),
+                ),
             )
             .await;
             let mut outbound = collect_join_outbound_from_snapshot(
@@ -1433,7 +1441,7 @@ async fn handle_leave_table(
             if let Some(user_id) = leaving_user_id {
                 notify_all_user_connections(
                     &state,
-                    user_active_table_updated_message(user_id, None),
+                    user_active_table_updated_message(user_id, None, None),
                 )
                 .await;
             }
@@ -1488,7 +1496,7 @@ async fn handle_leave_table(
             if let Some(user_id) = leaving_user_id {
                 notify_all_user_connections(
                     &state,
-                    user_active_table_updated_message(user_id, None),
+                    user_active_table_updated_message(user_id, None, None),
                 )
                 .await;
             }
@@ -1518,8 +1526,11 @@ async fn handle_leave_table(
         unregister_room_handle(&state, table_code, &room_handle).await;
         state.inner.db.delete_table(table_code, &left_at).await.ok();
         if let Some(user_id) = leaving_user_id {
-            notify_all_user_connections(&state, user_active_table_updated_message(user_id, None))
-                .await;
+            notify_all_user_connections(
+                &state,
+                user_active_table_updated_message(user_id, None, None),
+            )
+            .await;
         }
         schedule_room_tasks_detached(state, table_code.to_string());
         MessageOutcome {
@@ -1567,8 +1578,11 @@ async fn handle_leave_table(
             return internal_error_to(connection, error);
         }
         if let Some(user_id) = leaving_user_id {
-            notify_all_user_connections(&state, user_active_table_updated_message(user_id, None))
-                .await;
+            notify_all_user_connections(
+                &state,
+                user_active_table_updated_message(user_id, None, None),
+            )
+            .await;
         }
         let mut runtime = room_handle.runtime.lock().await;
         for handle in remove_all_seat_connections(&mut runtime, seat_index) {
@@ -1708,7 +1722,7 @@ mod tests {
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
-    use crate::app::room_runtime::room_handle;
+    use crate::app::room_runtime::{ensure_room_loaded, room_handle};
     use crate::app::{
         AppContext, ConnectionHandle, initial_room_state_with_owner, serialize_room_state,
     };
@@ -1851,6 +1865,7 @@ mod tests {
             .await?;
 
         let mut room = initial_room_state_with_owner(table_code, Some(owner.user_id), 1);
+        room.phase = "playing".to_string();
         room.seats.push(SeatState {
             seat_index: 0,
             user_id: Some(guest.user_id),
@@ -2249,6 +2264,46 @@ mod tests {
             payload["payload"]["reason"],
             "spectator_requires_owner_approval"
         );
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn spectator_waiting_table_rejects_approved_watch_table() -> Result<()> {
+        let (state, _guest_user_id, _guest_token, viewer_user_id, viewer_token) =
+            build_watch_state("ROOM93").await?;
+        let room_handle = ensure_room_loaded(&state, "ROOM93")
+            .await
+            .expect("room load should succeed")
+            .expect("room should be loaded");
+        {
+            let mut runtime = room_handle.runtime.lock().await;
+            runtime.room.phase = "waiting".to_string();
+        }
+        state
+            .inner
+            .db
+            .create_spectator_request("ROOM93", viewer_user_id, 1, "2026-05-06T00:10:00Z")
+            .await?;
+        state
+            .inner
+            .db
+            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
+            .await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
+
+        let outcome = handle_watch_table(
+            state,
+            "ROOM93",
+            &connection,
+            WatchTableRequest {
+                session_token: viewer_token,
+                nickname: "ViewerWatch".to_string(),
+            },
+        )
+        .await;
+
+        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
+        assert_eq!(payload["payload"]["reason"], "table_not_started");
         Ok(())
     }
 

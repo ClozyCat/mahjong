@@ -1167,11 +1167,12 @@ async fn invite_only_my_invites_omits_deleted_tables() -> Result<()> {
 #[tokio::test(flavor = "current_thread")]
 async fn spectator_non_player_request_creates_pending_request_and_owner_can_approve() -> Result<()>
 {
-    let (app, worker, _state) = test_app().await?;
+    let (app, worker, state) = test_app().await?;
     let (owner_token, owner_id) = register_user(&app, &worker, "INVITE100020", "Owner").await?;
     let (viewer_token, viewer_id) = register_user(&app, &worker, "INVITE100021", "Viewer").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    set_table_phase(&state, &worker, &table_code, "playing").await?;
     let request_response = app
         .clone()
         .oneshot(authed_json_request(
@@ -1222,12 +1223,36 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn spectator_latest_pending_request_from_same_requester_replaces_older_one() -> Result<()> {
+async fn spectator_waiting_table_cannot_be_requested() -> Result<()> {
     let (app, worker, _state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100094", "Owner").await?;
+    let (viewer_token, _viewer_id) = register_user(&app, &worker, "INVITE100095", "Viewer").await?;
+
+    let table_code = create_table(&app, &owner_token, 1).await?;
+    let request_response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/spectator-requests"),
+            &viewer_token,
+            json!({}),
+        ))
+        .await?;
+
+    assert_eq!(request_response.status(), StatusCode::CONFLICT);
+    let request_body = json_response(request_response).await;
+    assert_eq!(request_body["detail"], "table_not_started");
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn spectator_latest_pending_request_from_same_requester_replaces_older_one() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
     let (owner_token, _owner_id) = register_user(&app, &worker, "INVITE100092", "Owner").await?;
     let (viewer_token, viewer_id) = register_user(&app, &worker, "INVITE100093", "Viewer").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    set_table_phase(&state, &worker, &table_code, "playing").await?;
     let first_request = app
         .clone()
         .oneshot(authed_json_request(

@@ -267,7 +267,10 @@ const DEFAULT_PENDING_INVITE = {
   created_at: '2026-05-06T12:00:00Z',
   expires_at: '2026-05-06T12:10:00Z',
 };
-type MockPublicUser = typeof DEFAULT_CURRENT_USER & { active_table_code?: string | null };
+type MockPublicUser = typeof DEFAULT_CURRENT_USER & {
+  active_table_code?: string | null;
+  active_table_phase?: 'waiting' | 'playing' | 'settlement' | 'finished' | null;
+};
 
 function createMockResponse(body: unknown, status = 200): Response {
   return {
@@ -1179,6 +1182,7 @@ describe('App', () => {
         {
           ...DEFAULT_LEADERBOARD[1]!,
           active_table_code: 'ROOM42',
+          active_table_phase: 'playing',
         },
       ],
     });
@@ -1450,6 +1454,7 @@ describe('App', () => {
         payload: {
           user_id: 2,
           active_table_code: 'ROOM42',
+          active_table_phase: 'playing',
         },
       });
     });

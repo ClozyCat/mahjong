@@ -162,6 +162,7 @@ function getSocialStatusCopy(detail: string) {
     only_owner_can_invite: '只有房主可以邀请玩家。',
     table_multiplier_locked: '牌局已开始，无法再修改牌局设置。',
     table_not_found: '牌桌不存在或已关闭。',
+    table_not_started: '牌局尚未开始，暂不能观战。',
     spectator_requires_owner_approval: '观战需要房主同意。',
     player_cannot_watch_own_table: '牌局内玩家不能申请观战本局。',
     spectator_request_not_found: '观战申请不存在或已处理。',
@@ -375,7 +376,12 @@ function updateLeaderboardUserPoints(leaderboard: PublicUser[], userId: number, 
   return leaderboard.map((user) => updateUserPoints(user, userId, points, title) ?? user);
 }
 
-function updateUserActiveTableCode(user: PublicUser | null, userId: number, tableCode: string | null) {
+function updateUserActiveTableCode(
+  user: PublicUser | null,
+  userId: number,
+  tableCode: string | null,
+  tablePhase?: PublicUser['active_table_phase'],
+) {
   if (!user || user.user_id !== userId) {
     return user;
   }
@@ -383,11 +389,25 @@ function updateUserActiveTableCode(user: PublicUser | null, userId: number, tabl
   return {
     ...user,
     active_table_code: tableCode,
+    active_table_phase: tableCode ? tablePhase ?? user.active_table_phase ?? null : null,
   };
 }
 
-function updateLeaderboardUserActiveTableCode(leaderboard: PublicUser[], userId: number, tableCode: string | null) {
-  return leaderboard.map((user) => (user.user_id === userId ? { ...user, active_table_code: tableCode } : user));
+function updateLeaderboardUserActiveTableCode(
+  leaderboard: PublicUser[],
+  userId: number,
+  tableCode: string | null,
+  tablePhase?: PublicUser['active_table_phase'],
+) {
+  return leaderboard.map((user) =>
+    user.user_id === userId
+      ? {
+          ...user,
+          active_table_code: tableCode,
+          active_table_phase: tableCode ? tablePhase ?? user.active_table_phase ?? null : null,
+        }
+      : user,
+  );
 }
 
 function isStaleTableInviteError(error: unknown) {
@@ -774,10 +794,14 @@ export default function App() {
       }
 
       if (message.type === 'user_active_table_updated') {
-        const { user_id: userId, active_table_code: tableCode } = message.payload;
-        setCurrentUser((current) => updateUserActiveTableCode(current, userId, tableCode));
-        setSelectedProfileUser((current) => updateUserActiveTableCode(current, userId, tableCode));
-        setLeaderboard((current) => updateLeaderboardUserActiveTableCode(current, userId, tableCode));
+        const {
+          user_id: userId,
+          active_table_code: tableCode,
+          active_table_phase: tablePhase = null,
+        } = message.payload;
+        setCurrentUser((current) => updateUserActiveTableCode(current, userId, tableCode, tablePhase));
+        setSelectedProfileUser((current) => updateUserActiveTableCode(current, userId, tableCode, tablePhase));
+        setLeaderboard((current) => updateLeaderboardUserActiveTableCode(current, userId, tableCode, tablePhase));
         setAuthSession((current) =>
           current && current.user.user_id === userId
             ? {
@@ -785,6 +809,7 @@ export default function App() {
                 user: {
                   ...current.user,
                   active_table_code: tableCode,
+                  active_table_phase: tableCode ? tablePhase : null,
                 },
               }
             : current,
@@ -1525,8 +1550,10 @@ export default function App() {
       setActiveLobbyTableCode(table.table_code);
       setSentInviteStatusesByUserId({});
       setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
-      setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code));
-      setLeaderboard((users) => updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code));
+      setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code, table.phase));
+      setLeaderboard((users) =>
+        updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code, table.phase),
+      );
       setStatusMessage(`已创建牌局 ${table.table_code}，正在进入牌桌...`);
       openRoomSocket({
         tableCode: table.table_code,
@@ -1725,6 +1752,11 @@ export default function App() {
 
     if (!tableCode) {
       setStatusMessage('该玩家当前不在牌局中。');
+      return;
+    }
+
+    if (user.active_table_phase !== 'playing') {
+      setStatusMessage(user.active_table_phase === 'waiting' ? '牌局尚未开始，暂不能观战。' : '该玩家当前没有可观战的进行中牌局。');
       return;
     }
 

@@ -10,9 +10,10 @@ use crate::app::room_runtime::{
 use crate::app::{
     AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles, collect_observer_outbound_from_snapshot,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
-    disconnect_deadline_for_seat, next_disconnect_deadline, pending_timeout_deadline,
-    records::archive_current_round_if_needed, room_has_round_state, room_seats, send_outbound,
-    serialize_room, set_seat_bot_takeover, sleep_until,
+    disconnect_deadline_for_seat, next_disconnect_deadline, notify_all_user_connections,
+    pending_timeout_deadline, records::archive_current_round_if_needed, room_has_round_state,
+    room_seats, send_outbound, serialize_room, set_seat_bot_takeover, sleep_until,
+    user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
@@ -269,6 +270,13 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
     {
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
+    }
+    for user_id in room.seats.iter().filter_map(|seat| seat.user_id) {
+        notify_all_user_connections(
+            &state,
+            user_active_table_updated_message(user_id, Some(&table_code), Some(&room.phase)),
+        )
+        .await;
     }
     let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
         &room,

@@ -725,12 +725,14 @@ fn user_presence_updated_message(online_user_ids: Vec<i64>) -> Value {
 pub(crate) fn user_active_table_updated_message(
     user_id: i64,
     active_table_code: Option<&str>,
+    active_table_phase: Option<&str>,
 ) -> Value {
     json!({
         "type": "user_active_table_updated",
         "payload": {
             "user_id": user_id,
-            "active_table_code": active_table_code
+            "active_table_code": active_table_code,
+            "active_table_phase": active_table_phase
         }
     })
 }

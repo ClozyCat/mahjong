@@ -500,13 +500,41 @@ async fn get_leaderboard(State(state): State<AppContext>) -> Response {
                     return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
                 }
             };
+            let mut active_table_phases = HashMap::new();
+            for table_code in active_tables.values() {
+                if active_table_phases.contains_key(table_code) {
+                    continue;
+                }
+                let phase = match state.inner.db.get_table(table_code).await {
+                    Ok(Some(record)) => match parse_room_json(&record.room_json) {
+                        Ok(room) => Some(room.phase),
+                        Err(error) => {
+                            return json_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                &error.to_string(),
+                            );
+                        }
+                    },
+                    Ok(None) => None,
+                    Err(error) => {
+                        return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+                    }
+                };
+                active_table_phases.insert(table_code.clone(), phase);
+            }
             Json(
                 users
                     .iter()
                     .map(|user| {
+                        let active_table_code = active_tables.get(&user.user_id).cloned();
+                        let active_table_phase =
+                            active_table_code.as_ref().and_then(|table_code| {
+                                active_table_phases.get(table_code).cloned().flatten()
+                            });
                         public_user_view_with_active_table(
                             user,
-                            active_tables.get(&user.user_id).cloned(),
+                            active_table_code,
+                            active_table_phase,
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -854,6 +882,7 @@ async fn create_spectator_request(
     }
 
     let runtime = room_handle.runtime.lock().await;
+    let room_is_playing = room_phase(&runtime.room) == "playing";
     if runtime.room.owner_user_id == Some(authenticated_user.user_id) {
         return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table");
     }
@@ -868,6 +897,10 @@ async fn create_spectator_request(
         Ok(Some(_)) => return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table"),
         Ok(None) => {}
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+
+    if !room_is_playing {
+        return json_error(StatusCode::CONFLICT, "table_not_started");
     }
 
     let owner_user_id = match state.inner.db.get_table(&table_code).await {
@@ -1067,6 +1100,7 @@ async fn accept_table_invite(
                 user_active_table_updated_message(
                     authenticated_user.user_id,
                     Some(&invite.table_code),
+                    Some(&room.phase),
                 ),
             )
             .await;

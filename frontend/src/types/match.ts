@@ -36,6 +36,7 @@ export interface PublicUser {
   bio: string;
   avatar?: string | null;
   active_table_code?: string | null;
+  active_table_phase?: RoomPhase | null;
 }
 
 export interface UserBrief {
@@ -414,6 +415,7 @@ export interface UserActiveTableUpdatedMessage {
   payload: {
     user_id: number;
     active_table_code: string | null;
+    active_table_phase?: RoomPhase | null;
   };
 }
 

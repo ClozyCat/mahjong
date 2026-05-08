@@ -128,6 +128,18 @@ function getAllPlayerStatus(
     return { label: '创建牌局中', tone: 'creating' };
   }
 
+  if (user.active_table_phase === 'waiting') {
+    return { label: '创建牌局中', tone: 'creating' };
+  }
+
+  if (user.active_table_phase !== 'playing') {
+    if (!onlineUserIdSet.has(user.user_id)) {
+      return { label: '离线', tone: 'offline' };
+    }
+
+    return { label: '在线', tone: 'online' };
+  }
+
   if (!onlineUserIdSet.has(user.user_id)) {
     return { label: '离线', tone: 'offline' };
   }
@@ -264,10 +276,17 @@ export function TableSidebar({
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
                 {allUsers.map((user) => {
                   const isSelf = currentUserId === user.user_id;
+                  const isWaitingTable = Boolean(
+                    user.active_table_phase === 'waiting' ||
+                      (user.active_table_code && creatingTableCodeSet.has(user.active_table_code)),
+                  );
+                  const isWatchableTable = user.active_table_phase === 'playing';
                   const hasRequestedWatch = Boolean(
                     user.active_table_code && requestedWatchTableCodeSet.has(user.active_table_code),
                   );
-                  const canWatch = Boolean(user.active_table_code && !isSelf && onWatchUser && !hasRequestedWatch);
+                  const canWatch = Boolean(
+                    user.active_table_code && !isSelf && onWatchUser && !hasRequestedWatch && isWatchableTable,
+                  );
                   const playerStatus = getAllPlayerStatus(
                     user,
                     onlineUserIdSet,
@@ -298,8 +317,12 @@ export function TableSidebar({
                               ? `已申请观战 ${user.active_table_code}`
                               : canWatch
                               ? `申请观战 ${user.active_table_code}`
+                              : isWaitingTable
+                                ? '牌局尚未开始，暂不能观战'
                               : isSelf
                                 ? '不能观战自己的牌局'
+                              : user.active_table_code
+                                ? '该玩家当前没有可观战的进行中牌局'
                                 : '该玩家当前不在牌局中'
                           }
                           onClick={() => onWatchUser?.(user)}

@@ -153,6 +153,7 @@ describe('TableSidebar', () => {
         bio: '',
         avatar: null,
         active_table_code: 'HUMAN01',
+        active_table_phase: 'playing' as const,
       },
       {
         user_id: 2,
@@ -164,6 +165,7 @@ describe('TableSidebar', () => {
         bio: '',
         avatar: null,
         active_table_code: 'HUMAN01',
+        active_table_phase: 'playing' as const,
       },
       {
         user_id: 3,
@@ -175,6 +177,7 @@ describe('TableSidebar', () => {
         bio: '',
         avatar: null,
         active_table_code: 'BOT01',
+        active_table_phase: 'playing' as const,
       },
     ];
 
@@ -223,6 +226,7 @@ describe('TableSidebar', () => {
         bio: '',
         avatar: null,
         active_table_code: 'BOT01',
+        active_table_phase: 'playing' as const,
       },
     ];
 
@@ -248,6 +252,52 @@ describe('TableSidebar', () => {
     expect(within(rows[1]).getByText('与BOT对局中')).toBeInTheDocument();
   });
 
+  it('disables watch for users in waiting tables', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'WAIT01',
+        active_table_phase: 'waiting' as const,
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        currentUserId={1}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const row = screen.getByText(/阿强（平民）/).closest('li');
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText('创建牌局中')).toBeInTheDocument();
+
+    const watchButton = within(row!).getByRole('button', { name: '观战' });
+    expect(watchButton).toBeDisabled();
+
+    await user.click(watchButton);
+
+    expect(onWatchUser).not.toHaveBeenCalled();
+  });
+
   it('enables watch only for other users with active tables', async () => {
     const user = userEvent.setup();
     const onWatchUser = vi.fn();
@@ -262,6 +312,7 @@ describe('TableSidebar', () => {
         bio: '',
         avatar: null,
         active_table_code: 'SELF01',
+        active_table_phase: 'playing' as const,
       },
       {
         user_id: 2,
@@ -273,6 +324,7 @@ describe('TableSidebar', () => {
         bio: '',
         avatar: null,
         active_table_code: 'ROOM42',
+        active_table_phase: 'playing' as const,
       },
       {
         user_id: 3,
@@ -315,6 +367,47 @@ describe('TableSidebar', () => {
     await user.click(activeWatchButton);
 
     expect(onWatchUser).toHaveBeenCalledWith(users[1]);
+  });
+
+  it('disables watch when active table phase is unknown', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'ROOM42',
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        currentUserId={1}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const watchButton = screen.getByRole('button', { name: '观战' });
+    expect(watchButton).toBeDisabled();
+
+    await user.click(watchButton);
+
+    expect(onWatchUser).not.toHaveBeenCalled();
   });
 
   it('shows already requested watch buttons as disabled', async () => {
