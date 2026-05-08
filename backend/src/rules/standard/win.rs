@@ -797,6 +797,7 @@ fn fan_result_for_win_with_state(
     let player_tile_keys =
         player_tile_keys_from_parts(&concealed_tile_keys, &meld_tile_key_groups, incoming_tile);
     let winning_tile = winning_tile_for_win_state(state, winner_seat, incoming_tile);
+    let visible_tile_keys = visible_tile_keys_for_win_state(state, cache, incoming_tile);
 
     let evaluation = ScoringEvaluationInput {
         win_type: win_type.clone(),
@@ -816,7 +817,7 @@ fn fan_result_for_win_with_state(
         timing: timing_features_for_win_state(state, incoming_tile.is_none()),
         kong_entries,
         tile_keys: player_tile_keys,
-        visible_tile_keys: cache.visible_tile_keys.clone(),
+        visible_tile_keys,
         concealed_tile_keys,
         meld_tile_key_groups,
         open_meld_tile_key_groups,
@@ -826,6 +827,36 @@ fn fan_result_for_win_with_state(
     };
     let result = scoring_evaluate_fans(evaluation);
     Ok(EvaluatedWinResult { fan_result: result })
+}
+
+fn visible_tile_keys_for_win_state(
+    state: &RoomState,
+    cache: &RoomScoringCache,
+    incoming_tile: Option<&str>,
+) -> Vec<String> {
+    let mut visible_tile_keys = cache.visible_tile_keys.clone();
+    let Some(incoming_tile) = incoming_tile else {
+        return visible_tile_keys;
+    };
+    let Some(round) = state.round_state.as_ref() else {
+        return visible_tile_keys;
+    };
+    if !matches!(round.pending_action, Some(PendingAction::ClaimWindow(_))) {
+        return visible_tile_keys;
+    }
+    if round
+        .last_discard
+        .as_ref()
+        .is_some_and(|tile| tile.tile_key == incoming_tile)
+    {
+        if let Some(index) = visible_tile_keys
+            .iter()
+            .position(|tile_key| tile_key == incoming_tile)
+        {
+            visible_tile_keys.remove(index);
+        }
+    }
+    visible_tile_keys
 }
 
 fn prepare_win_evaluation(
@@ -901,7 +932,8 @@ mod tests {
         compute_hu_settlement_for_state,
     };
     use crate::core::state::{
-        LastActionContext, MatchState, PlayerRoundState, RoomState, RoundState, SeatState,
+        ClaimWindowAction, LastActionContext, MatchState, PendingAction, PlayerRoundState,
+        RoomState, RoundState, SeatState,
     };
     use crate::core::tile::Tile;
     use crate::room_scoring::RoomScoringCache;
@@ -996,6 +1028,49 @@ mod tests {
         assert!(
             settlement.fan_keys.iter().any(|fan| fan == "last_tile"),
             "fan keys should include last_tile, got {:?}",
+            settlement.fan_keys
+        );
+    }
+
+    #[test]
+    fn discard_win_does_not_count_claimed_discard_as_prior_visible_last_tile() {
+        let tile_keys = [
+            "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        let last_discard = Tile {
+            tile_id: "w1#discard-win".to_string(),
+            tile_key: "w1".to_string(),
+            ..Default::default()
+        };
+        let round = state.round_state.as_mut().expect("round should exist");
+        round.current_actor = 1;
+        round.last_discard = Some(last_discard.clone());
+        round.players[1].discards = vec![
+            Tile {
+                tile_id: "w1#discard-0".to_string(),
+                tile_key: "w1".to_string(),
+                ..Default::default()
+            },
+            Tile {
+                tile_id: "w1#discard-1".to_string(),
+                tile_key: "w1".to_string(),
+                ..Default::default()
+            },
+            last_discard,
+        ];
+        round.pending_action = Some(PendingAction::ClaimWindow(ClaimWindowAction {
+            discarder_seat: 1,
+            claim_window: vec![vec!["hu".to_string()], vec![], vec![], vec![]],
+            responded_seats: vec![],
+            claim_responses: vec![],
+        }));
+
+        let settlement = compute_hu_settlement_for_state(&state, 0, "discard").expect("settlement");
+
+        assert!(
+            !settlement.fan_keys.iter().any(|fan| fan == "last_tile"),
+            "claimed discard should not count as a prior visible copy, got {:?}",
             settlement.fan_keys
         );
     }
