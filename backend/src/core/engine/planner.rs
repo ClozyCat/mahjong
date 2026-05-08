@@ -73,10 +73,13 @@ pub fn plan_round_start_payload(
     dealer_seat: usize,
     round_wind: &str,
     round_id: String,
-    seed: u64,
+    _seed: u64,
 ) -> (RoundState, PendingTimeout) {
     let mut wall_tiles = full_tile_set();
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    // 使用操作系统级别的最高熵真随机种子初始化随机数生成器。
+    // 传入的 _seed: u64 仍保留在函数签名中以维持 API 兼容性并用于 round_id 生成，
+    // 但洗牌时改用从操作系统直接获取随机性，以确保最大的随机安全性。
+    let mut rng = rand::rngs::StdRng::from_os_rng();
     wall_tiles.shuffle(&mut rng);
 
     let mut head_index = 0usize;
