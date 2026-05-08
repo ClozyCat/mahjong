@@ -162,6 +162,7 @@ async fn add_bot_takeover_human_to_table(
         bot_persona: None,
         bot_aggression: None,
         disconnect_deadline_at: None,
+        consecutive_timeout_auto_response_count: 0,
     });
     let created_at = runtime.created_at.clone();
     let room_json = serialize_room_state(&runtime.room)?;
@@ -518,6 +519,7 @@ async fn invite_only_create_requires_open_or_replaceable_seat() -> Result<()> {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
             });
         }
         let created_at = runtime.created_at.clone();
@@ -621,6 +623,7 @@ async fn invite_only_full_bot_takeover_human_seat_is_not_replaceable() -> Result
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
             });
         }
         let created_at = runtime.created_at.clone();

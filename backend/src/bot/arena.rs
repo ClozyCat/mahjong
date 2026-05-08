@@ -269,6 +269,7 @@ pub fn arena_room(table_code: &str) -> RoomState {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
             })
             .collect(),
         match_state: None,

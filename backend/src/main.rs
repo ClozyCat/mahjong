@@ -42,8 +42,8 @@ mod tests {
     };
     use crate::app::{
         AppContext, ConnectionHandle, add_bot_to_waiting_room, initial_room_state, now_iso,
-        occupied_seats, parse_datetime, random_open_seat_index_with_rng,
-        remove_bot_from_waiting_room, seat_matches_reconnect_credentials, send_outbound,
+        occupied_seats, random_open_seat_index_with_rng, remove_bot_from_waiting_room,
+        seat_matches_reconnect_credentials, send_outbound,
     };
     use crate::core::state::{RoomState, SeatState};
 
@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn restored_human_seats_receive_disconnect_deadline() {
+    fn restored_human_seats_are_marked_disconnected_without_takeover_deadline() {
         let mut room = room_state(json!({
             "table_code": "ROOM42",
             "phase": "waiting",
@@ -147,12 +147,8 @@ mod tests {
 
         mark_restored_room_disconnected(&mut room);
 
-        let human_deadline = room.seats[0]
-            .disconnect_deadline_at
-            .as_deref()
-            .and_then(parse_datetime);
-        assert!(human_deadline.is_some());
         assert!(!room.seats[0].connected);
+        assert!(room.seats[0].disconnect_deadline_at.is_none());
         assert!(room.seats[1].disconnect_deadline_at.is_none());
     }
 
@@ -446,7 +442,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn restore_persisted_rooms_rehydrates_disconnect_tasks() -> Result<()> {
+    async fn restore_persisted_rooms_marks_humans_disconnected_without_takeover_task() -> Result<()>
+    {
         let db = in_memory_database("")?;
         db.initialize()?;
         let worker = DbWorker::start(db)?;
@@ -468,6 +465,7 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         });
         let room_json = crate::app::serialize_room_state(&room)?;
         worker
@@ -481,14 +479,7 @@ mod tests {
             .expect("restored room should be loaded");
         let runtime = room_handle.runtime.lock().await;
         assert!(!runtime.room.seats[0].connected);
-        assert!(
-            runtime.room.seats[0]
-                .disconnect_deadline_at
-                .as_deref()
-                .and_then(parse_datetime)
-                .is_some()
-        );
-        assert!(runtime.disconnect_task.is_some());
+        assert!(runtime.room.seats[0].disconnect_deadline_at.is_none());
         drop(runtime);
         close_room_handle(&room_handle).await;
         Ok(())
@@ -517,6 +508,7 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         });
         let room_json = crate::app::serialize_room_state(&room)?;
         worker

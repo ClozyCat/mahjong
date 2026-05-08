@@ -83,6 +83,7 @@ pub fn add_bot_seats_for_test(room: &mut RoomState) {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         });
     }
     room.seats.sort_by_key(|seat| seat.seat_index);
@@ -467,10 +468,7 @@ fn rotate_seats_after_wind_end(room: &mut RoomState, prevailing_wind: &str) {
     room.seats.sort_by_key(|seat| seat.seat_index);
 }
 
-fn rotate_match_scores_after_wind_end(
-    room: &mut RoomState,
-    old_to_new_seat: &[usize; MAX_SEATS],
-) {
+fn rotate_match_scores_after_wind_end(room: &mut RoomState, old_to_new_seat: &[usize; MAX_SEATS]) {
     let Some(match_state) = room.match_state.as_mut() else {
         return;
     };
@@ -1075,6 +1073,7 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         }
     }
 
@@ -1340,7 +1339,11 @@ mod tests {
                 .statistics
                 .seat_stats_by_seat
                 .get(&0)
-                .map(|stats| (stats.score_history.clone(), stats.win_count, stats.deal_in_count)),
+                .map(|stats| (
+                    stats.score_history.clone(),
+                    stats.win_count,
+                    stats.deal_in_count
+                )),
             Some((vec![0, 20], 2, 1))
         );
         assert_eq!(
@@ -1348,7 +1351,11 @@ mod tests {
                 .statistics
                 .seat_stats_by_seat
                 .get(&1)
-                .map(|stats| (stats.score_history.clone(), stats.win_count, stats.deal_in_count)),
+                .map(|stats| (
+                    stats.score_history.clone(),
+                    stats.win_count,
+                    stats.deal_in_count
+                )),
             Some((vec![0, 10], 1, 0))
         );
     }

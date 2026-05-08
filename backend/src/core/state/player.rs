@@ -24,6 +24,7 @@ pub struct SeatState {
     pub bot_persona: Option<String>,
     pub bot_aggression: Option<i64>,
     pub disconnect_deadline_at: Option<String>,
+    pub consecutive_timeout_auto_response_count: u8,
 }
 
 impl SeatState {

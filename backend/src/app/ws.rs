@@ -39,9 +39,9 @@ use super::{
     generate_player_session_id, generate_reconnect_token, generate_short_hex, normalize_table_code,
     notify_all_user_connections, occupied_seats, presence_and_snapshot_for_all_from_snapshot,
     random_open_seat_index, remove_bot_from_waiting_room, remove_seat_from_room,
-    room_has_round_state, room_phase, room_player_session_id, room_seats, seat_exists,
-    seat_matches_reconnect_credentials, send_outbound, serialize_room, set_seat_bot_takeover,
-    set_seat_connected, user_active_table_updated_message,
+    reset_timeout_auto_response_count, room_has_round_state, room_phase, room_player_session_id,
+    room_seats, seat_exists, seat_matches_reconnect_credentials, send_outbound, serialize_room,
+    set_seat_bot_takeover, set_seat_connected, user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::SeatState;
@@ -611,6 +611,7 @@ async fn handle_join_table(
             seat.disconnect_deadline_at = None;
             seat.is_bot = false;
             seat.seat_type = "human".to_string();
+            seat.consecutive_timeout_auto_response_count = 0;
             (participant.seat_index, false)
         } else if runtime.room.owner_user_id == Some(authenticated_user.user_id)
             && room_phase(&runtime.room) == "waiting"
@@ -636,6 +637,7 @@ async fn handle_join_table(
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
             });
             runtime.room.seats.sort_by_key(|seat| seat.seat_index);
             let created_at = runtime.created_at.clone();
@@ -822,6 +824,7 @@ async fn handle_reconnect(
         seat.disconnect_deadline_at = None;
         seat.is_bot = false;
         seat.seat_type = "human".to_string();
+        seat.consecutive_timeout_auto_response_count = 0;
     }
     let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
@@ -1275,6 +1278,7 @@ async fn handle_action_request(
         Some(Err(reason)) => return reject_to(connection, &reason),
         None => return reject_to(connection, "invalid_action"),
     };
+    reset_timeout_auto_response_count(&mut runtime.room, seat_index);
 
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -1628,12 +1632,7 @@ async fn handle_disconnect(
     if remove_seat_connection(&mut runtime, seat_index, connection_id) {
         return;
     }
-    set_seat_connected(
-        &mut runtime.room,
-        seat_index,
-        false,
-        Some(super::disconnect_deadline_iso()),
-    );
+    set_seat_connected(&mut runtime.room, seat_index, false);
     let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -1795,6 +1794,7 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         });
         let room_json = serialize_room_state(&room)?;
         worker
@@ -1881,6 +1881,7 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         });
         let room_json = serialize_room_state(&room)?;
         worker

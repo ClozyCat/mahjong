@@ -9,8 +9,7 @@ use tokio::task::JoinHandle;
 
 use crate::app::scheduler::schedule_room_tasks;
 use crate::app::{
-    AppContext, ConnectionHandle, OutboundMessage, disconnect_deadline_iso, parse_room_json,
-    serialize_room_state,
+    AppContext, ConnectionHandle, OutboundMessage, parse_room_json, serialize_room_state,
 };
 use crate::core::state::RoomState;
 use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state;
@@ -53,12 +52,10 @@ pub(crate) struct RoomRuntime {
     pub(crate) timeout_nonce: u64,
     pub(crate) continue_nonce: u64,
     pub(crate) start_match_nonce: u64,
-    pub(crate) disconnect_nonce: u64,
     pub(crate) bot_nonce: u64,
     pub(crate) timeout_task: Option<JoinHandle<()>>,
     pub(crate) continue_task: Option<JoinHandle<()>>,
     pub(crate) start_match_task: Option<JoinHandle<()>>,
-    pub(crate) disconnect_task: Option<JoinHandle<()>>,
     pub(crate) bot_task: Option<JoinHandle<()>>,
     pub(crate) pending_start_match: Option<PendingStartMatch>,
 }
@@ -79,12 +76,10 @@ impl RoomRuntime {
             timeout_nonce: 0,
             continue_nonce: 0,
             start_match_nonce: 0,
-            disconnect_nonce: 0,
             bot_nonce: 0,
             timeout_task: None,
             continue_task: None,
             start_match_task: None,
-            disconnect_task: None,
             bot_task: None,
             pending_start_match: None,
         }
@@ -119,7 +114,6 @@ pub(crate) fn abort_room_tasks(runtime: &mut RoomRuntime) {
     abort_join_handle(&mut runtime.timeout_task);
     abort_join_handle(&mut runtime.continue_task);
     abort_join_handle(&mut runtime.start_match_task);
-    abort_join_handle(&mut runtime.disconnect_task);
     abort_join_handle(&mut runtime.bot_task);
 }
 
@@ -227,13 +221,12 @@ pub(crate) async fn unregister_room_handle(
 }
 
 pub(crate) fn mark_restored_room_disconnected(room: &mut RoomState) {
-    let deadline = disconnect_deadline_iso();
     for seat in &mut room.seats {
         if seat.seat_type == "bot" {
             continue;
         }
         seat.connected = false;
-        seat.disconnect_deadline_at = Some(deadline.clone());
+        seat.disconnect_deadline_at = None;
     }
 }
 

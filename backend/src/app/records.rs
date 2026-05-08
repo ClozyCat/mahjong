@@ -521,6 +521,7 @@ mod tests {
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         }
     }
 

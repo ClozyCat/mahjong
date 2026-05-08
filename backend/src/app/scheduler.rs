@@ -4,16 +4,15 @@ use chrono::Utc;
 
 use crate::app::room_runtime::{
     abort_join_handle, close_runtime, remap_connections_to_current_seats, restore_room_snapshot,
-    room_handle, room_has_only_bots, should_terminate_unattended, snapshot_connections,
-    snapshot_spectator_connections, snapshot_spectator_identities, unregister_room_handle,
+    room_handle, room_has_only_bots, snapshot_connections, snapshot_spectator_connections,
+    snapshot_spectator_identities, unregister_room_handle,
 };
 use crate::app::{
     AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles, collect_observer_outbound_from_snapshot,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
-    disconnect_deadline_for_seat, next_disconnect_deadline, notify_all_user_connections,
-    pending_timeout_deadline, records::archive_current_round_if_needed, room_has_round_state,
-    room_seats, send_outbound, serialize_room, set_seat_bot_takeover, sleep_until,
-    user_active_table_updated_message,
+    notify_all_user_connections, pending_timeout_deadline, record_timeout_auto_responses,
+    records::archive_current_round_if_needed, room_has_round_state, room_seats, send_outbound,
+    serialize_room, sleep_until, timeout_auto_response_seats, user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
@@ -58,6 +57,7 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     if deadline > Utc::now() {
         return;
     }
+    let timed_out_seats = timeout_auto_response_seats(&runtime.room);
     let rust_messages = match standard_try_process_due_timeout(&mut runtime.room) {
         Ok(messages) => messages,
         Err(_) => return,
@@ -65,6 +65,11 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     let Some(rust_messages) = rust_messages else {
         return;
     };
+    if record_timeout_auto_responses(&mut runtime.room, &timed_out_seats)
+        && room_has_round_state(&runtime.room)
+    {
+        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
+    }
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let room_json = match serialize_room(&room) {
@@ -292,99 +297,6 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
     schedule_room_tasks_detached(state, table_code);
 }
 
-async fn process_due_disconnect_timeout(
-    state: AppContext,
-    table_code: String,
-    seat_index: usize,
-    expected_nonce: u64,
-) {
-    let left_at = super::now_iso();
-    let Some(room_handle) = room_handle(&state, &table_code).await else {
-        return;
-    };
-    if room_handle.is_closed() {
-        return;
-    }
-    let _persist_guard = room_handle.persist.lock().await;
-    let mut runtime = room_handle.runtime.lock().await;
-    if room_handle.is_closed() {
-        return;
-    }
-    let previous_room = runtime.room.clone();
-    if runtime.disconnect_nonce != expected_nonce {
-        return;
-    }
-    let Some(deadline) = disconnect_deadline_for_seat(&runtime.room, seat_index) else {
-        return;
-    };
-    if deadline > Utc::now() {
-        return;
-    }
-
-    if set_seat_bot_takeover(&mut runtime.room, seat_index, true).is_ok()
-        && room_has_round_state(&runtime.room)
-    {
-        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
-    }
-    let should_close =
-        room_seats(&runtime.room).is_empty() || should_terminate_unattended(&runtime);
-
-    if should_close {
-        room_handle.mark_closed();
-        close_runtime(&mut runtime);
-        drop(runtime);
-        unregister_room_handle(&state, &table_code, &room_handle).await;
-        state
-            .inner
-            .db
-            .delete_table(&table_code, &left_at)
-            .await
-            .ok();
-        return;
-    }
-
-    let created_at = runtime.created_at.clone();
-    let room_json = match serialize_room(&runtime.room) {
-        Ok(value) => value,
-        Err(_) => return,
-    };
-    drop(runtime);
-    if state
-        .inner
-        .db
-        .save_table_and_delete_tokens_for_seat(
-            &table_code,
-            &created_at,
-            &room_json,
-            seat_index,
-            &left_at,
-        )
-        .await
-        .is_err()
-    {
-        restore_room_snapshot(&room_handle, previous_room).await;
-        return;
-    }
-    let mut runtime = room_handle.runtime.lock().await;
-    let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &runtime.room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &runtime.room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
-    runtime.connections.remove(&seat_index);
-    drop(runtime);
-    send_outbound(outbound);
-    schedule_room_tasks_detached(state, table_code);
-}
-
 async fn process_due_bot_action(state: AppContext, table_code: String, expected_nonce: u64) {
     let Some(room_handle) = room_handle(&state, &table_code).await else {
         return;
@@ -534,12 +446,10 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     abort_join_handle(&mut runtime.timeout_task);
     abort_join_handle(&mut runtime.continue_task);
     abort_join_handle(&mut runtime.start_match_task);
-    abort_join_handle(&mut runtime.disconnect_task);
     abort_join_handle(&mut runtime.bot_task);
     runtime.timeout_nonce = runtime.timeout_nonce.wrapping_add(1);
     runtime.continue_nonce = runtime.continue_nonce.wrapping_add(1);
     runtime.start_match_nonce = runtime.start_match_nonce.wrapping_add(1);
-    runtime.disconnect_nonce = runtime.disconnect_nonce.wrapping_add(1);
     runtime.bot_nonce = runtime.bot_nonce.wrapping_add(1);
 
     if let Some(deadline) = pending_timeout_deadline(&runtime.room) {
@@ -574,16 +484,6 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         }));
     }
 
-    if let Some((seat_index, deadline)) = next_disconnect_deadline(&runtime.room) {
-        let state_clone = state.clone();
-        let table_clone = table_code.clone();
-        let nonce = runtime.disconnect_nonce;
-        runtime.disconnect_task = Some(tokio::spawn(async move {
-            sleep_until(deadline).await;
-            process_due_disconnect_timeout(state_clone, table_clone, seat_index, nonce).await;
-        }));
-    }
-
     if standard_next_bot_action(&runtime.room)
         .ok()
         .flatten()
@@ -603,78 +503,4 @@ pub(crate) fn schedule_room_tasks_detached(state: AppContext, table_code: String
     tokio::spawn(async move {
         schedule_room_tasks(state, table_code).await;
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use anyhow::Result;
-
-    use super::process_due_disconnect_timeout;
-    use crate::app::persistence::{DbWorker, in_memory_database};
-    use crate::app::room_runtime::{RoomHandle, RoomRuntime};
-    use crate::app::{AppContext, initial_room_state_with_owner, serialize_room};
-    use crate::core::state::SeatState;
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn disconnect_timeout_enables_bot_takeover_without_replacing_human_seat() -> Result<()> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-        let worker = DbWorker::start(db)?;
-        let state = AppContext::new(worker.clone());
-
-        let mut room = initial_room_state_with_owner("ROOMT1", Some(1), 1);
-        room.seats.push(SeatState {
-            seat_index: 0,
-            user_id: None,
-            nickname: Some("Player".to_string()),
-            points: None,
-            title: None,
-            reconnect_token: Some("reconnect-token".to_string()),
-            player_session_id: Some(100),
-            connected: false,
-            ready: true,
-            is_bot: false,
-            seat_type: "human".to_string(),
-            bot_persona: None,
-            bot_aggression: None,
-            disconnect_deadline_at: Some("2026-05-06T00:00:00Z".to_string()),
-        });
-
-        let created_at = "2026-05-06T00:00:00Z";
-        let room_json = serialize_room(&room)?;
-        worker.save_table("ROOMT1", created_at, &room_json).await?;
-
-        let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(
-            created_at.to_string(),
-            room,
-        )));
-        state
-            .inner
-            .rooms
-            .write()
-            .await
-            .insert("ROOMT1".to_string(), room_handle.clone());
-
-        let expected_nonce = {
-            let runtime = room_handle.runtime.lock().await;
-            runtime.disconnect_nonce
-        };
-        process_due_disconnect_timeout(state, "ROOMT1".to_string(), 0, expected_nonce).await;
-
-        let runtime = room_handle.runtime.lock().await;
-        let seat = runtime
-            .room
-            .seats
-            .iter()
-            .find(|seat| seat.seat_index == 0)
-            .expect("original human seat should remain");
-        assert_eq!(seat.seat_type, "human");
-        assert!(seat.is_bot);
-        assert_eq!(seat.reconnect_token.as_deref(), Some("reconnect-token"));
-        assert!(seat.disconnect_deadline_at.is_none());
-        assert!(!room_handle.is_closed());
-        Ok(())
-    }
 }

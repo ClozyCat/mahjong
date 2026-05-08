@@ -30,7 +30,7 @@ use tokio::sync::{Notify, RwLock, mpsc};
 use self::persistence::DbWorker;
 use self::protocol::player_presence_message;
 use self::room_runtime::{RoomHandle, SpectatorIdentity};
-use crate::core::state::{RoomState, SeatState};
+use crate::core::state::{PendingAction, RoomState, SeatState};
 use crate::projection::match_result::match_result_message;
 use crate::projection::prompt::action_prompt_message;
 use crate::projection::room_snapshot::{
@@ -39,8 +39,9 @@ use crate::projection::room_snapshot::{
 use crate::projection::support::build_seat_projection_support_for_state;
 
 pub(crate) const MAX_SEATS: usize = 4;
-pub(crate) const DISCONNECT_GRACE_SECONDS: i64 = 120;
+pub(crate) const DISCONNECT_GRACE_SECONDS: i64 = 2;
 pub(crate) const BOT_ACTION_DELAY_MS: u64 = 150;
+pub(crate) const TIMEOUT_AUTO_RESPONSE_BOT_TAKEOVER_THRESHOLD: u8 = 2;
 pub(crate) const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 #[derive(Clone)]
@@ -281,31 +282,6 @@ pub(crate) fn continue_action_deadline(room: &RoomState) -> Option<DateTime<Utc>
         .and_then(parse_datetime)
 }
 
-pub(crate) fn disconnect_deadline_for_seat(
-    room: &RoomState,
-    seat_index: usize,
-) -> Option<DateTime<Utc>> {
-    room.seats
-        .iter()
-        .find(|seat| seat.seat_index == seat_index)
-        .and_then(|seat| seat.disconnect_deadline_at.as_deref())
-        .as_deref()
-        .and_then(parse_datetime)
-}
-
-pub(crate) fn next_disconnect_deadline(room: &RoomState) -> Option<(usize, DateTime<Utc>)> {
-    room.seats
-        .iter()
-        .filter(|seat| !seat.is_bot && !seat.connected)
-        .filter_map(|seat| {
-            seat.disconnect_deadline_at
-                .as_deref()
-                .and_then(parse_datetime)
-                .map(|deadline| (seat.seat_index, deadline))
-        })
-        .min_by_key(|(_, deadline)| *deadline)
-}
-
 pub(crate) fn parse_datetime(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .map(|value| value.with_timezone(&Utc))
@@ -328,11 +304,6 @@ pub(crate) async fn sleep_until(deadline: DateTime<Utc>) {
 
 pub(crate) fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
-}
-
-pub(crate) fn disconnect_deadline_iso() -> String {
-    (Utc::now() + chrono::TimeDelta::seconds(DISCONNECT_GRACE_SECONDS))
-        .to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 pub(crate) fn generate_player_session_id() -> i64 {
@@ -433,6 +404,7 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
         bot_persona: None,
         bot_aggression: None,
         disconnect_deadline_at: None,
+        consecutive_timeout_auto_response_count: 0,
     });
     room.seats.sort_by_key(|seat| seat.seat_index);
     Ok(seat_index)
@@ -474,6 +446,7 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
         seat.seat_type = "bot".to_string();
         seat.reconnect_token = None;
         seat.disconnect_deadline_at = None;
+        seat.consecutive_timeout_auto_response_count = 0;
     }
 }
 
@@ -494,6 +467,7 @@ pub(crate) fn set_seat_bot_takeover(
     seat.disconnect_deadline_at = None;
     seat.is_bot = enabled;
     seat.seat_type = "human".to_string();
+    seat.consecutive_timeout_auto_response_count = 0;
     if enabled {
         seat.ready = true;
     }
@@ -501,19 +475,81 @@ pub(crate) fn set_seat_bot_takeover(
     Ok(())
 }
 
-pub(crate) fn set_seat_connected(
-    room: &mut RoomState,
-    seat_index: usize,
-    connected: bool,
-    deadline_at: Option<String>,
-) {
+pub(crate) fn reset_timeout_auto_response_count(room: &mut RoomState, seat_index: usize) {
+    if let Some(seat) = room
+        .seats
+        .iter_mut()
+        .find(|seat| seat.seat_index == seat_index)
+    {
+        seat.consecutive_timeout_auto_response_count = 0;
+    }
+}
+
+pub(crate) fn timeout_auto_response_seats(room: &RoomState) -> Vec<usize> {
+    let Some(timeout) = room.pending_timeout.as_ref() else {
+        return Vec::new();
+    };
+    let Some(round) = room.round_state.as_ref() else {
+        return Vec::new();
+    };
+
+    match timeout.kind.as_str() {
+        "active_turn" => vec![round.current_actor],
+        "claim_window" => match round.pending_action.as_ref() {
+            Some(PendingAction::ClaimWindow(claim)) => (1..MAX_SEATS)
+                .map(|offset| (claim.discarder_seat + offset) % MAX_SEATS)
+                .filter(|seat| {
+                    claim
+                        .claim_window
+                        .get(*seat)
+                        .is_some_and(|claims| !claims.is_empty())
+                        && !claim.responded_seats.contains(seat)
+                })
+                .collect(),
+            Some(PendingAction::RobKongWindow(rob)) => (1..MAX_SEATS)
+                .map(|offset| (rob.actor_seat + offset) % MAX_SEATS)
+                .filter(|seat| {
+                    rob.offered_hu_seats.contains(seat) && !rob.responded_seats.contains(seat)
+                })
+                .collect(),
+            None => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+pub(crate) fn record_timeout_auto_responses(room: &mut RoomState, seat_indexes: &[usize]) -> bool {
+    let mut enabled_takeover = false;
+    for seat_index in seat_indexes {
+        let should_enable = room
+            .seats
+            .iter_mut()
+            .find(|seat| seat.seat_index == *seat_index)
+            .is_some_and(|seat| {
+                if seat.seat_type != "human" || seat.is_bot {
+                    return false;
+                }
+                seat.consecutive_timeout_auto_response_count = seat
+                    .consecutive_timeout_auto_response_count
+                    .saturating_add(1);
+                seat.consecutive_timeout_auto_response_count
+                    >= TIMEOUT_AUTO_RESPONSE_BOT_TAKEOVER_THRESHOLD
+            });
+        if should_enable && set_seat_bot_takeover(room, *seat_index, true).is_ok() {
+            enabled_takeover = true;
+        }
+    }
+    enabled_takeover
+}
+
+pub(crate) fn set_seat_connected(room: &mut RoomState, seat_index: usize, connected: bool) {
     if let Some(seat) = room
         .seats
         .iter_mut()
         .find(|seat| seat.seat_index == seat_index)
     {
         seat.connected = connected;
-        seat.disconnect_deadline_at = deadline_at;
+        seat.disconnect_deadline_at = None;
     }
 }
 
@@ -832,10 +868,13 @@ pub(crate) async fn online_user_ids(state: &AppContext) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BOT_ACTION_DELAY_MS, convert_seat_to_bot, optional_env_value, remove_bot_from_waiting_room,
-        resolve_database_path, set_seat_bot_takeover,
+        BOT_ACTION_DELAY_MS, convert_seat_to_bot, optional_env_value,
+        record_timeout_auto_responses, remove_bot_from_waiting_room,
+        reset_timeout_auto_response_count, resolve_database_path, set_seat_bot_takeover,
+        timeout_auto_response_seats,
     };
     use crate::core::state::{RoomState, SeatState};
+    use serde_json::json;
 
     #[test]
     fn bot_action_delay_defaults_to_150ms() {
@@ -901,6 +940,7 @@ mod tests {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
             }],
             match_state: None,
             round_state: None,
@@ -948,6 +988,7 @@ mod tests {
                 bot_persona: None,
                 bot_aggression: None,
                 disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
             }],
             match_state: None,
             round_state: None,
@@ -989,6 +1030,7 @@ mod tests {
                     bot_persona: None,
                     bot_aggression: None,
                     disconnect_deadline_at: None,
+                    consecutive_timeout_auto_response_count: 0,
                 },
                 SeatState {
                     seat_index: 1,
@@ -1005,6 +1047,7 @@ mod tests {
                     bot_persona: None,
                     bot_aggression: None,
                     disconnect_deadline_at: None,
+                    consecutive_timeout_auto_response_count: 0,
                 },
             ],
             match_state: None,
@@ -1020,5 +1063,94 @@ mod tests {
         assert_eq!(room.seats.len(), 1);
         assert_eq!(room.seats[0].seat_index, 0);
         assert_eq!(room.seats[0].seat_type, "human");
+    }
+
+    #[test]
+    fn record_timeout_auto_responses_enables_takeover_on_second_human_timeout() {
+        let mut room = RoomState {
+            table_code: "ABCD".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: vec![SeatState {
+                seat_index: 0,
+                nickname: Some("Alice".to_string()),
+                connected: true,
+                ready: true,
+                seat_type: "human".to_string(),
+                ..Default::default()
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        assert!(!record_timeout_auto_responses(&mut room, &[0]));
+        assert!(!room.seats[0].is_bot);
+        assert_eq!(room.seats[0].consecutive_timeout_auto_response_count, 1);
+
+        assert!(record_timeout_auto_responses(&mut room, &[0]));
+        assert!(room.seats[0].is_bot);
+        assert_eq!(room.seats[0].seat_type, "human");
+        assert_eq!(room.seats[0].consecutive_timeout_auto_response_count, 0);
+    }
+
+    #[test]
+    fn reset_timeout_auto_response_count_clears_human_action_streak() {
+        let mut room = RoomState {
+            table_code: "ABCD".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: vec![SeatState {
+                seat_index: 0,
+                nickname: Some("Alice".to_string()),
+                connected: true,
+                ready: true,
+                seat_type: "human".to_string(),
+                consecutive_timeout_auto_response_count: 1,
+                ..Default::default()
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        reset_timeout_auto_response_count(&mut room, 0);
+
+        assert_eq!(room.seats[0].consecutive_timeout_auto_response_count, 0);
+    }
+
+    #[test]
+    fn timeout_auto_response_seats_include_unanswered_claim_window_seats() {
+        let room = RoomState::from_room_value(&json!({
+            "table_code": "ABCD",
+            "phase": "playing",
+            "mode": "normal",
+            "seats": [],
+            "round_state": {
+                "current_actor": 0,
+                "pending_action": {
+                    "type": "claim_window",
+                    "discarder_seat": 0,
+                    "claim_window": [[], ["pung"], ["kong", "hu"], ["chow"]],
+                    "responded_seats": [2],
+                    "claim_responses": []
+                }
+            },
+            "pending_timeout": {
+                "kind": "claim_window",
+                "seat_index": 0,
+                "deadline_at": "2026-05-08T00:00:00Z",
+                "drawn_tile_id": null
+            }
+        }))
+        .expect("room should parse");
+
+        assert_eq!(timeout_auto_response_seats(&room), vec![1, 3]);
     }
 }

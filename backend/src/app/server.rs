@@ -1049,6 +1049,7 @@ async fn accept_table_invite(
             seat.bot_persona = None;
             seat.bot_aggression = None;
             seat.disconnect_deadline_at = None;
+            seat.consecutive_timeout_auto_response_count = 0;
         }
     } else {
         runtime.room.seats.push(crate::core::state::SeatState {
@@ -1066,6 +1067,7 @@ async fn accept_table_invite(
             bot_persona: None,
             bot_aggression: None,
             disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
         });
         runtime.room.seats.sort_by_key(|seat| seat.seat_index);
     }
