@@ -19,7 +19,6 @@ interface SocialSidebarPanelProps {
 }
 
 interface SocialSidebarMessagesPanelProps {
-  inviteDialog: TableInvite | null;
   pendingInvites: TableInvite[];
   spectatorRequests: SpectatorRequest[];
   isOwner: boolean;
@@ -30,7 +29,6 @@ interface SocialSidebarMessagesPanelProps {
   onRejectInvite: (invite: TableInvite) => void;
   onApproveSpectatorRequest: (requestId: number) => void;
   onRejectSpectatorRequest: (requestId: number) => void;
-  onDismissInviteDialog: () => void;
 }
 
 function getInviteCreatorLabel(invite: TableInvite, labelsByUserId: Record<number, string>) {
@@ -129,7 +127,6 @@ export function SocialSidebarPanel({
 }
 
 export function SocialSidebarMessagesPanel({
-  inviteDialog,
   pendingInvites,
   spectatorRequests,
   isOwner,
@@ -140,29 +137,10 @@ export function SocialSidebarMessagesPanel({
   onRejectInvite,
   onApproveSpectatorRequest,
   onRejectSpectatorRequest,
-  onDismissInviteDialog,
 }: SocialSidebarMessagesPanelProps) {
   return (
     <div className="social-sidebar" role="region" aria-label="消息中心">
       {message ? <p className="social-sidebar__message">{message}</p> : null}
-
-      {inviteDialog ? (
-        <section className="social-sidebar__notice" aria-label="牌局邀请">
-          <strong>收到牌局邀请</strong>
-          <span>{getInviteCopy(inviteDialog, inviteCreatorLabelsByUserId)}</span>
-          <div className="social-sidebar__actions">
-            <button type="button" className="social-sidebar__primary" onClick={() => onAcceptInvite(inviteDialog)}>
-              接受邀请
-            </button>
-            <button type="button" onClick={() => onRejectInvite(inviteDialog)}>
-              拒绝
-            </button>
-            <button type="button" onClick={onDismissInviteDialog}>
-              稍后处理
-            </button>
-          </div>
-        </section>
-      ) : null}
 
       <section className="social-sidebar__section">
         <h3>待处理邀请</h3>

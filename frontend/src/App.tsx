@@ -466,22 +466,6 @@ function getUserDisplayName(users: PublicUser[], userId: number) {
   return users.find((user) => user.user_id === userId)?.display_name ?? `用户 #${userId}`;
 }
 
-function removeDismissedInviteAlertId(current: Set<number>, inviteId: number) {
-  if (!current.has(inviteId)) {
-    return current;
-  }
-
-  const next = new Set(current);
-  next.delete(inviteId);
-  return next;
-}
-
-function retainDismissedInviteAlertIds(current: Set<number>, pendingInvites: TableInvite[]) {
-  const pendingInviteIds = new Set(pendingInvites.map((invite) => invite.id));
-  const next = new Set(Array.from(current).filter((inviteId) => pendingInviteIds.has(inviteId)));
-  return next.size === current.size ? current : next;
-}
-
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => loadStoredVoiceEnabled());
@@ -502,8 +486,6 @@ export default function App() {
   const [sentInviteStatusesByUserId, setSentInviteStatusesByUserId] = useState<Record<number, SentInviteStatus>>({});
   const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
   const [requestedSpectatorTableCodes, setRequestedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
-  const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
-  const [dismissedInviteAlertIds, setDismissedInviteAlertIds] = useState<Set<number>>(() => new Set());
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
   const [currentTableOwnerUserId, setCurrentTableOwnerUserId] = useState<number | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
@@ -584,11 +566,9 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
-        setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests([]);
         setRequestedSpectatorTableCodes(new Set());
-        setInviteDialog(null);
         setSelectedProfileUser(null);
         setSelectedProfileFallbackName(null);
         setProfileFanStats([]);
@@ -622,7 +602,6 @@ export default function App() {
 
         setCurrentUser(me);
         setPendingInvites(getPendingTableInvites(nextInvites));
-        setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests(getPendingSpectatorRequests(nextSpectatorRequests));
         setRequestedSpectatorTableCodes(new Set());
@@ -666,10 +645,8 @@ export default function App() {
         setLeaderboard([]);
         setOnlineUserIds([]);
         setPendingInvites([]);
-        setDismissedInviteAlertIds(new Set());
         setPendingSpectatorRequests([]);
         setRequestedSpectatorTableCodes(new Set());
-        setInviteDialog(null);
         setSelectedProfileUser(null);
         setSelectedProfileFallbackName(null);
         setProfileFanStats([]);
@@ -739,10 +716,6 @@ export default function App() {
           });
           setSelectedProfileFallbackName((current) => (current === currentDisplayName ? me.display_name : current));
           setPendingInvites(nextPendingInvites);
-          setDismissedInviteAlertIds((current) => retainDismissedInviteAlertIds(current, nextPendingInvites));
-          setInviteDialog((current) =>
-            current && nextPendingInvites.some((invite) => invite.id === current.id) ? current : null,
-          );
           setPendingSpectatorRequests(getPendingSpectatorRequests(nextSpectatorRequests));
           setLeaderboard(nextLeaderboard);
           saveStoredAuthSession({
@@ -819,23 +792,11 @@ export default function App() {
 
       if (message.type === 'table_invite_created') {
         setPendingInvites((current) => upsertInvite(current, message.payload));
-        if (!isPendingTableInvite(message.payload)) {
-          setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, message.payload.id));
-        }
-        setInviteDialog((current) => {
-          if (isPendingTableInvite(message.payload)) {
-            return message.payload;
-          }
-
-          return current?.id === message.payload.id ? null : current;
-        });
         return;
       }
 
       if (message.type === 'table_invite_decided') {
         setPendingInvites((current) => upsertInvite(current, message.payload));
-        setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, message.payload.id));
-        setInviteDialog((current) => (current?.id === message.payload.id ? null : current));
         if (currentUserId === message.payload.inviter_user_id) {
           setSentInviteStatusesByUserId((current) => {
             if (message.payload.status === 'rejected') {
@@ -1600,8 +1561,6 @@ export default function App() {
       setStatusMessage(`正在进入牌桌 ${invite.table_code}...`);
       const accepted = await acceptTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
       setPendingInvites((current) => removeInviteById(current, invite.id));
-      setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
-      setInviteDialog((current) => (current?.id === invite.id ? null : current));
       setActiveLobbyTableCode(null);
       setCurrentTableOwnerUserId(invite.inviter_user_id);
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
@@ -1614,8 +1573,6 @@ export default function App() {
     } catch (error) {
       if (isStaleTableInviteError(error)) {
         setPendingInvites((current) => removeInviteById(current, invite.id));
-        setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
-        setInviteDialog((current) => (current?.id === invite.id ? null : current));
       }
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '接受邀请失败。');
     }
@@ -1630,25 +1587,13 @@ export default function App() {
     try {
       await rejectTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
       setPendingInvites((current) => removeInviteById(current, invite.id));
-      setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
-      setInviteDialog((current) => (current?.id === invite.id ? null : current));
       setStatusMessage(`已拒绝牌桌 ${invite.table_code} 的邀请。`);
     } catch (error) {
       if (isStaleTableInviteError(error)) {
         setPendingInvites((current) => removeInviteById(current, invite.id));
-        setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, invite.id));
-        setInviteDialog((current) => (current?.id === invite.id ? null : current));
       }
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '拒绝邀请失败。');
     }
-  }
-
-  function handleDismissInviteDialog() {
-    if (inviteDialog) {
-      setDismissedInviteAlertIds((current) => new Set(current).add(inviteDialog.id));
-    }
-
-    setInviteDialog(null);
   }
 
   async function handleLogout() {
@@ -1667,11 +1612,9 @@ export default function App() {
     setLeaderboard([]);
     setOnlineUserIds([]);
     setPendingInvites([]);
-    setDismissedInviteAlertIds(new Set());
     setSentInviteStatusesByUserId({});
     setPendingSpectatorRequests([]);
     setRequestedSpectatorTableCodes(new Set());
-    setInviteDialog(null);
     setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
     setIsActiveTableLookupPending(false);
@@ -2075,9 +2018,7 @@ export default function App() {
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
   }
 
-  const hasMessageAlert =
-    pendingInvites.some((invite) => !dismissedInviteAlertIds.has(invite.id)) ||
-    (isSidebarOwner && pendingSpectatorRequests.length > 0);
+  const hasMessageAlert = pendingInvites.length > 0 || (isSidebarOwner && pendingSpectatorRequests.length > 0);
 
   const sidebarRoomPanel = currentUser ? (
     <SocialSidebarPanel
@@ -2098,7 +2039,6 @@ export default function App() {
 
   const sidebarMessagesPanel = currentUser ? (
     <SocialSidebarMessagesPanel
-      inviteDialog={inviteDialog}
       pendingInvites={pendingInvites}
       spectatorRequests={pendingSpectatorRequests}
       isOwner={isSidebarOwner}
@@ -2109,7 +2049,6 @@ export default function App() {
       onRejectInvite={handleRejectInvite}
       onApproveSpectatorRequest={handleApproveSpectatorRequest}
       onRejectSpectatorRequest={handleRejectSpectatorRequest}
-      onDismissInviteDialog={handleDismissInviteDialog}
     />
   ) : null;
 

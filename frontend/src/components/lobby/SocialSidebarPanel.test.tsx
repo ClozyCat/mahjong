@@ -36,7 +36,6 @@ const defaultProps = {
   pendingInvites: [],
   spectatorRequests: [],
   activeTableCode: null,
-  inviteDialog: null,
   busy: false,
   isCreateTableDisabled: false,
   canInvitePlayers: false,
@@ -48,7 +47,6 @@ const defaultProps = {
   onRejectInvite: vi.fn(),
   onApproveSpectatorRequest: vi.fn(),
   onRejectSpectatorRequest: vi.fn(),
-  onDismissInviteDialog: vi.fn(),
   onLogout: vi.fn(),
 };
 
@@ -169,14 +167,12 @@ describe('SocialSidebarPanel', () => {
             expires_at: '2026-05-06T12:10:00Z',
           },
         ]}
-        inviteDialog={null}
         spectatorRequests={[]}
         isOwner={false}
         onAcceptInvite={vi.fn()}
         onRejectInvite={onRejectInvite}
         onApproveSpectatorRequest={vi.fn()}
         onRejectSpectatorRequest={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
       />,
     );
 
@@ -200,15 +196,6 @@ describe('SocialSidebarPanel', () => {
             expires_at: '2026-05-06T12:10:00Z',
           },
         ]}
-        inviteDialog={{
-          id: 9,
-          table_code: 'ROOM42',
-          inviter_user_id: 2,
-          invitee_user_id: 1,
-          status: 'pending',
-          created_at: '2026-05-06T12:00:00Z',
-          expires_at: '2026-05-06T12:10:00Z',
-        }}
         spectatorRequests={[]}
         isOwner={false}
         inviteCreatorLabelsByUserId={{ 2: '阿强（平民）' }}
@@ -216,11 +203,11 @@ describe('SocialSidebarPanel', () => {
         onRejectInvite={vi.fn()}
         onApproveSpectatorRequest={vi.fn()}
         onRejectSpectatorRequest={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
       />,
     );
 
-    expect(screen.getAllByText('阿强（平民）创建的牌桌ROOM42邀请你加入。')).toHaveLength(2);
+    expect(screen.getAllByText('阿强（平民）创建的牌桌ROOM42邀请你加入。')).toHaveLength(1);
+    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
   });
 
   it('lets the owner approve and reject spectator requests from the room tab panel', async () => {
@@ -230,7 +217,6 @@ describe('SocialSidebarPanel', () => {
 
     render(
       <SocialSidebarMessagesPanel
-        inviteDialog={null}
         pendingInvites={[]}
         isOwner
         spectatorRequests={[
@@ -249,7 +235,6 @@ describe('SocialSidebarPanel', () => {
         onRejectInvite={vi.fn()}
         onApproveSpectatorRequest={onApproveSpectatorRequest}
         onRejectSpectatorRequest={onRejectSpectatorRequest}
-        onDismissInviteDialog={vi.fn()}
       />,
     );
 

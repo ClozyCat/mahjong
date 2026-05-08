@@ -1505,7 +1505,7 @@ describe('App', () => {
     expect(leaderboardCalls).toHaveLength(2);
   });
 
-  it('shows the invitation notice when /ws/me receives a new invite', async () => {
+  it('shows a new invite only in the pending list with a messages alert', async () => {
     await renderAuthenticatedLobby();
 
     const meSocket = getMeSocket();
@@ -1523,7 +1523,8 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: '消息' }));
 
-    expect(screen.getByRole('region', { name: '牌局邀请' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
+    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
     expect(screen.getAllByText('Player B（平民）创建的牌桌ZXCVBN邀请你加入。')).not.toHaveLength(0);
   });
 
@@ -1552,7 +1553,7 @@ describe('App', () => {
     expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
   });
 
-  it('replaces an existing invite notice when the same inviter sends a newer invite', async () => {
+  it('replaces an existing invite from the same inviter in the pending list', async () => {
     const user = userEvent.setup();
     await renderAuthenticatedLobby();
 
@@ -1582,7 +1583,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('tab', { name: '消息' }));
 
-    expect(screen.getByRole('region', { name: '牌局邀请' })).toHaveTextContent('LATEST');
+    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
     expect(screen.getByText('LATEST')).toBeInTheDocument();
     expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
   });
@@ -1629,7 +1630,7 @@ describe('App', () => {
     expect(screen.queryByText('申请观战 OLDER1')).not.toBeInTheDocument();
   });
 
-  it('keeps dismissed invite messages visible without a sidebar alert', async () => {
+  it('keeps the messages alert visible while a pending invite remains', async () => {
     const user = userEvent.setup();
     await renderAuthenticatedLobby();
 
@@ -1645,12 +1646,9 @@ describe('App', () => {
 
     await user.click(screen.getByRole('tab', { name: '消息' }));
     expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
-
-    await user.click(screen.getByRole('button', { name: '稍后处理' }));
-
     expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
     expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toBeNull();
+    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
   });
 
   it('hides already accepted invites from the sidebar pending list', async () => {

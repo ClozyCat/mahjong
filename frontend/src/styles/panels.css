@@ -16,7 +16,6 @@
 .fan-guide__dialog,
 .auth-gate__panel,
 .social-lobby__panel,
-.social-lobby__dialog,
 .table-sidebar__panel {
   border: 1px solid var(--glass-border);
   background:
@@ -467,8 +466,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .social-sidebar__header h2,
-.social-sidebar__section h3,
-.social-sidebar__notice strong {
+.social-sidebar__section h3 {
   margin: 0;
 }
 
@@ -487,27 +485,18 @@ button.table-sidebar__toggle:active:not(:disabled) {
 
 .social-sidebar__header span,
 .social-sidebar__section p,
-.social-sidebar__message,
-.social-sidebar__notice span {
+.social-sidebar__message {
   margin: 0;
   color: color-mix(in srgb, var(--theme-paper) 70%, transparent);
   font-size: 0.86rem;
   line-height: 1.45;
 }
 
-.social-sidebar__section,
-.social-sidebar__notice {
+.social-sidebar__section {
   display: grid;
   gap: 0.7rem;
   padding-top: 1rem;
   border-top: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
-}
-
-.social-sidebar__notice {
-  padding: 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--theme-border));
-  border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .social-sidebar button {
@@ -1121,8 +1110,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .auth-gate__panel,
-.social-lobby__panel,
-.social-lobby__dialog {
+.social-lobby__panel {
   border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
   background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
   box-shadow: var(--shadow-lg);
@@ -1316,8 +1304,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 
-.social-lobby__panel h2,
-.social-lobby__dialog h2 {
+.social-lobby__panel h2 {
   margin: 0;
   font-size: 1rem;
 }
@@ -1351,24 +1338,6 @@ button.table-sidebar__toggle:active:not(:disabled) {
 
 .social-lobby__empty {
   color: var(--muted);
-}
-
-.social-lobby__dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-}
-
-.social-lobby__dialog {
-  width: min(100%, 26rem);
-  border-radius: 1.75rem;
-  padding: 2rem;
-  display: grid;
-  gap: 1.5rem;
-  animation: overlay-fade-in-up 0.4s var(--ease-lux) forwards;
 }
 
 @media (max-width: 900px) {

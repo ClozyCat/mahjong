@@ -7,14 +7,12 @@ interface SocialLobbyProps {
   onlineUserIds: number[];
   pendingInvites: TableInvite[];
   activeTableCode: string | null;
-  inviteDialog: TableInvite | null;
   busy: boolean;
   isCreateTableDisabled: boolean;
   message?: string | null;
   onCreateTable: () => void;
   onInvite: (userId: number) => void;
   onAcceptInvite: (invite: TableInvite) => void;
-  onDismissInviteDialog: () => void;
   onLogout: () => void;
 }
 
@@ -32,14 +30,12 @@ export function SocialLobby({
   onlineUserIds,
   pendingInvites,
   activeTableCode,
-  inviteDialog,
   busy,
   isCreateTableDisabled,
   message,
   onCreateTable,
   onInvite,
   onAcceptInvite,
-  onDismissInviteDialog,
   onLogout,
 }: SocialLobbyProps) {
   const onlineUsers = leaderboard.filter(
@@ -133,23 +129,6 @@ export function SocialLobby({
           </ol>
         </div>
       </section>
-
-      {inviteDialog ? (
-        <div className="social-lobby__dialog-backdrop" role="presentation">
-          <div className="social-lobby__dialog" role="dialog" aria-modal="true" aria-label="牌局邀请">
-            <h2>收到牌局邀请</h2>
-            <p>{getInviteCopy(inviteDialog, leaderboard)}</p>
-            <div className="social-lobby__actions">
-              <button type="button" className="social-lobby__primary" onClick={() => onAcceptInvite(inviteDialog)}>
-                接受邀请
-              </button>
-              <button type="button" className="social-lobby__secondary" onClick={onDismissInviteDialog}>
-                稍后处理
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }

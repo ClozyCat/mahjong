@@ -38,13 +38,11 @@ describe('SocialLobby', () => {
         onlineUserIds={[1, 2]}
         pendingInvites={[]}
         activeTableCode={null}
-        inviteDialog={null}
         busy={false}
         isCreateTableDisabled={false}
         onCreateTable={vi.fn()}
         onInvite={vi.fn()}
         onAcceptInvite={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
         onLogout={vi.fn()}
       />,
     );
@@ -65,13 +63,11 @@ describe('SocialLobby', () => {
         onlineUserIds={[1, 2]}
         pendingInvites={[]}
         activeTableCode="ROOM42"
-        inviteDialog={null}
         busy={false}
         isCreateTableDisabled={false}
         onCreateTable={vi.fn()}
         onInvite={onInvite}
         onAcceptInvite={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
         onLogout={vi.fn()}
       />,
     );
@@ -98,13 +94,11 @@ describe('SocialLobby', () => {
           },
         ]}
         activeTableCode={null}
-        inviteDialog={null}
         busy={false}
         isCreateTableDisabled={false}
         onCreateTable={vi.fn()}
         onInvite={vi.fn()}
         onAcceptInvite={vi.fn()}
-        onDismissInviteDialog={vi.fn()}
         onLogout={vi.fn()}
       />,
     );
