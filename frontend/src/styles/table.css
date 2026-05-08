@@ -252,14 +252,13 @@
   gap: clamp(0.05rem, 0.15vw, 0.1rem);
   color: var(--table-center-ring-ink);
   font-family: 'Noto Serif TC', 'Noto Serif Traditional Chinese', serif;
-  /* Font metric adjustment: push down slightly */
-  transform: translateY(4%);
+  /* Removed manual font metric adjustment to ensure perfect flexbox centering */
 }
 
 .table-stage__center-indicator-count {
   font-size: calc(var(--table-stage-center-indicator-size) * 0.32);
   font-weight: 700;
-  line-height: 0.9;
+  line-height: 1;
   margin: 0;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
