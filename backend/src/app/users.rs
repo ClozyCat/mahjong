@@ -17,11 +17,14 @@ pub(crate) struct PublicUserView {
 
 pub(crate) fn title_for_points(points: i64) -> &'static str {
     match points {
-        i64::MIN..=-1 => "乞丐",
-        0..=499 => "平民",
-        500..=1_999 => "小康",
-        2_000..=4_999 => "富豪",
-        _ => "财神",
+        i64::MIN..=-600 => "感动中国大善人",
+        -599..=0 => "赛博 ATM",
+        1..=400 => "大漏勺",
+        401..=600 => "正分守门员",
+        601..=800 => "概率论博导",
+        801..=1_200 => "大罗金仙",
+        1_201..=1_800 => "只手遮天大魔王",
+        _ => "太上无极宇宙雀神",
     }
 }
 
@@ -59,18 +62,24 @@ mod tests {
 
     #[test]
     fn user_title_thresholds_follow_design_ranges() {
-        assert_eq!(title_for_points(-1), "乞丐");
-        assert_eq!(title_for_points(0), "平民");
-        assert_eq!(title_for_points(499), "平民");
-        assert_eq!(title_for_points(500), "小康");
-        assert_eq!(title_for_points(1_999), "小康");
-        assert_eq!(title_for_points(2_000), "富豪");
-        assert_eq!(title_for_points(4_999), "富豪");
-        assert_eq!(title_for_points(5_000), "财神");
+        assert_eq!(title_for_points(-600), "感动中国大善人");
+        assert_eq!(title_for_points(-599), "赛博 ATM");
+        assert_eq!(title_for_points(0), "赛博 ATM");
+        assert_eq!(title_for_points(1), "大漏勺");
+        assert_eq!(title_for_points(400), "大漏勺");
+        assert_eq!(title_for_points(401), "正分守门员");
+        assert_eq!(title_for_points(600), "正分守门员");
+        assert_eq!(title_for_points(601), "概率论博导");
+        assert_eq!(title_for_points(800), "概率论博导");
+        assert_eq!(title_for_points(801), "大罗金仙");
+        assert_eq!(title_for_points(1_200), "大罗金仙");
+        assert_eq!(title_for_points(1_201), "只手遮天大魔王");
+        assert_eq!(title_for_points(1_800), "只手遮天大魔王");
+        assert_eq!(title_for_points(1_801), "太上无极宇宙雀神");
     }
 
     #[test]
     fn user_title_display_label_appends_title_with_parentheses() {
-        assert_eq!(display_label("Alice", 2_000), "Alice（富豪）");
+        assert_eq!(display_label("Alice", 1_801), "Alice（太上无极宇宙雀神）");
     }
 }
