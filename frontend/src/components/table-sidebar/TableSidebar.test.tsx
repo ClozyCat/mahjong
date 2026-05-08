@@ -316,4 +316,46 @@ describe('TableSidebar', () => {
 
     expect(onWatchUser).toHaveBeenCalledWith(users[1]);
   });
+
+  it('shows already requested watch buttons as disabled', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'ROOM42',
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        requestedWatchTableCodes={['ROOM42']}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const requestedButton = screen.getByRole('button', { name: '已申请' });
+
+    expect(requestedButton).toBeDisabled();
+
+    await user.click(requestedButton);
+
+    expect(onWatchUser).not.toHaveBeenCalled();
+  });
 });

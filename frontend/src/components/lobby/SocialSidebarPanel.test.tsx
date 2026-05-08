@@ -244,6 +244,7 @@ describe('SocialSidebarPanel', () => {
             decided_at: null,
           },
         ]}
+        spectatorRequesterLabelsByUserId={{ 7: '阿成（雀士）' }}
         onAcceptInvite={vi.fn()}
         onRejectInvite={vi.fn()}
         onApproveSpectatorRequest={onApproveSpectatorRequest}
@@ -254,6 +255,8 @@ describe('SocialSidebarPanel', () => {
 
     expect(screen.getByRole('heading', { name: '待处理观战申请' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '积分榜' })).not.toBeInTheDocument();
+    expect(screen.getByText('阿成（雀士）')).toBeInTheDocument();
+    expect(screen.queryByText('用户 #7')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '同意' }));
     await user.click(screen.getByRole('button', { name: '拒绝' }));

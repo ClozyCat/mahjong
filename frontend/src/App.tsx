@@ -393,6 +393,22 @@ function removeSpectatorRequestById(current: SpectatorRequest[], requestId: numb
   return current.filter((request) => request.id !== requestId);
 }
 
+function addRequestedSpectatorTableCode(current: Set<string>, tableCode: string) {
+  const next = new Set(current);
+  next.add(tableCode);
+  return next;
+}
+
+function removeRequestedSpectatorTableCode(current: Set<string>, tableCode: string) {
+  if (!current.has(tableCode)) {
+    return current;
+  }
+
+  const next = new Set(current);
+  next.delete(tableCode);
+  return next;
+}
+
 function getSeatLabel(seatIndex?: number | null) {
   const windLabels = ['东位', '南位', '西位', '北位'];
   if (typeof seatIndex !== 'number' || seatIndex < 0) {
@@ -435,6 +451,7 @@ export default function App() {
   const [pendingInvites, setPendingInvites] = useState<TableInvite[]>([]);
   const [sentInviteStatusesByUserId, setSentInviteStatusesByUserId] = useState<Record<number, SentInviteStatus>>({});
   const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
+  const [requestedSpectatorTableCodes, setRequestedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
   const [inviteDialog, setInviteDialog] = useState<TableInvite | null>(null);
   const [dismissedInviteAlertIds, setDismissedInviteAlertIds] = useState<Set<number>>(() => new Set());
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
@@ -520,6 +537,7 @@ export default function App() {
         setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests([]);
+        setRequestedSpectatorTableCodes(new Set());
         setInviteDialog(null);
         setSelectedProfileUser(null);
         setSelectedProfileFallbackName(null);
@@ -557,6 +575,7 @@ export default function App() {
         setDismissedInviteAlertIds(new Set());
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests(nextSpectatorRequests);
+        setRequestedSpectatorTableCodes(new Set());
         setLeaderboard(nextLeaderboard);
         setSelectedProfileUser((current) => current ?? me);
         setSelectedProfileFallbackName((current) => current ?? me.display_name);
@@ -599,6 +618,7 @@ export default function App() {
         setPendingInvites([]);
         setDismissedInviteAlertIds(new Set());
         setPendingSpectatorRequests([]);
+        setRequestedSpectatorTableCodes(new Set());
         setInviteDialog(null);
         setSelectedProfileUser(null);
         setSelectedProfileFallbackName(null);
@@ -732,6 +752,11 @@ export default function App() {
 
       if (message.type === 'spectator_request_decided') {
         setPendingSpectatorRequests((current) => removeSpectatorRequestById(current, message.payload.id));
+        if (message.payload.requester_user_id === currentUser.user_id) {
+          setRequestedSpectatorTableCodes((current) =>
+            removeRequestedSpectatorTableCode(current, message.payload.table_code),
+          );
+        }
         setStatusMessage(
           message.payload.status === 'approved'
             ? `牌桌 ${message.payload.table_code} 已允许观战。`
@@ -1493,6 +1518,7 @@ export default function App() {
     setDismissedInviteAlertIds(new Set());
     setSentInviteStatusesByUserId({});
     setPendingSpectatorRequests([]);
+    setRequestedSpectatorTableCodes(new Set());
     setInviteDialog(null);
     setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
@@ -1570,16 +1596,20 @@ export default function App() {
       return;
     }
 
-    if (!user.active_table_code) {
+    const tableCode = user.active_table_code;
+
+    if (!tableCode) {
       setStatusMessage('该玩家当前不在牌局中。');
       return;
     }
 
     try {
-      setStatusMessage(`正在申请观战 ${user.active_table_code}...`);
-      await createSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, user.active_table_code);
-      setStatusMessage(`已申请观战 ${user.active_table_code}，等待房主同意。`);
+      setRequestedSpectatorTableCodes((current) => addRequestedSpectatorTableCode(current, tableCode));
+      setStatusMessage(`正在申请观战 ${tableCode}...`);
+      await createSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, tableCode);
+      setStatusMessage(`已申请观战 ${tableCode}，等待房主同意。`);
     } catch (error) {
+      setRequestedSpectatorTableCodes((current) => removeRequestedSpectatorTableCode(current, tableCode));
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '申请观战失败。');
     }
   }
@@ -1920,6 +1950,7 @@ export default function App() {
       spectatorRequests={pendingSpectatorRequests}
       isOwner={isSidebarOwner}
       inviteCreatorLabelsByUserId={inviteCreatorLabelsByUserId}
+      spectatorRequesterLabelsByUserId={inviteCreatorLabelsByUserId}
       message={statusMessage}
       onAcceptInvite={handleAcceptInvite}
       onRejectInvite={handleRejectInvite}
@@ -1959,6 +1990,7 @@ export default function App() {
         sidebarOnlineUserIds={onlineUserIds}
         sidebarCreatingTableCodes={creatingTableCodes}
         sidebarCurrentUserId={currentUser?.user_id ?? null}
+        sidebarRequestedWatchTableCodes={requestedSpectatorTableCodes}
         sidebarCurrentUser={currentUser}
         sidebarSpectators={tableSidebarSpectators}
         sidebarProfileUser={selectedProfileUser}

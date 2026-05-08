@@ -24,6 +24,7 @@ interface SocialSidebarMessagesPanelProps {
   spectatorRequests: SpectatorRequest[];
   isOwner: boolean;
   inviteCreatorLabelsByUserId?: Record<number, string>;
+  spectatorRequesterLabelsByUserId?: Record<number, string>;
   message?: string | null;
   onAcceptInvite: (invite: TableInvite) => void;
   onRejectInvite: (invite: TableInvite) => void;
@@ -38,6 +39,10 @@ function getInviteCreatorLabel(invite: TableInvite, labelsByUserId: Record<numbe
 
 function getInviteCopy(invite: TableInvite, labelsByUserId: Record<number, string>) {
   return `${getInviteCreatorLabel(invite, labelsByUserId)}创建的牌桌${invite.table_code}邀请你加入。`;
+}
+
+function getSpectatorRequesterLabel(request: SpectatorRequest, labelsByUserId: Record<number, string>) {
+  return labelsByUserId[request.requester_user_id] ?? `用户 #${request.requester_user_id}`;
 }
 
 export function SocialSidebarPanel({
@@ -129,6 +134,7 @@ export function SocialSidebarMessagesPanel({
   spectatorRequests,
   isOwner,
   inviteCreatorLabelsByUserId = {},
+  spectatorRequesterLabelsByUserId = {},
   message,
   onAcceptInvite,
   onRejectInvite,
@@ -191,7 +197,9 @@ export function SocialSidebarMessagesPanel({
             ? spectatorRequests.map((request) => (
                 <li key={request.id} className="table-sidebar__row table-sidebar__row--stacked">
                   <div className="table-sidebar__row-info">
-                    <strong className="table-sidebar__row-name">用户 #{request.requester_user_id}</strong>
+                    <strong className="table-sidebar__row-name">
+                      {getSpectatorRequesterLabel(request, spectatorRequesterLabelsByUserId)}
+                    </strong>
                     <span className="table-sidebar__stat">申请观战 {request.table_code}</span>
                   </div>
                   <div className="table-sidebar__actions">

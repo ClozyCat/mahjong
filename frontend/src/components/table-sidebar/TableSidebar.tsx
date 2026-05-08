@@ -38,6 +38,7 @@ interface TableSidebarProps {
   onlineUserIds?: number[];
   creatingTableCodes?: string[];
   currentUserId?: number | null;
+  requestedWatchTableCodes?: Iterable<string>;
   spectators: TableSidebarSpectator[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   roomPanel?: ReactNode;
@@ -146,6 +147,7 @@ export function TableSidebar({
   onlineUserIds = [],
   creatingTableCodes = [],
   currentUserId = null,
+  requestedWatchTableCodes = [],
   spectators,
   tabAlerts = {},
   roomPanel,
@@ -168,6 +170,7 @@ export function TableSidebar({
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
   const creatingTableCodeSet = new Set(creatingTableCodes);
+  const requestedWatchTableCodeSet = new Set(requestedWatchTableCodes);
   const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
   const activeTableUserCounts = allUsers.reduce((counts, user) => {
     if (!user.active_table_code) {
@@ -261,7 +264,10 @@ export function TableSidebar({
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
                 {allUsers.map((user) => {
                   const isSelf = currentUserId === user.user_id;
-                  const canWatch = Boolean(user.active_table_code && !isSelf && onWatchUser);
+                  const hasRequestedWatch = Boolean(
+                    user.active_table_code && requestedWatchTableCodeSet.has(user.active_table_code),
+                  );
+                  const canWatch = Boolean(user.active_table_code && !isSelf && onWatchUser && !hasRequestedWatch);
                   const playerStatus = getAllPlayerStatus(
                     user,
                     onlineUserIdSet,
@@ -288,7 +294,9 @@ export function TableSidebar({
                           type="button"
                           disabled={!canWatch}
                           title={
-                            canWatch
+                            hasRequestedWatch
+                              ? `已申请观战 ${user.active_table_code}`
+                              : canWatch
                               ? `申请观战 ${user.active_table_code}`
                               : isSelf
                                 ? '不能观战自己的牌局'
@@ -296,7 +304,7 @@ export function TableSidebar({
                           }
                           onClick={() => onWatchUser?.(user)}
                         >
-                          观战
+                          {hasRequestedWatch ? '已申请' : '观战'}
                         </button>
                       </div>
                     </li>

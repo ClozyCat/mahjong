@@ -1178,6 +1178,18 @@ describe('App', () => {
     await user.click(watchButton);
 
     expect(findFetchCall(fetchMock, '/api/tables/ROOM42/spectator-requests', 'POST')).toBeDefined();
+    await waitFor(() => {
+      expect(within(playerRow!).getByRole('button', { name: '已申请' })).toBeDisabled();
+    });
+
+    await user.click(within(playerRow!).getByRole('button', { name: '已申请' }));
+
+    expect(
+      fetchMock.mock.calls.filter(([input, init]) => {
+        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+        return url.endsWith('/api/tables/ROOM42/spectator-requests') && (init?.method ?? 'GET') === 'POST';
+      }),
+    ).toHaveLength(1);
 
     const meSocket = getMeSocket();
     expect(meSocket).toBeDefined();

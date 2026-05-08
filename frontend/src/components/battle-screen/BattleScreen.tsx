@@ -59,6 +59,7 @@ interface BattleScreenProps {
   sidebarOnlineUserIds?: number[];
   sidebarCreatingTableCodes?: string[];
   sidebarCurrentUserId?: number | null;
+  sidebarRequestedWatchTableCodes?: Iterable<string>;
   sidebarCurrentUser?: PublicUser | null;
   sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
@@ -115,6 +116,7 @@ export function BattleScreen({
   sidebarOnlineUserIds = [],
   sidebarCreatingTableCodes = [],
   sidebarCurrentUserId = null,
+  sidebarRequestedWatchTableCodes = [],
   sidebarCurrentUser = null,
   sidebarSpectators = [],
   sidebarRoomPanel = null,
@@ -517,6 +519,7 @@ export function BattleScreen({
             onlineUserIds={sidebarOnlineUserIds}
             creatingTableCodes={sidebarCreatingTableCodes}
             currentUserId={sidebarCurrentUserId}
+            requestedWatchTableCodes={sidebarRequestedWatchTableCodes}
             spectators={sidebarSpectators}
             tabAlerts={sidebarTabAlerts}
             roomPanel={sidebarRoomPanel}
