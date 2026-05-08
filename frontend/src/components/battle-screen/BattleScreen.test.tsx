@@ -739,6 +739,85 @@ describe('BattleScreen', () => {
     expect(document.body.querySelector('.result-overlay')).not.toBeNull();
   });
 
+  it('keeps a manually collapsed settlement overlay collapsed across equivalent result refreshes', async () => {
+    const user = userEvent.setup();
+    const settlementResult = {
+      title: '本局结算',
+      summary: '等待下一局',
+      fanTotal: 8,
+      winnerSeat: 'right' as const,
+      discarderSeat: 'left' as const,
+      winType: 'discard',
+      winTypeLabel: '荣和',
+      provisional: false,
+      flowerCount: 0,
+      fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+      scoreDeltaBySeat: {
+        bottom: 0,
+        left: -8,
+        right: 8,
+      },
+      seats: [
+        { seat: 'bottom' as const, name: 'Player A', score: 25000, delta: 0 },
+        { seat: 'left' as const, name: 'Player Left', score: 24992, delta: -8 },
+        { seat: 'top' as const, name: 'Player Top', score: 25000, delta: 0 },
+        { seat: 'right' as const, name: 'Player B', score: 25008, delta: 8 },
+      ],
+      continueAction: {
+        id: 'start_next_round' as const,
+        label: '下一局',
+        enabled: true,
+      },
+    };
+    const props = {
+      themeId: 'tian-shui-bi' as const,
+      themeLabel: '天水碧',
+      onCycleTheme: vi.fn(),
+      onAction: vi.fn(),
+      onTileSelect: vi.fn(),
+      onTileDoubleClick: vi.fn(),
+      onClaimCandidateSelect: vi.fn(),
+      onClaimCandidateActivate: vi.fn(),
+      onCopyTableCode: vi.fn(),
+      onLeaveTable: vi.fn(),
+    };
+    const { rerender } = render(
+      <BattleScreen
+        {...props}
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          result: settlementResult,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '收起面板' }));
+
+    expect(screen.getByRole('button', { name: '展开结算面板' })).toBeInTheDocument();
+
+    rerender(
+      <BattleScreen
+        {...props}
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          promptText: 'websocket 刷新',
+          result: {
+            ...settlementResult,
+            fanBreakdown: settlementResult.fanBreakdown.map((fan) => ({ ...fan })),
+            scoreDeltaBySeat: { ...settlementResult.scoreDeltaBySeat },
+            seats: settlementResult.seats.map((seat) => ({ ...seat })),
+            continueAction: { ...settlementResult.continueAction },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '展开结算面板' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '收起面板' })).toBeNull();
+  });
+
   it('allows paging between multiple winning hands in the settlement overlay', () => {
     vi.useFakeTimers();
 

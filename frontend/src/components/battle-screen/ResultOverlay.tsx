@@ -9,11 +9,12 @@ import { MahjongTile } from './MahjongTile';
 
 interface ResultOverlayProps {
   result: ResultView;
+  settlementKey: string;
   settlementHands?: Partial<Record<Seat, string[]>> | null;
   onAction: (actionId: BattleActionId) => void;
 }
 
-export function ResultOverlay({ result, settlementHands, onAction }: ResultOverlayProps) {
+export function ResultOverlay({ result, settlementKey, settlementHands, onAction }: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeResultPageIndex, setActiveResultPageIndex] = useState(0);
   const [activeScorePageIndex, setActiveScorePageIndex] = useState(0);
@@ -49,15 +50,27 @@ export function ResultOverlay({ result, settlementHands, onAction }: ResultOverl
   const closeFanGuideTimerRef = useRef<number | null>(null);
   const openSeatStatsTimerRef = useRef<number | null>(null);
   const closeSeatStatsTimerRef = useRef<number | null>(null);
+  const previousSettlementKeyRef = useRef(settlementKey);
 
   const resultPages = getResultPages(result);
   const activeResultPage = resultPages[activeResultPageIndex] ?? null;
   const hasFanPanel = activeResultPage?.fanTotal !== null || (activeResultPage?.fanBreakdown.length ?? 0) > 0;
 
   useEffect(() => {
+    if (previousSettlementKeyRef.current === settlementKey) {
+      return;
+    }
+
+    previousSettlementKeyRef.current = settlementKey;
     setIsCollapsed(false);
     setActiveResultPageIndex(0);
-  }, [result]);
+    setActiveScorePageIndex(0);
+  }, [settlementKey]);
+
+  useEffect(() => {
+    setActiveResultPageIndex((currentIndex) => Math.min(currentIndex, Math.max(resultPages.length - 1, 0)));
+    setActiveScorePageIndex((currentIndex) => Math.min(currentIndex, Math.max(result.seats.length - 1, 0)));
+  }, [resultPages.length, result.seats.length]);
 
   useEffect(() => {
     clearFanGuideTimers(openFanGuideTimerRef, closeFanGuideTimerRef);

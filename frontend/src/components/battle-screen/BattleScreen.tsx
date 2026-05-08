@@ -187,6 +187,7 @@ export function BattleScreen({
       ? getSettlementWinnerSeats(viewModel.result)
       : [];
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
+  const settlementResetKey = getSettlementResetKey(viewModel);
 
   function adjustTableTileScale(offset: number) {
     setTableTileScale((currentScale) => {
@@ -545,6 +546,7 @@ export function BattleScreen({
           {visibleResult ? (
             <ResultOverlay
               result={visibleResult}
+              settlementKey={settlementResetKey}
               settlementHands={viewModel.settlementHands}
               onAction={onAction}
             />
@@ -703,5 +705,27 @@ function getSettlementVisibilityKey(result: BattleViewModel['result']) {
     fanBreakdown: result.fanBreakdown,
     pages: result.pages,
     seats: result.seats,
+  });
+}
+
+function getSettlementResetKey(viewModel: BattleViewModel) {
+  const result = viewModel.result;
+  if (!result) {
+    return 'no-result';
+  }
+
+  return JSON.stringify({
+    tableCode: viewModel.tableCode,
+    roundId: result.roundId ?? null,
+    roundLabel: result.roundId ? null : viewModel.roundLabel,
+    title: result.title,
+    winType: result.winType,
+    winnerSeat: result.winnerSeat,
+    discarderSeat: result.discarderSeat,
+    pages: result.pages?.map((page) => ({
+      winType: page.winType,
+      winnerSeat: page.winnerSeat,
+      discarderSeat: page.discarderSeat,
+    })) ?? null,
   });
 }

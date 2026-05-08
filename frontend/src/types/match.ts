@@ -676,6 +676,7 @@ export interface ResultPageView {
 }
 
 export interface ResultView {
+  roundId?: string | null;
   title: string;
   summary: string;
   fanTotal: number | null;

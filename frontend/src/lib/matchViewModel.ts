@@ -1365,6 +1365,7 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
     }
 
     return {
+      roundId: result.round_id,
       title: '本局结算',
       summary: createResultSummary(result, pages.length),
       fanTotal: primaryPage?.fanTotal ?? result.fan_total,
@@ -1413,6 +1414,7 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
 
   if (snapshot.phase === 'finished') {
     return {
+      roundId: snapshot.match_state?.last_completed_round_id ?? null,
       title: '整场结束',
       summary: '本桌完整对局已经结束，可以直接发起再来一局。',
       fanTotal: null,
