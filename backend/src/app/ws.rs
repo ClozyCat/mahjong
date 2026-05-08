@@ -39,12 +39,12 @@ use super::{
     generate_player_session_id, generate_reconnect_token, generate_short_hex, normalize_table_code,
     notify_all_user_connections, occupied_seats, presence_and_snapshot_for_all_from_snapshot,
     random_open_seat_index, remove_bot_from_waiting_room, remove_seat_from_room,
-    reset_timeout_auto_response_count, room_has_round_state, room_phase, room_player_session_id,
-    room_seats, seat_exists, seat_matches_reconnect_credentials, send_outbound, serialize_room,
-    set_seat_bot_takeover, set_seat_connected, user_active_table_updated_message,
+    reset_timeout_auto_response_count, room_has_round_state, room_phase, room_seats, seat_exists,
+    seat_matches_reconnect_credentials, send_outbound, serialize_room, set_seat_bot_takeover,
+    set_seat_connected, user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
-use crate::core::state::SeatState;
+use crate::core::state::{RoomState, SeatState};
 use crate::rules::standard::flow::{
     reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state,
     record_continue_action_in_room_state as record_standard_continue_action,
@@ -541,6 +541,59 @@ async fn handle_watch_table(
     }
 }
 
+fn current_seat_index_for_user(
+    room: &RoomState,
+    user_id: i64,
+    fallback_seat_index: usize,
+) -> Option<usize> {
+    room.seats
+        .iter()
+        .find(|seat| seat.user_id == Some(user_id))
+        .map(|seat| seat.seat_index)
+        .or_else(|| {
+            room.seats
+                .iter()
+                .find(|seat| {
+                    seat.seat_index == fallback_seat_index
+                        && (seat.user_id.is_none() || seat.user_id == Some(user_id))
+                })
+                .map(|seat| seat.seat_index)
+        })
+}
+
+fn current_seat_index_for_reconnect(
+    room: &RoomState,
+    player_session_id: i64,
+    reconnect_token: &str,
+    fallback_seat_index: usize,
+) -> Option<usize> {
+    room.seats
+        .iter()
+        .find(|seat| {
+            seat.seat_index == fallback_seat_index
+                && seat_matches_reconnect_credentials(
+                    room,
+                    seat.seat_index,
+                    player_session_id,
+                    reconnect_token,
+                )
+        })
+        .map(|seat| seat.seat_index)
+        .or_else(|| {
+            room.seats
+                .iter()
+                .find(|seat| {
+                    seat_matches_reconnect_credentials(
+                        room,
+                        seat.seat_index,
+                        player_session_id,
+                        reconnect_token,
+                    )
+                })
+                .map(|seat| seat.seat_index)
+        })
+}
+
 async fn handle_join_table(
     state: AppContext,
     table_code: &str,
@@ -603,11 +656,18 @@ async fn handle_join_table(
 
     let (seat_index, persisted_with_new_participant) =
         if let Some(participant) = existing_participant {
+            let Some(seat_index) = current_seat_index_for_user(
+                &runtime.room,
+                authenticated_user.user_id,
+                participant.seat_index,
+            ) else {
+                return reject_to(connection, "table_invite_required");
+            };
             let Some(seat) = runtime
                 .room
                 .seats
                 .iter_mut()
-                .find(|seat| seat.seat_index == participant.seat_index)
+                .find(|seat| seat.seat_index == seat_index)
             else {
                 return reject_to(connection, "table_invite_required");
             };
@@ -620,7 +680,7 @@ async fn handle_join_table(
             seat.is_bot = false;
             seat.seat_type = "human".to_string();
             seat.consecutive_timeout_auto_response_count = 0;
-            (participant.seat_index, false)
+            (seat_index, false)
         } else if runtime.room.owner_user_id == Some(authenticated_user.user_id)
             && room_phase(&runtime.room) == "waiting"
             && !room_has_round_state(&runtime.room)
@@ -806,26 +866,21 @@ async fn handle_reconnect(
     {
         return reject_to(connection, "seat_already_owned");
     }
-    let Some(current_session_id) = room_player_session_id(&runtime.room, token_record.seat_index)
-    else {
-        return reject_to(connection, "invalid_reconnect_token");
-    };
-    if !seat_matches_reconnect_credentials(
+    let Some(current_seat_index) = current_seat_index_for_reconnect(
         &runtime.room,
-        token_record.seat_index,
         token_record.player_session_id,
         &reconnect_token,
-    ) || current_session_id != token_record.player_session_id
-    {
+        token_record.seat_index,
+    ) else {
         return reject_to(connection, "invalid_reconnect_token");
-    }
+    };
 
     let new_token = generate_reconnect_token();
     if let Some(seat) = runtime
         .room
         .seats
         .iter_mut()
-        .find(|seat| seat.seat_index == token_record.seat_index)
+        .find(|seat| seat.seat_index == current_seat_index)
     {
         seat.reconnect_token = Some(new_token.clone());
         seat.connected = true;
@@ -854,7 +909,7 @@ async fn handle_reconnect(
             &room_json,
             &reconnect_token,
             &new_token,
-            token_record.seat_index,
+            current_seat_index,
             token_record.player_session_id,
         )
         .await
@@ -871,7 +926,7 @@ async fn handle_reconnect(
         &connections,
         table_code,
         connection,
-        token_record.seat_index,
+        current_seat_index,
         true,
     );
     outbound.extend(collect_observer_outbound_from_snapshot(
@@ -880,13 +935,13 @@ async fn handle_reconnect(
         &spectator_connections,
     ));
     let mut runtime = room_handle.runtime.lock().await;
-    add_seat_connection(&mut runtime, token_record.seat_index, None, connection);
+    add_seat_connection(&mut runtime, current_seat_index, None, connection);
     drop(runtime);
     schedule_room_tasks_detached(state, table_code.to_string());
     MessageOutcome {
         outbound,
         role: Some(ConnectionRole::Player {
-            seat_index: token_record.seat_index,
+            seat_index: current_seat_index,
         }),
         clear_role: false,
         close_socket: false,
@@ -1797,8 +1852,8 @@ mod tests {
 
     use super::{
         ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, ReadyRequest,
-        WatchTableRequest, handle_client_message, handle_disconnect, handle_join_table,
-        handle_watch_table, parse_client_message,
+        ReconnectRequest, WatchTableRequest, handle_client_message, handle_disconnect,
+        handle_join_table, handle_reconnect, handle_watch_table, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1822,6 +1877,152 @@ mod tests {
             },
             receiver,
         )
+    }
+
+    struct TestSeat<'a> {
+        seat_index: usize,
+        user_id: i64,
+        nickname: &'a str,
+        token: &'a str,
+        player_session_id: i64,
+        connected: bool,
+    }
+
+    struct StaleSeatRow<'a> {
+        table_code: &'a str,
+        room_json: &'a str,
+        token: &'a str,
+        stale_seat_index: usize,
+        player_session_id: i64,
+        user_id: i64,
+        nickname: &'a str,
+    }
+
+    fn human_seat(input: TestSeat<'_>) -> SeatState {
+        SeatState {
+            seat_index: input.seat_index,
+            user_id: Some(input.user_id),
+            nickname: Some(input.nickname.to_string()),
+            points: Some(600),
+            title: Some("正分守门员".to_string()),
+            reconnect_token: Some(input.token.to_string()),
+            player_session_id: Some(input.player_session_id),
+            connected: input.connected,
+            ready: true,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
+        }
+    }
+
+    async fn register_ws_test_user(
+        worker: &DbWorker,
+        invite_code: &str,
+        display_name: &str,
+    ) -> Result<(i64, String)> {
+        worker
+            .create_invite_code(invite_code, "2026-05-06T00:00:00Z", None)
+            .await?;
+        let session_token = generate_session_token();
+        let user = worker
+            .register_user(
+                display_name,
+                display_name,
+                &hash_password("secret-123")?,
+                invite_code,
+                &hash_session_token(&session_token),
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+        Ok((user.user_id, session_token))
+    }
+
+    async fn persist_stale_rotated_seat(worker: &DbWorker, row: StaleSeatRow<'_>) -> Result<()> {
+        worker
+            .save_table_and_store_reconnect_token_and_upsert_participant(
+                row.table_code,
+                "2026-05-06T00:00:00Z",
+                row.room_json,
+                row.token,
+                row.stale_seat_index,
+                row.player_session_id,
+                row.user_id,
+                row.nickname,
+                "2026-05-06T00:00:00Z",
+            )
+            .await
+    }
+
+    async fn build_loaded_room_with_stale_seat_indexes(
+        table_code: &str,
+    ) -> Result<(AppContext, DbWorker, String, i64, i64)> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let (other_user_id, _) =
+            register_ws_test_user(&worker, "INVITE200008", "OtherRotated").await?;
+        let (guest_user_id, guest_token) =
+            register_ws_test_user(&worker, "INVITE200009", "GuestRotated").await?;
+
+        let mut room = initial_room_state_with_owner(table_code, Some(other_user_id), 1);
+        room.phase = "playing".to_string();
+        room.seats.push(human_seat(TestSeat {
+            seat_index: 0,
+            user_id: other_user_id,
+            nickname: "OtherRotated",
+            token: "other-current-token",
+            player_session_id: 11,
+            connected: true,
+        }));
+        room.seats.push(human_seat(TestSeat {
+            seat_index: 1,
+            user_id: guest_user_id,
+            nickname: "GuestRotated",
+            token: "guest-current-token",
+            player_session_id: 22,
+            connected: false,
+        }));
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table(table_code, "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+
+        let state = AppContext::new(worker.clone());
+        ensure_room_loaded(&state, table_code)
+            .await?
+            .expect("room should load before stale db rows are inserted");
+
+        persist_stale_rotated_seat(
+            &worker,
+            StaleSeatRow {
+                table_code,
+                room_json: &room_json,
+                token: "guest-current-token",
+                stale_seat_index: 0,
+                player_session_id: 22,
+                user_id: guest_user_id,
+                nickname: "GuestRotated",
+            },
+        )
+        .await?;
+        persist_stale_rotated_seat(
+            &worker,
+            StaleSeatRow {
+                table_code,
+                room_json: &room_json,
+                token: "other-current-token",
+                stale_seat_index: 1,
+                player_session_id: 11,
+                user_id: other_user_id,
+                nickname: "OtherRotated",
+            },
+        )
+        .await?;
+
+        Ok((state, worker, guest_token, guest_user_id, other_user_id))
     }
 
     async fn build_reserved_participant_state(table_code: &str) -> Result<(AppContext, String)> {
@@ -2132,6 +2333,119 @@ mod tests {
             .expect("room should be loaded");
         let runtime = room_handle.runtime.lock().await;
         assert!(runtime.room.seats[0].connected);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn join_table_reuses_current_room_seat_after_wind_rotation() -> Result<()> {
+        let (state, worker, guest_token, guest_user_id, other_user_id) =
+            build_loaded_room_with_stale_seat_indexes("ROOMROTJOIN").await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
+
+        let outcome = handle_join_table(
+            state.clone(),
+            "ROOMROTJOIN",
+            &connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+
+        assert!(matches!(
+            outcome.role,
+            Some(ConnectionRole::Player { seat_index: 1 })
+        ));
+        let room_handle = room_handle(&state, "ROOMROTJOIN")
+            .await
+            .expect("room should stay loaded");
+        let runtime = room_handle.runtime.lock().await;
+        let guest_seats = runtime
+            .room
+            .seats
+            .iter()
+            .filter(|seat| seat.user_id == Some(guest_user_id))
+            .map(|seat| seat.seat_index)
+            .collect::<Vec<_>>();
+        assert_eq!(guest_seats, vec![1]);
+        assert_eq!(
+            runtime
+                .room
+                .seats
+                .iter()
+                .find(|seat| seat.seat_index == 0)
+                .and_then(|seat| seat.user_id),
+            Some(other_user_id)
+        );
+        drop(runtime);
+
+        let participant = worker
+            .get_active_table_participant("ROOMROTJOIN", guest_user_id)
+            .await?
+            .expect("participant should remain active");
+        assert_eq!(participant.seat_index, 1);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn reconnect_reuses_current_room_seat_after_wind_rotation() -> Result<()> {
+        let (state, worker, _guest_token, guest_user_id, other_user_id) =
+            build_loaded_room_with_stale_seat_indexes("ROOMROTREC").await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
+
+        let outcome = handle_reconnect(
+            state.clone(),
+            "ROOMROTREC",
+            &connection,
+            ReconnectRequest {
+                reconnect_token: "guest-current-token".to_string(),
+            },
+        )
+        .await;
+
+        assert!(matches!(
+            outcome.role,
+            Some(ConnectionRole::Player { seat_index: 1 })
+        ));
+        let room_handle = room_handle(&state, "ROOMROTREC")
+            .await
+            .expect("room should stay loaded");
+        let runtime = room_handle.runtime.lock().await;
+        let guest_seat = runtime
+            .room
+            .seats
+            .iter()
+            .find(|seat| seat.seat_index == 1)
+            .expect("current guest seat should exist");
+        assert_eq!(guest_seat.user_id, Some(guest_user_id));
+        assert!(guest_seat.connected);
+        let new_token = guest_seat
+            .reconnect_token
+            .clone()
+            .expect("reconnect should rotate token");
+        assert_eq!(
+            runtime
+                .room
+                .seats
+                .iter()
+                .find(|seat| seat.seat_index == 0)
+                .and_then(|seat| seat.user_id),
+            Some(other_user_id)
+        );
+        drop(runtime);
+
+        assert!(
+            worker
+                .get_reconnect_token("guest-current-token")
+                .await?
+                .is_none()
+        );
+        let token_record = worker
+            .get_reconnect_token(&new_token)
+            .await?
+            .expect("new token should be persisted");
+        assert_eq!(token_record.seat_index, 1);
+        assert_eq!(token_record.player_session_id, 22);
         Ok(())
     }
 

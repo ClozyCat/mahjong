@@ -21,6 +21,14 @@ pub(crate) struct Database {
     conn: Connection,
 }
 
+struct SeatIndexSync<'a> {
+    table_code: &'a str,
+    seat_index: i64,
+    user_id: Option<i64>,
+    reconnect_token: Option<&'a str>,
+    player_session_id: Option<i64>,
+}
+
 #[derive(Clone)]
 pub(crate) struct DbWorker {
     sender: std_mpsc::Sender<DbTask>,
@@ -720,6 +728,100 @@ impl Database {
         Ok(())
     }
 
+    fn sync_current_seat_indexes_with_conn(
+        conn: &Connection,
+        table_code: &str,
+        room_json: &str,
+    ) -> Result<()> {
+        let Ok(room) = serde_json::from_str::<Value>(room_json) else {
+            return Ok(());
+        };
+        let Some(seats) = room.get("seats").and_then(Value::as_array) else {
+            return Ok(());
+        };
+
+        for seat in seats {
+            let Some(sync) = Self::seat_index_sync_from_json(table_code, seat) else {
+                continue;
+            };
+            if sync.user_id.is_some() {
+                Self::sync_participant_seat_index_with_conn(conn, &sync)?;
+            }
+            if sync.reconnect_token.is_some() {
+                Self::sync_reconnect_token_seat_index_with_conn(conn, &sync)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn seat_index_sync_from_json<'a>(
+        table_code: &'a str,
+        seat: &'a Value,
+    ) -> Option<SeatIndexSync<'a>> {
+        Some(SeatIndexSync {
+            table_code,
+            seat_index: seat.get("seat_index").and_then(Value::as_u64)? as i64,
+            user_id: seat.get("user_id").and_then(Value::as_i64),
+            reconnect_token: seat
+                .get("reconnect_token")
+                .and_then(Value::as_str)
+                .filter(|token| !token.is_empty()),
+            player_session_id: seat.get("player_session_id").and_then(Value::as_i64),
+        })
+    }
+
+    fn sync_participant_seat_index_with_conn(
+        conn: &Connection,
+        sync: &SeatIndexSync<'_>,
+    ) -> Result<()> {
+        let Some(user_id) = sync.user_id else {
+            return Ok(());
+        };
+        conn.execute(
+            "
+            UPDATE table_participants
+            SET seat_index = ?3
+            WHERE table_code = ?1
+              AND user_id = ?2
+              AND left_at IS NULL
+            ",
+            params![sync.table_code, user_id, sync.seat_index],
+        )?;
+        Ok(())
+    }
+
+    fn sync_reconnect_token_seat_index_with_conn(
+        conn: &Connection,
+        sync: &SeatIndexSync<'_>,
+    ) -> Result<()> {
+        let Some(token) = sync.reconnect_token else {
+            return Ok(());
+        };
+        let mut sql = "
+            UPDATE reconnect_tokens
+            SET seat_index = ?3
+            WHERE table_code = ?1
+              AND token = ?2
+        "
+        .to_string();
+        if sync.player_session_id.is_some() {
+            sql.push_str(" AND player_session_id = ?4");
+            conn.execute(
+                &sql,
+                params![
+                    sync.table_code,
+                    token,
+                    sync.seat_index,
+                    sync.player_session_id
+                ],
+            )?;
+        } else {
+            conn.execute(&sql, params![sync.table_code, token, sync.seat_index])?;
+        }
+        Ok(())
+    }
+
     fn delete_tokens_for_table_with_conn(conn: &Connection, table_code: &str) -> Result<()> {
         conn.execute(
             "DELETE FROM reconnect_tokens WHERE table_code = ?1",
@@ -829,7 +931,10 @@ impl Database {
     }
 
     fn save_table(&self, table_code: &str, created_at: &str, room_json: &str) -> Result<()> {
-        Self::save_table_with_conn(&self.conn, table_code, created_at, room_json)
+        self.with_transaction("save table and sync current seats", |conn| {
+            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Self::sync_current_seat_indexes_with_conn(conn, table_code, room_json)
+        })
     }
 
     fn delete_table(&self, table_code: &str, left_at: &str) -> Result<()> {
@@ -1748,6 +1853,7 @@ impl Database {
                 seat_index,
                 player_session_id,
             )?;
+            Self::sync_current_seat_indexes_with_conn(conn, table_code, room_json)?;
             Ok(())
         })
     }
@@ -1773,6 +1879,7 @@ impl Database {
                 params![table_code, seat_index as i64, left_at],
             )?;
             Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
+            Self::sync_current_seat_indexes_with_conn(conn, table_code, room_json)?;
             Ok(())
         })
     }
@@ -2971,6 +3078,80 @@ mod tests {
         assert_eq!(reconnect.table_code, "ROOM42");
         assert_eq!(reconnect.seat_index, 0);
         assert_eq!(reconnect.player_session_id, 42);
+        Ok(())
+    }
+
+    #[test]
+    fn save_table_syncs_active_seat_indexes_from_room_json() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        db.conn.execute(
+            "
+            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
+            VALUES
+                (1, 'guest', 'Guest', 'hash', '2026-04-06T00:00:00Z', '2026-04-06T00:00:00Z'),
+                (2, 'other', 'Other', 'hash', '2026-04-06T00:00:00Z', '2026-04-06T00:00:00Z')
+            ",
+            [],
+        )?;
+        let room_json = serde_json::to_string(&json!({
+            "table_code": "ROOMROT",
+            "seats": [
+                {
+                    "seat_index": 0,
+                    "user_id": 2,
+                    "reconnect_token": "other-current-token",
+                    "player_session_id": 11
+                },
+                {
+                    "seat_index": 1,
+                    "user_id": 1,
+                    "reconnect_token": "guest-current-token",
+                    "player_session_id": 22
+                }
+            ]
+        }))?;
+        db.save_table_and_store_reconnect_token_and_upsert_participant(
+            "ROOMROT",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "guest-current-token",
+            0,
+            22,
+            1,
+            "Guest",
+            "2026-04-06T00:00:00Z",
+        )?;
+        db.save_table_and_store_reconnect_token_and_upsert_participant(
+            "ROOMROT",
+            "2026-04-06T00:00:00Z",
+            &room_json,
+            "other-current-token",
+            1,
+            11,
+            2,
+            "Other",
+            "2026-04-06T00:00:00Z",
+        )?;
+
+        db.save_table("ROOMROT", "2026-04-06T00:00:00Z", &room_json)?;
+
+        let guest = db
+            .get_active_table_participant("ROOMROT", 1)?
+            .expect("guest participant should stay active");
+        assert_eq!(guest.seat_index, 1);
+        let other = db
+            .get_active_table_participant("ROOMROT", 2)?
+            .expect("other participant should stay active");
+        assert_eq!(other.seat_index, 0);
+        let guest_token = db
+            .get_reconnect_token("guest-current-token")?
+            .expect("guest token should stay active");
+        assert_eq!(guest_token.seat_index, 1);
+        let other_token = db
+            .get_reconnect_token("other-current-token")?
+            .expect("other token should stay active");
+        assert_eq!(other_token.seat_index, 0);
         Ok(())
     }
 
