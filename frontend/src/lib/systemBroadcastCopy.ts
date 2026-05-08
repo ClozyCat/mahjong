@@ -3,18 +3,12 @@ import type {
   SeatSnapshot,
   UserPointsUpdatedMessage,
 } from '../types/match';
+import { TITLE_BANDS, titleForPoints, titleRank } from './titleBands';
 
-const NEUTRAL_TITLES = new Set(['大漏勺', '正分守门员', '概率论博导']);
-const TITLE_ORDER = [
-  '感动中国大善人',
-  '赛博 ATM',
-  '大漏勺',
-  '正分守门员',
-  '概率论博导',
-  '大罗金仙',
-  '只手遮天大魔王',
-  '太上无极宇宙雀神',
-] as const;
+export { titleDescriptionForTitle, titleForPoints } from './titleBands';
+
+const NEUTRAL_TITLES = new Set(['熟练的码牌工', '弹性拆牌艺术家', '牌池人体扫描仪']);
+const LOW_TITLE_BOUNDARY = titleRank('熟练的码牌工');
 
 type BroadcastTone = 'low' | 'neutral' | 'high';
 
@@ -24,41 +18,8 @@ type PlayerBroadcastProfile = {
   tone: BroadcastTone;
 };
 
-export function titleForPoints(points: number): string {
-  if (points <= -600) {
-    return '感动中国大善人';
-  }
-
-  if (points <= 0) {
-    return '赛博 ATM';
-  }
-
-  if (points <= 400) {
-    return '大漏勺';
-  }
-
-  if (points <= 600) {
-    return '正分守门员';
-  }
-
-  if (points <= 800) {
-    return '概率论博导';
-  }
-
-  if (points <= 1200) {
-    return '大罗金仙';
-  }
-
-  if (points <= 1800) {
-    return '只手遮天大魔王';
-  }
-
-  return '太上无极宇宙雀神';
-}
-
 function getTitleRank(title: string): number {
-  const index = TITLE_ORDER.indexOf(title as (typeof TITLE_ORDER)[number]);
-  return index >= 0 ? index : TITLE_ORDER.indexOf('正分守门员');
+  return titleRank(title);
 }
 
 function getTitleTone(title: string): BroadcastTone {
@@ -66,7 +27,7 @@ function getTitleTone(title: string): BroadcastTone {
     return 'neutral';
   }
 
-  return getTitleRank(title) < TITLE_ORDER.indexOf('大漏勺') ? 'low' : 'high';
+  return getTitleRank(title) < LOW_TITLE_BOUNDARY ? 'low' : 'high';
 }
 
 function getBroadcastPrefix(emoji: string): string {
@@ -91,9 +52,9 @@ function getPlayerProfile(
     seatSnapshot?.title ??
     (typeof fallback?.points === 'number'
       ? titleForPoints(fallback.points)
-      : typeof seatSnapshot?.points === 'number'
-        ? titleForPoints(seatSnapshot.points)
-        : '正分守门员');
+        : typeof seatSnapshot?.points === 'number'
+          ? titleForPoints(seatSnapshot.points)
+          : TITLE_BANDS[LOW_TITLE_BOUNDARY].title);
 
   return {
     name,

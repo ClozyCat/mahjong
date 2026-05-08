@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { GameSummary, UserFanStat } from '../../types/match';
-import { UserProfilePanel, generatePublicBio } from './UserProfilePanel';
+import { UserProfilePanel } from './UserProfilePanel';
 
 describe('UserProfilePanel', () => {
   it('renders fan stats and recent games for a public user', () => {
@@ -12,9 +12,9 @@ describe('UserProfilePanel', () => {
           user_id: 1,
           username: 'alice',
           display_name: '阿明',
-          points: 320,
-          title: '平民',
-          display_label: '阿明（平民）',
+          points: 550,
+          title: '熟练的码牌工',
+          display_label: '阿明（熟练的码牌工）',
           bio: '喜欢朋友局。',
           avatar: null,
         }}
@@ -34,9 +34,9 @@ describe('UserProfilePanel', () => {
             owner: {
               user_id: 1,
               display_name: '阿明',
-              points: 320,
-              title: '平民',
-              display_label: '阿明（平民）',
+              points: 550,
+              title: '熟练的码牌工',
+              display_label: '阿明（熟练的码牌工）',
             },
             multiplier: 1,
             started_at: '2026-05-06T10:00:00Z',
@@ -48,7 +48,7 @@ describe('UserProfilePanel', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: '阿明（平民）' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '阿明（熟练的码牌工）' })).toBeInTheDocument();
     expect(screen.getByText('对对和')).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '历史牌局' })).toBeInTheDocument();
@@ -56,7 +56,7 @@ describe('UserProfilePanel', () => {
     expect(screen.getByText('05/06 19:00')).toBeInTheDocument();
     expect(screen.getByText('总 8 局')).toBeInTheDocument();
     expect(screen.getByText('小李、小王、小陈')).toBeInTheDocument();
-    expect(screen.getByText('暂无公开简介')).toBeInTheDocument();
+    expect(screen.getByText('已经脱离了新手的低级趣味，不仅码牌速度快，甚至偶尔还能看懂别人在做什么牌。')).toBeInTheDocument();
     expect(screen.queryByText(/x[123]/)).not.toBeInTheDocument();
   });
 
@@ -141,9 +141,9 @@ describe('UserProfilePanel', () => {
           user_id: 1,
           username: 'alice',
           display_name: '阿明',
-          points: 320,
-          title: '平民',
-          display_label: '阿明（平民）',
+          points: 550,
+          title: '熟练的码牌工',
+          display_label: '阿明（熟练的码牌工）',
           bio: '',
           avatar: null,
         }}
@@ -171,30 +171,28 @@ describe('UserProfilePanel', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
-  it('generates a deal-in bio from recent player summaries', () => {
-    expect(
-      generatePublicBio([gameWithSummary({ round_count: 8, deal_in_count: 3 })], []),
-    ).toBe('放铳王');
-  });
+  it('keeps public bio tied to title instead of recent records', () => {
+    render(
+      <UserProfilePanel
+        user={publicUser({
+          title: '弹性拆牌艺术家',
+          display_label: '阿明（弹性拆牌艺术家）',
+        })}
+        fanStats={fanStats()}
+        recentGames={[
+          gameWithSummary({
+            round_count: 8,
+            win_count: 4,
+            high_score_round_count: 5,
+            deal_in_count: 3,
+          }),
+        ]}
+      />,
+    );
 
-  it('generates a top winner bio when wins and scores stay high', () => {
-    expect(
-      generatePublicBio([
-        gameWithSummary({
-          round_count: 8,
-          win_count: 4,
-          self_draw_win_count: 2,
-          high_score_round_count: 5,
-          total_score_delta: 160,
-          average_cumulative_score: 120,
-        }),
-      ], []),
-    ).toBe('雀圣');
-  });
-
-  it('keeps the empty public bio when there are no player records', () => {
-    expect(generatePublicBio([], fanStats())).toBe('暂无公开简介');
-    expect(generatePublicBio([gameWithSummary(null)], fanStats())).toBe('暂无公开简介');
+    expect(screen.getByText(/深谙“好死不如赖活着”的麻将哲学/)).toBeInTheDocument();
+    expect(screen.queryByText('放铳王')).not.toBeInTheDocument();
+    expect(screen.queryByText('雀圣')).not.toBeInTheDocument();
   });
 });
 
@@ -215,14 +213,18 @@ function gameWithSummary(
   };
 }
 
-function publicUser() {
+function publicUser(overrides: Partial<ReturnType<typeof basePublicUser>> = {}) {
+  return { ...basePublicUser(), ...overrides };
+}
+
+function basePublicUser() {
   return {
     user_id: 1,
     username: 'alice',
     display_name: '阿明',
-    points: 320,
-    title: '平民',
-    display_label: '阿明（平民）',
+    points: 550,
+    title: '熟练的码牌工',
+    display_label: '阿明（熟练的码牌工）',
     bio: '喜欢朋友局。',
     avatar: null,
   };
