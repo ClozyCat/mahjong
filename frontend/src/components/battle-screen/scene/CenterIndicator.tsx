@@ -182,7 +182,7 @@ export const CenterIndicator = memo(function CenterIndicator({
       </svg>
       <div className="table-stage__center-indicator-remaining">
         <strong className="table-stage__center-indicator-count">
-          {dealerSelection ? '东' : remainingCount ?? 0}
+          {dealerSelection ? '東' : remainingCount ?? 0}
         </strong>
       </div>
     </div>

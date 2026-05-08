@@ -842,7 +842,7 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(container.querySelector('.table-stage__center-indicator-count')).toHaveTextContent('东');
+    expect(container.querySelector('.table-stage__center-indicator-count')).toHaveTextContent('東');
   });
 
   it('opens the quick-chat radial menu from the global emoji trigger', async () => {
