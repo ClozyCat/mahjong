@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow};
 use rand::Rng;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::Value;
 use tokio::sync::oneshot;
 
 use super::auth::AuthenticatedUser;
@@ -220,6 +221,23 @@ fn deal_in_count_for_round(seat_index: usize, settlement_json: &str) -> Result<i
         return Ok(0);
     }
     Ok(settlement.winning_seats().len() as i64)
+}
+
+fn room_json_has_independent_bot_seat(room_json: Option<&str>) -> Result<bool> {
+    let Some(room_json) = room_json else {
+        return Ok(false);
+    };
+    let room = serde_json::from_str::<Value>(room_json)?;
+    let Some(seats) = room.get("seats").and_then(Value::as_array) else {
+        return Ok(false);
+    };
+    Ok(seats.iter().any(|seat| {
+        let seat_type = seat.get("seat_type").and_then(Value::as_str);
+        if let Some(seat_type) = seat_type {
+            return seat_type == "bot";
+        }
+        seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false)
+    }))
 }
 
 #[derive(Debug, Clone)]
@@ -937,6 +955,12 @@ impl Database {
             opponent_names: Vec::new(),
             player_summary: None,
         })
+    }
+
+    fn game_summary_with_room_json_from_row(
+        row: &rusqlite::Row<'_>,
+    ) -> rusqlite::Result<(GameSummaryRecord, Option<String>)> {
+        Ok((Self::game_summary_from_row(row)?, row.get(9)?))
     }
 
     fn round_player_result_from_row(
@@ -1915,20 +1939,31 @@ impl Database {
                 game_records.multiplier,
                 game_records.started_at,
                 game_records.ended_at,
-                COUNT(round_records.id) AS round_count
+                COUNT(round_records.id) AS round_count,
+                COALESCE(game_records.final_room_json, tables.room_json) AS room_json
             FROM game_records
             JOIN users ON users.id = game_records.owner_user_id
+            LEFT JOIN tables ON tables.table_code = game_records.table_code
             LEFT JOIN round_records ON round_records.game_record_id = game_records.id
             GROUP BY game_records.id
             ORDER BY COALESCE(game_records.ended_at, MAX(round_records.ended_at), game_records.started_at) DESC,
                      game_records.id DESC
-            LIMIT ?1
             ",
         )?;
         let rows = statement
-            .query_map(params![limit as i64], Self::game_summary_from_row)?
+            .query_map([], Self::game_summary_with_room_json_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
+        let mut summaries = Vec::new();
+        for (summary, room_json) in rows {
+            if room_json_has_independent_bot_seat(room_json.as_deref())? {
+                continue;
+            }
+            summaries.push(summary);
+            if summaries.len() >= limit {
+                break;
+            }
+        }
+        Ok(summaries)
     }
 
     fn get_game_detail(&self, game_id: i64) -> Result<Option<GameRecordDetail>> {
@@ -2107,9 +2142,11 @@ impl Database {
                 game_records.multiplier,
                 game_records.started_at,
                 game_records.ended_at,
-                COUNT(round_records.id) AS round_count
+                COUNT(round_records.id) AS round_count,
+                COALESCE(game_records.final_room_json, tables.room_json) AS room_json
             FROM game_records
             JOIN users ON users.id = game_records.owner_user_id
+            LEFT JOIN tables ON tables.table_code = game_records.table_code
             LEFT JOIN round_records ON round_records.game_record_id = game_records.id
             WHERE EXISTS (
                 SELECT 1
@@ -2130,13 +2167,21 @@ impl Database {
             GROUP BY game_records.id
             ORDER BY COALESCE(game_records.ended_at, MAX(round_records.ended_at), game_records.started_at) DESC,
                      game_records.id DESC
-            LIMIT ?2
             ",
         )?;
         let rows = statement
-            .query_map(params![user_id, limit as i64], Self::game_summary_from_row)?
+            .query_map(params![user_id], Self::game_summary_with_room_json_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let mut games = rows;
+        let mut games = Vec::new();
+        for (game, room_json) in rows {
+            if room_json_has_independent_bot_seat(room_json.as_deref())? {
+                continue;
+            }
+            games.push(game);
+            if games.len() >= limit {
+                break;
+            }
+        }
         for game in &mut games {
             game.player_summary = Some(self.user_game_player_summary(user_id, game.game_id)?);
             game.opponent_names = self.opponent_names_for_user_game(user_id, game.game_id)?;
@@ -3145,6 +3190,49 @@ mod tests {
                 .map(|summary| summary.round_count),
             Some(1)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn list_games_for_user_excludes_standalone_bot_games() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        db.conn.execute(
+            "
+            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
+            VALUES
+                (1, 'owner', 'Owner', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z'),
+                (2, 'guest', 'Guest', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z')
+            ",
+            [],
+        )?;
+
+        insert_finished_game_fixture(
+            &db,
+            1,
+            "HUMAN1",
+            r#"{"seats":[{"seat_index":0,"seat_type":"human","is_bot":false},{"seat_index":1,"seat_type":"human","is_bot":false}]}"#,
+        )?;
+        insert_finished_game_fixture(
+            &db,
+            2,
+            "BOTMIX",
+            r#"{"seats":[{"seat_index":0,"seat_type":"human","is_bot":false},{"seat_index":1,"seat_type":"bot","is_bot":true},{"seat_index":2,"seat_type":"human","is_bot":false}]}"#,
+        )?;
+        insert_finished_game_fixture(
+            &db,
+            3,
+            "TAKEVR",
+            r#"{"seats":[{"seat_index":0,"seat_type":"human","is_bot":true},{"seat_index":1,"seat_type":"human","is_bot":false}]}"#,
+        )?;
+
+        let user_games = db.list_games_for_user(1, 10)?;
+        let table_codes = user_games
+            .iter()
+            .map(|game| game.table_code.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(table_codes, vec!["TAKEVR", "HUMAN1"]);
         Ok(())
     }
 

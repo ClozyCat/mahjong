@@ -607,6 +607,13 @@ mod tests {
             .ok_or_else(|| anyhow::anyhow!("game detail should exist"))
     }
 
+    async fn archived_detail_by_id(worker: &DbWorker, game_id: i64) -> Result<GameRecordDetail> {
+        worker
+            .get_game_detail(game_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("game detail should exist"))
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn records_archive_round_creates_results_without_multiplier_points() -> Result<()> {
         let (state, worker) = test_state().await?;
@@ -853,15 +860,16 @@ mod tests {
         )
         .await?;
 
-        archive_current_round_if_needed(
+        let archive = archive_current_round_if_needed(
             &state,
             &room,
             "2026-05-06T00:00:00Z",
             "2026-05-06T01:00:00Z",
         )
-        .await?;
+        .await?
+        .expect("settlement should archive");
 
-        let detail = archived_detail(&worker).await?;
+        let detail = archived_detail_by_id(&worker, archive.game_id).await?;
         let player_results = &detail.rounds[0].player_results;
         assert_eq!(player_results[0].point_delta, 0);
         assert_eq!(player_results[1].point_delta, 0);
@@ -929,15 +937,16 @@ mod tests {
         )
         .await?;
 
-        archive_current_round_if_needed(
+        let archive = archive_current_round_if_needed(
             &state,
             &room,
             "2026-05-06T00:00:00Z",
             "2026-05-06T01:00:00Z",
         )
-        .await?;
+        .await?
+        .expect("settlement should archive");
 
-        let detail = archived_detail(&worker).await?;
+        let detail = archived_detail_by_id(&worker, archive.game_id).await?;
         let player_results = &detail.rounds[0].player_results;
         assert!(player_results.iter().all(|result| result.point_delta == 0));
 
