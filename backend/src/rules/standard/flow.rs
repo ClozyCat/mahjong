@@ -458,12 +458,40 @@ fn rotate_seats_after_wind_end(room: &mut RoomState, prevailing_wind: &str) {
     let Some(old_to_new_seat) = seat_rotation_for_completed_wind(prevailing_wind) else {
         return;
     };
+    rotate_match_scores_after_wind_end(room, &old_to_new_seat);
     for seat in &mut room.seats {
         if let Some(&next_seat) = old_to_new_seat.get(seat.seat_index) {
             seat.seat_index = next_seat;
         }
     }
     room.seats.sort_by_key(|seat| seat.seat_index);
+}
+
+fn rotate_match_scores_after_wind_end(
+    room: &mut RoomState,
+    old_to_new_seat: &[usize; MAX_SEATS],
+) {
+    let Some(match_state) = room.match_state.as_mut() else {
+        return;
+    };
+
+    remap_seat_keyed_map(&mut match_state.cumulative_scores, old_to_new_seat);
+    remap_seat_keyed_map(
+        &mut match_state.statistics.seat_stats_by_seat,
+        old_to_new_seat,
+    );
+    match_state.sync_statistics_to_cumulative_scores();
+}
+
+fn remap_seat_keyed_map<T>(
+    values_by_seat: &mut BTreeMap<usize, T>,
+    old_to_new_seat: &[usize; MAX_SEATS],
+) {
+    let previous_values = std::mem::take(values_by_seat);
+    for (old_seat, value) in previous_values {
+        let next_seat = old_to_new_seat.get(old_seat).copied().unwrap_or(old_seat);
+        values_by_seat.insert(next_seat, value);
+    }
 }
 
 #[cfg(test)]
@@ -983,6 +1011,7 @@ fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::state::match_state::MatchSeatStatistics;
     use crate::core::state::{
         ContinueActionState, LastActionContext, PendingTimeout, PlayerRoundState,
         RoundScoreTrackers, RoundState, RuleRuntimeState, SeatState, WallState,
@@ -1256,6 +1285,72 @@ mod tests {
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "south");
         assert_eq!(match_state.hand_number, 1);
+    }
+
+    #[test]
+    fn wind_end_rotation_moves_scores_and_statistics_with_players() {
+        let mut room = settlement_room_at_wind_end("east");
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.cumulative_scores = BTreeMap::from([(0, 10), (1, 20), (2, 30), (3, 40)]);
+        match_state.statistics.seat_stats_by_seat = BTreeMap::from([
+            (
+                0,
+                MatchSeatStatistics {
+                    score_history: vec![0, 10],
+                    win_count: 1,
+                    deal_in_count: 0,
+                },
+            ),
+            (
+                1,
+                MatchSeatStatistics {
+                    score_history: vec![0, 20],
+                    win_count: 2,
+                    deal_in_count: 1,
+                },
+            ),
+            (
+                2,
+                MatchSeatStatistics {
+                    score_history: vec![0, 30],
+                    win_count: 3,
+                    deal_in_count: 2,
+                },
+            ),
+            (
+                3,
+                MatchSeatStatistics {
+                    score_history: vec![0, 40],
+                    win_count: 4,
+                    deal_in_count: 3,
+                },
+            ),
+        ]);
+
+        complete_start_next_round_in_room_state(&mut room).expect("next wind should start");
+
+        assert_eq!(nicknames_by_seat(&room), vec!["P1", "P0", "P3", "P2"]);
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(
+            match_state.cumulative_scores,
+            BTreeMap::from([(0, 20), (1, 10), (2, 40), (3, 30)])
+        );
+        assert_eq!(
+            match_state
+                .statistics
+                .seat_stats_by_seat
+                .get(&0)
+                .map(|stats| (stats.score_history.clone(), stats.win_count, stats.deal_in_count)),
+            Some((vec![0, 20], 2, 1))
+        );
+        assert_eq!(
+            match_state
+                .statistics
+                .seat_stats_by_seat
+                .get(&1)
+                .map(|stats| (stats.score_history.clone(), stats.win_count, stats.deal_in_count)),
+            Some((vec![0, 10], 1, 0))
+        );
     }
 
     #[test]
