@@ -326,6 +326,8 @@ pub fn build_pending_action_view(
                             .filter(|option| option == "hu" || option == "kong")
                             .collect()
                     }
+                } else if is_responded {
+                    Vec::new()
                 } else {
                     options
                 };
@@ -1233,6 +1235,57 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
             serde_json::json!(["kong", "hu", "pass"])
+        );
+    }
+
+    #[test]
+    fn claim_window_projection_hides_options_after_local_pass_response() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: players(),
+                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat: 1,
+                    claim_window: vec![
+                        vec!["chow".to_string(), "hu".to_string()],
+                        vec![],
+                        vec![],
+                        vec![],
+                    ],
+                    responded_seats: vec![0],
+                    claim_responses: vec![],
+                })),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "claim_window".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: None,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["responded_seats"],
+            serde_json::json!([0])
         );
     }
 

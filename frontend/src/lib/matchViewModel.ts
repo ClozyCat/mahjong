@@ -226,9 +226,23 @@ function createPublicTurnPrompt(state: SessionState) {
   return createActorPrompt(getSeatName(state, actorSeat), ['discard']);
 }
 
-function createCenterDeadlineAt(state: SessionState) {
+function createCenterDeadlineAt(state: SessionState, options: MatchViewModelOptions = {}) {
   const snapshot = state.roomSnapshot?.payload;
   const pendingAction = snapshot?.private_state?.pending_action;
+
+  if (options.hideLocalClaimPrompt) {
+    if (pendingAction?.type === 'claim_window' || pendingAction?.type === 'rob_kong_window') {
+      return null;
+    }
+
+    if (
+      state.latestActionPrompt?.payload.options.some(
+        (option) => option === 'hu' || option === 'chow' || option === 'pung' || option === 'kong',
+      )
+    ) {
+      return null;
+    }
+  }
 
   if (pendingAction && 'deadline_at' in pendingAction) {
     return String(pendingAction.deadline_at);
@@ -252,6 +266,7 @@ interface MatchViewModelOptions {
   showLocalTurnKongPrompt?: boolean;
   showLocalSelfHuPassOption?: boolean;
   hideLocalSelfHuPrompt?: boolean;
+  hideLocalClaimPrompt?: boolean;
   perspectiveSeat?: number | null;
   isSpectator?: boolean;
 }
@@ -307,16 +322,31 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
       return createActorPrompt(getSeatName(state, actorSeat), promptOptions.length > 0 ? promptOptions : ['discard']);
     }
     if (pendingAction.type === 'claim_window') {
+      if (options.hideLocalClaimPrompt) {
+        return null;
+      }
       const claimLabels = getPendingActionOptions(pendingAction as { options?: unknown });
       return createActorPrompt('一名玩家', claimLabels.length > 0 ? claimLabels : ['chow', 'pung', 'kong', 'hu']);
     }
     if (pendingAction.type === 'rob_kong_window') {
-      const options = getPendingActionOptions(pendingAction as { options?: unknown });
-      return createActorPrompt('一名玩家', options.length > 0 ? options : ['hu']);
+      if (options.hideLocalClaimPrompt) {
+        return null;
+      }
+      const robKongOptions = getPendingActionOptions(pendingAction as { options?: unknown });
+      return createActorPrompt('一名玩家', robKongOptions.length > 0 ? robKongOptions : ['hu']);
     }
   }
 
   if (state.latestActionPrompt) {
+    if (
+      options.hideLocalClaimPrompt &&
+      state.latestActionPrompt.payload.options.some(
+        (option) => option === 'hu' || option === 'chow' || option === 'pung' || option === 'kong',
+      )
+    ) {
+      return null;
+    }
+
     const promptSeat = state.latestActionPrompt.payload.seat_index;
     if (typeof currentActor !== 'number' || currentActor === promptSeat) {
       return createActorPrompt(
@@ -354,6 +384,10 @@ function getPromptSourceSeatLabel(seat: Seat | null) {
 }
 
 function getLocalPromptOptions(state: SessionState, viewOptions: MatchViewModelOptions = {}): BackendActionType[] {
+  if (viewOptions.hideLocalClaimPrompt) {
+    return [];
+  }
+
   const localSeat = getLocalSeat(state);
   const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
 
@@ -415,7 +449,7 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
     };
   }
 
-  if (pendingAction?.type === 'claim_window' && highlightedActionIds.length > 0) {
+  if (!options.hideLocalClaimPrompt && pendingAction?.type === 'claim_window' && highlightedActionIds.length > 0) {
     const sourceSeat =
       typeof pendingAction.discarder_seat === 'number' ? toRelativeSeat(localSeat, pendingAction.discarder_seat) : createLastDiscardSeat(state, options);
 
@@ -539,6 +573,10 @@ function getRawPromptOptions(state: SessionState): BackendActionType[] {
 }
 
 function getPromptOptions(state: SessionState, options: MatchViewModelOptions = {}): BackendActionType[] {
+  if (options.hideLocalClaimPrompt) {
+    return [];
+  }
+
   return normalizeLocalSelfHuPromptOptions(state, getRawPromptOptions(state), options);
 }
 
@@ -1054,8 +1092,8 @@ function getClaimCandidateSignature(actionId: ClaimActionId, tiles: ClaimCandida
   return `${actionId}:${tiles.map((tile) => `${tile.source}:${tile.code}`).join('|')}`;
 }
 
-export function createClaimCandidates(state: SessionState): ClaimCandidateView[] {
-  if (hasOptimisticDiscardPending(state)) {
+export function createClaimCandidates(state: SessionState, options: MatchViewModelOptions = {}): ClaimCandidateView[] {
+  if (hasOptimisticDiscardPending(state) || options.hideLocalClaimPrompt) {
     return [];
   }
 
@@ -1839,7 +1877,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
   const activePlayerSeatIndex = getCurrentActorSeatIndex(snapshot?.private_state);
   const activePlayerSeat =
     typeof activePlayerSeatIndex === 'number' ? toRelativeSeat(localSeat, activePlayerSeatIndex) : 'bottom';
-  const deadlineAt = createCenterDeadlineAt(state);
+  const deadlineAt = createCenterDeadlineAt(state, options);
   const promptCue = createPromptCue(state, options);
   const actionIndicatorSeat = createActionIndicatorSeat(state, options);
   const mode = !snapshot
@@ -1889,7 +1927,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     selectedTileCode: createSelectedTileCode(state, options),
     localHand: createLocalHand(state, options),
     handInsight: options.isSpectator ? null : createHandInsight(state),
-    claimCandidates: options.isSpectator ? [] : createClaimCandidates(state),
+    claimCandidates: options.isSpectator ? [] : createClaimCandidates(state, options),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
     centerStatusText: dealerSelection ? '抽取东家' : createCenterStatusText(state),

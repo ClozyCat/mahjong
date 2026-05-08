@@ -1976,9 +1976,15 @@ describe('App', () => {
     });
 
     expect(countSelectedTiles(document.body)).toBe(2);
+    expect(screen.getByRole('button', { name: '过' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '吃' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '过' }));
+
     expect(countSelectedTiles(document.body)).toBe(0);
+    expect(screen.queryByRole('button', { name: '过' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '吃' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '吃候选组合 1' })).not.toBeInTheDocument();
 
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },

@@ -92,6 +92,7 @@ const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
 const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当前所在的牌桌。';
 const LEAVE_TABLE_CONFIRM_MESSAGE = '是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
+const CLAIM_RESPONSE_ACTION_IDS = ['chow', 'pung', 'kong', 'hu'] as const;
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'ready',
   'start_match',
@@ -187,7 +188,7 @@ function closeSocket(socketRef: MutableRefObject<WebSocket | null>, heartbeatTim
 }
 
 function hasClaimAction(options: BackendActionType[]) {
-  return CLAIM_ACTION_IDS.some((actionId) => options.includes(actionId));
+  return CLAIM_RESPONSE_ACTION_IDS.some((actionId) => options.includes(actionId));
 }
 
 function getClaimSelectionSignature(state: SessionState) {
@@ -196,15 +197,20 @@ function getClaimSelectionSignature(state: SessionState) {
   if (pendingAction?.type === 'claim_window' && Array.isArray(pendingAction.options)) {
     const options = pendingAction.options
       .filter((option): option is BackendActionType => typeof option === 'string')
-      .filter((option): option is ClaimActionId => CLAIM_ACTION_IDS.includes(option as ClaimActionId));
+      .filter((option): option is (typeof CLAIM_RESPONSE_ACTION_IDS)[number] =>
+        CLAIM_RESPONSE_ACTION_IDS.includes(option as (typeof CLAIM_RESPONSE_ACTION_IDS)[number]),
+      );
     return options.length > 0 ? `claim:${pendingAction.deadline_at}:${options.slice().sort().join(',')}` : null;
   }
 
   const promptOptions = (state.latestActionPrompt?.payload.options ?? []).filter(
-    (option): option is BackendActionType => CLAIM_ACTION_IDS.includes(option as ClaimActionId) || option === 'pass',
+    (option): option is BackendActionType =>
+      CLAIM_RESPONSE_ACTION_IDS.includes(option as (typeof CLAIM_RESPONSE_ACTION_IDS)[number]) || option === 'pass',
   );
   if (promptOptions.includes('pass') && hasClaimAction(promptOptions)) {
-    const options = promptOptions.filter((option): option is ClaimActionId => CLAIM_ACTION_IDS.includes(option as ClaimActionId));
+    const options = promptOptions.filter((option): option is (typeof CLAIM_RESPONSE_ACTION_IDS)[number] =>
+      CLAIM_RESPONSE_ACTION_IDS.includes(option as (typeof CLAIM_RESPONSE_ACTION_IDS)[number]),
+    );
     return options.length > 0 ? `claim:${state.latestActionPrompt?.payload.deadline_at ?? ''}:${options.slice().sort().join(',')}` : null;
   }
 
@@ -524,6 +530,7 @@ export default function App() {
   const previousHadRoomSnapshotRef = useRef(false);
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
   const [dismissedLocalSelfHuPromptSignature, setDismissedLocalSelfHuPromptSignature] = useState<string | null>(null);
+  const [dismissedClaimPromptSignature, setDismissedClaimPromptSignature] = useState<string | null>(null);
   const inviteCreatorLabelsByUserId = useMemo(() => {
     const labelsByUserId: Record<number, string> = {};
     for (const user of leaderboard) {
@@ -1292,6 +1299,8 @@ export default function App() {
   }, [state]);
 
   const localTurnKongPromptSignature = getLocalTurnKongPromptSignature(state);
+  const claimPromptSignature = getClaimSelectionSignature(state);
+  const isClaimPromptDismissed = claimPromptSignature !== null && claimPromptSignature === dismissedClaimPromptSignature;
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const hasLocalTurnKongPrompt =
     localTurnKongPromptSignature !== null && localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature;
@@ -1326,6 +1335,7 @@ export default function App() {
     showLocalTurnKongPrompt: !isSpectator && hasLocalTurnKongPrompt,
     showLocalSelfHuPassOption: !isSpectator && hasLocalSelfHuPassOption,
     hideLocalSelfHuPrompt: !isSpectator && isLocalSelfHuPromptDismissed,
+    hideLocalClaimPrompt: !isSpectator && isClaimPromptDismissed,
     isSpectator,
     perspectiveSeat: spectatorFocusSeat,
   });
@@ -1376,6 +1386,14 @@ export default function App() {
         : [];
   const isSidebarOwner = currentUser?.user_id !== undefined && roomOwnerUserId === currentUser.user_id;
   useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
+
+  useEffect(() => {
+    if (claimPromptSignature !== dismissedClaimPromptSignature) {
+      setDismissedClaimPromptSignature((current) =>
+        current === null || current === claimPromptSignature ? current : null,
+      );
+    }
+  }, [claimPromptSignature, dismissedClaimPromptSignature]);
 
   useEffect(() => {
     const previousLocalTurnKongPromptSignature = previousLocalTurnKongPromptSignatureRef.current;
@@ -1906,7 +1924,12 @@ export default function App() {
         return;
       }
 
-      sendMessage(serializeClientMessage(createActionRequestMessage(actionId)));
+      if (!sendMessage(serializeClientMessage(createActionRequestMessage(actionId)))) {
+        return;
+      }
+      if (claimPromptSignature) {
+        setDismissedClaimPromptSignature(claimPromptSignature);
+      }
       dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
       return;
     }
