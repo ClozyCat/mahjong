@@ -273,7 +273,7 @@ export function buildTableSceneModel({
     layoutProfile.centerIndicator.minPx,
     layoutProfile.centerIndicator.maxPx,
   );
-  const localPlayer = players.find((player) => player.isLocal);
+  const localPlayer = players.find((player) => player.isLocal) ?? playerBySeat.get('bottom');
 
   return {
     effectMode: viewport.effectMode,

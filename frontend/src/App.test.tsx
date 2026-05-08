@@ -1243,6 +1243,29 @@ describe('App', () => {
         nickname: DEFAULT_CURRENT_USER.display_name,
       },
     });
+
+    await act(async () => {
+      spectatorSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          table_code: 'ROOM42',
+          local_seat: 1,
+          reconnect_token: undefined,
+          spectators: [{ user_id: DEFAULT_CURRENT_USER.user_id, display_name: DEFAULT_CURRENT_USER.display_name }],
+        }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '打开快捷表情' }));
+    await user.click(await screen.findByRole('menuitem', { name: '发送喝茶表情' }));
+
+    expect(spectatorSocket!.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'quick_chat',
+      payload: {
+        target_seat: 0,
+        emoji: '🍵',
+      },
+    });
   });
 
   it('disables sidebar invites when the active table is full and has no replaceable bot seats', async () => {

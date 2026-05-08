@@ -35,6 +35,10 @@ struct QuickChatPayload {
     message_id: String,
     actor_seat: usize,
     target_seat: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_display_name: Option<String>,
     emoji: String,
     sent_at: String,
 }
@@ -153,6 +157,8 @@ pub(crate) fn quick_chat_message(
     message_id: String,
     actor_seat: usize,
     target_seat: usize,
+    actor_kind: Option<&str>,
+    actor_display_name: Option<&str>,
     emoji: String,
     sent_at: String,
 ) -> Value {
@@ -163,6 +169,8 @@ pub(crate) fn quick_chat_message(
             message_id,
             actor_seat,
             target_seat,
+            actor_kind: actor_kind.map(ToOwned::to_owned),
+            actor_display_name: actor_display_name.map(ToOwned::to_owned),
             emoji,
             sent_at,
         },

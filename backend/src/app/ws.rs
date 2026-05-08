@@ -397,12 +397,28 @@ async fn handle_client_message(
             handle_action_request(state, table_code, connection, seat_index, request).await
         }
         ClientMessage::QuickChat(request) => {
-            let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
-            else {
-                return reject_to(connection, "seat_not_owned");
-            };
-            handle_quick_chat(state, table_code, connection, seat_index, request).await
+            match role {
+                ConnectionRole::Player { seat_index } => {
+                    let Some(seat_index) =
+                        assert_active_owned_seat(&state, table_code, connection, Some(seat_index))
+                            .await
+                    else {
+                        return reject_to(connection, "seat_not_owned");
+                    };
+                    handle_quick_chat(state, table_code, connection, seat_index, request).await
+                }
+                ConnectionRole::Spectator { spectator_id } => {
+                    handle_spectator_quick_chat(
+                        state,
+                        table_code,
+                        connection,
+                        spectator_id,
+                        request,
+                    )
+                    .await
+                }
+                ConnectionRole::Unbound => reject_to(connection, "seat_not_owned"),
+            }
         }
         ClientMessage::Heartbeat(payload) => MessageOutcome {
             outbound: vec![connection.outbound(heartbeat_message(payload))],
@@ -1372,15 +1388,88 @@ async fn handle_quick_chat(
         generate_short_hex(8),
         seat_index,
         target_seat,
+        None,
+        None,
         emoji,
         super::now_iso(),
     );
     let connections = snapshot_connections(&runtime);
+    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
-    let outbound = connections
+    let mut outbound = connections
         .into_iter()
         .map(|(_, handle)| handle.outbound(payload.clone()))
-        .collect();
+        .collect::<Vec<_>>();
+    outbound.extend(
+        spectator_connections
+            .into_iter()
+            .map(|(_, handle)| handle.outbound(payload.clone())),
+    );
+    MessageOutcome {
+        outbound,
+        role: None,
+        clear_role: false,
+        close_socket: false,
+    }
+}
+
+async fn handle_spectator_quick_chat(
+    state: AppContext,
+    table_code: &str,
+    connection: &ConnectionHandle,
+    spectator_id: u64,
+    request: QuickChatRequest,
+) -> MessageOutcome {
+    let target_seat = request.target_seat;
+    let emoji = request.emoji.trim().to_string();
+    if emoji.is_empty() {
+        return reject_to(connection, "invalid_action");
+    }
+
+    let Some(room_handle) = room_handle(&state, table_code).await else {
+        return reject_to(connection, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let Some(target_seat) = target_seat else {
+        return reject_to(connection, "invalid_action");
+    };
+    if !occupied_seats(&runtime.room).contains(&target_seat) {
+        return reject_to(connection, "invalid_action");
+    }
+    let Some(spectator) = runtime.spectator_connections.get(&spectator_id) else {
+        return reject_to(connection, "seat_not_owned");
+    };
+    if spectator.connection.id != connection.id {
+        return reject_to(connection, "seat_not_owned");
+    }
+
+    let payload = quick_chat_message(
+        generate_short_hex(8),
+        target_seat,
+        target_seat,
+        Some("spectator"),
+        Some(&spectator.display_name),
+        emoji,
+        super::now_iso(),
+    );
+    let connections = snapshot_connections(&runtime);
+    let spectator_connections = snapshot_spectator_connections(&runtime);
+    drop(runtime);
+    let mut outbound = connections
+        .into_iter()
+        .map(|(_, handle)| handle.outbound(payload.clone()))
+        .collect::<Vec<_>>();
+    outbound.extend(
+        spectator_connections
+            .into_iter()
+            .map(|(_, handle)| handle.outbound(payload.clone())),
+    );
     MessageOutcome {
         outbound,
         role: None,
@@ -1715,9 +1804,9 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        ClientMessage, ConnectionRole, JoinTableRequest, ReadyRequest, WatchTableRequest,
-        handle_client_message, handle_disconnect, handle_join_table, handle_watch_table,
-        parse_client_message,
+        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, ReadyRequest,
+        WatchTableRequest, handle_client_message, handle_disconnect, handle_join_table,
+        handle_watch_table, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -2339,6 +2428,71 @@ mod tests {
             outcome.role,
             Some(ConnectionRole::Spectator { .. })
         ));
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn spectator_can_send_quick_chat_to_table() -> Result<()> {
+        let (state, _guest_user_id, guest_token, viewer_user_id, viewer_token) =
+            build_watch_state("ROOM94").await?;
+        state
+            .inner
+            .db
+            .create_spectator_request("ROOM94", viewer_user_id, 1, "2026-05-06T00:10:00Z")
+            .await?;
+        state
+            .inner
+            .db
+            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
+            .await?;
+        let (player_connection, _player_receiver) = test_connection_handle(2, 8);
+        let player_join = handle_join_table(
+            state.clone(),
+            "ROOM94",
+            &player_connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+        assert!(matches!(
+            player_join.role,
+            Some(ConnectionRole::Player { seat_index: 0 })
+        ));
+        let (spectator_connection, _spectator_receiver) = test_connection_handle(1, 8);
+        let watch_outcome = handle_watch_table(
+            state.clone(),
+            "ROOM94",
+            &spectator_connection,
+            WatchTableRequest {
+                session_token: viewer_token,
+                nickname: "ViewerWatch".to_string(),
+            },
+        )
+        .await;
+        let Some(ConnectionRole::Spectator { spectator_id }) = watch_outcome.role else {
+            panic!("watch_table should bind spectator role");
+        };
+
+        let chat_outcome = handle_client_message(
+            state,
+            "ROOM94",
+            &spectator_connection,
+            ConnectionRole::Spectator { spectator_id },
+            ClientMessage::QuickChat(QuickChatRequest {
+                target_seat: Some(0),
+                emoji: "观战加油".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(chat_outcome.outbound.len(), 2);
+        let payload: Value = serde_json::from_str(&chat_outcome.outbound[0].payload)?;
+        assert_eq!(payload["type"], "quick_chat");
+        assert_eq!(payload["payload"]["actor_kind"], "spectator");
+        assert_eq!(payload["payload"]["actor_display_name"], "ViewerWatch");
+        assert_eq!(payload["payload"]["target_seat"], 0);
+        assert_eq!(payload["payload"]["emoji"], "观战加油");
         Ok(())
     }
 }

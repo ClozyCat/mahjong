@@ -1955,7 +1955,8 @@ function createQuickChatEvent(state: SessionState, options: MatchViewModelOption
   const localSeat = getPerspectiveSeat(state, options);
   const actorSeat = toRelativeSeat(localSeat, message.payload.actor_seat);
   const targetSeat = toRelativeSeat(localSeat, message.payload.target_seat);
-  const actorName = getSeatName(state, message.payload.actor_seat);
+  const isSpectatorActor = message.payload.actor_kind === 'spectator';
+  const actorName = message.payload.actor_display_name?.trim() || getSeatName(state, message.payload.actor_seat);
   const targetName = getSeatName(state, message.payload.target_seat);
 
   return {
@@ -1966,7 +1967,9 @@ function createQuickChatEvent(state: SessionState, options: MatchViewModelOption
     targetName,
     emoji: message.payload.emoji,
     text:
-      message.payload.actor_seat === message.payload.target_seat
+      isSpectatorActor
+        ? `${actorName}（观战）：${message.payload.emoji}`
+        : message.payload.actor_seat === message.payload.target_seat
         ? `${actorName}：${message.payload.emoji}`
         : `${actorName} -> ${targetName} : ${message.payload.emoji}`,
   };

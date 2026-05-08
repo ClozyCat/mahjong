@@ -371,6 +371,8 @@ export interface QuickChatMessage {
     message_id: string;
     actor_seat: number;
     target_seat: number;
+    actor_kind?: 'player' | 'spectator' | string;
+    actor_display_name?: string | null;
     emoji: QuickChatEmoji;
     sent_at: string;
   };

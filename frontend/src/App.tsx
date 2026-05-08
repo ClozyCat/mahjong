@@ -2000,10 +2000,6 @@ export default function App() {
   }
 
   function handleQuickChat(targetSeat: number, emoji: QuickChatEmoji) {
-    if (isSpectator) {
-      return;
-    }
-
     sendMessage(serializeClientMessage(createQuickChatMessage(targetSeat, emoji)));
   }
 

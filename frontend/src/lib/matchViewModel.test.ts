@@ -2077,6 +2077,33 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actionIndicatorSeat).toBeNull();
   });
 
+  it('labels spectator quick-chat barrage without treating the viewer as a seated player', () => {
+    const base = createPlayingSessionState({
+      clientMode: 'spectator',
+      spectatorFocusSeat: 1,
+      latestQuickChatMessage: {
+        type: 'quick_chat',
+        payload: {
+          message_id: 'quick-chat-spectator-1',
+          actor_seat: 1,
+          target_seat: 1,
+          actor_kind: 'spectator',
+          actor_display_name: 'ViewerWatch',
+          emoji: '观战加油',
+          sent_at: '2026-05-06T00:12:00Z',
+        },
+      } as SessionState['latestQuickChatMessage'],
+    });
+
+    const viewModel = createMatchViewModel(base);
+
+    expect(viewModel.quickChatEvent).toMatchObject({
+      actorName: 'ViewerWatch',
+      targetName: 'Player B',
+      text: 'ViewerWatch（观战）：观战加油',
+    });
+  });
+
   it('projects an optimistic ready_hand as a ting callout instead of a normal discard effect', () => {
     const base = createPlayingSessionState({
       selectedTileIds: ['w2#p0-1'],
