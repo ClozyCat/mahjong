@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { PublicUser } from '../../types/match';
 
@@ -193,7 +194,7 @@ export function TableSidebar({
     return counts;
   }, new Map<string, number>());
 
-  return (
+  const content = (
     <aside className={`table-sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`} aria-label="Table sidebar shell">
       <button
         type="button"
@@ -354,4 +355,7 @@ export function TableSidebar({
       ) : null}
     </aside>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(content, document.body);
 }

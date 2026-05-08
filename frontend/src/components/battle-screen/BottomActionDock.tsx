@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type {
   BackendActionType,
@@ -390,10 +391,49 @@ function HandInsightWinningFanItem({
   isPinned: boolean;
 }) {
   const [isHovered, setIsHovered] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState<{
+    top: number;
+    left: number;
+    placement: 'left' | 'right';
+    arrowTop: number;
+  } | null>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const entry = isPinned ? getFanGuideEntry(item.fanKey) : null;
+
+  useLayoutEffect(() => {
+    if (!isHovered || !entry || typeof window === 'undefined') {
+      setPopoverPosition(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const anchorRect = anchorRef.current?.getBoundingClientRect();
+      if (!anchorRect) return;
+
+      const popoverRect = popoverRef.current?.getBoundingClientRect();
+      const nextPosition = getHandInsightPopoverPosition(
+        anchorRect,
+        popoverRect?.width ?? 224, // 14rem
+        popoverRect?.height ?? 120
+      );
+
+      setPopoverPosition(nextPosition);
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isHovered, entry]);
 
   return (
     <div
+      ref={anchorRef}
       className="action-dock__hand-insight-winning-fan"
       role="listitem"
       onMouseEnter={() => setIsHovered(true)}
@@ -402,21 +442,40 @@ function HandInsightWinningFanItem({
       <span>{getFanLabel(item.fanKey)}</span>
       <strong>{item.fanValue}番</strong>
 
-      {isPinned && isHovered && entry && (
-        <div className="action-dock__fan-detail-popover">
-          <div className="action-dock__fan-detail-header">
-            <strong>{entry.label}</strong>
-            <span>{entry.fanValue}番</span>
-          </div>
-          <p>{entry.intro}</p>
-          {entry.example && (
-            <div className="action-dock__fan-detail-example">
-              <small>例：</small>
-              {entry.example}
+      {isPinned && isHovered && entry &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className={[
+              'action-dock__fan-detail-popover',
+              popoverPosition ? `action-dock__fan-detail-popover--${popoverPosition.placement}` : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            style={
+              popoverPosition
+                ? ({
+                    top: `${popoverPosition.top}px`,
+                    left: `${popoverPosition.left}px`,
+                    '--fan-detail-arrow-top': `${popoverPosition.arrowTop}px`,
+                  } as CSSProperties)
+                : { visibility: 'hidden' }
+            }
+          >
+            <div className="action-dock__fan-detail-header">
+              <strong>{entry.label}</strong>
+              <span>{entry.fanValue}番</span>
             </div>
-          )}
-        </div>
-      )}
+            <p>{entry.intro}</p>
+            {entry.example && (
+              <div className="action-dock__fan-detail-example">
+                <small>例：</small>
+                {entry.example}
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -489,4 +548,32 @@ function getDisplayedWinningFans(handInsight: NonNullable<BottomActionDockProps[
     .map((item, index) => ({ item, index }))
     .sort((left, right) => right.item.fanValue - left.item.fanValue || left.index - right.index)
     .map(({ item }) => item);
+}
+
+function getHandInsightPopoverPosition(anchorRect: DOMRect, popoverWidth: number, popoverHeight: number) {
+  const offset = 14;
+  const margin = 12;
+  const arrowSize = 12;
+  const arrowMargin = 16;
+
+  const canPlaceLeft = anchorRect.left - popoverWidth - offset >= margin;
+  const placement: 'left' | 'right' = canPlaceLeft ? 'left' : 'right';
+
+  const left =
+    placement === 'left'
+      ? anchorRect.left - popoverWidth - offset
+      : anchorRect.right + offset;
+
+  const top = Math.min(
+    Math.max(margin, anchorRect.top + anchorRect.height / 2 - popoverHeight / 2),
+    window.innerHeight - popoverHeight - margin
+  );
+
+  const anchorCenterY = anchorRect.top + anchorRect.height / 2;
+  const arrowTop = Math.min(
+    Math.max(arrowMargin, anchorCenterY - top - arrowSize / 2),
+    popoverHeight - arrowSize - arrowMargin
+  );
+
+  return { top, left, placement, arrowTop };
 }
