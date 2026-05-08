@@ -294,6 +294,7 @@ pub(crate) fn snapshot_seat_connections(
         .unwrap_or_default()
 }
 
+#[cfg(test)]
 pub(crate) fn seat_has_live_connections(runtime: &RoomRuntime, seat_index: usize) -> bool {
     runtime
         .connections

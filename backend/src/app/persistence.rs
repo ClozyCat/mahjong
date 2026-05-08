@@ -43,8 +43,6 @@ pub(crate) struct TableParticipantRecord {
     pub(crate) seat_index: usize,
     pub(crate) role: String,
     pub(crate) nickname_snapshot: String,
-    pub(crate) joined_at: String,
-    pub(crate) left_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,9 +77,6 @@ pub(crate) struct UserRecord {
     pub(crate) avatar: Option<String>,
     pub(crate) bio: String,
     pub(crate) points: i64,
-    pub(crate) last_login_local_date: Option<String>,
-    pub(crate) created_at: String,
-    pub(crate) updated_at: String,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +124,7 @@ pub(crate) struct UserPointBalanceRecord {
 #[derive(Debug, Clone)]
 pub(crate) struct ArchiveRoundOutcome {
     pub(crate) inserted: bool,
+    #[cfg(test)]
     pub(crate) game_id: i64,
     pub(crate) point_updates: Vec<UserPointBalanceRecord>,
 }
@@ -885,9 +881,6 @@ impl Database {
             avatar: row.get(4)?,
             bio: row.get(5)?,
             points: row.get(6)?,
-            last_login_local_date: row.get(7)?,
-            created_at: row.get(8)?,
-            updated_at: row.get(9)?,
         })
     }
 
@@ -900,8 +893,6 @@ impl Database {
             seat_index: row.get::<_, i64>(2)? as usize,
             role: row.get(3)?,
             nickname_snapshot: row.get(4)?,
-            joined_at: row.get(5)?,
-            left_at: row.get(6)?,
         })
     }
 
@@ -1016,8 +1007,7 @@ impl Database {
     fn get_user_by_id_with_conn(conn: &Connection, user_id: i64) -> Result<Option<UserRecord>> {
         conn.query_row(
             "
-            SELECT id, username, display_name, password_hash, avatar, bio, points,
-                   last_login_local_date, created_at, updated_at
+            SELECT id, username, display_name, password_hash, avatar, bio, points
             FROM users
             WHERE id = ?1
             ",
@@ -1038,8 +1028,7 @@ impl Database {
                 .conn
                 .query_row(
                     "
-                    SELECT id, username, display_name, password_hash, avatar, bio, points,
-                           last_login_local_date, created_at, updated_at
+                    SELECT id, username, display_name, password_hash, avatar, bio, points
                     FROM users
                     WHERE username = ?1 OR id = ?2
                     ORDER BY CASE WHEN username = ?1 THEN 0 ELSE 1 END
@@ -1055,8 +1044,7 @@ impl Database {
         self.conn
             .query_row(
                 "
-                SELECT id, username, display_name, password_hash, avatar, bio, points,
-                       last_login_local_date, created_at, updated_at
+                SELECT id, username, display_name, password_hash, avatar, bio, points
                 FROM users
                 WHERE username = ?1
                 ",
@@ -1168,7 +1156,7 @@ impl Database {
             .conn
             .query_row(
                 "
-                SELECT users.id, users.username, users.display_name
+                SELECT users.id, users.display_name
                 FROM auth_sessions
                 JOIN users ON users.id = auth_sessions.user_id
                 WHERE auth_sessions.token_hash = ?1
@@ -1178,8 +1166,7 @@ impl Database {
                 |row| {
                     Ok(AuthenticatedUser {
                         user_id: row.get(0)?,
-                        username: row.get(1)?,
-                        display_name: row.get(2)?,
+                        display_name: row.get(1)?,
                     })
                 },
             )
@@ -1281,7 +1268,7 @@ impl Database {
         self.conn
             .query_row(
                 "
-                SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+                SELECT table_code, user_id, seat_index, role, nickname_snapshot
                 FROM table_participants
                 WHERE table_code = ?1
                   AND user_id = ?2
@@ -1300,7 +1287,7 @@ impl Database {
     ) -> Result<Vec<TableParticipantRecord>> {
         let mut statement = self.conn.prepare(
             "
-            SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+            SELECT table_code, user_id, seat_index, role, nickname_snapshot
             FROM table_participants
             WHERE user_id = ?1
               AND left_at IS NULL
@@ -1319,7 +1306,7 @@ impl Database {
     ) -> Result<Vec<TableParticipantRecord>> {
         let mut statement = self.conn.prepare(
             "
-            SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+            SELECT table_code, user_id, seat_index, role, nickname_snapshot
             FROM table_participants
             WHERE table_code = ?1
               AND left_at IS NULL
@@ -1335,7 +1322,7 @@ impl Database {
     fn list_active_table_participants(&self) -> Result<Vec<TableParticipantRecord>> {
         let mut statement = self.conn.prepare(
             "
-            SELECT table_code, user_id, seat_index, role, nickname_snapshot, joined_at, left_at
+            SELECT table_code, user_id, seat_index, role, nickname_snapshot
             FROM table_participants
             WHERE left_at IS NULL
             ORDER BY joined_at ASC
@@ -1366,25 +1353,6 @@ impl Database {
                 |row| row.get(0),
             )
             .map_err(Into::into)
-    }
-
-    fn mark_table_participant_left_by_seat(
-        &self,
-        table_code: &str,
-        seat_index: usize,
-        left_at: &str,
-    ) -> Result<()> {
-        self.conn.execute(
-            "
-            UPDATE table_participants
-            SET left_at = ?3
-            WHERE table_code = ?1
-              AND seat_index = ?2
-              AND left_at IS NULL
-            ",
-            params![table_code, seat_index as i64, left_at],
-        )?;
-        Ok(())
     }
 
     fn create_table_invite(
@@ -1685,6 +1653,7 @@ impl Database {
         })
     }
 
+    #[cfg(test)]
     fn save_table_and_store_reconnect_token(
         &self,
         table_code: &str,
@@ -1789,6 +1758,7 @@ impl Database {
             if inserted == 0 {
                 return Ok(ArchiveRoundOutcome {
                     inserted: false,
+                    #[cfg(test)]
                     game_id,
                     point_updates: Vec::new(),
                 });
@@ -1902,6 +1872,7 @@ impl Database {
 
             Ok(ArchiveRoundOutcome {
                 inserted: true,
+                #[cfg(test)]
                 game_id,
                 point_updates,
             })
@@ -2167,11 +2138,10 @@ impl Database {
     fn list_users_by_points(&self, limit: usize) -> Result<Vec<UserRecord>> {
         let mut statement = self.conn.prepare(
             "
-            SELECT id, username, display_name, password_hash, avatar, bio, points,
-                   last_login_local_date, created_at, updated_at
-            FROM users
-            ORDER BY points DESC, created_at ASC, id ASC
-            LIMIT ?1
+                SELECT id, username, display_name, password_hash, avatar, bio, points
+                FROM users
+                ORDER BY points DESC, created_at ASC, id ASC
+                LIMIT ?1
             ",
         )?;
         let rows = statement
@@ -2196,6 +2166,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn consume_invite_code(
         &self,
         code: &str,
@@ -2296,6 +2267,7 @@ impl DbWorker {
         self.call(move |db| db.get_reconnect_token(&token)).await
     }
 
+    #[cfg(test)]
     pub(crate) async fn save_table_and_store_reconnect_token(
         &self,
         table_code: &str,
@@ -2376,6 +2348,7 @@ impl DbWorker {
         .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn create_invite_code(
         &self,
         code: &str,
@@ -2454,14 +2427,6 @@ impl DbWorker {
         .await
     }
 
-    pub(crate) async fn get_spectator_request(
-        &self,
-        request_id: i64,
-    ) -> Result<Option<SpectatorRequestRecord>> {
-        self.call(move |db| db.get_spectator_request(request_id))
-            .await
-    }
-
     pub(crate) async fn list_pending_spectator_requests_for_owner(
         &self,
         owner_user_id: i64,
@@ -2535,20 +2500,6 @@ impl DbWorker {
         let table_code = table_code.to_string();
         self.call(move |db| db.count_active_other_human_participants(&table_code, excluded_user_id))
             .await
-    }
-
-    pub(crate) async fn mark_table_participant_left_by_seat(
-        &self,
-        table_code: &str,
-        seat_index: usize,
-        left_at: &str,
-    ) -> Result<()> {
-        let table_code = table_code.to_string();
-        let left_at = left_at.to_string();
-        self.call(move |db| {
-            db.mark_table_participant_left_by_seat(&table_code, seat_index, &left_at)
-        })
-        .await
     }
 
     #[allow(clippy::too_many_arguments)]

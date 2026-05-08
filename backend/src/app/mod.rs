@@ -189,6 +189,7 @@ pub(crate) fn serialize_payload<T: Serialize>(payload: &T) -> String {
     })
 }
 
+#[cfg(test)]
 pub(crate) fn initial_room_state(table_code: &str) -> RoomState {
     initial_room_state_with_owner(table_code, None, 1)
 }
