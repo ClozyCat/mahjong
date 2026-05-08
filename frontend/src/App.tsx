@@ -84,6 +84,8 @@ import type {
 } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
+const SOCIAL_REFRESH_INTERVAL_MS = 15_000;
+const SOCIAL_SOCKET_RECONNECT_MS = 1_000;
 const MAX_CACHED_RECONNECT_CLOSES = 3;
 const TABLE_SEAT_CAPACITY = 4;
 const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
@@ -454,6 +456,12 @@ function removeDismissedInviteAlertId(current: Set<number>, inviteId: number) {
   return next;
 }
 
+function retainDismissedInviteAlertIds(current: Set<number>, pendingInvites: TableInvite[]) {
+  const pendingInviteIds = new Set(pendingInvites.map((invite) => invite.id));
+  const next = new Set(Array.from(current).filter((inviteId) => pendingInviteIds.has(inviteId)));
+  return next.size === current.size ? current : next;
+}
+
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(() => loadStoredVoiceEnabled());
@@ -667,30 +675,84 @@ export default function App() {
     }
 
     const currentDisplayName = currentUser.display_name;
-    const socket = new WebSocket(buildMeSocketUrl(state.wsBaseUrl, authSession.sessionToken));
-    meSocketRef.current = socket;
+    const currentUserId = currentUser.user_id;
+    const sessionToken = authSession.sessionToken;
+    const wsBaseUrl = state.wsBaseUrl;
     let closed = false;
+    let reconnectTimerId: number | null = null;
+    let heartbeatTimerId: number | null = null;
+    let refreshTimerId: number | null = null;
 
-    async function refreshLeaderboardFromPresence() {
-      try {
-        const nextLeaderboard = await getLeaderboard(defaults.apiBaseUrl);
-        if (!closed && meSocketRef.current === socket) {
-          setLeaderboard(nextLeaderboard);
-        }
-      } catch {
-        // Presence still updates from websocket; keep the last known user details if refresh fails.
+    function clearSocialTimers() {
+      if (reconnectTimerId !== null) {
+        window.clearTimeout(reconnectTimerId);
+        reconnectTimerId = null;
+      }
+      if (heartbeatTimerId !== null) {
+        window.clearInterval(heartbeatTimerId);
+        heartbeatTimerId = null;
+      }
+      if (refreshTimerId !== null) {
+        window.clearInterval(refreshTimerId);
+        refreshTimerId = null;
       }
     }
 
-    socket.onmessage = (event) => {
-      const message = parseSocialServerMessage(String(event.data));
+    async function refreshSocialSidebarData(socket: WebSocket) {
+      try {
+        const [me, nextInvites, nextLeaderboard, nextSpectatorRequests] = await Promise.all([
+          getMe(defaults.apiBaseUrl, sessionToken),
+          getMyInvites(defaults.apiBaseUrl, sessionToken),
+          getLeaderboard(defaults.apiBaseUrl),
+          getMySpectatorRequests(defaults.apiBaseUrl, sessionToken),
+        ]);
+        if (!closed && meSocketRef.current === socket) {
+          const nextPendingInvites = getPendingTableInvites(nextInvites);
+          setCurrentUser(me);
+          setSelectedProfileUser((current) => {
+            if (!current) {
+              return current;
+            }
+            return current.user_id === me.user_id
+              ? me
+              : nextLeaderboard.find((user) => user.user_id === current.user_id) ?? current;
+          });
+          setSelectedProfileFallbackName((current) => (current === currentDisplayName ? me.display_name : current));
+          setPendingInvites(nextPendingInvites);
+          setDismissedInviteAlertIds((current) => retainDismissedInviteAlertIds(current, nextPendingInvites));
+          setInviteDialog((current) =>
+            current && nextPendingInvites.some((invite) => invite.id === current.id) ? current : null,
+          );
+          setPendingSpectatorRequests(getPendingSpectatorRequests(nextSpectatorRequests));
+          setLeaderboard(nextLeaderboard);
+          saveStoredAuthSession({
+            sessionToken,
+            user: me,
+          });
+          setAuthSession((current) =>
+            current && current.sessionToken === sessionToken
+              ? {
+                  sessionToken: current.sessionToken,
+                  user: me,
+                }
+              : current,
+          );
+          dispatch({ type: 'set_credentials', nickname: me.display_name });
+        }
+      } catch {
+        // Keep the last known sidebar state; the next websocket event or polling tick will retry.
+      }
+    }
+
+    function handleSocialMessage(socket: WebSocket, raw: string) {
+      const message = parseSocialServerMessage(raw);
       if (!message) {
         return;
       }
 
       if (message.type === 'user_presence_updated') {
         setOnlineUserIds(message.payload.online_user_ids);
-        void refreshLeaderboardFromPresence();
+        void refreshSocialSidebarData(socket);
         return;
       }
 
@@ -749,7 +811,7 @@ export default function App() {
         setPendingInvites((current) => upsertInvite(current, message.payload));
         setDismissedInviteAlertIds((current) => removeDismissedInviteAlertId(current, message.payload.id));
         setInviteDialog((current) => (current?.id === message.payload.id ? null : current));
-        if (currentUser.user_id === message.payload.inviter_user_id) {
+        if (currentUserId === message.payload.inviter_user_id) {
           setSentInviteStatusesByUserId((current) => {
             if (message.payload.status === 'rejected') {
               return {
@@ -774,7 +836,7 @@ export default function App() {
 
       if (message.type === 'spectator_request_decided') {
         setPendingSpectatorRequests((current) => removeSpectatorRequestById(current, message.payload.id));
-        if (message.payload.requester_user_id === currentUser.user_id) {
+        if (message.payload.requester_user_id === currentUserId) {
           setRequestedSpectatorTableCodes((current) =>
             removeRequestedSpectatorTableCode(current, message.payload.table_code),
           );
@@ -784,29 +846,70 @@ export default function App() {
             ? `牌桌 ${message.payload.table_code} 已允许观战。`
             : `牌桌 ${message.payload.table_code} 拒绝了观战申请。`,
         );
-        if (message.payload.status === 'approved' && authSession?.sessionToken) {
+        if (message.payload.status === 'approved' && sessionToken) {
           openRoomSocketRef.current?.({
             tableCode: message.payload.table_code,
             nickname: currentDisplayName,
             wsBaseUrl: defaults.wsBaseUrl,
-            sessionToken: authSession.sessionToken,
+            sessionToken,
             mode: 'spectator',
           });
         }
       }
-    };
+    }
 
-    socket.onclose = () => {
-      if (meSocketRef.current === socket) {
-        meSocketRef.current = null;
+    function openSocialSocket() {
+      clearSocialTimers();
+      const socket = new WebSocket(buildMeSocketUrl(wsBaseUrl, sessionToken));
+      meSocketRef.current = socket;
+
+      socket.onopen = () => {
+        void refreshSocialSidebarData(socket);
+        heartbeatTimerId = window.setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(serializeClientMessage(createHeartbeatMessage(new Date().toISOString())));
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+        refreshTimerId = window.setInterval(() => {
+          void refreshSocialSidebarData(socket);
+        }, SOCIAL_REFRESH_INTERVAL_MS);
+      };
+
+      socket.onmessage = (event) => {
+        handleSocialMessage(socket, String(event.data));
+      };
+
+      socket.onclose = () => {
+        if (meSocketRef.current === socket) {
+          meSocketRef.current = null;
+        }
+        clearSocialTimers();
+        if (!closed) {
+          reconnectTimerId = window.setTimeout(openSocialSocket, SOCIAL_SOCKET_RECONNECT_MS);
+        }
+      };
+    }
+
+    function refreshWhenVisible() {
+      const socket = meSocketRef.current;
+      if (!socket || document.visibilityState === 'hidden') {
+        return;
       }
-    };
+      void refreshSocialSidebarData(socket);
+    }
+
+    openSocialSocket();
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
 
     return () => {
       closed = true;
-      socket.onclose = null;
-      socket.close();
-      if (meSocketRef.current === socket) {
+      clearSocialTimers();
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      if (meSocketRef.current) {
+        meSocketRef.current.onclose = null;
+        meSocketRef.current.close();
         meSocketRef.current = null;
       }
     };

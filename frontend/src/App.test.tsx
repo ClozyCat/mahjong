@@ -314,6 +314,18 @@ function createFetchMock(options?: {
   leaderboard?: MockPublicUser[];
   leaderboardResponses?: MockPublicUser[][];
   invites?: typeof DEFAULT_PENDING_INVITE[];
+  inviteResponses?: Array<typeof DEFAULT_PENDING_INVITE[]>;
+  spectatorRequestResponses?: Array<
+    Array<{
+      id: number;
+      table_code: string;
+      requester_user_id: number;
+      owner_user_id: number;
+      status: string;
+      created_at: string;
+      decided_at: string | null;
+    }>
+  >;
   createdTableCode?: string;
   acceptInviteStatus?: number;
   acceptInviteDetail?: string;
@@ -324,6 +336,8 @@ function createFetchMock(options?: {
   const leaderboard = options?.leaderboard ?? DEFAULT_LEADERBOARD;
   const leaderboardResponses = options?.leaderboardResponses ? [...options.leaderboardResponses] : null;
   const invites = options?.invites ?? [];
+  const inviteResponses = options?.inviteResponses ? [...options.inviteResponses] : null;
+  const spectatorRequestResponses = options?.spectatorRequestResponses ? [...options.spectatorRequestResponses] : null;
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
   const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
   const acceptInviteDetail = options?.acceptInviteDetail;
@@ -368,7 +382,7 @@ function createFetchMock(options?: {
     }
 
     if (url.endsWith('/api/me/invites') && method === 'GET') {
-      return createMockResponse(invites);
+      return createMockResponse(inviteResponses?.shift() ?? invites);
     }
 
     if (url.endsWith('/api/me/active-table') && method === 'GET') {
@@ -376,7 +390,7 @@ function createFetchMock(options?: {
     }
 
     if (url.endsWith('/api/me/spectator-requests') && method === 'GET') {
-      return createMockResponse([]);
+      return createMockResponse(spectatorRequestResponses?.shift() ?? []);
     }
 
     if (url.endsWith('/api/leaderboard') && method === 'GET') {
@@ -541,6 +555,7 @@ describe('App', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     Object.defineProperty(window, 'innerWidth', {
@@ -1309,6 +1324,78 @@ describe('App', () => {
       ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
     );
     expect(leaderboardCalls).toHaveLength(2);
+  });
+
+  it('keeps the social socket alive and reconnects it after an unexpected close', async () => {
+    await renderAuthenticatedLobby();
+    const firstSocket = getMeSocket();
+    expect(firstSocket).toBeDefined();
+
+    vi.useFakeTimers();
+    await act(async () => {
+      firstSocket!.triggerOpen();
+      vi.advanceTimersByTime(20_000);
+    });
+
+    expect(firstSocket!.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'heartbeat',
+      payload: {
+        sent_at: expect.any(String),
+      },
+    });
+
+    await act(async () => {
+      firstSocket!.close();
+      vi.advanceTimersByTime(1_000);
+    });
+
+    expect(MockWebSocket.instances.filter((socket) => socket.url.includes('/ws/me'))).toHaveLength(2);
+    vi.useRealTimers();
+  });
+
+  it('refreshes all social sidebar data when the social socket opens and while it stays open', async () => {
+    const refreshedUser = {
+      ...DEFAULT_LEADERBOARD[1]!,
+      points: 128,
+      title: '雀士',
+      display_label: 'Player B（雀士）',
+    };
+    const nextInvite = {
+      ...DEFAULT_PENDING_INVITE,
+      id: 9,
+      table_code: 'LIVE99',
+      created_at: '2026-05-06T12:02:00Z',
+    };
+    const { fetchMock } = await renderAuthenticatedLobby({
+      leaderboardResponses: [
+        DEFAULT_LEADERBOARD,
+        [DEFAULT_CURRENT_USER, refreshedUser],
+        [DEFAULT_CURRENT_USER, refreshedUser],
+      ],
+      inviteResponses: [[], [nextInvite], [nextInvite]],
+    });
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+
+    vi.useFakeTimers();
+    await act(async () => {
+      meSocket!.triggerOpen();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(countFetchCalls(fetchMock, '/api/me')).toBeGreaterThanOrEqual(3);
+    expect(countFetchCalls(fetchMock, '/api/me/invites')).toBeGreaterThanOrEqual(3);
+    expect(countFetchCalls(fetchMock, '/api/me/spectator-requests')).toBeGreaterThanOrEqual(3);
+    expect(countFetchCalls(fetchMock, '/api/leaderboard')).toBeGreaterThanOrEqual(3);
+    vi.useRealTimers();
   });
 
   it('applies point updates from /ws/me without waiting for a leaderboard refresh', async () => {

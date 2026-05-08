@@ -9,12 +9,13 @@ use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::{Notify, mpsc};
+use tokio::time::{Duration, sleep};
 
 use super::auth::{AuthenticatedUser, hash_session_token};
 use super::protocol::detail_response;
 use super::{
-    AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, now_iso, register_user_connection,
-    unregister_user_connection,
+    AppContext, ConnectionHandle, DISCONNECT_GRACE_SECONDS, OUTBOUND_CHANNEL_CAPACITY, now_iso,
+    register_user_connection, unregister_user_connection,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -55,6 +56,13 @@ pub(crate) async fn authenticate_session_token(
         .await
         .ok()
         .flatten()
+}
+
+fn schedule_user_connection_unregister(state: AppContext, user_id: i64, connection_id: u64) {
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(DISCONNECT_GRACE_SECONDS as u64)).await;
+        unregister_user_connection(&state, user_id, connection_id).await;
+    });
 }
 
 async fn social_websocket_session(state: AppContext, socket: WebSocket, user_id: i64) {
@@ -111,7 +119,7 @@ async fn social_websocket_session(state: AppContext, socket: WebSocket, user_id:
     }
 
     handle.request_close();
-    unregister_user_connection(&state, user_id, connection_id).await;
+    schedule_user_connection_unregister(state.clone(), user_id, connection_id);
     let _ = writer.await;
 }
 
