@@ -396,30 +396,22 @@ async fn handle_client_message(
             };
             handle_action_request(state, table_code, connection, seat_index, request).await
         }
-        ClientMessage::QuickChat(request) => {
-            match role {
-                ConnectionRole::Player { seat_index } => {
-                    let Some(seat_index) =
-                        assert_active_owned_seat(&state, table_code, connection, Some(seat_index))
-                            .await
-                    else {
-                        return reject_to(connection, "seat_not_owned");
-                    };
-                    handle_quick_chat(state, table_code, connection, seat_index, request).await
-                }
-                ConnectionRole::Spectator { spectator_id } => {
-                    handle_spectator_quick_chat(
-                        state,
-                        table_code,
-                        connection,
-                        spectator_id,
-                        request,
-                    )
-                    .await
-                }
-                ConnectionRole::Unbound => reject_to(connection, "seat_not_owned"),
+        ClientMessage::QuickChat(request) => match role {
+            ConnectionRole::Player { seat_index } => {
+                let Some(seat_index) =
+                    assert_active_owned_seat(&state, table_code, connection, Some(seat_index))
+                        .await
+                else {
+                    return reject_to(connection, "seat_not_owned");
+                };
+                handle_quick_chat(state, table_code, connection, seat_index, request).await
             }
-        }
+            ConnectionRole::Spectator { spectator_id } => {
+                handle_spectator_quick_chat(state, table_code, connection, spectator_id, request)
+                    .await
+            }
+            ConnectionRole::Unbound => reject_to(connection, "seat_not_owned"),
+        },
         ClientMessage::Heartbeat(payload) => MessageOutcome {
             outbound: vec![connection.outbound(heartbeat_message(payload))],
             role: None,

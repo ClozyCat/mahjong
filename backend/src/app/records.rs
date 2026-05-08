@@ -325,16 +325,20 @@ fn archive_input_from_room(
                 .or_insert(0) += 1;
         }
     }
-    let fan_stats = fan_counts
-        .into_iter()
-        .map(|((user_id, fan_key), count)| ArchivedFanStatInput {
-            user_id,
-            fan_label: fan_key.clone(),
-            fan_key,
-            count,
-            last_seen_at: archived_at.to_string(),
-        })
-        .collect::<Vec<_>>();
+    let fan_stats = if points_enabled {
+        fan_counts
+            .into_iter()
+            .map(|((user_id, fan_key), count)| ArchivedFanStatInput {
+                user_id,
+                fan_label: fan_key.clone(),
+                fan_key,
+                count,
+                last_seen_at: archived_at.to_string(),
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     Ok(Some(ArchiveRoundInput {
         table_code: room.table_code.clone(),
@@ -874,7 +878,7 @@ mod tests {
         assert_eq!(guest.points, INITIAL_USER_POINTS);
 
         let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
-        assert_eq!(fan_stats[0].count, 1);
+        assert!(fan_stats.is_empty());
         Ok(())
     }
 
@@ -998,6 +1002,10 @@ mod tests {
         let player_results = &detail.rounds[0].player_results;
         assert_eq!(player_results[0].point_delta, 9);
         assert_eq!(player_results[1].point_delta, -9);
+
+        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
+        assert_eq!(fan_stats.len(), 1);
+        assert_eq!(fan_stats[0].fan_key, "all_sequences");
         Ok(())
     }
 
