@@ -73,7 +73,11 @@ pub(crate) fn compute_multi_hu_settlement_for_state(
         return Err("invalid_action".to_string());
     };
     if winner_seats.len() == 1 {
-        return compute_hu_settlement_for_state(state, primary_winner_seat, "discard");
+        let settlement = compute_hu_settlement_for_state(state, primary_winner_seat, "discard")?;
+        if !settlement_meets_minimum_hu_fan(&settlement) {
+            return Err("invalid_action".to_string());
+        }
+        return Ok(settlement);
     }
 
     let settlements = winner_seats
@@ -929,7 +933,7 @@ mod tests {
 
     use super::{
         apply_hu_action_output_in_room_state, can_declare_hu_with_cache_for_state,
-        compute_hu_settlement_for_state,
+        compute_hu_settlement_for_state, compute_multi_hu_settlement_for_state,
     };
     use crate::core::state::{
         ClaimWindowAction, LastActionContext, MatchState, PendingAction, PlayerRoundState,
@@ -1164,6 +1168,50 @@ mod tests {
         assert!(!can_declare_hu_with_cache_for_state(
             &state, &cache, 0, None, None
         ));
+    }
+
+    #[test]
+    fn single_discard_hu_claim_requires_eight_non_flower_fan() {
+        let mut state = test_room_state_with_concealed_tiles(&[]);
+        let low_fan_waiting_tiles = [
+            "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let round = state.round_state.as_mut().expect("round should exist");
+        round.current_actor = 0;
+        round.players[1].concealed_tiles = low_fan_waiting_tiles
+            .iter()
+            .enumerate()
+            .map(|(index, tile_key)| Tile {
+                tile_id: format!("{tile_key}#{index}"),
+                tile_key: (*tile_key).to_string(),
+                ..Default::default()
+            })
+            .collect();
+        round.last_discard = Some(Tile {
+            tile_id: "w1#discard".to_string(),
+            tile_key: "w1".to_string(),
+            ..Default::default()
+        });
+        round.pending_action = Some(PendingAction::ClaimWindow(ClaimWindowAction {
+            discarder_seat: 0,
+            claim_window: vec![vec![], vec!["hu".to_string()], vec![], vec![]],
+            responded_seats: vec![],
+            claim_responses: vec![],
+        }));
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 1, "discard").expect("settlement");
+        assert!(
+            settlement.score_delta.minimum_qualifying_fan_total < 8,
+            "test hand should be below eight non-flower fan, got {:?}",
+            settlement.fan_breakdown
+        );
+
+        assert_eq!(
+            compute_multi_hu_settlement_for_state(&state, &[1])
+                .expect_err("single low-fan discard hu should fail"),
+            "invalid_action"
+        );
     }
 
     #[test]
