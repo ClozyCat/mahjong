@@ -109,6 +109,7 @@ type RoomSocketOptions = {
   reconnectToken?: string | null;
   reconnect?: boolean;
   mode?: ClientMode;
+  spectatorFocusUserId?: number | null;
 };
 
 function getRuntimeDefaultBaseUrls() {
@@ -443,13 +444,25 @@ function getPendingSpectatorRequests(requests: SpectatorRequest[]) {
     .reduceRight<SpectatorRequest[]>((current, request) => upsertSpectatorRequest(current, request), []);
 }
 
-function addRequestedSpectatorTableCode(current: Set<string>, tableCode: string) {
+function getApprovedSpectatorTableCodes(requests: SpectatorRequest[], currentUserId?: number | null) {
+  if (typeof currentUserId !== 'number') {
+    return new Set<string>();
+  }
+
+  return new Set(
+    requests
+      .filter((request) => request.status === 'approved' && request.requester_user_id === currentUserId)
+      .map((request) => request.table_code),
+  );
+}
+
+function addTableCode(current: Set<string>, tableCode: string) {
   const next = new Set(current);
   next.add(tableCode);
   return next;
 }
 
-function removeRequestedSpectatorTableCode(current: Set<string>, tableCode: string) {
+function removeTableCode(current: Set<string>, tableCode: string) {
   if (!current.has(tableCode)) {
     return current;
   }
@@ -492,6 +505,7 @@ export default function App() {
   const [sentInviteStatusesByUserId, setSentInviteStatusesByUserId] = useState<Record<number, SentInviteStatus>>({});
   const [pendingSpectatorRequests, setPendingSpectatorRequests] = useState<SpectatorRequest[]>([]);
   const [requestedSpectatorTableCodes, setRequestedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
+  const [approvedSpectatorTableCodes, setApprovedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
   const [currentTableOwnerUserId, setCurrentTableOwnerUserId] = useState<number | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
@@ -524,6 +538,7 @@ export default function App() {
   const reconnectCloseCountRef = useRef(0);
   const activeTableRestoreRef = useRef<{ tableCode: string; sessionToken: string; nickname: string } | null>(null);
   const openRoomSocketRef = useRef<((options: RoomSocketOptions) => void) | null>(null);
+  const pendingSpectatorFocusUserIdRef = useRef<number | null>(null);
   const skipActiveTableLookupTokenRef = useRef<string | null>(null);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
@@ -576,6 +591,7 @@ export default function App() {
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests([]);
         setRequestedSpectatorTableCodes(new Set());
+        setApprovedSpectatorTableCodes(new Set());
         setSelectedProfileUser(null);
         setSelectedProfileFallbackName(null);
         setProfileFanStats([]);
@@ -612,6 +628,7 @@ export default function App() {
         setSentInviteStatusesByUserId({});
         setPendingSpectatorRequests(getPendingSpectatorRequests(nextSpectatorRequests));
         setRequestedSpectatorTableCodes(new Set());
+        setApprovedSpectatorTableCodes(getApprovedSpectatorTableCodes(nextSpectatorRequests, me.user_id));
         setLeaderboard(nextLeaderboard);
         setSelectedProfileUser((current) => current ?? me);
         setSelectedProfileFallbackName((current) => current ?? me.display_name);
@@ -654,6 +671,7 @@ export default function App() {
         setPendingInvites([]);
         setPendingSpectatorRequests([]);
         setRequestedSpectatorTableCodes(new Set());
+        setApprovedSpectatorTableCodes(new Set());
         setSelectedProfileUser(null);
         setSelectedProfileFallbackName(null);
         setProfileFanStats([]);
@@ -724,6 +742,7 @@ export default function App() {
           setSelectedProfileFallbackName((current) => (current === currentDisplayName ? me.display_name : current));
           setPendingInvites(nextPendingInvites);
           setPendingSpectatorRequests(getPendingSpectatorRequests(nextSpectatorRequests));
+          setApprovedSpectatorTableCodes(getApprovedSpectatorTableCodes(nextSpectatorRequests, me.user_id));
           setLeaderboard(nextLeaderboard);
           saveStoredAuthSession({
             sessionToken,
@@ -831,7 +850,12 @@ export default function App() {
         setPendingSpectatorRequests((current) => removeSpectatorRequestById(current, message.payload.id));
         if (message.payload.requester_user_id === currentUserId) {
           setRequestedSpectatorTableCodes((current) =>
-            removeRequestedSpectatorTableCode(current, message.payload.table_code),
+            removeTableCode(current, message.payload.table_code),
+          );
+          setApprovedSpectatorTableCodes((current) =>
+            message.payload.status === 'approved'
+              ? addTableCode(current, message.payload.table_code)
+              : removeTableCode(current, message.payload.table_code),
           );
         }
         setStatusMessage(
@@ -839,13 +863,22 @@ export default function App() {
             ? `牌桌 ${message.payload.table_code} 已允许观战。`
             : `牌桌 ${message.payload.table_code} 拒绝了观战申请。`,
         );
-        if (message.payload.status === 'approved' && sessionToken) {
+        if (
+          message.payload.status === 'approved' &&
+          message.payload.requester_user_id === currentUserId &&
+          sessionToken &&
+          !sessionRef.current.roomSnapshot &&
+          !currentUser?.active_table_code &&
+          sessionRef.current.connectionStatus !== 'connecting' &&
+          sessionRef.current.connectionStatus !== 'reconnecting'
+        ) {
           openRoomSocketRef.current?.({
             tableCode: message.payload.table_code,
             nickname: currentDisplayName,
             wsBaseUrl: defaults.wsBaseUrl,
             sessionToken,
             mode: 'spectator',
+            spectatorFocusUserId: message.payload.owner_user_id,
           });
         }
       }
@@ -1056,6 +1089,14 @@ export default function App() {
 
     if (message.type === 'room_snapshot') {
       reconnectCloseCountRef.current = 0;
+      const focusUserId = pendingSpectatorFocusUserIdRef.current;
+      if (sessionRef.current.clientMode === 'spectator' && typeof focusUserId === 'number') {
+        const focusSeat = message.payload.seats.find((seat) => seat.user_id === focusUserId)?.seat_index;
+        if (typeof focusSeat === 'number') {
+          dispatch({ type: 'set_spectator_focus_seat', seatIndex: focusSeat });
+        }
+      }
+      pendingSpectatorFocusUserIdRef.current = null;
       dispatch({ type: 'set_connection_status', status: 'connected' });
       setStatusMessage(null);
     }
@@ -1067,14 +1108,25 @@ export default function App() {
     (options: RoomSocketOptions) => {
       closeSocket(socketRef, heartbeatTimerRef);
 
-      const { tableCode, nickname, wsBaseUrl, sessionToken, reconnectToken, reconnect, mode = 'player' } = options;
+      const {
+        tableCode,
+        nickname,
+        wsBaseUrl,
+        sessionToken,
+        reconnectToken,
+        reconnect,
+        mode = 'player',
+        spectatorFocusUserId = null,
+      } = options;
       if (!reconnect) {
         reconnectCloseCountRef.current = 0;
       }
       if (mode === 'player' && sessionToken) {
         activeTableRestoreRef.current = { tableCode, sessionToken, nickname };
       }
+      pendingSpectatorFocusUserIdRef.current = mode === 'spectator' ? spectatorFocusUserId : null;
       dispatch({ type: 'set_client_mode', clientMode: mode });
+      dispatch({ type: 'set_spectator_focus_seat', seatIndex: null });
       dispatch({ type: 'set_connection_status', status: reconnect ? 'reconnecting' : 'connecting' });
       dispatch({ type: 'set_credentials', tableCode, nickname });
       dispatch({ type: 'set_config', wsBaseUrl });
@@ -1322,10 +1374,6 @@ export default function App() {
       : [];
   const isSpectator = state.clientMode === 'spectator';
   const spectatorFocusSeat = isSpectator ? resolveSpectatorFocusSeat(state) : null;
-  const spectatorFocusName =
-    isSpectator
-      ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === spectatorFocusSeat)?.nickname ?? null
-      : null;
   const localSeatIndex = state.roomSnapshot?.payload.local_seat;
   const localSeatState =
     typeof localSeatIndex === 'number'
@@ -1633,6 +1681,7 @@ export default function App() {
     setSentInviteStatusesByUserId({});
     setPendingSpectatorRequests([]);
     setRequestedSpectatorTableCodes(new Set());
+    setApprovedSpectatorTableCodes(new Set());
     setActiveLobbyTableCode(null);
     setCurrentTableOwnerUserId(null);
     setIsActiveTableLookupPending(false);
@@ -1721,27 +1770,33 @@ export default function App() {
       return;
     }
 
+    if (currentUser.active_table_code || (state.roomSnapshot && !isSpectator)) {
+      setStatusMessage('你正在牌局中，退出当前牌局后才能观战其他玩家。');
+      return;
+    }
+
+    if (approvedSpectatorTableCodes.has(tableCode)) {
+      setStatusMessage(`正在进入观战 ${tableCode}...`);
+      openRoomSocket({
+        tableCode,
+        nickname: currentUser.display_name,
+        wsBaseUrl: defaults.wsBaseUrl,
+        sessionToken: authSession.sessionToken,
+        mode: 'spectator',
+        spectatorFocusUserId: user.user_id,
+      });
+      return;
+    }
+
     try {
-      setRequestedSpectatorTableCodes((current) => addRequestedSpectatorTableCode(current, tableCode));
+      setRequestedSpectatorTableCodes((current) => addTableCode(current, tableCode));
       setStatusMessage(`正在申请观战 ${tableCode}...`);
       await createSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, tableCode);
       setStatusMessage(`已申请观战 ${tableCode}，等待房主同意。`);
     } catch (error) {
-      setRequestedSpectatorTableCodes((current) => removeRequestedSpectatorTableCode(current, tableCode));
+      setRequestedSpectatorTableCodes((current) => removeTableCode(current, tableCode));
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '申请观战失败。');
     }
-  }
-
-  function handleSwitchSpectatorPerspective() {
-    const seats = getOccupiedSpectatorSeats(state.roomSnapshot);
-    if (seats.length === 0) {
-      return;
-    }
-
-    const current = resolveSpectatorFocusSeat(state);
-    const currentIndex = seats.indexOf(current);
-    const nextSeat = seats[(currentIndex + 1) % seats.length] ?? seats[0];
-    dispatch({ type: 'set_spectator_focus_seat', seatIndex: nextSeat });
   }
 
   function handleTileSelect(tileId: string) {
@@ -2106,6 +2161,7 @@ export default function App() {
         sidebarCreatingTableCodes={creatingTableCodes}
         sidebarCurrentUserId={currentUser?.user_id ?? null}
         sidebarRequestedWatchTableCodes={requestedSpectatorTableCodes}
+        sidebarApprovedWatchTableCodes={approvedSpectatorTableCodes}
         sidebarCurrentUser={currentUser}
         sidebarSpectators={tableSidebarSpectators}
         sidebarProfileUser={selectedProfileUser}
@@ -2135,8 +2191,6 @@ export default function App() {
         onQuickChat={handleQuickChat}
         onSidebarWatchUser={handleWatchSidebarUser}
         isSpectator={isSpectator}
-        spectatorFocusName={spectatorFocusName}
-        onSwitchSpectatorPerspective={isSpectator ? handleSwitchSpectatorPerspective : undefined}
       />
     );
   }

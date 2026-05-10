@@ -290,7 +290,7 @@ function parseRequestBody(init?: RequestInit) {
   return JSON.parse(init.body);
 }
 
-function seedStoredAuthSession(user = DEFAULT_CURRENT_USER) {
+function seedStoredAuthSession(user: MockPublicUser = DEFAULT_CURRENT_USER) {
   localStorage.setItem(
     'mahjong:auth',
     JSON.stringify({
@@ -313,7 +313,7 @@ function seedStoredRoomSession() {
 }
 
 function createFetchMock(options?: {
-  me?: typeof DEFAULT_CURRENT_USER;
+  me?: MockPublicUser;
   leaderboard?: MockPublicUser[];
   leaderboardResponses?: MockPublicUser[][];
   invites?: typeof DEFAULT_PENDING_INVITE[];
@@ -501,7 +501,7 @@ function expectTableHome() {
 
 async function renderAuthenticatedLobby(
   options?: Parameters<typeof createFetchMock>[0] & {
-    user?: typeof DEFAULT_CURRENT_USER;
+    user?: MockPublicUser;
   },
 ) {
   const fetchMock = createFetchMock(options);
@@ -1174,7 +1174,7 @@ describe('App', () => {
     expect(within(currentUserRow!).getByText('创建牌局中')).toBeInTheDocument();
   });
 
-  it('requests spectator approval from all players and enters watch mode after approval', async () => {
+  it('requests spectator approval and enters watch mode after approval when not in another table', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby({
       leaderboard: [
@@ -1266,6 +1266,81 @@ describe('App', () => {
         emoji: '🍵',
       },
     });
+  });
+
+  it('does not auto-enter spectator mode when approval arrives while user is already in a table', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock({
+      me: {
+        ...DEFAULT_CURRENT_USER,
+        active_table_code: 'CURRENT',
+        active_table_phase: 'playing',
+      },
+      activeTable: { table_code: 'CURRENT', seat_index: 0, role: 'player' },
+      leaderboard: [
+        {
+          ...DEFAULT_CURRENT_USER,
+          active_table_code: 'CURRENT',
+          active_table_phase: 'playing',
+        },
+        {
+          ...DEFAULT_LEADERBOARD[1]!,
+          active_table_code: 'ROOM42',
+          active_table_phase: 'playing',
+        },
+      ],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    seedStoredAuthSession({
+      ...DEFAULT_CURRENT_USER,
+      active_table_code: 'CURRENT',
+      active_table_phase: 'playing',
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(getRoomSocket('CURRENT')).toBeDefined();
+    });
+
+    const currentSocket = getRoomSocket('CURRENT');
+    await act(async () => {
+      currentSocket!.triggerOpen();
+      currentSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          table_code: 'CURRENT',
+          local_seat: 0,
+          owner_user_id: DEFAULT_CURRENT_USER.user_id,
+        }),
+      });
+    });
+
+    const meSocket = getMeSocket();
+    expect(meSocket).toBeDefined();
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'spectator_request_decided',
+        payload: {
+          id: 11,
+          table_code: 'ROOM42',
+          requester_user_id: 1,
+          owner_user_id: 2,
+          status: 'approved',
+          created_at: '2026-05-06T12:01:00Z',
+          decided_at: '2026-05-06T12:02:00Z',
+        },
+      });
+    });
+
+    expect(await screen.findByText('牌桌 ROOM42 已允许观战。')).toBeInTheDocument();
+    expect(getRoomSocket('ROOM42')).toBeUndefined();
+
+    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
+    const playerRows = screen.getAllByText(/Player B（平民）/);
+    const playerRow = playerRows.at(-1)?.closest('li') ?? null;
+    expect(playerRow).not.toBeNull();
+    expect(within(playerRow!).getByRole('button', { name: '进入观战' })).toBeDisabled();
   });
 
   it('disables sidebar invites when the active table is full and has no replaceable bot seats', async () => {

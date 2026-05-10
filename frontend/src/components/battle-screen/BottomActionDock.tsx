@@ -22,10 +22,8 @@ interface BottomActionDockProps {
   isWaitingForMatchStart?: boolean;
   isHandInteractionDisabled?: boolean;
   isSpectator?: boolean;
-  spectatorFocusName?: string | null;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
-  onSwitchPerspective?: () => void;
   onTileSelect: (tileId: string) => void;
   onTileDoubleClick: (tileId: string) => void;
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
@@ -42,10 +40,8 @@ export function BottomActionDock({
   isWaitingForMatchStart = false,
   isHandInteractionDisabled = false,
   isSpectator = false,
-  spectatorFocusName = null,
   promptCue,
   deadlineAt,
-  onSwitchPerspective,
   onTileSelect,
   onTileDoubleClick,
   onClaimCandidateSelect,
@@ -299,17 +295,6 @@ export function BottomActionDock({
       ) : null}
       <div className="action-dock__tableau action-dock__tableau--full">
         <div className="action-dock__hand-zone">
-          {isSpectator && onSwitchPerspective ? (
-            <button
-              type="button"
-              className="action-dock__spectator-switch"
-              aria-label={`切换观战视角，当前 ${spectatorFocusName ?? '未知玩家'}`}
-              title="切换观战视角"
-              onClick={onSwitchPerspective}
-            >
-              <span aria-hidden="true">↓</span>
-            </button>
-          ) : null}
           <div className="action-dock__hand-cluster">
             {hand.length > 0 ? (
               <div className="action-dock__hand" aria-label="Local hand">

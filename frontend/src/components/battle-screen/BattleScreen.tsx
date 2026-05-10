@@ -46,8 +46,6 @@ interface BattleScreenProps {
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   isSpectator?: boolean;
-  spectatorFocusName?: string | null;
-  onSwitchSpectatorPerspective?: () => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -60,6 +58,7 @@ interface BattleScreenProps {
   sidebarCreatingTableCodes?: string[];
   sidebarCurrentUserId?: number | null;
   sidebarRequestedWatchTableCodes?: Iterable<string>;
+  sidebarApprovedWatchTableCodes?: Iterable<string>;
   sidebarCurrentUser?: PublicUser | null;
   sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
@@ -103,8 +102,6 @@ export function BattleScreen({
   onRemoveBot,
   onQuickChat,
   isSpectator = false,
-  spectatorFocusName = null,
-  onSwitchSpectatorPerspective,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -117,6 +114,7 @@ export function BattleScreen({
   sidebarCreatingTableCodes = [],
   sidebarCurrentUserId = null,
   sidebarRequestedWatchTableCodes = [],
+  sidebarApprovedWatchTableCodes = [],
   sidebarCurrentUser = null,
   sidebarSpectators = [],
   sidebarRoomPanel = null,
@@ -500,10 +498,8 @@ export function BattleScreen({
                 isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
                 isHandInteractionDisabled={isBotTakeoverEnabled}
                 isSpectator={isSpectator}
-                spectatorFocusName={spectatorFocusName}
                 promptCue={viewModel.promptCue}
                 deadlineAt={viewModel.deadlineAt}
-                onSwitchPerspective={onSwitchSpectatorPerspective}
                 onTileSelect={onTileSelect}
                 onTileDoubleClick={onTileDoubleClick}
                 onClaimCandidateSelect={onClaimCandidateSelect}
@@ -521,6 +517,7 @@ export function BattleScreen({
             creatingTableCodes={sidebarCreatingTableCodes}
             currentUserId={sidebarCurrentUserId}
             requestedWatchTableCodes={sidebarRequestedWatchTableCodes}
+            approvedWatchTableCodes={sidebarApprovedWatchTableCodes}
             spectators={sidebarSpectators}
             tabAlerts={sidebarTabAlerts}
             roomPanel={sidebarRoomPanel}

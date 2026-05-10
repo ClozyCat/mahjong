@@ -1685,21 +1685,21 @@ impl Database {
             .map_err(Into::into)
     }
 
-    fn list_pending_spectator_requests_for_owner(
+    fn list_spectator_requests_for_user(
         &self,
-        owner_user_id: i64,
+        user_id: i64,
     ) -> Result<Vec<SpectatorRequestRecord>> {
         let mut statement = self.conn.prepare(
             "
             SELECT id, table_code, requester_user_id, owner_user_id, status, created_at, decided_at
             FROM spectator_requests
-            WHERE owner_user_id = ?1
-              AND status = 'pending'
+            WHERE (owner_user_id = ?1 AND status = 'pending')
+               OR (requester_user_id = ?1 AND status = 'approved')
             ORDER BY created_at DESC
             ",
         )?;
         let rows = statement
-            .query_map(params![owner_user_id], Self::spectator_request_from_row)?
+            .query_map(params![user_id], Self::spectator_request_from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -2648,11 +2648,11 @@ impl DbWorker {
         .await
     }
 
-    pub(crate) async fn list_pending_spectator_requests_for_owner(
+    pub(crate) async fn list_spectator_requests_for_user(
         &self,
-        owner_user_id: i64,
+        user_id: i64,
     ) -> Result<Vec<SpectatorRequestRecord>> {
-        self.call(move |db| db.list_pending_spectator_requests_for_owner(owner_user_id))
+        self.call(move |db| db.list_spectator_requests_for_user(user_id))
             .await
     }
 

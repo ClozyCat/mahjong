@@ -914,11 +914,11 @@ async fn create_spectator_request(
     match state
         .inner
         .db
-        .get_active_table_participant(&table_code, authenticated_user.user_id)
+        .list_active_table_participants_for_user(authenticated_user.user_id)
         .await
     {
-        Ok(Some(_)) => return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table"),
-        Ok(None) => {}
+        Ok(active_tables) if active_tables.is_empty() => {}
+        Ok(_) => return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table"),
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 
@@ -979,7 +979,7 @@ async fn get_my_spectator_requests(
     match state
         .inner
         .db
-        .list_pending_spectator_requests_for_owner(authenticated_user.user_id)
+        .list_spectator_requests_for_user(authenticated_user.user_id)
         .await
     {
         Ok(requests) => Json(

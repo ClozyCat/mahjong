@@ -40,6 +40,7 @@ interface TableSidebarProps {
   creatingTableCodes?: string[];
   currentUserId?: number | null;
   requestedWatchTableCodes?: Iterable<string>;
+  approvedWatchTableCodes?: Iterable<string>;
   spectators: TableSidebarSpectator[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   roomPanel?: ReactNode;
@@ -161,6 +162,7 @@ export function TableSidebar({
   creatingTableCodes = [],
   currentUserId = null,
   requestedWatchTableCodes = [],
+  approvedWatchTableCodes = [],
   spectators,
   tabAlerts = {},
   roomPanel,
@@ -184,6 +186,7 @@ export function TableSidebar({
   const onlineUserIdSet = new Set(onlineUserIds);
   const creatingTableCodeSet = new Set(creatingTableCodes);
   const requestedWatchTableCodeSet = new Set(requestedWatchTableCodes);
+  const approvedWatchTableCodeSet = new Set(approvedWatchTableCodes);
   const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
   const activeTableUserCounts = allUsers.reduce((counts, user) => {
     if (!user.active_table_code) {
@@ -277,6 +280,10 @@ export function TableSidebar({
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
                 {allUsers.map((user) => {
                   const isSelf = currentUserId === user.user_id;
+                  const currentUser = typeof currentUserId === 'number'
+                    ? allUsers.find((candidate) => candidate.user_id === currentUserId)
+                    : null;
+                  const isCurrentUserInTable = Boolean(currentUser?.active_table_code);
                   const isWaitingTable = Boolean(
                     user.active_table_phase === 'waiting' ||
                       (user.active_table_code && creatingTableCodeSet.has(user.active_table_code)),
@@ -285,8 +292,16 @@ export function TableSidebar({
                   const hasRequestedWatch = Boolean(
                     user.active_table_code && requestedWatchTableCodeSet.has(user.active_table_code),
                   );
+                  const hasApprovedWatch = Boolean(
+                    user.active_table_code && approvedWatchTableCodeSet.has(user.active_table_code),
+                  );
                   const canWatch = Boolean(
-                    user.active_table_code && !isSelf && onWatchUser && !hasRequestedWatch && isWatchableTable,
+                    user.active_table_code &&
+                      !isSelf &&
+                      !isCurrentUserInTable &&
+                      onWatchUser &&
+                      !hasRequestedWatch &&
+                      isWatchableTable,
                   );
                   const playerStatus = getAllPlayerStatus(
                     user,
@@ -316,8 +331,12 @@ export function TableSidebar({
                           title={
                             hasRequestedWatch
                               ? `已申请观战 ${user.active_table_code}`
+                              : hasApprovedWatch && !isCurrentUserInTable
+                                ? `进入观战 ${user.active_table_code}`
                               : canWatch
-                              ? `申请观战 ${user.active_table_code}`
+                                ? `申请观战 ${user.active_table_code}`
+                              : isCurrentUserInTable && !isSelf
+                                ? '你正在牌局中，不能观战其他玩家'
                               : isWaitingTable
                                 ? '牌局尚未开始，暂不能观战'
                               : isSelf
@@ -328,7 +347,7 @@ export function TableSidebar({
                           }
                           onClick={() => onWatchUser?.(user)}
                         >
-                          {hasRequestedWatch ? '已申请' : '观战'}
+                          {hasRequestedWatch ? '已申请' : hasApprovedWatch ? '进入观战' : '观战'}
                         </button>
                       </div>
                     </li>

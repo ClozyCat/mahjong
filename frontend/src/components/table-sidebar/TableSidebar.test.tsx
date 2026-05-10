@@ -330,7 +330,7 @@ describe('TableSidebar', () => {
     expect(onWatchUser).not.toHaveBeenCalled();
   });
 
-  it('enables watch only for other users with active tables', async () => {
+  it('enables watch only for other users with active tables when current user is not in a table', async () => {
     const user = userEvent.setup();
     const onWatchUser = vi.fn();
     const users = [
@@ -343,8 +343,7 @@ describe('TableSidebar', () => {
         display_label: '阿明（平民）',
         bio: '',
         avatar: null,
-        active_table_code: 'SELF01',
-        active_table_phase: 'playing' as const,
+        active_table_code: null,
       },
       {
         user_id: 2,
@@ -399,6 +398,61 @@ describe('TableSidebar', () => {
     await user.click(activeWatchButton);
 
     expect(onWatchUser).toHaveBeenCalledWith(users[1]);
+  });
+
+  it('disables watch for other users while the current user is in a table', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 1,
+        username: 'alice',
+        display_name: '阿明',
+        points: 300,
+        title: '平民',
+        display_label: '阿明（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'SELF01',
+        active_table_phase: 'playing' as const,
+      },
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'ROOM42',
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        currentUserId={1}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const activeWatchButton = within(screen.getAllByRole('listitem')[1]).getByRole('button', { name: '观战' });
+
+    expect(activeWatchButton).toBeDisabled();
+    expect(activeWatchButton).toHaveAttribute('title', '你正在牌局中，不能观战其他玩家');
+
+    await user.click(activeWatchButton);
+
+    expect(onWatchUser).not.toHaveBeenCalled();
   });
 
   it('disables watch when active table phase is unknown', async () => {
@@ -482,5 +536,60 @@ describe('TableSidebar', () => {
     await user.click(requestedButton);
 
     expect(onWatchUser).not.toHaveBeenCalled();
+  });
+
+  it('shows approved watch as direct entry', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 1,
+        username: 'alice',
+        display_name: '阿明',
+        points: 300,
+        title: '平民',
+        display_label: '阿明（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: null,
+      },
+      {
+        user_id: 2,
+        username: 'bob',
+        display_name: '阿强',
+        points: 120,
+        title: '平民',
+        display_label: '阿强（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'ROOM42',
+        active_table_phase: 'playing' as const,
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        currentUserId={1}
+        approvedWatchTableCodes={['ROOM42']}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const approvedButton = screen.getByRole('button', { name: '进入观战' });
+
+    expect(approvedButton).toBeEnabled();
+
+    await user.click(approvedButton);
+
+    expect(onWatchUser).toHaveBeenCalledWith(users[1]);
   });
 });

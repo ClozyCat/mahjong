@@ -484,11 +484,11 @@ async fn handle_watch_table(
     match state
         .inner
         .db
-        .get_active_table_participant(&table_code, authenticated_user.user_id)
+        .list_active_table_participants_for_user(authenticated_user.user_id)
         .await
     {
-        Ok(Some(_)) => return reject_to(connection, "player_cannot_watch_own_table"),
-        Ok(None) => {}
+        Ok(active_tables) if active_tables.is_empty() => {}
+        Ok(_) => return reject_to(connection, "player_cannot_watch_own_table"),
         Err(error) => return internal_error_to(connection, error),
     }
     if !room_is_playing {
@@ -2626,6 +2626,56 @@ mod tests {
             WatchTableRequest {
                 session_token: guest_token,
                 nickname: "GuestWatch".to_string(),
+            },
+        )
+        .await;
+
+        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
+        assert_eq!(
+            payload["payload"]["reason"],
+            "player_cannot_watch_own_table"
+        );
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn spectator_player_in_another_table_cannot_watch_table() -> Result<()> {
+        let (state, _guest_user_id, _guest_token, viewer_user_id, viewer_token) =
+            build_watch_state("ROOM74").await?;
+        state
+            .inner
+            .db
+            .create_spectator_request("ROOM74", viewer_user_id, 1, "2026-05-06T00:10:00Z")
+            .await?;
+        state
+            .inner
+            .db
+            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
+            .await?;
+        state
+            .inner
+            .db
+            .save_table_and_store_reconnect_token_and_upsert_participant(
+                "ROOM75",
+                "2026-05-06T00:00:00Z",
+                r#"{"table_code":"ROOM75","phase":"playing","seats":[]}"#,
+                "viewer-other-token",
+                0,
+                92,
+                viewer_user_id,
+                "ViewerWatch",
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
+
+        let outcome = handle_watch_table(
+            state,
+            "ROOM74",
+            &connection,
+            WatchTableRequest {
+                session_token: viewer_token,
+                nickname: "ViewerWatch".to_string(),
             },
         )
         .await;
