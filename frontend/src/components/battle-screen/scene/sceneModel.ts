@@ -222,13 +222,15 @@ export function buildTableSceneModel({
     viewport.height - topInsetPx - bottomInsetPx,
     viewport.height * layoutProfile.sideSafeHeightRatio,
   );
+  const adaptiveWidth = Math.min(viewport.width, viewport.height * 1.75);
+
   const riverBaseWidthPx = clamp(
-    viewport.width * layoutProfile.riverBaseWidth.ratio,
+    adaptiveWidth * layoutProfile.riverBaseWidth.ratio,
     layoutProfile.riverBaseWidth.minPx,
     layoutProfile.riverBaseWidth.maxPx,
   );
   const riverGapPx = clamp(
-    viewport.width * layoutProfile.riverGap.ratio,
+    adaptiveWidth * layoutProfile.riverGap.ratio,
     layoutProfile.riverGap.minPx,
     layoutProfile.riverGap.maxPx,
   );
@@ -248,17 +250,17 @@ export function buildTableSceneModel({
     layoutProfile.verticalRiverColumns.max,
   );
   const handBaseWidthPx = clamp(
-    viewport.width * layoutProfile.handBaseWidth.ratio,
+    adaptiveWidth * layoutProfile.handBaseWidth.ratio,
     layoutProfile.handBaseWidth.minPx,
     layoutProfile.handBaseWidth.maxPx,
   );
   const meldBaseWidthPx = clamp(
-    viewport.width * layoutProfile.meldBaseWidth.ratio,
+    adaptiveWidth * layoutProfile.meldBaseWidth.ratio,
     layoutProfile.meldBaseWidth.minPx,
     layoutProfile.meldBaseWidth.maxPx,
   );
   const settlementBaseWidthPx = clamp(
-    viewport.width * layoutProfile.settlementBaseWidth.ratio,
+    adaptiveWidth * layoutProfile.settlementBaseWidth.ratio,
     layoutProfile.settlementBaseWidth.minPx,
     layoutProfile.settlementBaseWidth.maxPx,
   );
