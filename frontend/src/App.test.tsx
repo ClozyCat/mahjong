@@ -1815,7 +1815,6 @@ describe('App', () => {
     expect(requestFullscreen).not.toHaveBeenCalled();
     expect(screen.getByText('请旋转屏幕或调整窗口比例')).toBeInTheDocument();
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
     await act(async () => {
@@ -1851,9 +1850,9 @@ describe('App', () => {
 
 
 
-  it('still asks for confirmation after the match has started', async () => {
+  it('leaves the table without confirmation even after the match has started', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, 'confirm');
 
     const { socket } = await joinTable(user);
 
@@ -1866,7 +1865,7 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith('是否确定离开牌桌？');
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(socket.sentMessages.map((message) => JSON.parse(message))).toEqual([
       { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
       { type: 'leave_table', payload: {} },
@@ -1875,7 +1874,6 @@ describe('App', () => {
 
   it('returns to the table home as soon as leave_table_accepted arrives', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { socket } = await joinTable(user);
 
     await act(async () => {
@@ -1936,7 +1934,6 @@ describe('App', () => {
 
   it('returns to the table home with guidance when leaving after the connection has already dropped', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { socket } = await joinTable(user);
 
     await act(async () => {

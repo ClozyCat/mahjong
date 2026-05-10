@@ -90,7 +90,6 @@ const MAX_CACHED_RECONNECT_CLOSES = 3;
 const TABLE_SEAT_CAPACITY = 4;
 const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
 const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当前所在的牌桌。';
-const LEAVE_TABLE_CONFIRM_MESSAGE = '是否确定离开牌桌？';
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
 const CLAIM_RESPONSE_ACTION_IDS = ['chow', 'pung', 'kong', 'hu'] as const;
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
@@ -2079,10 +2078,6 @@ export default function App() {
       return;
     }
 
-    const shouldConfirmLeave = state.roomSnapshot?.payload.phase !== 'waiting';
-    if (shouldConfirmLeave && !window.confirm(LEAVE_TABLE_CONFIRM_MESSAGE)) {
-      return;
-    }
 
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       handleLeaveToLobby(
