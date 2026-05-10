@@ -693,8 +693,8 @@ describe('BattleScreen', () => {
 
     expect(visibleFanList.getByText('平和')).toBeInTheDocument();
     expect(visibleFanList.getByText('清一色')).toBeInTheDocument();
-    expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
-    expect(screen.getByText(/放铳 Player Left（左家）/)).toBeInTheDocument();
+    expect(screen.getByText(/胜者 Player B（下家）/)).toBeInTheDocument();
+    expect(screen.getByText(/放铳 Player Left（上家）/)).toBeInTheDocument();
     expect(screen.queryByText(/胜者 right/)).not.toBeInTheDocument();
     expect(screen.queryByText(/放铳 left/)).not.toBeInTheDocument();
     expect(visibleFanList.getByText('幺九刻')).toBeInTheDocument();
@@ -772,7 +772,7 @@ describe('BattleScreen', () => {
     expect(screen.getByText(/胜者 Player B（本家）/)).toBeInTheDocument();
     expect(playerBRow).not.toBeNull();
     expect(playerBRow).toHaveTextContent('本家');
-    expect(playerBRow).not.toHaveTextContent('右家');
+    expect(playerBRow).not.toHaveTextContent('下家');
   });
 
   it('renders the settlement overlay through a top-layer portal', () => {
@@ -955,7 +955,7 @@ describe('BattleScreen', () => {
     expect(screen.getByRole('button', { name: '上一位' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '下一位' })).toBeInTheDocument();
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
-    expect(screen.getByText(/胜者 Player B（右家）/)).toBeInTheDocument();
+    expect(screen.getByText(/胜者 Player B（下家）/)).toBeInTheDocument();
     expect(screen.getByText('平和')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '下一位' }));
@@ -2644,7 +2644,7 @@ describe('BattleScreen', () => {
         promptCue: {
           kind: 'claim',
           tone: 'critical',
-          title: '左家刚打出可响应牌',
+          title: '上家刚打出可响应牌',
           detail: '你可以 和牌 / 碰 / 过',
           actionIds: ['hu', 'pung', 'pass'],
           highlightedActionIds: ['hu', 'pung'],
@@ -2674,7 +2674,7 @@ describe('BattleScreen', () => {
     expect(huButton).not.toHaveClass('action-dock__action--response-glow');
     expect(pungButton).not.toHaveClass('action-dock__action--response-glow');
     expect(passButton).not.toHaveClass('action-dock__action--response-glow');
-    expect(screen.queryByText('左家刚打出可响应牌')).toBeNull();
+    expect(screen.queryByText('上家刚打出可响应牌')).toBeNull();
   });
 
   it('keeps the table sidebar collapsed by default and reveals all tabs when opened', async () => {

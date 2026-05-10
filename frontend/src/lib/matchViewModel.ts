@@ -1975,9 +1975,9 @@ const KONG_EFFECT_LABELS: Record<string, string> = {
 
 const PROMPT_SEAT_COPY: Record<Seat, string> = {
   bottom: '你',
-  left: '左家',
+  left: '上家',
   top: '对家',
-  right: '右家',
+  right: '下家',
 };
 
 function resolveActionEffectCalloutTone(claimType: string): ActionEffectView['calloutTone'] {

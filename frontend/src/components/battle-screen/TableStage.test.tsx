@@ -349,7 +349,7 @@ describe('TableStage', () => {
         promptCue={{
           kind: 'claim',
           tone: 'urgent',
-          title: '左家刚打出可响应牌',
+          title: '上家刚打出可响应牌',
           detail: '你可以 吃 / 过',
           actionIds: ['chow', 'pass'],
           highlightedActionIds: ['chow'],

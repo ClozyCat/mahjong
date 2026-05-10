@@ -660,9 +660,9 @@ const OVERLAY_POPOVER_ARROW_MARGIN_PX = 16;
 
 const RELATIVE_SEAT_LABELS: Record<Seat, string> = {
   bottom: '本家',
-  left: '左家',
+  left: '上家',
   top: '对家',
-  right: '右家',
+  right: '下家',
 };
 
 type SeatLabelByAbsoluteSeat = ReadonlyMap<number, string>;

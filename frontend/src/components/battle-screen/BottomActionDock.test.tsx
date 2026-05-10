@@ -650,7 +650,7 @@ describe('BottomActionDock', () => {
         promptCue={{
           kind: 'claim',
           tone: 'critical',
-          title: '左家刚打出可响应牌',
+          title: '上家刚打出可响应牌',
           detail: '你可以 和牌 / 碰 / 过',
           actionIds: ['hu', 'pung', 'pass'],
           highlightedActionIds: ['hu', 'pung'],
@@ -719,7 +719,7 @@ describe('BottomActionDock', () => {
         promptCue={{
           kind: 'claim',
           tone: 'critical',
-          title: '左家刚打出可响应牌',
+          title: '上家刚打出可响应牌',
           detail: '你可以 和牌 / 吃 / 过',
           actionIds: ['hu', 'chow', 'pass'],
           highlightedActionIds: ['hu', 'chow'],
