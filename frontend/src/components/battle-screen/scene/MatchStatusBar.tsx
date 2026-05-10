@@ -58,10 +58,37 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   actionSeat,
   dealerSelection = null,
   deadlineAt,
-  isAmbiguous = false,
+  isAmbiguous: isAmbiguousProp = false,
 }: MatchStatusBarProps) {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
-  const [displayedActionSeat, setDisplayedActionSeat] = useState<Seat | null>(actionSeat);
+  const [isAmbiguous, setIsAmbiguous] = useState(false);
+  
+  // Track "stable" action seat info to avoid flickering during optimistic updates
+  const [stableActionSeat, setStableActionSeat] = useState<Seat | null>(actionSeat);
+  const [stableDealerSelection, setStableDealerSelection] = useState<DealerSelectionView | null>(dealerSelection);
+
+  useEffect(() => {
+    // If we have a concrete action or dealer selection, update immediately
+    if (actionSeat || dealerSelection) {
+      setStableActionSeat(actionSeat);
+      setStableDealerSelection(dealerSelection);
+      setIsAmbiguous(false);
+      return;
+    }
+
+    // If we enter an ambiguous/waiting state (e.g. after discard), wait before updating UI
+    const timer = window.setTimeout(() => {
+      setStableActionSeat(null);
+      setStableDealerSelection(null);
+      if (isAmbiguousProp) {
+        setIsAmbiguous(true);
+      }
+    }, 500); // Slightly longer delay for text stability
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [actionSeat, dealerSelection, isAmbiguousProp]);
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -81,18 +108,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     };
   }, [deadlineAt]);
 
-  useEffect(() => {
-    if (actionSeat) {
-      setDisplayedActionSeat(actionSeat);
-    } else {
-      const timer = setTimeout(() => {
-        setDisplayedActionSeat(null);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [actionSeat]);
-
-  const activeSeatLabel = dealerSelection ? '抽取东家' : (displayedActionSeat ? SEAT_LABELS[displayedActionSeat] : '等待中');
+  const activeSeatLabel = stableDealerSelection ? '抽取东家' : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : '等待中');
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
 
   return (
@@ -104,14 +120,14 @@ export const MatchStatusBar = memo(function MatchStatusBar({
       
       <div className="match-status-bar__divider" />
       
-      <div className={`match-status-bar__section match-status-bar__section--action ${displayedActionSeat ? `match-status-bar__action--${displayedActionSeat}` : ''}`}>
-        {displayedActionSeat && !dealerSelection ? <SeatArrow seat={displayedActionSeat} /> : null}
+      <div className={`match-status-bar__section match-status-bar__section--action ${stableActionSeat ? `match-status-bar__action--${stableActionSeat}` : ''}`}>
+        {stableActionSeat && !stableDealerSelection ? <SeatArrow seat={stableActionSeat} /> : null}
         <span className="match-status-bar__value">{activeSeatLabel}</span>
       </div>
 
       <div className="match-status-bar__divider" />
 
-      <div className={`match-status-bar__section ${showUrgent ? 'match-status-bar__section--urgent' : ''}`}>
+      <div className="match-status-bar__section">
         <span className="match-status-bar__label">倒数</span>
         <span className={`match-status-bar__value ${showUrgent ? 'match-status-bar__value--urgent' : ''}`}>
           {remainingSeconds !== null ? `${remainingSeconds}s` : '--'}
