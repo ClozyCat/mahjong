@@ -23,6 +23,7 @@
   --table-stage-settlement-tile-width: calc(var(--table-stage-settlement-base-width) * var(--table-stage-tile-scale));
   --table-stage-settlement-tile-height: calc(var(--table-stage-settlement-base-height) * var(--table-stage-tile-scale));
   --table-stage-river-gap: var(--battle-stage-gap, 0.4rem);
+  --table-stage-river-tile-radius: max(0.24rem, calc(var(--table-stage-river-tile-width) * 0.15));
   --table-stage-seat-panel-padding-block: clamp(0.08rem, 0.45vmin, 0.32rem);
   --table-stage-seat-panel-padding-inline: clamp(0.08rem, 0.45vmin, 0.32rem);
   --table-stage-horizontal-river-reference-rows: 2;
@@ -363,7 +364,7 @@
   display: flex;
   justify-content: center;
   width: max-content;
-  border-radius: clamp(0.75rem, 1.3vw, 1.25rem);
+  border-radius: calc(var(--table-stage-river-tile-radius) + 0.24rem);
   padding: 0.28rem;
   background: color-mix(in srgb, var(--theme-paper) 12%, transparent);
   backdrop-filter: blur(14px) saturate(1.15);
@@ -396,7 +397,7 @@
   position: relative;
   display: block;
   padding: var(--table-stage-seat-panel-padding-block) var(--table-stage-seat-panel-padding-inline);
-  border-radius: clamp(1rem, 1.5vw, 1.4rem);
+  border-radius: calc(var(--table-stage-river-tile-radius) + 0.48rem);
   /* Extremely faint, integrated background */
   background:
     var(--seat-panel-sheen),
