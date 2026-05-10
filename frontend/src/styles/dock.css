@@ -8,7 +8,7 @@
 .action-dock {
   --action-dock-tile-width: var(--battle-hand-tile-width, 3.18rem);
   --action-dock-tile-gap: clamp(1px, 0.05vw, 0.04rem);
-  --action-dock-bottom-offset: clamp(1.2rem, 8vh, 2.5rem);
+  --action-dock-bottom-offset: clamp(1.8rem, 9vh, 3.2rem);
   --action-dock-bottom-padding: 0rem;
   --action-dock-local-info-clearance: 0rem;
   --action-dock-min-tile-width: 0.55rem;

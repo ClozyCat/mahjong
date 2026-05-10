@@ -23,9 +23,9 @@
   --ease-lux-slow: cubic-bezier(0.4, 0, 0, 1);
 
   /* ---- Battle layout system (responsive) ---- */
-  --battle-shell-gap: clamp(0.5rem, 1.1vw, 1.2rem);
-  --battle-shell-top-gap: clamp(0.2rem, 0.4vh, 0.45rem);
-  --battle-shell-bottom-gap: clamp(0.2rem, 0.4vh, 0.45rem);
+  --battle-shell-gap: 1px;
+  --battle-shell-top-gap: 1px;
+  --battle-shell-bottom-gap: 1px;
   --battle-hand-tile-width-base: clamp(1.32rem, 4.6vw, 3.8rem);
   --battle-hand-tile-width: calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1));
   --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
@@ -218,13 +218,6 @@ input {
 @media (orientation: landscape) and (max-height: 500px) {
   html {
     font-size: 13.8px;
-  }
-
-  :root {
-    --battle-shell-gap: clamp(0.3rem, 0.8vw, 0.6rem);
-    --battle-shell-top-gap: clamp(0.1rem, 0.2vh, 0.2rem);
-    --battle-shell-bottom-gap: clamp(0.1rem, 0.2vh, 0.2rem);
-    --battle-hand-tile-width-base: clamp(1.2rem, 6vw, 3.3rem);
   }
 }
 
