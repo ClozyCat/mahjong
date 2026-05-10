@@ -729,55 +729,17 @@ button.table-sidebar__toggle:active:not(:disabled) {
 
 @media (max-width: 760px), (max-height: 540px) {
   .table-sidebar {
-    position: fixed;
-    inset: 0;
+    /* Unify with desktop form: proportionally scale instead of changing layout */
+    --sidebar-mobile-scale: clamp(0.68, min(100vw / 580, 100vh / 720), 0.88);
+    transform: scale(var(--sidebar-mobile-scale));
+    transform-origin: left center;
     z-index: 40;
-  }
-
-  .table-sidebar__toggle,
-  .table-sidebar__toggle:hover,
-  button.table-sidebar__toggle:hover:not(:disabled),
-  .table-sidebar.is-open .table-sidebar__toggle,
-  .table-sidebar.is-open .table-sidebar__toggle:hover {
-    position: absolute;
-    top: auto !important;
-    bottom: max(0.8rem, env(safe-area-inset-bottom)) !important;
-    left: max(0.8rem, env(safe-area-inset-left)) !important;
-    right: auto !important;
-    transform: none !important;
-    width: 3.2rem !important;
-    height: 3.2rem !important;
-    border-radius: 50%;
-    flex-shrink: 0;
-    z-index: 10;
-  }
-
-  .table-sidebar__toggle:active,
-  button.table-sidebar__toggle:active:not(:disabled) {
-    transform: scale(0.95) !important;
+    position: fixed; /* Keep it fixed on mobile viewports */
   }
 
   .table-sidebar__panel {
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100vw;
-    max-height: none;
-    border-radius: 0;
-    flex-direction: column-reverse;
-    padding:
-      calc(max(0.75rem, env(safe-area-inset-top)) + 0.8rem)
-      1rem
-      max(1rem, env(safe-area-inset-bottom));
-  }
-
-  .table-sidebar__tabs {
-    flex-direction: row;
-    justify-content: center;
-    border-left: 0;
-    border-top: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
-    padding-top: 0.75rem;
+    /* Ensure it doesn't exceed viewport height visually after scaling */
+    max-height: calc(100vh / var(--sidebar-mobile-scale) - 2rem);
   }
 }
 
