@@ -280,7 +280,7 @@ export function buildTableSceneModel({
     ? Math.min(layoutProfile.spotlightScale, 1.16)
     : layoutProfile.spotlightScale;
 
-  const spotlightOffsetPx = (barHeightPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + layoutProfile.spotlightGap;
+  const spotlightOffsetPx = (barHeightPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + layoutProfile.spotlightGap * 2;
   const spotlightOffsetHorizontalPx = (barWidthPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + (layoutProfile.spotlightGap * 2);
   const localPlayer = players.find((player) => player.isLocal) ?? playerBySeat.get('bottom');
 

@@ -32,7 +32,7 @@
   --table-stage-match-bar-h: clamp(2.4rem, 8vmin, 2.8rem);
   --table-stage-match-bar-w: clamp(12.5rem, 36vw, 16.5rem);
   --table-stage-spotlight-gap: 0.5rem;
-  --table-stage-spotlight-offset: calc(var(--table-stage-match-bar-h) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + var(--table-stage-spotlight-gap));
+  --table-stage-spotlight-offset: calc(var(--table-stage-match-bar-h) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + var(--table-stage-spotlight-gap) * 2);
   --table-stage-spotlight-offset-horizontal: calc(var(--table-stage-match-bar-w) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + (var(--table-stage-spotlight-gap) * 2));
   --table-stage-center-v: 42%;
   --table-stage-seat-top-v: clamp(0.1rem, 1.2vmin, 0.82rem);
