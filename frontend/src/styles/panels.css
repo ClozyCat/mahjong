@@ -1510,7 +1510,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 /* --- Lobby controls --- */
 .table-stage__lobby-controls {
   position: absolute;
-  top: calc(var(--table-stage-center-v) + (var(--table-stage-center-indicator-size) / 2) + 0.8rem);
+  top: calc(var(--table-stage-center-v) + (var(--table-stage-match-bar-h) / 2) + 0.8rem);
   left: 50%;
   z-index: 5;
   display: grid;
