@@ -430,6 +430,7 @@ mod tests {
             database_path: ":memory:".to_string(),
             cors_origins: vec![],
             frontend_dir: None,
+            dev_seed_user: None,
         }
     }
 

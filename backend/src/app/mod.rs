@@ -50,6 +50,14 @@ pub(crate) struct Settings {
     pub(crate) database_path: String,
     pub(crate) cors_origins: Vec<String>,
     pub(crate) frontend_dir: Option<String>,
+    pub(crate) dev_seed_user: Option<DevSeedUserSettings>,
+}
+
+#[derive(Clone)]
+pub(crate) struct DevSeedUserSettings {
+    pub(crate) username: String,
+    pub(crate) display_name: String,
+    pub(crate) password: String,
 }
 
 impl Settings {
@@ -62,6 +70,7 @@ impl Settings {
             ),
             cors_origins: dev_cors_origins(),
             frontend_dir: optional_env_value("MAHJONG_FRONTEND_DIR"),
+            dev_seed_user: dev_seed_user_settings(),
         })
     }
 }
@@ -139,6 +148,15 @@ pub(crate) fn optional_env_value(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn dev_seed_user_settings() -> Option<DevSeedUserSettings> {
+    Some(DevSeedUserSettings {
+        username: optional_env_value("MAHJONG_DEV_DEFAULT_USERNAME")?,
+        display_name: optional_env_value("MAHJONG_DEV_DEFAULT_DISPLAY_NAME")
+            .unwrap_or_else(|| "调试账号".to_string()),
+        password: optional_env_value("MAHJONG_DEV_DEFAULT_PASSWORD")?,
+    })
 }
 
 pub(crate) fn dev_cors_origins() -> Vec<String> {

@@ -14,6 +14,7 @@ fn test_settings() -> Settings {
         database_path: ":memory:".to_string(),
         cors_origins: vec![],
         frontend_dir: None,
+        dev_seed_user: None,
     }
 }
 
@@ -49,6 +50,42 @@ fn authed_json_request(method: Method, uri: &str, token: &str, body: Value) -> R
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(body.to_string()))
         .expect("request should build")
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn dev_seed_user_can_login_without_invite_code() -> Result<()> {
+    let db = in_memory_database("")?;
+    db.initialize()?;
+    let worker = DbWorker::start(db)?;
+    let state = AppContext::new(worker);
+    let settings = Settings {
+        dev_seed_user: Some(super::DevSeedUserSettings {
+            username: "dev".to_string(),
+            display_name: "调试账号".to_string(),
+            password: "dev123456".to_string(),
+        }),
+        ..test_settings()
+    };
+    server::seed_dev_user(&state, &settings).await?;
+    let app = server::build_app(state, &settings);
+
+    let login_response = app
+        .oneshot(json_request(
+            Method::POST,
+            "/api/auth/login",
+            json!({
+                "identifier": "dev",
+                "password": "dev123456",
+            }),
+        ))
+        .await?;
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let login_body = json_response(login_response).await;
+    assert_eq!(login_body["user"]["username"], "dev");
+    assert_eq!(login_body["user"]["display_name"], "调试账号");
+    assert!(login_body["session_token"].as_str().is_some());
+    Ok(())
 }
 
 #[tokio::test(flavor = "current_thread")]

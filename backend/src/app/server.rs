@@ -123,6 +123,7 @@ pub(crate) async fn run() -> Result<()> {
     let settings = Settings::from_env()?;
     let db = DbWorker::start(Database::open(&settings.database_path)?)?;
     let app_state = AppContext::new(db);
+    seed_dev_user(&app_state, &settings).await?;
     restore_persisted_rooms(&app_state).await;
 
     let app = build_app(app_state, &settings);
@@ -131,6 +132,28 @@ pub(crate) async fn run() -> Result<()> {
         .await
         .with_context(|| format!("failed to bind to {}", settings.bind_addr))?;
     axum::serve(listener, app).await?;
+    Ok(())
+}
+
+pub(crate) async fn seed_dev_user(app_state: &AppContext, settings: &Settings) -> Result<()> {
+    let Some(seed_user) = settings.dev_seed_user.as_ref() else {
+        return Ok(());
+    };
+    let password_hash = hash_password(&seed_user.password)?;
+    app_state
+        .inner
+        .db
+        .upsert_dev_user(
+            &seed_user.username,
+            &seed_user.display_name,
+            &password_hash,
+            &now_iso(),
+        )
+        .await?;
+    eprintln!(
+        "dev login account ready: username={} password={}",
+        seed_user.username, seed_user.password
+    );
     Ok(())
 }
 

@@ -173,8 +173,12 @@ $backendCommand = @"
 Set-Location -LiteralPath $(Convert-ToSingleQuotedPowerShellString -Value $backendDir)
 `$env:MAHJONG_BIND_ADDR = $(Convert-ToSingleQuotedPowerShellString -Value "${backendHost}:${BackendPort}")
 `$env:MAHJONG_DATABASE_URL = $(Convert-ToSingleQuotedPowerShellString -Value $databasePath)
+`$env:MAHJONG_DEV_DEFAULT_USERNAME = 'dev'
+`$env:MAHJONG_DEV_DEFAULT_DISPLAY_NAME = '调试账号'
+`$env:MAHJONG_DEV_DEFAULT_PASSWORD = 'dev123456'
 Write-Host "Backend starting on $backendUrl" -ForegroundColor Cyan
 Write-Host "SQLite database: $databasePath" -ForegroundColor DarkGray
+Write-Host "Dev login: dev / dev123456" -ForegroundColor Yellow
 cargo run --bin backend
 if (`$LASTEXITCODE -ne 0) {
     Write-Host ""
@@ -203,6 +207,7 @@ if ($DryRun) {
     Write-Host "Backend URL:        $backendUrl"
     Write-Host "Database path:      $databasePath"
     Write-Host "Frontend install:   $([bool](-not $SkipFrontendInstall))"
+    Write-Host "Dev login:          dev / dev123456"
     exit 0
 }
 
@@ -224,3 +229,4 @@ Write-Host ""
 Write-Host "Dev environment started."
 Write-Host "Frontend: $frontendUrl"
 Write-Host "Backend:  $backendUrl"
+Write-Host "Dev login: dev / dev123456"

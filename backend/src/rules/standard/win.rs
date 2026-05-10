@@ -1199,8 +1199,7 @@ mod tests {
             claim_responses: vec![],
         }));
 
-        let settlement =
-            compute_hu_settlement_for_state(&state, 1, "discard").expect("settlement");
+        let settlement = compute_hu_settlement_for_state(&state, 1, "discard").expect("settlement");
         assert!(
             settlement.score_delta.minimum_qualifying_fan_total < 8,
             "test hand should be below eight non-flower fan, got {:?}",
