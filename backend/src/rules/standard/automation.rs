@@ -1146,6 +1146,118 @@ mod tests {
         .expect("room should parse")
     }
 
+    fn rob_kong_low_fan_room_state() -> RoomState {
+        RoomState::from_room_value(&json!({
+            "table_code": "ROOM4",
+            "phase": "playing",
+            "mode": "normal",
+            "test_mode": false,
+            "enforce_minimum_eight_fan": true,
+            "continue_action": null,
+            "seats": [
+                {"seat_index": 0, "nickname": "P0", "reconnect_token": "t0", "player_session_id": 1, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "Bot 1", "reconnect_token": "t1", "player_session_id": 2, "connected": true, "ready": true, "is_bot": true, "seat_type": "bot", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "reconnect_token": "t2", "player_session_id": 3, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "reconnect_token": "t3", "player_session_id": 4, "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+            ],
+            "match_state": {
+                "prevailing_wind": "east",
+                "hand_number": 1,
+                "dealer_seat": 0,
+                "cumulative_scores": {"0": 0, "1": 0, "2": 0, "3": 0},
+                "match_finished": false,
+                "last_completed_round_id": null
+            },
+            "round_state": {
+                "round_id": "east-1-dealer-0-rob-kong",
+                "dealer_seat": 0,
+                "current_actor": 0,
+                "wall": {
+                    "tiles": [suit("w9", "w9#draw")],
+                    "head_index": 0,
+                    "tail_index": 0
+                },
+                "players": [
+                    {
+                        "seat": 0,
+                        "concealed_tiles": [suit("w3", "w3#add")],
+                        "melds": [["w3", "w3", "w3"]],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 1,
+                        "concealed_tiles": [
+                            suit("w1", "w1#1"),
+                            suit("w1", "w1#1b"),
+                            suit("w2", "w2#1"),
+                            suit("t4", "t4#1"),
+                            suit("t5", "t5#1"),
+                            suit("t7", "t7#1"),
+                            suit("b3", "b3#1"),
+                            suit("b4", "b4#1"),
+                            suit("b8", "b8#1"),
+                            suit("w6", "w6#1"),
+                            suit("w8", "w8#1"),
+                            wind("red", "red#1a"),
+                            wind("green", "green#1")
+                        ],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 2,
+                        "concealed_tiles": [suit("w2", "w2#2")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    },
+                    {
+                        "seat": 3,
+                        "concealed_tiles": [suit("w4", "w4#3")],
+                        "melds": [],
+                        "flowers": [],
+                        "discards": []
+                    }
+                ],
+                "last_discard": suit("w3", "w3#add"),
+                "pending_action": {
+                    "type": "rob_kong_window",
+                    "actor_seat": 0,
+                    "tile_id": "w3#add",
+                    "tile_key": "w3",
+                    "meld_index": 0,
+                    "offered_hu_seats": [1],
+                    "responded_seats": [],
+                    "claim_responses": []
+                },
+                "phase": "playing",
+                "settlement": null,
+                "version": 1,
+                "score_trackers": {"kong_entries": []},
+                "last_action_context": {
+                    "kind": "discard",
+                    "seat": 0,
+                    "tile_id": "w3#add",
+                    "from_kong_replacement": false,
+                    "was_last_live_tile": false,
+                    "was_last_discard": false
+                },
+                "round_wind": "east",
+                "enforce_minimum_eight_fan": true,
+                "restricted_discard_tile_key": null
+            },
+            "pending_timeout": {
+                "kind": "claim_window",
+                "seat_index": 0,
+                "deadline_at": "2026-04-07T00:00:30Z",
+                "drawn_tile_id": null
+            }
+        }))
+        .expect("room should parse")
+    }
+
     #[test]
     fn claim_window_bot_waits_for_earlier_human_hu_response() {
         let mut room = claim_window_priority_room_state();
@@ -1199,6 +1311,82 @@ mod tests {
 
         assert_eq!(action.seat_index, 1);
         assert_eq!(action.action_type, "pass");
+    }
+
+    #[test]
+    fn rejected_claim_hu_does_not_record_partial_response() {
+        let mut room = claim_window_priority_room_state();
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.players[1].concealed_tiles = serde_json::from_value(json!([
+            suit("w1", "w1#1"),
+            suit("w2", "w2#1"),
+            suit("t4", "t4#1"),
+            suit("t5", "t5#1"),
+            suit("t6", "t6#1"),
+            suit("b3", "b3#1"),
+            suit("b4", "b4#1"),
+            suit("b5", "b5#1"),
+            suit("w6", "w6#1"),
+            suit("w7", "w7#1"),
+            suit("w8", "w8#1"),
+            wind("red", "red#1a"),
+            wind("red", "red#1b")
+        ]))
+        .expect("tiles should parse");
+        if let Some(claim) = round.pending_action.as_mut() {
+            if let crate::core::state::PendingAction::ClaimWindow(claim) = claim {
+                claim.responded_seats.push(0);
+            }
+        }
+        let before_pending = room
+            .round_state
+            .as_ref()
+            .expect("round should exist")
+            .pending_action
+            .clone();
+
+        let result = try_handle_player_action_in_room_state(&mut room, 1, "hu", &[])
+            .expect("hu command should be handled")
+            .expect("hu should return an action result");
+
+        assert_eq!(
+            result.expect_err("low-fan hu should be rejected"),
+            "invalid_action"
+        );
+        assert_eq!(
+            room.round_state
+                .as_ref()
+                .expect("round should exist")
+                .pending_action,
+            before_pending
+        );
+    }
+
+    #[test]
+    fn invalid_rob_kong_hu_does_not_record_partial_response() {
+        let mut room = rob_kong_low_fan_room_state();
+        let before_pending = room
+            .round_state
+            .as_ref()
+            .expect("round should exist")
+            .pending_action
+            .clone();
+
+        let result = try_handle_player_action_in_room_state(&mut room, 1, "hu", &[])
+            .expect("hu command should be handled")
+            .expect("hu should return an action result");
+
+        assert_eq!(
+            result.expect_err("invalid hu should be rejected"),
+            "invalid_action"
+        );
+        assert_eq!(
+            room.round_state
+                .as_ref()
+                .expect("round should exist")
+                .pending_action,
+            before_pending
+        );
     }
 
     #[test]

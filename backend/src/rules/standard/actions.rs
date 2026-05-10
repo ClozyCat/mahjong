@@ -459,6 +459,9 @@ pub fn apply_claim_window_action_in_room_state(
     action_type: &str,
     tile_ids: &[String],
 ) -> Result<EngineOutput, String> {
+    if action_type == "hu" {
+        validate_claim_hu_before_recording_response(room, seat_index)?;
+    }
     if matches!(action_type, "chow" | "pung" | "kong") {
         validate_claim_selection_in_room_state(room, seat_index, action_type, tile_ids)?;
     }
@@ -476,6 +479,16 @@ pub fn apply_claim_window_action_in_room_state(
         return Ok(EngineOutput::default());
     }
     resolve_recorded_claims_local_output_in_room_state(room)
+}
+
+fn validate_claim_hu_before_recording_response(
+    room: &RoomState,
+    seat_index: usize,
+) -> Result<(), String> {
+    match compute_hu_settlement_for_state(room, seat_index, "discard") {
+        Ok(settlement) if settlement_meets_minimum_hu_fan(&settlement) => Ok(()),
+        _ => Err("invalid_action".to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -2305,6 +2318,7 @@ pub fn apply_rob_kong_hu_in_room_state(
     room: &mut RoomState,
     seat_index: usize,
 ) -> Result<EngineOutput, String> {
+    validate_rob_kong_hu_before_recording_response(room, seat_index)?;
     let round = room
         .round_state
         .as_ref()
@@ -2363,6 +2377,16 @@ pub fn apply_rob_kong_hu_in_room_state(
         .collect::<Vec<_>>();
     let settlement = compute_multi_hu_settlement_for_state(room, &winner_seats)?;
     apply_hu_settlement_output_in_room_state(room, winner_seats[0], "discard", settlement)
+}
+
+fn validate_rob_kong_hu_before_recording_response(
+    room: &RoomState,
+    seat_index: usize,
+) -> Result<(), String> {
+    match compute_hu_settlement_for_state(room, seat_index, "discard") {
+        Ok(settlement) if settlement_meets_minimum_hu_fan(&settlement) => Ok(()),
+        _ => Err("invalid_action".to_string()),
+    }
 }
 
 fn self_kong_kind_name(kind: SelfKongKind) -> &'static str {
