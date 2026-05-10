@@ -270,6 +270,11 @@ export function buildTableSceneModel({
     layoutProfile.spotlightOffset.minPx,
     layoutProfile.spotlightOffset.maxPx,
   );
+  const spotlightOffsetHorizontalPx = clamp(
+    minDimension * layoutProfile.spotlightOffsetHorizontal.ratio,
+    layoutProfile.spotlightOffsetHorizontal.minPx,
+    layoutProfile.spotlightOffsetHorizontal.maxPx,
+  );
   const centerIndicatorSizePx = clamp(
     minDimension * layoutProfile.centerIndicator.ratio,
     layoutProfile.centerIndicator.minPx,
@@ -299,6 +304,7 @@ export function buildTableSceneModel({
       '--table-stage-settlement-base-height': `${settlementBaseWidthPx * 1.4}px`,
       '--table-stage-center-indicator-size': `${centerIndicatorSizePx}px`,
       '--table-stage-spotlight-offset': `${spotlightOffsetPx}px`,
+      '--table-stage-spotlight-offset-horizontal': `${spotlightOffsetHorizontalPx}px`,
       '--table-stage-center-v': `${layoutProfile.centerVPercent}%`,
       '--table-stage-seat-top-v': `${seatTopPx}px`,
       '--table-stage-local-info-guard-bottom': `${playerBySeat.has('bottom') ? bottomSeatAnchorPx : viewport.height}px`,

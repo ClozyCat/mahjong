@@ -12,7 +12,7 @@ import type {
   SystemBroadcastEventView,
 } from '../../types/match';
 
-import { CenterIndicator } from './scene/CenterIndicator';
+import { MatchStatusBar } from './scene/MatchStatusBar';
 import { MotionLayer } from './scene/MotionLayer';
 import { buildTableSceneModel } from './scene/sceneModel';
 import { SeatZone } from './scene/SeatZone';
@@ -220,7 +220,7 @@ export function TableStage({
             isBotTakeoverEnabled={isBotTakeoverEnabled}
             onToggleBotTakeover={onToggleBotTakeover}
           />
-          <CenterIndicator
+          <MatchStatusBar
             remainingCount={remainingTileCount}
             actionSeat={actionIndicatorSeat}
             dealerSelection={dealerSelection}

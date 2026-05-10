@@ -31,6 +31,7 @@
   --table-stage-action-pointer-size: clamp(0.65rem, 1.8vmin, 1.4rem);
   --table-stage-center-indicator-size: clamp(1.8rem, 18vmin, 5.5rem);
   --table-stage-spotlight-offset: clamp(1.5rem, 14vmin, 5.5rem);
+  --table-stage-spotlight-offset-horizontal: clamp(4.5rem, 24vmin, 11rem);
   --table-stage-center-v: 41%;
   --table-stage-seat-top-v: clamp(0.1rem, 1.2vmin, 0.82rem);
   --table-stage-side-gap: clamp(0.2rem, 11vmin, 8rem);
@@ -156,139 +157,93 @@
 /* ------- Urgent table state ------- */
 
 
-/* ------- Center indicator (unified) ------- */
+/* ------- Match Status Bar (Replaces Center Indicator) ------- */
 
-.table-stage__center-indicator {
+.match-status-bar {
   position: absolute;
   left: 50%;
   top: var(--table-stage-center-v);
-  width: var(--table-stage-center-indicator-size);
-  height: var(--table-stage-center-indicator-size);
   transform: translate(-50%, -50%);
   z-index: 4;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: clamp(0.6rem, 1.5vw, 1.25rem);
+  padding: clamp(0.35rem, 0.8vw, 0.6rem) clamp(0.8rem, 2vw, 1.5rem);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 45%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  box-shadow: 
+    0 8px 24px -6px var(--theme-shadow-soft),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  color: var(--theme-paper-strong);
   pointer-events: none;
-  border-radius: 50%;
+  transition: all 0.3s var(--ease-lux);
+}
 
-  /* Extra depth layer */
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -12%;
-    border-radius: 50%;
-    background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
-    opacity: 0.6;
-    z-index: -1;
+.match-status-bar--ambiguous {
+  animation: match-status-bar-breathing 2.8s var(--ease-lux) infinite;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--theme-success) 20%, transparent);
+  border-color: color-mix(in srgb, var(--theme-success) 30%, transparent);
+}
+
+@keyframes match-status-bar-breathing {
+  0%, 100% {
+    box-shadow: 0 0 16px color-mix(in srgb, var(--theme-success) 20%, transparent);
   }
-}
-
-.table-stage__center-indicator-ring {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.table-stage__center-indicator-base {
-  fill: var(--table-center-ring-bg);
-  stroke: var(--table-center-ring-border);
-  stroke-width: clamp(1, 1.8vw, 1.5);
-  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.42));
-}
-
-.table-stage__center-indicator-countdown {
-  fill: none;
-  stroke: var(--table-center-countdown-color);
-  stroke-linecap: round;
-  transform: rotate(-90deg);
-  transform-origin: center;
-  filter: drop-shadow(0 0 4px var(--table-center-countdown-color));
-}
-
-.table-stage__center-indicator-pointer {
-  fill: var(--accent-2);
-  filter: drop-shadow(0 0 6px var(--accent-2));
-  transition: transform 0.4s var(--ease-spring);
-}
-
-.table-stage__center-indicator--dealer-selection .table-stage__center-indicator-base {
-  stroke: color-mix(in srgb, var(--accent-2) 72%, var(--table-center-ring-border));
-  filter:
-    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.44))
-    drop-shadow(0 0 10px color-mix(in srgb, var(--accent-2) 34%, transparent));
-}
-
-.table-stage__center-indicator--dealer-selection .table-stage__center-indicator-pointer {
-  fill: color-mix(in srgb, var(--accent-2) 88%, white);
-  filter:
-    drop-shadow(0 0 7px var(--accent-2))
-    drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 34%, transparent));
-}
-
-.table-stage__center-indicator--dealer-selection .table-stage__center-indicator-count {
-  font-size: calc(var(--table-stage-center-indicator-size) * 0.28);
-}
-
-.table-stage__center-indicator-breathing {
-  position: absolute;
-  inset: -8%;
-  border-radius: 50%;
-  border: 1.5px solid var(--table-center-breathing-color);
-  opacity: 0;
-  pointer-events: none;
-  animation: center-indicator-breathing 2.8s var(--ease-lux) infinite;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--table-center-breathing-color) 28%, transparent);
-  will-change: transform, opacity;
-}
-
-.table-stage__center-indicator-remaining {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(0.05rem, 0.15vw, 0.1rem);
-  color: var(--table-center-ring-ink);
-  font-family: 'Noto Serif TC', 'Noto Serif Traditional Chinese', serif;
-  /* Added manual font metric adjustment to compensate for Noto Serif's high baseline */
-  transform: translateY(-5%);
-}
-
-.table-stage__center-indicator-count {
-  font-size: calc(var(--table-stage-center-indicator-size) * 0.32);
-  font-weight: 700;
-  line-height: 1;
-  margin: 0;
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
-  text-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.45),
-    0 0 12px color-mix(in srgb, var(--accent-2) 24%, transparent);
-}
-
-.table-stage__center-indicator-label {
-  font-size: calc(var(--table-stage-center-indicator-size) * 0.16);
-  opacity: 0.7;
-  letter-spacing: 0.1em;
-}
-
-@keyframes center-indicator-breathing {
-
-  0%,
-  100% {
-    transform: scale(0.97);
-    opacity: 0.06;
-  }
-
   50% {
-    transform: scale(1.05);
-    opacity: 0.28;
+    box-shadow: 0 0 24px color-mix(in srgb, var(--theme-success) 40%, transparent);
   }
 }
 
+.match-status-bar__section {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.2rem, 0.6vw, 0.4rem);
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Noto Sans SC', sans-serif;
+}
+
+.match-status-bar__section--action {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+
+.match-status-bar__label {
+  font-size: clamp(0.65rem, 1.5vw, 0.8rem);
+  color: color-mix(in srgb, var(--theme-paper-strong) 60%, transparent);
+  letter-spacing: 0.05em;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.match-status-bar__value {
+  font-size: clamp(0.85rem, 2vw, 1.05rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.match-status-bar__value--urgent {
+  color: var(--theme-danger, #ff4d4f);
+  animation: match-status-bar-urgent 1s infinite alternate;
+}
+
+@keyframes match-status-bar-urgent {
+  from { opacity: 1; }
+  to { opacity: 0.5; }
+}
+
+.match-status-bar__divider {
+  width: 1px;
+  height: clamp(0.8rem, 2vw, 1.25rem);
+  background: color-mix(in srgb, var(--theme-paper) 12%, transparent);
+}
+
+.match-status-bar__arrow {
+  width: clamp(0.9rem, 2.2vw, 1.25rem);
+  height: clamp(0.9rem, 2.2vw, 1.25rem);
+  transition: transform 0.4s var(--ease-spring);
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
+}
 
 .table-stage__status-summary {
   color: color-mix(in srgb, var(--theme-paper) 88%, var(--accent-2));
@@ -623,15 +578,13 @@
   backdrop-filter: none;
 }
 
-.table-stage[data-fx='lowFx'] .table-stage__center-indicator-base,
-.table-stage[data-fx='lowFx'] .table-stage__center-indicator-countdown,
-.table-stage[data-fx='lowFx'] .table-stage__center-indicator-pointer,
+.table-stage[data-fx='lowFx'] .match-status-bar,
 .table-stage[data-fx='lowFx'] .table-stage__action-callout,
 .table-stage[data-fx='lowFx'] .pinned-fan-list {
   filter: none;
 }
 
-.table-stage[data-fx='lowFx'] .table-stage__center-indicator-breathing,
+.table-stage[data-fx='lowFx'] .match-status-bar--ambiguous,
 .table-stage[data-fx='lowFx'] .table-stage__player-edge-info--tenpai::after {
   animation-duration: 6s;
   opacity: 0.2;
@@ -1430,12 +1383,12 @@
 
 .table-stage__spotlight.table-stage__spotlight--left,
 .table-stage__action-callout.table-stage__spotlight--left {
-  left: calc(50% - var(--table-stage-spotlight-offset));
+  left: calc(50% - var(--table-stage-spotlight-offset-horizontal));
 }
 
 .table-stage__spotlight.table-stage__spotlight--right,
 .table-stage__action-callout.table-stage__spotlight--right {
-  left: calc(50% + var(--table-stage-spotlight-offset));
+  left: calc(50% + var(--table-stage-spotlight-offset-horizontal));
 }
 
 .table-stage__action-callout--draw {
@@ -1769,6 +1722,7 @@
   .table-stage {
     --table-stage-center-indicator-size: clamp(1rem, 6vw, 3.2rem);
     --table-stage-spotlight-offset: clamp(1.2rem, 7vw, 3.6rem);
+    --table-stage-spotlight-offset-horizontal: clamp(2.8rem, 16vw, 6.5rem);
     --table-stage-spotlight-scale: 1.18;
     --table-stage-river-columns: 7;
   }

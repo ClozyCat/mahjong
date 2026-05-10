@@ -55,8 +55,8 @@ type BarrageMessage = {
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotation: string }> = {
   top: { left: '50%', top: 'calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset))', rotation: '180deg' },
   bottom: { left: '50%', top: 'calc(var(--table-stage-center-v) + var(--table-stage-spotlight-offset))', rotation: '0deg' },
-  left: { left: 'calc(50% - var(--table-stage-spotlight-offset))', top: 'var(--table-stage-center-v)', rotation: '90deg' },
-  right: { left: 'calc(50% + var(--table-stage-spotlight-offset))', top: 'var(--table-stage-center-v)', rotation: '-90deg' },
+  left: { left: 'calc(50% - var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '90deg' },
+  right: { left: 'calc(50% + var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '-90deg' },
 };
 
 function getActionCalloutLingerMs(callout: ActionCallout) {
