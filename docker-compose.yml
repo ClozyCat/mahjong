@@ -36,5 +36,4 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${APP_PORT:-80}:80"    # 监听 IPv4 的 localhost
-      - "[::1]:${APP_PORT:-80}:80"        # 监听 IPv6 的 localhost
+      - "${APP_PORT:-80}:80"
