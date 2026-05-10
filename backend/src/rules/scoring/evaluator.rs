@@ -216,6 +216,9 @@ impl FanContext {
             &concealed_tile_keys,
             &kong_entries,
             winner_seat,
+            &win_type,
+            winning_tile.as_deref(),
+            &open_meld_tile_key_groups,
         );
         let all_tile_derived = derive_all_tile_data(&tile_keys);
         Self {
@@ -254,6 +257,9 @@ impl FanContext {
             &next.concealed_tile_keys,
             &next.kong_entries,
             next.winner_seat,
+            &next.win_type,
+            next.winning_tile.as_deref(),
+            &next.open_meld_tile_key_groups,
         );
         next
     }
@@ -1098,13 +1104,23 @@ fn derive_standard_data(
     concealed_tile_keys: &[String],
     kong_entries: &[KongEntry],
     winner_seat: Option<usize>,
+    win_type: &str,
+    winning_tile: Option<&str>,
+    open_meld_tile_key_groups: &[Vec<String>],
 ) -> StandardDerivedData {
-    let concealed_counts = tile_counts_array(concealed_tile_keys.iter().map(String::as_str));
+    let effective_concealed_tile_keys = effective_concealed_tile_keys_for_concealed_pungs(
+        concealed_tile_keys,
+        win_type,
+        winning_tile,
+    );
+    let concealed_counts =
+        tile_counts_array(effective_concealed_tile_keys.iter().map(String::as_str));
     let concealed_kongs = kong_entries
         .iter()
         .filter(|entry| Some(entry.actor_seat) == winner_seat)
         .filter(|entry| entry.kong_type == "concealed_kong")
         .count();
+    let open_triplet_keys = open_triplet_keys(open_meld_tile_key_groups);
 
     let mut derived = StandardDerivedData {
         concealed_pung_count: concealed_kongs,
@@ -1145,11 +1161,13 @@ fn derive_standard_data(
                         .insert(rank);
                 }
 
-                if concealed_counts.as_ref().is_some_and(|counts| {
-                    tile_index(triplet_tile)
-                        .map(|index| counts[index] >= 3)
-                        .unwrap_or(false)
-                }) {
+                if !open_triplet_keys.contains(triplet_tile)
+                    && concealed_counts.as_ref().is_some_and(|counts| {
+                        tile_index(triplet_tile)
+                            .map(|index| counts[index] >= 3)
+                            .unwrap_or(false)
+                    })
+                {
                     decomposition_concealed_pungs += 1;
                 }
                 continue;
@@ -1176,6 +1194,28 @@ fn derive_standard_data(
 
     derived.concealed_pung_count += best_standard_concealed_pungs;
     derived
+}
+
+fn effective_concealed_tile_keys_for_concealed_pungs(
+    concealed_tile_keys: &[String],
+    win_type: &str,
+    winning_tile: Option<&str>,
+) -> Vec<String> {
+    let mut tile_keys = concealed_tile_keys.to_vec();
+    if win_type == "self_draw" {
+        if let Some(tile_key) = winning_tile {
+            tile_keys.push(tile_key.to_string());
+        }
+    }
+    tile_keys
+}
+
+fn open_triplet_keys(open_meld_tile_key_groups: &[Vec<String>]) -> HashSet<String> {
+    open_meld_tile_key_groups
+        .iter()
+        .filter(|meld| meld.len() >= 3 && meld.iter().take(3).all(|tile_key| tile_key == &meld[0]))
+        .map(|meld| meld[0].clone())
+        .collect()
 }
 
 fn derive_all_tile_data(all_tile_keys: &[String]) -> AllTileDerivedData {
@@ -4191,6 +4231,243 @@ mod tests {
                 .fan_keys
                 .iter()
                 .any(|fan| fan == "two_concealed_pungs")
+        );
+    }
+
+    #[test]
+    fn self_drawn_triplet_counts_as_concealed_pung() {
+        let concealed_tile_keys = vec![
+            "w1", "w1", "w1", "w4", "w4", "w4", "t7", "t7", "b1", "b2", "b3", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let tile_keys = concealed_tile_keys
+            .iter()
+            .cloned()
+            .chain(std::iter::once("t7".to_string()))
+            .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w1".to_string(), "w1".to_string()],
+                vec!["w4".to_string(), "w4".to_string(), "w4".to_string()],
+                vec!["t7".to_string(), "t7".to_string(), "t7".to_string()],
+                vec!["b1".to_string(), "b2".to_string(), "b3".to_string()],
+            ],
+            ..Default::default()
+        }];
+        let features = extract_hand_features(
+            &concealed_tile_keys,
+            &[],
+            None,
+            Some("t7"),
+            Some("east"),
+            Some("south"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys,
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: Some("t7".to_string()),
+            decompositions,
+        });
+
+        assert!(
+            result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "three_concealed_pungs"),
+            "self-drawn triplet should count as concealed pung, got {:?}",
+            result.fan_keys
+        );
+    }
+
+    #[test]
+    fn discard_completed_triplet_does_not_count_as_concealed_pung() {
+        let concealed_tile_keys = vec![
+            "w1", "w1", "w1", "w4", "w4", "w4", "t7", "t7", "b1", "b2", "b3", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let tile_keys = concealed_tile_keys
+            .iter()
+            .cloned()
+            .chain(std::iter::once("t7".to_string()))
+            .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["w1".to_string(), "w1".to_string(), "w1".to_string()],
+                vec!["w4".to_string(), "w4".to_string(), "w4".to_string()],
+                vec!["t7".to_string(), "t7".to_string(), "t7".to_string()],
+                vec!["b1".to_string(), "b2".to_string(), "b3".to_string()],
+            ],
+            ..Default::default()
+        }];
+        let features = extract_hand_features(
+            &concealed_tile_keys,
+            &[],
+            None,
+            Some("t7"),
+            Some("east"),
+            Some("south"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys,
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: Some("t7".to_string()),
+            winning_tile: Some("t7".to_string()),
+            decompositions,
+        });
+
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "three_concealed_pungs"),
+            "discard-completed triplet should not count as concealed pung, got {:?}",
+            result.fan_keys
+        );
+        assert!(
+            result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "two_concealed_pungs"),
+            "only the two self-held triplets should count, got {:?}",
+            result.fan_keys
+        );
+    }
+
+    #[test]
+    fn exposed_and_add_kongs_do_not_count_as_concealed_pungs() {
+        let concealed_tile_keys = vec![
+            "w1", "w1", "w1", "w4", "w4", "w4", "t7", "t7", "t7", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let meld_tile_key_groups = vec![
+            vec![
+                "b2".to_string(),
+                "b2".to_string(),
+                "b2".to_string(),
+                "b2".to_string(),
+            ],
+            vec![
+                "b5".to_string(),
+                "b5".to_string(),
+                "b5".to_string(),
+                "b5".to_string(),
+            ],
+        ];
+        let tile_keys = concealed_tile_keys
+            .iter()
+            .cloned()
+            .chain(
+                ["b2", "b2", "b2", "b5", "b5", "b5"]
+                    .into_iter()
+                    .map(ToString::to_string),
+            )
+            .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: vec![
+                vec!["b2".to_string(), "b2".to_string(), "b2".to_string()],
+                vec!["b5".to_string(), "b5".to_string(), "b5".to_string()],
+                vec!["w1".to_string(), "w1".to_string(), "w1".to_string()],
+                vec!["w4".to_string(), "w4".to_string(), "w4".to_string()],
+                vec!["t7".to_string(), "t7".to_string(), "t7".to_string()],
+            ],
+            ..Default::default()
+        }];
+        let features = extract_hand_features(
+            &concealed_tile_keys,
+            &meld_tile_key_groups,
+            Some(&[true, true]),
+            None,
+            Some("east"),
+            Some("south"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![
+                KongEntry {
+                    kong_type: "exposed_kong".to_string(),
+                    actor_seat: 0,
+                    payer_seats: vec![1],
+                    tile_key: Some("b2".to_string()),
+                },
+                KongEntry {
+                    kong_type: "add_kong".to_string(),
+                    actor_seat: 0,
+                    payer_seats: vec![1, 2, 3],
+                    tile_key: Some("b5".to_string()),
+                },
+            ],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys,
+            meld_tile_key_groups: meld_tile_key_groups.clone(),
+            open_meld_tile_key_groups: meld_tile_key_groups,
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(
+            result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "three_concealed_pungs"),
+            "three concealed hand triplets should still count, got {:?}",
+            result.fan_keys
+        );
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "four_concealed_pungs"),
+            "exposed/add kongs should not upgrade to four concealed pungs, got {:?}",
+            result.fan_keys
         );
     }
 
