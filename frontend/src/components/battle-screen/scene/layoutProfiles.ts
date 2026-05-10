@@ -73,7 +73,7 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
     centerIndicator: { ratio: 0.112, minPx: 42, maxPx: 90 },
     spotlightOffset: { ratio: 0.13, minPx: 38, maxPx: 104 },
     riverBaseWidth: { ratio: 0.024, minPx: 14, maxPx: 34 },
-    riverGap: { ratio: 0.001, minPx: 1, maxPx: 5 },
+    riverGap: { ratio: 0.0008, minPx: 0.01, maxPx: 2 },
     handBaseWidth: { ratio: 0.034, minPx: 16, maxPx: 48 },
     meldBaseWidth: { ratio: 0.019, minPx: 13, maxPx: 26 },
     settlementBaseWidth: { ratio: 0.013, minPx: 11, maxPx: 20 },
