@@ -11,6 +11,7 @@ use crate::core::state::{
 };
 use crate::projection::SeatProjectionSupport;
 use crate::projection::hand_insight::{HandInsightsView, build_hand_insights_view};
+use crate::rules::standard::win::hu_meets_minimum_fan_for_state;
 
 #[derive(Debug, Clone, Serialize)]
 struct RoomSnapshotMessage {
@@ -311,27 +312,32 @@ pub fn build_pending_action_view(
         }
         "claim_window" => match round.pending_action.as_ref()? {
             PendingAction::ClaimWindow(claim) => {
-                let options = claim
+                let raw_options = claim
                     .claim_window
                     .get(local_seat)
                     .cloned()
                     .unwrap_or_default();
                 let is_responded = claim.responded_seats.contains(&local_seat);
-                let mut payload_options = if is_local_ready_hand {
-                    if is_responded {
-                        Vec::new()
-                    } else {
-                        options
-                            .into_iter()
-                            .filter(|option| option == "hu" || option == "kong")
-                            .collect()
-                    }
-                } else if is_responded {
+                let offered_options = filter_claim_window_options_for_projection(
+                    state,
+                    local_seat,
+                    raw_options,
+                    is_local_ready_hand,
+                );
+                let mut payload_options = if is_responded {
                     Vec::new()
                 } else {
-                    options
+                    offered_options
                 };
-                if !payload_options.is_empty() && !is_responded {
+                if payload_options.is_empty()
+                    && !is_responded
+                    && claim
+                        .claim_window
+                        .get(local_seat)
+                        .is_some_and(|options| !options.is_empty())
+                {
+                    payload_options.push("pass".to_string());
+                } else if !payload_options.is_empty() && !is_responded {
                     payload_options.push("pass".to_string());
                 }
                 Some(PendingActionView::ClaimWindow {
@@ -341,43 +347,68 @@ pub fn build_pending_action_view(
                     options: payload_options,
                 })
             }
-            PendingAction::RobKongWindow(rob) => {
-                let offered = rob.offered_hu_seats.contains(&local_seat);
-                let is_responded = rob.responded_seats.contains(&local_seat);
-                let options = if offered && !is_responded {
-                    vec!["hu".to_string(), "pass".to_string()]
-                } else {
-                    Vec::new()
-                };
-                Some(PendingActionView::RobKongWindow {
-                    actor_seat: rob.actor_seat,
-                    tile_key: rob.tile_key.clone(),
-                    deadline_at,
-                    responded_seats: rob.responded_seats.clone(),
-                    options,
-                })
-            }
+            PendingAction::RobKongWindow(rob) => Some(rob_kong_pending_action_view(
+                state,
+                local_seat,
+                rob,
+                deadline_at,
+            )),
         },
         "rob_kong_window" => {
             let PendingAction::RobKongWindow(rob) = round.pending_action.as_ref()? else {
                 return None;
             };
-            let offered = rob.offered_hu_seats.contains(&local_seat);
-            let is_responded = rob.responded_seats.contains(&local_seat);
-            let options = if offered && !is_responded {
-                vec!["hu".to_string(), "pass".to_string()]
-            } else {
-                Vec::new()
-            };
-            Some(PendingActionView::RobKongWindow {
-                actor_seat: rob.actor_seat,
-                tile_key: rob.tile_key.clone(),
+            Some(rob_kong_pending_action_view(
+                state,
+                local_seat,
+                rob,
                 deadline_at,
-                responded_seats: rob.responded_seats.clone(),
-                options,
-            })
+            ))
         }
         _ => None,
+    }
+}
+
+fn filter_claim_window_options_for_projection(
+    state: &RoomState,
+    local_seat: Seat,
+    options: Vec<String>,
+    is_local_ready_hand: bool,
+) -> Vec<String> {
+    options
+        .into_iter()
+        .filter(|option| {
+            if option == "hu" {
+                return hu_meets_minimum_fan_for_state(state, local_seat, "discard");
+            }
+            !is_local_ready_hand || option == "kong"
+        })
+        .collect()
+}
+
+fn rob_kong_pending_action_view(
+    state: &RoomState,
+    local_seat: Seat,
+    rob: &crate::core::state::RobKongWindowAction,
+    deadline_at: Option<String>,
+) -> PendingActionView {
+    let offered = rob.offered_hu_seats.contains(&local_seat);
+    let is_responded = rob.responded_seats.contains(&local_seat);
+    let options = if offered && !is_responded {
+        if hu_meets_minimum_fan_for_state(state, local_seat, "discard") {
+            vec!["hu".to_string(), "pass".to_string()]
+        } else {
+            vec!["pass".to_string()]
+        }
+    } else {
+        Vec::new()
+    };
+    PendingActionView::RobKongWindow {
+        actor_seat: rob.actor_seat,
+        tile_key: rob.tile_key.clone(),
+        deadline_at,
+        responded_seats: rob.responded_seats.clone(),
+        options,
     }
 }
 
@@ -1192,6 +1223,7 @@ mod tests {
     fn claim_window_projection_includes_pass_for_ready_hand_discard_hu() {
         let mut ready_hand_players = players();
         ready_hand_players[0].is_ready_hand = true;
+        ready_hand_players[0].concealed_tiles = winning_discard_hu_tiles();
 
         let state = RoomState {
             table_code: "ROOM42".to_string(),
@@ -1208,6 +1240,7 @@ mod tests {
                 current_actor: 1,
                 phase: "playing".to_string(),
                 players: ready_hand_players,
+                last_discard: Some(suit_tile("w3", "w3#discard")),
                 pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
                     discarder_seat: 1,
                     claim_window: vec![
@@ -1235,6 +1268,52 @@ mod tests {
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
             serde_json::json!(["kong", "hu", "pass"])
+        );
+    }
+
+    #[test]
+    fn claim_window_projection_hides_invalid_hu_but_keeps_pass() {
+        let mut ready_hand_players = players();
+        ready_hand_players[0].is_ready_hand = true;
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: ready_hand_players,
+                last_discard: Some(suit_tile("w3", "w3#discard")),
+                pending_action: Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                    discarder_seat: 1,
+                    claim_window: vec![vec!["hu".to_string()], vec![], vec![], vec![]],
+                    responded_seats: vec![],
+                    claim_responses: vec![],
+                })),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "claim_window".to_string(),
+                seat_index: 1,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: None,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["pass"])
         );
     }
 
@@ -1293,6 +1372,7 @@ mod tests {
     fn rob_kong_projection_includes_pass_for_ready_hand_hu() {
         let mut ready_hand_players = players();
         ready_hand_players[0].is_ready_hand = true;
+        ready_hand_players[0].concealed_tiles = winning_discard_hu_tiles();
 
         let state = RoomState {
             table_code: "ROOM42".to_string(),
@@ -1309,6 +1389,7 @@ mod tests {
                 current_actor: 1,
                 phase: "playing".to_string(),
                 players: ready_hand_players,
+                last_discard: Some(suit_tile("w3", "w3#add")),
                 pending_action: Some(PendingAction::RobKongWindow(
                     crate::core::state::RobKongWindowAction {
                         actor_seat: 1,
@@ -1339,6 +1420,57 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rob_kong_projection_hides_invalid_hu_but_keeps_pass() {
+        let mut ready_hand_players = players();
+        ready_hand_players[0].is_ready_hand = true;
+
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats: seats(),
+            match_state: None,
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 1,
+                phase: "playing".to_string(),
+                players: ready_hand_players,
+                last_discard: Some(suit_tile("w3", "w3#add")),
+                pending_action: Some(PendingAction::RobKongWindow(
+                    crate::core::state::RobKongWindowAction {
+                        actor_seat: 1,
+                        tile_id: Some("w3#add".to_string()),
+                        tile_key: Some("w3".to_string()),
+                        meld_index: Some(0),
+                        offered_hu_seats: vec![0],
+                        responded_seats: vec![],
+                        claim_responses: vec![],
+                    },
+                )),
+                ..Default::default()
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "rob_kong_window".to_string(),
+                seat_index: 0,
+                deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
+                drawn_tile_id: None,
+            }),
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(
+            snapshot["payload"]["private_state"]["pending_action"]["options"],
+            serde_json::json!(["pass"])
+        );
+    }
+
     fn seats() -> Vec<SeatState> {
         (0..4)
             .map(|seat_index| SeatState {
@@ -1358,6 +1490,55 @@ mod tests {
                 ..Default::default()
             })
             .collect()
+    }
+
+    fn winning_discard_hu_tiles() -> Vec<Tile> {
+        vec![
+            suit_tile("w1", "w1#0a"),
+            suit_tile("w1", "w1#0b"),
+            suit_tile("w2", "w2#0a"),
+            suit_tile("w2", "w2#0b"),
+            suit_tile("w3", "w3#0a"),
+            suit_tile("t4", "t4#0a"),
+            suit_tile("t4", "t4#0b"),
+            suit_tile("t5", "t5#0a"),
+            suit_tile("t5", "t5#0b"),
+            suit_tile("b6", "b6#0a"),
+            suit_tile("b6", "b6#0b"),
+            wind_tile("red", "red#0a"),
+            wind_tile("red", "red#0b"),
+        ]
+    }
+
+    fn suit_tile(tile_key: &str, tile_id: &str) -> Tile {
+        Tile {
+            tile_id: tile_id.to_string(),
+            tile_key: tile_key.to_string(),
+            kind: "suit".to_string(),
+            suit: Some(
+                if tile_key.starts_with('w') {
+                    "characters"
+                } else if tile_key.starts_with('t') {
+                    "bamboos"
+                } else {
+                    "dots"
+                }
+                .to_string(),
+            ),
+            rank: tile_key[1..].parse().ok(),
+            name: Some(tile_key.to_string()),
+        }
+    }
+
+    fn wind_tile(tile_key: &str, tile_id: &str) -> Tile {
+        Tile {
+            tile_id: tile_id.to_string(),
+            tile_key: tile_key.to_string(),
+            kind: "wind".to_string(),
+            suit: None,
+            rank: None,
+            name: Some(tile_key.to_string()),
+        }
     }
 
     fn state_with_concealed_kong(phase: &str) -> RoomState {

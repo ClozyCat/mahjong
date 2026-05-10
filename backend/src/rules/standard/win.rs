@@ -427,6 +427,14 @@ pub(crate) fn hu_meets_bot_minimum_fan_for_state(
     winner_seat: usize,
     hu_context: &str,
 ) -> bool {
+    hu_meets_minimum_fan_for_state(state, winner_seat, hu_context)
+}
+
+pub(crate) fn hu_meets_minimum_fan_for_state(
+    state: &RoomState,
+    winner_seat: usize,
+    hu_context: &str,
+) -> bool {
     compute_hu_settlement_for_state(state, winner_seat, hu_context)
         .is_ok_and(|settlement| settlement_meets_minimum_hu_fan(&settlement))
 }

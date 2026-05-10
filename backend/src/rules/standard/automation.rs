@@ -393,8 +393,9 @@ fn choose_bot_claim_action_with_cache_for_state(
         _ => return None,
     };
     let hu_offered = claim_window_offers_action(claim, seat_index, "hu");
+    let hu_allowed = hu_offered && hu_meets_bot_minimum_fan_for_state(room, seat_index, "discard");
     if policy_is_neural(policy_config) {
-        let claim_options = claim_options_for_seat(cache, claim, seat_index, hu_offered);
+        let claim_options = claim_options_for_seat(cache, claim, seat_index, hu_allowed);
         let bot_context = build_bot_context_view(
             cache,
             room,
@@ -411,7 +412,7 @@ fn choose_bot_claim_action_with_cache_for_state(
             return Some(decision.action);
         }
     }
-    if hu_offered && hu_meets_bot_minimum_fan_for_state(room, seat_index, "discard") {
+    if hu_allowed {
         return Some(BotAction {
             seat_index,
             action_type: "hu".to_string(),
@@ -601,6 +602,13 @@ fn next_bot_action_for_state_with_policy_resolver(
                 let seat_index =
                     next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
                 let policy_config = policy_for_seat(seat_index);
+                if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
+                    return Some(BotAction {
+                        seat_index,
+                        action_type: "pass".to_string(),
+                        tile_ids: vec![],
+                    });
+                }
                 if policy_is_neural(&policy_config) {
                     let cache = RoomScoringCache::from_state(state);
                     let bot_context = build_bot_context_view(
@@ -623,13 +631,6 @@ fn next_bot_action_for_state_with_policy_resolver(
                     {
                         return Some(decision.action);
                     }
-                }
-                if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
-                    return Some(BotAction {
-                        seat_index,
-                        action_type: "pass".to_string(),
-                        tile_ids: vec![],
-                    });
                 }
                 Some(BotAction {
                     seat_index,
@@ -721,9 +722,11 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     .filter(|seat| seat_is_bot(state, *seat))?;
                 let policy_config = policy_for_seat(seat_index);
                 let hu_offered = claim_window_offers_action(claim, seat_index, "hu");
+                let hu_allowed =
+                    hu_offered && hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard");
                 if policy_is_neural(&policy_config) {
                     let claim_options =
-                        claim_options_for_seat(&cache, claim, seat_index, hu_offered);
+                        claim_options_for_seat(&cache, claim, seat_index, hu_allowed);
                     let context = build_bot_context_view(
                         &cache,
                         state,
@@ -748,7 +751,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                         });
                     }
                 }
-                if hu_offered && hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
+                if hu_allowed {
                     return None;
                 }
                 let claim_options = claim_options_for_seat(&cache, claim, seat_index, false);
@@ -778,6 +781,9 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                 let seat_index =
                     next_rob_kong_responder_seat(rob).filter(|seat| seat_is_bot(state, *seat))?;
                 let policy_config = policy_for_seat(seat_index);
+                if !hu_meets_bot_minimum_fan_for_state(state, seat_index, "discard") {
+                    return None;
+                }
                 if !policy_is_neural(&policy_config) {
                     return None;
                 }
