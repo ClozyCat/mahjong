@@ -250,7 +250,7 @@ export function buildTableSceneModel({
     layoutProfile.verticalRiverColumns.max,
   );
   const handBaseWidthPx = clamp(
-    adaptiveWidth * layoutProfile.handBaseWidth.ratio,
+    viewport.width * layoutProfile.handBaseWidth.ratio,
     layoutProfile.handBaseWidth.minPx,
     layoutProfile.handBaseWidth.maxPx,
   );
