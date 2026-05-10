@@ -21,7 +21,6 @@ interface SocialSidebarPanelProps {
 interface SocialSidebarMessagesPanelProps {
   pendingInvites: TableInvite[];
   spectatorRequests: SpectatorRequest[];
-  isOwner: boolean;
   inviteCreatorLabelsByUserId?: Record<number, string>;
   spectatorRequesterLabelsByUserId?: Record<number, string>;
   message?: string | null;
@@ -129,7 +128,6 @@ export function SocialSidebarPanel({
 export function SocialSidebarMessagesPanel({
   pendingInvites,
   spectatorRequests,
-  isOwner,
   inviteCreatorLabelsByUserId = {},
   spectatorRequesterLabelsByUserId = {},
   message,
@@ -169,28 +167,25 @@ export function SocialSidebarMessagesPanel({
       <section className="social-sidebar__section">
         <h3>待处理观战申请</h3>
         <ul className="table-sidebar__list">
-          {!isOwner ? <li className="table-sidebar__empty">仅房主可审批观战申请</li> : null}
-          {isOwner && spectatorRequests.length === 0 ? <li className="table-sidebar__empty">暂无待审批申请</li> : null}
-          {isOwner
-            ? spectatorRequests.map((request) => (
-                <li key={request.id} className="table-sidebar__row table-sidebar__row--stacked">
-                  <div className="table-sidebar__row-info">
-                    <strong className="table-sidebar__row-name">
-                      {getSpectatorRequesterLabel(request, spectatorRequesterLabelsByUserId)}
-                    </strong>
-                    <span className="table-sidebar__stat">申请观战 {request.table_code}</span>
-                  </div>
-                  <div className="table-sidebar__actions">
-                    <button type="button" onClick={() => onApproveSpectatorRequest(request.id)}>
-                      同意
-                    </button>
-                    <button type="button" onClick={() => onRejectSpectatorRequest(request.id)}>
-                      拒绝
-                    </button>
-                  </div>
-                </li>
-              ))
-            : null}
+          {spectatorRequests.length === 0 ? <li className="table-sidebar__empty">暂无待审批申请</li> : null}
+          {spectatorRequests.map((request) => (
+            <li key={request.id} className="table-sidebar__row table-sidebar__row--stacked">
+              <div className="table-sidebar__row-info">
+                <strong className="table-sidebar__row-name">
+                  {getSpectatorRequesterLabel(request, spectatorRequesterLabelsByUserId)}
+                </strong>
+                <span className="table-sidebar__stat">申请观战 {request.table_code}</span>
+              </div>
+              <div className="table-sidebar__actions">
+                <button type="button" onClick={() => onApproveSpectatorRequest(request.id)}>
+                  同意
+                </button>
+                <button type="button" onClick={() => onRejectSpectatorRequest(request.id)}>
+                  拒绝
+                </button>
+              </div>
+            </li>
+          ))}
         </ul>
       </section>
     </div>

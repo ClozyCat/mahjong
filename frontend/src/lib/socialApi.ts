@@ -128,10 +128,21 @@ export function getMySpectatorRequests(baseUrl: string, sessionToken: string) {
   });
 }
 
-export function createSpectatorRequest(baseUrl: string, sessionToken: string, tableCode: string) {
+export function createSpectatorRequest(
+  baseUrl: string,
+  sessionToken: string,
+  tableCode: string,
+  targetUserId?: number,
+) {
   return requestJson<SpectatorRequest>(`${normalizeBaseUrl(baseUrl)}/api/tables/${tableCode}/spectator-requests`, {
     method: 'POST',
-    headers: authHeaders(sessionToken),
+    headers: {
+      ...authHeaders(sessionToken),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      target_user_id: targetUserId,
+    }),
   });
 }
 

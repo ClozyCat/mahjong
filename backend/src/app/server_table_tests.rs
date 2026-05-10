@@ -115,6 +115,39 @@ async fn create_table(app: &Router, token: &str, multiplier: i64) -> Result<Stri
         .to_string())
 }
 
+async fn invite_and_accept(
+    app: &Router,
+    owner_token: &str,
+    guest_token: &str,
+    guest_id: i64,
+    table_code: &str,
+) -> Result<()> {
+    let invite = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/tables/{table_code}/invites"),
+            owner_token,
+            json!({ "invitee_user_id": guest_id }),
+        ))
+        .await?;
+    assert_eq!(invite.status(), StatusCode::CREATED);
+    let invite_body = json_response(invite).await;
+    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
+
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept.status(), StatusCode::OK);
+    Ok(())
+}
+
 async fn add_bots_to_table(
     state: &AppContext,
     worker: &DbWorker,
@@ -1169,13 +1202,15 @@ async fn invite_only_my_invites_omits_deleted_tables() -> Result<()> {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn spectator_non_player_request_creates_pending_request_and_owner_can_approve() -> Result<()>
-{
+async fn spectator_non_player_request_is_reviewed_by_target_player() -> Result<()> {
     let (app, worker, state) = test_app().await?;
     let (owner_token, owner_id) = register_user(&app, &worker, "INVITE100020", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITE100024", "Guest").await?;
     let (viewer_token, viewer_id) = register_user(&app, &worker, "INVITE100021", "Viewer").await?;
 
     let table_code = create_table(&app, &owner_token, 1).await?;
+    add_bots_to_table(&state, &worker, &table_code, 1).await?;
+    invite_and_accept(&app, &owner_token, &guest_token, guest_id, &table_code).await?;
     set_table_phase(&state, &worker, &table_code, "playing").await?;
     let request_response = app
         .clone()
@@ -1183,7 +1218,7 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
             Method::POST,
             &format!("/api/tables/{table_code}/spectator-requests"),
             &viewer_token,
-            json!({}),
+            json!({ "target_user_id": guest_id }),
         ))
         .await?;
     assert_eq!(request_response.status(), StatusCode::CREATED);
@@ -1192,7 +1227,7 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
         .as_i64()
         .expect("spectator request id should exist");
     assert_eq!(request_body["requester_user_id"], viewer_id);
-    assert_eq!(request_body["owner_user_id"], owner_id);
+    assert_eq!(request_body["owner_user_id"], guest_id);
 
     let owner_requests = app
         .clone()
@@ -1205,15 +1240,39 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
         .await?;
     assert_eq!(owner_requests.status(), StatusCode::OK);
     let owner_requests_body = json_response(owner_requests).await;
-    assert_eq!(owner_requests_body.as_array().map(Vec::len), Some(1));
-    assert_eq!(owner_requests_body[0]["id"], request_id);
+    assert_eq!(owner_requests_body.as_array().map(Vec::len), Some(0));
+
+    let stale_owner_approve = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/spectator-requests/{request_id}/approve"),
+            &owner_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(stale_owner_approve.status(), StatusCode::NOT_FOUND);
+
+    let guest_requests = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            "/api/me/spectator-requests",
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(guest_requests.status(), StatusCode::OK);
+    let guest_requests_body = json_response(guest_requests).await;
+    assert_eq!(guest_requests_body.as_array().map(Vec::len), Some(1));
+    assert_eq!(guest_requests_body[0]["id"], request_id);
 
     let approve_response = app
         .clone()
         .oneshot(authed_json_request(
             Method::POST,
             &format!("/api/spectator-requests/{request_id}/approve"),
-            &owner_token,
+            &guest_token,
             json!({}),
         ))
         .await?;
@@ -1224,6 +1283,7 @@ async fn spectator_non_player_request_creates_pending_request_and_owner_can_appr
             .await?
     );
 
+    assert_ne!(owner_id, guest_id);
     let viewer_requests = app
         .clone()
         .oneshot(authed_json_request(
@@ -1396,8 +1456,10 @@ async fn spectator_player_cannot_request_to_watch_same_table() -> Result<()> {
 #[tokio::test(flavor = "current_thread")]
 async fn spectator_player_cannot_request_to_watch_another_table_while_playing() -> Result<()> {
     let (app, worker, state) = test_app().await?;
-    let (owner_a_token, _owner_a_id) = register_user(&app, &worker, "INVITE100096", "OwnerA").await?;
-    let (owner_b_token, _owner_b_id) = register_user(&app, &worker, "INVITE100097", "OwnerB").await?;
+    let (owner_a_token, _owner_a_id) =
+        register_user(&app, &worker, "INVITE100096", "OwnerA").await?;
+    let (owner_b_token, _owner_b_id) =
+        register_user(&app, &worker, "INVITE100097", "OwnerB").await?;
     let (_guest_token, guest_id) = register_user(&app, &worker, "INVITE100098", "Guest").await?;
 
     let table_a = create_table(&app, &owner_a_token, 1).await?;

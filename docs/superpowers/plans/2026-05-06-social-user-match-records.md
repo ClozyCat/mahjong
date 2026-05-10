@@ -546,7 +546,7 @@ Expected: all commands exit 0.
 
 ```powershell
 git add backend/Cargo.toml backend/src/app/ws.rs backend/src/app/room_runtime.rs backend/src/app/server.rs backend/src/app/persistence.rs backend/src/projection/room_snapshot.rs Dockerfile docker-compose.yml frontend/vite.config.ts frontend/src/vite-env.d.ts frontend/src/features/spectator/socket.ts frontend/src/lib/socket.ts frontend/src/App.tsx
-git commit -m "feat(spectator): 默认启用房主审批观战"
+git commit -m "feat(spectator): 默认启用观战审批"
 ```
 
 ---

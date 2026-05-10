@@ -40,7 +40,6 @@ const defaultProps = {
   isCreateTableDisabled: false,
   canInvitePlayers: false,
   inviteStatusesByUserId: {},
-  isOwner: false,
   onCreateTable: vi.fn(),
   onInvite: vi.fn(),
   onAcceptInvite: vi.fn(),
@@ -168,7 +167,6 @@ describe('SocialSidebarPanel', () => {
           },
         ]}
         spectatorRequests={[]}
-        isOwner={false}
         onAcceptInvite={vi.fn()}
         onRejectInvite={onRejectInvite}
         onApproveSpectatorRequest={vi.fn()}
@@ -197,7 +195,6 @@ describe('SocialSidebarPanel', () => {
           },
         ]}
         spectatorRequests={[]}
-        isOwner={false}
         inviteCreatorLabelsByUserId={{ 2: '阿强（平民）' }}
         onAcceptInvite={vi.fn()}
         onRejectInvite={vi.fn()}
@@ -210,7 +207,7 @@ describe('SocialSidebarPanel', () => {
     expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
   });
 
-  it('lets the owner approve and reject spectator requests from the room tab panel', async () => {
+  it('lets the target player approve and reject spectator requests from the room tab panel', async () => {
     const user = userEvent.setup();
     const onApproveSpectatorRequest = vi.fn();
     const onRejectSpectatorRequest = vi.fn();
@@ -218,7 +215,6 @@ describe('SocialSidebarPanel', () => {
     render(
       <SocialSidebarMessagesPanel
         pendingInvites={[]}
-        isOwner
         spectatorRequests={[
           {
             id: 3,

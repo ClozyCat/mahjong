@@ -164,7 +164,8 @@ function getSocialStatusCopy(detail: string) {
     table_multiplier_locked: '牌局已开始，无法再修改牌局设置。',
     table_not_found: '牌桌不存在或已关闭。',
     table_not_started: '牌局尚未开始，暂不能观战。',
-    spectator_requires_owner_approval: '观战需要房主同意。',
+    spectator_requires_owner_approval: '观战需要对方同意。',
+    spectator_target_not_in_table: '该玩家已不在目标牌桌中。',
     player_cannot_watch_own_table: '牌局内玩家不能申请观战本局。',
     spectator_request_not_found: '观战申请不存在或已处理。',
   };
@@ -506,7 +507,6 @@ export default function App() {
   const [requestedSpectatorTableCodes, setRequestedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
   const [approvedSpectatorTableCodes, setApprovedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
-  const [currentTableOwnerUserId, setCurrentTableOwnerUserId] = useState<number | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
   const [selectedProfileFallbackName, setSelectedProfileFallbackName] = useState<string | null>(
     storedAuthSession?.user.display_name ?? null,
@@ -596,7 +596,6 @@ export default function App() {
         setProfileFanStats([]);
         setProfileRecentGames([]);
         setProfileMessage(null);
-        setCurrentTableOwnerUserId(null);
         setIsActiveTableLookupPending(false);
         activeTableRestoreRef.current = null;
         skipActiveTableLookupTokenRef.current = null;
@@ -1031,7 +1030,6 @@ export default function App() {
     reconnectCloseCountRef.current = 0;
     activeTableRestoreRef.current = null;
     setActiveLobbyTableCode(null);
-    setCurrentTableOwnerUserId(null);
     if (currentUser) {
       setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, null));
       setLeaderboard((users) => updateLeaderboardUserActiveTableCode(users, currentUser.user_id, null));
@@ -1048,7 +1046,6 @@ export default function App() {
   const handleFatalLobbyReset = useEffectEvent((message: string, tableCode?: string) => {
     reconnectCloseCountRef.current = 0;
     activeTableRestoreRef.current = null;
-    setCurrentTableOwnerUserId(null);
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
@@ -1387,7 +1384,6 @@ export default function App() {
     perspectiveSeat: spectatorFocusSeat,
   });
   const isLocalBotTakeoverEnabled = !isSpectator && Boolean(localSeatState?.is_bot);
-  const roomOwnerUserId = state.roomSnapshot?.payload.owner_user_id ?? currentTableOwnerUserId;
   const tableSidebarPlayers: TableSidebarPlayer[] = viewModel.players.map((player) => {
     const matchedUser =
       (currentUser && currentUser.display_name === player.name ? currentUser : null) ??
@@ -1431,7 +1427,6 @@ export default function App() {
             },
           ]
         : [];
-  const isSidebarOwner = currentUser?.user_id !== undefined && roomOwnerUserId === currentUser.user_id;
   useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
 
   useEffect(() => {
@@ -1575,7 +1570,6 @@ export default function App() {
       const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken);
       setActiveLobbyTableCode(table.table_code);
       setSentInviteStatusesByUserId({});
-      setCurrentTableOwnerUserId(table.owner_user_id ?? currentUser.user_id);
       setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code, table.phase));
       setLeaderboard((users) =>
         updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code, table.phase),
@@ -1627,7 +1621,6 @@ export default function App() {
       const accepted = await acceptTableInvite(defaults.apiBaseUrl, authSession.sessionToken, invite.id);
       setPendingInvites((current) => removeInviteById(current, invite.id));
       setActiveLobbyTableCode(null);
-      setCurrentTableOwnerUserId(invite.inviter_user_id);
       dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
       openRoomSocket({
         tableCode: accepted.table_code,
@@ -1682,7 +1675,6 @@ export default function App() {
     setRequestedSpectatorTableCodes(new Set());
     setApprovedSpectatorTableCodes(new Set());
     setActiveLobbyTableCode(null);
-    setCurrentTableOwnerUserId(null);
     setIsActiveTableLookupPending(false);
     activeTableRestoreRef.current = null;
     skipActiveTableLookupTokenRef.current = null;
@@ -1790,8 +1782,8 @@ export default function App() {
     try {
       setRequestedSpectatorTableCodes((current) => addTableCode(current, tableCode));
       setStatusMessage(`正在申请观战 ${tableCode}...`);
-      await createSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, tableCode);
-      setStatusMessage(`已申请观战 ${tableCode}，等待房主同意。`);
+      await createSpectatorRequest(defaults.apiBaseUrl, authSession.sessionToken, tableCode, user.user_id);
+      setStatusMessage(`已申请观战 ${tableCode}，等待对方同意。`);
     } catch (error) {
       setRequestedSpectatorTableCodes((current) => removeTableCode(current, tableCode));
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '申请观战失败。');
@@ -2091,7 +2083,12 @@ export default function App() {
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
   }
 
-  const hasMessageAlert = pendingInvites.length > 0 || (isSidebarOwner && pendingSpectatorRequests.length > 0);
+  const reviewableSpectatorRequests = currentUser
+    ? pendingSpectatorRequests.filter(
+        (request) => request.status === 'pending' && request.owner_user_id === currentUser.user_id,
+      )
+    : [];
+  const hasMessageAlert = pendingInvites.length > 0 || reviewableSpectatorRequests.length > 0;
 
   const sidebarRoomPanel = currentUser ? (
     <SocialSidebarPanel
@@ -2113,8 +2110,7 @@ export default function App() {
   const sidebarMessagesPanel = currentUser ? (
     <SocialSidebarMessagesPanel
       pendingInvites={pendingInvites}
-      spectatorRequests={pendingSpectatorRequests}
-      isOwner={isSidebarOwner}
+      spectatorRequests={reviewableSpectatorRequests}
       inviteCreatorLabelsByUserId={inviteCreatorLabelsByUserId}
       spectatorRequesterLabelsByUserId={inviteCreatorLabelsByUserId}
       message={statusMessage}

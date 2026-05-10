@@ -75,6 +75,12 @@ struct CreateTableInviteRequest {
     invitee_user_id: i64,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateSpectatorRequestRequest {
+    #[serde(default)]
+    target_user_id: Option<i64>,
+}
+
 #[derive(Debug, Serialize)]
 struct AuthResponse {
     session_token: String,
@@ -887,11 +893,13 @@ async fn create_spectator_request(
     State(state): State<AppContext>,
     headers: axum::http::HeaderMap,
     axum::extract::Path(table_code): axum::extract::Path<String>,
+    payload: Option<Json<CreateSpectatorRequestRequest>>,
 ) -> Response {
     let authenticated_user = match require_authenticated_user(&state, &headers).await {
         Ok(user) => user,
         Err(response) => return response,
     };
+    let target_user_id = payload.and_then(|Json(body)| body.target_user_id);
     let table_code = normalize_table_code(&table_code);
     let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &table_code)
         .await
@@ -926,7 +934,7 @@ async fn create_spectator_request(
         return json_error(StatusCode::CONFLICT, "table_not_started");
     }
 
-    let owner_user_id = match state.inner.db.get_table(&table_code).await {
+    let fallback_owner_user_id = match state.inner.db.get_table(&table_code).await {
         Ok(Some(record)) => match parse_room_json(&record.room_json) {
             Ok(room) => match room.owner_user_id {
                 Some(owner_user_id) => owner_user_id,
@@ -939,6 +947,22 @@ async fn create_spectator_request(
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "table_not_found"),
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     };
+    let approval_user_id = match target_user_id {
+        Some(user_id) if user_id == authenticated_user.user_id => {
+            return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table");
+        }
+        Some(user_id) => match state
+            .inner
+            .db
+            .get_active_table_participant(&table_code, user_id)
+            .await
+        {
+            Ok(Some(_)) => user_id,
+            Ok(None) => return json_error(StatusCode::CONFLICT, "spectator_target_not_in_table"),
+            Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        },
+        None => fallback_owner_user_id,
+    };
 
     match state
         .inner
@@ -946,7 +970,7 @@ async fn create_spectator_request(
         .create_spectator_request(
             &table_code,
             authenticated_user.user_id,
-            owner_user_id,
+            approval_user_id,
             &now_iso(),
         )
         .await
@@ -955,7 +979,7 @@ async fn create_spectator_request(
             let payload = spectator_request_response(request.clone());
             notify_user_connections(
                 &state,
-                owner_user_id,
+                approval_user_id,
                 json!({
                     "type": "spectator_request_created",
                     "payload": payload.clone(),
