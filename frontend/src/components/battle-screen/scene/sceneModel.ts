@@ -265,21 +265,23 @@ export function buildTableSceneModel({
     layoutProfile.settlementBaseWidth.maxPx,
   );
   const minDimension = Math.min(viewport.width, viewport.height);
-  const spotlightOffsetPx = clamp(
-    minDimension * layoutProfile.spotlightOffset.ratio,
-    layoutProfile.spotlightOffset.minPx,
-    layoutProfile.spotlightOffset.maxPx,
+  const barWidthPx = clamp(
+    adaptiveWidth * layoutProfile.matchBarSize.width.ratio,
+    layoutProfile.matchBarSize.width.minPx,
+    layoutProfile.matchBarSize.width.maxPx,
   );
-  const spotlightOffsetHorizontalPx = clamp(
-    minDimension * layoutProfile.spotlightOffsetHorizontal.ratio,
-    layoutProfile.spotlightOffsetHorizontal.minPx,
-    layoutProfile.spotlightOffsetHorizontal.maxPx,
+  const barHeightPx = clamp(
+    adaptiveWidth * layoutProfile.matchBarSize.height.ratio,
+    layoutProfile.matchBarSize.height.minPx,
+    layoutProfile.matchBarSize.height.maxPx,
   );
-  const centerIndicatorSizePx = clamp(
-    minDimension * layoutProfile.centerIndicator.ratio,
-    layoutProfile.centerIndicator.minPx,
-    layoutProfile.centerIndicator.maxPx,
-  );
+  const scaledRiverHeightPx = scaledRiverWidthPx * DISCARD_TILE_RATIO;
+  const spotlightScale = viewport.effectMode === 'lowFx'
+    ? Math.min(layoutProfile.spotlightScale, 1.16)
+    : layoutProfile.spotlightScale;
+
+  const spotlightOffsetPx = (barHeightPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + layoutProfile.spotlightGap;
+  const spotlightOffsetHorizontalPx = (barWidthPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + (layoutProfile.spotlightGap * 2);
   const localPlayer = players.find((player) => player.isLocal) ?? playerBySeat.get('bottom');
 
   return {
@@ -287,9 +289,7 @@ export function buildTableSceneModel({
     layoutId: layoutProfile.id,
     stageStyle: {
       '--table-stage-tile-scale': `${tileScale}`,
-      '--table-stage-spotlight-scale': `${viewport.effectMode === 'lowFx'
-        ? Math.min(layoutProfile.spotlightScale, 1.16)
-        : layoutProfile.spotlightScale}`,
+      '--table-stage-spotlight-scale': `${spotlightScale}`,
       '--battle-hand-tile-width-base': `${handBaseWidthPx}px`,
       '--battle-hand-tile-width': `calc(${handBaseWidthPx}px * var(--table-stage-tile-scale, 1))`,
       '--battle-hand-tile-height': 'calc(var(--battle-hand-tile-width) * 1.57)',
@@ -297,12 +297,13 @@ export function buildTableSceneModel({
       '--table-stage-meld-rows-h': `${layoutProfile.horizontalMeldRows}`,
       '--table-stage-meld-cols-v': `${layoutProfile.verticalMeldColumns}`,
       '--table-stage-river-base-width': `${riverBaseWidthPx}px`,
-      '--table-stage-river-base-height': `${riverBaseWidthPx * DISCARD_TILE_RATIO}px`,
+      '--table-stage-river-base-height': `${scaledRiverHeightPx}px`,
       '--table-stage-river-gap': `${riverGapPx}px`,
       '--table-stage-meld-base-width': `${meldBaseWidthPx}px`,
       '--table-stage-settlement-base-width': `${settlementBaseWidthPx}px`,
       '--table-stage-settlement-base-height': `${settlementBaseWidthPx * 1.4}px`,
-      '--table-stage-center-indicator-size': `${centerIndicatorSizePx}px`,
+      '--table-stage-match-bar-w': `${barWidthPx}px`,
+      '--table-stage-match-bar-h': `${barHeightPx}px`,
       '--table-stage-spotlight-offset': `${spotlightOffsetPx}px`,
       '--table-stage-spotlight-offset-horizontal': `${spotlightOffsetHorizontalPx}px`,
       '--table-stage-center-v': `${layoutProfile.centerVPercent}%`,

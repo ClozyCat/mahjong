@@ -18,21 +18,11 @@ export interface TableLayoutProfile {
     min: number;
     max: number;
   };
-  centerIndicator: {
-    ratio: number;
-    minPx: number;
-    maxPx: number;
+  matchBarSize: {
+    width: { ratio: number; minPx: number; maxPx: number };
+    height: { ratio: number; minPx: number; maxPx: number };
   };
-  spotlightOffset: {
-    ratio: number;
-    minPx: number;
-    maxPx: number;
-  };
-  spotlightOffsetHorizontal: {
-    ratio: number;
-    minPx: number;
-    maxPx: number;
-  };
+  spotlightGap: number;
   riverBaseWidth: {
     ratio: number;
     minPx: number;
@@ -75,9 +65,11 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
     verticalMeldColumns: 1,
     horizontalRiverColumns: { min: 7, max: 10 },
     verticalRiverColumns: { min: 5, max: 7 },
-    centerIndicator: { ratio: 0.112, minPx: 42, maxPx: 90 },
-    spotlightOffset: { ratio: 0.13, minPx: 38, maxPx: 104 },
-    spotlightOffsetHorizontal: { ratio: 0.22, minPx: 96, maxPx: 220 },
+    matchBarSize: {
+      width: { ratio: 0.18, minPx: 160, maxPx: 280 },
+      height: { ratio: 0.045, minPx: 36, maxPx: 56 },
+    },
+    spotlightGap: 8,
     riverBaseWidth: { ratio: 0.024, minPx: 12, maxPx: 34 },
     riverGap: { ratio: 0.0008, minPx: 0.01, maxPx: 2 },
     handBaseWidth: { ratio: 0.034, minPx: 16, maxPx: 48 },

@@ -29,10 +29,12 @@
   --table-stage-horizontal-river-reference-rows: 2;
   --table-stage-horizontal-river-reference-height: calc((var(--table-stage-river-tile-height) * var(--table-stage-horizontal-river-reference-rows)) + (var(--table-stage-river-gap) * (var(--table-stage-horizontal-river-reference-rows) - 1)));
   --table-stage-action-pointer-size: clamp(0.65rem, 1.8vmin, 1.4rem);
-  --table-stage-center-indicator-size: clamp(1.8rem, 18vmin, 5.5rem);
-  --table-stage-spotlight-offset: clamp(1.5rem, 14vmin, 5.5rem);
-  --table-stage-spotlight-offset-horizontal: clamp(4.5rem, 24vmin, 11rem);
-  --table-stage-center-v: 41%;
+  --table-stage-match-bar-h: clamp(2.4rem, 8vmin, 2.8rem);
+  --table-stage-match-bar-w: clamp(12.5rem, 36vw, 16.5rem);
+  --table-stage-spotlight-gap: 0.5rem;
+  --table-stage-spotlight-offset: calc(var(--table-stage-match-bar-h) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + var(--table-stage-spotlight-gap));
+  --table-stage-spotlight-offset-horizontal: calc(var(--table-stage-match-bar-w) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + (var(--table-stage-spotlight-gap) * 2));
+  --table-stage-center-v: 42%;
   --table-stage-seat-top-v: clamp(0.1rem, 1.2vmin, 0.82rem);
   --table-stage-side-gap: clamp(0.2rem, 11vmin, 8rem);
   --table-player-accent: color-mix(in srgb, var(--accent) 62%, var(--theme-paper));
@@ -167,13 +169,17 @@
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: clamp(0.6rem, 1.5vw, 1.25rem);
-  padding: clamp(0.35rem, 0.8vw, 0.6rem) clamp(0.8rem, 2vw, 1.5rem);
+  gap: clamp(0.4rem, 1.2vw, 1rem);
+  padding: 0 clamp(0.7rem, 2.5vw, 1.25rem);
+  min-width: var(--table-stage-match-bar-w);
+  min-height: var(--table-stage-match-bar-h);
+  width: auto;
+  justify-content: center;
   border-radius: 999px;
   background: color-mix(in srgb, var(--theme-panel-bg-strong) 45%, transparent);
   backdrop-filter: blur(12px) saturate(1.2);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  box-shadow: 
+  box-shadow:
     0 8px 24px -6px var(--theme-shadow-soft),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   color: var(--theme-paper-strong);
@@ -188,9 +194,12 @@
 }
 
 @keyframes match-status-bar-breathing {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 16px color-mix(in srgb, var(--theme-success) 20%, transparent);
   }
+
   50% {
     box-shadow: 0 0 24px color-mix(in srgb, var(--theme-success) 40%, transparent);
   }
@@ -199,8 +208,9 @@
 .match-status-bar__section {
   display: flex;
   align-items: center;
-  gap: clamp(0.2rem, 0.6vw, 0.4rem);
+  gap: clamp(0.15rem, 0.4vw, 0.4rem);
   font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Noto Sans SC', sans-serif;
+  flex-shrink: 0;
 }
 
 .match-status-bar__section--action {
@@ -209,14 +219,14 @@
 }
 
 .match-status-bar__label {
-  font-size: clamp(0.65rem, 1.5vw, 0.8rem);
+  font-size: clamp(0.6rem, 1.4vw, 0.8rem);
   color: color-mix(in srgb, var(--theme-paper-strong) 60%, transparent);
   letter-spacing: 0.05em;
   font-family: 'Noto Sans SC', sans-serif;
 }
 
 .match-status-bar__value {
-  font-size: clamp(0.85rem, 2vw, 1.05rem);
+  font-size: clamp(0.8rem, 1.8vw, 1.05rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -228,13 +238,18 @@
 }
 
 @keyframes match-status-bar-urgent {
-  from { opacity: 1; }
-  to { opacity: 0.5; }
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.5;
+  }
 }
 
 .match-status-bar__divider {
   width: 1px;
-  height: clamp(0.8rem, 2vw, 1.25rem);
+  height: clamp(0.7rem, 1.8vw, 1.25rem);
   background: color-mix(in srgb, var(--theme-paper) 12%, transparent);
 }
 
@@ -242,7 +257,7 @@
   width: clamp(0.9rem, 2.2vw, 1.25rem);
   height: clamp(0.9rem, 2.2vw, 1.25rem);
   transition: transform 0.4s var(--ease-spring);
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 .table-stage__status-summary {
@@ -1373,12 +1388,12 @@
 /* Seat-specific spotlight & callout positioning (higher specificity) */
 .table-stage__spotlight.table-stage__spotlight--top,
 .table-stage__action-callout.table-stage__spotlight--top {
-  top: calc(41% - var(--table-stage-spotlight-offset));
+  top: calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset));
 }
 
 .table-stage__spotlight.table-stage__spotlight--bottom,
 .table-stage__action-callout.table-stage__spotlight--bottom {
-  top: calc(41% + var(--table-stage-spotlight-offset));
+  top: calc(var(--table-stage-center-v) + var(--table-stage-spotlight-offset));
 }
 
 .table-stage__spotlight.table-stage__spotlight--left,
@@ -1612,6 +1627,7 @@
     opacity: 0;
     transform: scale(0.9) translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -1720,9 +1736,9 @@
 /* ---- Landscape mobile ---- */
 @media (orientation: landscape) and (max-height: 500px) {
   .table-stage {
-    --table-stage-center-indicator-size: clamp(1rem, 6vw, 3.2rem);
-    --table-stage-spotlight-offset: clamp(1.2rem, 7vw, 3.6rem);
-    --table-stage-spotlight-offset-horizontal: clamp(2.8rem, 16vw, 6.5rem);
+    --table-stage-match-bar-h: clamp(1.8rem, 10vw, 2.4rem);
+    --table-stage-match-bar-w: clamp(8.5rem, 45vw, 12rem);
+    --table-stage-spotlight-gap: 0.35rem;
     --table-stage-spotlight-scale: 1.18;
     --table-stage-river-columns: 7;
   }
