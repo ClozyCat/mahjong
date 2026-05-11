@@ -314,7 +314,9 @@
   font-weight: 700;
   line-height: 1;
   backdrop-filter: blur(24px) saturate(140%);
-  transition: transform 0.3s var(--ease-spring), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
   box-shadow: 
     0 8px 16px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);

@@ -75,7 +75,7 @@
   width: 1rem;
   height: 1rem;
   opacity: 0.6;
-  transition: transform 0.3s var(--ease-spring), opacity 0.2s ease;
+  transition: transform 0.25s var(--ease-lux), opacity 0.2s ease;
 }
 
 .table-sidebar.is-open .table-sidebar__toggle {
@@ -215,7 +215,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
   display: flex;
   width: 1.4rem;
   height: 1.4rem;
-  transition: transform 0.3s var(--ease-spring);
+  transition: transform 0.25s var(--ease-lux);
 }
 
 
@@ -534,11 +534,11 @@ button.table-sidebar__toggle:active:not(:disabled) {
   padding: 0.45rem 1.2rem;
   font-weight: 700;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 24%, transparent);
-  transition: transform 0.3s var(--ease-spring), box-shadow 0.3s var(--ease-spring), background 0.3s ease;
+  transition: transform 0.22s var(--ease-lux), box-shadow 0.22s var(--ease-lux), background 0.3s ease;
 }
 
 .social-sidebar__primary:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.02);
+  transform: translate3d(0, -2px, 0) scale(1.02);
   box-shadow:
     0 10px 24px color-mix(in srgb, var(--accent) 34%, transparent),
     0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
@@ -977,7 +977,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
   border-radius: clamp(0.85rem, 2.5vw, 1.25rem);
   font-weight: 700;
   font-size: clamp(0.85rem, 2.2vw, 1rem);
-  transition: all 0.3s var(--ease-spring);
+  transition: transform 0.25s var(--ease-lux), background-color 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux);
 }
 
 .connect-gate__btn--primary {
@@ -988,7 +988,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .connect-gate__btn--primary:hover:not(:disabled) {
-  transform: translateY(-3px) scale(1.02);
+  transform: translate3d(0, -3px, 0) scale(1.02);
   box-shadow: 0 15px 35px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
