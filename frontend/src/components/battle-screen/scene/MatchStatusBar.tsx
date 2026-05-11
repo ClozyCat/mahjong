@@ -19,7 +19,16 @@ const SEAT_LABELS: Record<Seat, string> = {
   left: '上家',
 };
 
-const SeatArrow = ({ seat }: { seat: Seat }) => {
+function getDealerSelectionTransitionMs(dealerSelection: DealerSelectionView) {
+  const remainingMs = new Date(dealerSelection.revealAt).getTime() - Date.now();
+  if (!Number.isFinite(remainingMs)) {
+    return Math.max(300, Math.min(4_800, dealerSelection.durationMs));
+  }
+
+  return Math.max(300, Math.min(4_800, remainingMs));
+}
+
+const SeatArrow = ({ seat, dealerSelection }: { seat: Seat; dealerSelection?: DealerSelectionView | null }) => {
   const seatOrder: Seat[] = ['bottom', 'right', 'top', 'left'];
   const getBaseRotation = (s: Seat) => {
     const index = seatOrder.indexOf(s);
@@ -28,8 +37,24 @@ const SeatArrow = ({ seat }: { seat: Seat }) => {
 
   const [rotation, setRotation] = useState(() => getBaseRotation(seat));
   const prevSeatRef = useRef<Seat>(seat);
+  const dealerSelectionKey = dealerSelection?.key ?? null;
 
   useEffect(() => {
+    if (dealerSelectionKey && dealerSelection) {
+      // Handle spin for dealer selection
+      const targetRotation = getBaseRotation(dealerSelection.dealerSeat);
+      setRotation(prev => {
+        let next = targetRotation;
+        // Always spin many times CCW (decreasing angle)
+        while (next >= prev - 180) {
+          next -= 360;
+        }
+        return next - 360 * 5; // 5 extra full spins for lottery effect
+      });
+      prevSeatRef.current = dealerSelection.dealerSeat;
+      return;
+    }
+
     if (prevSeatRef.current !== seat) {
       const prevIndex = seatOrder.indexOf(prevSeatRef.current);
       const currIndex = seatOrder.indexOf(seat);
@@ -42,13 +67,20 @@ const SeatArrow = ({ seat }: { seat: Seat }) => {
       setRotation(prev => prev - (step * 90));
       prevSeatRef.current = seat;
     }
-  }, [seat]);
+  }, [seat, dealerSelectionKey, dealerSelection]);
+
+  const transitionMs = dealerSelection ? getDealerSelectionTransitionMs(dealerSelection) : 400;
+  const timingFunction = dealerSelection ? 'cubic-bezier(0.12, 0.78, 0.12, 1)' : 'var(--ease-spring)';
 
   return (
     <svg 
       className="match-status-bar__arrow" 
       viewBox="0 0 24 24" 
-      style={{ transform: `rotate(${rotation}deg)` }}
+      style={{ 
+        transform: `rotate(${rotation}deg)`,
+        transitionDuration: `${transitionMs}ms`,
+        transitionTimingFunction: timingFunction
+      }}
     >
       <path d="M12 6l-6 6 1.41 1.41L12 8.83l4.59 4.58L18 12z" fill="currentColor" />
     </svg>
@@ -133,7 +165,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     };
   }, [deadlineAt]);
 
-  const activeSeatLabel = stableDealerSelection ? '抽取东家' : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : '等待中');
+  const activeSeatLabel = stableDealerSelection ? '东家' : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : '等待中');
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
 
   useLayoutEffect(() => {
@@ -167,7 +199,11 @@ export const MatchStatusBar = memo(function MatchStatusBar({
       <div className="match-status-bar__divider" />
       
       <div className={`match-status-bar__section match-status-bar__section--action ${stableActionSeat ? `match-status-bar__action--${stableActionSeat}` : ''}`}>
-        {stableActionSeat && !stableDealerSelection ? <SeatArrow seat={stableActionSeat} /> : null}
+        {stableDealerSelection ? (
+          <SeatArrow seat={stableDealerSelection.dealerSeat} dealerSelection={stableDealerSelection} />
+        ) : stableActionSeat ? (
+          <SeatArrow seat={stableActionSeat} />
+        ) : null}
         <span className="match-status-bar__value">{activeSeatLabel}</span>
       </div>
 
