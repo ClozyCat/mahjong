@@ -25,6 +25,8 @@ param(
     [double]$KlCoef = 0.01,
     [double]$KlEndCoef = 0.0,
     [double]$TargetKl = 0.03,
+    [ValidateSet("aggressive", "balanced", "defensive")]
+    [string]$PlayStyle = "balanced",
     [string]$Device = "auto",
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
@@ -222,6 +224,7 @@ try {
     Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"
     Write-Host "Device:              $Device"
+    Write-Host "Play style:          $PlayStyle"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
     $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
@@ -359,6 +362,7 @@ try {
             "--kl-coef", "$KlCoef",
             "--kl-end-coef", "$KlEndCoef",
             "--target-kl", "$TargetKl",
+            "--play-style", $PlayStyle,
             "--output", $iterCheckpointDir,
             "--device", $Device
         )

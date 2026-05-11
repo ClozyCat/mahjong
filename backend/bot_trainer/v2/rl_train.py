@@ -20,6 +20,34 @@ DISCARD_MIN_RISK_WEIGHT = 0.25
 DISCARD_MAX_RISK_WEIGHT = 1.45
 
 
+PLAY_STYLE_CONFIGS = {
+    "aggressive": {
+        "base_risk_weight": 0.60,
+        "value_risk_range": 0.40,
+        "min_risk_weight": 0.15,
+        "max_risk_weight": 1.00,
+        "entropy_multiplier": 1.3,
+        "description": "进攻型：更激进的打法，愿意冒险追求高番",
+    },
+    "balanced": {
+        "base_risk_weight": 0.90,
+        "value_risk_range": 0.55,
+        "min_risk_weight": 0.25,
+        "max_risk_weight": 1.45,
+        "entropy_multiplier": 1.0,
+        "description": "平衡型：攻守兼备的标准打法",
+    },
+    "defensive": {
+        "base_risk_weight": 1.20,
+        "value_risk_range": 0.70,
+        "min_risk_weight": 0.40,
+        "max_risk_weight": 1.80,
+        "entropy_multiplier": 0.7,
+        "description": "防守型：保守稳健的打法，注重防守和风险控制",
+    },
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trajectories", type=Path, required=True)
@@ -38,6 +66,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kl-coef", type=float, default=0.01)
     parser.add_argument("--kl-end-coef", type=float, default=0.0)
     parser.add_argument("--target-kl", type=float, default=0.03)
+    parser.add_argument(
+        "--play-style",
+        choices=["aggressive", "balanced", "defensive"],
+        default="balanced",
+        help="打牌风格：aggressive(进攻型), balanced(平衡型), defensive(防守型)",
+    )
     parser.add_argument("--recompute-old-policy-stats", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="auto")
@@ -54,18 +88,33 @@ def masked_head_log_probs(
     return log_probs.gather(1, actions.long().unsqueeze(1)).squeeze(1)
 
 
-def risk_adjusted_discard_logits(outputs: dict[str, torch.Tensor]) -> torch.Tensor:
+def risk_adjusted_discard_logits(
+    outputs: dict[str, torch.Tensor],
+    style_config: dict[str, float] | None = None,
+) -> torch.Tensor:
     discard_logits = outputs["discard_logits"]
     risk_logits = outputs.get("risk_logits")
     value = outputs.get("value")
     if risk_logits is None or value is None:
         return discard_logits
+
+    if style_config is None:
+        base_risk_weight = DISCARD_BASE_RISK_WEIGHT
+        value_risk_range = DISCARD_VALUE_RISK_RANGE
+        min_risk_weight = DISCARD_MIN_RISK_WEIGHT
+        max_risk_weight = DISCARD_MAX_RISK_WEIGHT
+    else:
+        base_risk_weight = style_config["base_risk_weight"]
+        value_risk_range = style_config["value_risk_range"]
+        min_risk_weight = style_config["min_risk_weight"]
+        max_risk_weight = style_config["max_risk_weight"]
+
     values = value.squeeze(-1)
     normalized_value = torch.clamp(values / DISCARD_VALUE_SCALE, -1.0, 1.0)
     risk_weight = torch.clamp(
-        DISCARD_BASE_RISK_WEIGHT - DISCARD_VALUE_RISK_RANGE * normalized_value,
-        DISCARD_MIN_RISK_WEIGHT,
-        DISCARD_MAX_RISK_WEIGHT,
+        base_risk_weight - value_risk_range * normalized_value,
+        min_risk_weight,
+        max_risk_weight,
     ).unsqueeze(1)
     risk_probability = torch.sigmoid(risk_logits)
     adjusted = discard_logits - risk_weight * risk_probability
@@ -76,9 +125,10 @@ def risk_adjusted_discard_logits(outputs: dict[str, torch.Tensor]) -> torch.Tens
 def head_logits(
     outputs: dict[str, torch.Tensor],
     logits_key: str,
+    style_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     if logits_key == "discard_logits":
-        return risk_adjusted_discard_logits(outputs)
+        return risk_adjusted_discard_logits(outputs, style_config)
     return outputs[logits_key]
 
 
@@ -195,6 +245,7 @@ def model_config_from_checkpoint(checkpoint: Path | None) -> ModelConfig:
 def select_action_log_probs(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
+    style_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros_like(batch["reward"].float())
     heads = [
@@ -206,7 +257,7 @@ def select_action_log_probs(
     for head_index, logits_key, mask_key in heads:
         active = batch["action_head"] == head_index
         if torch.any(active):
-            logits = head_logits(outputs, logits_key)
+            logits = head_logits(outputs, logits_key, style_config)
             result[active] = masked_head_log_probs(
                 logits[active],
                 batch[mask_key][active],
@@ -229,6 +280,7 @@ def forward_model(
 def select_action_entropy(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
+    style_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros_like(batch["reward"].float())
     heads = [
@@ -240,7 +292,7 @@ def select_action_entropy(
     for head_index, logits_key, mask_key in heads:
         active = batch["action_head"] == head_index
         if torch.any(active):
-            logits = head_logits(outputs, logits_key)
+            logits = head_logits(outputs, logits_key, style_config)
             masked = logits[active].masked_fill(
                 ~batch[mask_key][active].bool(),
                 -1.0e4,
@@ -255,6 +307,7 @@ def select_action_head_kl(
     teacher_outputs: dict[str, torch.Tensor],
     student_outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
+    style_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros((), device=batch["reward"].device)
     count = 0
@@ -268,8 +321,8 @@ def select_action_head_kl(
         active = batch["action_head"] == head_index
         if torch.any(active):
             result = result + masked_categorical_kl(
-                head_logits(teacher_outputs, logits_key)[active],
-                head_logits(student_outputs, logits_key)[active],
+                head_logits(teacher_outputs, logits_key, style_config)[active],
+                head_logits(student_outputs, logits_key, style_config)[active],
                 batch[mask_key][active],
             )
             count += 1
@@ -310,6 +363,16 @@ def main() -> None:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
+
+    # 获取打牌风格配置
+    style_config = PLAY_STYLE_CONFIGS[args.play_style]
+    print(f"Play style: {args.play_style} - {style_config['description']}")
+
+    # 应用风格的熵系数调整
+    entropy_multiplier = style_config["entropy_multiplier"]
+    adjusted_entropy_coef = args.entropy_coef * entropy_multiplier
+    adjusted_entropy_end_coef = args.entropy_end_coef * entropy_multiplier
+
     dataset = ArenaTrajectoryDataset(
         args.trajectories,
         gamma=args.gamma,
@@ -338,7 +401,8 @@ def main() -> None:
         "RL train: "
         f"trajectories={len(dataset)} batches={len(loader)} "
         f"epochs={args.epochs} batch_size={args.batch_size} device={device} "
-        f"entropy_start={args.entropy_coef} entropy_end={args.entropy_end_coef}"
+        f"entropy_start={adjusted_entropy_coef:.6f} entropy_end={adjusted_entropy_end_coef:.6f} "
+        f"(base={args.entropy_coef:.6f}, multiplier={entropy_multiplier:.2f})"
     )
     print("RL trajectory diagnostics: " + json.dumps(diagnostics, ensure_ascii=False))
     entropy_decay_steps = args.entropy_decay_steps
@@ -363,8 +427,8 @@ def main() -> None:
             entropy_coef = entropy_coef_for_progress(
                 global_step,
                 entropy_decay_steps,
-                args.entropy_coef,
-                args.entropy_end_coef,
+                adjusted_entropy_coef,
+                adjusted_entropy_end_coef,
             )
             kl_coef = entropy_coef_for_progress(
                 global_step,
@@ -376,12 +440,12 @@ def main() -> None:
             if old_policy_model is not None:
                 with torch.no_grad():
                     old_outputs = forward_model(old_policy_model, batch)
-                    old_log_probs = select_action_log_probs(old_outputs, batch)
+                    old_log_probs = select_action_log_probs(old_outputs, batch, style_config)
                     old_values = old_outputs["value"].squeeze(1)
             else:
                 old_log_probs = batch["old_log_prob"].float()
                 old_values = batch["old_value"].float()
-            log_probs = select_action_log_probs(outputs, batch)
+            log_probs = select_action_log_probs(outputs, batch, style_config)
             returns = batch["return"].float()
             advantages = batch["advantage"].float()
             advantages = (advantages - advantages.mean()) / (
@@ -406,12 +470,12 @@ def main() -> None:
                 returns,
                 args.value_clip_epsilon,
             )
-            entropy = select_action_entropy(outputs, batch)
+            entropy = select_action_entropy(outputs, batch, style_config)
             kl_loss = torch.zeros((), device=device)
             if teacher_model is not None:
                 with torch.no_grad():
                     teacher_outputs = forward_model(teacher_model, batch)
-                kl_loss = select_action_head_kl(teacher_outputs, outputs, batch)
+                kl_loss = select_action_head_kl(teacher_outputs, outputs, batch, style_config)
             explained_variance = value_explained_variance(values.detach(), returns)
             loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
             optimizer.zero_grad(set_to_none=True)
@@ -458,7 +522,10 @@ def main() -> None:
             break
 
     checkpoint_path = args.output / "best.pt"
-    torch.save(checkpoint_payload(model, model_config, history), checkpoint_path)
+    payload = checkpoint_payload(model, model_config, history)
+    payload["play_style"] = args.play_style
+    payload["style_config"] = style_config
+    torch.save(payload, checkpoint_path)
     (args.output / "trajectory_diagnostics.json").write_text(
         json.dumps(diagnostics, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -468,6 +535,7 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"RL train saved checkpoint: {checkpoint_path}")
+    print(f"Play style: {args.play_style}")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,13 @@
       "sample_actions": false,
       "temperature": 1.0,
       "weight": 1
+    },
+    {
+      "id": "self",
+      "mode": "neural",
+      "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+      "sample_actions": true,
+      "temperature": 1.0
     }
   ]
 }

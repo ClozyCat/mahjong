@@ -26,6 +26,7 @@ ENTROPY_DECAY_STEPS=0
 KL_COEF=0.01
 KL_END_COEF=0.0
 TARGET_KL=0.03
+PLAY_STYLE=balanced
 DEVICE=auto
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
 LEARNER_POLICY_ID="learner"
@@ -77,6 +78,7 @@ Options:
   --kl-coef VALUE                  Supervised policy KL coefficient. Default 0.01.
   --kl-end-coef VALUE              Final KL coefficient after decay.
   --target-kl VALUE                Stop PPO epoch loop when approximate KL exceeds this value.
+  --play-style STYLE               Play style: aggressive, balanced, or defensive. Default balanced.
   --device DEVICE                  auto, cpu, cuda, etc.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
@@ -289,6 +291,11 @@ while [[ $# -gt 0 ]]; do
             TARGET_KL="$2"
             shift 2
             ;;
+        --play-style)
+            require_value "$1" "${2:-}"
+            PLAY_STYLE="$2"
+            shift 2
+            ;;
         --device)
             require_value "$1" "${2:-}"
             DEVICE="$2"
@@ -363,6 +370,10 @@ if [[ "$CANDIDATE_SELECTION_MODE" != "epoch" && "$CANDIDATE_SELECTION_MODE" != "
     echo "--candidate-selection-mode must be epoch or final." >&2
     exit 2
 fi
+if [[ "$PLAY_STYLE" != "aggressive" && "$PLAY_STYLE" != "balanced" && "$PLAY_STYLE" != "defensive" ]]; then
+    echo "--play-style must be aggressive, balanced, or defensive." >&2
+    exit 2
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
@@ -416,6 +427,7 @@ echo "Opponent pool:       $OPPONENT_POOL"
 echo "Learner policy id:   $LEARNER_POLICY_ID"
 echo "Eval matches:        $EVAL_MATCHES"
 echo "Device:              $DEVICE"
+echo "Play style:          $PLAY_STYLE"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
 if (( ARENA_JOBS == 0 )); then
@@ -533,6 +545,7 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
         --kl-coef "$KL_COEF"
         --kl-end-coef "$KL_END_COEF"
         --target-kl "$TARGET_KL"
+        --play-style "$PLAY_STYLE"
         --output "$iter_checkpoint_dir"
         --device "$DEVICE"
     )
