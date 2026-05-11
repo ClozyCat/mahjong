@@ -601,7 +601,10 @@
   filter: none;
 }
 
-.table-stage[data-fx='lowFx'] .match-status-bar--ambiguous,
+.table-stage[data-fx='lowFx'] .match-status-bar--ambiguous {
+  animation-duration: 6s;
+}
+
 .table-stage[data-fx='lowFx'] .table-stage__player-edge-info--tenpai::after {
   animation-duration: 6s;
   opacity: 0.2;
