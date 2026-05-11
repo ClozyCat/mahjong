@@ -2040,6 +2040,64 @@ mod tests {
     }
 
     #[test]
+    fn ready_hand_bot_one_tile_low_fan_self_draw_discards_drawn_pair() {
+        let mut room = ready_hand_auto_room_state("w3", "w3#draw");
+        room.seats.get_mut(0).expect("seat should exist").is_bot = true;
+        let round = room.round_state.as_mut().expect("round should exist");
+        round.wall.tiles =
+            serde_json::from_value(json!([suit("b9", "b9#next"), suit("b8", "b8#tail")]))
+                .expect("wall tiles should parse");
+        round.wall.head_index = 0;
+        round.wall.tail_index = 1;
+        round
+            .players
+            .get_mut(0)
+            .expect("player should exist")
+            .concealed_tiles =
+            serde_json::from_value(json!([wind("red", "red#pair"), wind("red", "red#draw")]))
+                .expect("tiles should parse");
+        round.players[0].melds = vec![
+            vec!["w1".to_string(), "w2".to_string(), "w3".to_string()],
+            vec!["t4".to_string(), "t5".to_string(), "t6".to_string()],
+            vec!["b3".to_string(), "b4".to_string(), "b5".to_string()],
+            vec!["w6".to_string(), "w7".to_string(), "w8".to_string()],
+        ];
+        round.last_action_context.tile_id = Some("red#draw".to_string());
+        room.pending_timeout
+            .as_mut()
+            .expect("timeout should exist")
+            .drawn_tile_id = Some("red#draw".to_string());
+
+        let action =
+            next_bot_action_in_room_state(&room).expect("ready-hand lookup should succeed");
+        assert_eq!(
+            action.as_ref().map(|action| action.action_type.as_str()),
+            Some("discard")
+        );
+        assert_eq!(
+            action.as_ref().map(|action| action.tile_ids.as_slice()),
+            Some(&["red#draw".to_string()][..])
+        );
+
+        let emitted = try_process_due_timeout_in_room_state(&mut room)
+            .expect("ready-hand timeout should not fail")
+            .expect("timeout should emit discard");
+
+        assert_eq!(emitted[0]["payload"]["event_type"], "tile_discarded");
+        assert_eq!(emitted[0]["payload"]["event"]["tile_id"], "red#draw");
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.current_actor),
+            Some(1)
+        );
+        assert_eq!(
+            room.pending_timeout
+                .as_ref()
+                .map(|timeout| timeout.kind.as_str()),
+            Some("active_turn")
+        );
+    }
+
+    #[test]
     fn ready_hand_human_waits_for_manual_add_kong_before_auto_discard() {
         let mut room = ready_hand_auto_room_state("w3", "w3#add");
         let round = room.round_state.as_mut().expect("round should exist");

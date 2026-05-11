@@ -853,9 +853,6 @@ fn visible_tile_keys_for_win_state(
     let Some(round) = state.round_state.as_ref() else {
         return visible_tile_keys;
     };
-    if !matches!(round.pending_action, Some(PendingAction::ClaimWindow(_))) {
-        return visible_tile_keys;
-    }
     if round
         .last_discard
         .as_ref()

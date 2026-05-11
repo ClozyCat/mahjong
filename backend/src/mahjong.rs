@@ -522,6 +522,30 @@ mod tests {
         ]);
     }
 
+    fn set_ready_hand_low_fan_wait_on_w1(room: &mut Value) {
+        room["round_state"]["players"][0]["concealed_tiles"][0] = suit("w1", "w1#discard");
+        room["round_state"]["last_action_context"]["tile_id"] = json!("w1#discard");
+        room["pending_timeout"]["drawn_tile_id"] = json!("w1#discard");
+        room["round_state"]["players"][1]["is_ready_hand"] = json!(true);
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w2", "w2#1"),
+            suit("w3", "w3#1"),
+            suit("t4", "t4#1"),
+            suit("t5", "t5#1"),
+            suit("t6", "t6#1"),
+            suit("b3", "b3#1"),
+            suit("b4", "b4#1"),
+            suit("b5", "b5#1"),
+            suit("w6", "w6#1"),
+            suit("w7", "w7#1"),
+            suit("w8", "w8#1"),
+            wind("red", "red#1a"),
+            wind("red", "red#1b")
+        ]);
+        room["round_state"]["players"][2]["discards"] = json!([suit("w1", "w1#seen-a")]);
+        room["round_state"]["players"][3]["discards"] = json!([suit("w1", "w1#seen-b")]);
+    }
+
     fn room_for_bot_active_turn() -> Value {
         let mut room = room_for_local_discard();
         room["seats"][0]["is_bot"] = json!(true);
@@ -1118,6 +1142,23 @@ mod tests {
             json!([1])
         );
         assert_eq!(room["pending_timeout"]["kind"], "claim_window");
+    }
+
+    #[test]
+    fn low_fan_discard_wait_does_not_prompt_pass_only_claim_window() {
+        let mut room = room_for_local_claim_window();
+        set_ready_hand_low_fan_wait_on_w1(&mut room);
+
+        let result = try_handle_action(&mut room, 0, "discard", &[String::from("w1#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["payload"]["event_type"], "tile_discarded");
+        assert!(room["round_state"]["pending_action"].is_null());
+        assert_eq!(room["round_state"]["current_actor"], 1);
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert!(action_prompt(&room, 1).is_none());
     }
 
     #[test]
