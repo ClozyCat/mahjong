@@ -201,7 +201,7 @@
   border-radius: inherit;
   border: 2px solid transparent;
   pointer-events: none;
-  transition: all 0.2s var(--ease-lux);
+  /* transition: all 0.2s var(--ease-lux); */
   z-index: 1;
 }
 
