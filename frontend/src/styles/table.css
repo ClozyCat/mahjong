@@ -226,21 +226,12 @@
 }
 
 .match-status-bar--ambiguous {
-  animation: match-status-bar-breathing 2.8s var(--ease-lux) infinite;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--theme-success) 20%, transparent);
-  border-color: color-mix(in srgb, var(--theme-success) 30%, transparent);
+  /* No special background/border change in waiting state */
 }
 
-@keyframes match-status-bar-breathing {
-
-  0%,
-  100% {
-    box-shadow: 0 0 16px color-mix(in srgb, var(--theme-success) 20%, transparent);
-  }
-
-  50% {
-    box-shadow: 0 0 24px color-mix(in srgb, var(--theme-success) 40%, transparent);
-  }
+.match-status-bar--ambiguous::before {
+  /* Show indicator lines for all players in waiting state */
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .match-status-bar__section {
@@ -664,9 +655,6 @@
   filter: none;
 }
 
-.table-stage[data-fx='lowFx'] .match-status-bar--ambiguous {
-  animation-duration: 6s;
-}
 
 .table-stage[data-fx='lowFx'] .table-stage__player-edge-info--tenpai::after {
   animation-duration: 6s;
