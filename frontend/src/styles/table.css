@@ -186,7 +186,7 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   color: var(--theme-paper-strong);
   pointer-events: none;
-  transition: all 0.3s var(--ease-lux);
+  transition: all 0.2s var(--ease-lux);
 }
 
 .match-status-bar[data-active-seat] {
@@ -201,7 +201,7 @@
   border-radius: inherit;
   border: 2px solid transparent;
   pointer-events: none;
-  transition: all 0.4s var(--ease-lux);
+  transition: all 0.2s var(--ease-lux);
   z-index: 1;
 }
 
@@ -303,7 +303,7 @@
 .match-status-bar__arrow {
   width: clamp(1.2rem, 3.2vw, 1.8rem);
   height: clamp(1.2rem, 3.2vw, 1.8rem);
-  transition: transform 0.4s var(--ease-spring);
+  transition: transform 0.2s var(--ease-spring);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 

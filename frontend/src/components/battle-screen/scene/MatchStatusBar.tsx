@@ -71,7 +71,7 @@ const SeatArrow = ({ seat, dealerSelection }: { seat: Seat; dealerSelection?: De
     }
   }, [seat, dealerSelectionKey, dealerSelection]);
 
-  const transitionMs = dealerSelection ? getDealerSelectionTransitionMs(dealerSelection) : 400;
+  const transitionMs = dealerSelection ? getDealerSelectionTransitionMs(dealerSelection) : 200;
   const timingFunction = dealerSelection ? 'cubic-bezier(0.12, 0.78, 0.12, 1)' : 'var(--ease-spring)';
 
   return (
