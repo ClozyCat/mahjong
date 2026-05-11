@@ -28,40 +28,35 @@ describe('system broadcast copy', () => {
     expect(titleForPoints(9999)).toBe('言出法随真雀神');
   });
 
-  it('creates a neutral ready-hand barrage with player title', () => {
+  it('does not create a ready-hand system broadcast', () => {
     const copy = createRoundEventSystemBroadcast('ready_hand_declared', { seat: 0 }, seats);
 
-    expectSystemPrefix(copy);
-    expect(copy).toContain('小A（熟练的码牌工）宣布听牌');
+    expect(copy).toBeNull();
   });
 
-  it('uses playful low-score copy for player entry', () => {
+  it('does not create a player-entry system broadcast', () => {
     const copy = createPresenceSystemBroadcast(
       { table_code: 'ROOM1', seat_index: 1, connected: true },
       seats,
     );
 
-    expectSystemPrefix(copy);
-    expect(copy).toContain('小B（全自动点炮机）');
-    expect(copy).toContain('节目效果');
+    expect(copy).toBeNull();
   });
 
-  it('uses worshipful high-score copy for self draw', () => {
+  it('does not create a self-draw system broadcast', () => {
     const copy = createRoundEventSystemBroadcast('self_hu_declared', { seat: 2 }, seats);
 
-    expect(copy?.startsWith('✨系统播报：')).toBe(true);
-    expect(copy).toContain('小C（言出法随真雀神）自摸成功');
+    expect(copy).toBeNull();
   });
 
-  it('announces discard wins as deal-in broadcasts with both titles', () => {
+  it('does not create a discard-win system broadcast', () => {
     const copy = createRoundEventSystemBroadcast(
       'claim_made',
       { seat: 0, from: 1, claim_type: 'hu' },
       seats,
     );
 
-    expectSystemPrefix(copy);
-    expect(copy).toContain('小B（全自动点炮机）给小A（熟练的码牌工）放铳');
+    expect(copy).toBeNull();
   });
 
   it('announces title changes with a dynamic event emoji', () => {
@@ -82,7 +77,7 @@ describe('system broadcast copy', () => {
     expect(copy).toContain('小A（熟练的码牌工）成功由“间歇性好运携带者”晋升“熟练的码牌工”');
   });
 
-  it('uses event-specific emoji instead of reusing the crown example', () => {
+  it('only creates system broadcasts for title changes', () => {
     const entry = createPresenceSystemBroadcast(
       { table_code: 'ROOM1', seat_index: 2, connected: true },
       seats,
@@ -107,10 +102,10 @@ describe('system broadcast copy', () => {
       source_round_id: 'east-1',
     });
 
-    expect(entry?.startsWith('🌟系统播报：')).toBe(true);
-    expect(readyHand?.startsWith('🔮系统播报：')).toBe(true);
-    expect(selfDraw?.startsWith('✨系统播报：')).toBe(true);
-    expect(discardWin?.startsWith('⚡系统播报：')).toBe(true);
+    expect(entry).toBeNull();
+    expect(readyHand).toBeNull();
+    expect(selfDraw).toBeNull();
+    expect(discardWin).toBeNull();
     expect(titleChange?.startsWith('🏆系统播报：')).toBe(true);
   });
 });
