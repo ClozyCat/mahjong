@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { DealerSelectionView, Seat } from '../../../types/match';
 
@@ -8,6 +8,8 @@ interface MatchStatusBarProps {
   dealerSelection?: DealerSelectionView | null;
   deadlineAt: string | null;
   isAmbiguous?: boolean;
+  shouldDebounceWaiting?: boolean;
+  onSizeChange?: (size: { width: number; height: number }) => void;
 }
 
 const SEAT_LABELS: Record<Seat, string> = {
@@ -53,22 +55,41 @@ const SeatArrow = ({ seat }: { seat: Seat }) => {
   );
 };
 
+function reportStatusBarSize(
+  element: HTMLDivElement | null,
+  onSizeChange: ((size: { width: number; height: number }) => void) | undefined,
+) {
+  if (!element || !onSizeChange) {
+    return;
+  }
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
+    onSizeChange({
+      width: rect.width,
+      height: rect.height,
+    });
+  }
+}
+
 export const MatchStatusBar = memo(function MatchStatusBar({
   remainingCount,
   actionSeat,
   dealerSelection = null,
   deadlineAt,
   isAmbiguous: isAmbiguousProp = false,
+  shouldDebounceWaiting = false,
+  onSizeChange,
 }: MatchStatusBarProps) {
+  const statusBarRef = useRef<HTMLDivElement | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [isAmbiguous, setIsAmbiguous] = useState(false);
   
-  // Track "stable" action seat info to avoid flickering during optimistic updates
+  // Track "stable" action seat info to avoid flickering during optimistic discard acknowledgements.
   const [stableActionSeat, setStableActionSeat] = useState<Seat | null>(actionSeat);
   const [stableDealerSelection, setStableDealerSelection] = useState<DealerSelectionView | null>(dealerSelection);
 
   useEffect(() => {
-    // If we have a concrete action or dealer selection, update immediately
     if (actionSeat || dealerSelection) {
       setStableActionSeat(actionSeat);
       setStableDealerSelection(dealerSelection);
@@ -76,19 +97,23 @@ export const MatchStatusBar = memo(function MatchStatusBar({
       return;
     }
 
-    // If we enter an ambiguous/waiting state (e.g. after discard), wait before updating UI
+    if (!shouldDebounceWaiting) {
+      setStableActionSeat(null);
+      setStableDealerSelection(null);
+      setIsAmbiguous(isAmbiguousProp);
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       setStableActionSeat(null);
       setStableDealerSelection(null);
-      if (isAmbiguousProp) {
-        setIsAmbiguous(true);
-      }
-    }, 500); // Slightly longer delay for text stability
+      setIsAmbiguous(isAmbiguousProp);
+    }, 500);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [actionSeat, dealerSelection, isAmbiguousProp]);
+  }, [actionSeat, dealerSelection, isAmbiguousProp, shouldDebounceWaiting]);
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -111,8 +136,29 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   const activeSeatLabel = stableDealerSelection ? '抽取东家' : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : '等待中');
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
 
+  useLayoutEffect(() => {
+    reportStatusBarSize(statusBarRef.current, onSizeChange);
+  }, [activeSeatLabel, isAmbiguous, onSizeChange, remainingCount, remainingSeconds]);
+
+  useLayoutEffect(() => {
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => reportStatusBarSize(statusBarRef.current, onSizeChange))
+      : null;
+    const element = statusBarRef.current;
+
+    if (!resizeObserver || !element || !onSizeChange) {
+      return undefined;
+    }
+
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [onSizeChange]);
+
   return (
-    <div className={`match-status-bar ${isAmbiguous ? 'match-status-bar--ambiguous' : ''}`}>
+    <div ref={statusBarRef} className={`match-status-bar ${isAmbiguous ? 'match-status-bar--ambiguous' : ''}`}>
       <div className="match-status-bar__section">
         <span className="match-status-bar__label">剩余</span>
         <span className="match-status-bar__value">{remainingCount ?? 0}</span>

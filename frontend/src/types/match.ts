@@ -771,6 +771,7 @@ export interface BattleViewModel {
   topStatusLabel: string;
   activePlayerSeat: Seat;
   actionIndicatorSeat: Seat | null;
+  shouldDebounceCenterWaiting?: boolean;
   isActionDockElevated: boolean;
   players: PlayerView[];
   actions: BattleActionView[];

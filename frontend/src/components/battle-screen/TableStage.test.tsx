@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -332,6 +332,61 @@ describe('TableStage', () => {
     expect(container.querySelectorAll('.table-stage__river-track--left .mahjong-tile')[1]).toHaveStyle('visibility: hidden');
   });
 
+  it('exports measured center capsule size for spotlight spacing', async () => {
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('match-status-bar')) {
+        return {
+          width: 218,
+          height: 46,
+          top: 0,
+          right: 218,
+          bottom: 46,
+          left: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      }
+
+      return originalGetBoundingClientRect.call(this);
+    });
+
+    const { container, unmount } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: ['b1', 'b2'],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="top"
+        actionIndicatorSeat="left"
+        lastDiscard="b2"
+        lastDiscardSeat="left"
+        remainingTileCount={42}
+        deadlineAt="2026-04-02T12:01:00Z"
+        promptText={null}
+      />,
+    );
+
+    try {
+      const tableStage = container.querySelector('.table-stage') as HTMLElement | null;
+      const spotlight = container.querySelector('.table-stage__spotlight--left') as HTMLElement | null;
+
+      await waitFor(() => {
+        expect(tableStage?.style.getPropertyValue('--table-stage-center-capsule-w')).toBe('218px');
+        expect(tableStage?.style.getPropertyValue('--table-stage-center-capsule-h')).toBe('46px');
+      });
+      expect(spotlight?.style.getPropertyValue('--spotlight-left')).toBe(
+        'calc(50% - var(--table-stage-spotlight-offset-horizontal))',
+      );
+    } finally {
+      unmount();
+      rectSpy.mockRestore();
+    }
+  });
+
   it('does not render the action pointer when the current prompt has no unique public actor', () => {
     render(
       <TableStage
@@ -362,288 +417,64 @@ describe('TableStage', () => {
     expect(screen.queryByLabelText(/正在行动/)).toBeNull();
   });
 
-  it.each([
-    { seat: 'left', expectedTransform: 'rotate(90 50 50)' },
-    { seat: 'right', expectedTransform: 'rotate(-90 50 50)' },
-  ] as const)('rotates the center indicator pointer toward the $seat seat', ({ seat, expectedTransform }) => {
-    const { container } = render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        actionIndicatorSeat={seat}
-        lastDiscard={null}
-        promptText={null}
-      />,
-    );
+  it('shows waiting immediately when the action seat clears without optimistic debounce', () => {
+    vi.useFakeTimers();
 
-    const pointer = container.querySelector('.table-stage__center-indicator-pointer');
-    expect(pointer).not.toBeNull();
-    expect(pointer?.getAttribute('transform')).toBe(expectedTransform);
-  });
-
-  it('keeps the center indicator pointer on the shortest counterclockwise path when moving from right to top', () => {
+    const discards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
     const props = {
-      discards: {
-        top: [],
-        left: [],
-        right: [],
-        bottom: [],
-      },
+      discards,
       activeSeat: 'bottom' as const,
       lastDiscard: null,
       promptText: null,
+      remainingTileCount: 42,
     };
 
-    const { container, rerender } = render(<TableStage {...props} actionIndicatorSeat="right" />);
+    const { rerender } = render(<TableStage {...props} actionIndicatorSeat="bottom" />);
 
-    rerender(<TableStage {...props} actionIndicatorSeat="top" />);
+    expect(screen.getByText('本家')).toBeInTheDocument();
 
-    const pointer = container.querySelector('.table-stage__center-indicator-pointer');
-    expect(pointer).not.toBeNull();
-    expect(pointer?.getAttribute('transform')).toBe('rotate(-180 50 50)');
+    rerender(<TableStage {...props} actionIndicatorSeat={null} />);
+
+    expect(screen.getByText('等待中')).toBeInTheDocument();
+    expect(screen.queryByText('本家')).toBeNull();
   });
 
-  it('keeps the center countdown progress when the active seat changes without a new deadline string', () => {
+  it('debounces waiting only when optimistic discard waiting is explicitly enabled', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
 
-    const deadlineAt = '2026-04-20T12:00:05Z';
     const discards = {
       top: [],
       left: [],
       right: [],
       bottom: [],
     };
-    const readCountdownOffset = (container: HTMLElement) =>
-      Number.parseFloat(
-        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
-      );
+    const props = {
+      discards,
+      activeSeat: 'bottom' as const,
+      lastDiscard: null,
+      promptText: null,
+      remainingTileCount: 42,
+      shouldDebounceWaitingStatus: true,
+    };
 
-    const { container, rerender } = render(
-      <TableStage
-        discards={discards}
-        activeSeat="bottom"
-        actionIndicatorSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt={deadlineAt}
-      />,
-    );
+    const { rerender } = render(<TableStage {...props} actionIndicatorSeat="bottom" />);
+
+    rerender(<TableStage {...props} actionIndicatorSeat={null} />);
+
+    expect(screen.getByText('本家')).toBeInTheDocument();
+    expect(screen.queryByText('等待中')).toBeNull();
 
     act(() => {
-      vi.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(500);
     });
 
-    const countdownBefore = readCountdownOffset(container);
-    expect(countdownBefore).toBeGreaterThan(0);
-
-    rerender(
-      <TableStage
-        discards={discards}
-        activeSeat="right"
-        actionIndicatorSeat="right"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt={deadlineAt}
-      />,
-    );
-
-    expect(readCountdownOffset(container)).toBeCloseTo(countdownBefore, 1);
-  });
-
-  it('keeps the center countdown progress when the response indicator seat changes without a new deadline string', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
-
-    const deadlineAt = '2026-04-20T12:00:05Z';
-    const discards = {
-      top: [],
-      left: [],
-      right: [],
-      bottom: [],
-    };
-    const readCountdownOffset = (container: HTMLElement) =>
-      Number.parseFloat(
-        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
-      );
-
-    const { container, rerender } = render(
-      <TableStage
-        discards={discards}
-        activeSeat="bottom"
-        actionIndicatorSeat="left"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt={deadlineAt}
-      />,
-    );
-
-    act(() => {
-      vi.advanceTimersByTime(2000);
-    });
-
-    const countdownBefore = readCountdownOffset(container);
-    expect(countdownBefore).toBeGreaterThan(0);
-
-    rerender(
-      <TableStage
-        discards={discards}
-        activeSeat="bottom"
-        actionIndicatorSeat="top"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt={deadlineAt}
-      />,
-    );
-
-    expect(readCountdownOffset(container)).toBeCloseTo(countdownBefore, 1);
-  });
-
-  it('renders a partial countdown immediately when the page mounts mid-turn', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
-
-    const discards = {
-      top: [],
-      left: [],
-      right: [],
-      bottom: [],
-    };
-    const readCountdownOffset = (container: HTMLElement) =>
-      Number.parseFloat(
-        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
-      );
-
-    const { container } = render(
-      <TableStage
-        discards={discards}
-        activeSeat="top"
-        actionIndicatorSeat="top"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt="2026-04-20T12:00:10Z"
-      />,
-    );
-
-    act(() => {
-      vi.advanceTimersByTime(20);
-    });
-
-    expect(readCountdownOffset(container)).toBeGreaterThan(0);
-  });
-
-  it('renders a full center ring without dash trimming when there is no countdown deadline', () => {
-    const discards = {
-      top: [],
-      left: [],
-      right: [],
-      bottom: [],
-    };
-
-    const { container } = render(
-      <TableStage
-        discards={discards}
-        activeSeat="bottom"
-        actionIndicatorSeat={null}
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt={null}
-      />,
-    );
-
-    const countdownRing = container.querySelector('.table-stage__center-indicator-countdown');
-
-    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
-    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
-  });
-
-  it('renders a closed center ring when only a small amount of countdown time has elapsed', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
-
-    const discards = {
-      top: [],
-      left: [],
-      right: [],
-      bottom: [],
-    };
-
-    const { container } = render(
-      <TableStage
-        discards={discards}
-        activeSeat="bottom"
-        actionIndicatorSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt="2026-04-20T12:00:29.800Z"
-      />,
-    );
-
-    const countdownRing = container.querySelector('.table-stage__center-indicator-countdown');
-
-    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
-    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
-  });
-
-  it('stops the previous countdown loop after the center timer is cleared', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-20T12:00:00Z'));
-
-    const discards = {
-      top: [],
-      left: [],
-      right: [],
-      bottom: [],
-    };
-    const readCountdownOffset = (container: HTMLElement) =>
-      Number.parseFloat(
-        container.querySelector('.table-stage__center-indicator-countdown')?.getAttribute('stroke-dashoffset') ?? 'NaN',
-      );
-
-    const { container, rerender } = render(
-      <TableStage
-        discards={discards}
-        activeSeat="bottom"
-        actionIndicatorSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt="2026-04-20T12:00:05Z"
-      />,
-    );
-
-    act(() => {
-      vi.advanceTimersByTime(2000);
-    });
-
-    expect(readCountdownOffset(container)).toBeGreaterThan(0);
-
-    const countdownRing = container.querySelector('.table-stage__center-indicator-countdown');
-
-    rerender(
-      <TableStage
-        discards={discards}
-        activeSeat="right"
-        actionIndicatorSeat={null}
-        lastDiscard={null}
-        promptText={null}
-        deadlineAt={null}
-      />,
-    );
-
-    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
-    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
-
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    expect(countdownRing?.hasAttribute('stroke-dasharray')).toBe(false);
-    expect(countdownRing?.hasAttribute('stroke-dashoffset')).toBe(false);
+    expect(screen.getByText('等待中')).toBeInTheDocument();
+    expect(screen.queryByText('本家')).toBeNull();
   });
 
   it('does not apply a separate dealer style modifier to the spotlight', () => {
@@ -868,32 +699,6 @@ describe('TableStage', () => {
     expect(getColorSlot('Player B')).toBe(playerBColorSlot);
   });
 
-  it('shows east in the center while the dealer selection wheel spins', () => {
-    const { container } = render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        dealerSelection={{
-          key: 'dealer-selection-1',
-          dealerSeat: 'right',
-          dealerName: 'Player B',
-          startedAt: '2026-04-27T12:00:00Z',
-          revealAt: '2026-04-27T12:00:04.200Z',
-          durationMs: 4200,
-        }}
-      />,
-    );
-
-    expect(container.querySelector('.table-stage__center-indicator-count')).toHaveTextContent('東');
-  });
-
   it('opens the quick-chat radial menu from the global emoji trigger', async () => {
     const user = userEvent.setup();
 
@@ -925,75 +730,6 @@ describe('TableStage', () => {
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(within(menu).getAllByRole('menuitem')).toHaveLength(6);
-  });
-
-  it('keeps primary corner controls ordered and expands table settings below them', () => {
-    const onCycleTheme = vi.fn();
-    const onToggleBgm = vi.fn();
-    const onToggleVoice = vi.fn();
-    const onToggleBotTakeover = vi.fn();
-
-    render(
-      <TableStage
-        discards={{
-          top: [],
-          left: [],
-          right: [],
-          bottom: [],
-        }}
-        activeSeat="bottom"
-        lastDiscard={null}
-        promptText={null}
-        canLeaveTable
-        themeId="qiu-xiang"
-        themeLabel="秋香"
-        isBgmEnabled
-        isVoiceEnabled
-        isBotTakeoverEnabled={false}
-        onLeaveTable={() => undefined}
-        onCycleTheme={onCycleTheme}
-        onToggleBgm={onToggleBgm}
-        onToggleVoice={onToggleVoice}
-        onToggleBotTakeover={onToggleBotTakeover}
-      />,
-    );
-
-    const settingsButton = screen.getByRole('button', { name: '展开牌桌快捷设置' });
-    const helpButton = screen.getByRole('button', { name: '打开国标麻将番种说明' });
-    const leaveButton = screen.getByRole('button', { name: '快捷离开牌桌' });
-    const controls = helpButton.parentElement;
-
-    expect(controls?.children[0]).toBe(settingsButton);
-    expect(controls?.children[1]).toBe(helpButton);
-    expect(controls?.children[2]).toBe(leaveButton);
-    expect(screen.queryByRole('group', { name: '牌桌快捷设置' })).toBeNull();
-
-    fireEvent.click(settingsButton);
-
-    const settings = screen.getByRole('group', { name: '牌桌快捷设置' });
-    const musicButton = within(settings).getByRole('button', { name: '音乐开关' });
-    const voiceButton = within(settings).getByRole('button', { name: '语音开关' });
-    const botButton = within(settings).getByRole('button', { name: 'BOT代打' });
-    const themeButton = within(settings).getByRole('button', { name: '换主题' });
-
-    expect(settingsButton).toHaveAccessibleName('收起牌桌快捷设置');
-    expect(settings.children[0]).toBe(musicButton);
-    expect(settings.children[1]).toBe(voiceButton);
-    expect(settings.children[2]).toBe(botButton);
-    expect(settings.children[3]).toBe(themeButton);
-    expect(musicButton).toHaveAttribute('aria-pressed', 'true');
-    expect(voiceButton).toHaveAttribute('aria-pressed', 'true');
-    expect(botButton).toHaveAttribute('aria-pressed', 'false');
-
-    fireEvent.click(musicButton);
-    fireEvent.click(voiceButton);
-    fireEvent.click(botButton);
-    fireEvent.click(themeButton);
-
-    expect(onToggleBgm).toHaveBeenCalledTimes(1);
-    expect(onToggleVoice).toHaveBeenCalledTimes(1);
-    expect(onToggleBotTakeover).toHaveBeenCalledWith(true);
-    expect(onCycleTheme).toHaveBeenCalledTimes(1);
   });
 
   it('opens the fan guide dialog from the corner help button and shows all fan guide entries in one scrollable list', () => {

@@ -1919,6 +1919,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
             : '对局中',
     activePlayerSeat,
     actionIndicatorSeat,
+    shouldDebounceCenterWaiting: Boolean(optimisticDiscard),
     isActionDockElevated: mode === 'my_turn' || Boolean(promptCue?.isUrgent),
     players: createPlayers(state, options),
     actions: createActionViews(state, waitingControls, options),

@@ -440,6 +440,7 @@ export function BattleScreen({
               selectedTileCode={viewModel.selectedTileCode}
               activeSeat={viewModel.activePlayerSeat}
               actionIndicatorSeat={viewModel.actionIndicatorSeat}
+              shouldDebounceWaitingStatus={viewModel.shouldDebounceCenterWaiting ?? false}
               lastDiscard={visibleLastDiscard}
               lastDiscardSeat={visibleLastDiscardSeat}
               settlementWinnerSeat={viewModel.result?.winnerSeat ?? null}

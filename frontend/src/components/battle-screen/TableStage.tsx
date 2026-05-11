@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import type { ThemeId } from '../../lib/themes';
 import type {
@@ -24,6 +24,11 @@ import { useBattleViewport } from './scene/useBattleViewport';
 export type { TableStagePlayer } from './scene/types';
 
 const PLAYER_COLOR_SLOT_COUNT = 4;
+
+type CenterStatusSize = {
+  width: number;
+  height: number;
+};
 
 function getPlayerIdentityKey(player: TableStagePlayer) {
   if (typeof player.userId === 'number') {
@@ -61,6 +66,7 @@ interface TableStageProps {
   selectedTileCode?: string | null;
   activeSeat: Seat;
   actionIndicatorSeat?: Seat | null;
+  shouldDebounceWaitingStatus?: boolean;
   lastDiscard: string | null;
   lastDiscardSeat?: Seat | null;
   settlementWinnerSeat?: Seat | null;
@@ -116,6 +122,7 @@ export function TableStage({
   selectedTileCode = null,
   activeSeat,
   actionIndicatorSeat = null,
+  shouldDebounceWaitingStatus = false,
   lastDiscard,
   lastDiscardSeat = null,
   settlementWinnerSeat = null,
@@ -167,6 +174,7 @@ export function TableStage({
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const playerColorSlotsRef = useRef(new Map<string, number>());
+  const [centerStatusSize, setCenterStatusSize] = useState<CenterStatusSize | null>(null);
   const viewport = useBattleViewport(containerRef);
   const shouldShowAspectRatioPrompt = viewport.width < viewport.height;
   const playersWithColorSlots = withPlayerColorSlots(players, playerColorSlotsRef.current);
@@ -183,13 +191,40 @@ export function TableStage({
   const hasSpotlightDiscard = Boolean(lastDiscard && lastDiscardSeat);
   const centerPrimaryText =
     centerStatusText ?? (typeof remainingTileCount === 'number' ? `剩余 ${remainingTileCount} 张` : '等待开局');
+  const handleCenterStatusSizeChange = useCallback((nextSize: CenterStatusSize) => {
+    const roundedSize = {
+      width: Math.round(nextSize.width),
+      height: Math.round(nextSize.height),
+    };
+
+    setCenterStatusSize((currentSize) => {
+      if (
+        currentSize &&
+        currentSize.width === roundedSize.width &&
+        currentSize.height === roundedSize.height
+      ) {
+        return currentSize;
+      }
+
+      return roundedSize;
+    });
+  }, []);
+  const stageStyle = {
+    ...scene.stageStyle,
+    ...(centerStatusSize
+      ? {
+          '--table-stage-center-capsule-w': `${centerStatusSize.width}px`,
+          '--table-stage-center-capsule-h': `${centerStatusSize.height}px`,
+        }
+      : {}),
+  } as CSSProperties;
 
   return (
     <section
       ref={containerRef}
       className="table-stage"
       aria-label="Mahjong table"
-      style={scene.stageStyle}
+      style={stageStyle}
       data-layout={scene.layoutId}
       data-fx={scene.effectMode}
       data-center-status={centerPrimaryText}
@@ -226,6 +261,8 @@ export function TableStage({
             dealerSelection={dealerSelection}
             deadlineAt={deadlineAt}
             isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
+            shouldDebounceWaiting={shouldDebounceWaitingStatus}
+            onSizeChange={handleCenterStatusSizeChange}
           />
           {scene.seats.map((seatScene) => (
             <SeatZone

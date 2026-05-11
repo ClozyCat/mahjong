@@ -2075,6 +2075,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.handInsight).toBeNull();
     expect(viewModel.shouldAutoReturnLastDiscardToRiver).toBe(false);
     expect(viewModel.actionIndicatorSeat).toBeNull();
+    expect(viewModel.shouldDebounceCenterWaiting).toBe(true);
   });
 
   it('labels spectator quick-chat barrage without treating the viewer as a seated player', () => {
