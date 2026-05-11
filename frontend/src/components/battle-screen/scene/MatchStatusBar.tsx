@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { DealerSelectionView, Seat } from '../../../types/match';
 
@@ -89,6 +89,70 @@ const SeatArrow = ({ seat, dealerSelection }: { seat: Seat; dealerSelection?: De
   );
 };
 
+const TimerIndicators = ({ 
+  progress, 
+  size, 
+  seat, 
+  isAmbiguous,
+  showUrgent
+}: { 
+  progress: number; 
+  size: { width: number; height: number }; 
+  seat: Seat | null; 
+  isAmbiguous: boolean;
+  showUrgent: boolean;
+}) => {
+  const { width, height } = size;
+  if (width === 0 || height === 0) return null;
+
+  const R = height / 2;
+  const W = width;
+  const H = height;
+
+  const paths = useMemo(() => {
+    // Basic segments
+    const top = `M ${R},0 L ${W - R},0`;
+    const bottom = `M ${W - R},${H} L ${R},${H}`;
+    const left = `M ${R},${H} A ${R},${R} 0 0 1 ${R},0`;
+    const right = `M ${W - R},0 A ${R},${R} 0 0 1 ${W - R},${H}`;
+
+    // Waiting state halves (shrink towards top/bottom centers)
+    const topHalf = `M 0,${R} A ${R},${R} 0 0 1 ${R},0 L ${W - R},0 A ${R},${R} 0 0 1 ${W},${R}`;
+    const bottomHalf = `M 0,${R} A ${R},${R} 0 0 0 ${R},${H} L ${W - R},${H} A ${R},${R} 0 0 0 ${W},${R}`;
+
+    return { top, bottom, left, right, topHalf, bottomHalf };
+  }, [W, H, R]);
+
+  const getDashStyles = (length: number) => {
+    const visible = length * progress;
+    const gap = length * (1 - progress);
+    return {
+      strokeDasharray: `${visible} ${gap}`,
+      strokeDashoffset: -(gap / 2),
+    };
+  };
+
+  const pathClass = `match-status-bar__timer-path ${showUrgent ? 'match-status-bar__timer-path--urgent' : ''}`;
+
+  return (
+    <svg className="match-status-bar__timer-svg" viewBox={`0 0 ${W} ${H}`} fill="none">
+      {/* Player Indicators */}
+      {seat === 'top' && <path d={paths.top} className={pathClass} {...getDashStyles(W - 2 * R)} />}
+      {seat === 'bottom' && <path d={paths.bottom} className={pathClass} {...getDashStyles(W - 2 * R)} />}
+      {seat === 'left' && <path d={paths.left} className={pathClass} {...getDashStyles(Math.PI * R)} />}
+      {seat === 'right' && <path d={paths.right} className={pathClass} {...getDashStyles(Math.PI * R)} />}
+
+      {/* Waiting state indicators */}
+      {isAmbiguous && (
+        <>
+          <path d={paths.topHalf} className={`${pathClass} match-status-bar__timer-path--waiting`} {...getDashStyles(W - 2 * R + Math.PI * R)} />
+          <path d={paths.bottomHalf} className={`${pathClass} match-status-bar__timer-path--waiting`} {...getDashStyles(W - 2 * R + Math.PI * R)} />
+        </>
+      )}
+    </svg>
+  );
+};
+
 function reportStatusBarSize(
   element: HTMLDivElement | null,
   onSizeChange: ((size: { width: number; height: number }) => void) | undefined,
@@ -118,6 +182,8 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   const statusBarRef = useRef<HTMLDivElement | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [isAmbiguous, setIsAmbiguous] = useState(false);
+  const [progress, setProgress] = useState(1);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   
   // Track "stable" action seat info to avoid flickering during optimistic discard acknowledgements.
   const [stableActionSeat, setStableActionSeat] = useState<Seat | null>(actionSeat);
@@ -167,6 +233,29 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     };
   }, [deadlineAt]);
 
+  useEffect(() => {
+    if (!deadlineAt) {
+      setProgress(1);
+      return;
+    }
+
+    const targetDate = new Date(deadlineAt).getTime();
+    const startRemainingMs = targetDate - Date.now();
+    // Use a baseline duration of at least 5s, typical mahjong timers are 15-30s.
+    const baselineDuration = Math.max(startRemainingMs, 5000);
+
+    const update = () => {
+      const now = Date.now();
+      const remaining = targetDate - now;
+      const p = Math.max(0, Math.min(1, remaining / baselineDuration));
+      setProgress(p);
+    };
+
+    update();
+    const timer = setInterval(update, 60);
+    return () => clearInterval(timer);
+  }, [deadlineAt]);
+
   const activeSeatLabel = stableDealerSelection
     ? '东家'
     : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : WAITING_ACTION_LABEL);
@@ -195,12 +284,34 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     };
   }, [onSizeChange]);
 
+  useEffect(() => {
+    if (!statusBarRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const target = entry.target as HTMLElement;
+        setSize({
+          width: target.offsetWidth,
+          height: target.offsetHeight,
+        });
+      }
+    });
+    observer.observe(statusBarRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div
       ref={statusBarRef}
       className={`match-status-bar ${isAmbiguous ? 'match-status-bar--ambiguous' : ''}`}
       data-active-seat={stableActionSeat ?? undefined}
     >
+      <TimerIndicators 
+        progress={progress} 
+        size={size} 
+        seat={stableActionSeat} 
+        isAmbiguous={isAmbiguous}
+        showUrgent={showUrgent}
+      />
       <div className="match-status-bar__section">
         <span className="match-status-bar__label">剩余</span>
         <span className="match-status-bar__value">{remainingCount ?? 0}</span>

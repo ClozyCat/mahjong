@@ -199,39 +199,42 @@
   position: absolute;
   inset: -1.5px;
   border-radius: inherit;
-  border: 2px solid transparent;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   pointer-events: none;
   transition: all 0.2s var(--ease-lux);
+  z-index: 0;
+}
+
+.match-status-bar__timer-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
   z-index: 1;
+  overflow: visible;
 }
 
-.match-status-bar[data-active-seat='top']::before {
-  border-top-color: var(--accent);
-  filter: drop-shadow(0 -4px 8px color-mix(in srgb, var(--accent) 60%, transparent));
+.match-status-bar__timer-path {
+  stroke: var(--accent);
+  stroke-width: 2px;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.1s linear, stroke-dashoffset 0.1s linear, stroke 0.3s ease;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent));
 }
 
-.match-status-bar[data-active-seat='bottom']::before {
-  border-bottom-color: var(--accent);
-  filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--accent) 60%, transparent));
+.match-status-bar__timer-path--waiting {
+  stroke: color-mix(in srgb, var(--accent) 35%, transparent);
+  filter: none;
 }
 
-.match-status-bar[data-active-seat='left']::before {
-  border-left-color: var(--accent);
-  filter: drop-shadow(-4px 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
-}
-
-.match-status-bar[data-active-seat='right']::before {
-  border-right-color: var(--accent);
-  filter: drop-shadow(4px 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
+.match-status-bar__timer-path--urgent {
+  stroke: var(--theme-danger, #ff4d4f);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--theme-danger, #ff4d4f) 50%, transparent));
 }
 
 .match-status-bar--ambiguous {
   /* No special background/border change in waiting state */
-}
-
-.match-status-bar--ambiguous::before {
-  /* Show indicator lines for all players in waiting state */
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .match-status-bar__section {
