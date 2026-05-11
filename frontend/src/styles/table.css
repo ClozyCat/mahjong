@@ -186,7 +186,7 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
   color: var(--theme-paper-strong);
   pointer-events: none;
-  transition: all 0.05s var(--ease-lux);
+  /* transition: all 0.05s var(--ease-lux); */
 }
 
 .match-status-bar[data-active-seat] {
