@@ -2442,8 +2442,6 @@ mod tests {
             nickname: Some(format!("P{seat_index}")),
             points: None,
             title: None,
-            reconnect_token: Some(format!("token-{seat_index}")),
-            player_session_id: Some(seat_index as i64 + 1),
             connected: true,
             ready: true,
             is_bot: false,

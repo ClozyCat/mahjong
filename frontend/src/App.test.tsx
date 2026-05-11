@@ -122,7 +122,6 @@ function createPlayingSnapshotPayload(overrides: Record<string, unknown> = {}) {
       { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
     ],
     local_seat: 0,
-    reconnect_token: 'token-1',
     match_state: {
       prevailing_wind: 'east',
       hand_number: 1,
@@ -306,7 +305,6 @@ function seedStoredRoomSession() {
     JSON.stringify({
       tableCode: 'OLD123',
       nickname: 'Old Player',
-      reconnectToken: 'old-reconnect-token',
       wsBaseUrl: 'ws://localhost:8000',
     }),
   );
@@ -639,7 +637,6 @@ describe('App', () => {
             { seat_index: 3, nickname: 'Bot 3', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
           ],
           local_seat: 0,
-          reconnect_token: 'token-1',
         },
       });
     });
@@ -667,7 +664,6 @@ describe('App', () => {
             { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
           ],
           local_seat: 0,
-          reconnect_token: 'token-1',
         },
       });
     });
@@ -695,7 +691,6 @@ describe('App', () => {
             { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
           ],
           local_seat: 0,
-          reconnect_token: 'token-1',
         },
       });
     });
@@ -886,7 +881,6 @@ describe('App', () => {
           seats: [{ seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' }],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -937,7 +931,6 @@ describe('App', () => {
           ],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -988,7 +981,6 @@ describe('App', () => {
           seats: [],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -1044,7 +1036,6 @@ describe('App', () => {
           ],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -1098,7 +1089,6 @@ describe('App', () => {
           ],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -1159,7 +1149,6 @@ describe('App', () => {
           seats: [],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -1250,7 +1239,6 @@ describe('App', () => {
         payload: createPlayingSnapshotPayload({
           table_code: 'ROOM42',
           local_seat: 1,
-          reconnect_token: undefined,
           spectators: [{ user_id: DEFAULT_CURRENT_USER.user_id, display_name: DEFAULT_CURRENT_USER.display_name }],
         }),
       });
@@ -1373,7 +1361,6 @@ describe('App', () => {
           ],
           spectators: [],
           local_seat: 0,
-          reconnect_token: 'token-1',
           match_state: null,
           private_state: null,
           owner_user_id: 1,
@@ -1910,7 +1897,6 @@ describe('App', () => {
           phase: 'waiting',
           seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
           local_seat: 0,
-          reconnect_token: 'token-1',
           owner_user_id: 1,
         },
       });
@@ -1975,6 +1961,30 @@ describe('App', () => {
 
     expectTableHome();
     expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
+  });
+
+  it('returns to the table home when reconnect receives table_closed', async () => {
+    const user = userEvent.setup();
+    const { socket } = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload(),
+      });
+    });
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'action_rejected',
+        payload: {
+          reason: 'table_closed',
+        },
+      });
+    });
+
+    expectTableHome();
+    expect(screen.getByText('牌桌已关闭，请返回大厅重新进入。')).toBeInTheDocument();
   });
 
 

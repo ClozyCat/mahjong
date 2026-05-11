@@ -10,7 +10,6 @@ const roomSnapshotMessage: RoomSnapshotMessage = {
     phase: 'waiting',
     seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
     local_seat: 0,
-    reconnect_token: 'token-1',
   },
 };
 
@@ -44,7 +43,6 @@ const playingRoomSnapshotMessage: RoomSnapshotMessage = {
       { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
     ],
     local_seat: 0,
-    reconnect_token: 'token-1',
     match_state: {
       prevailing_wind: 'east',
       hand_number: 1,
@@ -91,7 +89,7 @@ const matchResultMessage: MatchResultMessage = {
 };
 
 describe('sessionReducer', () => {
-  it('stores reconnect token from room_snapshot and clears stale rejection errors', () => {
+  it('stores room snapshot and clears stale rejection errors', () => {
     const next = sessionReducer(
       {
         ...createInitialSessionState(),
@@ -108,7 +106,6 @@ describe('sessionReducer', () => {
       },
     );
 
-    expect(next.reconnectToken).toBe('token-1');
     expect(next.lastRejectedAction).toBeNull();
     expect(next.roomSnapshot?.payload.table_code).toBe('AB12CD');
   });
@@ -233,7 +230,6 @@ describe('sessionReducer', () => {
             { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
           ],
           local_seat: 0,
-          reconnect_token: 'token-1',
           private_state: {
             round_id: 'round-1',
             round_wind: 'east',
@@ -404,7 +400,6 @@ describe('sessionReducer', () => {
             phase: 'playing',
             seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
             local_seat: 0,
-            reconnect_token: 'token-1',
             private_state: {
               round_id: 'round-1',
               round_wind: 'east',
@@ -454,7 +449,6 @@ describe('sessionReducer', () => {
             phase: 'playing',
             seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
             local_seat: 0,
-            reconnect_token: 'token-1',
             private_state: {
               round_id: 'round-1',
               round_wind: 'east',
@@ -510,7 +504,6 @@ describe('sessionReducer', () => {
           phase: 'playing',
           seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
           local_seat: 0,
-          reconnect_token: 'token-1',
           private_state: {
             round_id: 'round-1',
             round_wind: 'east',
@@ -562,7 +555,6 @@ describe('sessionReducer', () => {
               { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
             ],
             local_seat: 0,
-            reconnect_token: 'token-1',
             private_state: {
               round_id: 'round-1',
               round_wind: 'east',
@@ -621,7 +613,6 @@ describe('sessionReducer', () => {
             phase: 'playing',
             seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
             local_seat: 0,
-            reconnect_token: 'token-1',
             private_state: {
               round_id: 'round-1',
               round_wind: 'east',
@@ -683,7 +674,6 @@ describe('sessionReducer', () => {
             phase: 'playing',
             seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
             local_seat: 0,
-            reconnect_token: 'token-1',
             private_state: {
               round_id: 'round-1',
               round_wind: 'east',
@@ -733,7 +723,6 @@ describe('sessionReducer', () => {
           phase: 'playing',
           seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
           local_seat: 0,
-          reconnect_token: 'token-1',
           private_state: {
             round_id: 'round-1',
             round_wind: 'east',
@@ -809,7 +798,6 @@ describe('sessionReducer', () => {
             phase: 'playing',
             seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
             local_seat: 0,
-            reconnect_token: 'token-1',
             private_state: {
               round_id: 'round-1',
               round_wind: 'east',
@@ -878,7 +866,6 @@ describe('sessionReducer', () => {
           phase: 'playing',
           seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
           local_seat: 0,
-          reconnect_token: 'token-1',
           private_state: {
             round_id: 'round-1',
             round_wind: 'east',
@@ -967,7 +954,6 @@ describe('sessionReducer', () => {
             phase: 'playing',
             seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
             local_seat: null,
-            reconnect_token: 'token-should-be-ignored',
           },
         },
       },
@@ -978,7 +964,6 @@ describe('sessionReducer', () => {
     });
 
     expect(afterSnapshot.clientMode).toBe('spectator');
-    expect(afterSnapshot.reconnectToken).toBeNull();
     expect(afterFocusChange.spectatorFocusSeat).toBe(0);
     expect(afterFocusChange.selectedTileIds).toEqual([]);
     expect(afterFocusChange.selectionMode).toBeNull();

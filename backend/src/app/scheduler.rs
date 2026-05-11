@@ -28,11 +28,55 @@ use crate::rules::standard::flow::{
 };
 use crate::rules::standard::win::apply_hu_action_output_in_room_state;
 
+const UNATTENDED_ROOM_CLEANUP_DELAY: Duration = Duration::from_secs(180);
+
 fn player_is_ready_hand(room: &crate::core::state::RoomState, seat_index: usize) -> bool {
     room.round_state
         .as_ref()
         .and_then(|round| round.players.get(seat_index))
         .is_some_and(|player| player.is_ready_hand)
+}
+
+fn room_has_online_players(runtime: &crate::app::room_runtime::RoomRuntime) -> bool {
+    runtime.room.seats.iter().any(|seat| {
+        seat.seat_type == "human"
+            && seat.connected
+            && runtime
+                .connections
+                .get(&seat.seat_index)
+                .is_some_and(|group| !group.connections.is_empty())
+    })
+}
+
+async fn process_unattended_room_cleanup(
+    state: AppContext,
+    table_code: String,
+    expected_nonce: u64,
+) {
+    let Some(room_handle) = room_handle(&state, &table_code).await else {
+        return;
+    };
+    if room_handle.is_closed() {
+        return;
+    }
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() || runtime.unattended_cleanup_nonce != expected_nonce {
+        return;
+    }
+    if room_has_online_players(&runtime) {
+        return;
+    }
+    room_handle.mark_closed();
+    close_runtime(&mut runtime);
+    drop(runtime);
+    unregister_room_handle(&state, &table_code, &room_handle).await;
+    state
+        .inner
+        .db
+        .delete_table(&table_code, &crate::app::now_iso())
+        .await
+        .ok();
 }
 
 async fn process_due_pending_timeout(state: AppContext, table_code: String, expected_nonce: u64) {
@@ -447,10 +491,12 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     abort_join_handle(&mut runtime.continue_task);
     abort_join_handle(&mut runtime.start_match_task);
     abort_join_handle(&mut runtime.bot_task);
+    abort_join_handle(&mut runtime.unattended_cleanup_task);
     runtime.timeout_nonce = runtime.timeout_nonce.wrapping_add(1);
     runtime.continue_nonce = runtime.continue_nonce.wrapping_add(1);
     runtime.start_match_nonce = runtime.start_match_nonce.wrapping_add(1);
     runtime.bot_nonce = runtime.bot_nonce.wrapping_add(1);
+    runtime.unattended_cleanup_nonce = runtime.unattended_cleanup_nonce.wrapping_add(1);
 
     if let Some(deadline) = pending_timeout_deadline(&runtime.room) {
         let state_clone = state.clone();
@@ -497,10 +543,107 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
             process_due_bot_action(state_clone, table_clone, nonce).await;
         }));
     }
+
+    if !room_has_online_players(&runtime) {
+        let state_clone = state.clone();
+        let table_clone = table_code.clone();
+        let nonce = runtime.unattended_cleanup_nonce;
+        runtime.unattended_cleanup_task = Some(tokio::spawn(async move {
+            tokio::time::sleep(UNATTENDED_ROOM_CLEANUP_DELAY).await;
+            process_unattended_room_cleanup(state_clone, table_clone, nonce).await;
+        }));
+    }
 }
 
 pub(crate) fn schedule_room_tasks_detached(state: AppContext, table_code: String) {
     tokio::spawn(async move {
         schedule_room_tasks(state, table_code).await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+
+    use super::schedule_room_tasks;
+    use crate::app::persistence::{DbWorker, in_memory_database};
+    use crate::app::room_runtime::{RoomRuntime, room_handle};
+    use crate::app::{AppContext, initial_room_state_with_owner, serialize_room_state};
+    use crate::core::state::SeatState;
+
+    fn offline_human_room(table_code: &str) -> crate::core::state::RoomState {
+        let mut room = initial_room_state_with_owner(table_code, Some(101), 1);
+        room.seats.push(SeatState {
+            seat_index: 0,
+            user_id: Some(101),
+            nickname: Some("OfflinePlayer".to_string()),
+            points: Some(600),
+            title: Some("正分守门员".to_string()),
+            connected: false,
+            ready: true,
+            is_bot: false,
+            seat_type: "human".to_string(),
+            bot_persona: None,
+            bot_aggression: None,
+            disconnect_deadline_at: None,
+            consecutive_timeout_auto_response_count: 0,
+        });
+        room
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn closes_room_when_unattended_cleanup_is_due() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let room = offline_human_room("ROOMIDLE");
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("ROOMIDLE", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        let state = AppContext::new(worker.clone());
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("ROOMIDLE".to_string(), handle);
+
+        super::process_unattended_room_cleanup(state.clone(), "ROOMIDLE".to_string(), 0).await;
+
+        assert!(worker.get_table("ROOMIDLE").await?.is_none());
+        assert!(room_handle(&state, "ROOMIDLE").await.is_none());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn schedules_cleanup_when_room_has_no_online_players() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let room = offline_human_room("ROOMIDLE2");
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("ROOMIDLE2", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        let state = AppContext::new(worker);
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("ROOMIDLE2".to_string(), handle.clone());
+
+        schedule_room_tasks(state, "ROOMIDLE2".to_string()).await;
+
+        let runtime = handle.runtime.lock().await;
+        assert!(runtime.unattended_cleanup_task.is_some());
+        Ok(())
+    }
 }

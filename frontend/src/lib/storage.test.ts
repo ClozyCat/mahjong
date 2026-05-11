@@ -3,10 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearStoredSession,
   loadStoredVoiceEnabled,
-  loadStoredSession,
   loadStoredThemeId,
   saveStoredVoiceEnabled,
-  saveStoredSession,
   saveStoredThemeId,
 } from './storage';
 
@@ -44,33 +42,12 @@ describe('storage helpers', () => {
     vi.unstubAllGlobals();
   });
 
-  it('round-trips reconnect session payloads', () => {
-    saveStoredSession({
-      tableCode: 'AB12CD',
-      nickname: 'Player A',
-      reconnectToken: 'token-1',
-      wsBaseUrl: 'ws://localhost:8080',
-    });
-
-    expect(loadStoredSession()).toEqual({
-      tableCode: 'AB12CD',
-      nickname: 'Player A',
-      reconnectToken: 'token-1',
-      wsBaseUrl: 'ws://localhost:8080',
-    });
-  });
-
-  it('clears reconnect session payloads', () => {
-    saveStoredSession({
-      tableCode: 'AB12CD',
-      nickname: 'Player A',
-      reconnectToken: 'token-1',
-      wsBaseUrl: 'ws://localhost:8080',
-    });
+  it('clears legacy reconnect session payloads', () => {
+    localStorage.setItem('mahjong:session', 'legacy-session');
 
     clearStoredSession();
 
-    expect(loadStoredSession()).toBeNull();
+    expect(localStorage.getItem('mahjong:session')).toBeNull();
   });
 
   it('round-trips stored theme ids', () => {

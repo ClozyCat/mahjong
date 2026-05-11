@@ -187,8 +187,6 @@ async fn add_bot_takeover_human_to_table(
         nickname: Some("Hosted Player".to_string()),
         points: None,
         title: None,
-        reconnect_token: Some("hosted-token".to_string()),
-        player_session_id: Some(42),
         connected: true,
         ready: true,
         is_bot: true,
@@ -544,8 +542,6 @@ async fn invite_only_create_requires_open_or_replaceable_seat() -> Result<()> {
                 nickname: Some(format!("Player {seat_index}")),
                 points: None,
                 title: None,
-                reconnect_token: Some(format!("token-{seat_index}")),
-                player_session_id: Some(100 + seat_index as i64),
                 connected: true,
                 ready: true,
                 is_bot: false,
@@ -648,8 +644,6 @@ async fn invite_only_full_bot_takeover_human_seat_is_not_replaceable() -> Result
                 nickname: Some(format!("Player {seat_index}")),
                 points: None,
                 title: None,
-                reconnect_token: Some(format!("token-{seat_index}")),
-                player_session_id: Some(200 + seat_index as i64),
                 connected: true,
                 ready: true,
                 is_bot: false,
@@ -991,7 +985,6 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
     assert_eq!(seat.seat_type, "human");
     assert!(!seat.is_bot);
     assert_eq!(seat.nickname.as_deref(), Some("Guest"));
-    assert!(seat.reconnect_token.is_some());
     Ok(())
 }
 

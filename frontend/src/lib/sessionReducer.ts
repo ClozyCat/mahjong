@@ -35,8 +35,8 @@ export type SessionAction =
 
 const ACTION_REJECTION_COPY: Record<string, string> = {
   table_not_found: '牌桌不存在，请检查牌桌编号。',
+  table_closed: '牌桌已关闭，请返回大厅重新进入。',
   table_full: '牌桌已满，暂时无法加入。',
-  invalid_reconnect_token: '重连凭证已失效，请重新加入牌桌。',
   room_already_started: '牌桌已经开始对局。',
   match_not_finished: '整场比赛尚未结束，暂时不能再来一局。',
   seat_not_owned: '当前连接没有对应座位，无法执行该操作。',
@@ -410,7 +410,6 @@ export function createInitialSessionState(): SessionState {
     latestQuickChatMessage: null,
     latestSystemBroadcast: null,
     lastRejectedAction: null,
-    reconnectToken: null,
     optimisticDiscard: null,
     optimisticFlower: null,
     selectedTileIds: [],
@@ -458,10 +457,6 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
         ...state,
         roomSnapshot: message,
         tableCode: message.payload.table_code,
-        reconnectToken:
-          state.clientMode === 'spectator'
-            ? null
-            : message.payload.reconnect_token ?? state.reconnectToken,
         lastRejectedAction: null,
         optimisticDiscard: nextOptimisticDiscard,
         optimisticFlower: nextOptimisticFlower,
@@ -568,7 +563,6 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       return {
         ...state,
         clientMode: action.clientMode,
-        reconnectToken: action.clientMode === 'spectator' ? null : state.reconnectToken,
       };
     case 'set_spectator_focus_seat':
       return {

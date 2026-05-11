@@ -31,7 +31,6 @@ import {
   createLeaveTableMessage,
   createQuickChatMessage,
   createReadyMessage,
-  createReconnectMessage,
   createRestartMatchMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
@@ -61,7 +60,6 @@ import { titleForPoints } from './lib/systemBroadcastCopy';
 import {
   clearStoredSession,
   loadStoredThemeId,
-  saveStoredSession,
   saveStoredThemeId,
   loadStoredBgmEnabled,
   saveStoredBgmEnabled,
@@ -86,7 +84,6 @@ import type {
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const SOCIAL_REFRESH_INTERVAL_MS = 15_000;
 const SOCIAL_SOCKET_RECONNECT_MS = 1_000;
-const MAX_CACHED_RECONNECT_CLOSES = 3;
 const TABLE_SEAT_CAPACITY = 4;
 const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
 const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当前所在的牌桌。';
@@ -105,7 +102,6 @@ type RoomSocketOptions = {
   nickname: string;
   wsBaseUrl: string;
   sessionToken?: string | null;
-  reconnectToken?: string | null;
   reconnect?: boolean;
   mode?: ClientMode;
   spectatorFocusUserId?: number | null;
@@ -144,9 +140,8 @@ function getDefaultConfig() {
 function getRejectedMessage(reason: string) {
   const lookup: Record<string, string> = {
     table_not_found: '牌桌不存在或已关闭。',
+    table_closed: '牌桌已关闭，请返回大厅重新进入。',
     table_full: '本牌局人数已满。',
-    invalid_reconnect_token: '上次的重连凭证已失效，请回到牌桌侧栏后重新进入可加入的牌局。',
-    seat_occupied: '这个座位已经被占用，请选择其他空位。',
   };
 
   return lookup[reason] ?? '请求未被服务器接受，请按最新房间状态重试。';
@@ -525,7 +520,6 @@ export default function App() {
       wsBaseUrl: defaults.wsBaseUrl,
       tableCode: '',
       nickname: storedAuthSession?.user.display_name ?? '',
-      reconnectToken: null,
       connectionStatus: 'idle',
     }),
   );
@@ -990,41 +984,6 @@ export default function App() {
     };
   }, [defaults.apiBaseUrl, selectedProfileFallbackName, selectedProfileUser]);
 
-  useEffect(() => {
-    if (
-      authStatus !== 'ready' ||
-      state.connectionStatus !== 'idle' ||
-      !state.reconnectToken ||
-      !state.tableCode ||
-      state.roomSnapshot
-    ) {
-      return;
-    }
-
-    dispatch({ type: 'set_connection_status', status: 'reconnecting' });
-  }, [authStatus, state.connectionStatus, state.reconnectToken, state.roomSnapshot, state.tableCode]);
-
-  useEffect(() => {
-    if (state.clientMode === 'spectator') {
-      clearStoredSession();
-      return;
-    }
-
-    if (state.reconnectToken && state.tableCode && state.wsBaseUrl) {
-      saveStoredSession({
-        tableCode: state.tableCode,
-        nickname: currentUser?.display_name ?? state.nickname,
-        reconnectToken: state.reconnectToken,
-        wsBaseUrl: state.wsBaseUrl,
-      });
-      return;
-    }
-
-    if (state.tableCode) {
-      clearStoredSession();
-    }
-  }, [currentUser?.display_name, state.clientMode, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
-
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
     reconnectCloseCountRef.current = 0;
@@ -1065,14 +1024,14 @@ export default function App() {
     if (message.type === 'action_rejected') {
       const current = sessionRef.current;
       const isFatalTableMissing = message.payload.reason === 'table_not_found';
-      const isFatalReconnectFailure = message.payload.reason === 'invalid_reconnect_token';
+      const isFatalTableClosed = message.payload.reason === 'table_closed';
       const isFatalJoinFailure = !current.roomSnapshot && message.payload.reason === 'table_full';
 
       if (leavingTableRef.current) {
         leavingTableRef.current = false;
       }
 
-      if (isFatalReconnectFailure || isFatalTableMissing || isFatalJoinFailure) {
+      if (isFatalTableMissing || isFatalTableClosed || isFatalJoinFailure) {
         handleFatalLobbyReset(getRejectedMessage(message.payload.reason), current.tableCode);
         return;
       }
@@ -1109,7 +1068,6 @@ export default function App() {
         nickname,
         wsBaseUrl,
         sessionToken,
-        reconnectToken,
         reconnect,
         mode = 'player',
         spectatorFocusUserId = null,
@@ -1135,9 +1093,7 @@ export default function App() {
           const message =
             mode === 'spectator'
               ? createWatchTableMessage(sessionToken ?? '', nickname)
-              : reconnect && reconnectToken
-                ? createReconnectMessage(reconnectToken)
-                : createJoinTableMessage(sessionToken ?? '');
+              : createJoinTableMessage(sessionToken ?? '');
           socket.send(serializeClientMessage(message));
 
           heartbeatTimerRef.current = window.setInterval(() => {
@@ -1176,19 +1132,6 @@ export default function App() {
         if (activeRestore && activeRestore.tableCode === current.tableCode) {
           dispatch({ type: 'set_connection_status', status: 'reconnecting' });
           setStatusMessage(ACTIVE_TABLE_RETRY_MESSAGE);
-          return;
-        }
-        if (current.reconnectToken && current.tableCode && current.wsBaseUrl) {
-          reconnectCloseCountRef.current += 1;
-          if (
-            !current.roomSnapshot &&
-            reconnectCloseCountRef.current >= MAX_CACHED_RECONNECT_CLOSES
-          ) {
-            handleFatalLobbyReset('未能恢复座位，请回到牌桌侧栏后重新进入可加入的牌局。', current.tableCode);
-            return;
-          }
-          dispatch({ type: 'set_connection_status', status: 'reconnecting' });
-          setStatusMessage('连接已断开，正在尝试恢复座位。');
           return;
         }
 
@@ -1286,36 +1229,6 @@ export default function App() {
       window.clearTimeout(timeoutId);
     };
   }, [openRoomSocket, state.connectionStatus, state.tableCode, state.wsBaseUrl]);
-
-  useEffect(() => {
-    const activeRestore = activeTableRestoreRef.current;
-    if (
-      state.connectionStatus !== 'reconnecting' ||
-      (activeRestore && activeRestore.tableCode === state.tableCode) ||
-      !state.reconnectToken ||
-      !state.tableCode ||
-      !state.wsBaseUrl ||
-      socketRef.current
-    ) {
-      return;
-    }
-
-    const wsBaseUrl = state.wsBaseUrl;
-
-    const timeoutId = window.setTimeout(() => {
-      openRoomSocket({
-        tableCode: state.tableCode,
-        nickname: currentUser?.display_name ?? state.nickname,
-        wsBaseUrl,
-        reconnectToken: state.reconnectToken,
-        reconnect: true,
-      });
-    }, 1000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [currentUser?.display_name, openRoomSocket, state.connectionStatus, state.nickname, state.reconnectToken, state.tableCode, state.wsBaseUrl]);
 
   useEffect(() => {
     return () => {

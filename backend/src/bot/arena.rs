@@ -260,8 +260,6 @@ pub fn arena_room(table_code: &str) -> RoomState {
                 nickname: Some(format!("Arena Bot {seat_index}")),
                 points: None,
                 title: None,
-                reconnect_token: None,
-                player_session_id: Some(-((seat_index as i64) + 1)),
                 connected: true,
                 ready: true,
                 is_bot: true,

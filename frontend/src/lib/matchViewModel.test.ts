@@ -20,14 +20,12 @@ function createWaitingSessionState(): SessionState {
           { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
         ],
         local_seat: 0,
-        reconnect_token: 'token-1',
       },
     },
     latestActionPrompt: null,
     latestMatchResult: null,
     latestRoundEvent: null,
     lastRejectedAction: null,
-    reconnectToken: 'token-1',
     toasts: [],
   };
 }
@@ -51,7 +49,6 @@ function createPlayingSessionState(overrides: Partial<SessionState> = {}): Sessi
           { seat_index: 3, nickname: 'Player D', connected: false, ready: true, is_bot: false },
         ],
         local_seat: 2,
-        reconnect_token: 'token-2',
         match_state: {
           prevailing_wind: 'east',
           hand_number: 1,
@@ -130,7 +127,6 @@ function createPlayingSessionState(overrides: Partial<SessionState> = {}): Sessi
     latestMatchResult: null,
     latestRoundEvent: null,
     lastRejectedAction: null,
-    reconnectToken: 'token-2',
     toasts: [],
     ...overrides,
   };
@@ -1606,7 +1602,6 @@ describe('createMatchViewModel', () => {
           payload: {
             ...base.roomSnapshot!.payload,
             local_seat: null,
-            reconnect_token: null,
             private_state: {
               ...base.roomSnapshot!.payload.private_state!,
               pending_action: {

@@ -43,7 +43,7 @@ mod tests {
     use crate::app::{
         AppContext, ConnectionHandle, add_bot_to_waiting_room, initial_room_state, now_iso,
         occupied_seats, random_open_seat_index_with_rng, remove_bot_from_waiting_room,
-        seat_matches_reconnect_credentials, send_outbound,
+        send_outbound,
     };
     use crate::core::state::{RoomState, SeatState};
 
@@ -116,8 +116,6 @@ mod tests {
             {
                 "seat_index": 0,
                 "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
                 "connected": true,
                 "ready": true,
                 "is_bot": false,
@@ -129,8 +127,6 @@ mod tests {
             {
                 "seat_index": 1,
                 "nickname": "Bot 1",
-                "reconnect_token": Value::Null,
-                "player_session_id": -2,
                 "connected": true,
                 "ready": true,
                 "is_bot": true,
@@ -165,8 +161,6 @@ mod tests {
             {
                 "seat_index": 0,
                 "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
                 "connected": true,
                 "ready": false,
                 "is_bot": false,
@@ -178,8 +172,6 @@ mod tests {
             {
                 "seat_index": 2,
                 "nickname": "Carol",
-                "reconnect_token": "token-2",
-                "player_session_id": 2,
                 "connected": true,
                 "ready": true,
                 "is_bot": false,
@@ -218,8 +210,6 @@ mod tests {
             {
                 "seat_index": 0,
                 "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
                 "connected": true,
                 "ready": true,
                 "is_bot": false,
@@ -231,8 +221,6 @@ mod tests {
             {
                 "seat_index": 1,
                 "nickname": "Bot 1",
-                "reconnect_token": Value::Null,
-                "player_session_id": -2,
                 "connected": true,
                 "ready": true,
                 "is_bot": true,
@@ -244,8 +232,6 @@ mod tests {
             {
                 "seat_index": 3,
                 "nickname": "Bot 3",
-                "reconnect_token": Value::Null,
-                "player_session_id": -4,
                 "connected": true,
                 "ready": true,
                 "is_bot": true,
@@ -283,8 +269,6 @@ mod tests {
             "seats": [{
             "seat_index": 0,
             "nickname": "Bot 1",
-            "reconnect_token": Value::Null,
-            "player_session_id": -1,
             "connected": true,
             "ready": true,
             "is_bot": true,
@@ -310,8 +294,6 @@ mod tests {
             {
                 "seat_index": 0,
                 "nickname": "Bot 1",
-                "reconnect_token": Value::Null,
-                "player_session_id": -1,
                 "connected": true,
                 "ready": true,
                 "is_bot": true,
@@ -323,8 +305,6 @@ mod tests {
             {
                 "seat_index": 1,
                 "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
                 "connected": false,
                 "ready": true,
                 "is_bot": false,
@@ -342,53 +322,6 @@ mod tests {
     }
 
     #[test]
-    fn seat_matches_reconnect_credentials_requires_current_room_token() {
-        let room = room_state(json!({
-            "table_code": "ROOM42",
-            "phase": "waiting",
-            "mode": "normal",
-            "test_mode": false,
-            "enforce_minimum_eight_fan": true,
-            "continue_action": null,
-            "seats": [{
-            "seat_index": 0,
-            "nickname": "Alice",
-            "reconnect_token": "token-new",
-            "player_session_id": 42,
-            "connected": false,
-            "ready": true,
-            "is_bot": false,
-            "seat_type": "human",
-            "bot_persona": Value::Null,
-            "bot_aggression": Value::Null,
-            "disconnect_deadline_at": Value::Null,
-        }],
-            "match_state": null,
-            "round_state": null,
-            "pending_timeout": null
-        }));
-
-        assert!(seat_matches_reconnect_credentials(
-            &room,
-            0,
-            42,
-            "token-new"
-        ));
-        assert!(!seat_matches_reconnect_credentials(
-            &room,
-            0,
-            42,
-            "token-old"
-        ));
-        assert!(!seat_matches_reconnect_credentials(
-            &room,
-            0,
-            7,
-            "token-new"
-        ));
-    }
-
-    #[test]
     fn random_open_seat_index_can_pick_different_open_seats() {
         let room = room_state(json!({
             "table_code": "ROOM42",
@@ -401,8 +334,6 @@ mod tests {
                 {
                     "seat_index": 1,
                     "nickname": "Alice",
-                    "reconnect_token": "token-1",
-                    "player_session_id": 1,
                     "connected": true,
                     "ready": true,
                     "is_bot": false,
@@ -414,8 +345,6 @@ mod tests {
                 {
                     "seat_index": 3,
                     "nickname": "Bob",
-                    "reconnect_token": "token-2",
-                    "player_session_id": 2,
                     "connected": true,
                     "ready": true,
                     "is_bot": false,
@@ -456,8 +385,6 @@ mod tests {
             nickname: Some("Alice".to_string()),
             points: None,
             title: None,
-            reconnect_token: Some("token-1".to_string()),
-            player_session_id: Some(42),
             connected: true,
             ready: true,
             is_bot: false,
@@ -499,8 +426,6 @@ mod tests {
             nickname: Some("Bot 1".to_string()),
             points: None,
             title: None,
-            reconnect_token: None,
-            player_session_id: Some(-1),
             connected: true,
             ready: true,
             is_bot: true,

@@ -32,7 +32,6 @@ function createSessionState(overrides: Partial<SessionState> = {}): SessionState
           { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
         ],
         local_seat: 0,
-        reconnect_token: 'token-1',
         private_state: {
           round_id: 'round-1',
           round_wind: 'east',
@@ -105,7 +104,6 @@ function createSessionState(overrides: Partial<SessionState> = {}): SessionState
     latestMatchResult: null,
     latestRoundEvent: null,
     lastRejectedAction: null,
-    reconnectToken: 'token-1',
     selectedTileIds: [],
     selectionMode: null,
     toasts: [],

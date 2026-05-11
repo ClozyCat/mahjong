@@ -53,10 +53,12 @@ pub(crate) struct RoomRuntime {
     pub(crate) continue_nonce: u64,
     pub(crate) start_match_nonce: u64,
     pub(crate) bot_nonce: u64,
+    pub(crate) unattended_cleanup_nonce: u64,
     pub(crate) timeout_task: Option<JoinHandle<()>>,
     pub(crate) continue_task: Option<JoinHandle<()>>,
     pub(crate) start_match_task: Option<JoinHandle<()>>,
     pub(crate) bot_task: Option<JoinHandle<()>>,
+    pub(crate) unattended_cleanup_task: Option<JoinHandle<()>>,
     pub(crate) pending_start_match: Option<PendingStartMatch>,
 }
 
@@ -77,10 +79,12 @@ impl RoomRuntime {
             continue_nonce: 0,
             start_match_nonce: 0,
             bot_nonce: 0,
+            unattended_cleanup_nonce: 0,
             timeout_task: None,
             continue_task: None,
             start_match_task: None,
             bot_task: None,
+            unattended_cleanup_task: None,
             pending_start_match: None,
         }
     }
@@ -115,6 +119,7 @@ pub(crate) fn abort_room_tasks(runtime: &mut RoomRuntime) {
     abort_join_handle(&mut runtime.continue_task);
     abort_join_handle(&mut runtime.start_match_task);
     abort_join_handle(&mut runtime.bot_task);
+    abort_join_handle(&mut runtime.unattended_cleanup_task);
 }
 
 pub(crate) fn close_runtime(runtime: &mut RoomRuntime) {
@@ -319,24 +324,11 @@ pub(crate) fn remap_connections_to_current_seats(
     runtime: &mut RoomRuntime,
     previous_room: &RoomState,
 ) {
-    let session_to_current_seat = runtime
+    let user_to_current_seat = runtime
         .room
         .seats
         .iter()
-        .filter_map(|seat| {
-            seat.player_session_id
-                .map(|session| (session, seat.seat_index))
-        })
-        .collect::<HashMap<_, _>>();
-    let token_to_current_seat = runtime
-        .room
-        .seats
-        .iter()
-        .filter_map(|seat| {
-            seat.reconnect_token
-                .as_ref()
-                .map(|token| (token.clone(), seat.seat_index))
-        })
+        .filter_map(|seat| seat.user_id.map(|user_id| (user_id, seat.seat_index)))
         .collect::<HashMap<_, _>>();
     let previous_seats = previous_room
         .seats
@@ -349,13 +341,8 @@ pub(crate) fn remap_connections_to_current_seats(
         let next_seat = previous_seats
             .get(&previous_seat)
             .and_then(|seat| {
-                seat.player_session_id
-                    .and_then(|session| session_to_current_seat.get(&session).copied())
-                    .or_else(|| {
-                        seat.reconnect_token
-                            .as_ref()
-                            .and_then(|token| token_to_current_seat.get(token).copied())
-                    })
+                seat.user_id
+                    .and_then(|user_id| user_to_current_seat.get(&user_id).copied())
             })
             .unwrap_or(previous_seat);
         let target = next_connections
@@ -461,11 +448,7 @@ pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {
     if !runtime.connections.is_empty() {
         return false;
     }
-    runtime
-        .room
-        .seats
-        .iter()
-        .all(|seat| seat.seat_type == "bot" || seat.reconnect_token.is_none())
+    true
 }
 
 #[cfg(test)]
@@ -526,8 +509,7 @@ mod tests {
         previous_room.seats = (0..4)
             .map(|seat_index| SeatState {
                 seat_index,
-                player_session_id: Some(seat_index as i64 + 10),
-                reconnect_token: Some(format!("token-{seat_index}")),
+                user_id: Some((seat_index as i64 + 1) * 100),
                 connected: true,
                 ready: true,
                 seat_type: "human".to_string(),
@@ -544,22 +526,18 @@ mod tests {
         runtime.room.seats = vec![
             SeatState {
                 seat_index: 0,
-                player_session_id: Some(11),
                 ..previous_room.seats[1].clone()
             },
             SeatState {
                 seat_index: 1,
-                player_session_id: Some(10),
                 ..previous_room.seats[0].clone()
             },
             SeatState {
                 seat_index: 2,
-                player_session_id: Some(13),
                 ..previous_room.seats[3].clone()
             },
             SeatState {
                 seat_index: 3,
-                player_session_id: Some(12),
                 ..previous_room.seats[2].clone()
             },
         ];

@@ -60,8 +60,6 @@ mod tests {
             "seats": [{
                 "seat_index": 0,
                 "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
                 "connected": true,
                 "ready": false,
                 "is_bot": false,
@@ -98,8 +96,6 @@ mod tests {
                 {
                     "seat_index": 0,
                     "nickname": "Alice",
-                    "reconnect_token": "token-1",
-                    "player_session_id": 1,
                     "connected": true,
                     "ready": true,
                     "is_bot": false,
@@ -111,8 +107,6 @@ mod tests {
                 {
                     "seat_index": 1,
                     "nickname": "Bot 1",
-                    "reconnect_token": null,
-                    "player_session_id": -2,
                     "connected": true,
                     "ready": true,
                     "is_bot": true,
@@ -273,8 +267,6 @@ mod tests {
                 {
                     "seat_index": 0,
                     "nickname": "Alice",
-                    "reconnect_token": "token-1",
-                    "player_session_id": 1,
                     "connected": true,
                     "ready": true,
                     "is_bot": false,
@@ -286,8 +278,6 @@ mod tests {
                 {
                     "seat_index": 1,
                     "nickname": "Bot 1",
-                    "reconnect_token": null,
-                    "player_session_id": -2,
                     "connected": true,
                     "ready": true,
                     "is_bot": true,
@@ -333,8 +323,6 @@ mod tests {
                 nickname: Some("Alice".to_string()),
                 points: None,
                 title: None,
-                reconnect_token: Some("token-1".to_string()),
-                player_session_id: Some(1),
                 connected: true,
                 ready: true,
                 is_bot: false,

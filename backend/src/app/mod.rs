@@ -260,30 +260,6 @@ pub(crate) fn occupied_seats(room: &RoomState) -> HashSet<usize> {
     room.seats.iter().map(|seat| seat.seat_index).collect()
 }
 
-pub(crate) fn room_player_session_id(room: &RoomState, seat_index: usize) -> Option<i64> {
-    room.seats
-        .iter()
-        .find(|seat| seat.seat_index == seat_index)
-        .and_then(|seat| seat.player_session_id)
-}
-
-pub(crate) fn room_reconnect_token(room: &RoomState, seat_index: usize) -> Option<String> {
-    room.seats
-        .iter()
-        .find(|seat| seat.seat_index == seat_index)
-        .and_then(|seat| seat.reconnect_token.clone())
-}
-
-pub(crate) fn seat_matches_reconnect_credentials(
-    room: &RoomState,
-    seat_index: usize,
-    player_session_id: i64,
-    reconnect_token: &str,
-) -> bool {
-    room_player_session_id(room, seat_index) == Some(player_session_id)
-        && room_reconnect_token(room, seat_index).as_deref() == Some(reconnect_token)
-}
-
 pub(crate) fn pending_timeout_deadline(room: &RoomState) -> Option<DateTime<Utc>> {
     room.pending_timeout
         .as_ref()
@@ -322,15 +298,6 @@ pub(crate) async fn sleep_until(deadline: DateTime<Utc>) {
 
 pub(crate) fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
-}
-
-pub(crate) fn generate_player_session_id() -> i64 {
-    let mut rng = rand::rng();
-    rng.random_range(1_i64..i64::MAX)
-}
-
-pub(crate) fn generate_reconnect_token() -> String {
-    generate_short_hex(32)
 }
 
 pub(crate) fn generate_short_hex(bytes: usize) -> String {
@@ -413,8 +380,6 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
         nickname: Some(format!("Bot {seat_index}")),
         points: None,
         title: None,
-        reconnect_token: None,
-        player_session_id: Some(-((seat_index as i64) + 1)),
         connected: true,
         ready: true,
         is_bot: true,
@@ -462,7 +427,6 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
         seat.ready = true;
         seat.is_bot = true;
         seat.seat_type = "bot".to_string();
-        seat.reconnect_token = None;
         seat.disconnect_deadline_at = None;
         seat.consecutive_timeout_auto_response_count = 0;
     }
@@ -936,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn bot_takeover_preserves_human_reconnect_credentials() {
+    fn bot_takeover_preserves_human_seat_identity() {
         let mut room = RoomState {
             table_code: "ABCD".to_string(),
             phase: "playing".to_string(),
@@ -949,8 +913,6 @@ mod tests {
                 nickname: Some("Alice".to_string()),
                 points: None,
                 title: None,
-                reconnect_token: Some("token-1".to_string()),
-                player_session_id: Some(42),
                 connected: true,
                 ready: false,
                 is_bot: false,
@@ -970,16 +932,14 @@ mod tests {
         let seat = room.seats.first().expect("seat should remain");
         assert!(seat.is_bot);
         assert_eq!(seat.seat_type, "human");
-        assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
-        assert_eq!(seat.player_session_id, Some(42));
+        assert_eq!(seat.nickname.as_deref(), Some("Alice"));
         assert!(seat.ready);
 
         set_seat_bot_takeover(&mut room, 0, false).expect("takeover should turn off");
         let seat = room.seats.first().expect("seat should remain");
         assert!(!seat.is_bot);
         assert_eq!(seat.seat_type, "human");
-        assert_eq!(seat.reconnect_token.as_deref(), Some("token-1"));
-        assert_eq!(seat.player_session_id, Some(42));
+        assert_eq!(seat.nickname.as_deref(), Some("Alice"));
         assert!(seat.connected);
     }
 
@@ -997,8 +957,6 @@ mod tests {
                 nickname: Some("Alice".to_string()),
                 points: Some(650),
                 title: Some("概率论博导".to_string()),
-                reconnect_token: Some("token-1".to_string()),
-                player_session_id: Some(42),
                 connected: true,
                 ready: false,
                 is_bot: false,
@@ -1021,7 +979,6 @@ mod tests {
         assert!(seat.is_bot);
         assert_eq!(seat.seat_type, "bot");
         assert!(seat.connected);
-        assert_eq!(seat.reconnect_token, None);
     }
 
     #[test]
@@ -1039,8 +996,6 @@ mod tests {
                     nickname: Some("Alice".to_string()),
                     points: None,
                     title: None,
-                    reconnect_token: Some("token-1".to_string()),
-                    player_session_id: Some(42),
                     connected: true,
                     ready: true,
                     is_bot: true,
@@ -1056,8 +1011,6 @@ mod tests {
                     nickname: Some("Bot 1".to_string()),
                     points: None,
                     title: None,
-                    reconnect_token: None,
-                    player_session_id: Some(-2),
                     connected: true,
                     ready: true,
                     is_bot: true,

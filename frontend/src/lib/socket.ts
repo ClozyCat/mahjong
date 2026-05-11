@@ -46,15 +46,6 @@ export function createWatchTableMessage(sessionToken: string, nickname?: string)
   };
 }
 
-export function createReconnectMessage(reconnectToken: string): ClientMessage {
-  return {
-    type: 'reconnect',
-    payload: {
-      reconnect_token: reconnectToken,
-    },
-  };
-}
-
 export function createLeaveTableMessage(): ClientMessage {
   return {
     type: 'leave_table',

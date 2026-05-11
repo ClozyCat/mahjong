@@ -310,13 +310,11 @@ async fn get_my_active_table_returns_latest_active_participant() -> Result<()> {
         .await?
         .expect("created table should be persisted");
     worker
-        .save_table_and_store_reconnect_token_and_upsert_participant(
+        .save_table_and_upsert_participant(
             "LIVE99",
             &table.created_at,
             &table.room_json,
-            "token-live-99",
             2,
-            42,
             user_id,
             "Erin",
             "2026-05-06T12:00:00Z",

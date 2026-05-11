@@ -541,20 +541,13 @@ mod tests {
         }
     }
 
-    fn seat(
-        seat_index: usize,
-        nickname: &str,
-        reconnect_token: Option<&str>,
-        is_bot: bool,
-    ) -> SeatState {
+    fn seat(seat_index: usize, nickname: &str, is_bot: bool) -> SeatState {
         SeatState {
             seat_index,
             user_id: None,
             nickname: Some(nickname.to_string()),
             points: None,
             title: None,
-            reconnect_token: reconnect_token.map(ToString::to_string),
-            player_session_id: Some((seat_index as i64) + 1),
             connected: true,
             ready: true,
             is_bot,
@@ -566,8 +559,8 @@ mod tests {
         }
     }
 
-    fn bot_takeover_seat(seat_index: usize, nickname: &str, reconnect_token: &str) -> SeatState {
-        let mut seat = seat(seat_index, nickname, Some(reconnect_token), true);
+    fn bot_takeover_seat(seat_index: usize, nickname: &str) -> SeatState {
+        let mut seat = seat(seat_index, nickname, true);
         seat.seat_type = "human".to_string();
         seat
     }
@@ -582,13 +575,11 @@ mod tests {
     ) -> Result<()> {
         let room_json = serialize_room_state(room)?;
         worker
-            .save_table_and_store_reconnect_token_and_upsert_participant(
+            .save_table_and_upsert_participant(
                 &room.table_code,
                 table_created_at,
                 &room_json,
-                &format!("token-{seat_index}"),
                 seat_index,
-                seat_index as i64 + 10,
                 user_id,
                 nickname,
                 table_created_at,
@@ -623,10 +614,7 @@ mod tests {
         let room = base_room(
             "ROOMREC1",
             3,
-            vec![
-                seat(0, "Owner", Some("owner-token"), false),
-                seat(1, "Guest", Some("guest-token"), false),
-            ],
+            vec![seat(0, "Owner", false), seat(1, "Guest", false)],
             &[(0, 8), (1, -8)],
             &[(0, 108), (1, 92)],
             0,
@@ -692,9 +680,9 @@ mod tests {
         let (state, worker) = test_state().await?;
         let owner_user_id = register_user(&worker, "INVITE300021", "Owner").await?;
         let guest_user_id = register_user(&worker, "INVITE300022", "Guest").await?;
-        let mut guest_seat = seat(0, "Guest", Some("guest-token"), false);
+        let mut guest_seat = seat(0, "Guest", false);
         guest_seat.user_id = Some(guest_user_id);
-        let mut owner_seat = seat(1, "Owner", Some("owner-token"), false);
+        let mut owner_seat = seat(1, "Owner", false);
         owner_seat.user_id = Some(owner_user_id);
         let mut room = base_room(
             "ROOMREC_ROTATED",
@@ -760,10 +748,7 @@ mod tests {
         let room = base_room(
             "ROOMREC2",
             2,
-            vec![
-                seat(0, "Owner", Some("owner-token"), false),
-                seat(1, "Guest", Some("guest-token"), false),
-            ],
+            vec![seat(0, "Owner", false), seat(1, "Guest", false)],
             &[(0, 6), (1, -6)],
             &[(0, 106), (1, 94)],
             0,
@@ -833,9 +818,9 @@ mod tests {
             "ROOMREC3",
             3,
             vec![
-                seat(0, "Owner", Some("owner-token"), false),
-                seat(1, "Guest", Some("guest-token"), false),
-                seat(2, "Bot 2", None, true),
+                seat(0, "Owner", false),
+                seat(1, "Guest", false),
+                seat(2, "Bot 2", true),
             ],
             &[(0, 8), (1, -8), (2, 0)],
             &[(0, 108), (1, 92), (2, 100)],
@@ -901,9 +886,9 @@ mod tests {
             "ROOMREC6",
             2,
             vec![
-                seat(0, "Owner", Some("owner-token"), false),
-                seat(1, "Guest", Some("guest-token"), false),
-                seat(2, "Bot 2", None, true),
+                seat(0, "Owner", false),
+                seat(1, "Guest", false),
+                seat(2, "Bot 2", true),
             ],
             &[(0, 7), (1, -7), (2, 0)],
             &[(0, 107), (1, 93), (2, 100)],
@@ -972,10 +957,7 @@ mod tests {
         let room = base_room(
             "ROOMREC4",
             2,
-            vec![
-                bot_takeover_seat(0, "Owner", "owner-token"),
-                seat(1, "Guest", Some("guest-token"), false),
-            ],
+            vec![bot_takeover_seat(0, "Owner"), seat(1, "Guest", false)],
             &[(0, 9), (1, -9)],
             &[(0, 109), (1, 91)],
             0,
@@ -1027,10 +1009,7 @@ mod tests {
         let mut room = base_room(
             "ROOMREC5",
             1,
-            vec![
-                seat(0, "Owner", Some("owner-token"), false),
-                seat(1, "Guest", Some("guest-token"), false),
-            ],
+            vec![seat(0, "Owner", false), seat(1, "Guest", false)],
             &[(0, 10), (1, -10)],
             &[(0, 110), (1, 90)],
             0,

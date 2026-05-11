@@ -15,8 +15,6 @@ pub struct SeatState {
     pub nickname: Option<String>,
     pub points: Option<i64>,
     pub title: Option<String>,
-    pub reconnect_token: Option<String>,
-    pub player_session_id: Option<i64>,
     pub connected: bool,
     pub ready: bool,
     pub is_bot: bool,

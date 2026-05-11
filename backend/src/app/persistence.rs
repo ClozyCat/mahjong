@@ -25,8 +25,6 @@ struct SeatIndexSync<'a> {
     table_code: &'a str,
     seat_index: i64,
     user_id: Option<i64>,
-    reconnect_token: Option<&'a str>,
-    player_session_id: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -37,12 +35,6 @@ pub(crate) struct DbWorker {
 pub(crate) struct TableRecord {
     pub(crate) created_at: String,
     pub(crate) room_json: String,
-}
-
-pub(crate) struct ReconnectTokenRecord {
-    pub(crate) table_code: String,
-    pub(crate) seat_index: usize,
-    pub(crate) player_session_id: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -316,7 +308,7 @@ impl Database {
             ",
         )?;
         self.ensure_tables_schema()?;
-        self.ensure_reconnect_tokens_schema()?;
+        self.drop_legacy_reconnect_tokens_table()?;
         self.create_user_auth_tables()?;
         self.create_record_tables()?;
         self.ensure_indexes()?;
@@ -326,12 +318,6 @@ impl Database {
     fn ensure_indexes(&self) -> Result<()> {
         self.conn.execute_batch(
             "
-            CREATE INDEX IF NOT EXISTS idx_reconnect_tokens_table_code
-            ON reconnect_tokens(table_code);
-
-            CREATE INDEX IF NOT EXISTS idx_reconnect_tokens_table_seat
-            ON reconnect_tokens(table_code, seat_index);
-
             CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
             ON auth_sessions(user_id);
 
@@ -406,32 +392,6 @@ impl Database {
         })
     }
 
-    fn ensure_reconnect_tokens_schema(&self) -> Result<()> {
-        let columns = self.table_columns("reconnect_tokens")?;
-        if columns.is_empty() {
-            self.create_reconnect_tokens_table()?;
-            return Ok(());
-        }
-
-        if self.reconnect_tokens_schema_is_current(&columns) {
-            return Ok(());
-        }
-
-        eprintln!("detected incompatible sqlite schema for `reconnect_tokens`; rebuilding it");
-
-        self.with_schema_rebuild("rebuild `reconnect_tokens` schema", |db| {
-            db.conn.execute_batch(
-                "
-                DROP TABLE IF EXISTS reconnect_tokens_old;
-                ALTER TABLE reconnect_tokens RENAME TO reconnect_tokens_old;
-                ",
-            )?;
-            db.create_reconnect_tokens_table()?;
-            db.conn.execute_batch("DROP TABLE reconnect_tokens_old;")?;
-            Ok(())
-        })
-    }
-
     fn create_tables_table(&self) -> Result<()> {
         self.conn.execute_batch(
             "
@@ -445,17 +405,9 @@ impl Database {
         Ok(())
     }
 
-    fn create_reconnect_tokens_table(&self) -> Result<()> {
-        self.conn.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS reconnect_tokens (
-                token TEXT PRIMARY KEY,
-                table_code TEXT NOT NULL,
-                seat_index INTEGER NOT NULL,
-                player_session_id INTEGER NOT NULL
-            );
-            ",
-        )?;
+    fn drop_legacy_reconnect_tokens_table(&self) -> Result<()> {
+        self.conn
+            .execute_batch("DROP TABLE IF EXISTS reconnect_tokens;")?;
         Ok(())
     }
 
@@ -614,26 +566,9 @@ impl Database {
                 .any(|column| column.name == "room_json" && column.not_null)
     }
 
-    fn reconnect_tokens_schema_is_current(&self, columns: &[SqliteColumn]) -> bool {
-        columns.len() == 4
-            && columns
-                .iter()
-                .any(|column| column.name == "token" && column.primary_key)
-            && columns
-                .iter()
-                .any(|column| column.name == "table_code" && column.not_null)
-            && columns
-                .iter()
-                .any(|column| column.name == "seat_index" && column.not_null)
-            && columns
-                .iter()
-                .any(|column| column.name == "player_session_id" && column.not_null)
-    }
-
     fn table_columns(&self, table_name: &str) -> Result<Vec<SqliteColumn>> {
         let pragma = match table_name {
             "tables" => "PRAGMA table_info(tables)",
-            "reconnect_tokens" => "PRAGMA table_info(reconnect_tokens)",
             _ => return Err(anyhow!("unsupported table inspection target: {table_name}")),
         };
 
@@ -747,9 +682,6 @@ impl Database {
             if sync.user_id.is_some() {
                 Self::sync_participant_seat_index_with_conn(conn, &sync)?;
             }
-            if sync.reconnect_token.is_some() {
-                Self::sync_reconnect_token_seat_index_with_conn(conn, &sync)?;
-            }
         }
 
         Ok(())
@@ -763,11 +695,6 @@ impl Database {
             table_code,
             seat_index: seat.get("seat_index").and_then(Value::as_u64)? as i64,
             user_id: seat.get("user_id").and_then(Value::as_i64),
-            reconnect_token: seat
-                .get("reconnect_token")
-                .and_then(Value::as_str)
-                .filter(|token| !token.is_empty()),
-            player_session_id: seat.get("player_session_id").and_then(Value::as_i64),
         })
     }
 
@@ -787,45 +714,6 @@ impl Database {
               AND left_at IS NULL
             ",
             params![sync.table_code, user_id, sync.seat_index],
-        )?;
-        Ok(())
-    }
-
-    fn sync_reconnect_token_seat_index_with_conn(
-        conn: &Connection,
-        sync: &SeatIndexSync<'_>,
-    ) -> Result<()> {
-        let Some(token) = sync.reconnect_token else {
-            return Ok(());
-        };
-        let mut sql = "
-            UPDATE reconnect_tokens
-            SET seat_index = ?3
-            WHERE table_code = ?1
-              AND token = ?2
-        "
-        .to_string();
-        if sync.player_session_id.is_some() {
-            sql.push_str(" AND player_session_id = ?4");
-            conn.execute(
-                &sql,
-                params![
-                    sync.table_code,
-                    token,
-                    sync.seat_index,
-                    sync.player_session_id
-                ],
-            )?;
-        } else {
-            conn.execute(&sql, params![sync.table_code, token, sync.seat_index])?;
-        }
-        Ok(())
-    }
-
-    fn delete_tokens_for_table_with_conn(conn: &Connection, table_code: &str) -> Result<()> {
-        conn.execute(
-            "DELETE FROM reconnect_tokens WHERE table_code = ?1",
-            params![table_code],
         )?;
         Ok(())
     }
@@ -866,40 +754,6 @@ impl Database {
               AND ended_at IS NULL
             ",
             params![table_code, ended_at, final_room_json],
-        )?;
-        Ok(())
-    }
-
-    fn store_reconnect_token_with_conn(
-        conn: &Connection,
-        token: &str,
-        table_code: &str,
-        seat_index: usize,
-        player_session_id: i64,
-    ) -> Result<()> {
-        conn.execute(
-            "INSERT INTO reconnect_tokens (token, table_code, seat_index, player_session_id) VALUES (?1, ?2, ?3, ?4)",
-            params![token, table_code, seat_index as i64, player_session_id],
-        )?;
-        Ok(())
-    }
-
-    fn delete_reconnect_token_with_conn(conn: &Connection, token: &str) -> Result<usize> {
-        let rows_affected = conn.execute(
-            "DELETE FROM reconnect_tokens WHERE token = ?1",
-            params![token],
-        )?;
-        Ok(rows_affected)
-    }
-
-    fn delete_tokens_for_seat_with_conn(
-        conn: &Connection,
-        table_code: &str,
-        seat_index: usize,
-    ) -> Result<()> {
-        conn.execute(
-            "DELETE FROM reconnect_tokens WHERE table_code = ?1 AND seat_index = ?2",
-            params![table_code, seat_index as i64],
         )?;
         Ok(())
     }
@@ -955,44 +809,9 @@ impl Database {
                 left_at,
                 final_room_json.as_deref(),
             )?;
-            Self::delete_tokens_for_table_with_conn(conn, table_code)?;
             Self::delete_table_row_with_conn(conn, table_code)?;
             Ok(())
         })
-    }
-
-    #[cfg(test)]
-    fn store_reconnect_token(
-        &self,
-        token: &str,
-        table_code: &str,
-        seat_index: usize,
-        player_session_id: i64,
-    ) -> Result<()> {
-        Self::store_reconnect_token_with_conn(
-            &self.conn,
-            token,
-            table_code,
-            seat_index,
-            player_session_id,
-        )
-    }
-
-    fn get_reconnect_token(&self, token: &str) -> Result<Option<ReconnectTokenRecord>> {
-        self.conn
-            .query_row(
-                "SELECT table_code, seat_index, player_session_id FROM reconnect_tokens WHERE token = ?1",
-                params![token],
-                |row| {
-                    Ok(ReconnectTokenRecord {
-                        table_code: row.get(0)?,
-                        seat_index: row.get::<_, i64>(1)? as usize,
-                        player_session_id: row.get(2)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(Into::into)
     }
 
     fn user_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRecord> {
@@ -1763,9 +1582,7 @@ impl Database {
         table_code: &str,
         room_json: &str,
         created_at: &str,
-        token: &str,
         seat_index: usize,
-        player_session_id: i64,
         nickname_snapshot: &str,
     ) -> Result<TableInviteRecord> {
         self.with_transaction("accept table invite and reserve seat", |conn| {
@@ -1786,13 +1603,6 @@ impl Database {
             }
 
             Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
-            Self::store_reconnect_token_with_conn(
-                conn,
-                token,
-                table_code,
-                seat_index,
-                player_session_id,
-            )?;
             Self::upsert_table_participant_with_conn(
                 conn,
                 table_code,
@@ -1817,27 +1627,18 @@ impl Database {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn save_table_and_store_reconnect_token_and_upsert_participant(
+    fn save_table_and_upsert_participant(
         &self,
         table_code: &str,
         created_at: &str,
         room_json: &str,
-        token: &str,
         seat_index: usize,
-        player_session_id: i64,
         user_id: i64,
         nickname_snapshot: &str,
         joined_at: &str,
     ) -> Result<()> {
-        self.with_transaction("save room reconnect token and participant", |conn| {
+        self.with_transaction("save room and participant", |conn| {
             Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
-            Self::store_reconnect_token_with_conn(
-                conn,
-                token,
-                table_code,
-                seat_index,
-                player_session_id,
-            )?;
             Self::upsert_table_participant_with_conn(
                 conn,
                 table_code,
@@ -1851,59 +1652,7 @@ impl Database {
         })
     }
 
-    #[cfg(test)]
-    fn save_table_and_store_reconnect_token(
-        &self,
-        table_code: &str,
-        created_at: &str,
-        room_json: &str,
-        token: &str,
-        seat_index: usize,
-        player_session_id: i64,
-    ) -> Result<()> {
-        self.with_transaction("save room and reconnect token", |conn| {
-            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
-            Self::store_reconnect_token_with_conn(
-                conn,
-                token,
-                table_code,
-                seat_index,
-                player_session_id,
-            )?;
-            Ok(())
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn rotate_reconnect_token(
-        &self,
-        table_code: &str,
-        created_at: &str,
-        room_json: &str,
-        old_token: &str,
-        new_token: &str,
-        seat_index: usize,
-        player_session_id: i64,
-    ) -> Result<()> {
-        self.with_transaction("rotate reconnect token", |conn| {
-            Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
-            let deleted = Self::delete_reconnect_token_with_conn(conn, old_token)?;
-            if deleted != 1 {
-                return Err(anyhow!("stale reconnect token"));
-            }
-            Self::store_reconnect_token_with_conn(
-                conn,
-                new_token,
-                table_code,
-                seat_index,
-                player_session_id,
-            )?;
-            Self::sync_current_seat_indexes_with_conn(conn, table_code, room_json)?;
-            Ok(())
-        })
-    }
-
-    fn save_table_and_delete_tokens_for_seat(
+    fn save_table_and_mark_participant_left(
         &self,
         table_code: &str,
         created_at: &str,
@@ -1911,8 +1660,7 @@ impl Database {
         seat_index: usize,
         left_at: &str,
     ) -> Result<()> {
-        self.with_transaction("save room and delete seat reconnect tokens", |conn| {
-            Self::delete_tokens_for_seat_with_conn(conn, table_code, seat_index)?;
+        self.with_transaction("save room and mark participant left", |conn| {
             conn.execute(
                 "
                 UPDATE table_participants
@@ -2480,72 +2228,7 @@ impl DbWorker {
             .await
     }
 
-    pub(crate) async fn get_reconnect_token(
-        &self,
-        token: &str,
-    ) -> Result<Option<ReconnectTokenRecord>> {
-        let token = token.to_string();
-        self.call(move |db| db.get_reconnect_token(&token)).await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn save_table_and_store_reconnect_token(
-        &self,
-        table_code: &str,
-        created_at: &str,
-        room_json: &str,
-        token: &str,
-        seat_index: usize,
-        player_session_id: i64,
-    ) -> Result<()> {
-        let table_code = table_code.to_string();
-        let created_at = created_at.to_string();
-        let room_json = room_json.to_string();
-        let token = token.to_string();
-        self.call(move |db| {
-            db.save_table_and_store_reconnect_token(
-                &table_code,
-                &created_at,
-                &room_json,
-                &token,
-                seat_index,
-                player_session_id,
-            )
-        })
-        .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn rotate_reconnect_token(
-        &self,
-        table_code: &str,
-        created_at: &str,
-        room_json: &str,
-        old_token: &str,
-        new_token: &str,
-        seat_index: usize,
-        player_session_id: i64,
-    ) -> Result<()> {
-        let table_code = table_code.to_string();
-        let created_at = created_at.to_string();
-        let room_json = room_json.to_string();
-        let old_token = old_token.to_string();
-        let new_token = new_token.to_string();
-        self.call(move |db| {
-            db.rotate_reconnect_token(
-                &table_code,
-                &created_at,
-                &room_json,
-                &old_token,
-                &new_token,
-                seat_index,
-                player_session_id,
-            )
-        })
-        .await
-    }
-
-    pub(crate) async fn save_table_and_delete_tokens_for_seat(
+    pub(crate) async fn save_table_and_mark_participant_left(
         &self,
         table_code: &str,
         created_at: &str,
@@ -2558,7 +2241,7 @@ impl DbWorker {
         let room_json = room_json.to_string();
         let left_at = left_at.to_string();
         self.call(move |db| {
-            db.save_table_and_delete_tokens_for_seat(
+            db.save_table_and_mark_participant_left(
                 &table_code,
                 &created_at,
                 &room_json,
@@ -2732,16 +2415,13 @@ impl DbWorker {
         table_code: &str,
         room_json: &str,
         created_at: &str,
-        token: &str,
         seat_index: usize,
-        player_session_id: i64,
         nickname_snapshot: &str,
     ) -> Result<TableInviteRecord> {
         let accepted_at = accepted_at.to_string();
         let table_code = table_code.to_string();
         let room_json = room_json.to_string();
         let created_at = created_at.to_string();
-        let token = token.to_string();
         let nickname_snapshot = nickname_snapshot.to_string();
         self.call(move |db| {
             db.accept_table_invite_and_reserve_seat(
@@ -2751,9 +2431,7 @@ impl DbWorker {
                 &table_code,
                 &room_json,
                 &created_at,
-                &token,
                 seat_index,
-                player_session_id,
                 &nickname_snapshot,
             )
         })
@@ -2761,14 +2439,12 @@ impl DbWorker {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn save_table_and_store_reconnect_token_and_upsert_participant(
+    pub(crate) async fn save_table_and_upsert_participant(
         &self,
         table_code: &str,
         created_at: &str,
         room_json: &str,
-        token: &str,
         seat_index: usize,
-        player_session_id: i64,
         user_id: i64,
         nickname_snapshot: &str,
         joined_at: &str,
@@ -2776,17 +2452,14 @@ impl DbWorker {
         let table_code = table_code.to_string();
         let created_at = created_at.to_string();
         let room_json = room_json.to_string();
-        let token = token.to_string();
         let nickname_snapshot = nickname_snapshot.to_string();
         let joined_at = joined_at.to_string();
         self.call(move |db| {
-            db.save_table_and_store_reconnect_token_and_upsert_participant(
+            db.save_table_and_upsert_participant(
                 &table_code,
                 &created_at,
                 &room_json,
-                &token,
                 seat_index,
-                player_session_id,
                 user_id,
                 &nickname_snapshot,
                 &joined_at,
@@ -3080,19 +2753,11 @@ mod tests {
             "seats": []
         }))?;
         db.save_table("ROOM99", "2026-04-06T01:00:00Z", &room_json)?;
-        db.store_reconnect_token("token-1", "ROOM99", 1, 42)?;
 
         let table = db
             .get_table("ROOM99")?
             .expect("new room should be stored after reset");
         assert_eq!(table.room_json, room_json);
-
-        let reconnect = db
-            .get_reconnect_token("token-1")?
-            .expect("new reconnect token should be stored after reset");
-        assert_eq!(reconnect.table_code, "ROOM99");
-        assert_eq!(reconnect.seat_index, 1);
-        assert_eq!(reconnect.player_session_id, 42);
 
         let player_sessions_exists = db
             .conn
@@ -3110,36 +2775,18 @@ mod tests {
                 |row| row.get::<_, String>(0),
             )
             .optional()?;
+        let reconnect_tokens_exists = db
+            .conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reconnect_tokens'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
 
         assert!(player_sessions_exists.is_none());
         assert!(alembic_version_exists.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn save_table_and_store_reconnect_token_writes_both_records() -> Result<()> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-
-        let room_json =
-            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
-        db.save_table_and_store_reconnect_token(
-            "ROOM42",
-            "2026-04-06T00:00:00Z",
-            &room_json,
-            "token-1",
-            0,
-            42,
-        )?;
-
-        let table = db.get_table("ROOM42")?.expect("table should exist");
-        let reconnect = db
-            .get_reconnect_token("token-1")?
-            .expect("token should exist");
-        assert_eq!(table.created_at, "2026-04-06T00:00:00Z");
-        assert_eq!(reconnect.table_code, "ROOM42");
-        assert_eq!(reconnect.seat_index, 0);
-        assert_eq!(reconnect.player_session_id, 42);
+        assert!(reconnect_tokens_exists.is_none());
         Ok(())
     }
 
@@ -3162,35 +2809,27 @@ mod tests {
                 {
                     "seat_index": 0,
                     "user_id": 2,
-                    "reconnect_token": "other-current-token",
-                    "player_session_id": 11
                 },
                 {
                     "seat_index": 1,
                     "user_id": 1,
-                    "reconnect_token": "guest-current-token",
-                    "player_session_id": 22
                 }
             ]
         }))?;
-        db.save_table_and_store_reconnect_token_and_upsert_participant(
+        db.save_table_and_upsert_participant(
             "ROOMROT",
             "2026-04-06T00:00:00Z",
             &room_json,
-            "guest-current-token",
             0,
-            22,
             1,
             "Guest",
             "2026-04-06T00:00:00Z",
         )?;
-        db.save_table_and_store_reconnect_token_and_upsert_participant(
+        db.save_table_and_upsert_participant(
             "ROOMROT",
             "2026-04-06T00:00:00Z",
             &room_json,
-            "other-current-token",
             1,
-            11,
             2,
             "Other",
             "2026-04-06T00:00:00Z",
@@ -3206,64 +2845,11 @@ mod tests {
             .get_active_table_participant("ROOMROT", 2)?
             .expect("other participant should stay active");
         assert_eq!(other.seat_index, 0);
-        let guest_token = db
-            .get_reconnect_token("guest-current-token")?
-            .expect("guest token should stay active");
-        assert_eq!(guest_token.seat_index, 1);
-        let other_token = db
-            .get_reconnect_token("other-current-token")?
-            .expect("other token should stay active");
-        assert_eq!(other_token.seat_index, 0);
         Ok(())
     }
 
     #[test]
-    fn rotate_reconnect_token_rejects_stale_old_token() -> Result<()> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-
-        let room_json =
-            crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
-        db.save_table_and_store_reconnect_token(
-            "ROOM42",
-            "2026-04-06T00:00:00Z",
-            &room_json,
-            "token-1",
-            0,
-            42,
-        )?;
-
-        db.rotate_reconnect_token(
-            "ROOM42",
-            "2026-04-06T00:00:00Z",
-            &room_json,
-            "token-1",
-            "token-2",
-            0,
-            42,
-        )?;
-
-        let error = db
-            .rotate_reconnect_token(
-                "ROOM42",
-                "2026-04-06T00:00:00Z",
-                &room_json,
-                "token-1",
-                "token-3",
-                0,
-                42,
-            )
-            .expect_err("stale token should be rejected");
-        assert!(format!("{error:#}").contains("stale reconnect token"));
-
-        assert!(db.get_reconnect_token("token-1")?.is_none());
-        assert!(db.get_reconnect_token("token-2")?.is_some());
-        assert!(db.get_reconnect_token("token-3")?.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn save_table_and_delete_tokens_for_seat_marks_participant_left() -> Result<()> {
+    fn save_table_and_mark_participant_left_marks_participant_left() -> Result<()> {
         let db = in_memory_database("")?;
         db.initialize()?;
         db.conn.execute(
@@ -3276,19 +2862,17 @@ mod tests {
 
         let room_json =
             crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
-        db.save_table_and_store_reconnect_token_and_upsert_participant(
+        db.save_table_and_upsert_participant(
             "ROOM42",
             "2026-04-06T00:00:00Z",
             &room_json,
-            "token-1",
             0,
-            42,
             1,
             "Owner",
             "2026-04-06T00:00:00Z",
         )?;
 
-        db.save_table_and_delete_tokens_for_seat(
+        db.save_table_and_mark_participant_left(
             "ROOM42",
             "2026-04-06T01:00:00Z",
             &room_json,
@@ -3326,24 +2910,20 @@ mod tests {
 
         let room_json =
             crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
-        db.save_table_and_store_reconnect_token_and_upsert_participant(
+        db.save_table_and_upsert_participant(
             "ROOM42",
             "2026-04-06T00:00:00Z",
             &room_json,
-            "token-1",
             0,
-            42,
             1,
             "Owner",
             "2026-04-06T00:00:00Z",
         )?;
-        db.save_table_and_store_reconnect_token_and_upsert_participant(
+        db.save_table_and_upsert_participant(
             "ROOM42",
             "2026-04-06T00:00:00Z",
             &room_json,
-            "token-2",
             1,
-            43,
             2,
             "Guest",
             "2026-04-06T00:00:00Z",
@@ -3352,8 +2932,6 @@ mod tests {
         db.delete_table("ROOM42", "2026-04-06T02:00:00Z")?;
 
         assert!(db.get_table("ROOM42")?.is_none());
-        assert!(db.get_reconnect_token("token-1")?.is_none());
-        assert!(db.get_reconnect_token("token-2")?.is_none());
 
         let left_times = db
             .conn
@@ -3550,7 +3128,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn db_worker_round_trips_room_and_token() -> Result<()> {
+    async fn db_worker_round_trips_room() -> Result<()> {
         let db = in_memory_database("")?;
         db.initialize()?;
         let worker = DbWorker::start(db)?;
@@ -3558,29 +3136,15 @@ mod tests {
         let room_json =
             crate::app::serialize_room_state(&crate::app::initial_room_state("ROOM42"))?;
         worker
-            .save_table_and_store_reconnect_token(
-                "ROOM42",
-                "2026-04-07T00:00:00Z",
-                &room_json,
-                "token-1",
-                0,
-                42,
-            )
+            .save_table("ROOM42", "2026-04-07T00:00:00Z", &room_json)
             .await?;
 
         let table = worker
             .get_table("ROOM42")
             .await?
             .expect("table should exist");
-        let reconnect = worker
-            .get_reconnect_token("token-1")
-            .await?
-            .expect("token should exist");
         assert_eq!(table.created_at, "2026-04-07T00:00:00Z");
         assert_eq!(table.room_json, room_json);
-        assert_eq!(reconnect.table_code, "ROOM42");
-        assert_eq!(reconnect.seat_index, 0);
-        assert_eq!(reconnect.player_session_id, 42);
         Ok(())
     }
 }

@@ -1074,8 +1074,6 @@ async fn accept_table_invite(
         return json_error(StatusCode::CONFLICT, "table_full");
     };
 
-    let player_session_id = crate::app::generate_player_session_id();
-    let reconnect_token = crate::app::generate_reconnect_token();
     if replaces_existing_seat {
         if let Some(seat) = runtime
             .room
@@ -1087,8 +1085,6 @@ async fn accept_table_invite(
             seat.nickname = Some(user.display_name.clone());
             seat.points = Some(user.points);
             seat.title = Some(title_for_points(user.points).to_string());
-            seat.reconnect_token = Some(reconnect_token.clone());
-            seat.player_session_id = Some(player_session_id);
             seat.connected = false;
             seat.ready = false;
             seat.is_bot = false;
@@ -1105,8 +1101,6 @@ async fn accept_table_invite(
             nickname: Some(user.display_name.clone()),
             points: Some(user.points),
             title: Some(title_for_points(user.points).to_string()),
-            reconnect_token: Some(reconnect_token.clone()),
-            player_session_id: Some(player_session_id),
             connected: false,
             ready: false,
             is_bot: false,
@@ -1136,9 +1130,7 @@ async fn accept_table_invite(
             &invite.table_code,
             &room_json,
             &created_at,
-            &reconnect_token,
             seat_index,
-            player_session_id,
             &user.display_name,
         )
         .await

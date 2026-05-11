@@ -249,7 +249,6 @@ export interface RoomSnapshotPayload {
   seats: SeatSnapshot[];
   spectators?: SpectatorSnapshot[];
   local_seat?: number | null;
-  reconnect_token?: string | null;
   match_state?: MatchState | null;
   private_state?: PrivateState | null;
   continue_action?:
@@ -453,7 +452,6 @@ export type SocialServerMessage =
 export type ClientMessage =
   | { type: 'join_table'; payload: { session_token: string } }
   | { type: 'watch_table'; payload: { session_token: string; nickname?: string } }
-  | { type: 'reconnect'; payload: { reconnect_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
   | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
@@ -515,7 +513,6 @@ export interface SessionState {
   latestQuickChatMessage?: QuickChatMessage | null;
   latestSystemBroadcast?: SystemBroadcastEventView | null;
   lastRejectedAction: ActionRejectedMessage | null;
-  reconnectToken: string | null;
   optimisticDiscard?: OptimisticDiscardState | null;
   optimisticFlower?: OptimisticFlowerState | null;
   selectedTileIds: string[];

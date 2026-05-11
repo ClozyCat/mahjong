@@ -200,8 +200,6 @@ mod tests {
             "seats": [{
                 "seat_index": 0,
                 "nickname": "Alice",
-                "reconnect_token": "token-1",
-                "player_session_id": 1,
                 "connected": true,
                 "ready": true,
                 "is_bot": false,

@@ -37,6 +37,33 @@ if (!globalThis.IntersectionObserver) {
   globalThis.IntersectionObserver = TestIntersectionObserver;
 }
 
+class TestResizeObserver implements ResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+
+  disconnect() {}
+
+  observe(target: Element) {
+    this.callback(
+      [
+        {
+          borderBoxSize: [],
+          contentBoxSize: [],
+          contentRect: target.getBoundingClientRect(),
+          devicePixelContentBoxSize: [],
+          target,
+        },
+      ],
+      this,
+    );
+  }
+
+  unobserve() {}
+}
+
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = TestResizeObserver;
+}
+
 Object.defineProperty(HTMLMediaElement.prototype, 'play', {
   configurable: true,
   value: () => Promise.resolve(),

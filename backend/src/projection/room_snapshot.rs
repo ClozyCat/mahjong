@@ -30,7 +30,6 @@ struct PlayerRoomSnapshot {
     seats: Vec<PublicSeatView>,
     spectators: Vec<PublicSpectatorView>,
     local_seat: Seat,
-    reconnect_token: Option<String>,
     match_state: Option<MatchState>,
     private_state: Option<PlayerRoundView>,
     continue_action: Option<ContinueActionView>,
@@ -172,7 +171,6 @@ pub(crate) fn room_snapshot_message_with_spectators(
         seats: public_seats(state),
         spectators: public_spectators(spectators),
         local_seat,
-        reconnect_token: reconnect_token(state, local_seat),
         match_state: state.match_state.clone(),
         private_state: private_round_state(state, local_seat, support),
         continue_action: continue_action_snapshot(state),
@@ -193,7 +191,6 @@ pub(crate) fn room_snapshot_message_with_spectators(
                 "seats": [],
                 "spectators": [],
                 "local_seat": local_seat,
-                "reconnect_token": Value::Null,
                 "match_state": Value::Null,
                 "private_state": Value::Null,
                 "continue_action": Value::Null,
@@ -219,7 +216,6 @@ pub(crate) fn observer_room_snapshot_message_with_spectators(
         seats: public_seats(state),
         spectators: public_spectators(spectators),
         local_seat: usize::MAX,
-        reconnect_token: None,
         match_state: state.match_state.clone(),
         private_state: observer_round_state(state),
         continue_action: continue_action_snapshot(state),
@@ -240,7 +236,6 @@ pub(crate) fn observer_room_snapshot_message_with_spectators(
                 "seats": [],
                 "spectators": [],
                 "local_seat": Value::Null,
-                "reconnect_token": Value::Null,
                 "match_state": Value::Null,
                 "private_state": Value::Null,
                 "continue_action": Value::Null,
@@ -438,14 +433,6 @@ fn public_spectators(spectators: &[SpectatorIdentity]) -> Vec<PublicSpectatorVie
             display_name: spectator.display_name.clone(),
         })
         .collect()
-}
-
-fn reconnect_token(state: &RoomState, local_seat: Seat) -> Option<String> {
-    state
-        .seats
-        .iter()
-        .find(|seat| seat.seat_index == local_seat)
-        .and_then(|seat| seat.reconnect_token.clone())
 }
 
 fn private_round_state(
@@ -1080,7 +1067,6 @@ mod tests {
             .expect("players should serialize");
 
         assert!(snapshot["payload"]["local_seat"].is_null());
-        assert!(snapshot["payload"]["reconnect_token"].is_null());
         assert_eq!(
             snapshot["payload"]["private_state"]["pending_action"]["options"],
             serde_json::json!([])

@@ -35,13 +35,12 @@ use super::users::title_for_points;
 use super::{
     AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, OutboundMessage,
     add_bot_to_waiting_room, collect_join_outbound_from_snapshot,
-    collect_snapshot_and_prompt_outbound_from_snapshot, convert_seat_to_bot,
-    generate_player_session_id, generate_reconnect_token, generate_short_hex, normalize_table_code,
-    notify_all_user_connections, occupied_seats, presence_and_snapshot_for_all_from_snapshot,
-    random_open_seat_index, remove_bot_from_waiting_room, remove_seat_from_room,
-    reset_timeout_auto_response_count, room_has_round_state, room_phase, room_seats, seat_exists,
-    seat_matches_reconnect_credentials, send_outbound, serialize_room, set_seat_bot_takeover,
-    set_seat_connected, user_active_table_updated_message,
+    collect_snapshot_and_prompt_outbound_from_snapshot, convert_seat_to_bot, generate_short_hex,
+    normalize_table_code, notify_all_user_connections, occupied_seats,
+    presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
+    remove_bot_from_waiting_room, remove_seat_from_room, reset_timeout_auto_response_count,
+    room_has_round_state, room_phase, room_seats, seat_exists, send_outbound, serialize_room,
+    set_seat_bot_takeover, set_seat_connected, user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{RoomState, SeatState};
@@ -58,7 +57,6 @@ const DEALER_SELECTION_DURATION_MS: u64 = 4_200;
 enum ClientMessage {
     WatchTable(WatchTableRequest),
     JoinTable(JoinTableRequest),
-    Reconnect(ReconnectRequest),
     Ready(ReadyRequest),
     AdjustBots(AdjustBotsRequest),
     SetBotTakeover(SetBotTakeoverRequest),
@@ -99,12 +97,6 @@ struct WatchTableRequest {
     session_token: String,
     #[serde(default)]
     nickname: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct ReconnectRequest {
-    #[serde(default)]
-    reconnect_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,12 +310,6 @@ async fn handle_client_message(
                 return reject_to(connection, "seat_already_owned");
             }
             handle_join_table(state, table_code, connection, request).await
-        }
-        ClientMessage::Reconnect(request) => {
-            if !matches!(role, ConnectionRole::Unbound) {
-                return reject_to(connection, "seat_already_owned");
-            }
-            handle_reconnect(state, table_code, connection, request).await
         }
         ClientMessage::Ready(request) => {
             let Some(seat_index) =
@@ -561,39 +547,6 @@ fn current_seat_index_for_user(
         })
 }
 
-fn current_seat_index_for_reconnect(
-    room: &RoomState,
-    player_session_id: i64,
-    reconnect_token: &str,
-    fallback_seat_index: usize,
-) -> Option<usize> {
-    room.seats
-        .iter()
-        .find(|seat| {
-            seat.seat_index == fallback_seat_index
-                && seat_matches_reconnect_credentials(
-                    room,
-                    seat.seat_index,
-                    player_session_id,
-                    reconnect_token,
-                )
-        })
-        .map(|seat| seat.seat_index)
-        .or_else(|| {
-            room.seats
-                .iter()
-                .find(|seat| {
-                    seat_matches_reconnect_credentials(
-                        room,
-                        seat.seat_index,
-                        player_session_id,
-                        reconnect_token,
-                    )
-                })
-                .map(|seat| seat.seat_index)
-        })
-}
-
 async fn handle_join_table(
     state: AppContext,
     table_code: &str,
@@ -618,12 +571,12 @@ async fn handle_join_table(
         return reject_to(connection, "table_not_found");
     };
     if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
+        return reject_to(connection, "table_closed");
     }
     let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
+        return reject_to(connection, "table_closed");
     }
     let previous_room = runtime.room.clone();
     if runtime
@@ -688,16 +641,12 @@ async fn handle_join_table(
             let Some(seat_index) = random_open_seat_index(&runtime.room) else {
                 return reject_to(connection, "table_full");
             };
-            let player_session_id = generate_player_session_id();
-            let reconnect_token = generate_reconnect_token();
             runtime.room.seats.push(SeatState {
                 seat_index,
                 user_id: Some(user.user_id),
                 nickname: Some(user.display_name.clone()),
                 points: Some(user.points),
                 title: Some(title_for_points(user.points).to_string()),
-                reconnect_token: Some(reconnect_token.clone()),
-                player_session_id: Some(player_session_id),
                 connected: true,
                 ready: false,
                 is_bot: false,
@@ -721,13 +670,11 @@ async fn handle_join_table(
             if let Err(error) = state
                 .inner
                 .db
-                .save_table_and_store_reconnect_token_and_upsert_participant(
+                .save_table_and_upsert_participant(
                     table_code,
                     &created_at,
                     &room_json,
-                    &reconnect_token,
                     seat_index,
-                    player_session_id,
                     authenticated_user.user_id,
                     &user.display_name,
                     &created_at,
@@ -826,123 +773,6 @@ async fn handle_join_table(
     MessageOutcome {
         outbound,
         role: Some(ConnectionRole::Player { seat_index }),
-        clear_role: false,
-        close_socket: false,
-    }
-}
-
-async fn handle_reconnect(
-    state: AppContext,
-    table_code: &str,
-    connection: &ConnectionHandle,
-    request: ReconnectRequest,
-) -> MessageOutcome {
-    let reconnect_token = request.reconnect_token;
-
-    let token_record = match state.inner.db.get_reconnect_token(&reconnect_token).await {
-        Ok(Some(token_record)) => token_record,
-        Ok(None) | Err(_) => return reject_to(connection, "invalid_reconnect_token"),
-    };
-    if token_record.table_code != table_code {
-        return reject_to(connection, "table_not_found");
-    }
-
-    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
-        return reject_to(connection, "table_not_found");
-    };
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let _persist_guard = room_handle.persist.lock().await;
-    let mut runtime = room_handle.runtime.lock().await;
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let previous_room = runtime.room.clone();
-    if runtime
-        .connections
-        .values()
-        .any(|group| group.connections.contains_key(&connection.id))
-    {
-        return reject_to(connection, "seat_already_owned");
-    }
-    let Some(current_seat_index) = current_seat_index_for_reconnect(
-        &runtime.room,
-        token_record.player_session_id,
-        &reconnect_token,
-        token_record.seat_index,
-    ) else {
-        return reject_to(connection, "invalid_reconnect_token");
-    };
-
-    let new_token = generate_reconnect_token();
-    if let Some(seat) = runtime
-        .room
-        .seats
-        .iter_mut()
-        .find(|seat| seat.seat_index == current_seat_index)
-    {
-        seat.reconnect_token = Some(new_token.clone());
-        seat.connected = true;
-        seat.disconnect_deadline_at = None;
-        seat.is_bot = false;
-        seat.seat_type = "human".to_string();
-        seat.consecutive_timeout_auto_response_count = 0;
-    }
-    let _ = reconcile_standard_continue_action_state(&mut runtime.room);
-    let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
-    drop(runtime);
-    let room_json = match serialize_room(&room) {
-        Ok(value) => value,
-        Err(error) => return internal_error_to(connection, error),
-    };
-    if let Err(error) = state
-        .inner
-        .db
-        .rotate_reconnect_token(
-            table_code,
-            &created_at,
-            &room_json,
-            &reconnect_token,
-            &new_token,
-            current_seat_index,
-            token_record.player_session_id,
-        )
-        .await
-    {
-        restore_room_snapshot(&room_handle, previous_room).await;
-        if error.to_string().contains("stale reconnect token") {
-            return reject_to(connection, "invalid_reconnect_token");
-        }
-        return internal_error_to(connection, error);
-    }
-    let mut outbound = collect_join_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-        table_code,
-        connection,
-        current_seat_index,
-        true,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
-    let mut runtime = room_handle.runtime.lock().await;
-    add_seat_connection(&mut runtime, current_seat_index, None, connection);
-    drop(runtime);
-    schedule_room_tasks_detached(state, table_code.to_string());
-    MessageOutcome {
-        outbound,
-        role: Some(ConnectionRole::Player {
-            seat_index: current_seat_index,
-        }),
         clear_role: false,
         close_socket: false,
     }
@@ -1621,7 +1451,7 @@ async fn handle_leave_table(
             if let Err(error) = state
                 .inner
                 .db
-                .save_table_and_delete_tokens_for_seat(
+                .save_table_and_mark_participant_left(
                     table_code,
                     &created_at,
                     &room_json,
@@ -1705,7 +1535,7 @@ async fn handle_leave_table(
         if let Err(error) = state
             .inner
             .db
-            .save_table_and_delete_tokens_for_seat(
+            .save_table_and_mark_participant_left(
                 table_code,
                 &created_at,
                 &room_json,
@@ -1852,8 +1682,8 @@ mod tests {
 
     use super::{
         ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, ReadyRequest,
-        ReconnectRequest, WatchTableRequest, handle_client_message, handle_disconnect,
-        handle_join_table, handle_reconnect, handle_watch_table, parse_client_message,
+        WatchTableRequest, handle_client_message, handle_disconnect, handle_join_table,
+        handle_watch_table, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1883,17 +1713,13 @@ mod tests {
         seat_index: usize,
         user_id: i64,
         nickname: &'a str,
-        token: &'a str,
-        player_session_id: i64,
         connected: bool,
     }
 
     struct StaleSeatRow<'a> {
         table_code: &'a str,
         room_json: &'a str,
-        token: &'a str,
         stale_seat_index: usize,
-        player_session_id: i64,
         user_id: i64,
         nickname: &'a str,
     }
@@ -1905,8 +1731,6 @@ mod tests {
             nickname: Some(input.nickname.to_string()),
             points: Some(600),
             title: Some("正分守门员".to_string()),
-            reconnect_token: Some(input.token.to_string()),
-            player_session_id: Some(input.player_session_id),
             connected: input.connected,
             ready: true,
             is_bot: false,
@@ -1942,13 +1766,11 @@ mod tests {
 
     async fn persist_stale_rotated_seat(worker: &DbWorker, row: StaleSeatRow<'_>) -> Result<()> {
         worker
-            .save_table_and_store_reconnect_token_and_upsert_participant(
+            .save_table_and_upsert_participant(
                 row.table_code,
                 "2026-05-06T00:00:00Z",
                 row.room_json,
-                row.token,
                 row.stale_seat_index,
-                row.player_session_id,
                 row.user_id,
                 row.nickname,
                 "2026-05-06T00:00:00Z",
@@ -1973,16 +1795,12 @@ mod tests {
             seat_index: 0,
             user_id: other_user_id,
             nickname: "OtherRotated",
-            token: "other-current-token",
-            player_session_id: 11,
             connected: true,
         }));
         room.seats.push(human_seat(TestSeat {
             seat_index: 1,
             user_id: guest_user_id,
             nickname: "GuestRotated",
-            token: "guest-current-token",
-            player_session_id: 22,
             connected: false,
         }));
         let room_json = serialize_room_state(&room)?;
@@ -2000,9 +1818,7 @@ mod tests {
             StaleSeatRow {
                 table_code,
                 room_json: &room_json,
-                token: "guest-current-token",
                 stale_seat_index: 0,
-                player_session_id: 22,
                 user_id: guest_user_id,
                 nickname: "GuestRotated",
             },
@@ -2013,9 +1829,7 @@ mod tests {
             StaleSeatRow {
                 table_code,
                 room_json: &room_json,
-                token: "other-current-token",
                 stale_seat_index: 1,
-                player_session_id: 11,
                 user_id: other_user_id,
                 nickname: "OtherRotated",
             },
@@ -2067,8 +1881,6 @@ mod tests {
             nickname: Some("Guest".to_string()),
             points: Some(600),
             title: Some("正分守门员".to_string()),
-            reconnect_token: Some("token-join".to_string()),
-            player_session_id: Some(88),
             connected: false,
             ready: false,
             is_bot: false,
@@ -2080,13 +1892,11 @@ mod tests {
         });
         let room_json = serialize_room_state(&room)?;
         worker
-            .save_table_and_store_reconnect_token_and_upsert_participant(
+            .save_table_and_upsert_participant(
                 table_code,
                 "2026-05-06T00:00:00Z",
                 &room_json,
-                "token-join",
                 0,
-                88,
                 guest.user_id,
                 "Guest",
                 "2026-05-06T00:00:00Z",
@@ -2154,8 +1964,6 @@ mod tests {
             nickname: Some("GuestWatch".to_string()),
             points: Some(600),
             title: Some("正分守门员".to_string()),
-            reconnect_token: Some("watch-token".to_string()),
-            player_session_id: Some(91),
             connected: true,
             ready: true,
             is_bot: false,
@@ -2167,13 +1975,11 @@ mod tests {
         });
         let room_json = serialize_room_state(&room)?;
         worker
-            .save_table_and_store_reconnect_token_and_upsert_participant(
+            .save_table_and_upsert_participant(
                 table_code,
                 "2026-05-06T00:00:00Z",
                 &room_json,
-                "watch-token",
                 0,
-                91,
                 guest.user_id,
                 "GuestWatch",
                 "2026-05-06T00:00:00Z",
@@ -2388,68 +2194,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn reconnect_reuses_current_room_seat_after_wind_rotation() -> Result<()> {
-        let (state, worker, _guest_token, guest_user_id, other_user_id) =
-            build_loaded_room_with_stale_seat_indexes("ROOMROTREC").await?;
-        let (connection, _receiver) = test_connection_handle(1, 8);
-
-        let outcome = handle_reconnect(
-            state.clone(),
-            "ROOMROTREC",
-            &connection,
-            ReconnectRequest {
-                reconnect_token: "guest-current-token".to_string(),
-            },
-        )
-        .await;
-
-        assert!(matches!(
-            outcome.role,
-            Some(ConnectionRole::Player { seat_index: 1 })
-        ));
-        let room_handle = room_handle(&state, "ROOMROTREC")
-            .await
-            .expect("room should stay loaded");
-        let runtime = room_handle.runtime.lock().await;
-        let guest_seat = runtime
-            .room
-            .seats
-            .iter()
-            .find(|seat| seat.seat_index == 1)
-            .expect("current guest seat should exist");
-        assert_eq!(guest_seat.user_id, Some(guest_user_id));
-        assert!(guest_seat.connected);
-        let new_token = guest_seat
-            .reconnect_token
-            .clone()
-            .expect("reconnect should rotate token");
-        assert_eq!(
-            runtime
-                .room
-                .seats
-                .iter()
-                .find(|seat| seat.seat_index == 0)
-                .and_then(|seat| seat.user_id),
-            Some(other_user_id)
-        );
-        drop(runtime);
-
-        assert!(
-            worker
-                .get_reconnect_token("guest-current-token")
-                .await?
-                .is_none()
-        );
-        let token_record = worker
-            .get_reconnect_token(&new_token)
-            .await?
-            .expect("new token should be persisted");
-        assert_eq!(token_record.seat_index, 1);
-        assert_eq!(token_record.player_session_id, 22);
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
     async fn multi_device_join_table_allows_actions_from_both_connections() -> Result<()> {
         let (state, guest_token) = build_reserved_participant_state("ROOM52").await?;
         let (first_connection, _first_receiver) = test_connection_handle(1, 8);
@@ -2655,13 +2399,11 @@ mod tests {
         state
             .inner
             .db
-            .save_table_and_store_reconnect_token_and_upsert_participant(
+            .save_table_and_upsert_participant(
                 "ROOM75",
                 "2026-05-06T00:00:00Z",
                 r#"{"table_code":"ROOM75","phase":"playing","seats":[]}"#,
-                "viewer-other-token",
                 0,
-                92,
                 viewer_user_id,
                 "ViewerWatch",
                 "2026-05-06T00:00:00Z",
