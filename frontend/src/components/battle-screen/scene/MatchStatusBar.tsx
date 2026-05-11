@@ -288,10 +288,10 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     if (!statusBarRef.current) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const target = entry.target as HTMLElement;
+        const rect = entry.target.getBoundingClientRect();
         setSize({
-          width: target.offsetWidth,
-          height: target.offsetHeight,
+          width: rect.width,
+          height: rect.height,
         });
       }
     });
