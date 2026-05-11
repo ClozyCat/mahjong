@@ -216,8 +216,26 @@
 }
 
 .match-status-bar__section--action {
+  position: relative;
+  justify-content: center;
   color: var(--accent-2);
   font-weight: 600;
+}
+
+.match-status-bar__section--action::before {
+  content: attr(data-width-label);
+  visibility: hidden;
+  font-size: clamp(0.8rem, 1.8vw, 1.05rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.match-status-bar__action-text {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
 }
 
 .match-status-bar__label {
@@ -260,6 +278,15 @@
   height: clamp(0.9rem, 2.2vw, 1.25rem);
   transition: transform 0.4s var(--ease-spring);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+}
+
+.match-status-bar__arrow-wrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
 }
 
 .table-stage__status-summary {

@@ -19,6 +19,8 @@ const SEAT_LABELS: Record<Seat, string> = {
   left: '上家',
 };
 
+const WAITING_ACTION_LABEL = '等待中';
+
 function getDealerSelectionTransitionMs(dealerSelection: DealerSelectionView) {
   const remainingMs = new Date(dealerSelection.revealAt).getTime() - Date.now();
   if (!Number.isFinite(remainingMs)) {
@@ -165,7 +167,11 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     };
   }, [deadlineAt]);
 
-  const activeSeatLabel = stableDealerSelection ? '东家' : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : '等待中');
+  const activeSeatLabel = stableDealerSelection
+    ? '东家'
+    : (stableActionSeat ? SEAT_LABELS[stableActionSeat] : WAITING_ACTION_LABEL);
+  const shouldShowActionArrow = Boolean(stableDealerSelection || stableActionSeat);
+  const visibleActionLabel = shouldShowActionArrow ? null : WAITING_ACTION_LABEL;
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
 
   useLayoutEffect(() => {
@@ -198,13 +204,23 @@ export const MatchStatusBar = memo(function MatchStatusBar({
       
       <div className="match-status-bar__divider" />
       
-      <div className={`match-status-bar__section match-status-bar__section--action ${stableActionSeat ? `match-status-bar__action--${stableActionSeat}` : ''}`}>
+      <div
+        className={`match-status-bar__section match-status-bar__section--action ${stableActionSeat ? `match-status-bar__action--${stableActionSeat}` : ''}`}
+        aria-label={`当前行动：${activeSeatLabel}`}
+        data-width-label={WAITING_ACTION_LABEL}
+      >
         {stableDealerSelection ? (
-          <SeatArrow seat={stableDealerSelection.dealerSeat} dealerSelection={stableDealerSelection} />
+          <span className="match-status-bar__arrow-wrap" aria-hidden="true">
+            <SeatArrow seat={stableDealerSelection.dealerSeat} dealerSelection={stableDealerSelection} />
+          </span>
         ) : stableActionSeat ? (
-          <SeatArrow seat={stableActionSeat} />
+          <span className="match-status-bar__arrow-wrap" aria-hidden="true">
+            <SeatArrow seat={stableActionSeat} />
+          </span>
         ) : null}
-        <span className="match-status-bar__value">{activeSeatLabel}</span>
+        {visibleActionLabel ? (
+          <span className="match-status-bar__value match-status-bar__action-text">{visibleActionLabel}</span>
+        ) : null}
       </div>
 
       <div className="match-status-bar__divider" />

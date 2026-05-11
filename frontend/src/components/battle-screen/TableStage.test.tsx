@@ -440,9 +440,11 @@ describe('TableStage', () => {
       remainingTileCount: 42,
     };
 
-    const { rerender } = render(<TableStage {...props} actionIndicatorSeat="bottom" />);
+    const { container, rerender } = render(<TableStage {...props} actionIndicatorSeat="bottom" />);
 
-    expect(screen.getByText('本家')).toBeInTheDocument();
+    expect(screen.getByLabelText('当前行动：本家')).toBeInTheDocument();
+    expect(container.querySelector('.match-status-bar__arrow')).toBeInTheDocument();
+    expect(screen.queryByText('本家')).toBeNull();
 
     rerender(<TableStage {...props} actionIndicatorSeat={null} />);
 
@@ -472,7 +474,8 @@ describe('TableStage', () => {
 
     rerender(<TableStage {...props} actionIndicatorSeat={null} />);
 
-    expect(screen.getByText('本家')).toBeInTheDocument();
+    expect(screen.getByLabelText('当前行动：本家')).toBeInTheDocument();
+    expect(screen.queryByText('本家')).toBeNull();
     expect(screen.queryByText('等待中')).toBeNull();
 
     act(() => {
