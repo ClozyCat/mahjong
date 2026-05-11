@@ -82,10 +82,15 @@ fn try_handle_player_action_command(
                 .flatten()
         }
         (LocalPlayerActionKind::ActiveTurnPass, PlayerAction::Pass) => {
-            let tile_id = active_turn_pass_discard_tile_id(context, seat_index)
+            let tile_id = active_turn_pass_tile_id(context, seat_index)
                 .ok_or_else(|| "invalid_action".to_string());
             Some(tile_id.and_then(|tile_id| {
-                apply_discard_action_output_in_room_state(room, seat_index, &tile_id)
+                match active_turn_tile_kind(context, seat_index, &tile_id).as_deref() {
+                    Some("flower") => {
+                        apply_flower_action_output_in_room_state(room, seat_index, &[tile_id])
+                    }
+                    _ => apply_discard_action_output_in_room_state(room, seat_index, &tile_id),
+                }
             }))
         }
         (LocalPlayerActionKind::ClaimWindow, PlayerAction::Pass) => Some(
@@ -104,7 +109,7 @@ fn try_handle_player_action_command(
     }
 }
 
-fn active_turn_pass_discard_tile_id(context: &EngineContext, seat_index: usize) -> Option<String> {
+fn active_turn_pass_tile_id(context: &EngineContext, seat_index: usize) -> Option<String> {
     let round = context.room.round_state.as_ref()?;
     let restricted_tile_key = round.restricted_discard_tile_key.as_deref();
     let player = round.players.get(seat_index)?;
@@ -132,4 +137,21 @@ fn active_turn_pass_discard_tile_id(context: &EngineContext, seat_index: usize) 
         .rev()
         .find(|tile| Some(tile.tile_key.as_str()) != restricted_tile_key)
         .map(|tile| tile.tile_id.clone())
+}
+
+fn active_turn_tile_kind(
+    context: &EngineContext,
+    seat_index: usize,
+    tile_id: &str,
+) -> Option<String> {
+    context
+        .room
+        .round_state
+        .as_ref()?
+        .players
+        .get(seat_index)?
+        .concealed_tiles
+        .iter()
+        .find(|tile| tile.tile_id == tile_id)
+        .map(|tile| tile.kind.clone())
 }

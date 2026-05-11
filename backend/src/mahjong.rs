@@ -260,6 +260,10 @@ mod tests {
         tile(tile_key, tile_id, "dragon")
     }
 
+    fn flower(tile_key: &str, tile_id: &str) -> Value {
+        tile(tile_key, tile_id, "flower")
+    }
+
     fn room_for_local_discard() -> Value {
         json!({
             "table_code": "ROOM1",
@@ -1597,6 +1601,39 @@ mod tests {
         assert_eq!(room["round_state"]["current_actor"], 1);
         assert_eq!(room["pending_timeout"]["kind"], "active_turn");
         assert_eq!(room["pending_timeout"]["seat_index"], 1);
+    }
+
+    #[test]
+    fn ready_hand_player_passes_self_kong_and_exposes_drawn_flower() {
+        let mut room = room_for_local_concealed_self_kong();
+        room["round_state"]["players"][0]["is_ready_hand"] = json!(true);
+        room["round_state"]["players"][0]["concealed_tiles"][13] = flower("f1", "f1#draw");
+        room["round_state"]["last_action_context"]["tile_id"] = json!("f1#draw");
+        room["pending_timeout"]["drawn_tile_id"] = json!("f1#draw");
+        room["round_state"]["wall"]["tiles"][0] = suit("b9", "b9#replacement");
+
+        let result = try_handle_action(&mut room, 0, "pass", &[])
+            .expect("ready-hand self kong pass should be handled locally")
+            .expect("ready-hand self kong pass should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0]["payload"]["event_type"], "flower_exposed");
+        assert_eq!(result[0]["payload"]["event"]["tile_id"], "f1#draw");
+        assert_eq!(result[1]["payload"]["event_type"], "replacement_draw");
+        assert_eq!(result[1]["payload"]["event"]["tile_id"], "b9#replacement");
+        assert_eq!(
+            room["round_state"]["players"][0]["flowers"][0]["tile_id"],
+            "f1#draw"
+        );
+        assert!(
+            room["round_state"]["players"][0]["discards"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(room["pending_timeout"]["kind"], "active_turn");
+        assert_eq!(room["pending_timeout"]["seat_index"], 0);
+        assert_eq!(room["pending_timeout"]["drawn_tile_id"], "b9#replacement");
     }
 
     #[test]
