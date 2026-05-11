@@ -24,6 +24,10 @@ import { useBattleViewport } from './scene/useBattleViewport';
 export type { TableStagePlayer } from './scene/types';
 
 const PLAYER_COLOR_SLOT_COUNT = 4;
+const CENTER_CAPSULE_SPOTLIGHT_OFFSET =
+  'calc(var(--table-stage-center-capsule-h) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + var(--table-stage-spotlight-gap) * 2)';
+const CENTER_CAPSULE_SPOTLIGHT_OFFSET_HORIZONTAL =
+  'calc(var(--table-stage-center-capsule-w) / 2 + (var(--table-stage-river-base-height) * var(--table-stage-spotlight-scale)) / 2 + (var(--table-stage-spotlight-gap) * 2))';
 
 type CenterStatusSize = {
   width: number;
@@ -215,6 +219,8 @@ export function TableStage({
       ? {
           '--table-stage-center-capsule-w': `${centerStatusSize.width}px`,
           '--table-stage-center-capsule-h': `${centerStatusSize.height}px`,
+          '--table-stage-spotlight-offset': CENTER_CAPSULE_SPOTLIGHT_OFFSET,
+          '--table-stage-spotlight-offset-horizontal': CENTER_CAPSULE_SPOTLIGHT_OFFSET_HORIZONTAL,
         }
       : {}),
   } as CSSProperties;

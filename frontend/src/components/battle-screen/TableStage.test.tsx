@@ -377,6 +377,12 @@ describe('TableStage', () => {
       await waitFor(() => {
         expect(tableStage?.style.getPropertyValue('--table-stage-center-capsule-w')).toBe('218px');
         expect(tableStage?.style.getPropertyValue('--table-stage-center-capsule-h')).toBe('46px');
+        expect(tableStage?.style.getPropertyValue('--table-stage-spotlight-offset')).toContain(
+          'var(--table-stage-center-capsule-h)',
+        );
+        expect(tableStage?.style.getPropertyValue('--table-stage-spotlight-offset-horizontal')).toContain(
+          'var(--table-stage-center-capsule-w)',
+        );
       });
       expect(spotlight?.style.getPropertyValue('--spotlight-left')).toBe(
         'calc(50% - var(--table-stage-spotlight-offset-horizontal))',
