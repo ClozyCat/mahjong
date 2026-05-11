@@ -160,9 +160,9 @@ function FanIcon({ className }: { className?: string }) {
 function IngotIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} fill="currentColor">
-      <path d="M16 6C11 6 7 9 7 13V15C7 19 11 22 16 22C21 22 25 19 25 15V13C25 9 21 6 16 6Z" opacity="0.25" />
-      <path d="M16 8C12.5 8 9.5 10.5 9.5 13.5V14.5C9.5 17.5 12.5 20 16 20C19.5 20 22.5 17.5 22.5 14.5V13.5C22.5 10.5 19.5 8 16 8Z" />
-      <path d="M9.5 13.5C9.5 10.5 12.5 8 16 8C19.5 8 22.5 10.5 22.5 13.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M16 8C11 8 7 11 7 15V17C7 21 11 24 16 24C21 24 25 21 25 17V15C25 11 21 8 16 8Z" opacity="0.25" />
+      <path d="M16 10C12.5 10 9.5 12.5 9.5 15.5V16.5C9.5 19.5 12.5 22 16 22C19.5 22 22.5 19.5 22.5 16.5V15.5C22.5 12.5 19.5 10 16 10Z" />
+      <path d="M9.5 15.5C9.5 12.5 12.5 10 16 10C19.5 10 22.5 12.5 22.5 15.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   );
 }

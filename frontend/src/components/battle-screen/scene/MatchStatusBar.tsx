@@ -82,7 +82,7 @@ const SeatArrow = ({ seat, dealerSelection }: { seat: Seat; dealerSelection?: De
         transitionTimingFunction: timingFunction
       }}
     >
-      <path d="M12 6l-6 6 1.41 1.41L12 8.83l4.59 4.58L18 12z" fill="currentColor" />
+      <path d="M12 8.3l-6 6 1.41 1.41L12 11.13l4.59 4.58L18 14.3z" fill="currentColor" />
     </svg>
   );
 };
