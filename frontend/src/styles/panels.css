@@ -1706,8 +1706,8 @@ button.table-sidebar__toggle:active:not(:disabled) {
   position: relative;
   width: min(57rem, calc(100vw - 2rem));
   max-width: calc(100vw - 2rem);
-  padding: 1.4rem 1.8rem 1.6rem;
-  border-radius: 2.2rem;
+  padding: 1rem 1.2rem 1.2rem;
+  border-radius: 1.8rem;
   box-shadow: 
     0 24px 64px rgba(0, 0, 0, 0.5),
     0 0 0 1px color-mix(in srgb, var(--theme-paper) 10%, transparent);
@@ -1799,9 +1799,9 @@ button.table-sidebar__toggle:active:not(:disabled) {
 
 .result-overlay__columns {
   display: grid;
-  grid-template-columns: minmax(18rem, 0.92fr) minmax(0, 1.08fr);
-  gap: 1rem;
-  margin-top: 1rem;
+  grid-template-columns: minmax(17rem, 0.92fr) minmax(0, 1.08fr);
+  gap: 0.8rem;
+  margin-top: 0.8rem;
   align-items: start;
 }
 
@@ -1814,9 +1814,9 @@ button.table-sidebar__toggle:active:not(:disabled) {
   min-width: 0;
   position: relative;
   overflow: hidden;
-  padding: 1.2rem;
+  padding: 0.8rem;
   /* Minimalist flat plate */
-  border-radius: 1.6rem;
+  border-radius: 1.4rem;
   border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   box-shadow: 
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 4%, transparent),
@@ -1827,7 +1827,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .result-overlay__fan-panel {
-  padding: 1.12rem;
+  padding: 0.8rem;
   border-color: color-mix(in srgb, var(--accent-2) 15%, var(--theme-paper));
 }
 
@@ -1843,7 +1843,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .result-overlay__score-panel {
-  padding-inline: 1.28rem;
+  padding-inline: 0.9rem;
   border-color: color-mix(in srgb, var(--accent) 15%, var(--theme-paper));
 }
 
@@ -1896,7 +1896,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
   align-items: center;
   justify-content: flex-start;
   gap: 0.55rem;
-  margin: 0.7rem 0 0;
+  margin: 0.5rem 0 0;
 }
 
 .result-overlay__pagination-button {
@@ -1933,7 +1933,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
 }
 
 .result-overlay__fan-list-viewport {
-  margin: 0.75rem 0 0;
+  margin: 0.5rem 0 0;
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
@@ -1952,7 +1952,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
-  padding: 0.65rem 0.85rem;
+  padding: 0.5rem 0.7rem;
   border-radius: 1rem;
   background: color-mix(in srgb, var(--theme-paper) 3%, transparent);
   border: 1px solid color-mix(in srgb, var(--theme-paper) 5%, transparent);
@@ -2061,15 +2061,15 @@ button.table-sidebar__toggle:active:not(:disabled) {
 
 /* Seat rows & tooltips */
 .result-overlay__seat-list {
-  gap: 0.7rem;
-  margin-top: 0.95rem;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
 }
 
 .result-overlay__seat-row {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  padding: 0.48rem 0.82rem;
+  padding: 0.4rem 0.7rem;
   border-radius: 1.1rem;
   border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   background: var(--result-overlay-seat-surface);
@@ -2203,7 +2203,7 @@ button.table-sidebar__toggle:active:not(:disabled) {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
-  margin-top: 0.8rem;
+  margin-top: 0.6rem;
 }
 
 .result-overlay__actions button {
