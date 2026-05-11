@@ -189,6 +189,42 @@
   transition: all 0.3s var(--ease-lux);
 }
 
+.match-status-bar[data-active-seat] {
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 60%, transparent);
+}
+
+.match-status-bar::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  pointer-events: none;
+  transition: all 0.4s var(--ease-lux);
+  z-index: 1;
+}
+
+.match-status-bar[data-active-seat='top']::before {
+  border-top-color: var(--accent);
+  filter: drop-shadow(0 -4px 8px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
+.match-status-bar[data-active-seat='bottom']::before {
+  border-bottom-color: var(--accent);
+  filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
+.match-status-bar[data-active-seat='left']::before {
+  border-left-color: var(--accent);
+  filter: drop-shadow(-4px 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
+.match-status-bar[data-active-seat='right']::before {
+  border-right-color: var(--accent);
+  filter: drop-shadow(4px 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
 .match-status-bar--ambiguous {
   animation: match-status-bar-breathing 2.8s var(--ease-lux) infinite;
   box-shadow: 0 0 16px color-mix(in srgb, var(--theme-success) 20%, transparent);

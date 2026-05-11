@@ -196,7 +196,11 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   }, [onSizeChange]);
 
   return (
-    <div ref={statusBarRef} className={`match-status-bar ${isAmbiguous ? 'match-status-bar--ambiguous' : ''}`}>
+    <div
+      ref={statusBarRef}
+      className={`match-status-bar ${isAmbiguous ? 'match-status-bar--ambiguous' : ''}`}
+      data-active-seat={stableActionSeat ?? undefined}
+    >
       <div className="match-status-bar__section">
         <span className="match-status-bar__label">剩余</span>
         <span className="match-status-bar__value">{remainingCount ?? 0}</span>
