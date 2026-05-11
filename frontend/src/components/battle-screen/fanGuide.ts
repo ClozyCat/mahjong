@@ -323,7 +323,7 @@ const FAN_GUIDE_DEFINITIONS: Array<Omit<FanGuideEntry, 'label'>> = [
     fanKey: 'all_fives',
     fanValue: 16,
     intro: '每一副面子和将牌都至少包含数字 5。',
-    example: '345万、555筒、456条、678万、55筒。',
+    example: '345万、555筒、456条、567万、55筒。',
   },
   {
     fanKey: 'pure_straight',
