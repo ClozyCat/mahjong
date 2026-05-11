@@ -310,8 +310,8 @@
 }
 
 .match-status-bar__arrow {
-  width: clamp(0.9rem, 2.2vw, 1.25rem);
-  height: clamp(0.9rem, 2.2vw, 1.25rem);
+  width: clamp(1.2rem, 3.2vw, 1.8rem);
+  height: clamp(1.2rem, 3.2vw, 1.8rem);
   transition: transform 0.4s var(--ease-spring);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
