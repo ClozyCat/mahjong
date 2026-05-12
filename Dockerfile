@@ -50,7 +50,7 @@ ARG DEBIAN_SECURITY_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian-security
 WORKDIR /app
 
 COPY --from=rust-backend-builder /app/backend/target/release/backend /usr/local/bin/backend
-COPY --from=rust-backend-builder /app/backend/assets/models /app/assets/models
+COPY --from=rust-backend-builder /app/backend/assets /app/assets
 COPY --from=rust-backend-builder /opt/onnxruntime/lib /app/lib
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 

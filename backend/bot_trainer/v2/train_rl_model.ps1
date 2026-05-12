@@ -1,7 +1,7 @@
 param(
     [string]$OutputDir = "backend/bot_trainer/v2/rl_runs/$(Get-Date -Format 'yyyyMMddHHmm')",
     [string]$BaselineCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt",
-    [string]$BaselineOnnx = "backend/assets/models/mahjong_policy_net.onnx",
+    [string]$BaselineOnnx = "backend/assets/backup_model/backup.onnx",
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",

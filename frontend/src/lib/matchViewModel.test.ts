@@ -718,6 +718,34 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('does not count special bot seats as removable standby bots', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: '舒伯特', connected: true, ready: true, is_bot: true, seat_type: 'special_bot' },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls).toMatchObject({
+      occupiedSeats: 2,
+      botCount: 0,
+      canAddBot: true,
+      canRemoveBot: false,
+    });
+    expect(viewModel.players.find((player) => player.name === '舒伯特')).toMatchObject({
+      seatType: 'special_bot',
+      isBotControlled: true,
+    });
+  });
+
   it('maps a local active turn into selectable discard controls', () => {
     const viewModel = createMatchViewModel(createPlayingSessionState());
 

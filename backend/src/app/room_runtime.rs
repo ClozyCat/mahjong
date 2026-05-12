@@ -13,6 +13,7 @@ use crate::app::{
 };
 use crate::core::state::RoomState;
 use crate::rules::standard::flow::reconcile_continue_action_state_in_room_state as reconcile_standard_continue_action_state;
+use crate::special_bots::{is_independent_bot_seat, is_special_bot_seat};
 
 pub(crate) type SeatConnections = Vec<(usize, ConnectionHandle)>;
 pub(crate) type SpectatorConnections = Vec<(u64, ConnectionHandle)>;
@@ -227,7 +228,7 @@ pub(crate) async fn unregister_room_handle(
 
 pub(crate) fn mark_restored_room_disconnected(room: &mut RoomState) {
     for seat in &mut room.seats {
-        if seat.seat_type == "bot" {
+        if is_independent_bot_seat(seat) || is_special_bot_seat(seat) {
             continue;
         }
         seat.connected = false;
@@ -441,7 +442,11 @@ pub(crate) fn remove_spectator_connection(
 }
 
 pub(crate) fn room_has_only_bots(room: &RoomState) -> bool {
-    !room.seats.is_empty() && room.seats.iter().all(|seat| seat.seat_type == "bot")
+    !room.seats.is_empty()
+        && room
+            .seats
+            .iter()
+            .all(|seat| is_independent_bot_seat(seat) || is_special_bot_seat(seat))
 }
 
 pub(crate) fn should_terminate_unattended(runtime: &RoomRuntime) -> bool {

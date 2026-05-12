@@ -3,7 +3,7 @@
   "learner": {
     "id": "learner",
     "mode": "neural",
-    "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+    "model_path": "backend/assets/backup_model/backup.onnx",
     "sample_actions": true,
     "temperature": 1.0
   },
@@ -19,7 +19,7 @@
     {
       "id": "self",
       "mode": "neural",
-      "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+      "model_path": "backend/assets/backup_model/backup.onnx",
       "sample_actions": true,
       "temperature": 1.0,
       "weight": 1

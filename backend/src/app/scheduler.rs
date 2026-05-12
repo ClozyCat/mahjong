@@ -17,7 +17,7 @@ use crate::app::{
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
 use crate::rules::standard::automation::{
-    next_bot_action_in_room_state as standard_next_bot_action,
+    next_bot_action_in_room_state_with_policy_resolver as standard_next_bot_action,
     try_process_due_timeout_in_room_state as standard_try_process_due_timeout,
 };
 use crate::rules::standard::flow::{
@@ -27,6 +27,7 @@ use crate::rules::standard::flow::{
     start_match_in_room_state as standard_start_match,
 };
 use crate::rules::standard::win::apply_hu_action_output_in_room_state;
+use crate::special_bots;
 
 const UNATTENDED_ROOM_CLEANUP_DELAY: Duration = Duration::from_secs(180);
 
@@ -358,7 +359,9 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         return;
     }
 
-    let action = match standard_next_bot_action(&runtime.room) {
+    let action = match standard_next_bot_action(&runtime.room, &|seat_index| {
+        special_bots::policy_config_for_seat(&runtime.room, seat_index)
+    }) {
         Ok(action) => action,
         Err(_) => return,
     };
@@ -530,10 +533,12 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         }));
     }
 
-    if standard_next_bot_action(&runtime.room)
-        .ok()
-        .flatten()
-        .is_some()
+    if standard_next_bot_action(&runtime.room, &|seat_index| {
+        special_bots::policy_config_for_seat(&runtime.room, seat_index)
+    })
+    .ok()
+    .flatten()
+    .is_some()
     {
         let state_clone = state.clone();
         let table_clone = table_code.clone();

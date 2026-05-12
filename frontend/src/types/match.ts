@@ -1,6 +1,6 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
 export type TableMode = 'normal';
-export type SeatType = 'human' | 'bot';
+export type SeatType = 'human' | 'bot' | 'special_bot';
 export type ClientMode = 'player' | 'spectator';
 export type TableMultiplier = 1;
 
@@ -37,6 +37,7 @@ export interface PublicUser {
   avatar?: string | null;
   active_table_code?: string | null;
   active_table_phase?: RoomPhase | null;
+  is_special_bot?: boolean;
 }
 
 export interface UserBrief {

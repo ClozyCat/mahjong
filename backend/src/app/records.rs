@@ -12,6 +12,7 @@ use super::persistence::{
 use super::users::{display_label, title_for_points};
 use super::{AppContext, notify_user_connections};
 use crate::core::state::{RoomState, RoundSettlement};
+use crate::special_bots::seat_blocks_public_records;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct UserBriefView {
@@ -199,7 +200,7 @@ pub(crate) fn fan_stat_view(record: &UserFanStatRecord) -> FanStatView {
 }
 
 fn pure_bot_seat_present(room: &RoomState) -> bool {
-    room.seats.iter().any(|seat| seat.seat_type == "bot")
+    room.seats.iter().any(seat_blocks_public_records)
 }
 
 fn current_seat_by_participant(
@@ -946,6 +947,74 @@ mod tests {
             .expect("guest should exist");
         assert_eq!(owner.points, INITIAL_USER_POINTS);
         assert_eq!(guest.points, INITIAL_USER_POINTS);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn point_events_include_special_bot_participant_record() -> Result<()> {
+        let (state, worker) = test_state().await?;
+        let owner_user_id = register_user(&worker, "INVITE300014", "Owner").await?;
+        let special_bot_user_id = register_user(&worker, "INVITE300015", "舒伯特").await?;
+        let mut special_bot = seat(1, "舒伯特", true);
+        special_bot.seat_type = crate::special_bots::SPECIAL_BOT_SEAT_TYPE.to_string();
+        special_bot.user_id = Some(special_bot_user_id);
+        let room = base_room(
+            "ROOMREC7",
+            2,
+            vec![seat(0, "Owner", false), special_bot],
+            &[(0, 7), (1, -7)],
+            &[(0, 107), (1, 93)],
+            0,
+            &["all_sequences"],
+        );
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            owner_user_id,
+            0,
+            "Owner",
+        )
+        .await?;
+        persist_participant(
+            &worker,
+            &room,
+            "2026-05-06T00:00:00Z",
+            special_bot_user_id,
+            1,
+            "舒伯特",
+        )
+        .await?;
+
+        archive_current_round_if_needed(
+            &state,
+            &room,
+            "2026-05-06T00:00:00Z",
+            "2026-05-06T01:00:00Z",
+        )
+        .await?;
+
+        let detail = archived_detail(&worker).await?;
+        let player_results = &detail.rounds[0].player_results;
+        assert_eq!(player_results[0].nickname_snapshot, "Owner");
+        assert_eq!(player_results[0].point_delta, 7);
+        assert_eq!(player_results[1].nickname_snapshot, "舒伯特");
+        assert_eq!(player_results[1].point_delta, -7);
+
+        let owner = worker
+            .get_user_by_id(owner_user_id)
+            .await?
+            .expect("owner should exist");
+        let special_bot = worker
+            .get_user_by_id(special_bot_user_id)
+            .await?
+            .expect("special bot should exist");
+        assert_eq!(owner.points, INITIAL_USER_POINTS + 7);
+        assert_eq!(special_bot.points, INITIAL_USER_POINTS - 7);
+
+        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
+        assert_eq!(fan_stats.len(), 1);
+        assert_eq!(fan_stats[0].fan_key, "all_sequences");
         Ok(())
     }
 

@@ -298,6 +298,7 @@ export function TableSidebar({
                   const canWatch = Boolean(
                     user.active_table_code &&
                       !isSelf &&
+                      !user.is_special_bot &&
                       !isCurrentUserInTable &&
                       onWatchUser &&
                       !hasRequestedWatch &&
@@ -341,6 +342,8 @@ export function TableSidebar({
                                 ? '牌局尚未开始，暂不能观战'
                               : isSelf
                                 ? '不能观战自己的牌局'
+                              : user.is_special_bot
+                                ? '该BOT不可被观战'
                               : user.active_table_code
                                 ? '该玩家当前没有可观战的进行中牌局'
                                 : '该玩家当前不在牌局中'

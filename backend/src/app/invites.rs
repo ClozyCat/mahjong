@@ -19,6 +19,12 @@ pub(crate) async fn invite_availability(
     invitee_user_id: i64,
     target_table_code: &str,
 ) -> Result<InviteAvailability> {
+    let is_special_bot = state
+        .inner
+        .special_bot_user_ids
+        .read()
+        .await
+        .contains(&invitee_user_id);
     let active_participants = state
         .inner
         .db
@@ -28,6 +34,9 @@ pub(crate) async fn invite_availability(
     for participant in active_participants {
         if participant.table_code == target_table_code {
             return Ok(InviteAvailability::TargetAlreadyInTable);
+        }
+        if is_special_bot {
+            return Ok(InviteAvailability::TargetPlayerBusy);
         }
 
         let other_humans = state

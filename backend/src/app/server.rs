@@ -18,21 +18,28 @@ use super::auth::{
     verify_password,
 };
 use super::invites::{InviteAvailability, invite_availability, invite_expires_at};
-use super::persistence::{Database, DbWorker};
+use super::persistence::{Database, DbWorker, UserRecord};
 use super::protocol::{create_table_response, detail_response};
 use super::records::{fan_stat_view, game_detail_view, game_summary_view};
-use super::room_runtime::{RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms};
+use super::room_runtime::{
+    RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms, restore_room_snapshot,
+    snapshot_connections, snapshot_spectator_connections, snapshot_spectator_identities,
+};
+use super::scheduler::schedule_room_tasks_detached;
 use super::social_ws::social_websocket_handler;
 use super::users::{
     PublicUserView, public_user_view, public_user_view_with_active_table, title_for_points,
 };
 use super::ws::websocket_handler;
 use super::{
-    AppContext, CreateTableRequest, Settings, initial_room_state_with_owner, is_valid_table_code,
-    normalize_table_code, notify_all_user_connections, notify_user_connections, now_iso,
-    parse_room_json, room_phase, serialize_room_state, user_active_table_updated_message,
+    AppContext, CreateTableRequest, Settings, collect_observer_outbound_from_snapshot,
+    collect_snapshot_and_prompt_outbound_from_snapshot, initial_room_state_with_owner,
+    is_valid_table_code, normalize_table_code, notify_all_user_connections,
+    notify_user_connections, now_iso, parse_room_json, room_phase, send_outbound,
+    serialize_room_state, user_active_table_updated_message,
 };
-use crate::core::state::RoomState;
+use crate::core::state::{RoomState, SeatState};
+use crate::special_bots::{self, SPECIAL_BOT_SEAT_TYPE};
 
 #[derive(Debug)]
 enum CreateTableError {
@@ -130,6 +137,7 @@ pub(crate) async fn run() -> Result<()> {
     let db = DbWorker::start(Database::open(&settings.database_path)?)?;
     let app_state = AppContext::new(db);
     seed_dev_user(&app_state, &settings).await?;
+    seed_special_bot_users(&app_state).await?;
     restore_persisted_rooms(&app_state).await;
 
     let app = build_app(app_state, &settings);
@@ -161,6 +169,29 @@ pub(crate) async fn seed_dev_user(app_state: &AppContext, settings: &Settings) -
         seed_user.username, seed_user.password
     );
     Ok(())
+}
+
+pub(crate) async fn seed_special_bot_users(app_state: &AppContext) -> Result<()> {
+    let mut user_ids = HashSet::new();
+    for bot in special_bots::definitions() {
+        let password_hash = hash_password(&special_bot_password(bot.username))?;
+        let user = app_state
+            .inner
+            .db
+            .upsert_special_bot_user(bot.username, bot.display_name, &password_hash, &now_iso())
+            .await?;
+        user_ids.insert(user.user_id);
+    }
+    *app_state.inner.special_bot_user_ids.write().await = user_ids;
+    Ok(())
+}
+
+fn special_bot_password(username: &str) -> String {
+    format!(
+        "special-bot-login-disabled::{username}::{}::{}",
+        generate_session_token(),
+        generate_session_token()
+    )
 }
 
 pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
@@ -319,7 +350,12 @@ async fn login(State(state): State<AppContext>, Json(payload): Json<LoginRequest
     };
 
     let user = match state.inner.db.find_user_by_identifier(&identifier).await {
-        Ok(Some(user)) if verify_password(&password, &user.password_hash) => user,
+        Ok(Some(user))
+            if !special_bots::is_special_bot_username(&user.username)
+                && verify_password(&password, &user.password_hash) =>
+        {
+            user
+        }
         Ok(_) => return json_error(StatusCode::UNAUTHORIZED, "invalid_credentials"),
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     };
@@ -424,6 +460,15 @@ async fn update_me(
         Ok(user) => user,
         Err(response) => return response,
     };
+    if state
+        .inner
+        .special_bot_user_ids
+        .read()
+        .await
+        .contains(&authenticated_user.user_id)
+    {
+        return json_error(StatusCode::FORBIDDEN, "special_bot_profile_locked");
+    }
     let Some(display_name) = normalized_patch_field(payload.display_name) else {
         return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_profile_update");
     };
@@ -551,24 +596,21 @@ async fn get_leaderboard(State(state): State<AppContext>) -> Response {
                 };
                 active_table_phases.insert(table_code.clone(), phase);
             }
-            Json(
-                users
-                    .iter()
-                    .map(|user| {
-                        let active_table_code = active_tables.get(&user.user_id).cloned();
-                        let active_table_phase =
-                            active_table_code.as_ref().and_then(|table_code| {
-                                active_table_phases.get(table_code).cloned().flatten()
-                            });
-                        public_user_view_with_active_table(
-                            user,
-                            active_table_code,
-                            active_table_phase,
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .into_response()
+            let special_bot_user_ids = state.inner.special_bot_user_ids.read().await.clone();
+            let mut views = Vec::new();
+            for user in &users {
+                let active_table_code = active_tables.get(&user.user_id).cloned();
+                let active_table_phase = active_table_code
+                    .as_ref()
+                    .and_then(|table_code| active_table_phases.get(table_code).cloned().flatten());
+                views.push(public_user_view_with_active_table(
+                    user,
+                    active_table_code,
+                    active_table_phase,
+                    special_bot_user_ids.contains(&user.user_id),
+                ));
+            }
+            Json(views).into_response()
         }
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
@@ -776,17 +818,11 @@ async fn create_table_invite(
         return json_error(StatusCode::NOT_FOUND, "table_not_found");
     }
 
-    if state
-        .inner
-        .db
-        .get_user_by_id(payload.invitee_user_id)
-        .await
-        .ok()
-        .flatten()
-        .is_none()
-    {
-        return json_error(StatusCode::NOT_FOUND, "user_not_found");
-    }
+    let invitee = match state.inner.db.get_user_by_id(payload.invitee_user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "user_not_found"),
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
 
     let _persist_guard = room_handle.persist.lock().await;
     let runtime = room_handle.runtime.lock().await;
@@ -797,6 +833,7 @@ async fn create_table_invite(
         return json_error(StatusCode::CONFLICT, "table_full");
     }
     drop(runtime);
+    drop(_persist_guard);
 
     match invite_availability(&state, payload.invitee_user_id, &table_code).await {
         Ok(InviteAvailability::TargetAlreadyInTable) => {
@@ -807,6 +844,23 @@ async fn create_table_invite(
         }
         Ok(InviteAvailability::Available) => {}
         Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    }
+
+    if state
+        .inner
+        .special_bot_user_ids
+        .read()
+        .await
+        .contains(&invitee.user_id)
+    {
+        return auto_accept_special_bot_invite(
+            state,
+            room_handle,
+            table_code,
+            authenticated_user.user_id,
+            invitee,
+        )
+        .await;
     }
 
     let created_at = now_iso();
@@ -889,6 +943,141 @@ async fn get_my_invites(
     }
 }
 
+async fn auto_accept_special_bot_invite(
+    state: AppContext,
+    room_handle: Arc<RoomHandle>,
+    table_code: String,
+    inviter_user_id: i64,
+    bot_user: UserRecord,
+) -> Response {
+    let created_at = now_iso();
+    let expires_at = invite_expires_at();
+    let invite = match state
+        .inner
+        .db
+        .create_table_invite(
+            &table_code,
+            inviter_user_id,
+            bot_user.user_id,
+            &created_at,
+            &expires_at,
+        )
+        .await
+    {
+        Ok(invite) => invite,
+        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+    };
+    let accepted_at = now_iso();
+
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        drop(runtime);
+        let _ = state
+            .inner
+            .db
+            .reject_table_invite(invite.id, bot_user.user_id, &accepted_at)
+            .await;
+        return json_error(StatusCode::NOT_FOUND, "table_not_found");
+    }
+    let previous_room = runtime.room.clone();
+    let Some((seat_index, replaces_existing_seat)) = inviteable_seat_index(&runtime.room) else {
+        drop(runtime);
+        let _ = state
+            .inner
+            .db
+            .reject_table_invite(invite.id, bot_user.user_id, &accepted_at)
+            .await;
+        return json_error(StatusCode::CONFLICT, "table_full");
+    };
+    upsert_special_bot_seat(
+        &mut runtime.room,
+        seat_index,
+        replaces_existing_seat,
+        &bot_user,
+    );
+    let room = runtime.room.clone();
+    let room_created_at = runtime.created_at.clone();
+    let connections = snapshot_connections(&runtime);
+    let spectator_connections = snapshot_spectator_connections(&runtime);
+    let spectator_identities = snapshot_spectator_identities(&runtime);
+    drop(runtime);
+
+    let room_json = match serialize_room_state(&room) {
+        Ok(room_json) => room_json,
+        Err(error) => {
+            restore_room_snapshot(&room_handle, previous_room).await;
+            let _ = state
+                .inner
+                .db
+                .reject_table_invite(invite.id, bot_user.user_id, &accepted_at)
+                .await;
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+        }
+    };
+    let invite = match state
+        .inner
+        .db
+        .accept_table_invite_and_reserve_seat(
+            invite.id,
+            bot_user.user_id,
+            &accepted_at,
+            &table_code,
+            &room_json,
+            &room_created_at,
+            seat_index,
+            &bot_user.display_name,
+            true,
+        )
+        .await
+    {
+        Ok(invite) => invite,
+        Err(error) if error_matches(&error, "table_invite_invalid") => {
+            restore_room_snapshot(&room_handle, previous_room).await;
+            return json_error(StatusCode::UNPROCESSABLE_ENTITY, "table_invite_invalid");
+        }
+        Err(error) if error_matches(&error, "target_player_busy") => {
+            restore_room_snapshot(&room_handle, previous_room).await;
+            let _ = state
+                .inner
+                .db
+                .reject_table_invite(invite.id, bot_user.user_id, &accepted_at)
+                .await;
+            return json_error(StatusCode::CONFLICT, "target_player_busy");
+        }
+        Err(error) => {
+            restore_room_snapshot(&room_handle, previous_room).await;
+            let _ = state
+                .inner
+                .db
+                .reject_table_invite(invite.id, bot_user.user_id, &accepted_at)
+                .await;
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+        }
+    };
+
+    notify_all_user_connections(
+        &state,
+        user_active_table_updated_message(bot_user.user_id, Some(&table_code), Some(&room.phase)),
+    )
+    .await;
+
+    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &connections,
+    );
+    outbound.extend(collect_observer_outbound_from_snapshot(
+        &room,
+        &spectator_identities,
+        &spectator_connections,
+    ));
+    send_outbound(outbound);
+    schedule_room_tasks_detached(state, table_code);
+
+    (StatusCode::CREATED, Json(table_invite_response(invite))).into_response()
+}
+
 async fn create_spectator_request(
     State(state): State<AppContext>,
     headers: axum::http::HeaderMap,
@@ -963,6 +1152,15 @@ async fn create_spectator_request(
         },
         None => fallback_owner_user_id,
     };
+    if state
+        .inner
+        .special_bot_user_ids
+        .read()
+        .await
+        .contains(&approval_user_id)
+    {
+        return json_error(StatusCode::CONFLICT, "special_bot_cannot_be_watched");
+    }
 
     match state
         .inner
@@ -1132,6 +1330,7 @@ async fn accept_table_invite(
             &created_at,
             seat_index,
             &user.display_name,
+            false,
         )
         .await
     {
@@ -1307,6 +1506,42 @@ fn inviteable_seat_index(room: &crate::core::state::RoomState) -> Option<(usize,
     }
 
     None
+}
+
+fn upsert_special_bot_seat(
+    room: &mut RoomState,
+    seat_index: usize,
+    replaces_existing_seat: bool,
+    user: &UserRecord,
+) {
+    let seat = SeatState {
+        seat_index,
+        user_id: Some(user.user_id),
+        nickname: Some(user.display_name.clone()),
+        points: Some(user.points),
+        title: Some(title_for_points(user.points).to_string()),
+        connected: true,
+        ready: true,
+        is_bot: true,
+        seat_type: SPECIAL_BOT_SEAT_TYPE.to_string(),
+        bot_persona: Some(user.username.clone()),
+        bot_aggression: None,
+        disconnect_deadline_at: None,
+        consecutive_timeout_auto_response_count: 0,
+    };
+
+    if replaces_existing_seat
+        && let Some(existing) = room
+            .seats
+            .iter_mut()
+            .find(|existing| existing.seat_index == seat_index)
+    {
+        *existing = seat;
+        return;
+    }
+
+    room.seats.push(seat);
+    room.seats.sort_by_key(|seat| seat.seat_index);
 }
 
 fn table_invite_response(invite: super::persistence::TableInviteRecord) -> TableInviteResponse {

@@ -1,7 +1,7 @@
 param(
     [string]$DataDir = "backend/bot_trainer/v2/out",
     [string]$CheckpointDir = "backend/bot_trainer/v2/checkpoints",
-    [string]$OnnxOutput = "backend/assets/models/mahjong_policy_net.onnx",
+    [string]$OnnxOutput = "backend/assets/backup_model/backup.onnx",
     [int]$Epochs = 20,
     [int]$BatchSize = 4096,
     [int]$NumWorkers = 0,

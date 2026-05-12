@@ -98,6 +98,7 @@ pub(crate) struct PublicUserView {
     pub(crate) avatar: Option<String>,
     pub(crate) active_table_code: Option<String>,
     pub(crate) active_table_phase: Option<String>,
+    pub(crate) is_special_bot: bool,
 }
 
 pub(crate) fn title_for_points(points: i64) -> &'static str {
@@ -132,6 +133,7 @@ pub(crate) fn public_user_view(user: &UserRecord) -> PublicUserView {
         avatar: user.avatar.clone(),
         active_table_code: None,
         active_table_phase: None,
+        is_special_bot: false,
     }
 }
 
@@ -139,10 +141,12 @@ pub(crate) fn public_user_view_with_active_table(
     user: &UserRecord,
     active_table_code: Option<String>,
     active_table_phase: Option<String>,
+    is_special_bot: bool,
 ) -> PublicUserView {
     PublicUserView {
         active_table_code,
         active_table_phase,
+        is_special_bot,
         ..public_user_view(user)
     }
 }

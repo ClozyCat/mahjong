@@ -458,6 +458,8 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         BotPolicyMode::Heuristic => ArenaPolicyMode::Heuristic,
         BotPolicyMode::Neural => ArenaPolicyMode::Neural,
     };
+    let model_path = env::var("MAHJONG_BOT_MODEL_PATH")
+        .unwrap_or_else(|_| crate::special_bots::BACKUP_MODEL_PATH.to_string());
     ArenaBotPolicyConfig {
         id: match mode {
             ArenaPolicyMode::Heuristic => "env-heuristic",
@@ -465,7 +467,7 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         }
         .to_string(),
         mode,
-        model_path: env::var("MAHJONG_BOT_MODEL_PATH").ok(),
+        model_path: Some(model_path),
         sample_actions: false,
         temperature: 1.0,
         record_heuristic_comparison: false,

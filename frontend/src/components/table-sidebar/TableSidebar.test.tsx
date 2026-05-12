@@ -330,6 +330,53 @@ describe('TableSidebar', () => {
     expect(onWatchUser).not.toHaveBeenCalled();
   });
 
+  it('disables watch for special bots even when they are in playing tables', async () => {
+    const user = userEvent.setup();
+    const onWatchUser = vi.fn();
+    const users = [
+      {
+        user_id: 8,
+        username: 'bot_schubert',
+        display_name: '舒伯特',
+        points: 600,
+        title: '平民',
+        display_label: '舒伯特（平民）',
+        bio: '',
+        avatar: null,
+        active_table_code: 'ROOM42',
+        active_table_phase: 'playing' as const,
+        is_special_bot: true,
+      },
+    ];
+
+    render(
+      <TableSidebar
+        isOpen
+        activeTab="online"
+        tablePlayers={[]}
+        onlineUsers={users}
+        currentUserId={1}
+        spectators={[]}
+        profilePanel={<div>profile</div>}
+        onToggle={vi.fn()}
+        onTabChange={vi.fn()}
+        onSelectUser={vi.fn()}
+        onWatchUser={onWatchUser}
+      />,
+    );
+
+    const row = screen.getByText(/舒伯特（平民）/).closest('li');
+    expect(row).not.toBeNull();
+
+    const watchButton = within(row!).getByRole('button', { name: '观战' });
+    expect(watchButton).toBeDisabled();
+    expect(watchButton).toHaveAttribute('title', '该BOT不可被观战');
+
+    await user.click(watchButton);
+
+    expect(onWatchUser).not.toHaveBeenCalled();
+  });
+
   it('enables watch only for other users with active tables when current user is not in a table', async () => {
     const user = userEvent.setup();
     const onWatchUser = vi.fn();

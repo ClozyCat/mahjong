@@ -6,6 +6,7 @@ pub mod projection;
 pub mod room_scoring;
 pub mod rules;
 pub mod scoring;
+pub(crate) mod special_bots;
 
 pub async fn run_server() -> anyhow::Result<()> {
     app::server::run().await

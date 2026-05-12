@@ -523,7 +523,7 @@ function createPromptCue(state: SessionState, options: MatchViewModelOptions = {
 }
 
 function getSeatIdentityType(seat: Pick<SeatSnapshot, 'seat_type' | 'nickname'>): SeatType {
-  if (seat.seat_type === 'bot' || seat.seat_type === 'human') {
+  if (seat.seat_type === 'bot' || seat.seat_type === 'human' || seat.seat_type === 'special_bot') {
     return seat.seat_type;
   }
 

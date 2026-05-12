@@ -15,10 +15,11 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-const DEFAULT_MODEL_PATHS: [&str; 3] = [
-    "assets/models/mahjong_policy_net.onnx",
-    "backend/assets/models/mahjong_policy_net.onnx",
-    "mahjong_policy_net.onnx",
+const DEFAULT_MODEL_PATHS: [&str; 4] = [
+    "/app/assets/backup_model/backup.onnx",
+    "assets/backup_model/backup.onnx",
+    "backend/assets/backup_model/backup.onnx",
+    "backup.onnx",
 ];
 const MODEL_PATH_ENV: &str = "MAHJONG_BOT_MODEL_PATH";
 
@@ -51,18 +52,17 @@ pub(crate) fn neural_decision_scores_for_model_path(
 ) -> Option<NeuralDecisionScores> {
     let features = encode_bot_context_v2(context);
     if let Some(path) = model_path {
+        let path = resolve_model_path(path);
         return CACHED_SESSIONS
             .with(|sessions| {
                 let session = *sessions
                     .borrow_mut()
-                    .entry(path.to_path_buf())
+                    .entry(path.clone())
                     .or_insert_with(|| {
                         // ORT Session destruction can block during arena worker teardown on
                         // Windows. Arena processes are short-lived, so keep per-thread sessions
                         // alive until process exit and let the OS reclaim them.
-                        Box::leak(Box::new(RefCell::new(OrtNeuralSession::new(
-                            path.to_path_buf(),
-                        ))))
+                        Box::leak(Box::new(RefCell::new(OrtNeuralSession::new(path.clone()))))
                     });
                 session.borrow_mut().run(features)
             })
@@ -144,13 +144,32 @@ fn shared_session() -> &'static Mutex<OrtNeuralSession> {
 
 fn model_path_from_env() -> PathBuf {
     if let Some(path) = env::var_os(MODEL_PATH_ENV) {
-        return PathBuf::from(path);
+        return resolve_model_path(Path::new(&path));
     }
     DEFAULT_MODEL_PATHS
         .iter()
         .map(PathBuf::from)
         .find(|path| path.exists())
         .unwrap_or_else(|| PathBuf::from(DEFAULT_MODEL_PATHS[0]))
+}
+
+fn resolve_model_path(path: &Path) -> PathBuf {
+    if path.exists() {
+        return path.to_path_buf();
+    }
+
+    if let Ok(relative) = path.strip_prefix("backend") {
+        let asset_path = PathBuf::from(relative);
+        if asset_path.exists() {
+            return asset_path;
+        }
+        let app_asset_path = PathBuf::from("/app").join(relative);
+        if app_asset_path.exists() {
+            return app_asset_path;
+        }
+    }
+
+    path.to_path_buf()
 }
 
 struct OrtNeuralSession {
@@ -409,6 +428,22 @@ mod tests {
             assert_eq!(session.load_attempts, 1);
             assert!(session.disabled);
         });
+    }
+
+    #[test]
+    fn explicit_backend_asset_path_resolves_to_runtime_asset_path_when_available() {
+        let path = PathBuf::from("backend/assets/backup_model/backup.onnx");
+        let resolved = resolve_model_path(&path);
+        if Path::new("assets/backup_model/backup.onnx").exists() {
+            assert_eq!(resolved, PathBuf::from("assets/backup_model/backup.onnx"));
+        } else if Path::new("/app/assets/backup_model/backup.onnx").exists() {
+            assert_eq!(
+                resolved,
+                PathBuf::from("/app/assets/backup_model/backup.onnx")
+            );
+        } else {
+            assert_eq!(resolved, path);
+        }
     }
 
     fn local_model_manifest_is_sequence_aware(model_path: &Path) -> bool {
