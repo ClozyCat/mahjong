@@ -83,7 +83,7 @@ Options:
   --target-kl VALUE                Stop PPO epoch loop when approximate KL exceeds this value.
   --play-style STYLE               Play style: aggressive, balanced, or defensive. Default balanced.
   --play-styles LIST               Comma-separated play styles trained in parallel on shared trajectories.
-  --trajectory-rollout-style STYLE Style whose current model generates shared trajectories. Defaults to first play style.
+  --trajectory-rollout-style STYLE Deprecated; ignored because trajectories are generated per play style.
   --device DEVICE                  auto, cpu, cuda, etc.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
@@ -441,9 +441,8 @@ if ! is_valid_play_style "$PLAY_STYLE"; then
     echo "--play-style must be aggressive, balanced, or defensive." >&2
     exit 2
 fi
-if [[ -n "$TRAJECTORY_ROLLOUT_STYLE" ]] && ! is_valid_play_style "$TRAJECTORY_ROLLOUT_STYLE"; then
-    echo "--trajectory-rollout-style must be aggressive, balanced, or defensive." >&2
-    exit 2
+if [[ -n "$TRAJECTORY_ROLLOUT_STYLE" ]]; then
+    echo "--trajectory-rollout-style is ignored because each play style now generates its own trajectories." >&2
 fi
 
 ACTIVE_PLAY_STYLES=()
@@ -470,13 +469,6 @@ fi
 MULTI_STYLE_TRAINING=0
 if (( ${#ACTIVE_PLAY_STYLES[@]} > 1 )); then
     MULTI_STYLE_TRAINING=1
-fi
-if [[ -z "$TRAJECTORY_ROLLOUT_STYLE" ]]; then
-    TRAJECTORY_ROLLOUT_STYLE="${ACTIVE_PLAY_STYLES[0]}"
-fi
-if ! contains_style "$TRAJECTORY_ROLLOUT_STYLE" "${ACTIVE_PLAY_STYLES[@]}"; then
-    echo "--trajectory-rollout-style must be included in --play-styles." >&2
-    exit 2
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -532,7 +524,6 @@ echo "Learner policy id:   $LEARNER_POLICY_ID"
 echo "Eval matches:        $EVAL_MATCHES"
 echo "Device:              $DEVICE"
 echo "Play styles:         ${ACTIVE_PLAY_STYLES[*]}"
-echo "Rollout style:       $TRAJECTORY_ROLLOUT_STYLE"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
 if (( ARENA_JOBS == 0 )); then
@@ -598,66 +589,63 @@ done
 for (( iter = 1; iter <= ITERATIONS; iter++ )); do
     printf -v iter_tag "iter_%03d" "$iter"
     iter_dir="$OUTPUT_DIR/$iter_tag"
-    iter_trajectory_config_dir="$iter_dir/trajectory_configs"
-    iter_trajectory_jsonl="$iter_dir/trajectories.jsonl"
     iter_seed=$(( SEED + (iter - 1) * 1000000 ))
-    rollout_onnx="${current_onnx_by_style[$TRAJECTORY_ROLLOUT_STYLE]}"
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
-    echo "  Iteration $iter / $ITERATIONS  (shared rollout: $(basename "$rollout_onnx"), style=$TRAJECTORY_ROLLOUT_STYLE)"
+    echo "  Iteration $iter / $ITERATIONS"
     echo "═══════════════════════════════════════════════════════════════"
 
-    # ── Step 1: Generate trajectories with current model ──────────────
-    mkdir -p "$iter_trajectory_config_dir"
-    trajectory_config_args=(
-        backend/bot_trainer/v2/league_config.py
-        --pool "$OPPONENT_POOL"
-        --output-dir "$iter_trajectory_config_dir"
-        --matches "$ITERATION_MATCHES"
-        --seed "$iter_seed"
-        --max-actions "$MAX_ACTIONS_PER_MATCH"
-        --mode trajectory
-        --rollout-onnx "$rollout_onnx"
-    )
-    if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
-        trajectory_config_args+=(--record-heuristic-comparison)
-    fi
-    "${PYTHON_CMD[@]}" "${trajectory_config_args[@]}"
-
-    trajectory_files=()
-    for config_path in "$iter_trajectory_config_dir"/trajectory_config_*.json; do
-        [[ -e "$config_path" ]] || continue
-        config_name="$(basename "$config_path" .json)"
-        index="${config_name#trajectory_config_}"
-        partial_report="$iter_dir/trajectory_arena_report_$index.jsonl"
-        partial_trajectory="$iter_dir/trajectories_$index.jsonl"
-        trajectory_files+=("$partial_trajectory")
-        arena_args=(
-            run --manifest-path backend/Cargo.toml --release --bin bot_arena --
-            --config "$config_path"
-            --output "$partial_report"
-            --trajectories "$partial_trajectory"
-            --jobs "$ARENA_JOBS"
-        )
-        if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
-            arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
-        fi
-        "${CARGO_CMD[@]}" "${arena_args[@]}"
-    done
-    if (( ${#trajectory_files[@]} == 0 )); then
-        echo "No trajectory configs generated in $iter_trajectory_config_dir" >&2
-        exit 2
-    fi
-    cat "${trajectory_files[@]}" > "$iter_trajectory_jsonl"
-
-    # ── Step 2: PPO training for each style on the shared trajectories ─
-    train_pids=()
-    train_styles=()
-    train_logs=()
+    # ── Step 1/2/3/4: Generate trajectories, train, export, and evaluate each style serially ─
     for style in "${ACTIVE_PLAY_STYLES[@]}"; do
         set_style_paths "$iter_dir" "$style"
         mkdir -p "$STYLE_CHECKPOINT_DIR" "$STYLE_DIR"
+        iter_trajectory_config_dir="$STYLE_DIR/trajectory_configs"
+        iter_trajectory_jsonl="$STYLE_DIR/trajectories.jsonl"
+        rollout_onnx="${current_onnx_by_style[$style]}"
+        echo "  Generating trajectories: style=$style rollout=$(basename "$rollout_onnx")"
+        mkdir -p "$iter_trajectory_config_dir"
+        trajectory_config_args=(
+            backend/bot_trainer/v2/league_config.py
+            --pool "$OPPONENT_POOL"
+            --output-dir "$iter_trajectory_config_dir"
+            --matches "$ITERATION_MATCHES"
+            --seed "$iter_seed"
+            --max-actions "$MAX_ACTIONS_PER_MATCH"
+            --mode trajectory
+            --rollout-onnx "$rollout_onnx"
+        )
+        if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
+            trajectory_config_args+=(--record-heuristic-comparison)
+        fi
+        "${PYTHON_CMD[@]}" "${trajectory_config_args[@]}"
+
+        trajectory_files=()
+        for config_path in "$iter_trajectory_config_dir"/trajectory_config_*.json; do
+            [[ -e "$config_path" ]] || continue
+            config_name="$(basename "$config_path" .json)"
+            index="${config_name#trajectory_config_}"
+            partial_report="$STYLE_DIR/trajectory_arena_report_$index.jsonl"
+            partial_trajectory="$STYLE_DIR/trajectories_$index.jsonl"
+            trajectory_files+=("$partial_trajectory")
+            arena_args=(
+                run --manifest-path backend/Cargo.toml --release --bin bot_arena --
+                --config "$config_path"
+                --output "$partial_report"
+                --trajectories "$partial_trajectory"
+                --jobs "$ARENA_JOBS"
+            )
+            if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
+                arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
+            fi
+            "${CARGO_CMD[@]}" "${arena_args[@]}"
+        done
+        if (( ${#trajectory_files[@]} == 0 )); then
+            echo "No trajectory configs generated in $iter_trajectory_config_dir" >&2
+            exit 2
+        fi
+        cat "${trajectory_files[@]}" > "$iter_trajectory_jsonl"
+
         rl_train_args=(
             backend/bot_trainer/v2/rl_train.py
             --trajectories "$iter_trajectory_jsonl"
@@ -682,32 +670,13 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
         if (( ENTROPY_DECAY_STEPS > 0 )); then
             rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
         fi
-        if (( RECOMPUTE_OLD_POLICY_STATS == 1 || MULTI_STYLE_TRAINING == 1 )); then
+        if (( RECOMPUTE_OLD_POLICY_STATS == 1 )); then
             rl_train_args+=(--recompute-old-policy-stats)
         fi
-        train_log="$STYLE_DIR/rl_train.log"
         echo "  Starting PPO training: style=$style"
-        "${PYTHON_CMD[@]}" "${rl_train_args[@]}" > "$train_log" 2>&1 &
-        train_pids+=("$!")
-        train_styles+=("$style")
-        train_logs+=("$train_log")
-    done
-    for index in "${!train_pids[@]}"; do
-        pid="${train_pids[$index]}"
-        style="${train_styles[$index]}"
-        train_log="${train_logs[$index]}"
-        if ! wait "$pid"; then
-            cat "$train_log" >&2
-            echo "PPO training failed for play_style=$style" >&2
-            exit 1
-        fi
-        cat "$train_log"
+        "${PYTHON_CMD[@]}" "${rl_train_args[@]}"
         echo "  PPO training finished: style=$style"
-    done
 
-    # ── Step 3/4: Export and evaluate each style serially ─────────────
-    for style in "${ACTIVE_PLAY_STYLES[@]}"; do
-        set_style_paths "$iter_dir" "$style"
         iter_best_pt="$STYLE_CHECKPOINT_DIR/best.pt"
         selected_checkpoint="$iter_best_pt"
         selected_onnx="$STYLE_CANDIDATE_ONNX"
@@ -929,7 +898,7 @@ PY
 done
 
 if (( MULTI_STYLE_TRAINING == 1 )); then
-    history_args=("$OUTPUT_DIR/iteration_history.json" "$TRAJECTORY_ROLLOUT_STYLE")
+    history_args=("$OUTPUT_DIR/iteration_history.json")
     for style in "${ACTIVE_PLAY_STYLES[@]}"; do
         set_final_style_paths "$style"
         history_args+=("$style" "$FINAL_STYLE_HISTORY")
@@ -940,15 +909,14 @@ import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
-rollout_style = sys.argv[2]
-pairs = sys.argv[3:]
+pairs = sys.argv[2:]
 styles = {}
 for index in range(0, len(pairs), 2):
     style = pairs[index]
     history_path = Path(pairs[index + 1])
     styles[style] = json.loads(history_path.read_text(encoding="utf-8"))
 output.write_text(
-    json.dumps({"rollout_style": rollout_style, "styles": styles}, indent=2, ensure_ascii=False) + "\n",
+    json.dumps({"trajectory_scope": "per_play_style", "styles": styles}, indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
 )
 PY

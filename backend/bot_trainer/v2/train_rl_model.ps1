@@ -200,7 +200,7 @@ function Get-StyleArtifactPaths {
     }
 }
 
-function Invoke-PlayStyleTrainingJob {
+function Invoke-PlayStyleTraining {
     param(
         [string]$Style,
         [string]$TrajectoryJsonl,
@@ -232,29 +232,12 @@ function Invoke-PlayStyleTrainingJob {
     if ($EntropyDecaySteps -gt 0) {
         $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
     }
-    if ($RecomputeOldPolicyStats -or $multiStyleTraining) {
+    if ($RecomputeOldPolicyStats) {
         $rlTrainArgs += @("--recompute-old-policy-stats")
     }
 
-    $pythonExeForJob = $PythonExe
-    $pythonVersionForJob = $PythonVersion
-    $repoRootForJob = (Resolve-Path $RepoRoot).Path
-    $jobName = "rl-$Style-$([System.Guid]::NewGuid().ToString('N').Substring(0, 8))"
-    Start-Job -Name $jobName -ArgumentList $pythonExeForJob, $pythonVersionForJob, $repoRootForJob, $rlTrainArgs -ScriptBlock {
-        param($JobPythonExe, $JobPythonVersion, $JobRepoRoot, $JobArgs)
-        Set-Location $JobRepoRoot
-        $env:PYTHONUTF8 = "1"
-        $env:PYTHONIOENCODING = "utf-8"
-        if ($JobPythonExe -eq "py" -and $JobPythonVersion.Length -gt 0) {
-            & $JobPythonExe "-$JobPythonVersion" @JobArgs
-        }
-        else {
-            & $JobPythonExe @JobArgs
-        }
-        if ($LASTEXITCODE -ne 0) {
-            throw "rl_train.py failed with exit code $LASTEXITCODE"
-        }
-    }
+    Invoke-TrainingPython $rlTrainArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function New-PytestWindowsSiteCustomize {
@@ -314,9 +297,8 @@ try {
     $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
     $activePlayStyles = Resolve-ActivePlayStyles
     $multiStyleTraining = $activePlayStyles.Count -gt 1
-    $rolloutStyle = if ([string]::IsNullOrWhiteSpace($TrajectoryRolloutStyle)) { $activePlayStyles[0] } else { $TrajectoryRolloutStyle }
-    if ($activePlayStyles -notcontains $rolloutStyle) {
-        throw "TrajectoryRolloutStyle '$rolloutStyle' must be included in PlayStyles: $($activePlayStyles -join ', ')"
+    if (-not [string]::IsNullOrWhiteSpace($TrajectoryRolloutStyle)) {
+        Write-Warning "-TrajectoryRolloutStyle is ignored because each play_style now generates its own trajectories."
     }
 
     Write-Host "Mahjong RL training (iterative self-play)"
@@ -333,7 +315,6 @@ try {
     Write-Host "Eval matches:        $EvalMatches"
     Write-Host "Device:              $Device"
     Write-Host "Play styles:         $($activePlayStyles -join ', ')"
-    Write-Host "Rollout style:       $rolloutStyle"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
     $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
@@ -402,99 +383,82 @@ try {
     for ($iter = 1; $iter -le $Iterations; $iter++) {
         $iterTag = "iter_{0:D3}" -f $iter
         $iterDir = Join-Path $OutputDir $iterTag
-        $iterTrajectoryConfigDir = Join-Path $iterDir "trajectory_configs"
-        $iterTrajectoryJsonl = Join-Path $iterDir "trajectories.jsonl"
         $iterSeed = $Seed + ($iter - 1) * 1000000
-        $rolloutState = $styleStates[$rolloutStyle]
-        $rolloutOnnx = [string]$rolloutState.current_onnx
 
         Write-Host ""
-        $currentOnnxLeaf = Split-Path -Leaf $rolloutOnnx
         Write-Host "==============================================================="
-        Write-Host ("  Iteration {0} / {1}  (shared rollout: {2}, style={3})" -f $iter, $Iterations, $currentOnnxLeaf, $rolloutStyle)
+        Write-Host ("  Iteration {0} / {1}" -f $iter, $Iterations)
         Write-Host "==============================================================="
 
-        # Step 1: Generate trajectories with current best model
-        New-Item -ItemType Directory -Force -Path $iterTrajectoryConfigDir | Out-Null
-        $trajectoryConfigArgs = @(
-            "backend/bot_trainer/v2/league_config.py",
-            "--pool", $OpponentPool,
-            "--output-dir", $iterTrajectoryConfigDir,
-            "--matches", "$IterationMatches",
-            "--seed", "$iterSeed",
-            "--max-actions", "$MaxActionsPerMatch",
-            "--mode", "trajectory",
-            "--rollout-onnx", $rolloutOnnx
-        )
-        if ($RecordHeuristicComparison) {
-            $trajectoryConfigArgs += @("--record-heuristic-comparison")
-        }
-        Invoke-TrainingPython $trajectoryConfigArgs
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-        $trajectoryFiles = @()
-        Get-ChildItem -LiteralPath $iterTrajectoryConfigDir -Filter "trajectory_config_*.json" |
-            Sort-Object Name |
-            ForEach-Object {
-                $index = [System.IO.Path]::GetFileNameWithoutExtension($_.Name).Replace("trajectory_config_", "")
-                $partialReport = Join-Path $iterDir "trajectory_arena_report_$index.jsonl"
-                $partialTrajectory = Join-Path $iterDir "trajectories_$index.jsonl"
-                $trajectoryFiles += $partialTrajectory
-                $arenaArgs = @(
-                    "run",
-                    "--manifest-path", "backend/Cargo.toml",
-                    "--release",
-                    "--bin", "bot_arena",
-                    "--",
-                    "--config", $_.FullName,
-                    "--output", $partialReport,
-                    "--trajectories", $partialTrajectory,
-                    "--jobs", "$ArenaJobs"
-                )
-                if ($TrajectoryProgressEvery -gt 0) {
-                    $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
-                }
-                & $CargoExe @arenaArgs
-                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
-        if ($trajectoryFiles.Count -eq 0) {
-            throw "No trajectory configs generated in $iterTrajectoryConfigDir"
-        }
-        Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
-
-        # Step 2: PPO training for each play style in parallel.
-        $trainingJobs = @()
+        # Step 1/2/3/4: Generate trajectories, train, export, and evaluate each style serially.
         foreach ($style in $activePlayStyles) {
             $paths = Get-StyleArtifactPaths -IterationDir $iterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            $iterTrajectoryConfigDir = Join-Path $paths.style_dir "trajectory_configs"
+            $iterTrajectoryJsonl = Join-Path $paths.style_dir "trajectories.jsonl"
             New-Item -ItemType Directory -Force -Path $paths.checkpoint_dir | Out-Null
-            $styleState = $styleStates[$style]
-            Write-Host ("  Starting PPO training: style={0}" -f $style)
-            $job = Invoke-PlayStyleTrainingJob `
-                -Style $style `
-                -TrajectoryJsonl $iterTrajectoryJsonl `
-                -Checkpoint ([string]$styleState.current_checkpoint) `
-                -CheckpointDir ([string]$paths.checkpoint_dir)
-            $trainingJobs += [ordered]@{ style = $style; job = $job }
-        }
-
-        foreach ($entry in $trainingJobs) {
-            $job = $entry.job
-            Wait-Job -Job $job | Out-Null
-            Receive-Job -Job $job
-            if ($job.State -ne "Completed") {
-                throw "PPO training failed for play_style=$($entry.style)"
-            }
-            Remove-Job -Job $job
-            Write-Host ("  PPO training finished: style={0}" -f $entry.style)
-        }
-
-        # Step 3/4: Export and evaluate each style serially.
-        foreach ($style in $activePlayStyles) {
-            $paths = Get-StyleArtifactPaths -IterationDir $iterDir -Style $style -UseStyleSubdir $multiStyleTraining
             $iterCheckpointDir = [string]$paths.checkpoint_dir
             $iterCandidateOnnx = [string]$paths.candidate_onnx
             $iterEvalDir = [string]$paths.eval_dir
             $styleState = $styleStates[$style]
+            $rolloutOnnx = [string]$styleState.current_onnx
+            $currentOnnxLeaf = Split-Path -Leaf $rolloutOnnx
+
+            Write-Host ("  Generating trajectories: style={0} rollout={1}" -f $style, $currentOnnxLeaf)
+            New-Item -ItemType Directory -Force -Path $iterTrajectoryConfigDir | Out-Null
+            $trajectoryConfigArgs = @(
+                "backend/bot_trainer/v2/league_config.py",
+                "--pool", $OpponentPool,
+                "--output-dir", $iterTrajectoryConfigDir,
+                "--matches", "$IterationMatches",
+                "--seed", "$iterSeed",
+                "--max-actions", "$MaxActionsPerMatch",
+                "--mode", "trajectory",
+                "--rollout-onnx", $rolloutOnnx
+            )
+            if ($RecordHeuristicComparison) {
+                $trajectoryConfigArgs += @("--record-heuristic-comparison")
+            }
+            Invoke-TrainingPython $trajectoryConfigArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            $trajectoryFiles = @()
+            Get-ChildItem -LiteralPath $iterTrajectoryConfigDir -Filter "trajectory_config_*.json" |
+                Sort-Object Name |
+                ForEach-Object {
+                    $index = [System.IO.Path]::GetFileNameWithoutExtension($_.Name).Replace("trajectory_config_", "")
+                    $partialReport = Join-Path $paths.style_dir "trajectory_arena_report_$index.jsonl"
+                    $partialTrajectory = Join-Path $paths.style_dir "trajectories_$index.jsonl"
+                    $trajectoryFiles += $partialTrajectory
+                    $arenaArgs = @(
+                        "run",
+                        "--manifest-path", "backend/Cargo.toml",
+                        "--release",
+                        "--bin", "bot_arena",
+                        "--",
+                        "--config", $_.FullName,
+                        "--output", $partialReport,
+                        "--trajectories", $partialTrajectory,
+                        "--jobs", "$ArenaJobs"
+                    )
+                    if ($TrajectoryProgressEvery -gt 0) {
+                        $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
+                    }
+                    & $CargoExe @arenaArgs
+                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                }
+            if ($trajectoryFiles.Count -eq 0) {
+                throw "No trajectory configs generated in $iterTrajectoryConfigDir"
+            }
+            Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
+
+            Write-Host ("  Starting PPO training: style={0}" -f $style)
+            Invoke-PlayStyleTraining `
+                -Style $style `
+                -TrajectoryJsonl $iterTrajectoryJsonl `
+                -Checkpoint ([string]$styleState.current_checkpoint) `
+                -CheckpointDir $iterCheckpointDir
+            Write-Host ("  PPO training finished: style={0}" -f $style)
+
             $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
             $selectedCheckpoint = $iterBestPt
             $selectedOnnx = $iterCandidateOnnx
@@ -677,7 +641,7 @@ try {
     $historyPath = Join-Path $OutputDir "iteration_history.json"
     if ($multiStyleTraining) {
         $historyDocument = [ordered]@{
-            rollout_style = $rolloutStyle
+            trajectory_scope = "per_play_style"
             styles = $historyByStyle
         }
         Write-Utf8NoBom -Path $historyPath -Content (($historyDocument | ConvertTo-Json -Depth 10) + "`n")
