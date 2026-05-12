@@ -2,11 +2,9 @@ import type {
   AcceptInviteResponse,
   ActiveTableResponse,
   CreateTableResponse,
-  GameSummary,
   PublicUser,
   SpectatorRequest,
   TableInvite,
-  UserFanStat,
 } from '../types/match';
 
 function normalizeBaseUrl(baseUrl: string) {
@@ -66,14 +64,6 @@ export function getMyActiveTable(baseUrl: string, sessionToken: string) {
   return requestJson<ActiveTableResponse | null>(`${normalizeBaseUrl(baseUrl)}/api/me/active-table`, {
     headers: authHeaders(sessionToken),
   });
-}
-
-export function getUserGames(baseUrl: string, userId: number) {
-  return requestJson<GameSummary[]>(`${normalizeBaseUrl(baseUrl)}/api/users/${userId}/games`);
-}
-
-export function getUserFans(baseUrl: string, userId: number) {
-  return requestJson<UserFanStat[]>(`${normalizeBaseUrl(baseUrl)}/api/users/${userId}/fans`);
 }
 
 export function getMyInvites(baseUrl: string, sessionToken: string) {

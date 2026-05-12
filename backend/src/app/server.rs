@@ -204,8 +204,6 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/me/active-table", get(get_my_active_table))
         .route("/api/games", get(list_games))
         .route("/api/games/{game_id}", get(get_game))
-        .route("/api/users/{user_id}/games", get(list_user_games))
-        .route("/api/users/{user_id}/fans", get(list_user_fans))
         .route("/api/leaderboard", get(get_leaderboard))
         .route("/api/me/invites", get(get_my_invites))
         .route("/api/me/spectator-requests", get(get_my_spectator_requests))
@@ -512,48 +510,6 @@ async fn get_game(
             Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
         },
         Ok(None) => json_error(StatusCode::NOT_FOUND, "game_not_found"),
-        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    }
-}
-
-async fn list_user_games(
-    State(state): State<AppContext>,
-    axum::extract::Path(user_id): axum::extract::Path<i64>,
-) -> Response {
-    if state
-        .inner
-        .db
-        .get_user_by_id(user_id)
-        .await
-        .ok()
-        .flatten()
-        .is_none()
-    {
-        return json_error(StatusCode::NOT_FOUND, "user_not_found");
-    }
-    match state.inner.db.list_games_for_user(user_id, 50).await {
-        Ok(games) => Json(games.iter().map(game_summary_view).collect::<Vec<_>>()).into_response(),
-        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    }
-}
-
-async fn list_user_fans(
-    State(state): State<AppContext>,
-    axum::extract::Path(user_id): axum::extract::Path<i64>,
-) -> Response {
-    if state
-        .inner
-        .db
-        .get_user_by_id(user_id)
-        .await
-        .ok()
-        .flatten()
-        .is_none()
-    {
-        return json_error(StatusCode::NOT_FOUND, "user_not_found");
-    }
-    match state.inner.db.list_user_fan_stats(user_id).await {
-        Ok(fans) => Json(fans.iter().map(fan_stat_view).collect::<Vec<_>>()).into_response(),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }

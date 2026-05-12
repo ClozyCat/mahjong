@@ -50,8 +50,6 @@ import {
   getMyActiveTable,
   getMyInvites,
   getMySpectatorRequests,
-  getUserFans,
-  getUserGames,
   rejectTableInvite,
   rejectSpectatorRequest,
 } from './lib/socialApi';
@@ -72,13 +70,11 @@ import type {
   BattleActionId,
   ClaimActionId,
   ClientMode,
-  GameSummary,
   PublicUser,
   QuickChatEmoji,
   SessionState,
   SpectatorRequest,
   TableInvite,
-  UserFanStat,
 } from './types/match';
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -502,14 +498,6 @@ export default function App() {
   const [requestedSpectatorTableCodes, setRequestedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
   const [approvedSpectatorTableCodes, setApprovedSpectatorTableCodes] = useState<Set<string>>(() => new Set());
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
-  const [selectedProfileUser, setSelectedProfileUser] = useState<PublicUser | null>(storedAuthSession?.user ?? null);
-  const [selectedProfileFallbackName, setSelectedProfileFallbackName] = useState<string | null>(
-    storedAuthSession?.user.display_name ?? null,
-  );
-  const [profileFanStats, setProfileFanStats] = useState<UserFanStat[]>([]);
-  const [profileRecentGames, setProfileRecentGames] = useState<GameSummary[]>([]);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [isActiveTableLookupPending, setIsActiveTableLookupPending] = useState(false);
   const [state, dispatch] = useReducer(
     sessionReducer,
@@ -940,49 +928,6 @@ export default function App() {
     defaults.wsBaseUrl,
     state.wsBaseUrl,
   ]);
-
-  useEffect(() => {
-    if (!selectedProfileUser) {
-      setProfileFanStats([]);
-      setProfileRecentGames([]);
-      setProfileMessage(selectedProfileFallbackName ? '该玩家暂无可用公开账号数据。' : null);
-      setProfileLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setProfileLoading(true);
-    setProfileMessage(null);
-
-    void Promise.all([
-      getUserFans(defaults.apiBaseUrl, selectedProfileUser.user_id),
-      getUserGames(defaults.apiBaseUrl, selectedProfileUser.user_id),
-    ])
-      .then(([fans, games]) => {
-        if (cancelled) {
-          return;
-        }
-
-        setProfileFanStats(fans);
-        setProfileRecentGames(games);
-        setProfileLoading(false);
-        setProfileMessage(null);
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-
-        setProfileFanStats([]);
-        setProfileRecentGames([]);
-        setProfileLoading(false);
-        setProfileMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '公开资料加载失败。');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [defaults.apiBaseUrl, selectedProfileFallbackName, selectedProfileUser]);
 
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
@@ -1607,20 +1552,6 @@ export default function App() {
     }
   }
 
-  function handleSelectSidebarUser(user: PublicUser) {
-    setSelectedProfileUser(user);
-    setSelectedProfileFallbackName(user.display_name);
-  }
-
-  function handleShowCurrentSidebarProfile() {
-    if (!currentUser) {
-      return;
-    }
-
-    setSelectedProfileUser(currentUser);
-    setSelectedProfileFallbackName(currentUser.display_name);
-  }
-
   async function handleApproveSpectatorRequest(requestId: number) {
     if (!authSession?.sessionToken) {
       setStatusMessage('请先登录。');
@@ -2068,17 +1999,9 @@ export default function App() {
         sidebarApprovedWatchTableCodes={approvedSpectatorTableCodes}
         sidebarCurrentUser={currentUser}
         sidebarSpectators={tableSidebarSpectators}
-        sidebarProfileUser={selectedProfileUser}
-        sidebarProfileFallbackName={selectedProfileFallbackName}
-        sidebarProfileFanStats={profileFanStats}
-        sidebarProfileRecentGames={profileRecentGames}
-        sidebarProfileLoading={profileLoading}
-        sidebarProfileMessage={profileMessage}
         sidebarTabAlerts={{
           messages: hasMessageAlert,
         }}
-        onSidebarSelectUser={handleSelectSidebarUser}
-        onSidebarShowCurrentUser={handleShowCurrentSidebarProfile}
         viewModel={viewModel}
         themeId={themeId}
         themeLabel={getThemeLabel(themeId)}

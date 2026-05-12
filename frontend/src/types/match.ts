@@ -102,37 +102,6 @@ export interface SpectatorSnapshot {
   display_name: string;
 }
 
-export interface GameSummary {
-  game_id: number;
-  table_code: string;
-  owner: UserBrief;
-  multiplier: number;
-  started_at: string;
-  ended_at?: string | null;
-  round_count: number;
-  opponent_names: string[];
-  player_summary?: UserGamePlayerSummary | null;
-}
-
-export interface UserGamePlayerSummary {
-  round_count: number;
-  win_count: number;
-  self_draw_win_count: number;
-  discard_win_count: number;
-  deal_in_count: number;
-  total_score_delta: number;
-  average_cumulative_score: number;
-  high_score_round_count: number;
-}
-
-export interface UserFanStat {
-  user_id: number;
-  fan_key: string;
-  fan_label: string;
-  count: number;
-  last_seen_at: string;
-}
-
 export interface SeatSnapshot {
   seat_index: number;
   user_id?: number | null;

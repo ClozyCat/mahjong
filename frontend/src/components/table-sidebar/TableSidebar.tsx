@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 import type { PublicUser } from '../../types/match';
 
-export type TableSidebarTab = 'room' | 'messages' | 'players' | 'online' | 'profile' | 'spectators';
+export type TableSidebarTab = 'room' | 'messages' | 'online' | 'spectators';
 
 export interface TableSidebarPlayer {
   key: string;
@@ -45,10 +45,8 @@ interface TableSidebarProps {
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   roomPanel?: ReactNode;
   messagesPanel?: ReactNode;
-  profilePanel: ReactNode;
   onToggle: () => void;
   onTabChange: (tab: TableSidebarTab) => void;
-  onSelectUser: (user: PublicUser) => void;
   onWatchUser?: (user: PublicUser) => void;
 }
 
@@ -71,17 +69,6 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
       </svg>
     ),
   },
-  players: {
-    label: '本局玩家',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-  },
   online: {
     label: '所有玩家',
     icon: (
@@ -89,15 +76,6 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
         <circle cx="12" cy="12" r="10" />
         <line x1="2" y1="12" x2="22" y2="12" />
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-      </svg>
-    ),
-  },
-  profile: {
-    label: '玩家信息',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
       </svg>
     ),
   },
@@ -167,18 +145,14 @@ export function TableSidebar({
   tabAlerts = {},
   roomPanel,
   messagesPanel,
-  profilePanel,
   onToggle,
   onTabChange,
-  onSelectUser,
   onWatchUser,
 }: TableSidebarProps) {
   const tabs: TableSidebarTab[] = [
     ...(roomPanel ? (['room'] as const) : []),
     ...(messagesPanel ? (['messages'] as const) : []),
-    'players',
     'online',
-    'profile',
     'spectators',
   ];
   const resolvedActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
@@ -244,37 +218,6 @@ export function TableSidebar({
 
             {resolvedActiveTab === 'messages' ? messagesPanel : null}
 
-            {resolvedActiveTab === 'players' ? (
-              <ul className="table-sidebar__list">
-                {tablePlayers.length === 0 ? <li className="table-sidebar__empty">尚未开局</li> : null}
-                {tablePlayers.map((player) => (
-                  <li key={player.key} className="table-sidebar__row table-sidebar__row--stacked">
-                    <div className="table-sidebar__row-info">
-                      <strong className="table-sidebar__row-name">
-                        {player.displayLabel}
-                      </strong>
-                      <div className="table-sidebar__row-stats">
-                        <span className="table-sidebar__stat">
-                          <small>分数</small> {player.score}
-                        </span>
-                        <span className="table-sidebar__stat">
-                          <small>积分</small> {player.points ?? '--'}
-                        </span>
-                        <span className={`table-sidebar__connection ${player.connected ? 'is-online' : 'is-offline'}`}>
-                          {player.connected ? '在线' : '离线'}
-                        </span>
-                      </div>
-                    </div>
-                    {player.profileUser ? (
-                      <button type="button" onClick={() => onSelectUser(player.profileUser!)}>
-                        查看信息
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
             {resolvedActiveTab === 'online' ? (
               <ul className="table-sidebar__list">
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
@@ -323,9 +266,6 @@ export function TableSidebar({
                         <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
                       </div>
                       <div className="table-sidebar__row-actions">
-                        <button type="button" onClick={() => onSelectUser(user)}>
-                          查看信息
-                        </button>
                         <button
                           type="button"
                           disabled={!canWatch}
@@ -358,8 +298,6 @@ export function TableSidebar({
                 })}
               </ul>
             ) : null}
-
-            {resolvedActiveTab === 'profile' ? profilePanel : null}
 
             {resolvedActiveTab === 'spectators' ? (
               <ul className="table-sidebar__list">

@@ -4,10 +4,8 @@ import type {
   BattleActionId,
   BattleViewModel,
   ClaimActionId,
-  GameSummary,
   PublicUser,
   QuickChatEmoji,
-  UserFanStat,
 } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
 import {
@@ -28,7 +26,6 @@ import {
   type TableSidebarSpectator,
   type TableSidebarTab,
 } from '../table-sidebar/TableSidebar';
-import { UserProfilePanel } from '../user-profile/UserProfilePanel';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
@@ -65,15 +62,7 @@ interface BattleScreenProps {
   sidebarMessagesPanel?: ReactNode;
   sidebarDefaultOpen?: boolean;
   sidebarInitialTab?: TableSidebarTab;
-  sidebarProfileUser?: PublicUser | null;
-  sidebarProfileFallbackName?: string | null;
-  sidebarProfileFanStats?: UserFanStat[];
-  sidebarProfileRecentGames?: GameSummary[];
-  sidebarProfileLoading?: boolean;
-  sidebarProfileMessage?: string | null;
   sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
-  onSidebarSelectUser?: (user: PublicUser) => void;
-  onSidebarShowCurrentUser?: () => void;
   onSidebarWatchUser?: (user: PublicUser) => void;
 }
 
@@ -120,16 +109,8 @@ export function BattleScreen({
   sidebarRoomPanel = null,
   sidebarMessagesPanel = null,
   sidebarDefaultOpen = false,
-  sidebarInitialTab = 'players',
-  sidebarProfileUser = null,
-  sidebarProfileFallbackName = null,
-  sidebarProfileFanStats = [],
-  sidebarProfileRecentGames = [],
-  sidebarProfileLoading = false,
-  sidebarProfileMessage = null,
+  sidebarInitialTab = 'online',
   sidebarTabAlerts = {},
-  onSidebarSelectUser,
-  onSidebarShowCurrentUser,
   onSidebarWatchUser,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
@@ -216,21 +197,9 @@ export function BattleScreen({
     onAction(actionId);
   }
 
-  function handleSidebarSelectUser(user: PublicUser) {
-    setSidebarTab('profile');
-    onSidebarSelectUser?.(user);
-  }
-
   function handleSidebarTabChange(tab: TableSidebarTab) {
     setSidebarTab(tab);
-    if (tab === 'profile') {
-      onSidebarShowCurrentUser?.();
-    }
   }
-
-  const showCurrentProfileAction = Boolean(
-    sidebarCurrentUser && (!sidebarProfileUser || sidebarProfileUser.user_id !== sidebarCurrentUser.user_id),
-  );
 
   const battleStageStyle = {
     '--table-stage-tile-scale': `${tableTileScale}`,
@@ -523,21 +492,8 @@ export function BattleScreen({
             tabAlerts={sidebarTabAlerts}
             roomPanel={sidebarRoomPanel}
             messagesPanel={sidebarMessagesPanel}
-            profilePanel={
-              <UserProfilePanel
-                user={sidebarProfileUser}
-                fallbackName={sidebarProfileFallbackName}
-                fanStats={sidebarProfileFanStats}
-                recentGames={sidebarProfileRecentGames}
-                loading={sidebarProfileLoading}
-                message={sidebarProfileMessage}
-                showCurrentUserAction={showCurrentProfileAction}
-                onShowCurrentUser={onSidebarShowCurrentUser}
-              />
-            }
             onToggle={() => setIsSidebarOpen((current) => !current)}
             onTabChange={handleSidebarTabChange}
-            onSelectUser={handleSidebarSelectUser}
             onWatchUser={onSidebarWatchUser}
           />
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
