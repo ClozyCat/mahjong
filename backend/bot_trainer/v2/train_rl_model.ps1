@@ -27,6 +27,9 @@ param(
     [double]$TargetKl = 0.03,
     [ValidateSet("aggressive", "balanced", "defensive")]
     [string]$PlayStyle = "balanced",
+    [string[]]$PlayStyles = @(),
+    [ValidateSet("", "aggressive", "balanced", "defensive")]
+    [string]$TrajectoryRolloutStyle = "",
     [string]$Device = "auto",
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
@@ -39,6 +42,7 @@ param(
     [switch]$EnforceCandidateGate,
     [switch]$AllowRlBaselineCheckpoint,
     [switch]$RecomputeOldPolicyStats,
+    [switch]$RecordHeuristicComparison,
     [ValidateSet("epoch", "final")]
     [string]$CandidateSelectionMode = "epoch"
 )
@@ -109,7 +113,7 @@ function Invoke-CandidateEvaluation {
     )
 
     New-Item -ItemType Directory -Force -Path $EvalDir | Out-Null
-    Invoke-TrainingPython @(
+    $evalConfigArgs = @(
         "backend/bot_trainer/v2/league_config.py",
         "--pool", $OpponentPool,
         "--output-dir", $EvalDir,
@@ -120,6 +124,10 @@ function Invoke-CandidateEvaluation {
         "--candidate-onnx", $CandidateModel,
         "--baseline-onnx", $EvalBaselineOnnx
     )
+    if ($RecordHeuristicComparison) {
+        $evalConfigArgs += @("--record-heuristic-comparison")
+    }
+    Invoke-TrainingPython $evalConfigArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $localConfig = Join-Path $EvalDir "candidate_eval_config.json"
@@ -152,6 +160,100 @@ function Invoke-CandidateEvaluation {
         summary = $localSummary
         gate = $localGate
         gate_exit = $localGateExit
+    }
+}
+
+function Resolve-ActivePlayStyles {
+    $sourceStyles = if ($PlayStyles.Count -gt 0) { $PlayStyles } else { @($PlayStyle) }
+    $activeStyles = @()
+    $validStyles = @("aggressive", "balanced", "defensive")
+    foreach ($styleValue in $sourceStyles) {
+        foreach ($style in ([string]$styleValue -split ",")) {
+            $normalizedStyle = $style.Trim()
+            if ([string]::IsNullOrWhiteSpace($normalizedStyle)) {
+                continue
+            }
+            if ($validStyles -notcontains $normalizedStyle) {
+                throw "Invalid play style '$normalizedStyle'. Expected one of: $($validStyles -join ', ')"
+            }
+            if ($activeStyles -notcontains $normalizedStyle) {
+                $activeStyles += $normalizedStyle
+            }
+        }
+    }
+    return $activeStyles
+}
+
+function Get-StyleArtifactPaths {
+    param(
+        [string]$IterationDir,
+        [string]$Style,
+        [bool]$UseStyleSubdir
+    )
+
+    $styleDir = if ($UseStyleSubdir) { Join-Path (Join-Path $IterationDir "styles") $Style } else { $IterationDir }
+    return [ordered]@{
+        style_dir = $styleDir
+        checkpoint_dir = Join-Path $styleDir "checkpoints"
+        candidate_onnx = Join-Path $styleDir "candidate.onnx"
+        eval_dir = Join-Path $styleDir "eval"
+    }
+}
+
+function Invoke-PlayStyleTrainingJob {
+    param(
+        [string]$Style,
+        [string]$TrajectoryJsonl,
+        [string]$Checkpoint,
+        [string]$CheckpointDir
+    )
+
+    $rlTrainArgs = @(
+        "backend/bot_trainer/v2/rl_train.py",
+        "--trajectories", $TrajectoryJsonl,
+        "--checkpoint", $Checkpoint,
+        "--epochs", "$Epochs",
+        "--batch-size", "$BatchSize",
+        "--lr", "$LearningRate",
+        "--gamma", "$Gamma",
+        "--gae-lambda", "$GaeLambda",
+        "--policy-id", $LearnerPolicyId,
+        "--clip-epsilon", "$ClipEpsilon",
+        "--value-clip-epsilon", "$ValueClipEpsilon",
+        "--entropy-coef", "$EntropyCoef",
+        "--entropy-end-coef", "$EntropyEndCoef",
+        "--kl-coef", "$KlCoef",
+        "--kl-end-coef", "$KlEndCoef",
+        "--target-kl", "$TargetKl",
+        "--play-style", $Style,
+        "--output", $CheckpointDir,
+        "--device", $Device
+    )
+    if ($EntropyDecaySteps -gt 0) {
+        $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
+    }
+    if ($RecomputeOldPolicyStats -or $multiStyleTraining) {
+        $rlTrainArgs += @("--recompute-old-policy-stats")
+    }
+
+    $pythonExeForJob = $PythonExe
+    $pythonVersionForJob = $PythonVersion
+    $repoRootForJob = (Resolve-Path $RepoRoot).Path
+    $jobName = "rl-$Style-$([System.Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    Start-Job -Name $jobName -ArgumentList $pythonExeForJob, $pythonVersionForJob, $repoRootForJob, $rlTrainArgs -ScriptBlock {
+        param($JobPythonExe, $JobPythonVersion, $JobRepoRoot, $JobArgs)
+        Set-Location $JobRepoRoot
+        $env:PYTHONUTF8 = "1"
+        $env:PYTHONIOENCODING = "utf-8"
+        if ($JobPythonExe -eq "py" -and $JobPythonVersion.Length -gt 0) {
+            & $JobPythonExe "-$JobPythonVersion" @JobArgs
+        }
+        else {
+            & $JobPythonExe @JobArgs
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "rl_train.py failed with exit code $LASTEXITCODE"
+        }
     }
 }
 
@@ -210,6 +312,12 @@ try {
     $env:TEMP = (Resolve-Path $TempDir).Path
     $env:TMP = $env:TEMP
     $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
+    $activePlayStyles = Resolve-ActivePlayStyles
+    $multiStyleTraining = $activePlayStyles.Count -gt 1
+    $rolloutStyle = if ([string]::IsNullOrWhiteSpace($TrajectoryRolloutStyle)) { $activePlayStyles[0] } else { $TrajectoryRolloutStyle }
+    if ($activePlayStyles -notcontains $rolloutStyle) {
+        throw "TrajectoryRolloutStyle '$rolloutStyle' must be included in PlayStyles: $($activePlayStyles -join ', ')"
+    }
 
     Write-Host "Mahjong RL training (iterative self-play)"
     Write-Host "Output:              $OutputDir"
@@ -224,11 +332,13 @@ try {
     Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"
     Write-Host "Device:              $Device"
-    Write-Host "Play style:          $PlayStyle"
+    Write-Host "Play styles:         $($activePlayStyles -join ', ')"
+    Write-Host "Rollout style:       $rolloutStyle"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
     $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
     Write-Host ("Arena jobs:          {0}" -f $arenaJobsLabel)
+    Write-Host ("Heuristic compare:   {0}" -f ([bool]$RecordHeuristicComparison))
 
     Assert-FileExists `
         $BaselineCheckpoint `
@@ -276,33 +386,37 @@ try {
     }
 
     # Iterative Self-Play Loop
-    $currentOnnx = $BaselineOnnx
-    $currentCheckpoint = $BaselineCheckpoint
-    $bestOnnx = $BaselineOnnx
-    $bestCheckpoint = $BaselineCheckpoint
-    $bestScoreMargin = 0.0
-    $bestIteration = 0
-    $iterationHistory = @()
+    $styleStates = @{}
+    foreach ($style in $activePlayStyles) {
+        $styleStates[$style] = [ordered]@{
+            current_onnx = $BaselineOnnx
+            current_checkpoint = $BaselineCheckpoint
+            best_onnx = $BaselineOnnx
+            best_checkpoint = $BaselineCheckpoint
+            best_score_margin = 0.0
+            best_iteration = 0
+            history = @()
+        }
+    }
 
     for ($iter = 1; $iter -le $Iterations; $iter++) {
         $iterTag = "iter_{0:D3}" -f $iter
         $iterDir = Join-Path $OutputDir $iterTag
         $iterTrajectoryConfigDir = Join-Path $iterDir "trajectory_configs"
         $iterTrajectoryJsonl = Join-Path $iterDir "trajectories.jsonl"
-        $iterCheckpointDir = Join-Path $iterDir "checkpoints"
-        $iterCandidateOnnx = Join-Path $iterDir "candidate.onnx"
-        $iterEvalDir = Join-Path $iterDir "eval"
         $iterSeed = $Seed + ($iter - 1) * 1000000
+        $rolloutState = $styleStates[$rolloutStyle]
+        $rolloutOnnx = [string]$rolloutState.current_onnx
 
         Write-Host ""
-        $currentOnnxLeaf = Split-Path -Leaf $currentOnnx
+        $currentOnnxLeaf = Split-Path -Leaf $rolloutOnnx
         Write-Host "==============================================================="
-        Write-Host ("  Iteration {0} / {1}  (rollout model: {2})" -f $iter, $Iterations, $currentOnnxLeaf)
+        Write-Host ("  Iteration {0} / {1}  (shared rollout: {2}, style={3})" -f $iter, $Iterations, $currentOnnxLeaf, $rolloutStyle)
         Write-Host "==============================================================="
 
         # Step 1: Generate trajectories with current best model
         New-Item -ItemType Directory -Force -Path $iterTrajectoryConfigDir | Out-Null
-        Invoke-TrainingPython @(
+        $trajectoryConfigArgs = @(
             "backend/bot_trainer/v2/league_config.py",
             "--pool", $OpponentPool,
             "--output-dir", $iterTrajectoryConfigDir,
@@ -310,8 +424,12 @@ try {
             "--seed", "$iterSeed",
             "--max-actions", "$MaxActionsPerMatch",
             "--mode", "trajectory",
-            "--rollout-onnx", $currentOnnx
+            "--rollout-onnx", $rolloutOnnx
         )
+        if ($RecordHeuristicComparison) {
+            $trajectoryConfigArgs += @("--record-heuristic-comparison")
+        }
+        Invoke-TrainingPython $trajectoryConfigArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
         $trajectoryFiles = @()
@@ -344,202 +462,244 @@ try {
         }
         Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
 
-        # Step 2: PPO training from current checkpoint
-        $rlTrainArgs = @(
-            "backend/bot_trainer/v2/rl_train.py",
-            "--trajectories", $iterTrajectoryJsonl,
-            "--checkpoint", $currentCheckpoint,
-            "--epochs", "$Epochs",
-            "--batch-size", "$BatchSize",
-            "--lr", "$LearningRate",
-            "--gamma", "$Gamma",
-            "--gae-lambda", "$GaeLambda",
-            "--policy-id", $LearnerPolicyId,
-            "--clip-epsilon", "$ClipEpsilon",
-            "--value-clip-epsilon", "$ValueClipEpsilon",
-            "--entropy-coef", "$EntropyCoef",
-            "--entropy-end-coef", "$EntropyEndCoef",
-            "--kl-coef", "$KlCoef",
-            "--kl-end-coef", "$KlEndCoef",
-            "--target-kl", "$TargetKl",
-            "--play-style", $PlayStyle,
-            "--output", $iterCheckpointDir,
-            "--device", $Device
-        )
-        if ($EntropyDecaySteps -gt 0) {
-            $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
-        }
-        if ($RecomputeOldPolicyStats) {
-            $rlTrainArgs += @("--recompute-old-policy-stats")
-        }
-        Invoke-TrainingPython $rlTrainArgs
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-        # Step 3: Export ONNX
-        $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
-        $selectedCheckpoint = $iterBestPt
-        $selectedOnnx = $iterCandidateOnnx
-        $selectedGate = $null
-        $selectedSummary = $null
-        if (-not $SkipOnnxExport) {
-            Invoke-TrainingPython @(
-                "backend/bot_trainer/v2/export_onnx.py",
-                "--checkpoint", $iterBestPt,
-                "--output", $iterCandidateOnnx
-            )
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # Step 2: PPO training for each play style in parallel.
+        $trainingJobs = @()
+        foreach ($style in $activePlayStyles) {
+            $paths = Get-StyleArtifactPaths -IterationDir $iterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            New-Item -ItemType Directory -Force -Path $paths.checkpoint_dir | Out-Null
+            $styleState = $styleStates[$style]
+            Write-Host ("  Starting PPO training: style={0}" -f $style)
+            $job = Invoke-PlayStyleTrainingJob `
+                -Style $style `
+                -TrajectoryJsonl $iterTrajectoryJsonl `
+                -Checkpoint ([string]$styleState.current_checkpoint) `
+                -CheckpointDir ([string]$paths.checkpoint_dir)
+            $trainingJobs += [ordered]@{ style = $style; job = $job }
         }
 
-        if (($CandidateSelectionMode -eq "epoch") -and (-not $SkipOnnxExport) -and (-not $SkipEval)) {
-            $candidateManifest = Join-Path $iterDir "candidate_manifest.json"
-            $candidateSelection = Join-Path $iterDir "candidate_selection.json"
-            $candidateEntries = @()
-            Get-ChildItem -LiteralPath $iterCheckpointDir -Filter "epoch_*.pt" |
-                Sort-Object Name |
-                ForEach-Object {
-                    $epochName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-                    $epochOnnx = Join-Path $iterDir "$epochName.onnx"
-                    $epochEvalDir = Join-Path $iterEvalDir $epochName
-                    Invoke-TrainingPython @(
-                        "backend/bot_trainer/v2/export_onnx.py",
-                        "--checkpoint", $_.FullName,
-                        "--output", $epochOnnx
-                    )
-                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-                    $epochEval = Invoke-CandidateEvaluation `
-                        -CandidateModel $epochOnnx `
-                        -EvalDir $epochEvalDir `
-                        -EvalBaselineOnnx $BaselineOnnx
-                    $epochNumber = [int]$epochName.Replace("epoch_", "")
-                    $candidateEntries += [ordered]@{
-                        epoch = $epochNumber
-                        checkpoint = $_.FullName
-                        onnx = $epochOnnx
-                        summary = $epochEval.summary
-                        gate_path = $epochEval.gate
+        foreach ($entry in $trainingJobs) {
+            $job = $entry.job
+            Wait-Job -Job $job | Out-Null
+            Receive-Job -Job $job
+            if ($job.State -ne "Completed") {
+                throw "PPO training failed for play_style=$($entry.style)"
+            }
+            Remove-Job -Job $job
+            Write-Host ("  PPO training finished: style={0}" -f $entry.style)
+        }
+
+        # Step 3/4: Export and evaluate each style serially.
+        foreach ($style in $activePlayStyles) {
+            $paths = Get-StyleArtifactPaths -IterationDir $iterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            $iterCheckpointDir = [string]$paths.checkpoint_dir
+            $iterCandidateOnnx = [string]$paths.candidate_onnx
+            $iterEvalDir = [string]$paths.eval_dir
+            $styleState = $styleStates[$style]
+            $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
+            $selectedCheckpoint = $iterBestPt
+            $selectedOnnx = $iterCandidateOnnx
+            $selectedGate = $null
+            $selectedSummary = $null
+
+            if (-not $SkipOnnxExport) {
+                Invoke-TrainingPython @(
+                    "backend/bot_trainer/v2/export_onnx.py",
+                    "--checkpoint", $iterBestPt,
+                    "--output", $iterCandidateOnnx
+                )
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+
+            if (($CandidateSelectionMode -eq "epoch") -and (-not $SkipOnnxExport) -and (-not $SkipEval)) {
+                $candidateManifest = Join-Path $paths.style_dir "candidate_manifest.json"
+                $candidateSelection = Join-Path $paths.style_dir "candidate_selection.json"
+                $candidateEntries = @()
+                Get-ChildItem -LiteralPath $iterCheckpointDir -Filter "epoch_*.pt" |
+                    Sort-Object Name |
+                    ForEach-Object {
+                        $epochName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+                        $epochOnnx = Join-Path $paths.style_dir "$epochName.onnx"
+                        $epochEvalDir = Join-Path $iterEvalDir $epochName
+                        Invoke-TrainingPython @(
+                            "backend/bot_trainer/v2/export_onnx.py",
+                            "--checkpoint", $_.FullName,
+                            "--output", $epochOnnx
+                        )
+                        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                        $epochEval = Invoke-CandidateEvaluation `
+                            -CandidateModel $epochOnnx `
+                            -EvalDir $epochEvalDir `
+                            -EvalBaselineOnnx $BaselineOnnx
+                        $epochNumber = [int]$epochName.Replace("epoch_", "")
+                        $candidateEntries += [ordered]@{
+                            play_style = $style
+                            epoch = $epochNumber
+                            checkpoint = $_.FullName
+                            onnx = $epochOnnx
+                            summary = $epochEval.summary
+                            gate_path = $epochEval.gate
+                        }
+                    }
+                Write-Utf8NoBom -Path $candidateManifest -Content ((@{ candidates = $candidateEntries } | ConvertTo-Json -Depth 12) + "`n")
+                Invoke-TrainingPython @(
+                    "backend/bot_trainer/v2/candidate_selector.py",
+                    "--manifest", $candidateManifest,
+                    "--output", $candidateSelection
+                )
+                if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                $selection = Get-Content -LiteralPath $candidateSelection -Raw | ConvertFrom-Json
+                $selectedCheckpoint = [string]$selection.checkpoint
+                $selectedOnnx = [string]$selection.onnx
+                $selectedGate = [string]$selection.selected.gate
+                $selectedSummary = [string]$selection.selected.summary
+                Copy-RequiredFile -SourcePath $selectedOnnx -TargetPath $iterCandidateOnnx
+                if (-not [string]::IsNullOrWhiteSpace($selectedGate)) {
+                    Copy-RequiredFile -SourcePath $selectedGate -TargetPath (Join-Path $iterEvalDir "candidate_gate.json")
+                }
+                if (-not [string]::IsNullOrWhiteSpace($selectedSummary)) {
+                    Copy-RequiredFile -SourcePath $selectedSummary -TargetPath (Join-Path $iterEvalDir "candidate_eval_summary.json")
+                }
+            }
+
+            $iterResult = [ordered]@{
+                iteration = $iter
+                play_style = $style
+                checkpoint = $selectedCheckpoint
+                onnx = $iterCandidateOnnx
+                accepted = $false
+                score_margin = 0.0
+            }
+
+            if ((-not $SkipOnnxExport) -and (-not $SkipEval)) {
+                if ($CandidateSelectionMode -eq "epoch") {
+                    $evalResult = [ordered]@{
+                        gate = (Join-Path $iterEvalDir "candidate_gate.json")
                     }
                 }
-            Write-Utf8NoBom -Path $candidateManifest -Content ((@{ candidates = $candidateEntries } | ConvertTo-Json -Depth 12) + "`n")
-            Invoke-TrainingPython @(
-                "backend/bot_trainer/v2/candidate_selector.py",
-                "--manifest", $candidateManifest,
-                "--output", $candidateSelection
-            )
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $selection = Get-Content -LiteralPath $candidateSelection -Raw | ConvertFrom-Json
-            $selectedCheckpoint = [string]$selection.checkpoint
-            $selectedOnnx = [string]$selection.onnx
-            $selectedGate = [string]$selection.selected.gate
-            $selectedSummary = [string]$selection.selected.summary
-            Copy-RequiredFile -SourcePath $selectedOnnx -TargetPath $iterCandidateOnnx
-            if (-not [string]::IsNullOrWhiteSpace($selectedGate)) {
-                Copy-RequiredFile -SourcePath $selectedGate -TargetPath (Join-Path $iterEvalDir "candidate_gate.json")
-            }
-            if (-not [string]::IsNullOrWhiteSpace($selectedSummary)) {
-                Copy-RequiredFile -SourcePath $selectedSummary -TargetPath (Join-Path $iterEvalDir "candidate_eval_summary.json")
-            }
-        }
+                else {
+                    $evalResult = Invoke-CandidateEvaluation `
+                        -CandidateModel $iterCandidateOnnx `
+                        -EvalDir $iterEvalDir `
+                        -EvalBaselineOnnx $BaselineOnnx
+                }
 
-        # Step 4: Evaluate candidate vs original baseline
-        $iterResult = [ordered]@{
-            iteration = $iter
-            checkpoint = $selectedCheckpoint
-            onnx = $iterCandidateOnnx
-            accepted = $false
-            score_margin = 0.0
-        }
+                $gateOutput = Get-Content -LiteralPath $evalResult.gate -Raw | ConvertFrom-Json
+                $iterResult.accepted = [bool]$gateOutput.accepted
+                $scoreMargin = $gateOutput.candidate.avg_score_delta - $gateOutput.baseline.avg_score_delta
+                $iterResult.score_margin = [math]::Round($scoreMargin, 4)
 
-        if ((-not $SkipOnnxExport) -and (-not $SkipEval)) {
-            if ($CandidateSelectionMode -eq "epoch") {
-                $evalResult = [ordered]@{
-                    gate = (Join-Path $iterEvalDir "candidate_gate.json")
+                Write-Host ("  Iteration {0} style={1}: score_margin={2} accepted={3}" -f $iter, $style, $iterResult.score_margin, $iterResult.accepted)
+
+                if ($iterResult.accepted -or ($iterResult.score_margin -gt [double]$styleState.best_score_margin)) {
+                    $styleState.best_score_margin = $iterResult.score_margin
+                    $styleState.best_checkpoint = $selectedCheckpoint
+                    $styleState.best_onnx = $iterCandidateOnnx
+                    $styleState.best_iteration = $iter
+                    $styleState.current_checkpoint = $selectedCheckpoint
+                    $styleState.current_onnx = $iterCandidateOnnx
+                    Write-Host ("  Style {0} advanced (score_margin={1}, accepted={2})" -f $style, $iterResult.score_margin, $iterResult.accepted)
+                }
+                else {
+                    Write-Host ("  Style {0} kept current best (best_score_margin={1})" -f $style, $styleState.best_score_margin)
                 }
             }
-            else {
-                $evalResult = Invoke-CandidateEvaluation `
-                    -CandidateModel $iterCandidateOnnx `
-                    -EvalDir $iterEvalDir `
-                    -EvalBaselineOnnx $BaselineOnnx
+
+            $styleState.history = @($styleState.history) + $iterResult
+        }
+    }
+
+    # Finalize: copy each play style's own best result.
+    $allAccepted = @()
+    $historyByStyle = [ordered]@{}
+    $finalOutputs = [ordered]@{}
+
+    foreach ($style in $activePlayStyles) {
+        $styleState = $styleStates[$style]
+        $styleOutputDir = if ($multiStyleTraining) { Join-Path (Join-Path $OutputDir "styles") $style } else { $OutputDir }
+        $FinalCandidateOnnx = Join-Path $styleOutputDir "candidate.onnx"
+        $FinalCheckpointDir = Join-Path $styleOutputDir "checkpoints"
+        $FinalEvalSummary = Join-Path $styleOutputDir "candidate_eval_summary.json"
+        $FinalGateOutput = Join-Path $styleOutputDir "candidate_gate.json"
+
+        New-Item -ItemType Directory -Force -Path $FinalCheckpointDir | Out-Null
+        Copy-RequiredFile -SourcePath ([string]$styleState.best_checkpoint) -TargetPath (Join-Path $FinalCheckpointDir "best.pt")
+        if (-not $SkipOnnxExport) {
+            Copy-RequiredFile -SourcePath ([string]$styleState.best_onnx) -TargetPath $FinalCandidateOnnx
+        }
+
+        $bestIteration = [int]$styleState.best_iteration
+        $bestIterTag = if ($bestIteration -gt 0) { "iter_{0:D3}" -f $bestIteration } else { "baseline" }
+        if ($bestIteration -gt 0) {
+            $bestIterDir = Join-Path $OutputDir $bestIterTag
+            $bestIterPaths = Get-StyleArtifactPaths -IterationDir $bestIterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            $bestIterEvalDir = [string]$bestIterPaths.eval_dir
+            if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
+                Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
             }
-
-            $gateOutput = Get-Content -LiteralPath $evalResult.gate -Raw | ConvertFrom-Json
-            $iterResult.accepted = [bool]$gateOutput.accepted
-            $scoreMargin = $gateOutput.candidate.avg_score_delta - $gateOutput.baseline.avg_score_delta
-            $iterResult.score_margin = [math]::Round($scoreMargin, 4)
-
-            Write-Host ("  Iteration {0} result: score_margin={1} accepted={2}" -f $iter, $iterResult.score_margin, $iterResult.accepted)
-
-            # Update the rollout model only when gate passes or the candidate improves best margin.
-            if ($iterResult.accepted -or ($iterResult.score_margin -gt $bestScoreMargin)) {
-                $bestScoreMargin = $iterResult.score_margin
-                $bestCheckpoint = $selectedCheckpoint
-                $bestOnnx = $iterCandidateOnnx
-                $bestIteration = $iter
-                $currentCheckpoint = $selectedCheckpoint
-                $currentOnnx = $iterCandidateOnnx
-                Write-Host ("  Rollout advanced to candidate (score_margin={0}, accepted={1})" -f $iterResult.score_margin, $iterResult.accepted)
+            if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_gate.json" -PathType Leaf) {
+                Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
             }
-            else {
-                Write-Host ("  Rollout kept current best (best_score_margin={0})" -f $bestScoreMargin)
+        }
+        elseif (@($styleState.history).Count -gt 0) {
+            $lastIterTag = "iter_{0:D3}" -f @($styleState.history)[-1].iteration
+            $lastIterDir = Join-Path $OutputDir $lastIterTag
+            $lastIterPaths = Get-StyleArtifactPaths -IterationDir $lastIterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            $lastIterEvalDir = [string]$lastIterPaths.eval_dir
+            if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
+                Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+            }
+            if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_gate.json" -PathType Leaf) {
+                Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
             }
         }
 
-        $iterationHistory += $iterResult
-    }
-
-    # Finalize: copy best results to top-level
-    $FinalCandidateOnnx = Join-Path $OutputDir "candidate.onnx"
-    $FinalCheckpointDir = Join-Path $OutputDir "checkpoints"
-    $FinalEvalSummary = Join-Path $OutputDir "candidate_eval_summary.json"
-    $FinalGateOutput = Join-Path $OutputDir "candidate_gate.json"
-
-    New-Item -ItemType Directory -Force -Path $FinalCheckpointDir | Out-Null
-    Copy-RequiredFile -SourcePath $bestCheckpoint -TargetPath (Join-Path $FinalCheckpointDir "best.pt")
-    if (-not $SkipOnnxExport) {
-        Copy-RequiredFile -SourcePath $bestOnnx -TargetPath $FinalCandidateOnnx
-    }
-
-    # Copy eval results from the best iteration
-    $bestIterTag = if ($bestIteration -gt 0) { "iter_{0:D3}" -f $bestIteration } else { "baseline" }
-    if ($bestIteration -gt 0) {
-        $bestIterEvalDir = Join-Path $OutputDir "$bestIterTag/eval"
-        if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
-            Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+        $historyByStyle[$style] = @($styleState.history)
+        $finalOutputs[$style] = [ordered]@{
+            best_iteration = $bestIterTag
+            best_score_margin = $styleState.best_score_margin
+            checkpoint = Join-Path $FinalCheckpointDir "best.pt"
+            candidate = $FinalCandidateOnnx
+            history = if ($multiStyleTraining) { Join-Path $styleOutputDir "iteration_history.json" } else { Join-Path $OutputDir "iteration_history.json" }
         }
-        if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_gate.json" -PathType Leaf) {
-            Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
+
+        if ($multiStyleTraining) {
+            Write-Utf8NoBom -Path $finalOutputs[$style].history -Content ((@($styleState.history) | ConvertTo-Json -Depth 8) + "`n")
         }
-    }
-    elseif ($iterationHistory.Count -gt 0) {
-        $lastIterTag = "iter_{0:D3}" -f $iterationHistory[-1].iteration
-        $lastIterEvalDir = Join-Path $OutputDir "$lastIterTag/eval"
-        if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
-            Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
+        $acceptedForStyle = (@($styleState.history) | Where-Object { $_.accepted }) | Select-Object -First 1
+        if ($null -ne $acceptedForStyle) {
+            $allAccepted += $acceptedForStyle
         }
-        if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_gate.json" -PathType Leaf) {
-            Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
+        elseif (-not $EnforceCandidateGate) {
+            Write-Warning "No iteration passed the candidate gate for play_style=$style. Best score_margin=$($styleState.best_score_margin). See $FinalGateOutput"
         }
     }
 
-    # Write iteration history
     $historyPath = Join-Path $OutputDir "iteration_history.json"
-    Write-Utf8NoBom -Path $historyPath -Content ((@($iterationHistory) | ConvertTo-Json -Depth 8) + "`n")
+    if ($multiStyleTraining) {
+        $historyDocument = [ordered]@{
+            rollout_style = $rolloutStyle
+            styles = $historyByStyle
+        }
+        Write-Utf8NoBom -Path $historyPath -Content (($historyDocument | ConvertTo-Json -Depth 10) + "`n")
+    }
+    else {
+        Write-Utf8NoBom -Path $historyPath -Content ((@($styleStates[$activePlayStyles[0]].history) | ConvertTo-Json -Depth 8) + "`n")
+    }
 
-    $finalAccepted = ($iterationHistory | Where-Object { $_.accepted }) | Select-Object -First 1
-    if ($EnforceCandidateGate -and $null -eq $finalAccepted) {
+    if ($EnforceCandidateGate -and $allAccepted.Count -eq 0) {
         Write-Warning "No iteration passed the candidate gate."
         exit 1
-    }
-    if ((-not $EnforceCandidateGate) -and $null -eq $finalAccepted) {
-        Write-Warning "No iteration passed the candidate gate. Best score_margin=$bestScoreMargin. See $FinalGateOutput"
     }
 
     Write-Host ""
     Write-Host "RL iterative self-play pipeline finished."
     Write-Host "Iterations:     $Iterations"
-    Write-Host ("Best iteration: {0} (score_margin={1})" -f $bestIterTag, $bestScoreMargin)
-    Write-Host "Checkpoint:     $bestCheckpoint"
-    Write-Host "Candidate:      $FinalCandidateOnnx"
+    foreach ($style in $activePlayStyles) {
+        $output = $finalOutputs[$style]
+        Write-Host ("[{0}] Best iteration: {1} (score_margin={2})" -f $style, $output.best_iteration, $output.best_score_margin)
+        Write-Host ("[{0}] Checkpoint:     {1}" -f $style, $output.checkpoint)
+        Write-Host ("[{0}] Candidate:      {1}" -f $style, $output.candidate)
+    }
     Write-Host "History:        $historyPath"
 }
 finally {

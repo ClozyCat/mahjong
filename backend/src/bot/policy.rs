@@ -175,7 +175,7 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
                     {
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
-                            same_as_heuristic_active_turn_action(context, &action);
+                            maybe_same_as_heuristic_active_turn_action(context, &action, config);
                         return Some(BotPolicyDecision {
                             action,
                             telemetry,
@@ -198,7 +198,7 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
             if let Some(action) = select_neural_only_active_turn_action(context, &scores) {
                 telemetry.used_neural_action = true;
                 telemetry.same_as_heuristic =
-                    same_as_heuristic_active_turn_action(context, &action);
+                    maybe_same_as_heuristic_active_turn_action(context, &action, config);
                 return Some(BotPolicyDecision {
                     action,
                     telemetry,
@@ -355,7 +355,7 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
                     {
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
-                            same_as_heuristic_claim_action(context, &action);
+                            maybe_same_as_heuristic_claim_action(context, &action, config);
                         return Some(BotPolicyDecision {
                             action,
                             telemetry,
@@ -377,7 +377,8 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
             telemetry.model_loaded = true;
             if let Some(action) = select_neural_only_claim(context, &scores) {
                 telemetry.used_neural_action = true;
-                telemetry.same_as_heuristic = same_as_heuristic_claim_action(context, &action);
+                telemetry.same_as_heuristic =
+                    maybe_same_as_heuristic_claim_action(context, &action, config);
                 return Some(BotPolicyDecision {
                     action,
                     telemetry,
@@ -445,7 +446,7 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
             model_loaded: true,
             used_neural_action: true,
             used_fallback: false,
-            same_as_heuristic: same_as_heuristic_claim_action(context, &action),
+            same_as_heuristic: maybe_same_as_heuristic_claim_action(context, &action, config),
         },
         action,
         neural_scores: Some(scores),
@@ -467,6 +468,7 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         model_path: env::var("MAHJONG_BOT_MODEL_PATH").ok(),
         sample_actions: false,
         temperature: 1.0,
+        record_heuristic_comparison: false,
     }
 }
 
@@ -934,9 +936,31 @@ fn same_as_heuristic_active_turn_action(context: &BotContext, action: &BotAction
         .map(|heuristic| bot_actions_are_equivalent(context, action, &heuristic))
 }
 
+fn maybe_same_as_heuristic_active_turn_action(
+    context: &BotContext,
+    action: &BotAction,
+    config: &ArenaBotPolicyConfig,
+) -> Option<bool> {
+    if !config.record_heuristic_comparison {
+        return None;
+    }
+    same_as_heuristic_active_turn_action(context, action)
+}
+
 fn same_as_heuristic_claim_action(context: &BotContext, action: &BotAction) -> Option<bool> {
     choose_heuristic_claim_action(context)
         .map(|heuristic| bot_actions_are_equivalent(context, action, &heuristic))
+}
+
+fn maybe_same_as_heuristic_claim_action(
+    context: &BotContext,
+    action: &BotAction,
+    config: &ArenaBotPolicyConfig,
+) -> Option<bool> {
+    if !config.record_heuristic_comparison {
+        return None;
+    }
+    same_as_heuristic_claim_action(context, action)
 }
 
 fn bot_actions_are_equivalent(context: &BotContext, left: &BotAction, right: &BotAction) -> bool {
@@ -1085,6 +1109,7 @@ mod tests {
             model_path: Some("missing-model.onnx".to_string()),
             sample_actions: false,
             temperature: 1.0,
+            record_heuristic_comparison: false,
         };
 
         let decision = choose_active_turn_decision_with_config_and_rng(&context, &config, None)
@@ -1095,6 +1120,31 @@ mod tests {
         assert!(decision.telemetry.used_fallback);
         assert!(!decision.telemetry.used_neural_action);
         assert_eq!(decision.telemetry.same_as_heuristic, None);
+    }
+
+    #[test]
+    fn heuristic_comparison_is_disabled_by_default() {
+        let mut context = base_context();
+        let concealed_tiles = tiles(&[
+            "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "green", "w9",
+            "w6",
+        ]);
+        context.player.concealed_tile_counts =
+            tile_counts34(concealed_tiles.iter().map(|tile| tile.tile_key.as_str()));
+        context.player.concealed_tiles = concealed_tiles;
+        let action = choose_heuristic_active_turn_action(&context).expect("heuristic action");
+        let mut config = ArenaBotPolicyConfig::heuristic();
+
+        assert_eq!(
+            maybe_same_as_heuristic_active_turn_action(&context, &action, &config),
+            None
+        );
+
+        config.record_heuristic_comparison = true;
+        assert_eq!(
+            maybe_same_as_heuristic_active_turn_action(&context, &action, &config),
+            Some(true)
+        );
     }
 
     #[test]

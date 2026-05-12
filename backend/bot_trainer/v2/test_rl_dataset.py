@@ -286,6 +286,7 @@ def test_league_config_rotates_learner_seat() -> None:
     assert len(configs) == 4
     assert [config["policies"].index(learner) for config in configs] == [0, 1, 2, 3]
     assert all(config["matches"] == 2 for config in configs)
+    assert all(config["record_heuristic_comparison"] is False for config in configs)
 
 
 def test_rollout_override_keeps_neural_opponents_frozen() -> None:
@@ -324,6 +325,20 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
     assert pool["learner"]["model_path"] == "runs/iter_001/candidate.onnx"
     assert pool["opponents"][0]["model_path"] == "backend/assets/history_models/sft.onnx"
     assert pool["opponents"][1]["model_path"] is None
+
+
+def test_eval_config_disables_heuristic_comparison() -> None:
+    from league_config import build_eval_config
+
+    config = build_eval_config(
+        candidate_onnx=Path("candidate.onnx"),
+        baseline_onnx=Path("baseline.onnx"),
+        matches=4,
+        seed=10,
+        max_actions=2400,
+    )
+
+    assert config["record_heuristic_comparison"] is False
 
 
 def test_eval_config_uses_cyclic_rotation() -> None:
@@ -694,6 +709,43 @@ def test_candidate_selector_uses_margin_score_when_all_rejected() -> None:
     assert selected["epoch"] == 2
     assert selected["accepted"] is False
     assert selected["score_margin"] == -2.0
+
+
+def test_candidate_selector_preserves_play_style_metadata() -> None:
+    from candidate_selector import select_best_candidate
+
+    baseline = {
+        "avg_score_delta": 0.0,
+        "win_rate": 0.30,
+        "deal_in_rate": 0.12,
+        "avg_first_tenpai_turn": 10.0,
+        "final_tenpai_rate": 0.60,
+        "avg_latency_ms_per_decision": 70.0,
+    }
+    selected = select_best_candidate([
+        {
+            "epoch": 1,
+            "play_style": "defensive",
+            "checkpoint": "defensive/epoch_001.pt",
+            "onnx": "defensive/epoch_001.onnx",
+            "gate": {
+                "accepted": True,
+                "failures": [],
+                "baseline": baseline,
+                "candidate": {
+                    "avg_score_delta": 1.0,
+                    "win_rate": 0.31,
+                    "deal_in_rate": 0.11,
+                    "avg_first_tenpai_turn": 9.8,
+                    "final_tenpai_rate": 0.62,
+                    "avg_latency_ms_per_decision": 72.0,
+                },
+            },
+        }
+    ])
+
+    assert selected["play_style"] == "defensive"
+    assert selected["selected"]["play_style"] == "defensive"
 
 
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:

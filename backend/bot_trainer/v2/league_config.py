@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("backend/assets/models/mahjong_policy_net.onnx"),
     )
+    parser.add_argument("--record-heuristic-comparison", action="store_true")
     return parser.parse_args()
 
 
@@ -52,6 +53,7 @@ def build_trajectory_configs(
     matches: int,
     seed: int,
     max_actions: int,
+    record_heuristic_comparison: bool = False,
 ) -> list[dict[str, Any]]:
     learner = clean_policy(pool["learner"])
     opponents = weighted_opponents(pool)
@@ -72,6 +74,7 @@ def build_trajectory_configs(
                 "seed": seed + learner_seat * 100000,
                 "max_actions_per_match": max_actions,
                 "report_trajectories": True,
+                "record_heuristic_comparison": record_heuristic_comparison,
                 "policies": policies,
             }
         )
@@ -84,12 +87,14 @@ def build_eval_config(
     matches: int,
     seed: int,
     max_actions: int,
+    record_heuristic_comparison: bool = False,
 ) -> dict[str, Any]:
     return {
         "matches": matches,
         "seed": seed,
         "max_actions_per_match": max_actions,
         "report_trajectories": False,
+        "record_heuristic_comparison": record_heuristic_comparison,
         "seat_rotation": "cyclic",
         "seat_rotation_offset": 0,
         "policies": [
@@ -131,7 +136,13 @@ def main() -> None:
         pool = load_pool(args.pool)
         apply_rollout_model_override(pool, args.rollout_onnx)
         for index, config in enumerate(
-            build_trajectory_configs(pool, args.matches, args.seed, args.max_actions)
+            build_trajectory_configs(
+                pool,
+                args.matches,
+                args.seed,
+                args.max_actions,
+                args.record_heuristic_comparison,
+            )
         ):
             write_json(args.output_dir / f"trajectory_config_{index}.json", config)
     else:
@@ -145,6 +156,7 @@ def main() -> None:
                 args.matches,
                 args.seed,
                 args.max_actions,
+                args.record_heuristic_comparison,
             ),
         )
 

@@ -27,6 +27,8 @@ KL_COEF=0.01
 KL_END_COEF=0.0
 TARGET_KL=0.03
 PLAY_STYLE=balanced
+PLAY_STYLES=""
+TRAJECTORY_ROLLOUT_STYLE=""
 DEVICE=auto
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
 LEARNER_POLICY_ID="learner"
@@ -38,6 +40,7 @@ SKIP_EVAL=0
 ENFORCE_CANDIDATE_GATE=0
 ALLOW_RL_BASELINE_CHECKPOINT=0
 RECOMPUTE_OLD_POLICY_STATS=0
+RECORD_HEURISTIC_COMPARISON=0
 CANDIDATE_SELECTION_MODE=epoch
 
 usage() {
@@ -79,6 +82,8 @@ Options:
   --kl-end-coef VALUE              Final KL coefficient after decay.
   --target-kl VALUE                Stop PPO epoch loop when approximate KL exceeds this value.
   --play-style STYLE               Play style: aggressive, balanced, or defensive. Default balanced.
+  --play-styles LIST               Comma-separated play styles trained in parallel on shared trajectories.
+  --trajectory-rollout-style STYLE Style whose current model generates shared trajectories. Defaults to first play style.
   --device DEVICE                  auto, cpu, cuda, etc.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
@@ -90,6 +95,7 @@ Options:
   --enforce-candidate-gate         Exit non-zero when no iteration passes candidate gate.
   --allow-rl-baseline-checkpoint   Allow intentionally continuing from an RL checkpoint.
   --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
+  --record-heuristic-comparison    Record same-as-heuristic telemetry during arena runs.
   --candidate-selection-mode MODE  epoch or final. Default epoch.
   -h, --help                       Show this help.
 EOF
@@ -125,20 +131,67 @@ copy_required_file() {
     cp -f "$source_path" "$target_path"
 }
 
+is_valid_play_style() {
+    [[ "$1" == "aggressive" || "$1" == "balanced" || "$1" == "defensive" ]]
+}
+
+contains_style() {
+    local needle="$1"
+    shift
+    local style
+    for style in "$@"; do
+        [[ "$style" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+set_style_paths() {
+    local iter_dir="$1"
+    local style="$2"
+    if (( MULTI_STYLE_TRAINING == 1 )); then
+        STYLE_DIR="$iter_dir/styles/$style"
+    else
+        STYLE_DIR="$iter_dir"
+    fi
+    STYLE_CHECKPOINT_DIR="$STYLE_DIR/checkpoints"
+    STYLE_CANDIDATE_ONNX="$STYLE_DIR/candidate.onnx"
+    STYLE_EVAL_DIR="$STYLE_DIR/eval"
+}
+
+set_final_style_paths() {
+    local style="$1"
+    if (( MULTI_STYLE_TRAINING == 1 )); then
+        FINAL_STYLE_DIR="$OUTPUT_DIR/styles/$style"
+    else
+        FINAL_STYLE_DIR="$OUTPUT_DIR"
+    fi
+    FINAL_STYLE_CANDIDATE_ONNX="$FINAL_STYLE_DIR/candidate.onnx"
+    FINAL_STYLE_CHECKPOINT_DIR="$FINAL_STYLE_DIR/checkpoints"
+    FINAL_STYLE_EVAL_SUMMARY="$FINAL_STYLE_DIR/candidate_eval_summary.json"
+    FINAL_STYLE_GATE_OUTPUT="$FINAL_STYLE_DIR/candidate_gate.json"
+    FINAL_STYLE_HISTORY="$FINAL_STYLE_DIR/iteration_history.json"
+}
+
 run_candidate_eval() {
     local candidate_model="$1"
     local eval_dir="$2"
     local eval_baseline_onnx="$3"
     mkdir -p "$eval_dir"
-    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
-        --pool "$OPPONENT_POOL" \
-        --output-dir "$eval_dir" \
-        --matches "$EVAL_MATCHES" \
-        --seed "$SEED" \
-        --max-actions "$MAX_ACTIONS_PER_MATCH" \
-        --mode eval \
-        --candidate-onnx "$candidate_model" \
+    eval_config_args=(
+        backend/bot_trainer/v2/league_config.py
+        --pool "$OPPONENT_POOL"
+        --output-dir "$eval_dir"
+        --matches "$EVAL_MATCHES"
+        --seed "$SEED"
+        --max-actions "$MAX_ACTIONS_PER_MATCH"
+        --mode eval
+        --candidate-onnx "$candidate_model"
         --baseline-onnx "$eval_baseline_onnx"
+    )
+    if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
+        eval_config_args+=(--record-heuristic-comparison)
+    fi
+    "${PYTHON_CMD[@]}" "${eval_config_args[@]}"
 
     RUN_EVAL_CONFIG="$eval_dir/candidate_eval_config.json"
     RUN_EVAL_JSONL="$eval_dir/candidate_eval.jsonl"
@@ -296,6 +349,16 @@ while [[ $# -gt 0 ]]; do
             PLAY_STYLE="$2"
             shift 2
             ;;
+        --play-styles)
+            require_value "$1" "${2:-}"
+            PLAY_STYLES="$2"
+            shift 2
+            ;;
+        --trajectory-rollout-style)
+            require_value "$1" "${2:-}"
+            TRAJECTORY_ROLLOUT_STYLE="$2"
+            shift 2
+            ;;
         --device)
             require_value "$1" "${2:-}"
             DEVICE="$2"
@@ -345,6 +408,10 @@ while [[ $# -gt 0 ]]; do
             RECOMPUTE_OLD_POLICY_STATS=1
             shift
             ;;
+        --record-heuristic-comparison)
+            RECORD_HEURISTIC_COMPARISON=1
+            shift
+            ;;
         --candidate-selection-mode)
             require_value "$1" "${2:-}"
             CANDIDATE_SELECTION_MODE="$2"
@@ -370,8 +437,45 @@ if [[ "$CANDIDATE_SELECTION_MODE" != "epoch" && "$CANDIDATE_SELECTION_MODE" != "
     echo "--candidate-selection-mode must be epoch or final." >&2
     exit 2
 fi
-if [[ "$PLAY_STYLE" != "aggressive" && "$PLAY_STYLE" != "balanced" && "$PLAY_STYLE" != "defensive" ]]; then
+if ! is_valid_play_style "$PLAY_STYLE"; then
     echo "--play-style must be aggressive, balanced, or defensive." >&2
+    exit 2
+fi
+if [[ -n "$TRAJECTORY_ROLLOUT_STYLE" ]] && ! is_valid_play_style "$TRAJECTORY_ROLLOUT_STYLE"; then
+    echo "--trajectory-rollout-style must be aggressive, balanced, or defensive." >&2
+    exit 2
+fi
+
+ACTIVE_PLAY_STYLES=()
+if [[ -n "$PLAY_STYLES" ]]; then
+    IFS=',' read -ra requested_styles <<< "$PLAY_STYLES"
+else
+    requested_styles=("$PLAY_STYLE")
+fi
+for requested_style in "${requested_styles[@]}"; do
+    requested_style="${requested_style//[[:space:]]/}"
+    [[ -n "$requested_style" ]] || continue
+    if ! is_valid_play_style "$requested_style"; then
+        echo "--play-styles contains invalid style: $requested_style" >&2
+        exit 2
+    fi
+    if ! contains_style "$requested_style" "${ACTIVE_PLAY_STYLES[@]}"; then
+        ACTIVE_PLAY_STYLES+=("$requested_style")
+    fi
+done
+if (( ${#ACTIVE_PLAY_STYLES[@]} == 0 )); then
+    echo "No play styles selected." >&2
+    exit 2
+fi
+MULTI_STYLE_TRAINING=0
+if (( ${#ACTIVE_PLAY_STYLES[@]} > 1 )); then
+    MULTI_STYLE_TRAINING=1
+fi
+if [[ -z "$TRAJECTORY_ROLLOUT_STYLE" ]]; then
+    TRAJECTORY_ROLLOUT_STYLE="${ACTIVE_PLAY_STYLES[0]}"
+fi
+if ! contains_style "$TRAJECTORY_ROLLOUT_STYLE" "${ACTIVE_PLAY_STYLES[@]}"; then
+    echo "--trajectory-rollout-style must be included in --play-styles." >&2
     exit 2
 fi
 
@@ -427,13 +531,19 @@ echo "Opponent pool:       $OPPONENT_POOL"
 echo "Learner policy id:   $LEARNER_POLICY_ID"
 echo "Eval matches:        $EVAL_MATCHES"
 echo "Device:              $DEVICE"
-echo "Play style:          $PLAY_STYLE"
+echo "Play styles:         ${ACTIVE_PLAY_STYLES[*]}"
+echo "Rollout style:       $TRAJECTORY_ROLLOUT_STYLE"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
 if (( ARENA_JOBS == 0 )); then
     echo "Arena jobs:          auto"
 else
     echo "Arena jobs:          $ARENA_JOBS"
+fi
+if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
+    echo "Heuristic compare:   true"
+else
+    echo "Heuristic compare:   false"
 fi
 
 require_file \
@@ -466,40 +576,54 @@ if (( SKIP_TESTS == 0 )); then
 fi
 
 # ── Iterative Self-Play Loop ──────────────────────────────────────────────
-current_onnx="$BASELINE_ONNX"
-current_checkpoint="$BASELINE_CHECKPOINT"
-best_onnx="$BASELINE_ONNX"
-best_checkpoint="$BASELINE_CHECKPOINT"
-best_score_margin="0.0"
-best_iter=0
+declare -A current_onnx_by_style=()
+declare -A current_checkpoint_by_style=()
+declare -A best_onnx_by_style=()
+declare -A best_checkpoint_by_style=()
+declare -A best_score_margin_by_style=()
+declare -A best_iter_by_style=()
+declare -A history_file_by_style=()
 
-iteration_results=()
+for style in "${ACTIVE_PLAY_STYLES[@]}"; do
+    current_onnx_by_style["$style"]="$BASELINE_ONNX"
+    current_checkpoint_by_style["$style"]="$BASELINE_CHECKPOINT"
+    best_onnx_by_style["$style"]="$BASELINE_ONNX"
+    best_checkpoint_by_style["$style"]="$BASELINE_CHECKPOINT"
+    best_score_margin_by_style["$style"]="0.0"
+    best_iter_by_style["$style"]=0
+    history_file_by_style["$style"]="$OUTPUT_DIR/${style}_iteration_results.jsonl"
+    : > "${history_file_by_style[$style]}"
+done
 
 for (( iter = 1; iter <= ITERATIONS; iter++ )); do
     printf -v iter_tag "iter_%03d" "$iter"
     iter_dir="$OUTPUT_DIR/$iter_tag"
     iter_trajectory_config_dir="$iter_dir/trajectory_configs"
     iter_trajectory_jsonl="$iter_dir/trajectories.jsonl"
-    iter_checkpoint_dir="$iter_dir/checkpoints"
-    iter_candidate_onnx="$iter_dir/candidate.onnx"
-    iter_eval_dir="$iter_dir/eval"
     iter_seed=$(( SEED + (iter - 1) * 1000000 ))
+    rollout_onnx="${current_onnx_by_style[$TRAJECTORY_ROLLOUT_STYLE]}"
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
-    echo "  Iteration $iter / $ITERATIONS  (rollout model: $(basename "$current_onnx"))"
+    echo "  Iteration $iter / $ITERATIONS  (shared rollout: $(basename "$rollout_onnx"), style=$TRAJECTORY_ROLLOUT_STYLE)"
     echo "═══════════════════════════════════════════════════════════════"
 
     # ── Step 1: Generate trajectories with current model ──────────────
     mkdir -p "$iter_trajectory_config_dir"
-    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/league_config.py \
-        --pool "$OPPONENT_POOL" \
-        --output-dir "$iter_trajectory_config_dir" \
-        --matches "$ITERATION_MATCHES" \
-        --seed "$iter_seed" \
-        --max-actions "$MAX_ACTIONS_PER_MATCH" \
-        --mode trajectory \
-        --rollout-onnx "$current_onnx"
+    trajectory_config_args=(
+        backend/bot_trainer/v2/league_config.py
+        --pool "$OPPONENT_POOL"
+        --output-dir "$iter_trajectory_config_dir"
+        --matches "$ITERATION_MATCHES"
+        --seed "$iter_seed"
+        --max-actions "$MAX_ACTIONS_PER_MATCH"
+        --mode trajectory
+        --rollout-onnx "$rollout_onnx"
+    )
+    if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
+        trajectory_config_args+=(--record-heuristic-comparison)
+    fi
+    "${PYTHON_CMD[@]}" "${trajectory_config_args[@]}"
 
     trajectory_files=()
     for config_path in "$iter_trajectory_config_dir"/trajectory_config_*.json; do
@@ -527,79 +651,106 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
     fi
     cat "${trajectory_files[@]}" > "$iter_trajectory_jsonl"
 
-    # ── Step 2: PPO training from current checkpoint ─────────────────
-    rl_train_args=(
-        backend/bot_trainer/v2/rl_train.py
-        --trajectories "$iter_trajectory_jsonl"
-        --checkpoint "$current_checkpoint"
-        --epochs "$EPOCHS"
-        --batch-size "$BATCH_SIZE"
-        --lr "$LEARNING_RATE"
-        --gamma "$GAMMA"
-        --gae-lambda "$GAE_LAMBDA"
-        --policy-id "$LEARNER_POLICY_ID"
-        --clip-epsilon "$CLIP_EPSILON"
-        --value-clip-epsilon "$VALUE_CLIP_EPSILON"
-        --entropy-coef "$ENTROPY_COEF"
-        --entropy-end-coef "$ENTROPY_END_COEF"
-        --kl-coef "$KL_COEF"
-        --kl-end-coef "$KL_END_COEF"
-        --target-kl "$TARGET_KL"
-        --play-style "$PLAY_STYLE"
-        --output "$iter_checkpoint_dir"
-        --device "$DEVICE"
-    )
-    if (( ENTROPY_DECAY_STEPS > 0 )); then
-        rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
-    fi
-    if (( RECOMPUTE_OLD_POLICY_STATS == 1 )); then
-        rl_train_args+=(--recompute-old-policy-stats)
-    fi
-    "${PYTHON_CMD[@]}" "${rl_train_args[@]}"
+    # ── Step 2: PPO training for each style on the shared trajectories ─
+    train_pids=()
+    train_styles=()
+    train_logs=()
+    for style in "${ACTIVE_PLAY_STYLES[@]}"; do
+        set_style_paths "$iter_dir" "$style"
+        mkdir -p "$STYLE_CHECKPOINT_DIR" "$STYLE_DIR"
+        rl_train_args=(
+            backend/bot_trainer/v2/rl_train.py
+            --trajectories "$iter_trajectory_jsonl"
+            --checkpoint "${current_checkpoint_by_style[$style]}"
+            --epochs "$EPOCHS"
+            --batch-size "$BATCH_SIZE"
+            --lr "$LEARNING_RATE"
+            --gamma "$GAMMA"
+            --gae-lambda "$GAE_LAMBDA"
+            --policy-id "$LEARNER_POLICY_ID"
+            --clip-epsilon "$CLIP_EPSILON"
+            --value-clip-epsilon "$VALUE_CLIP_EPSILON"
+            --entropy-coef "$ENTROPY_COEF"
+            --entropy-end-coef "$ENTROPY_END_COEF"
+            --kl-coef "$KL_COEF"
+            --kl-end-coef "$KL_END_COEF"
+            --target-kl "$TARGET_KL"
+            --play-style "$style"
+            --output "$STYLE_CHECKPOINT_DIR"
+            --device "$DEVICE"
+        )
+        if (( ENTROPY_DECAY_STEPS > 0 )); then
+            rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
+        fi
+        if (( RECOMPUTE_OLD_POLICY_STATS == 1 || MULTI_STYLE_TRAINING == 1 )); then
+            rl_train_args+=(--recompute-old-policy-stats)
+        fi
+        train_log="$STYLE_DIR/rl_train.log"
+        echo "  Starting PPO training: style=$style"
+        "${PYTHON_CMD[@]}" "${rl_train_args[@]}" > "$train_log" 2>&1 &
+        train_pids+=("$!")
+        train_styles+=("$style")
+        train_logs+=("$train_log")
+    done
+    for index in "${!train_pids[@]}"; do
+        pid="${train_pids[$index]}"
+        style="${train_styles[$index]}"
+        train_log="${train_logs[$index]}"
+        if ! wait "$pid"; then
+            cat "$train_log" >&2
+            echo "PPO training failed for play_style=$style" >&2
+            exit 1
+        fi
+        cat "$train_log"
+        echo "  PPO training finished: style=$style"
+    done
 
-    # ── Step 3: Export ONNX ──────────────────────────────────────────
-    iter_best_pt="$iter_checkpoint_dir/best.pt"
-    selected_checkpoint="$iter_best_pt"
-    selected_onnx="$iter_candidate_onnx"
-    if (( SKIP_ONNX_EXPORT == 0 )); then
-        "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
-            --checkpoint "$iter_best_pt" \
-            --output "$iter_candidate_onnx"
-    fi
-
-    if [[ "$CANDIDATE_SELECTION_MODE" == "epoch" && $SKIP_ONNX_EXPORT == 0 && $SKIP_EVAL == 0 ]]; then
-        candidate_entries_jsonl="$iter_dir/candidate_entries.jsonl"
-        candidate_manifest="$iter_dir/candidate_manifest.json"
-        candidate_selection="$iter_dir/candidate_selection.json"
-        : > "$candidate_entries_jsonl"
-        for epoch_pt in "$iter_checkpoint_dir"/epoch_*.pt; do
-            [[ -e "$epoch_pt" ]] || continue
-            epoch_name="$(basename "$epoch_pt" .pt)"
-            epoch_number="${epoch_name#epoch_}"
-            epoch_onnx="$iter_dir/$epoch_name.onnx"
-            epoch_eval_dir="$iter_eval_dir/$epoch_name"
+    # ── Step 3/4: Export and evaluate each style serially ─────────────
+    for style in "${ACTIVE_PLAY_STYLES[@]}"; do
+        set_style_paths "$iter_dir" "$style"
+        iter_best_pt="$STYLE_CHECKPOINT_DIR/best.pt"
+        selected_checkpoint="$iter_best_pt"
+        selected_onnx="$STYLE_CANDIDATE_ONNX"
+        if (( SKIP_ONNX_EXPORT == 0 )); then
             "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
-                --checkpoint "$epoch_pt" \
-                --output "$epoch_onnx"
-            run_candidate_eval "$epoch_onnx" "$epoch_eval_dir" "$BASELINE_ONNX"
-            "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$epoch_number" "$epoch_pt" "$epoch_onnx" "$RUN_EVAL_SUMMARY" "$RUN_EVAL_GATE" <<'PY'
+                --checkpoint "$iter_best_pt" \
+                --output "$STYLE_CANDIDATE_ONNX"
+        fi
+
+        if [[ "$CANDIDATE_SELECTION_MODE" == "epoch" && $SKIP_ONNX_EXPORT == 0 && $SKIP_EVAL == 0 ]]; then
+            candidate_entries_jsonl="$STYLE_DIR/candidate_entries.jsonl"
+            candidate_manifest="$STYLE_DIR/candidate_manifest.json"
+            candidate_selection="$STYLE_DIR/candidate_selection.json"
+            : > "$candidate_entries_jsonl"
+            for epoch_pt in "$STYLE_CHECKPOINT_DIR"/epoch_*.pt; do
+                [[ -e "$epoch_pt" ]] || continue
+                epoch_name="$(basename "$epoch_pt" .pt)"
+                epoch_number="${epoch_name#epoch_}"
+                epoch_onnx="$STYLE_DIR/$epoch_name.onnx"
+                epoch_eval_dir="$STYLE_EVAL_DIR/$epoch_name"
+                "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
+                    --checkpoint "$epoch_pt" \
+                    --output "$epoch_onnx"
+                run_candidate_eval "$epoch_onnx" "$epoch_eval_dir" "$BASELINE_ONNX"
+                "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$style" "$epoch_number" "$epoch_pt" "$epoch_onnx" "$RUN_EVAL_SUMMARY" "$RUN_EVAL_GATE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
 entry = {
-    "epoch": int(sys.argv[2]),
-    "checkpoint": sys.argv[3],
-    "onnx": sys.argv[4],
-    "summary": sys.argv[5],
-    "gate_path": sys.argv[6],
+    "play_style": sys.argv[2],
+    "epoch": int(sys.argv[3]),
+    "checkpoint": sys.argv[4],
+    "onnx": sys.argv[5],
+    "summary": sys.argv[6],
+    "gate_path": sys.argv[7],
 }
 with output.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 PY
-        done
-        "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$candidate_manifest" <<'PY'
+            done
+            "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$candidate_manifest" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -614,10 +765,10 @@ Path(sys.argv[2]).write_text(
     encoding="utf-8",
 )
 PY
-        "${PYTHON_CMD[@]}" backend/bot_trainer/v2/candidate_selector.py \
-            --manifest "$candidate_manifest" \
-            --output "$candidate_selection"
-        readarray -t selection_fields < <("${PYTHON_CMD[@]}" - "$candidate_selection" <<'PY'
+            "${PYTHON_CMD[@]}" backend/bot_trainer/v2/candidate_selector.py \
+                --manifest "$candidate_manifest" \
+                --output "$candidate_selection"
+            readarray -t selection_fields < <("${PYTHON_CMD[@]}" - "$candidate_selection" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -630,29 +781,27 @@ print(selected.get("gate") or "")
 print(selected.get("summary") or "")
 PY
 )
-        selected_checkpoint="${selection_fields[0]}"
-        selected_onnx="${selection_fields[1]}"
-        selected_gate="${selection_fields[2]}"
-        selected_summary="${selection_fields[3]}"
-        copy_required_file "$selected_onnx" "$iter_candidate_onnx"
-        if [[ -n "$selected_gate" ]]; then
-            copy_required_file "$selected_gate" "$iter_eval_dir/candidate_gate.json"
-        fi
-        if [[ -n "$selected_summary" ]]; then
-            copy_required_file "$selected_summary" "$iter_eval_dir/candidate_eval_summary.json"
-        fi
-    fi
-
-    # ── Step 4: Evaluate candidate vs original baseline ──────────────
-    iter_score_margin="0.0"
-    iter_accepted=0
-
-    if (( SKIP_ONNX_EXPORT == 0 && SKIP_EVAL == 0 )); then
-        if [[ "$CANDIDATE_SELECTION_MODE" == "final" ]]; then
-            run_candidate_eval "$iter_candidate_onnx" "$iter_eval_dir" "$BASELINE_ONNX"
+            selected_checkpoint="${selection_fields[0]}"
+            selected_onnx="${selection_fields[1]}"
+            selected_gate="${selection_fields[2]}"
+            selected_summary="${selection_fields[3]}"
+            copy_required_file "$selected_onnx" "$STYLE_CANDIDATE_ONNX"
+            if [[ -n "$selected_gate" ]]; then
+                copy_required_file "$selected_gate" "$STYLE_EVAL_DIR/candidate_gate.json"
+            fi
+            if [[ -n "$selected_summary" ]]; then
+                copy_required_file "$selected_summary" "$STYLE_EVAL_DIR/candidate_eval_summary.json"
+            fi
         fi
 
-        iter_score_margin="$("${PYTHON_CMD[@]}" - "$iter_eval_dir/candidate_gate.json" <<'PY'
+        iter_score_margin="0.0"
+        iter_accepted=0
+        if (( SKIP_ONNX_EXPORT == 0 && SKIP_EVAL == 0 )); then
+            if [[ "$CANDIDATE_SELECTION_MODE" == "final" ]]; then
+                run_candidate_eval "$STYLE_CANDIDATE_ONNX" "$STYLE_EVAL_DIR" "$BASELINE_ONNX"
+            fi
+
+            iter_score_margin="$("${PYTHON_CMD[@]}" - "$STYLE_EVAL_DIR/candidate_gate.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -662,7 +811,7 @@ margin = gate["candidate"]["avg_score_delta"] - gate["baseline"]["avg_score_delt
 print(f"{margin:.4f}")
 PY
 )"
-        iter_accepted="$("${PYTHON_CMD[@]}" - "$iter_eval_dir/candidate_gate.json" <<'PY'
+            iter_accepted="$("${PYTHON_CMD[@]}" - "$STYLE_EVAL_DIR/candidate_gate.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -671,103 +820,158 @@ gate = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 print("1" if gate.get("accepted") else "0")
 PY
 )"
-        if (( iter_accepted == 1 )); then
-            iter_accepted=1
+
+            echo "  Iteration $iter style=$style: score_margin=$iter_score_margin accepted=$iter_accepted"
+
+            if (( iter_accepted == 1 )) || "${PYTHON_CMD[@]}" -c "exit(0 if float('$iter_score_margin') > float('${best_score_margin_by_style[$style]}') else 1)"; then
+                best_score_margin_by_style["$style"]="$iter_score_margin"
+                best_checkpoint_by_style["$style"]="$selected_checkpoint"
+                best_onnx_by_style["$style"]="$STYLE_CANDIDATE_ONNX"
+                best_iter_by_style["$style"]="$iter"
+                current_checkpoint_by_style["$style"]="$selected_checkpoint"
+                current_onnx_by_style["$style"]="$STYLE_CANDIDATE_ONNX"
+                echo "  Style $style advanced (score_margin=$iter_score_margin, accepted=$iter_accepted)"
+            else
+                echo "  Style $style kept current best (best_score_margin=${best_score_margin_by_style[$style]})"
+            fi
         fi
 
-        echo "  Iteration $iter result: score_margin=$iter_score_margin accepted=$iter_accepted"
-
-        if (( iter_accepted == 1 )) || "${PYTHON_CMD[@]}" -c "exit(0 if float('$iter_score_margin') > float('$best_score_margin') else 1)"; then
-            best_score_margin="$iter_score_margin"
-            best_checkpoint="$selected_checkpoint"
-            best_onnx="$iter_candidate_onnx"
-            best_iter="$iter"
-            current_checkpoint="$selected_checkpoint"
-            current_onnx="$iter_candidate_onnx"
-            echo "  Rollout advanced to candidate (score_margin=$iter_score_margin, accepted=$iter_accepted)"
-        else
-            echo "  Rollout kept current best (best_score_margin=$best_score_margin)"
-        fi
-    fi
-
-    iteration_results+=("$iter|$iter_score_margin|$iter_accepted")
-done
-
-# ── Finalize: copy best results to top-level ──────────────────────────────
-FINAL_CANDIDATE_ONNX="$OUTPUT_DIR/candidate.onnx"
-FINAL_CHECKPOINT_DIR="$OUTPUT_DIR/checkpoints"
-FINAL_EVAL_SUMMARY="$OUTPUT_DIR/candidate_eval_summary.json"
-FINAL_GATE_OUTPUT="$OUTPUT_DIR/candidate_gate.json"
-
-mkdir -p "$FINAL_CHECKPOINT_DIR"
-copy_required_file "$best_checkpoint" "$FINAL_CHECKPOINT_DIR/best.pt"
-if (( SKIP_ONNX_EXPORT == 0 )); then
-    copy_required_file "$best_onnx" "$FINAL_CANDIDATE_ONNX"
-fi
-
-if (( best_iter > 0 )); then
-    printf -v best_iter_tag "iter_%03d" "$best_iter"
-    best_iter_eval_dir="$OUTPUT_DIR/$best_iter_tag/eval"
-    if [[ -f "$best_iter_eval_dir/candidate_eval_summary.json" ]]; then
-        copy_required_file "$best_iter_eval_dir/candidate_eval_summary.json" "$FINAL_EVAL_SUMMARY"
-    fi
-    if [[ -f "$best_iter_eval_dir/candidate_gate.json" ]]; then
-        copy_required_file "$best_iter_eval_dir/candidate_gate.json" "$FINAL_GATE_OUTPUT"
-    fi
-else
-    best_iter_tag="baseline"
-    if (( ${#iteration_results[@]} > 0 )); then
-        last_index=$(( ${#iteration_results[@]} - 1 ))
-        last_iter="${iteration_results[$last_index]%%|*}"
-        printf -v last_iter_tag "iter_%03d" "$last_iter"
-        last_iter_eval_dir="$OUTPUT_DIR/$last_iter_tag/eval"
-        if [[ -f "$last_iter_eval_dir/candidate_eval_summary.json" ]]; then
-            copy_required_file "$last_iter_eval_dir/candidate_eval_summary.json" "$FINAL_EVAL_SUMMARY"
-        fi
-        if [[ -f "$last_iter_eval_dir/candidate_gate.json" ]]; then
-            copy_required_file "$last_iter_eval_dir/candidate_gate.json" "$FINAL_GATE_OUTPUT"
-        fi
-    fi
-fi
-
-# Write iteration history
-"${PYTHON_CMD[@]}" - "$OUTPUT_DIR/iteration_history.json" "${iteration_results[@]}" <<'PY'
+        "${PYTHON_CMD[@]}" - "${history_file_by_style[$style]}" "$iter" "$style" "$selected_checkpoint" "$STYLE_CANDIDATE_ONNX" "$iter_score_margin" "$iter_accepted" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 output = Path(sys.argv[1])
-entries = []
-for row in sys.argv[2:]:
-    parts = row.split("|", 2)
-    entries.append({
-        "iteration": int(parts[0]),
-        "score_margin": float(parts[1]),
-        "accepted": parts[2] == "1",
-    })
-output.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
+entry = {
+    "iteration": int(sys.argv[2]),
+    "play_style": sys.argv[3],
+    "checkpoint": sys.argv[4],
+    "onnx": sys.argv[5],
+    "score_margin": float(sys.argv[6]),
+    "accepted": sys.argv[7] == "1",
+}
+with output.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+PY
+    done
+done
+
+# ── Finalize: copy each play style's own best result ─────────────────────
+any_accepted=0
+for style in "${ACTIVE_PLAY_STYLES[@]}"; do
+    set_final_style_paths "$style"
+    mkdir -p "$FINAL_STYLE_CHECKPOINT_DIR"
+    copy_required_file "${best_checkpoint_by_style[$style]}" "$FINAL_STYLE_CHECKPOINT_DIR/best.pt"
+    if (( SKIP_ONNX_EXPORT == 0 )); then
+        copy_required_file "${best_onnx_by_style[$style]}" "$FINAL_STYLE_CANDIDATE_ONNX"
+    fi
+
+    best_iter="${best_iter_by_style[$style]}"
+    if (( best_iter > 0 )); then
+        printf -v best_iter_tag "iter_%03d" "$best_iter"
+        best_iter_dir="$OUTPUT_DIR/$best_iter_tag"
+        set_style_paths "$best_iter_dir" "$style"
+        best_iter_eval_dir="$STYLE_EVAL_DIR"
+        if [[ -f "$best_iter_eval_dir/candidate_eval_summary.json" ]]; then
+            copy_required_file "$best_iter_eval_dir/candidate_eval_summary.json" "$FINAL_STYLE_EVAL_SUMMARY"
+        fi
+        if [[ -f "$best_iter_eval_dir/candidate_gate.json" ]]; then
+            copy_required_file "$best_iter_eval_dir/candidate_gate.json" "$FINAL_STYLE_GATE_OUTPUT"
+        fi
+    else
+        best_iter_tag="baseline"
+        last_iter="$("${PYTHON_CMD[@]}" - "${history_file_by_style[$style]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+rows = [json.loads(line) for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.strip()]
+print(rows[-1]["iteration"] if rows else "")
+PY
+)"
+        if [[ -n "$last_iter" ]]; then
+            printf -v last_iter_tag "iter_%03d" "$last_iter"
+            last_iter_dir="$OUTPUT_DIR/$last_iter_tag"
+            set_style_paths "$last_iter_dir" "$style"
+            last_iter_eval_dir="$STYLE_EVAL_DIR"
+            if [[ -f "$last_iter_eval_dir/candidate_eval_summary.json" ]]; then
+                copy_required_file "$last_iter_eval_dir/candidate_eval_summary.json" "$FINAL_STYLE_EVAL_SUMMARY"
+            fi
+            if [[ -f "$last_iter_eval_dir/candidate_gate.json" ]]; then
+                copy_required_file "$last_iter_eval_dir/candidate_gate.json" "$FINAL_STYLE_GATE_OUTPUT"
+            fi
+        fi
+    fi
+
+    "${PYTHON_CMD[@]}" - "${history_file_by_style[$style]}" "$FINAL_STYLE_HISTORY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+rows = [json.loads(line) for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() if line.strip()]
+Path(sys.argv[2]).write_text(json.dumps(rows, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
 
-any_accepted=0
-for result in "${iteration_results[@]}"; do
-    if [[ "$result" == *"|1" ]]; then
+    style_accepted="$("${PYTHON_CMD[@]}" - "$FINAL_STYLE_HISTORY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+rows = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print("1" if any(row.get("accepted") for row in rows) else "0")
+PY
+)"
+    if (( style_accepted == 1 )); then
         any_accepted=1
-        break
+    elif (( ENFORCE_CANDIDATE_GATE == 0 )); then
+        echo "No iteration passed the candidate gate for play_style=$style. Best score_margin=${best_score_margin_by_style[$style]}. See $FINAL_STYLE_GATE_OUTPUT" >&2
     fi
 done
+
+if (( MULTI_STYLE_TRAINING == 1 )); then
+    history_args=("$OUTPUT_DIR/iteration_history.json" "$TRAJECTORY_ROLLOUT_STYLE")
+    for style in "${ACTIVE_PLAY_STYLES[@]}"; do
+        set_final_style_paths "$style"
+        history_args+=("$style" "$FINAL_STYLE_HISTORY")
+    done
+    "${PYTHON_CMD[@]}" - "${history_args[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+rollout_style = sys.argv[2]
+pairs = sys.argv[3:]
+styles = {}
+for index in range(0, len(pairs), 2):
+    style = pairs[index]
+    history_path = Path(pairs[index + 1])
+    styles[style] = json.loads(history_path.read_text(encoding="utf-8"))
+output.write_text(
+    json.dumps({"rollout_style": rollout_style, "styles": styles}, indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
+)
+PY
+fi
 
 if (( ENFORCE_CANDIDATE_GATE == 1 && any_accepted == 0 )); then
     echo "No iteration passed the candidate gate." >&2
     exit 1
 fi
-if (( ENFORCE_CANDIDATE_GATE != 1 && any_accepted == 0 )); then
-    echo "No iteration passed the candidate gate. Best score_margin=$best_score_margin. See $FINAL_GATE_OUTPUT" >&2
-fi
 
 echo ""
 echo "RL iterative self-play pipeline finished."
 echo "Iterations:     $ITERATIONS"
-echo "Best iteration: $best_iter_tag (score_margin=$best_score_margin)"
-echo "Checkpoint:     $best_checkpoint"
-echo "Candidate:      $FINAL_CANDIDATE_ONNX"
+for style in "${ACTIVE_PLAY_STYLES[@]}"; do
+    set_final_style_paths "$style"
+    best_iter="${best_iter_by_style[$style]}"
+    if (( best_iter > 0 )); then
+        printf -v best_iter_tag "iter_%03d" "$best_iter"
+    else
+        best_iter_tag="baseline"
+    fi
+    echo "[$style] Best iteration: $best_iter_tag (score_margin=${best_score_margin_by_style[$style]})"
+    echo "[$style] Checkpoint:     $FINAL_STYLE_CHECKPOINT_DIR/best.pt"
+    echo "[$style] Candidate:      $FINAL_STYLE_CANDIDATE_ONNX"
+done
 echo "History:        $OUTPUT_DIR/iteration_history.json"

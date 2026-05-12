@@ -53,6 +53,8 @@ pub struct ArenaBotPolicyConfig {
     pub sample_actions: bool,
     #[serde(default = "default_policy_temperature")]
     pub temperature: f32,
+    #[serde(default)]
+    pub record_heuristic_comparison: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -63,6 +65,8 @@ pub struct ArenaConfig {
     pub max_actions_per_match: usize,
     #[serde(default)]
     pub report_trajectories: bool,
+    #[serde(default)]
+    pub record_heuristic_comparison: bool,
     #[serde(default = "default_seat_rotation")]
     pub seat_rotation: ArenaSeatRotation,
     #[serde(default)]
@@ -163,6 +167,7 @@ impl ArenaBotPolicyConfig {
             model_path: None,
             sample_actions: false,
             temperature: 1.0,
+            record_heuristic_comparison: false,
         }
     }
 }
@@ -536,11 +541,13 @@ fn policy_for_match_seat(
         ArenaSeatRotation::Cyclic => config.seat_rotation_offset.wrapping_add(match_index),
     };
     let policy_index = seat_index.wrapping_add(rotation) % policy_count;
-    config
+    let mut policy = config
         .policies
         .get(policy_index)
         .cloned()
-        .unwrap_or_else(ArenaBotPolicyConfig::heuristic)
+        .unwrap_or_else(ArenaBotPolicyConfig::heuristic);
+    policy.record_heuristic_comparison = config.record_heuristic_comparison;
+    policy
 }
 
 fn trajectory_row_from_trace(
@@ -849,10 +856,27 @@ mod tests {
         assert_eq!(config.seed, 20260429);
         assert_eq!(config.max_actions_per_match, 2400);
         assert!(!config.report_trajectories);
+        assert!(!config.record_heuristic_comparison);
         assert_eq!(config.policies[1].id, "neural");
         assert_eq!(config.policies[1].mode, ArenaPolicyMode::Neural);
         assert!(!config.policies[0].sample_actions);
         assert_eq!(config.policies[0].temperature, 1.0);
+    }
+
+    #[test]
+    fn arena_config_parses_heuristic_comparison_toggle() {
+        let raw = r#"{
+            "matches": 1,
+            "seed": 20260429,
+            "record_heuristic_comparison": true,
+            "policies": [
+                {"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+            ]
+        }"#;
+
+        let config: ArenaConfig = serde_json::from_str(raw).expect("config");
+
+        assert!(config.record_heuristic_comparison);
     }
 
     #[test]
@@ -885,6 +909,7 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            record_heuristic_comparison: true,
             seat_rotation: ArenaSeatRotation::Cyclic,
             seat_rotation_offset: 0,
             policies: ["a", "b", "c", "d"]
@@ -895,6 +920,7 @@ mod tests {
                     model_path: None,
                     sample_actions: false,
                     temperature: 1.0,
+                    record_heuristic_comparison: false,
                 })
                 .collect(),
         };
@@ -907,6 +933,7 @@ mod tests {
 
             assert_eq!(policy_ids, vec!["a", "b", "c", "d"]);
         }
+        assert!(policy_for_match_seat(&config, 0, 0).record_heuristic_comparison);
     }
 
     #[test]
@@ -916,6 +943,7 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Cyclic,
             seat_rotation_offset: 3,
             policies: ["a", "b", "c", "d"]
@@ -926,6 +954,7 @@ mod tests {
                     model_path: None,
                     sample_actions: false,
                     temperature: 1.0,
+                    record_heuristic_comparison: false,
                 })
                 .collect(),
         };
@@ -995,6 +1024,7 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig::heuristic()],
@@ -1017,6 +1047,7 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig {
@@ -1025,6 +1056,7 @@ mod tests {
                 model_path: Some("missing.onnx".to_string()),
                 sample_actions: false,
                 temperature: 1.0,
+                record_heuristic_comparison: false,
             }],
         };
         let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
@@ -1059,6 +1091,7 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig::heuristic()],
@@ -1106,6 +1139,7 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
+            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
             policies: vec![ArenaBotPolicyConfig::heuristic()],
@@ -1207,6 +1241,7 @@ mod tests {
             model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
             sample_actions: true,
             temperature: 1.0,
+            record_heuristic_comparison: false,
         };
 
         let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
@@ -1247,6 +1282,7 @@ mod tests {
             model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
             sample_actions: true,
             temperature: 1.0,
+            record_heuristic_comparison: false,
         };
 
         let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
