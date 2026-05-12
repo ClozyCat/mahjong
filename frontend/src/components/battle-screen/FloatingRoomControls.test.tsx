@@ -48,7 +48,7 @@ describe('FloatingRoomControls', () => {
           },
         ]}
         actions={[
-          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
+          { id: 'invite', label: '邀请', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
           { id: 'start_next_round', label: '下一局', enabled: true, emphasis: 'high' },
           { id: 'restart_match', label: '再来一局', enabled: false, emphasis: 'medium' },
@@ -70,6 +70,6 @@ describe('FloatingRoomControls', () => {
     );
 
     expect(screen.queryByLabelText('牌桌侧边面板')).toBeNull();
-    expect(screen.queryByRole('button', { name: '准备' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '邀请' })).toBeNull();
   });
 });

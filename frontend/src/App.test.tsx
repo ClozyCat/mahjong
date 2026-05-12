@@ -453,8 +453,12 @@ function getRoomSockets(tableCode = 'AB12CD') {
 
 function expectTableHome() {
   expect(screen.getByLabelText('Mahjong table')).toBeInTheDocument();
-  expect(screen.getByRole('complementary', { name: 'Table sidebar' })).toBeInTheDocument();
-  expect(screen.getByRole('region', { name: '牌桌侧栏首页' })).toBeInTheDocument();
+}
+
+async function inviteFirstHumanFromDialog(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '打开玩家列表' }));
+  const dialog = await screen.findByRole('dialog', { name: '玩家列表' });
+  await user.click(within(dialog).getAllByRole('button', { name: '邀请' })[0]!);
 }
 
 async function renderAuthenticatedLobby(
@@ -468,12 +472,12 @@ async function renderAuthenticatedLobby(
 
   render(<App />);
 
-  await screen.findByRole('heading', { name: (options?.me ?? DEFAULT_CURRENT_USER).display_label });
+  await screen.findByLabelText('Mahjong table');
   await waitFor(() => {
     expect(getMeSocket()).toBeDefined();
   });
   await waitFor(() => {
-    expect(screen.getByRole('button', { name: /创建.*牌局/u })).toBeEnabled();
+    expect(getRoomSocket(options?.createdTableCode ?? 'AB12CD')).toBeDefined();
   });
 
   return { fetchMock };
@@ -485,7 +489,6 @@ async function joinTable(
 ) {
   const lobby = await renderAuthenticatedLobby(options);
 
-  await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
   await waitFor(() => {
     expect(getRoomSocket(options?.createdTableCode ?? 'AB12CD')).toBeDefined();
   });
@@ -609,60 +612,6 @@ describe('App', () => {
     ]);
   });
 
-  it('disables creating another table while waiting in a non-all-bot room', async () => {
-    const user = userEvent.setup();
-    const { socket, fetchMock } = await joinTable(user);
-
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: {
-          table_code: 'AB12CD',
-          phase: 'waiting',
-          seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: false, is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
-          ],
-          local_seat: 0,
-        },
-      });
-    });
-
-    expect(screen.queryByRole('button', { name: /创建.*牌局/u })).not.toBeInTheDocument();
-
-    const createTableCalls = fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith('/api/tables') && init?.method === 'POST',
-    );
-    expect(createTableCalls).toHaveLength(1);
-  });
-
-  it('treats bot-takeover human seats as human when disabling table creation', async () => {
-    const user = userEvent.setup();
-    const { socket, fetchMock } = await joinTable(user);
-
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'room_snapshot',
-        payload: {
-          table_code: 'AB12CD',
-          phase: 'waiting',
-          seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
-          ],
-          local_seat: 0,
-        },
-      });
-    });
-
-    expect(screen.queryByRole('button', { name: /创建.*牌局/u })).not.toBeInTheDocument();
-
-    const createTableCalls = fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith('/api/tables') && init?.method === 'POST',
-    );
-    expect(createTableCalls).toHaveLength(1);
-  });
-
   it('registers with invite code and then enters the table view', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();
@@ -676,7 +625,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('密码'), 'secret-123');
     await user.click(screen.getByRole('button', { name: '注册并登录' }));
 
-    await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+    await screen.findByLabelText('Mahjong table');
     expectTableHome();
 
     const registerCall = findFetchCall(fetchMock, '/api/auth/register', 'POST');
@@ -688,7 +637,7 @@ describe('App', () => {
     });
   });
 
-  it('does not poll the active table endpoint after registering a new user without a table', async () => {
+  it('checks the active table endpoint after registering and creates an empty table when none exists', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();
     vi.stubGlobal('fetch', fetchMock);
@@ -702,12 +651,15 @@ describe('App', () => {
     await user.type(inputs[2], 'secret-123');
     await user.click(screen.getAllByRole('button').at(-1)!);
 
-    await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+    await screen.findByLabelText('Mahjong table');
     await waitFor(() => {
       expect(findFetchCall(fetchMock, '/api/me')).toBeDefined();
     });
-    expect(countFetchCalls(fetchMock, '/api/me/active-table')).toBe(0);
-    expect(screen.getByRole('button', { name: /创建.*牌局/u })).toBeEnabled();
+    await waitFor(() => {
+      expect(countFetchCalls(fetchMock, '/api/me/active-table')).toBeGreaterThanOrEqual(1);
+      expect(findFetchCall(fetchMock, '/api/tables', 'POST')).toBeDefined();
+    });
+    expect(getRoomSocket()).toBeDefined();
   });
 
   it('checks active table once after an incognito login with no active table', async () => {
@@ -722,34 +674,15 @@ describe('App', () => {
     await user.type(inputs[1], 'secret-123');
     await user.click(screen.getAllByRole('button').at(-1)!);
 
-    await screen.findByRole('heading', { name: DEFAULT_CURRENT_USER.display_label });
+    await screen.findByLabelText('Mahjong table');
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /创建.*牌局/u })).toBeEnabled();
+      expect(getRoomSocket()).toBeDefined();
     });
 
     expect(countFetchCalls(fetchMock, '/api/me/active-table')).toBe(1);
-    expect(getRoomSocket()).toBeUndefined();
   });
 
-  it('keeps the table home usable immediately after registration while profile bootstrap is pending', async () => {
-    const user = userEvent.setup();
-    const fetchMock = createFetchMock({ deferMeResponse: true });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(<App />);
-
-    await user.click(screen.getAllByRole('tab')[1]);
-    const inputs = Array.from(document.querySelectorAll('input'));
-    await user.type(inputs[0], 'INVITE-1');
-    await user.type(inputs[1], 'New Friend');
-    await user.type(inputs[2], 'secret-123');
-    await user.click(screen.getAllByRole('button').at(-1)!);
-
-    expect(await screen.findByRole('region', { name: /牌桌侧栏首页/u })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /创建.*牌局/u })).toBeEnabled();
-  });
-
-  it('clears stale room reconnection state after registration so the table home stays usable', async () => {
+  it('clears stale room reconnection state after registration before creating the empty table', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();
     vi.stubGlobal('fetch', fetchMock);
@@ -764,8 +697,7 @@ describe('App', () => {
     await user.type(inputs[2], 'secret-123');
     await user.click(screen.getAllByRole('button').at(-1)!);
 
-    expect(await screen.findByRole('region', { name: /牌桌侧栏首页/u })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /创建.*牌局/u })).toBeEnabled();
+    expect(await screen.findByLabelText('Mahjong table')).toBeInTheDocument();
     expect(getRoomSocket('OLD123')).toBeUndefined();
     expect(localStorage.getItem('mahjong:session')).toBeNull();
   });
@@ -789,8 +721,7 @@ describe('App', () => {
     });
 
     expect(getRoomSocket('OLD123')).toBeUndefined();
-    expect(screen.getByText(/正在重连/u)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /创建.*牌局/u })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Mahjong table')).toBeInTheDocument();
 
     const socket = getRoomSocket('LIVE99')!;
     act(() => {
@@ -802,15 +733,12 @@ describe('App', () => {
     expect(socket.sentMessages[0]).not.toContain('reconnect');
   });
 
-  it('shows the logged-in table view and creates a default x1 table without multiplier controls', async () => {
-    const user = userEvent.setup();
+  it('shows the logged-in table view and automatically creates a default x1 table without multiplier controls', async () => {
     const { fetchMock } = await renderAuthenticatedLobby();
 
-    expect(screen.getByRole('heading', { name: DEFAULT_CURRENT_USER.display_label })).toBeInTheDocument();
+    expect(screen.getByLabelText('Mahjong table')).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
 
     const createTableCall = findFetchCall(fetchMock, '/api/tables', 'POST');
     expect(createTableCall).toBeDefined();
@@ -821,11 +749,9 @@ describe('App', () => {
     });
   });
 
-  it('calls the invite API from the sidebar', async () => {
+  it('calls the invite API from the player list', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
 
     const meSocket = getMeSocket();
     expect(meSocket).toBeDefined();
@@ -856,21 +782,19 @@ describe('App', () => {
       });
     });
 
-    await user.click(screen.getAllByRole('button', { name: '邀请' })[0]!);
+    await inviteFirstHumanFromDialog(user);
 
     const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
     expect(inviteCall).toBeDefined();
     expect(parseRequestBody(inviteCall?.[1])).toEqual({
       invitee_user_id: 2,
     });
-    expect(screen.getByText('已向Player B发出邀请。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已发送' })).toBeDisabled();
   });
 
-  it('enables sidebar invites when the active waiting table reports bots with the legacy is_bot flag', async () => {
+  it('enables player list invites when the active waiting table reports bots with the legacy is_bot flag', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
 
     const meSocket = getMeSocket();
     const roomSocket = getRoomSocket();
@@ -905,7 +829,9 @@ describe('App', () => {
       });
     });
 
-    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    await user.click(screen.getByRole('button', { name: '打开玩家列表' }));
+    const dialog = await screen.findByRole('dialog', { name: '玩家列表' });
+    const inviteButton = within(dialog).getAllByRole('button', { name: '邀请' })[0];
     expect(inviteButton).toBeDefined();
     expect(inviteButton).toBeEnabled();
 
@@ -918,11 +844,9 @@ describe('App', () => {
     });
   });
 
-  it('enables sidebar invites when the active waiting table still has empty seats', async () => {
+  it('enables player list invites when the active waiting table still has empty seats', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
 
     const meSocket = getMeSocket();
     const roomSocket = getRoomSocket();
@@ -954,7 +878,9 @@ describe('App', () => {
       });
     });
 
-    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    await user.click(screen.getByRole('button', { name: '打开玩家列表' }));
+    const dialog = await screen.findByRole('dialog', { name: '玩家列表' });
+    const inviteButton = within(dialog).getAllByRole('button', { name: '邀请' })[0];
     expect(inviteButton).toBeDefined();
     expect(inviteButton).toBeEnabled();
 
@@ -967,11 +893,9 @@ describe('App', () => {
     });
   });
 
-  it('enables sidebar invites during play when a standalone bot seat can be replaced', async () => {
+  it('enables player list invites during play when a standalone bot seat can be replaced', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
 
     const meSocket = getMeSocket();
     const roomSocket = getRoomSocket();
@@ -1008,7 +932,9 @@ describe('App', () => {
       });
     });
 
-    const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
+    await user.click(screen.getByRole('button', { name: '打开玩家列表' }));
+    const dialog = await screen.findByRole('dialog', { name: '玩家列表' });
+    const inviteButton = within(dialog).getAllByRole('button', { name: '邀请' })[0];
     expect(inviteButton).toBeDefined();
     expect(inviteButton).toBeEnabled();
 
@@ -1024,8 +950,6 @@ describe('App', () => {
   it('marks sent invites as already invited and disables the button until rejected', async () => {
     const user = userEvent.setup();
     await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
 
     const meSocket = getMeSocket();
     const roomSocket = getRoomSocket();
@@ -1057,10 +981,10 @@ describe('App', () => {
       });
     });
 
-    await user.click(screen.getByRole('button', { name: '邀请' }));
+    await inviteFirstHumanFromDialog(user);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: '已邀请' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: '已发送' })).toBeDisabled();
     });
 
     await act(async () => {
@@ -1075,57 +999,19 @@ describe('App', () => {
       });
     });
 
-    const rejectedButton = screen.getByRole('button', { name: '已被拒绝' });
+    const rejectedButton = screen.getByRole('button', { name: '已拒绝' });
     expect(rejectedButton).toBeEnabled();
 
     await user.click(rejectedButton);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: '已邀请' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: '已发送' })).toBeDisabled();
     });
   });
 
-  it('marks the creator as creating a table in the all players tab after creating a waiting table', async () => {
-    const user = userEvent.setup();
-    await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
-
-    const roomSocket = getRoomSocket();
-    expect(roomSocket).toBeDefined();
-
-    await act(async () => {
-      roomSocket!.triggerOpen();
-      roomSocket!.triggerMessage({
-        type: 'room_snapshot',
-        payload: {
-          table_code: 'AB12CD',
-          phase: 'waiting',
-          seats: [],
-          local_seat: 0,
-          match_state: null,
-          private_state: null,
-          owner_user_id: 1,
-        },
-      });
-    });
-
-    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
-
-    const currentUserRow = screen.getByText(/Player A（平民）/).closest('li');
-    expect(currentUserRow).not.toBeNull();
-    expect(within(currentUserRow!).getByText('创建牌局中')).toBeInTheDocument();
-  });
-
-  it('disables sidebar invites when the active table is full and has no replaceable bot seats', async () => {
+  it('disables player list invites when the active table is full and has no replaceable bot seats', async () => {
     const user = userEvent.setup();
     const { fetchMock } = await renderAuthenticatedLobby();
-
-    const createButton = screen
-      .getAllByRole('button')
-      .find((button) => button.textContent?.trim() === '创建新牌局');
-    expect(createButton).toBeDefined();
-    await user.click(createButton!);
 
     const meSocket = getMeSocket();
     const roomSocket = getRoomSocket();
@@ -1162,6 +1048,8 @@ describe('App', () => {
       });
     });
 
+    const openInviteButton = screen.getByRole('button', { name: '打开玩家列表' });
+    expect(openInviteButton).toBeDisabled();
     const inviteButton = screen.getAllByRole('button').find((button) => button.textContent?.trim() === '邀请');
     expect(inviteButton).toBeDefined();
     expect(inviteButton).toBeDisabled();
@@ -1170,34 +1058,6 @@ describe('App', () => {
 
     const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
     expect(inviteCall).toBeUndefined();
-  });
-
-  it('refreshes online player details when presence updates reference new users', async () => {
-    const user = userEvent.setup();
-    const refreshedUser = DEFAULT_LEADERBOARD[1]!;
-    const { fetchMock } = await renderAuthenticatedLobby({
-      leaderboardResponses: [[DEFAULT_CURRENT_USER], [DEFAULT_CURRENT_USER, refreshedUser]],
-    });
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'user_presence_updated',
-        payload: {
-          online_user_ids: [1, refreshedUser.user_id],
-        },
-      });
-    });
-
-    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
-
-    expect(await screen.findAllByText(refreshedUser.display_label)).not.toHaveLength(0);
-    const leaderboardCalls = fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
-    );
-    expect(leaderboardCalls).toHaveLength(2);
   });
 
   it('keeps the social socket alive and reconnects it after an unexpected close', async () => {
@@ -1227,7 +1087,7 @@ describe('App', () => {
     vi.useRealTimers();
   });
 
-  it('refreshes all social sidebar data when the social socket opens and while it stays open', async () => {
+  it('refreshes all social data when the social socket opens and while it stays open', async () => {
     const refreshedUser = {
       ...DEFAULT_LEADERBOARD[1]!,
       points: 128,
@@ -1257,8 +1117,6 @@ describe('App', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
-
     await act(async () => {
       vi.advanceTimersByTime(15_000);
       await Promise.resolve();
@@ -1271,7 +1129,7 @@ describe('App', () => {
     vi.useRealTimers();
   });
 
-  it('applies point updates from /ws/me without waiting for a leaderboard refresh', async () => {
+  it('shows a new invite as a center popup', async () => {
     await renderAuthenticatedLobby();
 
     const meSocket = getMeSocket();
@@ -1279,220 +1137,14 @@ describe('App', () => {
 
     await act(async () => {
       meSocket!.triggerMessage({
-        type: 'user_points_updated',
-        payload: {
-          user_id: DEFAULT_CURRENT_USER.user_id,
-          delta: 8,
-          points: 158,
-          reason: 'round_settlement',
-          source_table_code: 'AB12CD',
-          source_round_id: 'round-1',
-        },
+        type: 'table_invite_created',
+        payload: DEFAULT_PENDING_INVITE,
       });
     });
 
-    expect(screen.getByText('积分 158')).toBeInTheDocument();
-  });
-
-  it('applies active table updates in all players without waiting for a leaderboard refresh', async () => {
-    const user = userEvent.setup();
-    const { fetchMock } = await renderAuthenticatedLobby();
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'user_presence_updated',
-        payload: {
-          online_user_ids: [1, 2],
-        },
-      });
-    });
-
-    await waitFor(() => {
-      const leaderboardCalls = fetchMock.mock.calls.filter(
-        ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
-      );
-      expect(leaderboardCalls).toHaveLength(2);
-    });
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'user_active_table_updated',
-        payload: {
-          user_id: 2,
-          active_table_code: 'ROOM42',
-          active_table_phase: 'playing',
-        },
-      });
-    });
-
-    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
-
-    const playerRow = screen.getByText(/Player B（平民）/).closest('li');
-    expect(playerRow).not.toBeNull();
-    expect(within(playerRow!).getByText('与BOT对局中')).toBeInTheDocument();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'user_active_table_updated',
-        payload: {
-          user_id: 2,
-          active_table_code: null,
-        },
-      });
-    });
-
-    expect(within(playerRow!).getByText('在线')).toBeInTheDocument();
-    const leaderboardCalls = fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith('/api/leaderboard') && (init?.method ?? 'GET') === 'GET',
+    expect(screen.getByRole('dialog', { name: '收到牌局邀请' })).toHaveTextContent(
+      '收到 Player B（平民） 的邀请，是否加入牌局？',
     );
-    expect(leaderboardCalls).toHaveLength(2);
-  });
-
-  it('shows a new invite only in the pending list with a messages alert', async () => {
-    await renderAuthenticatedLobby();
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'table_invite_created',
-        payload: DEFAULT_PENDING_INVITE,
-      });
-    });
-
-    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
-    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
-    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
-    expect(screen.getAllByText('Player B（平民）创建的牌桌ZXCVBN邀请你加入。')).not.toHaveLength(0);
-  });
-
-  it('keeps only the latest pending invite from the same inviter', async () => {
-    const user = userEvent.setup();
-    await renderAuthenticatedLobby({
-      invites: [
-        {
-          ...DEFAULT_PENDING_INVITE,
-          id: 8,
-          table_code: 'LATEST',
-          created_at: '2026-05-06T12:01:00Z',
-        },
-        {
-          ...DEFAULT_PENDING_INVITE,
-          id: 7,
-          table_code: 'OLDER1',
-          created_at: '2026-05-06T12:00:00Z',
-        },
-      ],
-    });
-
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.getByText('LATEST')).toBeInTheDocument();
-    expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
-  });
-
-  it('replaces an existing invite from the same inviter in the pending list', async () => {
-    const user = userEvent.setup();
-    await renderAuthenticatedLobby();
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'table_invite_created',
-        payload: {
-          ...DEFAULT_PENDING_INVITE,
-          id: 7,
-          table_code: 'OLDER1',
-          created_at: '2026-05-06T12:00:00Z',
-        },
-      });
-      meSocket!.triggerMessage({
-        type: 'table_invite_created',
-        payload: {
-          ...DEFAULT_PENDING_INVITE,
-          id: 8,
-          table_code: 'LATEST',
-          created_at: '2026-05-06T12:01:00Z',
-        },
-      });
-    });
-
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
-    expect(screen.getByText('LATEST')).toBeInTheDocument();
-    expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
-  });
-
-  it('keeps the messages alert visible while a pending invite remains', async () => {
-    const user = userEvent.setup();
-    await renderAuthenticatedLobby();
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'table_invite_created',
-        payload: DEFAULT_PENDING_INVITE,
-      });
-    });
-
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
-    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
-    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
-  });
-
-  it('hides already accepted invites from the sidebar pending list', async () => {
-    const user = userEvent.setup();
-    await renderAuthenticatedLobby({
-      invites: [
-        {
-          ...DEFAULT_PENDING_INVITE,
-          status: 'accepted',
-        },
-      ],
-    });
-
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
-    expect(screen.getByText('暂无待处理邀请')).toBeInTheDocument();
-  });
-
-  it('removes a stale invite when accepting it reports the table no longer exists', async () => {
-    const user = userEvent.setup();
-
-    await renderAuthenticatedLobby({
-      invites: [DEFAULT_PENDING_INVITE],
-      acceptInviteStatus: 404,
-      acceptInviteDetail: 'table_not_found',
-    });
-
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '接受' }));
-
-    await waitFor(() => {
-      expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
-    expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
-    expect(screen.getByText('暂无待处理邀请')).toBeInTheDocument();
   });
 
   it('lets users reject a pending table invite', async () => {
@@ -1501,14 +1153,10 @@ describe('App', () => {
       invites: [DEFAULT_PENDING_INVITE],
     });
 
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.getByText('ZXCVBN')).toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: '拒绝' }));
 
     await waitFor(() => {
-      expect(screen.queryByText('ZXCVBN')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: '收到牌局邀请' })).toBeNull();
     });
     expect(findFetchCall(fetchMock, '/api/invites/7/reject', 'POST')).toBeDefined();
   });
@@ -1627,7 +1275,7 @@ describe('App', () => {
     expectTableHome();
   });
 
-  it('clears the waiting table hint after the creator leaves before match start', async () => {
+  it('hides leave controls for a single-player empty waiting table', async () => {
     const user = userEvent.setup();
     const { socket } = await joinTable(user);
 
@@ -1644,25 +1292,13 @@ describe('App', () => {
       });
     });
 
-    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
-
-    await act(async () => {
-      socket.triggerMessage({
-        type: 'leave_table_accepted',
-        payload: {
-          table_code: 'AB12CD',
-          seat_index: 0,
-        },
-      });
-    });
-
     expectTableHome();
-    expect(screen.queryByText(/当前待开局牌桌/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '快捷离开牌桌' })).toBeNull();
   });
 
   it('returns to the table home with guidance when leaving after the connection has already dropped', async () => {
     const user = userEvent.setup();
-    const { socket } = await joinTable(user);
+    const { fetchMock, socket } = await joinTable(user);
 
     await act(async () => {
       socket.triggerMessage({
@@ -1678,7 +1314,9 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
 
     expectTableHome();
-    expect(screen.getByText('当前连接已断开，已回到牌桌界面。若仍需回到牌局，请等待房主重新邀请。')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(findFetchCall(fetchMock, '/api/tables', 'POST')).toBeDefined();
+    });
   });
 
   it('returns to the table home when a stale room snapshot receives table_not_found', async () => {
@@ -1702,7 +1340,7 @@ describe('App', () => {
     });
 
     expectTableHome();
-    expect(screen.getByText('牌桌不存在或已关闭。')).toBeInTheDocument();
+    expect(screen.getByLabelText('Mahjong table')).toBeInTheDocument();
   });
 
   it('returns to the table home when reconnect receives table_closed', async () => {
@@ -1726,7 +1364,7 @@ describe('App', () => {
     });
 
     expectTableHome();
-    expect(screen.getByText('牌桌已关闭，请返回大厅重新进入。')).toBeInTheDocument();
+    expect(screen.getByLabelText('Mahjong table')).toBeInTheDocument();
   });
 
 

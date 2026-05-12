@@ -18,6 +18,7 @@ interface TableChromeProps {
   canRemoveBot: boolean;
   canLeaveTable: boolean;
   onLeaveTable?: () => void;
+  onOpenInviteDialog?: () => void;
   onCycleTheme?: () => void;
   onAction?: (actionId: BattleActionView['id']) => void;
   onAddBot?: () => void;
@@ -43,6 +44,7 @@ export const TableChrome = memo(function TableChrome({
   canRemoveBot,
   canLeaveTable,
   onLeaveTable,
+  onOpenInviteDialog,
   onCycleTheme,
   onAction,
   onAddBot,
@@ -108,14 +110,27 @@ export const TableChrome = memo(function TableChrome({
   const shouldShowPreMatchActions = preMatchActions.length > 0;
   const shouldShowBotControls =
     shouldShowPreMatchActions || botCount > 0 || canAddBot || canRemoveBot;
+  const canOpenSeatInvite = resolvedOccupiedSeatCount < seatCapacity;
 
   return (
     <>
       {tableCode || seatCapacity > 0 ? (
         <div className="table-stage__table-info" aria-label="牌桌信息">
           {tableCode ? <span>牌桌编号：{tableCode}</span> : null}
-          <span>
+          <span className="table-stage__seat-count">
             房间座位数：{resolvedOccupiedSeatCount}/{seatCapacity}
+            {onOpenInviteDialog ? (
+              <button
+                type="button"
+                className="table-stage__seat-add"
+                aria-label="打开玩家列表"
+                title="邀请玩家"
+                disabled={!canOpenSeatInvite}
+                onClick={onOpenInviteDialog}
+              >
+                +
+              </button>
+            ) : null}
           </span>
         </div>
       ) : null}
@@ -262,7 +277,7 @@ export const TableChrome = memo(function TableChrome({
                   type="button"
                   className={`table-stage__room-action table-stage__room-action--${action.emphasis}`}
                   disabled={!action.enabled}
-                  onClick={() => onAction?.(action.id)}
+                  onClick={() => (action.id === 'invite' ? onOpenInviteDialog?.() : onAction?.(action.id))}
                 >
                   {action.label}
                 </button>

@@ -1030,6 +1030,7 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
         .expect("replaced seat should exist");
     assert_eq!(seat.seat_type, "human");
     assert!(!seat.is_bot);
+    assert!(seat.ready);
     assert_eq!(seat.nickname.as_deref(), Some("Guest"));
     Ok(())
 }
@@ -1189,6 +1190,17 @@ async fn invite_only_accept_uses_empty_waiting_seat() -> Result<()> {
         .await?
         .expect("participant should exist after accepting invite");
     assert_eq!(participant.seat_index, seat_index);
+    let table = worker
+        .get_table(&table_code)
+        .await?
+        .expect("table should exist after accepting invite");
+    let room = parse_room_json(&table.room_json)?;
+    let seat = room
+        .seats
+        .iter()
+        .find(|seat| seat.user_id == Some(guest_id))
+        .expect("guest seat should exist");
+    assert!(seat.ready);
     Ok(())
 }
 

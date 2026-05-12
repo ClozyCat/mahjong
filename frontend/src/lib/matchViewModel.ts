@@ -36,7 +36,6 @@ import {
 const RELATIVE_SEATS: Seat[] = ['bottom', 'right', 'top', 'left'];
 const WINDS: PlayerView['wind'][] = ['East', 'South', 'West', 'North'];
 const ACTION_ORDER: BattleActionId[] = [
-  'ready',
   'start_match',
   'start_next_round',
   'restart_match',
@@ -62,7 +61,7 @@ const PROMPT_ACTION_PRIORITY: Record<BackendActionType, number> = {
 };
 
 const ACTION_LABELS: Record<BattleActionId, string> = {
-  ready: '准备',
+  invite: '邀请',
   start_match: '开始对局',
   start_next_round: '下一局',
   restart_match: '再来一局',
@@ -74,7 +73,7 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   chow: '吃',
   pung: '碰',
   pass: '过',
-};
+} as const satisfies Record<BattleActionId, string>;
 
 function isBackendActionType(value: unknown): value is BackendActionType {
   return (
@@ -520,6 +519,22 @@ function getSeatIdentityType(seat: Pick<SeatSnapshot, 'seat_type' | 'nickname'>)
   return typeof seat.nickname === 'string' && /^bot\b/i.test(seat.nickname) ? 'bot' : 'human';
 }
 
+function canLeaveTable(snapshot: SessionState['roomSnapshot']) {
+  const payload = snapshot?.payload;
+  if (!payload) {
+    return false;
+  }
+
+  const localSeatIndex = payload.local_seat;
+  return payload.seats.some((seat) => {
+    if (typeof localSeatIndex === 'number' && seat.seat_index === localSeatIndex) {
+      return false;
+    }
+
+    return getSeatIdentityType(seat) !== 'bot';
+  });
+}
+
 function createWaitingControls(state: SessionState, options: MatchViewModelOptions = {}): WaitingControls | null {
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot || snapshot.phase !== 'waiting') {
@@ -531,12 +546,13 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   const occupiedSeats = snapshot.seats.length;
   const botCount = snapshot.seats.filter((seat) => getSeatIdentityType(seat) === 'bot').length;
   const dealerSelection = createDealerSelection(state, options);
+  const hasRegularBot = snapshot.seats.some((seat) => getSeatIdentityType(seat) === 'bot');
   const allReady =
-    occupiedSeats === 4 &&
+    (occupiedSeats === 4 || hasRegularBot) &&
     snapshot.seats.every((seat) => seat.ready && (seat.connected || seat.is_bot));
 
   return {
-    canReady: Boolean(localSeatState) && !dealerSelection,
+    canReady: false,
     canStart: allReady && !dealerSelection,
     isReady: Boolean(localSeatState?.ready),
     occupiedSeats,
@@ -675,9 +691,7 @@ function createActionViews(
   return ACTION_ORDER.map((id) => {
     let enabled = false;
 
-    if (id === 'ready') {
-      enabled = waitingControls?.canReady ?? false;
-    } else if (id === 'start_match') {
+    if (id === 'start_match') {
       enabled = waitingControls?.canStart ?? false;
     } else if (id === 'start_next_round') {
       enabled =
@@ -748,10 +762,6 @@ function getActionLabel(
     restartMatch: ReturnType<typeof createContinueActionConfirmation>;
   },
 ) {
-  if (id === 'ready' && waitingControls?.isReady) {
-    return '取消准备';
-  }
-
   const confirmation =
     id === 'start_next_round'
       ? continueActionConfirmations?.startNextRound
@@ -874,9 +884,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
               : snapshot.phase === 'waiting' && dealerSelection
                 ? '抽座中'
               : snapshot.phase === 'waiting'
-                ? seat.ready
-                  ? '已准备'
-                  : '等待中'
+                ? '等待中'
                 : snapshot.phase === 'settlement'
                   ? '等待下一局'
                   : snapshot.phase === 'finished'
@@ -1875,7 +1883,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     roomMode: snapshot?.mode ?? 'normal',
     mode,
     tableCode: snapshot?.table_code ?? state.tableCode,
-    canLeaveTable: Boolean(snapshot),
+    canLeaveTable: canLeaveTable(state.roomSnapshot),
     phaseLabel: snapshot ? PHASE_LABELS[snapshot.phase] : PHASE_LABELS.waiting,
     roundLabel: createRoundLabel(state),
     scoreSummaryLabel: createScoreSummaryLabel(state, options),

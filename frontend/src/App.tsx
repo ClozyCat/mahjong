@@ -2,8 +2,7 @@ import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type 
 
 import { AuthGate } from './components/auth/AuthGate';
 import { BattleScreen } from './components/battle-screen/BattleScreen';
-import type { TableSidebarPlayer } from './components/table-sidebar/TableSidebar';
-import { SocialSidebarMessagesPanel, SocialSidebarPanel } from './components/lobby/SocialSidebarPanel';
+import type { InviteDialogUser, PlayerInviteStatus } from './components/battle-screen/PlayerInviteDialog';
 import {
   clearStoredAuthSession,
   getMe,
@@ -30,7 +29,6 @@ import {
   createJoinTableMessage,
   createLeaveTableMessage,
   createQuickChatMessage,
-  createReadyMessage,
   createRestartMatchMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
@@ -79,7 +77,6 @@ const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当�
 const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
 const CLAIM_RESPONSE_ACTION_IDS = ['chow', 'pung', 'kong', 'hu'] as const;
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
-  'ready',
   'start_match',
   'start_next_round',
   'restart_match',
@@ -245,21 +242,6 @@ function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
   return state.latestActionPrompt?.payload.seat_index === localSeat && state.latestActionPrompt.payload.options.includes('discard');
 }
 
-function isWaitingInNonAllBotRoom(snapshot: SessionState['roomSnapshot']) {
-  const payload = snapshot?.payload;
-  if (!payload || payload.phase !== 'waiting' || payload.seats.length === 0) {
-    return false;
-  }
-
-  return payload.seats.some((seat) => {
-    if (seat.seat_type) {
-      return seat.seat_type !== 'bot';
-    }
-
-    return !seat.is_bot;
-  });
-}
-
 function isStandaloneBotSeat(seat: { seat_type?: string; is_bot?: boolean }) {
   if (seat.seat_type) {
     return seat.seat_type === 'bot';
@@ -268,9 +250,9 @@ function isStandaloneBotSeat(seat: { seat_type?: string; is_bot?: boolean }) {
   return Boolean(seat.is_bot);
 }
 
-function hasInviteableTableSeat(snapshot: SessionState['roomSnapshot'], tableCode: string | null) {
+function hasInviteableTableSeat(snapshot: SessionState['roomSnapshot']) {
   const payload = snapshot?.payload;
-  if (!payload || !tableCode || payload.table_code !== tableCode) {
+  if (!payload) {
     return false;
   }
 
@@ -381,17 +363,49 @@ function isStaleTableInviteError(error: unknown) {
   return error instanceof Error && error.message === 'table_not_found';
 }
 
-function getSeatLabel(seatIndex?: number | null) {
-  const windLabels = ['东位', '南位', '西位', '北位'];
-  if (typeof seatIndex !== 'number' || seatIndex < 0) {
-    return '未知座位';
-  }
-
-  return windLabels[seatIndex] ?? `${seatIndex + 1}号位`;
-}
-
 function getUserDisplayName(users: PublicUser[], userId: number) {
   return users.find((user) => user.user_id === userId)?.display_name ?? `用户 #${userId}`;
+}
+
+function getInviteCreatorLabel(invite: TableInvite, labelsByUserId: Record<number, string>) {
+  return labelsByUserId[invite.inviter_user_id] ?? `用户 #${invite.inviter_user_id}`;
+}
+
+function createInviteDialogUsers(users: PublicUser[], onlineUserIds: number[]): InviteDialogUser[] {
+  const onlineUserIdSet = new Set(onlineUserIds);
+  const activeTableUserCounts = users.reduce((counts, user) => {
+    if (!user.active_table_code) {
+      return counts;
+    }
+
+    counts.set(user.active_table_code, (counts.get(user.active_table_code) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+
+  return users.map((user) => ({
+    user,
+    status: getInviteDialogStatus(user, onlineUserIdSet, activeTableUserCounts),
+  }));
+}
+
+function getInviteDialogStatus(
+  user: PublicUser,
+  onlineUserIdSet: Set<number>,
+  activeTableUserCounts: Map<string, number>,
+): PlayerInviteStatus {
+  if (user.is_special_bot) {
+    return user.active_table_code ? 'playing' : 'online';
+  }
+
+  if (!onlineUserIdSet.has(user.user_id)) {
+    return 'offline';
+  }
+
+  if (!user.active_table_code) {
+    return 'online';
+  }
+
+  return (activeTableUserCounts.get(user.active_table_code) ?? 0) > 1 ? 'playing' : 'online';
 }
 
 export default function App() {
@@ -433,7 +447,6 @@ export default function App() {
   const leavingTableRef = useRef(false);
   const reconnectCloseCountRef = useRef(0);
   const activeTableRestoreRef = useRef<{ tableCode: string; sessionToken: string; nickname: string } | null>(null);
-  const skipActiveTableLookupTokenRef = useRef<string | null>(null);
   const previousClaimSelectionSignatureRef = useRef<string | null>(null);
   const previousLocalTurnKongPromptSignatureRef = useRef<string | null>(null);
   const previousHadRoomSnapshotRef = useRef(false);
@@ -485,7 +498,6 @@ export default function App() {
         setSentInviteStatusesByUserId({});
         setIsActiveTableLookupPending(false);
         activeTableRestoreRef.current = null;
-        skipActiveTableLookupTokenRef.current = null;
         if (meSocketRef.current) {
           meSocketRef.current.onclose = null;
           meSocketRef.current.close();
@@ -550,7 +562,6 @@ export default function App() {
         setPendingInvites([]);
         setIsActiveTableLookupPending(false);
         activeTableRestoreRef.current = null;
-        skipActiveTableLookupTokenRef.current = null;
         setAuthStatus('anonymous');
         setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '登录状态已失效，请重新登录。');
       }
@@ -591,7 +602,7 @@ export default function App() {
       }
     }
 
-    async function refreshSocialSidebarData(socket: WebSocket) {
+    async function refreshSocialData(socket: WebSocket) {
       try {
         const [me, nextInvites, nextLeaderboard] = await Promise.all([
           getMe(defaults.apiBaseUrl, sessionToken),
@@ -630,7 +641,7 @@ export default function App() {
 
       if (message.type === 'user_presence_updated') {
         setOnlineUserIds(message.payload.online_user_ids);
-        void refreshSocialSidebarData(socket);
+        void refreshSocialData(socket);
         return;
       }
 
@@ -705,14 +716,14 @@ export default function App() {
       meSocketRef.current = socket;
 
       socket.onopen = () => {
-        void refreshSocialSidebarData(socket);
+        void refreshSocialData(socket);
         heartbeatTimerId = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(serializeClientMessage(createHeartbeatMessage(new Date().toISOString())));
           }
         }, HEARTBEAT_INTERVAL_MS);
         refreshTimerId = window.setInterval(() => {
-          void refreshSocialSidebarData(socket);
+          void refreshSocialData(socket);
         }, SOCIAL_REFRESH_INTERVAL_MS);
       };
 
@@ -736,7 +747,7 @@ export default function App() {
       if (!socket || document.visibilityState === 'hidden') {
         return;
       }
-      void refreshSocialSidebarData(socket);
+      void refreshSocialData(socket);
     }
 
     openSocialSocket();
@@ -819,6 +830,9 @@ export default function App() {
 
     if (message.type === 'leave_table_accepted') {
       handleLeaveToLobby(message.payload.table_code);
+      if (authSession?.sessionToken && currentUser) {
+        void createAndEnterEmptyTable(authSession.sessionToken, currentUser.display_name);
+      }
       return;
     }
 
@@ -916,12 +930,42 @@ export default function App() {
     });
   });
 
-  useEffect(() => {
-    if (authStatus !== 'ready' || !authSession?.sessionToken || !currentUser) {
+  const createAndEnterEmptyTable = useEffectEvent(async (
+    sessionToken: string,
+    nickname: string,
+    isCancelled: () => boolean = () => false,
+  ) => {
+    if (!currentUser) {
       return;
     }
 
-    if (skipActiveTableLookupTokenRef.current === authSession.sessionToken) {
+    try {
+      setStatusMessage('正在为你准备空牌桌...');
+      dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
+      const table = await createSocialTable(defaults.apiBaseUrl, sessionToken);
+      if (isCancelled()) {
+        return;
+      }
+      setActiveLobbyTableCode(table.table_code);
+      setSentInviteStatusesByUserId({});
+      setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code, table.phase));
+      setLeaderboard((users) =>
+        updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code, table.phase),
+      );
+      openRoomSocket({
+        tableCode: table.table_code,
+        nickname,
+        wsBaseUrl: defaults.wsBaseUrl,
+        sessionToken,
+      });
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建空牌桌失败。');
+      dispatch({ type: 'set_connection_status', status: 'error' });
+    }
+  });
+
+  useEffect(() => {
+    if (authStatus !== 'ready' || !authSession?.sessionToken || !currentUser) {
       return;
     }
 
@@ -940,7 +984,7 @@ export default function App() {
           restoreActiveTable(activeTable.table_code, sessionToken, displayName);
           return;
         }
-        setStatusMessage((current) => (current === ACTIVE_TABLE_LOOKUP_MESSAGE ? null : current));
+        void createAndEnterEmptyTable(sessionToken, displayName, () => cancelled);
       })
       .catch((error) => {
         if (!cancelled) {
@@ -1031,13 +1075,7 @@ export default function App() {
     isActiveTableLookupPending ||
     state.connectionStatus === 'connecting' ||
     state.connectionStatus === 'reconnecting';
-  const isCreateTableBlockedByWaitingRoom = isWaitingInNonAllBotRoom(state.roomSnapshot);
-  const isCreateTableDisabled = lobbyBusy || isCreateTableBlockedByWaitingRoom;
-  const canInvitePlayers = hasInviteableTableSeat(state.roomSnapshot, activeLobbyTableCode);
-  const creatingTableCodes =
-    activeLobbyTableCode && state.roomSnapshot?.payload.table_code === activeLobbyTableCode && state.roomSnapshot.payload.phase === 'waiting'
-      ? [activeLobbyTableCode]
-      : [];
+  const canInvitePlayers = hasInviteableTableSeat(state.roomSnapshot);
   const localSeatIndex = state.roomSnapshot?.payload.local_seat;
   const localSeatState =
     typeof localSeatIndex === 'number'
@@ -1050,25 +1088,9 @@ export default function App() {
     hideLocalClaimPrompt: isClaimPromptDismissed,
   });
   const isLocalBotTakeoverEnabled = Boolean(localSeatState?.is_bot);
-  const tableSidebarPlayers: TableSidebarPlayer[] = viewModel.players.map((player) => {
-    const matchedUser =
-      (currentUser && currentUser.display_name === player.name ? currentUser : null) ??
-      leaderboard.find((user) => user.display_name === player.name) ??
-      null;
-
-    return {
-      key: `${player.seat}:${player.absoluteSeat ?? -1}`,
-      seatLabel: getSeatLabel(player.absoluteSeat),
-      displayLabel: matchedUser?.display_label ?? player.name,
-      score: player.score,
-      liveDelta: player.liveDelta,
-      points: matchedUser?.points ?? null,
-      connected: player.connected,
-      isBotSeat: player.seatType === 'bot',
-      isBotControlled: player.isBotControlled,
-      profileUser: matchedUser,
-    };
-  });
+  const inviteUsers = createInviteDialogUsers(leaderboard, onlineUserIds);
+  const inviteHumanUsers = inviteUsers.filter(({ user }) => !user.is_special_bot);
+  const inviteAiUsers = inviteUsers.filter(({ user }) => user.is_special_bot);
   useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
 
   useEffect(() => {
@@ -1162,7 +1184,6 @@ export default function App() {
         sessionToken: response.session_token,
         user: response.user,
       };
-      skipActiveTableLookupTokenRef.current = nextSession.sessionToken;
       activeTableRestoreRef.current = null;
       clearStoredSession();
       dispatch({ type: 'return_to_lobby', keepNickname: false, tableCode: '' });
@@ -1181,42 +1202,9 @@ export default function App() {
     }
   }
 
-  async function handleCreateLobbyTable() {
-    if (!authSession?.sessionToken || !currentUser) {
-      setStatusMessage('请先登录。');
-      return;
-    }
-    if (isCreateTableBlockedByWaitingRoom) {
-      setStatusMessage('当前牌局正在等待开局，不能重复创建牌局。');
-      return;
-    }
-
-    try {
-      setStatusMessage('正在创建牌局...');
-      dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-      const table = await createSocialTable(defaults.apiBaseUrl, authSession.sessionToken);
-      setActiveLobbyTableCode(table.table_code);
-      setSentInviteStatusesByUserId({});
-      setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code, table.phase));
-      setLeaderboard((users) =>
-        updateLeaderboardUserActiveTableCode(users, currentUser.user_id, table.table_code, table.phase),
-      );
-      setStatusMessage(`已创建牌局 ${table.table_code}，正在进入牌桌...`);
-      openRoomSocket({
-        tableCode: table.table_code,
-        nickname: currentUser.display_name,
-        wsBaseUrl: defaults.wsBaseUrl,
-        sessionToken: authSession.sessionToken,
-      });
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建牌局失败。');
-      dispatch({ type: 'set_connection_status', status: 'error' });
-    }
-  }
-
   async function handleInvitePlayer(userId: number) {
     if (!authSession?.sessionToken || !activeLobbyTableCode) {
-      setStatusMessage('请先创建牌局。');
+      setStatusMessage('正在准备你的空牌桌，请稍候。');
       return;
     }
 
@@ -1301,7 +1289,6 @@ export default function App() {
     setActiveLobbyTableCode(null);
     setIsActiveTableLookupPending(false);
     activeTableRestoreRef.current = null;
-    skipActiveTableLookupTokenRef.current = null;
     setAuthStatus('anonymous');
     setStatusMessage(null);
     dispatch({ type: 'return_to_lobby', keepNickname: false, tableCode: '' });
@@ -1355,16 +1342,6 @@ export default function App() {
     }
 
     if (state.optimisticDiscard && isActionBlockedByOptimisticDiscard(actionId)) {
-      return;
-    }
-
-    if (actionId === 'ready') {
-      const localSeat = state.roomSnapshot?.payload.local_seat;
-      const localSeatState =
-        typeof localSeat === 'number'
-          ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === localSeat)
-          : null;
-      sendMessage(serializeClientMessage(createReadyMessage(!localSeatState?.ready)));
       return;
     }
 
@@ -1579,12 +1556,30 @@ export default function App() {
     setStatusMessage(`已复制牌桌编号 ${tableCode}。`);
   }
 
+  const activePendingInvite = pendingInvites[0] ?? null;
+  const pendingInvitePanel = activePendingInvite ? (
+    <div className="table-invite-popup" role="dialog" aria-modal="false" aria-label="收到牌局邀请">
+      <p>收到 {getInviteCreatorLabel(activePendingInvite, inviteCreatorLabelsByUserId)} 的邀请，是否加入牌局？</p>
+      <div className="table-invite-popup__actions">
+        <button type="button" onClick={() => handleAcceptInvite(activePendingInvite)}>
+          加入
+        </button>
+        <button type="button" onClick={() => handleRejectInvite(activePendingInvite)}>
+          拒绝
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   function handleLeaveTable() {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
       handleLeaveToLobby(
         state.roomSnapshot?.payload.table_code ?? state.tableCode,
-        '当前连接已断开，已回到牌桌界面。若仍需回到牌局，请等待房主重新邀请。',
+        '当前连接已断开，正在为你准备新的空牌桌。',
       );
+      if (authSession?.sessionToken && currentUser) {
+        void createAndEnterEmptyTable(authSession.sessionToken, currentUser.display_name);
+      }
       return;
     }
 
@@ -1592,36 +1587,7 @@ export default function App() {
     socketRef.current.send(serializeClientMessage(createLeaveTableMessage()));
   }
 
-  const hasMessageAlert = pendingInvites.length > 0;
-
-  const sidebarRoomPanel = currentUser ? (
-    <SocialSidebarPanel
-      currentUser={currentUser}
-      leaderboard={leaderboard}
-      onlineUserIds={onlineUserIds}
-      activeTableCode={activeLobbyTableCode}
-      busy={lobbyBusy}
-      isCreateTableDisabled={isCreateTableDisabled}
-      canInvitePlayers={canInvitePlayers}
-      inviteStatusesByUserId={sentInviteStatusesByUserId}
-      message={statusMessage}
-      onCreateTable={handleCreateLobbyTable}
-      onInvite={handleInvitePlayer}
-      onLogout={handleLogout}
-    />
-  ) : null;
-
-  const sidebarMessagesPanel = currentUser ? (
-    <SocialSidebarMessagesPanel
-      pendingInvites={pendingInvites}
-      inviteCreatorLabelsByUserId={inviteCreatorLabelsByUserId}
-      message={statusMessage}
-      onAcceptInvite={handleAcceptInvite}
-      onRejectInvite={handleRejectInvite}
-    />
-  ) : null;
-
-  function renderBattleScreen(options: { defaultSidebarOpen?: boolean; initialSidebarTab?: 'room' | 'online' } = {}) {
+  function renderBattleScreen() {
     return (
       <BattleScreen
         isBgmEnabled={isBgmEnabled}
@@ -1642,18 +1608,11 @@ export default function App() {
         }
         isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
         onToggleBotTakeover={handleSetBotTakeover}
-        sidebarRoomPanel={sidebarRoomPanel}
-        sidebarMessagesPanel={sidebarMessagesPanel}
-        sidebarDefaultOpen={options.defaultSidebarOpen}
-        sidebarInitialTab={options.initialSidebarTab}
-        sidebarPlayers={tableSidebarPlayers}
-        sidebarOnlineUsers={leaderboard}
-        sidebarOnlineUserIds={onlineUserIds}
-        sidebarCreatingTableCodes={creatingTableCodes}
-        sidebarCurrentUserId={currentUser?.user_id ?? null}
-        sidebarTabAlerts={{
-          messages: hasMessageAlert,
-        }}
+        inviteHumanUsers={inviteHumanUsers}
+        inviteAiUsers={inviteAiUsers}
+        inviteStatusesByUserId={sentInviteStatusesByUserId}
+        pendingInvitePanel={pendingInvitePanel}
+        currentUserId={currentUser?.user_id ?? null}
         viewModel={viewModel}
         themeId={themeId}
         themeLabel={getThemeLabel(themeId)}
@@ -1665,6 +1624,7 @@ export default function App() {
         onAction={handleAction}
         onCopyTableCode={handleCopyTableCode}
         onLeaveTable={handleLeaveTable}
+        onInvitePlayer={handleInvitePlayer}
         onAddBot={() => handleAdjustBots(1)}
         onRemoveBot={() => handleAdjustBots(-1)}
         onQuickChat={handleQuickChat}
@@ -1684,7 +1644,7 @@ export default function App() {
       );
     }
 
-    return renderBattleScreen({ defaultSidebarOpen: true, initialSidebarTab: 'room' });
+    return renderBattleScreen();
   }
 
   return renderBattleScreen();

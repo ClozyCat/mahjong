@@ -393,7 +393,6 @@ export type SocialServerMessage =
 export type ClientMessage =
   | { type: 'join_table'; payload: { session_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
-  | { type: 'ready'; payload: { ready: boolean } }
   | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
   | { type: 'set_bot_takeover'; payload: { enabled: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
@@ -460,7 +459,7 @@ export interface SessionState {
 }
 
 export type BattleActionId =
-  | 'ready'
+  | 'invite'
   | 'start_match'
   | 'start_next_round'
   | 'restart_match'

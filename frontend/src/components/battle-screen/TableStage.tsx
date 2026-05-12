@@ -105,6 +105,7 @@ interface TableStageProps {
   themeId?: ThemeId;
   themeLabel?: string;
   onLeaveTable?: () => void;
+  onOpenInviteDialog?: () => void;
   onCycleTheme?: () => void;
   onAction?: (actionId: BattleActionView['id']) => void;
   onAddBot?: () => void;
@@ -161,6 +162,7 @@ export function TableStage({
   themeId = 'tian-shui-bi',
   themeLabel = '天水碧',
   onLeaveTable,
+  onOpenInviteDialog,
   onCycleTheme,
   onAction,
   onAddBot,
@@ -250,6 +252,7 @@ export function TableStage({
             canRemoveBot={canRemoveBot}
             canLeaveTable={canLeaveTable}
             onLeaveTable={onLeaveTable}
+            onOpenInviteDialog={onOpenInviteDialog}
             onCycleTheme={onCycleTheme}
             onAction={onAction}
             onAddBot={onAddBot}

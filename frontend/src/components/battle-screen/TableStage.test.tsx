@@ -551,7 +551,7 @@ describe('TableStage', () => {
         onAddBot={onAddBot}
         onRemoveBot={onRemoveBot}
         preMatchActions={[
-          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
+          { id: 'invite', label: '邀请', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
         ]}
       />,
@@ -559,7 +559,7 @@ describe('TableStage', () => {
 
     expect(screen.getByRole('button', { name: '快捷离开牌桌' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '准备' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始对局' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'BOT 数量控制' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '增加 BOT' })).toBeInTheDocument();

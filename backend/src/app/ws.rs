@@ -518,7 +518,7 @@ async fn handle_join_table(
                 points: Some(user.points),
                 title: Some(title_for_points(user.points).to_string()),
                 connected: true,
-                ready: false,
+                ready: true,
                 is_bot: false,
                 seat_type: "human".to_string(),
                 bot_persona: None,
@@ -1105,6 +1105,9 @@ async fn handle_leave_table(
     let previous_room = runtime.room.clone();
     let created_at = runtime.created_at.clone();
     let phase = room_phase(&runtime.room);
+    if phase == "waiting" && !can_leave_waiting_table(&runtime.room, leaving_user_id) {
+        return reject_to(connection, "cannot_leave_empty_table");
+    }
     if phase == "waiting" {
         remove_seat_from_room(&mut runtime.room, seat_index);
     } else {
@@ -1270,6 +1273,18 @@ async fn handle_leave_table(
     }
 }
 
+fn can_leave_waiting_table(room: &RoomState, leaving_user_id: Option<i64>) -> bool {
+    room.seats.iter().any(|seat| {
+        if Some(seat.user_id.unwrap_or_default()) == leaving_user_id && seat.user_id.is_some() {
+            return false;
+        }
+
+        crate::special_bots::is_independent_bot_seat(seat)
+            || crate::special_bots::is_special_bot_seat(seat)
+            || (seat.seat_type == "human" && seat.user_id.is_some())
+    })
+}
+
 async fn handle_disconnect(
     state: AppContext,
     table_code: &str,
@@ -1342,7 +1357,7 @@ mod tests {
 
     use super::{
         ClientMessage, ConnectionRole, JoinTableRequest, ReadyRequest, handle_client_message,
-        handle_disconnect, handle_join_table, parse_client_message,
+        handle_disconnect, handle_join_table, handle_leave_table, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1541,7 +1556,7 @@ mod tests {
             points: Some(600),
             title: Some("正分守门员".to_string()),
             connected: false,
-            ready: false,
+            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,
@@ -1709,6 +1724,33 @@ mod tests {
             .expect("room should be loaded");
         let runtime = room_handle.runtime.lock().await;
         assert!(runtime.room.seats[0].connected);
+        assert!(runtime.room.seats[0].ready);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn leave_table_rejects_single_player_waiting_table() -> Result<()> {
+        let (state, guest_token) = build_reserved_participant_state("ROOMSOLO").await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
+        let join = handle_join_table(
+            state.clone(),
+            "ROOMSOLO",
+            &connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+        assert!(matches!(
+            join.role,
+            Some(ConnectionRole::Player { seat_index: 0 })
+        ));
+
+        let outcome = handle_leave_table(state, "ROOMSOLO", &connection, 0).await;
+        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
+
+        assert_eq!(payload["payload"]["reason"], "cannot_leave_empty_table");
+        assert!(!outcome.close_socket);
         Ok(())
     }
 

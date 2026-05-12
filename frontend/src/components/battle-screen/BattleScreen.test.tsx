@@ -622,7 +622,7 @@ describe('BattleScreen', () => {
     }
   });
 
-  it('shows ready and start controls in waiting state', () => {
+  it('shows invite and start controls in waiting state', () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
@@ -637,13 +637,13 @@ describe('BattleScreen', () => {
           canRemoveBot: false,
         },
         actions: [
-          { id: 'ready', label: 'Ready', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: 'Start Match', enabled: true, emphasis: 'high' },
         ],
       }),
+      { onInvitePlayer: vi.fn() },
     );
 
-    expect(screen.getByRole('button', { name: /ready/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /start match/i })).toBeInTheDocument();
     expect(screen.queryByLabelText('牌桌侧边面板')).toBeNull();
   });
@@ -2473,7 +2473,6 @@ describe('BattleScreen', () => {
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
         actions: [
-          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
           { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
         ],
@@ -2487,12 +2486,14 @@ describe('BattleScreen', () => {
           canRemoveBot: false,
         },
       }),
+      { onInvitePlayer: vi.fn() },
     );
 
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
     expect(screen.queryByText('等待牌手')).toBeNull();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
+    expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
   });
 
   it('hides pre-match room and bot controls while dealer selection is spinning', () => {
@@ -2500,7 +2501,6 @@ describe('BattleScreen', () => {
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
         actions: [
-          { id: 'ready', label: '准备', enabled: false, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
         ],
         waitingControls: {
@@ -2530,19 +2530,18 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '减少 BOT' })).toBeNull();
   });
 
-  it('prevents repeated ready clicks for 3 seconds', () => {
-    vi.useFakeTimers();
-    const onAction = vi.fn();
+  it('opens the player list from the invite action and allows closing it', async () => {
+    const user = userEvent.setup();
+    const onInvitePlayer = vi.fn();
 
     renderBattleScreen(
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
         actions: [
-          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
         ],
         waitingControls: {
-          canReady: true,
+          canReady: false,
           canStart: false,
           isReady: false,
           occupiedSeats: 2,
@@ -2551,37 +2550,32 @@ describe('BattleScreen', () => {
           canRemoveBot: false,
         },
       }),
-      { onAction },
+      {
+        onInvitePlayer,
+        currentUserId: 1,
+        inviteHumanUsers: [
+          {
+            user: {
+              user_id: 2,
+              username: 'player-b',
+              display_name: 'Player B',
+              points: 300,
+              title: '新秀',
+              display_label: 'Player B（新秀）',
+              bio: '',
+              avatar: null,
+            },
+            status: 'online',
+          },
+        ],
+      },
     );
 
-    act(() => {
-      screen.getByRole('button', { name: '准备' }).click();
-      screen.getByRole('button', { name: '准备' }).click();
-    });
+    await user.click(screen.getByRole('button', { name: '邀请' }));
+    expect(screen.getByRole('dialog', { name: '玩家列表' })).toBeInTheDocument();
 
-    expect(onAction).toHaveBeenCalledTimes(1);
-    expect(onAction).toHaveBeenCalledWith('ready');
-    expect(screen.getByRole('button', { name: '准备' })).toBeDisabled();
-
-    act(() => {
-      vi.advanceTimersByTime(2999);
-      screen.getByRole('button', { name: '准备' }).click();
-    });
-
-    expect(onAction).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-
-    expect(screen.getByRole('button', { name: '准备' })).toBeEnabled();
-
-    act(() => {
-      screen.getByRole('button', { name: '准备' }).click();
-    });
-
-    expect(onAction).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
+    await user.click(screen.getByRole('button', { name: '关闭玩家列表' }));
+    expect(screen.queryByRole('dialog', { name: '玩家列表' })).toBeNull();
   });
 
   it('renders dedicated meld areas only for remote seats', () => {
@@ -2628,7 +2622,6 @@ describe('BattleScreen', () => {
       createBattleViewModel({
         waitingControls: null,
         actions: [
-          { id: 'ready', label: '准备', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
         ],
       }),
@@ -2677,20 +2670,16 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('上家刚打出可响应牌')).toBeNull();
   });
 
-  it('keeps the table sidebar collapsed by default and reveals all tabs when opened', async () => {
+  it('opens the player list with human and AI tabs', async () => {
     const user = userEvent.setup();
 
-    renderBattleScreen(createBattleViewModel(), {
-      sidebarPlayers: [
+    renderBattleScreen(createBattleViewModel({
+      players: createBattleViewModel().players.slice(0, 3),
+    }), {
+      onInvitePlayer: vi.fn(),
+      inviteHumanUsers: [
         {
-          key: 'bottom',
-          seatLabel: '东位',
-          displayLabel: 'Player A（平民）',
-          score: 25000,
-          liveDelta: 8,
-          points: 150,
-          connected: true,
-          profileUser: {
+          user: {
             user_id: 1,
             username: 'player-a',
             display_name: 'Player A',
@@ -2700,34 +2689,34 @@ describe('BattleScreen', () => {
             bio: '',
             avatar: null,
           },
+          status: 'online',
         },
       ],
-      sidebarOnlineUsers: [
+      inviteAiUsers: [
         {
-          user_id: 1,
-          username: 'player-a',
-          display_name: 'Player A',
-          points: 150,
-          title: '平民',
-          display_label: 'Player A（平民）',
-          bio: '',
-          avatar: null,
+          user: {
+            user_id: 5,
+            username: 'ai-5',
+            display_name: 'AI 5',
+            points: 600,
+            title: 'AI',
+            display_label: 'AI 5（AI）',
+            bio: '',
+            avatar: null,
+            is_special_bot: true,
+          },
+          status: 'online',
         },
       ],
-      sidebarRoomPanel: <div>room</div>,
-      sidebarMessagesPanel: <div>messages</div>,
     });
 
-    expect(screen.getByRole('button', { name: '打开牌桌侧边栏' })).toBeInTheDocument();
-    expect(screen.queryByRole('complementary', { name: 'Table sidebar' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: '打开玩家列表' }));
 
-    await user.click(screen.getByRole('button', { name: '打开牌桌侧边栏' }));
-
-    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual([
-      '牌局',
-      '消息',
-      '所有玩家',
-    ]);
+    expect(screen.getByRole('dialog', { name: '玩家列表' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '人类' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Player A（平民）')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'AI' }));
+    expect(screen.getByText('AI 5（AI）')).toBeInTheDocument();
   });
 
 });

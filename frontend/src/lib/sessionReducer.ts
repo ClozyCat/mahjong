@@ -38,7 +38,7 @@ const ACTION_REJECTION_COPY: Record<string, string> = {
   room_already_started: '牌桌已经开始对局。',
   match_not_finished: '整场比赛尚未结束，暂时不能再来一局。',
   seat_not_owned: '当前连接没有对应座位，无法执行该操作。',
-  room_not_ready: '四个座位都准备完成后才能开始。',
+  room_not_ready: '牌桌人数不足，或尚未加入 BOT。',
   round_not_ready: '结算尚未完成，暂时不能开始下一局。',
   not_your_turn: '还没轮到你操作。',
   invalid_action: '当前动作不合法，已按服务器状态为准。',

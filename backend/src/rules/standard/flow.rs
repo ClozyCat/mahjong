@@ -50,7 +50,11 @@ fn sync_pending_timeout_for_value_room(room: &mut Value) {
 }
 
 pub fn room_ready_to_start(room: &RoomState) -> bool {
-    room.seats.len() == MAX_SEATS
+    let has_regular_bot = room.seats.iter().any(crate::special_bots::is_independent_bot_seat);
+    let has_enough_seats = room.seats.len() == MAX_SEATS || has_regular_bot;
+
+    has_enough_seats
+        && !room.seats.is_empty()
         && room
             .seats
             .iter()

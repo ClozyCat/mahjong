@@ -43,15 +43,6 @@ export function createLeaveTableMessage(): ClientMessage {
   };
 }
 
-export function createReadyMessage(ready: boolean): ClientMessage {
-  return {
-    type: 'ready',
-    payload: {
-      ready,
-    },
-  };
-}
-
 export function createAdjustBotsMessage(delta: 1 | -1): ClientMessage {
   return {
     type: 'adjust_bots',

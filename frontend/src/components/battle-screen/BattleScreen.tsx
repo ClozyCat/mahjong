@@ -4,7 +4,6 @@ import type {
   BattleActionId,
   BattleViewModel,
   ClaimActionId,
-  PublicUser,
   QuickChatEmoji,
 } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
@@ -21,10 +20,10 @@ import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 import { TableStage } from './TableStage';
 import { SnakeOverlay } from './SnakeOverlay';
 import {
-  TableSidebar,
-  type TableSidebarPlayer,
-  type TableSidebarTab,
-} from '../table-sidebar/TableSidebar';
+  PlayerInviteDialog,
+  type InviteDialogUser,
+  type SentInviteStatus,
+} from './PlayerInviteDialog';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
@@ -38,6 +37,7 @@ interface BattleScreenProps {
   onAction: (actionId: BattleActionId) => void;
   onCopyTableCode: () => void;
   onLeaveTable: () => void;
+  onInvitePlayer?: (userId: number) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
@@ -47,16 +47,11 @@ interface BattleScreenProps {
   isBotTakeoverEnabled?: boolean;
   onToggleVoice?: () => void;
   onToggleBotTakeover?: (enabled: boolean) => void;
-  sidebarPlayers?: TableSidebarPlayer[];
-  sidebarOnlineUsers?: PublicUser[];
-  sidebarOnlineUserIds?: number[];
-  sidebarCreatingTableCodes?: string[];
-  sidebarCurrentUserId?: number | null;
-  sidebarRoomPanel?: ReactNode;
-  sidebarMessagesPanel?: ReactNode;
-  sidebarDefaultOpen?: boolean;
-  sidebarInitialTab?: TableSidebarTab;
-  sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
+  inviteHumanUsers?: InviteDialogUser[];
+  inviteAiUsers?: InviteDialogUser[];
+  currentUserId?: number | null;
+  inviteStatusesByUserId?: Record<number, SentInviteStatus>;
+  pendingInvitePanel?: ReactNode;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -65,7 +60,6 @@ const MIN_TABLE_TILE_SCALE = 0.88;
 const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const READY_HAND_CALLOUT_LINGER_MS = 1000;
-const READY_ACTION_COOLDOWN_MS = 3000;
 const VOICE_CUE_DEDUP_MS = 1200;
 
 export function BattleScreen({
@@ -80,6 +74,7 @@ export function BattleScreen({
   onAction,
   onCopyTableCode,
   onLeaveTable,
+  onInvitePlayer,
   onAddBot,
   onRemoveBot,
   onQuickChat,
@@ -89,25 +84,18 @@ export function BattleScreen({
   isBotTakeoverEnabled = false,
   onToggleVoice,
   onToggleBotTakeover,
-  sidebarPlayers = [],
-  sidebarOnlineUsers = [],
-  sidebarOnlineUserIds = [],
-  sidebarCreatingTableCodes = [],
-  sidebarCurrentUserId = null,
-  sidebarRoomPanel = null,
-  sidebarMessagesPanel = null,
-  sidebarDefaultOpen = false,
-  sidebarInitialTab = 'online',
-  sidebarTabAlerts = {},
+  currentUserId = null,
+  inviteHumanUsers = [],
+  inviteAiUsers = [],
+  inviteStatusesByUserId = {},
+  pendingInvitePanel = null,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
-  const [isReadyActionCoolingDown, setIsReadyActionCoolingDown] = useState(false);
   const [isSnakeActive, setIsSnakeActive] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(sidebarDefaultOpen);
-  const [sidebarTab, setSidebarTab] = useState<TableSidebarTab>(sidebarInitialTab);
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
@@ -115,22 +103,22 @@ export function BattleScreen({
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
-  const isReadyActionCoolingDownRef = useRef(false);
-  const readyActionCooldownTimerRef = useRef<number | null>(null);
   const trackedLastDiscardKeyRef = useRef<string | null>(null);
   const trackedLastDiscardStartedAtRef = useRef<number>(0);
   const trackedLastDiscardActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
-  const preMatchActions = viewModel.actions
-    .filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id))
-    .map((action) =>
-      action.id === 'ready'
-        ? {
-          ...action,
-          enabled: action.enabled && !isReadyActionCoolingDown,
-        }
-        : action,
-    );
-  const visiblePreMatchActions = viewModel.dealerSelection ? [] : preMatchActions;
+  const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
+  const canInvitePlayers = Boolean(onInvitePlayer) && hasInviteableSeat(viewModel);
+  const visiblePreMatchActions = viewModel.dealerSelection
+    ? []
+    : [
+        {
+          id: 'invite' as const,
+          label: '邀请',
+          enabled: canInvitePlayers,
+          emphasis: 'medium' as const,
+        },
+        ...preMatchActions,
+      ];
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.players.filter((player) => player.seatType !== 'bot').length;
   const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
@@ -164,28 +152,12 @@ export function BattleScreen({
   }
 
   function handleAction(actionId: BattleActionId) {
-    if (actionId === 'ready') {
-      if (isReadyActionCoolingDownRef.current) {
-        return;
-      }
-
-      isReadyActionCoolingDownRef.current = true;
-      setIsReadyActionCoolingDown(true);
-      if (readyActionCooldownTimerRef.current !== null) {
-        window.clearTimeout(readyActionCooldownTimerRef.current);
-      }
-      readyActionCooldownTimerRef.current = window.setTimeout(() => {
-        isReadyActionCoolingDownRef.current = false;
-        setIsReadyActionCoolingDown(false);
-        readyActionCooldownTimerRef.current = null;
-      }, READY_ACTION_COOLDOWN_MS);
+    if (actionId === 'invite') {
+      setIsInviteDialogOpen(true);
+      return;
     }
 
     onAction(actionId);
-  }
-
-  function handleSidebarTabChange(tab: TableSidebarTab) {
-    setSidebarTab(tab);
   }
 
   const battleStageStyle = {
@@ -334,16 +306,6 @@ export function BattleScreen({
   ]);
 
   useEffect(() => {
-    return () => {
-      if (readyActionCooldownTimerRef.current !== null) {
-        window.clearTimeout(readyActionCooldownTimerRef.current);
-        readyActionCooldownTimerRef.current = null;
-      }
-      isReadyActionCoolingDownRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -431,6 +393,7 @@ export function BattleScreen({
               themeId={themeId}
               themeLabel={themeLabel}
               onLeaveTable={onLeaveTable}
+              onOpenInviteDialog={onInvitePlayer ? () => setIsInviteDialogOpen(true) : undefined}
               onCycleTheme={onCycleTheme}
               onAction={handleAction}
               onAddBot={onAddBot}
@@ -464,20 +427,17 @@ export function BattleScreen({
               />
             </TableStage>
           </div>
-          <TableSidebar
-            isOpen={isSidebarOpen}
-            activeTab={sidebarTab}
-            tablePlayers={sidebarPlayers}
-            onlineUsers={sidebarOnlineUsers}
-            onlineUserIds={sidebarOnlineUserIds}
-            creatingTableCodes={sidebarCreatingTableCodes}
-            currentUserId={sidebarCurrentUserId}
-            tabAlerts={sidebarTabAlerts}
-            roomPanel={sidebarRoomPanel}
-            messagesPanel={sidebarMessagesPanel}
-            onToggle={() => setIsSidebarOpen((current) => !current)}
-            onTabChange={handleSidebarTabChange}
+          <PlayerInviteDialog
+            isOpen={isInviteDialogOpen}
+            currentUserId={currentUserId}
+            humanUsers={inviteHumanUsers}
+            aiUsers={inviteAiUsers}
+            canInvitePlayers={canInvitePlayers}
+            inviteStatusesByUserId={inviteStatusesByUserId}
+            onClose={() => setIsInviteDialogOpen(false)}
+            onInvite={(userId) => onInvitePlayer?.(userId)}
           />
+          {pendingInvitePanel}
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (
             <ResultOverlay
@@ -494,9 +454,18 @@ export function BattleScreen({
   );
 }
 
-const PRE_MATCH_ACTION_IDS: BattleActionId[] = ['ready', 'start_match'];
+const PRE_MATCH_ACTION_IDS: BattleActionId[] = ['start_match'];
 const HIDDEN_TABLE_ACTION_IDS: BattleActionId[] = ['start_next_round', 'restart_match'];
-const TABLE_ONLY_ACTION_IDS: BattleActionId[] = [...PRE_MATCH_ACTION_IDS, ...HIDDEN_TABLE_ACTION_IDS];
+const TABLE_ONLY_ACTION_IDS: BattleActionId[] = ['invite', ...PRE_MATCH_ACTION_IDS, ...HIDDEN_TABLE_ACTION_IDS];
+
+function hasInviteableSeat(viewModel: BattleViewModel) {
+  const occupiedSeats = viewModel.waitingControls?.occupiedSeats ?? viewModel.players.length;
+  if (occupiedSeats < 4) {
+    return true;
+  }
+
+  return viewModel.players.some((player) => player.seatType === 'bot');
+}
 
 function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
   if (!viewModel.lastDiscard || !viewModel.lastDiscardSeat) {

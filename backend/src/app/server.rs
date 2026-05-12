@@ -1061,7 +1061,7 @@ async fn accept_table_invite(
             seat.points = Some(user.points);
             seat.title = Some(title_for_points(user.points).to_string());
             seat.connected = false;
-            seat.ready = false;
+            seat.ready = true;
             seat.is_bot = false;
             seat.seat_type = "human".to_string();
             seat.bot_persona = None;
@@ -1077,7 +1077,7 @@ async fn accept_table_invite(
             points: Some(user.points),
             title: Some(title_for_points(user.points).to_string()),
             connected: false,
-            ready: false,
+            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,

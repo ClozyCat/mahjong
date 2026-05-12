@@ -259,7 +259,7 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.mode).toBe('disconnected_or_waiting');
     expect(viewModel.canLeaveTable).toBe(true);
-    expect(viewModel.waitingControls?.canReady).toBe(true);
+    expect(viewModel.waitingControls?.canReady).toBe(false);
     expect(viewModel.waitingControls?.canStart).toBe(false);
     expect(viewModel.waitingControls?.botCount).toBe(0);
     expect(viewModel.waitingControls?.canAddBot).toBe(true);
@@ -310,7 +310,7 @@ describe('createMatchViewModel', () => {
     expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(false);
   });
 
-  it('shows cancel-ready when the local seat is already ready in the waiting room', () => {
+  it('keeps waiting rooms ready by default without exposing a ready action', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -331,7 +331,8 @@ describe('createMatchViewModel', () => {
     });
 
     expect(viewModel.waitingControls?.isReady).toBe(true);
-    expect(viewModel.actions.find((action) => action.id === 'ready')?.label).toBe('取消准备');
+    expect(viewModel.waitingControls?.canReady).toBe(false);
+    expect(viewModel.actions.some((action) => action.id === 'invite')).toBe(false);
   });
 
   it('projects the current hand insight directly from backend snapshot data', () => {
@@ -684,7 +685,7 @@ describe('createMatchViewModel', () => {
       botCount: 2,
       canAddBot: true,
       canRemoveBot: true,
-      canStart: false,
+      canStart: true,
     });
   });
 
