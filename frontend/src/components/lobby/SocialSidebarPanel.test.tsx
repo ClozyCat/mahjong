@@ -34,7 +34,6 @@ const defaultProps = {
   leaderboard,
   onlineUserIds: [1, 2],
   pendingInvites: [],
-  spectatorRequests: [],
   activeTableCode: null,
   busy: false,
   isCreateTableDisabled: false,
@@ -44,8 +43,6 @@ const defaultProps = {
   onInvite: vi.fn(),
   onAcceptInvite: vi.fn(),
   onRejectInvite: vi.fn(),
-  onApproveSpectatorRequest: vi.fn(),
-  onRejectSpectatorRequest: vi.fn(),
   onLogout: vi.fn(),
 };
 
@@ -62,7 +59,6 @@ describe('SocialSidebarPanel', () => {
     expect(screen.queryByRole('group', { name: '牌局倍数' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /x[123]/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '待处理邀请' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '待处理观战申请' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '积分榜' })).not.toBeInTheDocument();
   });
 
@@ -166,11 +162,8 @@ describe('SocialSidebarPanel', () => {
             expires_at: '2026-05-06T12:10:00Z',
           },
         ]}
-        spectatorRequests={[]}
         onAcceptInvite={vi.fn()}
         onRejectInvite={onRejectInvite}
-        onApproveSpectatorRequest={vi.fn()}
-        onRejectSpectatorRequest={vi.fn()}
       />,
     );
 
@@ -194,12 +187,9 @@ describe('SocialSidebarPanel', () => {
             expires_at: '2026-05-06T12:10:00Z',
           },
         ]}
-        spectatorRequests={[]}
         inviteCreatorLabelsByUserId={{ 2: '阿强（平民）' }}
         onAcceptInvite={vi.fn()}
         onRejectInvite={vi.fn()}
-        onApproveSpectatorRequest={vi.fn()}
-        onRejectSpectatorRequest={vi.fn()}
       />,
     );
 
@@ -207,42 +197,4 @@ describe('SocialSidebarPanel', () => {
     expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
   });
 
-  it('lets the target player approve and reject spectator requests from the room tab panel', async () => {
-    const user = userEvent.setup();
-    const onApproveSpectatorRequest = vi.fn();
-    const onRejectSpectatorRequest = vi.fn();
-
-    render(
-      <SocialSidebarMessagesPanel
-        pendingInvites={[]}
-        spectatorRequests={[
-          {
-            id: 3,
-            table_code: 'AB12CD',
-            requester_user_id: 7,
-            owner_user_id: 1,
-            status: 'pending',
-            created_at: '2026-05-06T12:00:00Z',
-            decided_at: null,
-          },
-        ]}
-        spectatorRequesterLabelsByUserId={{ 7: '阿成（雀士）' }}
-        onAcceptInvite={vi.fn()}
-        onRejectInvite={vi.fn()}
-        onApproveSpectatorRequest={onApproveSpectatorRequest}
-        onRejectSpectatorRequest={onRejectSpectatorRequest}
-      />,
-    );
-
-    expect(screen.getByRole('heading', { name: '待处理观战申请' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '积分榜' })).not.toBeInTheDocument();
-    expect(screen.getByText('阿成（雀士）')).toBeInTheDocument();
-    expect(screen.queryByText('用户 #7')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '同意' }));
-    await user.click(screen.getByRole('button', { name: '拒绝' }));
-
-    expect(onApproveSpectatorRequest).toHaveBeenCalledWith(3);
-    expect(onRejectSpectatorRequest).toHaveBeenCalledWith(3);
-  });
 });

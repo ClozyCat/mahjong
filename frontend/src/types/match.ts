@@ -1,7 +1,6 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
 export type TableMode = 'normal';
 export type SeatType = 'human' | 'bot' | 'special_bot';
-export type ClientMode = 'player' | 'spectator';
 export type TableMultiplier = 1;
 
 export type MatchPhase =
@@ -85,21 +84,6 @@ export interface AcceptInviteResponse {
   table_code: string;
   seat_index: number;
   status: string;
-}
-
-export interface SpectatorRequest {
-  id: number;
-  table_code: string;
-  requester_user_id: number;
-  owner_user_id: number;
-  status: string;
-  created_at: string;
-  decided_at?: string | null;
-}
-
-export interface SpectatorSnapshot {
-  user_id: number;
-  display_name: string;
 }
 
 export interface SeatSnapshot {
@@ -217,7 +201,6 @@ export interface RoomSnapshotPayload {
   owner_user_id?: number | null;
   multiplier?: TableMultiplier;
   seats: SeatSnapshot[];
-  spectators?: SpectatorSnapshot[];
   local_seat?: number | null;
   match_state?: MatchState | null;
   private_state?: PrivateState | null;
@@ -340,7 +323,7 @@ export interface QuickChatMessage {
     message_id: string;
     actor_seat: number;
     target_seat: number;
-    actor_kind?: 'player' | 'spectator' | string;
+    actor_kind?: 'player' | string;
     actor_display_name?: string | null;
     emoji: QuickChatEmoji;
     sent_at: string;
@@ -400,28 +383,15 @@ export interface TableInviteDecidedMessage {
   payload: TableInvite;
 }
 
-export interface SpectatorRequestCreatedMessage {
-  type: 'spectator_request_created';
-  payload: SpectatorRequest;
-}
-
-export interface SpectatorRequestDecidedMessage {
-  type: 'spectator_request_decided';
-  payload: SpectatorRequest;
-}
-
 export type SocialServerMessage =
   | UserPresenceUpdatedMessage
   | UserPointsUpdatedMessage
   | UserActiveTableUpdatedMessage
   | TableInviteCreatedMessage
-  | TableInviteDecidedMessage
-  | SpectatorRequestCreatedMessage
-  | SpectatorRequestDecidedMessage;
+  | TableInviteDecidedMessage;
 
 export type ClientMessage =
   | { type: 'join_table'; payload: { session_token: string } }
-  | { type: 'watch_table'; payload: { session_token: string; nickname?: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'ready'; payload: { ready: boolean } }
   | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
@@ -469,8 +439,6 @@ export interface OptimisticFlowerState {
 export interface SessionState {
   apiBaseUrl?: string;
   wsBaseUrl?: string;
-  clientMode?: ClientMode;
-  spectatorFocusSeat?: number | null;
   tableCode: string;
   nickname: string;
   connectionStatus: ConnectionStatus;

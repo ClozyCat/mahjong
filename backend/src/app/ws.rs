@@ -13,7 +13,6 @@ use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 use super::auth::hash_session_token;
-use super::collect_observer_outbound_from_snapshot;
 use super::protocol::{
     HeartbeatPayload, action_rejected_message, dealer_selection_started_message, heartbeat_message,
     leave_table_accepted_message, quick_chat_message,
@@ -25,10 +24,6 @@ use super::room_runtime::{
     remove_all_seat_connections, remove_seat_connection, restore_room_snapshot, room_handle,
     room_has_only_bots, seat_group_contains_connection, should_terminate_unattended,
     snapshot_connections, unregister_room_handle,
-};
-use super::room_runtime::{
-    remove_spectator_connection, replace_spectator_connection, snapshot_spectator_connections,
-    snapshot_spectator_identities,
 };
 use super::scheduler::schedule_room_tasks_detached;
 use super::users::title_for_points;
@@ -55,7 +50,6 @@ const DEALER_SELECTION_DURATION_MS: u64 = 4_200;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 enum ClientMessage {
-    WatchTable(WatchTableRequest),
     JoinTable(JoinTableRequest),
     Ready(ReadyRequest),
     AdjustBots(AdjustBotsRequest),
@@ -91,14 +85,6 @@ struct JoinTableRequest {
     #[serde(default)]
     session_token: String,
 }
-#[derive(Debug, Default, Deserialize)]
-struct WatchTableRequest {
-    #[serde(default)]
-    session_token: String,
-    #[serde(default)]
-    nickname: String,
-}
-
 #[derive(Debug, Deserialize)]
 struct ReadyRequest {
     #[serde(default = "default_true")]
@@ -164,7 +150,6 @@ pub(crate) struct MessageOutcome {
 pub(crate) enum ConnectionRole {
     Unbound,
     Player { seat_index: usize },
-    Spectator { spectator_id: u64 },
 }
 
 impl ConnectionRole {
@@ -172,7 +157,6 @@ impl ConnectionRole {
         match self {
             Self::Player { seat_index } => Some(seat_index),
             Self::Unbound => None,
-            Self::Spectator { .. } => None,
         }
     }
 }
@@ -280,9 +264,6 @@ async fn websocket_session(state: AppContext, socket: WebSocket, table_code: Str
             ConnectionRole::Player { seat_index } => {
                 handle_disconnect(state, &table_code, Some(seat_index), connection_id).await;
             }
-            ConnectionRole::Spectator { spectator_id } => {
-                handle_spectator_disconnect(state, &table_code, spectator_id, connection_id).await;
-            }
             ConnectionRole::Unbound => {}
         }
     }
@@ -299,12 +280,6 @@ async fn handle_client_message(
     message: ClientMessage,
 ) -> MessageOutcome {
     match message {
-        ClientMessage::WatchTable(request) => {
-            if !matches!(role, ConnectionRole::Unbound) {
-                return reject_to(connection, "seat_already_owned");
-            }
-            handle_watch_table(state, table_code, connection, request).await
-        }
         ClientMessage::JoinTable(request) => {
             if !matches!(role, ConnectionRole::Unbound) {
                 return reject_to(connection, "seat_already_owned");
@@ -382,22 +357,17 @@ async fn handle_client_message(
             };
             handle_action_request(state, table_code, connection, seat_index, request).await
         }
-        ClientMessage::QuickChat(request) => match role {
-            ConnectionRole::Player { seat_index } => {
-                let Some(seat_index) =
-                    assert_active_owned_seat(&state, table_code, connection, Some(seat_index))
-                        .await
-                else {
-                    return reject_to(connection, "seat_not_owned");
-                };
-                handle_quick_chat(state, table_code, connection, seat_index, request).await
-            }
-            ConnectionRole::Spectator { spectator_id } => {
-                handle_spectator_quick_chat(state, table_code, connection, spectator_id, request)
-                    .await
-            }
-            ConnectionRole::Unbound => reject_to(connection, "seat_not_owned"),
-        },
+        ClientMessage::QuickChat(request) => {
+            let ConnectionRole::Player { seat_index } = role else {
+                return reject_to(connection, "seat_not_owned");
+            };
+            let Some(seat_index) =
+                assert_active_owned_seat(&state, table_code, connection, Some(seat_index)).await
+            else {
+                return reject_to(connection, "seat_not_owned");
+            };
+            handle_quick_chat(state, table_code, connection, seat_index, request).await
+        }
         ClientMessage::Heartbeat(payload) => MessageOutcome {
             outbound: vec![connection.outbound(heartbeat_message(payload))],
             role: None,
@@ -427,106 +397,6 @@ async fn assert_active_owned_seat(
         None
     }
 }
-async fn handle_watch_table(
-    state: AppContext,
-    table_code: &str,
-    connection: &ConnectionHandle,
-    request: WatchTableRequest,
-) -> MessageOutcome {
-    let session_token = request.session_token.trim().to_string();
-    if session_token.is_empty() {
-        return reject_to(connection, "auth_required");
-    }
-    let authenticated_user = match state
-        .inner
-        .db
-        .get_authenticated_user(&hash_session_token(&session_token), &super::now_iso())
-        .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) | Err(_) => return reject_to(connection, "auth_required"),
-    };
-    let _nickname = request.nickname.trim();
-    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
-        return reject_to(connection, "table_not_found");
-    };
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-
-    let spectator_id = connection.id;
-    let runtime = room_handle.runtime.lock().await;
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let room_is_playing = room_phase(&runtime.room) == "playing";
-    if runtime.room.owner_user_id == Some(authenticated_user.user_id) {
-        return reject_to(connection, "player_cannot_watch_own_table");
-    }
-    let table_code = runtime.room.table_code.clone();
-    let room = runtime.room.clone();
-    drop(runtime);
-
-    match state
-        .inner
-        .db
-        .list_active_table_participants_for_user(authenticated_user.user_id)
-        .await
-    {
-        Ok(active_tables) if active_tables.is_empty() => {}
-        Ok(_) => return reject_to(connection, "player_cannot_watch_own_table"),
-        Err(error) => return internal_error_to(connection, error),
-    }
-    if !room_is_playing {
-        return reject_to(connection, "table_not_started");
-    }
-    match state
-        .inner
-        .db
-        .has_approved_spectator_request(&table_code, authenticated_user.user_id)
-        .await
-    {
-        Ok(true) => {}
-        Ok(false) => return reject_to(connection, "spectator_requires_owner_approval"),
-        Err(error) => return internal_error_to(connection, error),
-    }
-
-    let mut runtime = room_handle.runtime.lock().await;
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    replace_spectator_connection(
-        &mut runtime,
-        spectator_id,
-        authenticated_user.user_id,
-        authenticated_user.display_name.clone(),
-        connection,
-    );
-    let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
-    drop(runtime);
-
-    MessageOutcome {
-        outbound: {
-            let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-                &room,
-                &spectator_identities,
-                &connections,
-            );
-            outbound.extend(collect_observer_outbound_from_snapshot(
-                &room,
-                &spectator_identities,
-                &spectator_connections,
-            ));
-            outbound
-        },
-        role: Some(ConnectionRole::Spectator { spectator_id }),
-        clear_role: false,
-        close_socket: false,
-    }
-}
-
 fn current_seat_index_for_user(
     room: &RoomState,
     user_id: i64,
@@ -660,8 +530,6 @@ async fn handle_join_table(
             let created_at = runtime.created_at.clone();
             let room = runtime.room.clone();
             let connections = snapshot_connections(&runtime);
-            let spectator_connections = snapshot_spectator_connections(&runtime);
-            let spectator_identities = snapshot_spectator_identities(&runtime);
             drop(runtime);
             let room_json = match serialize_room(&room) {
                 Ok(value) => value,
@@ -693,20 +561,14 @@ async fn handle_join_table(
                 ),
             )
             .await;
-            let mut outbound = collect_join_outbound_from_snapshot(
+            let outbound = collect_join_outbound_from_snapshot(
                 &room,
-                &spectator_identities,
                 &connections,
                 table_code,
                 connection,
                 seat_index,
                 true,
             );
-            outbound.extend(collect_observer_outbound_from_snapshot(
-                &room,
-                &spectator_identities,
-                &spectator_connections,
-            ));
             let mut runtime = room_handle.runtime.lock().await;
             add_seat_connection(
                 &mut runtime,
@@ -729,8 +591,6 @@ async fn handle_join_table(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     if !persisted_with_new_participant {
         let room_json = match serialize_room(&room) {
@@ -747,20 +607,14 @@ async fn handle_join_table(
             return internal_error_to(connection, error);
         }
     }
-    let mut outbound = collect_join_outbound_from_snapshot(
+    let outbound = collect_join_outbound_from_snapshot(
         &room,
-        &spectator_identities,
         &connections,
         table_code,
         connection,
         seat_index,
         true,
     );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
     let mut runtime = room_handle.runtime.lock().await;
     add_seat_connection(
         &mut runtime,
@@ -812,23 +666,12 @@ async fn handle_ready(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
@@ -884,23 +727,12 @@ async fn handle_adjust_bots(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
@@ -947,23 +779,12 @@ async fn handle_set_bot_takeover(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
@@ -1037,7 +858,6 @@ async fn handle_start_match(
         reveal_at: reveal_at.clone(),
     });
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
     let selection_message = dealer_selection_started_message(
         dealer_seat,
@@ -1045,15 +865,10 @@ async fn handle_start_match(
         reveal_at,
         DEALER_SELECTION_DURATION_MS,
     );
-    let mut outbound = connections
+    let outbound = connections
         .into_iter()
         .map(|(_, handle)| handle.outbound(selection_message.clone()))
         .collect::<Vec<_>>();
-    outbound.extend(
-        spectator_connections
-            .into_iter()
-            .map(|(_, handle)| handle.outbound(selection_message.clone())),
-    );
     let outcome = MessageOutcome {
         outbound,
         role: None,
@@ -1091,23 +906,12 @@ async fn handle_continue_action(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(error) => return internal_error_to(connection, error),
     };
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if let Err(error) = state
         .inner
         .db
@@ -1196,28 +1000,12 @@ async fn handle_action_request(
     }
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
-    let mut broadcast_handles = connections
+    let broadcast_handles = connections
         .iter()
         .map(|(_, handle)| handle.clone())
         .collect::<Vec<_>>();
-    broadcast_handles.extend(
-        spectator_connections
-            .iter()
-            .map(|(_, handle)| handle.clone()),
-    );
     let room = runtime.room.clone();
-    let mut snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     drop(runtime);
     let mut outbound =
         super::broadcast_to_handles(&broadcast_handles, Some(&rust_handled_messages));
@@ -1271,82 +1059,11 @@ async fn handle_quick_chat(
         super::now_iso(),
     );
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
     drop(runtime);
-    let mut outbound = connections
+    let outbound = connections
         .into_iter()
         .map(|(_, handle)| handle.outbound(payload.clone()))
         .collect::<Vec<_>>();
-    outbound.extend(
-        spectator_connections
-            .into_iter()
-            .map(|(_, handle)| handle.outbound(payload.clone())),
-    );
-    MessageOutcome {
-        outbound,
-        role: None,
-        clear_role: false,
-        close_socket: false,
-    }
-}
-
-async fn handle_spectator_quick_chat(
-    state: AppContext,
-    table_code: &str,
-    connection: &ConnectionHandle,
-    spectator_id: u64,
-    request: QuickChatRequest,
-) -> MessageOutcome {
-    let target_seat = request.target_seat;
-    let emoji = request.emoji.trim().to_string();
-    if emoji.is_empty() {
-        return reject_to(connection, "invalid_action");
-    }
-
-    let Some(room_handle) = room_handle(&state, table_code).await else {
-        return reject_to(connection, "table_not_found");
-    };
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let runtime = room_handle.runtime.lock().await;
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let Some(target_seat) = target_seat else {
-        return reject_to(connection, "invalid_action");
-    };
-    if !occupied_seats(&runtime.room).contains(&target_seat) {
-        return reject_to(connection, "invalid_action");
-    }
-    let Some(spectator) = runtime.spectator_connections.get(&spectator_id) else {
-        return reject_to(connection, "seat_not_owned");
-    };
-    if spectator.connection.id != connection.id {
-        return reject_to(connection, "seat_not_owned");
-    }
-
-    let payload = quick_chat_message(
-        generate_short_hex(8),
-        target_seat,
-        target_seat,
-        Some("spectator"),
-        Some(&spectator.display_name),
-        emoji,
-        super::now_iso(),
-    );
-    let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    drop(runtime);
-    let mut outbound = connections
-        .into_iter()
-        .map(|(_, handle)| handle.outbound(payload.clone()))
-        .collect::<Vec<_>>();
-    outbound.extend(
-        spectator_connections
-            .into_iter()
-            .map(|(_, handle)| handle.outbound(payload.clone())),
-    );
     MessageOutcome {
         outbound,
         role: None,
@@ -1428,8 +1145,6 @@ async fn handle_leave_table(
                 .into_iter()
                 .filter(|(other_seat, _)| *other_seat != seat_index)
                 .collect::<Vec<_>>();
-            let spectator_connections = snapshot_spectator_connections(&runtime);
-            let spectator_identities = snapshot_spectator_identities(&runtime);
             drop(runtime);
             let room_json = match serialize_room(&room) {
                 Ok(value) => value,
@@ -1437,16 +1152,10 @@ async fn handle_leave_table(
             };
             outbound.extend(presence_and_snapshot_for_all_from_snapshot(
                 &room,
-                &spectator_identities,
                 &connections,
                 table_code,
                 seat_index,
                 false,
-            ));
-            outbound.extend(collect_observer_outbound_from_snapshot(
-                &room,
-                &spectator_identities,
-                &spectator_connections,
             ));
             if let Err(error) = state
                 .inner
@@ -1515,8 +1224,6 @@ async fn handle_leave_table(
             .into_iter()
             .filter(|(other_seat, _)| *other_seat != seat_index)
             .collect::<Vec<_>>();
-        let spectator_connections = snapshot_spectator_connections(&runtime);
-        let spectator_identities = snapshot_spectator_identities(&runtime);
         drop(runtime);
         let room_json = match serialize_room(&room) {
             Ok(value) => value,
@@ -1524,13 +1231,7 @@ async fn handle_leave_table(
         };
         outbound.extend(collect_snapshot_and_prompt_outbound_from_snapshot(
             &room,
-            &spectator_identities,
             &connections,
-        ));
-        outbound.extend(collect_observer_outbound_from_snapshot(
-            &room,
-            &spectator_identities,
-            &spectator_connections,
         ));
         if let Err(error) = state
             .inner
@@ -1603,26 +1304,18 @@ async fn handle_disconnect(
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let mut outbound = presence_and_snapshot_for_all_from_snapshot(
+    let outbound = presence_and_snapshot_for_all_from_snapshot(
         &room,
-        &spectator_identities,
         &connections,
         table_code,
         seat_index,
         false,
     );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
     if state
         .inner
         .db
@@ -1638,39 +1331,6 @@ async fn handle_disconnect(
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code.to_string());
 }
-async fn handle_spectator_disconnect(
-    state: AppContext,
-    table_code: &str,
-    spectator_id: u64,
-    connection_id: u64,
-) {
-    let Some(room_handle) = room_handle(&state, table_code).await else {
-        return;
-    };
-    if room_handle.is_closed() {
-        return;
-    }
-    let mut runtime = room_handle.runtime.lock().await;
-    remove_spectator_connection(&mut runtime, spectator_id, connection_id);
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
-    drop(runtime);
-
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
-    send_outbound(outbound);
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1681,9 +1341,8 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, ReadyRequest,
-        WatchTableRequest, handle_client_message, handle_disconnect, handle_join_table,
-        handle_watch_table, parse_client_message,
+        ClientMessage, ConnectionRole, JoinTableRequest, ReadyRequest, handle_client_message,
+        handle_disconnect, handle_join_table, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1904,95 +1563,6 @@ mod tests {
             .await?;
 
         Ok((AppContext::new(worker), guest_token))
-    }
-
-    async fn build_watch_state(table_code: &str) -> Result<(AppContext, i64, String, i64, String)> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-        let worker = DbWorker::start(db)?;
-
-        worker
-            .create_invite_code("INVITE200005", "2026-05-06T00:00:00Z", None)
-            .await?;
-        let owner_token = generate_session_token();
-        let owner = worker
-            .register_user(
-                "OwnerWatch",
-                "OwnerWatch",
-                &hash_password("secret-123")?,
-                "INVITE200005",
-                &hash_session_token(&owner_token),
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        worker
-            .create_invite_code("INVITE200006", "2026-05-06T00:00:00Z", None)
-            .await?;
-        let guest_token = generate_session_token();
-        let guest = worker
-            .register_user(
-                "GuestWatch",
-                "GuestWatch",
-                &hash_password("secret-123")?,
-                "INVITE200006",
-                &hash_session_token(&guest_token),
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        worker
-            .create_invite_code("INVITE200007", "2026-05-06T00:00:00Z", None)
-            .await?;
-        let viewer_token = generate_session_token();
-        let viewer = worker
-            .register_user(
-                "ViewerWatch",
-                "ViewerWatch",
-                &hash_password("secret-123")?,
-                "INVITE200007",
-                &hash_session_token(&viewer_token),
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        let mut room = initial_room_state_with_owner(table_code, Some(owner.user_id), 1);
-        room.phase = "playing".to_string();
-        room.seats.push(SeatState {
-            seat_index: 0,
-            user_id: Some(guest.user_id),
-            nickname: Some("GuestWatch".to_string()),
-            points: Some(600),
-            title: Some("正分守门员".to_string()),
-            connected: true,
-            ready: true,
-            is_bot: false,
-            seat_type: "human".to_string(),
-            bot_persona: None,
-            bot_aggression: None,
-            disconnect_deadline_at: None,
-            consecutive_timeout_auto_response_count: 0,
-        });
-        let room_json = serialize_room_state(&room)?;
-        worker
-            .save_table_and_upsert_participant(
-                table_code,
-                "2026-05-06T00:00:00Z",
-                &room_json,
-                0,
-                guest.user_id,
-                "GuestWatch",
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-
-        Ok((
-            AppContext::new(worker),
-            guest.user_id,
-            guest_token,
-            viewer.user_id,
-            viewer_token,
-        ))
     }
 
     #[test]
@@ -2341,256 +1911,6 @@ mod tests {
         let runtime = room_handle.runtime.lock().await;
         assert!(!runtime.room.seats[0].connected);
         assert!(runtime.connections.get(&0).is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn parse_watch_table_message() {
-        let parsed = parse_client_message(
-            r#"{"type":"watch_table","payload":{"session_token":"token-456","nickname":"Viewer"}}"#,
-        )
-        .expect("watch_table should parse");
-        assert!(matches!(
-            parsed,
-            ClientMessage::WatchTable(request)
-                if request.session_token == "token-456" && request.nickname == "Viewer"
-        ));
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn spectator_player_in_same_table_cannot_watch_own_table() -> Result<()> {
-        let (state, _guest_user_id, guest_token, _viewer_user_id, _viewer_token) =
-            build_watch_state("ROOM72").await?;
-        let (connection, _receiver) = test_connection_handle(1, 8);
-
-        let outcome = handle_watch_table(
-            state,
-            "ROOM72",
-            &connection,
-            WatchTableRequest {
-                session_token: guest_token,
-                nickname: "GuestWatch".to_string(),
-            },
-        )
-        .await;
-
-        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
-        assert_eq!(
-            payload["payload"]["reason"],
-            "player_cannot_watch_own_table"
-        );
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn spectator_player_in_another_table_cannot_watch_table() -> Result<()> {
-        let (state, _guest_user_id, _guest_token, viewer_user_id, viewer_token) =
-            build_watch_state("ROOM74").await?;
-        state
-            .inner
-            .db
-            .create_spectator_request("ROOM74", viewer_user_id, 1, "2026-05-06T00:10:00Z")
-            .await?;
-        state
-            .inner
-            .db
-            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
-            .await?;
-        state
-            .inner
-            .db
-            .save_table_and_upsert_participant(
-                "ROOM75",
-                "2026-05-06T00:00:00Z",
-                r#"{"table_code":"ROOM75","phase":"playing","seats":[]}"#,
-                0,
-                viewer_user_id,
-                "ViewerWatch",
-                "2026-05-06T00:00:00Z",
-            )
-            .await?;
-        let (connection, _receiver) = test_connection_handle(1, 8);
-
-        let outcome = handle_watch_table(
-            state,
-            "ROOM74",
-            &connection,
-            WatchTableRequest {
-                session_token: viewer_token,
-                nickname: "ViewerWatch".to_string(),
-            },
-        )
-        .await;
-
-        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
-        assert_eq!(
-            payload["payload"]["reason"],
-            "player_cannot_watch_own_table"
-        );
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn spectator_watch_table_requires_owner_approval() -> Result<()> {
-        let (state, _guest_user_id, _guest_token, _viewer_user_id, viewer_token) =
-            build_watch_state("ROOM82").await?;
-        let (connection, _receiver) = test_connection_handle(1, 8);
-
-        let outcome = handle_watch_table(
-            state,
-            "ROOM82",
-            &connection,
-            WatchTableRequest {
-                session_token: viewer_token,
-                nickname: "ViewerWatch".to_string(),
-            },
-        )
-        .await;
-
-        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
-        assert_eq!(
-            payload["payload"]["reason"],
-            "spectator_requires_owner_approval"
-        );
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn spectator_waiting_table_rejects_approved_watch_table() -> Result<()> {
-        let (state, _guest_user_id, _guest_token, viewer_user_id, viewer_token) =
-            build_watch_state("ROOM93").await?;
-        let room_handle = ensure_room_loaded(&state, "ROOM93")
-            .await
-            .expect("room load should succeed")
-            .expect("room should be loaded");
-        {
-            let mut runtime = room_handle.runtime.lock().await;
-            runtime.room.phase = "waiting".to_string();
-        }
-        state
-            .inner
-            .db
-            .create_spectator_request("ROOM93", viewer_user_id, 1, "2026-05-06T00:10:00Z")
-            .await?;
-        state
-            .inner
-            .db
-            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
-            .await?;
-        let (connection, _receiver) = test_connection_handle(1, 8);
-
-        let outcome = handle_watch_table(
-            state,
-            "ROOM93",
-            &connection,
-            WatchTableRequest {
-                session_token: viewer_token,
-                nickname: "ViewerWatch".to_string(),
-            },
-        )
-        .await;
-
-        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
-        assert_eq!(payload["payload"]["reason"], "table_not_started");
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn spectator_approved_request_allows_watch_table() -> Result<()> {
-        let (state, _guest_user_id, _guest_token, viewer_user_id, viewer_token) =
-            build_watch_state("ROOM92").await?;
-        state
-            .inner
-            .db
-            .create_spectator_request("ROOM92", viewer_user_id, 1, "2026-05-06T00:10:00Z")
-            .await?;
-        state
-            .inner
-            .db
-            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
-            .await?;
-        let (connection, _receiver) = test_connection_handle(1, 8);
-
-        let outcome = handle_watch_table(
-            state,
-            "ROOM92",
-            &connection,
-            WatchTableRequest {
-                session_token: viewer_token,
-                nickname: "ViewerWatch".to_string(),
-            },
-        )
-        .await;
-
-        assert!(matches!(
-            outcome.role,
-            Some(ConnectionRole::Spectator { .. })
-        ));
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn spectator_can_send_quick_chat_to_table() -> Result<()> {
-        let (state, _guest_user_id, guest_token, viewer_user_id, viewer_token) =
-            build_watch_state("ROOM94").await?;
-        state
-            .inner
-            .db
-            .create_spectator_request("ROOM94", viewer_user_id, 1, "2026-05-06T00:10:00Z")
-            .await?;
-        state
-            .inner
-            .db
-            .decide_spectator_request(1, 1, true, "2026-05-06T00:11:00Z")
-            .await?;
-        let (player_connection, _player_receiver) = test_connection_handle(2, 8);
-        let player_join = handle_join_table(
-            state.clone(),
-            "ROOM94",
-            &player_connection,
-            JoinTableRequest {
-                session_token: guest_token,
-            },
-        )
-        .await;
-        assert!(matches!(
-            player_join.role,
-            Some(ConnectionRole::Player { seat_index: 0 })
-        ));
-        let (spectator_connection, _spectator_receiver) = test_connection_handle(1, 8);
-        let watch_outcome = handle_watch_table(
-            state.clone(),
-            "ROOM94",
-            &spectator_connection,
-            WatchTableRequest {
-                session_token: viewer_token,
-                nickname: "ViewerWatch".to_string(),
-            },
-        )
-        .await;
-        let Some(ConnectionRole::Spectator { spectator_id }) = watch_outcome.role else {
-            panic!("watch_table should bind spectator role");
-        };
-
-        let chat_outcome = handle_client_message(
-            state,
-            "ROOM94",
-            &spectator_connection,
-            ConnectionRole::Spectator { spectator_id },
-            ClientMessage::QuickChat(QuickChatRequest {
-                target_seat: Some(0),
-                emoji: "观战加油".to_string(),
-            }),
-        )
-        .await;
-
-        assert_eq!(chat_outcome.outbound.len(), 2);
-        let payload: Value = serde_json::from_str(&chat_outcome.outbound[0].payload)?;
-        assert_eq!(payload["type"], "quick_chat");
-        assert_eq!(payload["payload"]["actor_kind"], "spectator");
-        assert_eq!(payload["payload"]["actor_display_name"], "ViewerWatch");
-        assert_eq!(payload["payload"]["target_seat"], 0);
-        assert_eq!(payload["payload"]["emoji"], "观战加油");
         Ok(())
     }
 }

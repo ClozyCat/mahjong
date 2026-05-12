@@ -22,8 +22,6 @@ import {
 export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
   | { type: 'set_credentials'; tableCode?: string; nickname?: string }
-  | { type: 'set_client_mode'; clientMode: SessionState['clientMode'] }
-  | { type: 'set_spectator_focus_seat'; seatIndex: number | null }
   | { type: 'set_connection_status'; status: SessionState['connectionStatus'] }
   | { type: 'queue_optimistic_discard'; tileId: string; actionType: Extract<BackendActionType, 'discard' | 'ready_hand'> }
   | { type: 'queue_optimistic_flower'; tileId: string }
@@ -397,8 +395,6 @@ export function createInitialSessionState(): SessionState {
   return {
     apiBaseUrl: undefined,
     wsBaseUrl: undefined,
-    clientMode: 'player',
-    spectatorFocusSeat: null,
     tableCode: '',
     nickname: '',
     connectionStatus: 'idle',
@@ -558,18 +554,6 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         ...state,
         tableCode: action.tableCode ?? state.tableCode,
         nickname: action.nickname ?? state.nickname,
-      };
-    case 'set_client_mode':
-      return {
-        ...state,
-        clientMode: action.clientMode,
-      };
-    case 'set_spectator_focus_seat':
-      return {
-        ...state,
-        spectatorFocusSeat: action.seatIndex,
-        selectedTileIds: [],
-        selectionMode: null,
       };
     case 'set_connection_status':
       return {

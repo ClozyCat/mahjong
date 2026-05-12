@@ -12,12 +12,10 @@ interface ConnectGateProps {
   tableCodeError?: string | null;
   canCreate: boolean;
   canJoin: boolean;
-  canWatch?: boolean;
   message?: string | null;
   onChange: (patch: Partial<ConnectGateValue>) => void;
   onCreate: () => void;
   onJoin: () => void;
-  onWatch?: () => void;
 }
 export function ConnectGate({
   value,
@@ -26,12 +24,10 @@ export function ConnectGate({
   tableCodeError,
   canCreate,
   canJoin,
-  canWatch,
   message,
   onChange,
   onCreate,
   onJoin,
-  onWatch,
 }: ConnectGateProps) {
   const [tableCodeDraft, setTableCodeDraft] = useState(value.tableCode);
   const [nicknameDraft, setNicknameDraft] = useState(value.nickname);
@@ -166,18 +162,6 @@ export function ConnectGate({
             </button>
           </div>
 
-          {onWatch && (
-            <div className="connect-gate__spectate-action">
-              <button
-                type="button"
-                className="connect-gate__btn connect-gate__btn--spectate"
-                onClick={onWatch}
-                disabled={!canWatch}
-              >
-                观战牌桌
-              </button>
-            </div>
-          )}
         </section>
 
       </div>

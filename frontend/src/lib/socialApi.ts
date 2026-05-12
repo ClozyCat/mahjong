@@ -3,7 +3,6 @@ import type {
   ActiveTableResponse,
   CreateTableResponse,
   PublicUser,
-  SpectatorRequest,
   TableInvite,
 } from '../types/match';
 
@@ -110,48 +109,4 @@ export function rejectTableInvite(baseUrl: string, sessionToken: string, inviteI
     },
     body: JSON.stringify({}),
   });
-}
-
-export function getMySpectatorRequests(baseUrl: string, sessionToken: string) {
-  return requestJson<SpectatorRequest[]>(`${normalizeBaseUrl(baseUrl)}/api/me/spectator-requests`, {
-    headers: authHeaders(sessionToken),
-  });
-}
-
-export function createSpectatorRequest(
-  baseUrl: string,
-  sessionToken: string,
-  tableCode: string,
-  targetUserId?: number,
-) {
-  return requestJson<SpectatorRequest>(`${normalizeBaseUrl(baseUrl)}/api/tables/${tableCode}/spectator-requests`, {
-    method: 'POST',
-    headers: {
-      ...authHeaders(sessionToken),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      target_user_id: targetUserId,
-    }),
-  });
-}
-
-export function approveSpectatorRequest(baseUrl: string, sessionToken: string, requestId: number) {
-  return requestJson<SpectatorRequest>(
-    `${normalizeBaseUrl(baseUrl)}/api/spectator-requests/${requestId}/approve`,
-    {
-      method: 'POST',
-      headers: authHeaders(sessionToken),
-    },
-  );
-}
-
-export function rejectSpectatorRequest(baseUrl: string, sessionToken: string, requestId: number) {
-  return requestJson<SpectatorRequest>(
-    `${normalizeBaseUrl(baseUrl)}/api/spectator-requests/${requestId}/reject`,
-    {
-      method: 'POST',
-      headers: authHeaders(sessionToken),
-    },
-  );
 }

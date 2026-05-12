@@ -20,10 +20,10 @@ use super::auth::{
 use super::invites::{InviteAvailability, invite_availability, invite_expires_at};
 use super::persistence::{Database, DbWorker, UserRecord};
 use super::protocol::{create_table_response, detail_response};
-use super::records::{fan_stat_view, game_detail_view, game_summary_view};
+use super::records::{game_detail_view, game_summary_view};
 use super::room_runtime::{
     RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms, restore_room_snapshot,
-    snapshot_connections, snapshot_spectator_connections, snapshot_spectator_identities,
+    snapshot_connections,
 };
 use super::scheduler::schedule_room_tasks_detached;
 use super::social_ws::social_websocket_handler;
@@ -32,11 +32,10 @@ use super::users::{
 };
 use super::ws::websocket_handler;
 use super::{
-    AppContext, CreateTableRequest, Settings, collect_observer_outbound_from_snapshot,
-    collect_snapshot_and_prompt_outbound_from_snapshot, initial_room_state_with_owner,
-    is_valid_table_code, normalize_table_code, notify_all_user_connections,
-    notify_user_connections, now_iso, parse_room_json, room_phase, send_outbound,
-    serialize_room_state, user_active_table_updated_message,
+    AppContext, CreateTableRequest, Settings, collect_snapshot_and_prompt_outbound_from_snapshot,
+    initial_room_state_with_owner, is_valid_table_code, normalize_table_code,
+    notify_all_user_connections, notify_user_connections, now_iso, parse_room_json, room_phase,
+    send_outbound, serialize_room_state, user_active_table_updated_message,
 };
 use crate::core::state::{RoomState, SeatState};
 use crate::special_bots::{self, SPECIAL_BOT_SEAT_TYPE};
@@ -82,12 +81,6 @@ struct CreateTableInviteRequest {
     invitee_user_id: i64,
 }
 
-#[derive(Debug, Deserialize)]
-struct CreateSpectatorRequestRequest {
-    #[serde(default)]
-    target_user_id: Option<i64>,
-}
-
 #[derive(Debug, Serialize)]
 struct AuthResponse {
     session_token: String,
@@ -119,17 +112,6 @@ struct AcceptInviteResponse {
     table_code: String,
     seat_index: usize,
     status: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct SpectatorRequestResponse {
-    id: i64,
-    table_code: String,
-    requester_user_id: i64,
-    owner_user_id: i64,
-    status: String,
-    created_at: String,
-    decided_at: Option<String>,
 }
 
 pub(crate) async fn run() -> Result<()> {
@@ -206,15 +188,10 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/games/{game_id}", get(get_game))
         .route("/api/leaderboard", get(get_leaderboard))
         .route("/api/me/invites", get(get_my_invites))
-        .route("/api/me/spectator-requests", get(get_my_spectator_requests))
         .route("/api/tables", post(create_table))
         .route(
             "/api/tables/{table_code}/invites",
             post(create_table_invite),
-        )
-        .route(
-            "/api/tables/{table_code}/spectator-requests",
-            post(create_spectator_request),
         )
         .route(
             "/api/tables/{table_code}/multiplier",
@@ -222,14 +199,6 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         )
         .route("/api/invites/{invite_id}/accept", post(accept_table_invite))
         .route("/api/invites/{invite_id}/reject", post(reject_table_invite))
-        .route(
-            "/api/spectator-requests/{request_id}/approve",
-            post(approve_spectator_request),
-        )
-        .route(
-            "/api/spectator-requests/{request_id}/reject",
-            post(reject_spectator_request),
-        )
         .route("/ws/me", get(social_websocket_handler))
         .route("/ws/{table_code}", get(websocket_handler))
         .with_state(app_state)
@@ -955,8 +924,6 @@ async fn auto_accept_special_bot_invite(
     let room = runtime.room.clone();
     let room_created_at = runtime.created_at.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
 
     let room_json = match serialize_room_state(&room) {
@@ -1018,157 +985,11 @@ async fn auto_accept_special_bot_invite(
     )
     .await;
 
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 
     (StatusCode::CREATED, Json(table_invite_response(invite))).into_response()
-}
-
-async fn create_spectator_request(
-    State(state): State<AppContext>,
-    headers: axum::http::HeaderMap,
-    axum::extract::Path(table_code): axum::extract::Path<String>,
-    payload: Option<Json<CreateSpectatorRequestRequest>>,
-) -> Response {
-    let authenticated_user = match require_authenticated_user(&state, &headers).await {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-    let target_user_id = payload.and_then(|Json(body)| body.target_user_id);
-    let table_code = normalize_table_code(&table_code);
-    let Some(room_handle) = crate::app::room_runtime::ensure_room_loaded(&state, &table_code)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return json_error(StatusCode::NOT_FOUND, "table_not_found");
-    };
-    if room_handle.is_closed() {
-        return json_error(StatusCode::NOT_FOUND, "table_not_found");
-    }
-
-    let runtime = room_handle.runtime.lock().await;
-    let room_is_playing = room_phase(&runtime.room) == "playing";
-    if runtime.room.owner_user_id == Some(authenticated_user.user_id) {
-        return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table");
-    }
-    drop(runtime);
-
-    match state
-        .inner
-        .db
-        .list_active_table_participants_for_user(authenticated_user.user_id)
-        .await
-    {
-        Ok(active_tables) if active_tables.is_empty() => {}
-        Ok(_) => return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table"),
-        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    }
-
-    if !room_is_playing {
-        return json_error(StatusCode::CONFLICT, "table_not_started");
-    }
-
-    let fallback_owner_user_id = match state.inner.db.get_table(&table_code).await {
-        Ok(Some(record)) => match parse_room_json(&record.room_json) {
-            Ok(room) => match room.owner_user_id {
-                Some(owner_user_id) => owner_user_id,
-                None => {
-                    return json_error(StatusCode::CONFLICT, "spectator_requires_owner_approval");
-                }
-            },
-            Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-        },
-        Ok(None) => return json_error(StatusCode::NOT_FOUND, "table_not_found"),
-        Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    };
-    let approval_user_id = match target_user_id {
-        Some(user_id) if user_id == authenticated_user.user_id => {
-            return json_error(StatusCode::CONFLICT, "player_cannot_watch_own_table");
-        }
-        Some(user_id) => match state
-            .inner
-            .db
-            .get_active_table_participant(&table_code, user_id)
-            .await
-        {
-            Ok(Some(_)) => user_id,
-            Ok(None) => return json_error(StatusCode::CONFLICT, "spectator_target_not_in_table"),
-            Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-        },
-        None => fallback_owner_user_id,
-    };
-    if state
-        .inner
-        .special_bot_user_ids
-        .read()
-        .await
-        .contains(&approval_user_id)
-    {
-        return json_error(StatusCode::CONFLICT, "special_bot_cannot_be_watched");
-    }
-
-    match state
-        .inner
-        .db
-        .create_spectator_request(
-            &table_code,
-            authenticated_user.user_id,
-            approval_user_id,
-            &now_iso(),
-        )
-        .await
-    {
-        Ok(request) => {
-            let payload = spectator_request_response(request.clone());
-            notify_user_connections(
-                &state,
-                approval_user_id,
-                json!({
-                    "type": "spectator_request_created",
-                    "payload": payload.clone(),
-                }),
-            )
-            .await;
-            (StatusCode::CREATED, Json(payload)).into_response()
-        }
-        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    }
-}
-
-async fn get_my_spectator_requests(
-    State(state): State<AppContext>,
-    headers: axum::http::HeaderMap,
-) -> Response {
-    let authenticated_user = match require_authenticated_user(&state, &headers).await {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-    match state
-        .inner
-        .db
-        .list_spectator_requests_for_user(authenticated_user.user_id)
-        .await
-    {
-        Ok(requests) => Json(
-            requests
-                .into_iter()
-                .map(spectator_request_response)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
-        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    }
 }
 
 async fn accept_table_invite(
@@ -1318,22 +1139,6 @@ async fn accept_table_invite(
     }
 }
 
-async fn approve_spectator_request(
-    State(state): State<AppContext>,
-    headers: axum::http::HeaderMap,
-    axum::extract::Path(request_id): axum::extract::Path<i64>,
-) -> Response {
-    decide_spectator_request(state, headers, request_id, true).await
-}
-
-async fn reject_spectator_request(
-    State(state): State<AppContext>,
-    headers: axum::http::HeaderMap,
-    axum::extract::Path(request_id): axum::extract::Path<i64>,
-) -> Response {
-    decide_spectator_request(state, headers, request_id, false).await
-}
-
 async fn reject_table_invite(
     State(state): State<AppContext>,
     headers: axum::http::HeaderMap,
@@ -1363,40 +1168,6 @@ async fn reject_table_invite(
             Json(payload).into_response()
         }
         Ok(None) => json_error(StatusCode::NOT_FOUND, "table_invite_invalid"),
-        Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
-    }
-}
-
-async fn decide_spectator_request(
-    state: AppContext,
-    headers: axum::http::HeaderMap,
-    request_id: i64,
-    approved: bool,
-) -> Response {
-    let authenticated_user = match require_authenticated_user(&state, &headers).await {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-    match state
-        .inner
-        .db
-        .decide_spectator_request(request_id, authenticated_user.user_id, approved, &now_iso())
-        .await
-    {
-        Ok(Some(request)) => {
-            let payload = spectator_request_response(request.clone());
-            notify_user_connections(
-                &state,
-                request.requester_user_id,
-                json!({
-                    "type": "spectator_request_decided",
-                    "payload": payload.clone(),
-                }),
-            )
-            .await;
-            Json(payload).into_response()
-        }
-        Ok(None) => json_error(StatusCode::NOT_FOUND, "spectator_request_not_found"),
         Err(error) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
     }
 }
@@ -1510,19 +1281,5 @@ fn table_invite_response(invite: super::persistence::TableInviteRecord) -> Table
         created_at: invite.created_at,
         expires_at: invite.expires_at,
         accepted_at: invite.accepted_at,
-    }
-}
-
-fn spectator_request_response(
-    request: super::persistence::SpectatorRequestRecord,
-) -> SpectatorRequestResponse {
-    SpectatorRequestResponse {
-        id: request.id,
-        table_code: request.table_code,
-        requester_user_id: request.requester_user_id,
-        owner_user_id: request.owner_user_id,
-        status: request.status,
-        created_at: request.created_at,
-        decided_at: request.decided_at,
     }
 }

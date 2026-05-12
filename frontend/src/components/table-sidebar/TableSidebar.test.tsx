@@ -15,13 +15,10 @@ describe('TableSidebar', () => {
         activeTab="room"
         tablePlayers={[]}
         onlineUsers={[]}
-        spectators={[]}
         roomPanel={<div>room panel</div>}
         messagesPanel={<div>messages panel</div>}
-        profilePanel={<div>profile</div>}
         onToggle={onToggle}
         onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
       />,
     );
 
@@ -29,7 +26,11 @@ describe('TableSidebar', () => {
 
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('tab', { name: '牌局' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '消息' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual([
+      '牌局',
+      '消息',
+      '所有玩家',
+    ]);
     expect(screen.getByText('room panel')).toBeInTheDocument();
   });
 
@@ -40,73 +41,34 @@ describe('TableSidebar', () => {
         activeTab="messages"
         tablePlayers={[]}
         onlineUsers={[]}
-        spectators={[]}
         roomPanel={<div>room panel</div>}
         messagesPanel={<div>messages panel</div>}
-        profilePanel={<div>profile</div>}
         tabAlerts={{ messages: true }}
         onToggle={vi.fn()}
         onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
       />,
     );
 
     expect(screen.getByRole('tab', { name: '牌局' }).querySelector('.table-sidebar__tab-alert')).toBeNull();
     expect(screen.getByRole('tab', { name: '消息' }).querySelector('.table-sidebar__tab-alert')).toHaveTextContent('!');
     expect(screen.getByText('messages panel')).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: '观战申请' })).not.toBeInTheDocument();
   });
 
-  it('falls back to a visible tab when the requested room tab is unavailable', () => {
+  it('falls back to the all players tab when the requested room tab is unavailable', () => {
     render(
       <TableSidebar
         isOpen
         activeTab="room"
         tablePlayers={[]}
         onlineUsers={[]}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
         onToggle={vi.fn()}
         onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
       />,
     );
 
     expect(screen.queryByRole('tab', { name: '牌局' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '本局玩家' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('尚未开局')).toBeInTheDocument();
-  });
-
-  it('shows in-table players by display label without seat wind labels', () => {
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="players"
-        tablePlayers={[
-          {
-            key: 'east',
-            seatLabel: '东位',
-            displayLabel: '阿明（雀士）',
-            score: 25000,
-            liveDelta: 0,
-            points: 320,
-            connected: true,
-          },
-        ]}
-        onlineUsers={[]}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-      />,
-    );
-
-    const row = screen.getByRole('listitem');
-
-    expect(within(row).getByText('阿明（雀士）')).toBeInTheDocument();
-    expect(within(row).queryByText('东位')).not.toBeInTheDocument();
-    expect(within(row).queryByText('东位 阿明（雀士）')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '所有玩家' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('暂无玩家')).toBeInTheDocument();
   });
 
   it('shows all users by points and updates player status labels from presence', () => {
@@ -150,493 +112,114 @@ describe('TableSidebar', () => {
       activeTab: 'online' as const,
       tablePlayers: [],
       onlineUsers: users,
-      spectators: [],
-      profilePanel: <div>profile</div>,
       onToggle: vi.fn(),
       onTabChange: vi.fn(),
-      onSelectUser: vi.fn(),
     };
 
     const { rerender } = render(<TableSidebar {...baseProps} onlineUserIds={[2]} />);
 
     expect(screen.getByRole('tab', { name: '所有玩家' })).toHaveAttribute('aria-selected', 'true');
     const rows = screen.getAllByRole('listitem');
-    expect(within(rows[0]).getByText(/阿成（雀士）/)).toBeInTheDocument();
-    expect(within(rows[1]).getByText(/阿强（平民）/)).toBeInTheDocument();
-    expect(within(rows[2]).getByText(/阿丹（平民）/)).toBeInTheDocument();
-    expect(within(rows[1]).getByText('在线')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('离线')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText(/阿成（雀士）/)).toBeInTheDocument();
+    expect(within(rows[1]!).getByText(/阿强（平民）/)).toBeInTheDocument();
+    expect(within(rows[2]!).getByText(/阿丹（平民）/)).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('在线')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('离线')).toBeInTheDocument();
 
     rerender(<TableSidebar {...baseProps} onlineUserIds={[3]} />);
 
-    expect(within(screen.getAllByRole('listitem')[0]).getByText('在线')).toBeInTheDocument();
-    expect(within(screen.getAllByRole('listitem')[1]).getByText('离线')).toBeInTheDocument();
+    expect(within(screen.getAllByRole('listitem')[0]!).getByText('在线')).toBeInTheDocument();
+    expect(within(screen.getAllByRole('listitem')[1]!).getByText('离线')).toBeInTheDocument();
   });
 
-  it('splits online in-table status between player and bot games', () => {
-    const users = [
-      {
-        user_id: 1,
-        username: 'alice',
-        display_name: '阿明',
-        points: 300,
-        title: '平民',
-        display_label: '阿明（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'HUMAN01',
-        active_table_phase: 'playing' as const,
-      },
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'HUMAN01',
-        active_table_phase: 'playing' as const,
-      },
-      {
-        user_id: 3,
-        username: 'chen',
-        display_name: '阿成',
-        points: 80,
-        title: '平民',
-        display_label: '阿成（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'BOT01',
-        active_table_phase: 'playing' as const,
-      },
-    ];
-
+  it('marks the current account without rendering legacy watch actions', () => {
     render(
       <TableSidebar
         isOpen
         activeTab="online"
         tablePlayers={[]}
-        onlineUsers={users}
-        onlineUserIds={[1, 2, 3]}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
+        onlineUsers={[
+          {
+            user_id: 1,
+            username: 'alice',
+            display_name: '阿明',
+            points: 300,
+            title: '平民',
+            display_label: '阿明（平民）',
+            bio: '',
+            avatar: null,
+            active_table_code: 'HUMAN01',
+            active_table_phase: 'playing',
+          },
+          {
+            user_id: 2,
+            username: 'bob',
+            display_name: '阿强',
+            points: 120,
+            title: '平民',
+            display_label: '阿强（平民）',
+            bio: '',
+            avatar: null,
+            active_table_code: 'HUMAN01',
+            active_table_phase: 'playing',
+          },
+        ]}
+        onlineUserIds={[1, 2]}
+        currentUserId={1}
         onToggle={vi.fn()}
         onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
       />,
     );
 
     const rows = screen.getAllByRole('listitem');
 
-    expect(within(rows[0]).getByText('与玩家对局中')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('与玩家对局中')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('与BOT对局中')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('当前账号')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('与玩家对局中')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('与玩家对局中')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
 
-  it('shows creating status for users in a waiting table', () => {
-    const users = [
-      {
-        user_id: 1,
-        username: 'alice',
-        display_name: '阿明',
-        points: 300,
-        title: '平民',
-        display_label: '阿明（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'WAIT01',
-      },
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'BOT01',
-        active_table_phase: 'playing' as const,
-      },
-    ];
-
+  it('shows creating and bot-game status labels', () => {
     render(
       <TableSidebar
         isOpen
         activeTab="online"
         tablePlayers={[]}
-        onlineUsers={users}
+        onlineUsers={[
+          {
+            user_id: 1,
+            username: 'alice',
+            display_name: '阿明',
+            points: 300,
+            title: '平民',
+            display_label: '阿明（平民）',
+            bio: '',
+            avatar: null,
+            active_table_code: 'WAIT01',
+          },
+          {
+            user_id: 2,
+            username: 'bob',
+            display_name: '阿强',
+            points: 120,
+            title: '平民',
+            display_label: '阿强（平民）',
+            bio: '',
+            avatar: null,
+            active_table_code: 'BOT01',
+            active_table_phase: 'playing',
+          },
+        ]}
         onlineUserIds={[1, 2]}
         creatingTableCodes={['WAIT01']}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
         onToggle={vi.fn()}
         onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
       />,
     );
 
     const rows = screen.getAllByRole('listitem');
 
-    expect(within(rows[0]).getByText('创建牌局中')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('与BOT对局中')).toBeInTheDocument();
-  });
-
-  it('disables watch for users in waiting tables', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'WAIT01',
-        active_table_phase: 'waiting' as const,
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        currentUserId={1}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const row = screen.getByText(/阿强（平民）/).closest('li');
-    expect(row).not.toBeNull();
-    expect(within(row!).getByText('创建牌局中')).toBeInTheDocument();
-
-    const watchButton = within(row!).getByRole('button', { name: '观战' });
-    expect(watchButton).toBeDisabled();
-
-    await user.click(watchButton);
-
-    expect(onWatchUser).not.toHaveBeenCalled();
-  });
-
-  it('disables watch for special bots even when they are in playing tables', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 8,
-        username: 'bot_schubert',
-        display_name: '舒伯特',
-        points: 600,
-        title: '平民',
-        display_label: '舒伯特（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'ROOM42',
-        active_table_phase: 'playing' as const,
-        is_special_bot: true,
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        currentUserId={1}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const row = screen.getByText(/舒伯特（平民）/).closest('li');
-    expect(row).not.toBeNull();
-
-    const watchButton = within(row!).getByRole('button', { name: '观战' });
-    expect(watchButton).toBeDisabled();
-    expect(watchButton).toHaveAttribute('title', '该BOT不可被观战');
-
-    await user.click(watchButton);
-
-    expect(onWatchUser).not.toHaveBeenCalled();
-  });
-
-  it('enables watch only for other users with active tables when current user is not in a table', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 1,
-        username: 'alice',
-        display_name: '阿明',
-        points: 300,
-        title: '平民',
-        display_label: '阿明（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: null,
-      },
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'ROOM42',
-        active_table_phase: 'playing' as const,
-      },
-      {
-        user_id: 3,
-        username: 'chen',
-        display_name: '阿成',
-        points: 80,
-        title: '平民',
-        display_label: '阿成（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: null,
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        currentUserId={1}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const rows = screen.getAllByRole('listitem');
-    const selfWatchButton = within(rows[0]).getByRole('button', { name: '观战' });
-    const activeWatchButton = within(rows[1]).getByRole('button', { name: '观战' });
-    const inactiveWatchButton = within(rows[2]).getByRole('button', { name: '观战' });
-
-    expect(selfWatchButton).toBeDisabled();
-    expect(activeWatchButton).toBeEnabled();
-    expect(inactiveWatchButton).toBeDisabled();
-
-    await user.click(activeWatchButton);
-
-    expect(onWatchUser).toHaveBeenCalledWith(users[1]);
-  });
-
-  it('disables watch for other users while the current user is in a table', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 1,
-        username: 'alice',
-        display_name: '阿明',
-        points: 300,
-        title: '平民',
-        display_label: '阿明（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'SELF01',
-        active_table_phase: 'playing' as const,
-      },
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'ROOM42',
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        currentUserId={1}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const activeWatchButton = within(screen.getAllByRole('listitem')[1]).getByRole('button', { name: '观战' });
-
-    expect(activeWatchButton).toBeDisabled();
-    expect(activeWatchButton).toHaveAttribute('title', '你正在牌局中，不能观战其他玩家');
-
-    await user.click(activeWatchButton);
-
-    expect(onWatchUser).not.toHaveBeenCalled();
-  });
-
-  it('disables watch when active table phase is unknown', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'ROOM42',
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        currentUserId={1}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const watchButton = screen.getByRole('button', { name: '观战' });
-    expect(watchButton).toBeDisabled();
-
-    await user.click(watchButton);
-
-    expect(onWatchUser).not.toHaveBeenCalled();
-  });
-
-  it('shows already requested watch buttons as disabled', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'ROOM42',
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        requestedWatchTableCodes={['ROOM42']}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const requestedButton = screen.getByRole('button', { name: '已申请' });
-
-    expect(requestedButton).toBeDisabled();
-
-    await user.click(requestedButton);
-
-    expect(onWatchUser).not.toHaveBeenCalled();
-  });
-
-  it('shows approved watch as direct entry', async () => {
-    const user = userEvent.setup();
-    const onWatchUser = vi.fn();
-    const users = [
-      {
-        user_id: 1,
-        username: 'alice',
-        display_name: '阿明',
-        points: 300,
-        title: '平民',
-        display_label: '阿明（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: null,
-      },
-      {
-        user_id: 2,
-        username: 'bob',
-        display_name: '阿强',
-        points: 120,
-        title: '平民',
-        display_label: '阿强（平民）',
-        bio: '',
-        avatar: null,
-        active_table_code: 'ROOM42',
-        active_table_phase: 'playing' as const,
-      },
-    ];
-
-    render(
-      <TableSidebar
-        isOpen
-        activeTab="online"
-        tablePlayers={[]}
-        onlineUsers={users}
-        currentUserId={1}
-        approvedWatchTableCodes={['ROOM42']}
-        spectators={[]}
-        profilePanel={<div>profile</div>}
-        onToggle={vi.fn()}
-        onTabChange={vi.fn()}
-        onSelectUser={vi.fn()}
-        onWatchUser={onWatchUser}
-      />,
-    );
-
-    const approvedButton = screen.getByRole('button', { name: '进入观战' });
-
-    expect(approvedButton).toBeEnabled();
-
-    await user.click(approvedButton);
-
-    expect(onWatchUser).toHaveBeenCalledWith(users[1]);
+    expect(within(rows[0]!).getByText('创建牌局中')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('与BOT对局中')).toBeInTheDocument();
   });
 });

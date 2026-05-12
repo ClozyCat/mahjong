@@ -21,7 +21,6 @@ interface BottomActionDockProps {
   isElevated: boolean;
   isWaitingForMatchStart?: boolean;
   isHandInteractionDisabled?: boolean;
-  isSpectator?: boolean;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
   onTileSelect: (tileId: string) => void;
@@ -39,7 +38,6 @@ export function BottomActionDock({
   actions,
   isWaitingForMatchStart = false,
   isHandInteractionDisabled = false,
-  isSpectator = false,
   promptCue,
   deadlineAt,
   onTileSelect,
@@ -299,7 +297,7 @@ export function BottomActionDock({
             {hand.length > 0 ? (
               <div className="action-dock__hand" aria-label="Local hand">
                 {hand.map((tile, index) => {
-                  const isTileInteractionDisabled = tile.isDisabled || isSpectator || isHandInteractionDisabled;
+                  const isTileInteractionDisabled = tile.isDisabled || isHandInteractionDisabled;
 
                   return (
                     <button
@@ -316,9 +314,7 @@ export function BottomActionDock({
                         .join(' ')}
                       disabled={isTileInteractionDisabled}
                       aria-label={
-                        isSpectator
-                          ? `${tile.code} 观战模式`
-                          : isHandInteractionDisabled
+                        isHandInteractionDisabled
                             ? `${tile.code} BOT代打中`
                             : tile.isDisabled
                               ? `${tile.code} 当前回合禁止打出`

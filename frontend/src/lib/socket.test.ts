@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createJoinTableMessage, createSetBotTakeoverMessage, createWatchTableMessage } from './socket';
+import { createJoinTableMessage, createSetBotTakeoverMessage } from './socket';
 
 describe('socket message builders', () => {
   it('creates an authenticated join_table message', () => {
@@ -8,16 +8,6 @@ describe('socket message builders', () => {
       type: 'join_table',
       payload: {
         session_token: 'session-token-1',
-      },
-    });
-  });
-
-  it('creates an authenticated watch_table message', () => {
-    expect(createWatchTableMessage('session-token-1', '观众')).toEqual({
-      type: 'watch_table',
-      payload: {
-        session_token: 'session-token-1',
-        nickname: '观众',
       },
     });
   });

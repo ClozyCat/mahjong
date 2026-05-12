@@ -29,13 +29,11 @@ use tokio::sync::{Notify, RwLock, mpsc};
 
 use self::persistence::DbWorker;
 use self::protocol::player_presence_message;
-use self::room_runtime::{RoomHandle, SpectatorIdentity};
+use self::room_runtime::RoomHandle;
 use crate::core::state::{PendingAction, RoomState, SeatState};
 use crate::projection::match_result::match_result_message;
 use crate::projection::prompt::action_prompt_message;
-use crate::projection::room_snapshot::{
-    observer_room_snapshot_message_with_spectators, room_snapshot_message_with_spectators,
-};
+use crate::projection::room_snapshot::room_snapshot_message;
 use crate::projection::support::build_seat_projection_support_for_state;
 
 pub(crate) const MAX_SEATS: usize = 4;
@@ -539,7 +537,6 @@ pub(crate) fn set_seat_connected(room: &mut RoomState, seat_index: usize, connec
 
 pub(crate) fn collect_join_outbound_from_snapshot(
     room: &RoomState,
-    spectators: &[SpectatorIdentity],
     connections: &[(usize, ConnectionHandle)],
     table_code: &str,
     connection: &ConnectionHandle,
@@ -547,9 +544,7 @@ pub(crate) fn collect_join_outbound_from_snapshot(
     connected: bool,
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
-    outbound.extend(build_room_messages_for_seat(
-        room, spectators, seat_index, connection,
-    ));
+    outbound.extend(build_room_messages_for_seat(room, seat_index, connection));
     if let Some(prompt) = build_prompt_for_seat(room, seat_index) {
         outbound.push(connection.outbound(prompt));
     }
@@ -570,12 +565,7 @@ pub(crate) fn collect_join_outbound_from_snapshot(
             continue;
         }
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat(
-            room,
-            spectators,
-            *other_seat,
-            handle,
-        ));
+        outbound.extend(build_room_messages_for_seat(room, *other_seat, handle));
     }
     for (other_seat, handle) in connections {
         if *other_seat == seat_index && handle.id == connection.id {
@@ -590,7 +580,6 @@ pub(crate) fn collect_join_outbound_from_snapshot(
 
 pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
     room: &RoomState,
-    spectators: &[SpectatorIdentity],
     connections: &[(usize, ConnectionHandle)],
     table_code: &str,
     seat_index: usize,
@@ -609,12 +598,7 @@ pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
     );
     for (target_seat, handle) in connections {
         outbound.push(handle.outbound(presence.clone()));
-        outbound.extend(build_room_messages_for_seat(
-            room,
-            spectators,
-            *target_seat,
-            handle,
-        ));
+        outbound.extend(build_room_messages_for_seat(room, *target_seat, handle));
         if let Some(prompt) = build_prompt_for_seat(room, *target_seat) {
             outbound.push(handle.outbound(prompt));
         }
@@ -624,17 +608,11 @@ pub(crate) fn presence_and_snapshot_for_all_from_snapshot(
 
 pub(crate) fn collect_snapshot_and_prompt_outbound_from_snapshot(
     room: &RoomState,
-    spectators: &[SpectatorIdentity],
     connections: &[(usize, ConnectionHandle)],
 ) -> Vec<OutboundMessage> {
     let mut outbound = Vec::new();
     for (seat_index, handle) in connections {
-        outbound.extend(build_room_messages_for_seat(
-            room,
-            spectators,
-            *seat_index,
-            handle,
-        ));
+        outbound.extend(build_room_messages_for_seat(room, *seat_index, handle));
     }
     for (seat_index, handle) in connections {
         if let Some(prompt) = build_prompt_for_seat(room, *seat_index) {
@@ -646,46 +624,17 @@ pub(crate) fn collect_snapshot_and_prompt_outbound_from_snapshot(
 
 pub(crate) fn build_room_messages_for_seat(
     room: &RoomState,
-    spectators: &[SpectatorIdentity],
     local_seat: usize,
     connection: &ConnectionHandle,
 ) -> Vec<OutboundMessage> {
     let support = build_seat_projection_support_for_state(room, local_seat);
-    let mut payloads = vec![room_snapshot_message_with_spectators(
-        room, spectators, local_seat, &support,
-    )];
+    let mut payloads = vec![room_snapshot_message(room, local_seat, &support)];
     if let Some(result) = match_result_message(room) {
         payloads.push(result);
     }
     payloads
         .into_iter()
         .map(|payload| connection.outbound(payload))
-        .collect()
-}
-pub(crate) fn build_room_messages_for_observer(
-    room: &RoomState,
-    spectators: &[SpectatorIdentity],
-    connection: &ConnectionHandle,
-) -> Vec<OutboundMessage> {
-    let mut payloads = vec![observer_room_snapshot_message_with_spectators(
-        room, spectators,
-    )];
-    if let Some(result) = match_result_message(room) {
-        payloads.push(result);
-    }
-    payloads
-        .into_iter()
-        .map(|payload| connection.outbound(payload))
-        .collect()
-}
-pub(crate) fn collect_observer_outbound_from_snapshot(
-    room: &RoomState,
-    spectators: &[SpectatorIdentity],
-    connections: &[(u64, ConnectionHandle)],
-) -> Vec<OutboundMessage> {
-    connections
-        .iter()
-        .flat_map(|(_, handle)| build_room_messages_for_observer(room, spectators, handle))
         .collect()
 }
 

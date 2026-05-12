@@ -36,16 +36,6 @@ export function createJoinTableMessage(sessionToken: string): ClientMessage {
   };
 }
 
-export function createWatchTableMessage(sessionToken: string, nickname?: string): ClientMessage {
-  return {
-    type: 'watch_table',
-    payload: {
-      session_token: sessionToken,
-      ...(nickname ? { nickname } : {}),
-    },
-  };
-}
-
 export function createLeaveTableMessage(): ClientMessage {
   return {
     type: 'leave_table',

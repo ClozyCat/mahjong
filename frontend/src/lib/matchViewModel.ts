@@ -267,8 +267,6 @@ interface MatchViewModelOptions {
   showLocalSelfHuPassOption?: boolean;
   hideLocalSelfHuPrompt?: boolean;
   hideLocalClaimPrompt?: boolean;
-  perspectiveSeat?: number | null;
-  isSpectator?: boolean;
 }
 
 function getLocalSeat(state: SessionState): number {
@@ -276,10 +274,6 @@ function getLocalSeat(state: SessionState): number {
 }
 
 function getPerspectiveSeat(state: SessionState, options: MatchViewModelOptions = {}): number {
-  if (typeof options.perspectiveSeat === 'number') {
-    return options.perspectiveSeat;
-  }
-
   return getLocalSeat(state);
 }
 
@@ -410,10 +404,6 @@ function getLocalPromptOptions(state: SessionState, viewOptions: MatchViewModelO
 }
 
 function createPromptCue(state: SessionState, options: MatchViewModelOptions = {}): BattlePromptView | null {
-  if (options.isSpectator) {
-    return null;
-  }
-
   if (hasOptimisticDiscardPending(state)) {
     return null;
   }
@@ -531,10 +521,6 @@ function getSeatIdentityType(seat: Pick<SeatSnapshot, 'seat_type' | 'nickname'>)
 }
 
 function createWaitingControls(state: SessionState, options: MatchViewModelOptions = {}): WaitingControls | null {
-  if (options.isSpectator) {
-    return null;
-  }
-
   const snapshot = state.roomSnapshot?.payload;
   if (!snapshot || snapshot.phase !== 'waiting') {
     return null;
@@ -647,15 +633,6 @@ function createActionViews(
   waitingControls: WaitingControls | null,
   options: MatchViewModelOptions = {},
 ): BattleActionView[] {
-  if (options.isSpectator) {
-    return ACTION_ORDER.map((id) => ({
-      id,
-      label: ACTION_LABELS[id],
-      enabled: false,
-      emphasis: 'low',
-    }));
-  }
-
   const snapshot = state.roomSnapshot?.payload;
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
@@ -880,7 +857,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         wind: getWindForSeat(seat.seat_index, dealerSeat),
         isDealer: dealerSeat === seat.seat_index,
         isActive: currentActor === seat.seat_index,
-        isLocal: !options.isSpectator && typeof ownSeat === 'number' && seat.seat_index === ownSeat,
+        isLocal: typeof ownSeat === 'number' && seat.seat_index === ownSeat,
         connected: seat.connected,
         isBotControlled,
         ready: seat.ready,
@@ -974,7 +951,6 @@ function createLocalHand(state: SessionState, options: MatchViewModelOptions = {
       isReplacementDrawn: tile.tile_id === replacementDrawnTileId,
       isFlower: isFlowerTileKey(tile.tile_key),
       isDisabled:
-        options.isSpectator ||
         Boolean(optimisticDiscard) ||
         localReadyHandLocked ||
         restrictedDiscardTileIdSet.has(tile.tile_id),
@@ -1389,7 +1365,7 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
     return null;
   }
 
-  const isConnectionInteractive = state.connectionStatus === 'connected' && !options.isSpectator;
+  const isConnectionInteractive = state.connectionStatus === 'connected';
   const localSeat = getPerspectiveSeat(state, options);
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
   const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
@@ -1888,8 +1864,6 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
         ? 'disconnected_or_waiting'
         : isSettlement
           ? 'resolving'
-          : options.isSpectator
-            ? 'watching'
           : optimisticDiscard
             ? 'watching'
           : snapshot.private_state?.pending_action?.type === 'active_turn' &&
@@ -1927,8 +1901,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     discards: createDiscards(state, options),
     selectedTileCode: createSelectedTileCode(state, options),
     localHand: createLocalHand(state, options),
-    handInsight: options.isSpectator ? null : createHandInsight(state),
-    claimCandidates: options.isSpectator ? [] : createClaimCandidates(state, options),
+    handInsight: createHandInsight(state),
+    claimCandidates: createClaimCandidates(state, options),
     drawnTileId: createDrawnTileId(state),
     centerBanner: createCenterBanner(state),
     centerStatusText: dealerSelection ? '抽取东家' : createCenterStatusText(state),
@@ -2006,7 +1980,6 @@ function createQuickChatEvent(state: SessionState, options: MatchViewModelOption
   const localSeat = getPerspectiveSeat(state, options);
   const actorSeat = toRelativeSeat(localSeat, message.payload.actor_seat);
   const targetSeat = toRelativeSeat(localSeat, message.payload.target_seat);
-  const isSpectatorActor = message.payload.actor_kind === 'spectator';
   const actorName = message.payload.actor_display_name?.trim() || getSeatName(state, message.payload.actor_seat);
   const targetName = getSeatName(state, message.payload.target_seat);
 
@@ -2018,9 +1991,7 @@ function createQuickChatEvent(state: SessionState, options: MatchViewModelOption
     targetName,
     emoji: message.payload.emoji,
     text:
-      isSpectatorActor
-        ? `${actorName}（观战）：${message.payload.emoji}`
-        : message.payload.actor_seat === message.payload.target_seat
+      message.payload.actor_seat === message.payload.target_seat
         ? `${actorName}：${message.payload.emoji}`
         : `${actorName} -> ${targetName} : ${message.payload.emoji}`,
   };

@@ -5,13 +5,12 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::persistence::{
-    ArchiveRoundInput, ArchiveRoundOutcome, ArchivedFanStatInput, ArchivedRoundPlayerInput,
-    GameRecordDetail, GameSummaryRecord, RoundPlayerResultRecord, TableParticipantRecord,
-    UserFanStatRecord, UserGamePlayerSummaryRecord,
+    ArchiveRoundInput, ArchiveRoundOutcome, ArchivedRoundPlayerInput, GameRecordDetail,
+    GameSummaryRecord, RoundPlayerResultRecord, TableParticipantRecord,
 };
 use super::users::{display_label, title_for_points};
 use super::{AppContext, notify_user_connections};
-use crate::core::state::{RoomState, RoundSettlement};
+use crate::core::state::RoomState;
 use crate::special_bots::seat_blocks_public_records;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -33,20 +32,6 @@ pub(crate) struct GameSummaryView {
     pub(crate) ended_at: Option<String>,
     pub(crate) round_count: i64,
     pub(crate) opponent_names: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) player_summary: Option<UserGamePlayerSummaryView>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct UserGamePlayerSummaryView {
-    pub(crate) round_count: i64,
-    pub(crate) win_count: i64,
-    pub(crate) self_draw_win_count: i64,
-    pub(crate) discard_win_count: i64,
-    pub(crate) deal_in_count: i64,
-    pub(crate) total_score_delta: i64,
-    pub(crate) average_cumulative_score: i64,
-    pub(crate) high_score_round_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -83,15 +68,6 @@ pub(crate) struct GameDetailView {
     pub(crate) rounds: Vec<RoundRecordView>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct FanStatView {
-    pub(crate) user_id: i64,
-    pub(crate) fan_key: String,
-    pub(crate) fan_label: String,
-    pub(crate) count: i64,
-    pub(crate) last_seen_at: String,
-}
-
 fn user_brief_view(user_id: i64, display_name: &str, points: i64) -> UserBriefView {
     UserBriefView {
         user_id,
@@ -116,25 +92,6 @@ pub(crate) fn game_summary_view(summary: &GameSummaryRecord) -> GameSummaryView 
         ended_at: summary.ended_at.clone(),
         round_count: summary.round_count,
         opponent_names: summary.opponent_names.clone(),
-        player_summary: summary
-            .player_summary
-            .as_ref()
-            .map(user_game_player_summary_view),
-    }
-}
-
-fn user_game_player_summary_view(
-    summary: &UserGamePlayerSummaryRecord,
-) -> UserGamePlayerSummaryView {
-    UserGamePlayerSummaryView {
-        round_count: summary.round_count,
-        win_count: summary.win_count,
-        self_draw_win_count: summary.self_draw_win_count,
-        discard_win_count: summary.discard_win_count,
-        deal_in_count: summary.deal_in_count,
-        total_score_delta: summary.total_score_delta,
-        average_cumulative_score: summary.average_cumulative_score,
-        high_score_round_count: summary.high_score_round_count,
     }
 }
 
@@ -189,16 +146,6 @@ pub(crate) fn game_detail_view(detail: &GameRecordDetail) -> Result<GameDetailVi
     })
 }
 
-pub(crate) fn fan_stat_view(record: &UserFanStatRecord) -> FanStatView {
-    FanStatView {
-        user_id: record.user_id,
-        fan_key: record.fan_key.clone(),
-        fan_label: record.fan_label.clone(),
-        count: record.count,
-        last_seen_at: record.last_seen_at.clone(),
-    }
-}
-
 fn pure_bot_seat_present(room: &RoomState) -> bool {
     room.seats.iter().any(seat_blocks_public_records)
 }
@@ -227,20 +174,6 @@ fn current_seat_by_participant(
         .collect()
 }
 
-fn fan_keys_by_winner(settlement: &RoundSettlement) -> HashMap<usize, Vec<String>> {
-    let mut by_seat = HashMap::new();
-    if !settlement.winning_details.is_empty() {
-        for detail in &settlement.winning_details {
-            by_seat.insert(detail.winner_seat, detail.fan_keys.clone());
-        }
-        return by_seat;
-    }
-    if let Some(winner_seat) = settlement.winner_seat {
-        by_seat.insert(winner_seat, settlement.fan_keys.clone());
-    }
-    by_seat
-}
-
 fn archive_input_from_room(
     room: &RoomState,
     table_created_at: &str,
@@ -261,20 +194,7 @@ fn archive_input_from_room(
     };
 
     let current_seat_by_user = current_seat_by_participant(room, participants);
-    let participants_by_seat = participants
-        .iter()
-        .map(|participant| {
-            (
-                current_seat_by_user
-                    .get(&participant.user_id)
-                    .copied()
-                    .unwrap_or(participant.seat_index),
-                participant,
-            )
-        })
-        .collect::<HashMap<_, _>>();
     let points_enabled = !pure_bot_seat_present(room);
-    let winner_fans = fan_keys_by_winner(settlement);
     let winning_seats = settlement
         .winning_seats()
         .into_iter()
@@ -315,32 +235,6 @@ fn archive_input_from_room(
         });
     }
 
-    let mut fan_counts = HashMap::<(i64, String), i64>::new();
-    for (seat_index, keys) in winner_fans {
-        let Some(participant) = participants_by_seat.get(&seat_index) else {
-            continue;
-        };
-        for fan_key in keys {
-            *fan_counts
-                .entry((participant.user_id, fan_key))
-                .or_insert(0) += 1;
-        }
-    }
-    let fan_stats = if points_enabled {
-        fan_counts
-            .into_iter()
-            .map(|((user_id, fan_key), count)| ArchivedFanStatInput {
-                user_id,
-                fan_label: fan_key.clone(),
-                fan_key,
-                count,
-                last_seen_at: archived_at.to_string(),
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-
     Ok(Some(ArchiveRoundInput {
         table_code: room.table_code.clone(),
         owner_user_id,
@@ -351,7 +245,6 @@ fn archive_input_from_room(
         settlement_json: serde_json::to_string(settlement)?,
         points_enabled,
         player_results,
-        fan_stats,
     }))
 }
 
@@ -416,7 +309,9 @@ mod tests {
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::server;
     use crate::app::{Settings, serialize_room_state};
-    use crate::core::state::{MatchState, RoundState, SeatState, SettlementScoreDelta};
+    use crate::core::state::{
+        MatchState, RoundSettlement, RoundState, SeatState, SettlementScoreDelta,
+    };
     use axum::Router;
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode, header};
@@ -669,10 +564,6 @@ mod tests {
         assert_eq!(owner.points, INITIAL_USER_POINTS + 8);
         assert_eq!(guest.points, INITIAL_USER_POINTS - 8);
 
-        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
-        assert_eq!(fan_stats.len(), 1);
-        assert_eq!(fan_stats[0].fan_key, "all_pungs");
-        assert_eq!(fan_stats[0].count, 1);
         Ok(())
     }
 
@@ -735,14 +626,11 @@ mod tests {
         assert_eq!(owner.points, INITIAL_USER_POINTS - 8);
         assert_eq!(guest.points, INITIAL_USER_POINTS + 8);
 
-        let fan_stats = worker.list_user_fan_stats(guest_user_id).await?;
-        assert_eq!(fan_stats.len(), 1);
-        assert_eq!(fan_stats[0].fan_key, "all_pungs");
         Ok(())
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn point_events_archive_is_idempotent_and_fan_stats_increment_once() -> Result<()> {
+    async fn point_events_archive_is_idempotent() -> Result<()> {
         let (state, worker) = test_state().await?;
         let owner_user_id = register_user(&worker, "INVITE300003", "Owner").await?;
         let guest_user_id = register_user(&worker, "INVITE300004", "Guest").await?;
@@ -805,8 +693,6 @@ mod tests {
         assert_eq!(owner.points, INITIAL_USER_POINTS + 6);
         assert_eq!(guest.points, INITIAL_USER_POINTS - 6);
 
-        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
-        assert_eq!(fan_stats[0].count, 1);
         Ok(())
     }
 
@@ -872,8 +758,6 @@ mod tests {
         assert_eq!(owner.points, INITIAL_USER_POINTS);
         assert_eq!(guest.points, INITIAL_USER_POINTS);
 
-        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
-        assert!(fan_stats.is_empty());
         Ok(())
     }
 
@@ -1012,9 +896,6 @@ mod tests {
         assert_eq!(owner.points, INITIAL_USER_POINTS + 7);
         assert_eq!(special_bot.points, INITIAL_USER_POINTS - 7);
 
-        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
-        assert_eq!(fan_stats.len(), 1);
-        assert_eq!(fan_stats[0].fan_key, "all_sequences");
         Ok(())
     }
 
@@ -1064,9 +945,6 @@ mod tests {
         assert_eq!(player_results[0].point_delta, 9);
         assert_eq!(player_results[1].point_delta, -9);
 
-        let fan_stats = worker.list_user_fan_stats(owner_user_id).await?;
-        assert_eq!(fan_stats.len(), 1);
-        assert_eq!(fan_stats[0].fan_key, "all_sequences");
         Ok(())
     }
 
@@ -1134,47 +1012,6 @@ mod tests {
         assert_eq!(detail_response.status(), StatusCode::OK);
         let detail_body = json_response(detail_response).await;
         assert_eq!(detail_body["rounds"][0]["round_id"], "round-1");
-
-        let user_games_response = app
-            .clone()
-            .oneshot(json_request(
-                Method::GET,
-                &format!("/api/users/{owner_user_id}/games"),
-            ))
-            .await?;
-        assert_eq!(user_games_response.status(), StatusCode::OK);
-        let user_games_body = json_response(user_games_response).await;
-        assert_eq!(user_games_body[0]["game_id"], game_id);
-        assert_eq!(user_games_body[0]["opponent_names"][0], "Guest");
-        assert_eq!(user_games_body[0]["player_summary"]["round_count"], 1);
-        assert_eq!(user_games_body[0]["player_summary"]["win_count"], 1);
-        assert_eq!(user_games_body[0]["player_summary"]["deal_in_count"], 0);
-        assert_eq!(
-            user_games_body[0]["player_summary"]["high_score_round_count"],
-            1
-        );
-
-        let guest_games_response = app
-            .clone()
-            .oneshot(json_request(
-                Method::GET,
-                &format!("/api/users/{guest_user_id}/games"),
-            ))
-            .await?;
-        assert_eq!(guest_games_response.status(), StatusCode::OK);
-        let guest_games_body = json_response(guest_games_response).await;
-        assert_eq!(guest_games_body[0]["player_summary"]["deal_in_count"], 1);
-
-        let fans_response = app
-            .clone()
-            .oneshot(json_request(
-                Method::GET,
-                &format!("/api/users/{owner_user_id}/fans"),
-            ))
-            .await?;
-        assert_eq!(fans_response.status(), StatusCode::OK);
-        let fans_body = json_response(fans_response).await;
-        assert_eq!(fans_body[0]["fan_key"], "all_pungs");
 
         let leaderboard_response = app
             .oneshot(json_request(Method::GET, "/api/leaderboard"))

@@ -10,10 +10,8 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 use super::auth::AuthenticatedUser;
-use crate::core::state::RoundSettlement;
 
 const INITIAL_USER_POINTS: i64 = 600;
-const HIGH_CUMULATIVE_SCORE_THRESHOLD: i64 = 80;
 
 type DbTask = Box<dyn FnOnce(&Database) + Send + 'static>;
 
@@ -59,17 +57,6 @@ pub(crate) struct TableInviteRecord {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SpectatorRequestRecord {
-    pub(crate) id: i64,
-    pub(crate) table_code: String,
-    pub(crate) requester_user_id: i64,
-    pub(crate) owner_user_id: i64,
-    pub(crate) status: String,
-    pub(crate) created_at: String,
-    pub(crate) decided_at: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct UserRecord {
     pub(crate) user_id: i64,
     pub(crate) username: String,
@@ -93,15 +80,6 @@ pub(crate) struct ArchivedRoundPlayerInput {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ArchivedFanStatInput {
-    pub(crate) user_id: i64,
-    pub(crate) fan_key: String,
-    pub(crate) fan_label: String,
-    pub(crate) count: i64,
-    pub(crate) last_seen_at: String,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct ArchiveRoundInput {
     pub(crate) table_code: String,
     pub(crate) owner_user_id: i64,
@@ -112,7 +90,6 @@ pub(crate) struct ArchiveRoundInput {
     pub(crate) settlement_json: String,
     pub(crate) points_enabled: bool,
     pub(crate) player_results: Vec<ArchivedRoundPlayerInput>,
-    pub(crate) fan_stats: Vec<ArchivedFanStatInput>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,85 +119,6 @@ pub(crate) struct GameSummaryRecord {
     pub(crate) ended_at: Option<String>,
     pub(crate) round_count: i64,
     pub(crate) opponent_names: Vec<String>,
-    pub(crate) player_summary: Option<UserGamePlayerSummaryRecord>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct UserGamePlayerSummaryRecord {
-    pub(crate) round_count: i64,
-    pub(crate) win_count: i64,
-    pub(crate) self_draw_win_count: i64,
-    pub(crate) discard_win_count: i64,
-    pub(crate) deal_in_count: i64,
-    pub(crate) total_score_delta: i64,
-    pub(crate) average_cumulative_score: i64,
-    pub(crate) high_score_round_count: i64,
-}
-
-#[derive(Default)]
-struct UserGamePlayerSummaryBuilder {
-    round_count: i64,
-    win_count: i64,
-    self_draw_win_count: i64,
-    discard_win_count: i64,
-    deal_in_count: i64,
-    total_score_delta: i64,
-    cumulative_score_total: i64,
-    high_score_round_count: i64,
-}
-
-impl UserGamePlayerSummaryBuilder {
-    fn add_round(
-        &mut self,
-        seat_index: usize,
-        score_delta: i64,
-        cumulative_score: i64,
-        is_winner: bool,
-        win_type: Option<&str>,
-        settlement_json: &str,
-    ) -> Result<()> {
-        self.round_count += 1;
-        self.total_score_delta += score_delta;
-        self.cumulative_score_total += cumulative_score;
-        if cumulative_score >= HIGH_CUMULATIVE_SCORE_THRESHOLD {
-            self.high_score_round_count += 1;
-        }
-        if is_winner {
-            self.win_count += 1;
-            match win_type {
-                Some("self_draw") => self.self_draw_win_count += 1,
-                Some("discard") => self.discard_win_count += 1,
-                _ => {}
-            }
-        }
-        self.deal_in_count += deal_in_count_for_round(seat_index, settlement_json)?;
-        Ok(())
-    }
-
-    fn build(self) -> UserGamePlayerSummaryRecord {
-        UserGamePlayerSummaryRecord {
-            round_count: self.round_count,
-            win_count: self.win_count,
-            self_draw_win_count: self.self_draw_win_count,
-            discard_win_count: self.discard_win_count,
-            deal_in_count: self.deal_in_count,
-            total_score_delta: self.total_score_delta,
-            average_cumulative_score: average_score(self.cumulative_score_total, self.round_count),
-            high_score_round_count: self.high_score_round_count,
-        }
-    }
-}
-
-fn average_score(total: i64, count: i64) -> i64 {
-    if count == 0 { 0 } else { total / count }
-}
-
-fn deal_in_count_for_round(seat_index: usize, settlement_json: &str) -> Result<i64> {
-    let settlement = serde_json::from_str::<RoundSettlement>(settlement_json)?;
-    if settlement.discarder_seat != Some(seat_index) {
-        return Ok(0);
-    }
-    Ok(settlement.winning_seats().len() as i64)
 }
 
 fn room_json_has_independent_bot_seat(room_json: Option<&str>) -> Result<bool> {
@@ -268,15 +166,6 @@ pub(crate) struct RoundPlayerResultRecord {
     pub(crate) nickname_snapshot: String,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct UserFanStatRecord {
-    pub(crate) user_id: i64,
-    pub(crate) fan_key: String,
-    pub(crate) fan_label: String,
-    pub(crate) count: i64,
-    pub(crate) last_seen_at: String,
-}
-
 struct SqliteColumn {
     name: String,
     not_null: bool,
@@ -311,6 +200,7 @@ impl Database {
         self.drop_legacy_reconnect_tokens_table()?;
         self.create_user_auth_tables()?;
         self.create_record_tables()?;
+        self.drop_removed_social_schema()?;
         self.ensure_indexes()?;
         Ok(())
     }
@@ -333,12 +223,6 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_table_invites_invitee_status
             ON table_invites(invitee_user_id, status);
 
-            CREATE INDEX IF NOT EXISTS idx_spectator_requests_owner_status
-            ON spectator_requests(owner_user_id, status);
-
-            CREATE INDEX IF NOT EXISTS idx_spectator_requests_requester_table
-            ON spectator_requests(requester_user_id, table_code, status);
-
             CREATE INDEX IF NOT EXISTS idx_game_records_table_code
             ON game_records(table_code, ended_at);
 
@@ -348,8 +232,6 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_round_player_results_user_id
             ON round_player_results(user_id);
 
-            CREATE INDEX IF NOT EXISTS idx_user_fan_stats_user_id
-            ON user_fan_stats(user_id);
             ",
         )?;
         Ok(())
@@ -408,6 +290,19 @@ impl Database {
     fn drop_legacy_reconnect_tokens_table(&self) -> Result<()> {
         self.conn
             .execute_batch("DROP TABLE IF EXISTS reconnect_tokens;")?;
+        Ok(())
+    }
+
+    fn drop_removed_social_schema(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            DROP INDEX IF EXISTS idx_user_fan_stats_user_id;
+            DROP INDEX IF EXISTS idx_spectator_requests_owner_status;
+            DROP INDEX IF EXISTS idx_spectator_requests_requester_table;
+            DROP TABLE IF EXISTS user_fan_stats;
+            DROP TABLE IF EXISTS spectator_requests;
+            ",
+        )?;
         Ok(())
     }
 
@@ -484,17 +379,6 @@ impl Database {
                 FOREIGN KEY(invitee_user_id) REFERENCES users(id)
             );
 
-            CREATE TABLE IF NOT EXISTS spectator_requests (
-                id INTEGER PRIMARY KEY,
-                table_code TEXT NOT NULL,
-                requester_user_id INTEGER NOT NULL,
-                owner_user_id INTEGER NOT NULL,
-                status TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                decided_at TEXT,
-                FOREIGN KEY(requester_user_id) REFERENCES users(id),
-                FOREIGN KEY(owner_user_id) REFERENCES users(id)
-            );
             ",
         )?;
         Ok(())
@@ -539,15 +423,6 @@ impl Database {
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
 
-            CREATE TABLE IF NOT EXISTS user_fan_stats (
-                user_id INTEGER NOT NULL,
-                fan_key TEXT NOT NULL,
-                fan_label TEXT NOT NULL,
-                count INTEGER NOT NULL DEFAULT 0,
-                last_seen_at TEXT NOT NULL,
-                PRIMARY KEY(user_id, fan_key),
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            );
             ",
         )?;
         Ok(())
@@ -851,20 +726,6 @@ impl Database {
         })
     }
 
-    fn spectator_request_from_row(
-        row: &rusqlite::Row<'_>,
-    ) -> rusqlite::Result<SpectatorRequestRecord> {
-        Ok(SpectatorRequestRecord {
-            id: row.get(0)?,
-            table_code: row.get(1)?,
-            requester_user_id: row.get(2)?,
-            owner_user_id: row.get(3)?,
-            status: row.get(4)?,
-            created_at: row.get(5)?,
-            decided_at: row.get(6)?,
-        })
-    }
-
     fn game_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameSummaryRecord> {
         Ok(GameSummaryRecord {
             game_id: row.get(0)?,
@@ -877,7 +738,6 @@ impl Database {
             ended_at: row.get(7)?,
             round_count: row.get(8)?,
             opponent_names: Vec::new(),
-            player_summary: None,
         })
     }
 
@@ -899,16 +759,6 @@ impl Database {
             is_winner: row.get::<_, i64>(5)? != 0,
             win_type: row.get(6)?,
             nickname_snapshot: row.get(7)?,
-        })
-    }
-
-    fn user_fan_stat_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserFanStatRecord> {
-        Ok(UserFanStatRecord {
-            user_id: row.get(0)?,
-            fan_key: row.get(1)?,
-            fan_label: row.get(2)?,
-            count: row.get(3)?,
-            last_seen_at: row.get(4)?,
         })
     }
 
@@ -1497,127 +1347,6 @@ impl Database {
         self.get_table_invite(invite_id)
     }
 
-    fn create_spectator_request(
-        &self,
-        table_code: &str,
-        requester_user_id: i64,
-        owner_user_id: i64,
-        created_at: &str,
-    ) -> Result<SpectatorRequestRecord> {
-        let request_id = self.with_transaction("create spectator request", |conn| {
-            conn.execute(
-                "
-                UPDATE spectator_requests
-                SET status = 'superseded'
-                WHERE requester_user_id = ?1
-                  AND owner_user_id = ?2
-                  AND status = 'pending'
-                ",
-                params![requester_user_id, owner_user_id],
-            )?;
-            conn.execute(
-                "
-                INSERT INTO spectator_requests (
-                    table_code,
-                    requester_user_id,
-                    owner_user_id,
-                    status,
-                    created_at
-                )
-                VALUES (?1, ?2, ?3, 'pending', ?4)
-                ",
-                params![table_code, requester_user_id, owner_user_id, created_at],
-            )?;
-            Ok(conn.last_insert_rowid())
-        })?;
-        self.get_spectator_request(request_id)?
-            .ok_or_else(|| anyhow!("created spectator request should exist"))
-    }
-
-    fn get_spectator_request(&self, request_id: i64) -> Result<Option<SpectatorRequestRecord>> {
-        self.conn
-            .query_row(
-                "
-                SELECT id, table_code, requester_user_id, owner_user_id, status, created_at, decided_at
-                FROM spectator_requests
-                WHERE id = ?1
-                ",
-                params![request_id],
-                Self::spectator_request_from_row,
-            )
-            .optional()
-            .map_err(Into::into)
-    }
-
-    fn list_spectator_requests_for_user(
-        &self,
-        user_id: i64,
-    ) -> Result<Vec<SpectatorRequestRecord>> {
-        let mut statement = self.conn.prepare(
-            "
-            SELECT id, table_code, requester_user_id, owner_user_id, status, created_at, decided_at
-            FROM spectator_requests
-            WHERE (owner_user_id = ?1 AND status = 'pending')
-               OR (requester_user_id = ?1 AND status = 'approved')
-            ORDER BY created_at DESC
-            ",
-        )?;
-        let rows = statement
-            .query_map(params![user_id], Self::spectator_request_from_row)?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }
-
-    fn decide_spectator_request(
-        &self,
-        request_id: i64,
-        owner_user_id: i64,
-        approved: bool,
-        decided_at: &str,
-    ) -> Result<Option<SpectatorRequestRecord>> {
-        let status = if approved { "approved" } else { "rejected" };
-        let rows_affected = self.conn.execute(
-            "
-            UPDATE spectator_requests
-            SET status = ?3,
-                decided_at = ?4
-            WHERE id = ?1
-              AND owner_user_id = ?2
-              AND status = 'pending'
-            ",
-            params![request_id, owner_user_id, status, decided_at],
-        )?;
-        if rows_affected != 1 {
-            return Ok(None);
-        }
-        self.get_spectator_request(request_id)
-    }
-
-    fn has_approved_spectator_request(
-        &self,
-        table_code: &str,
-        requester_user_id: i64,
-    ) -> Result<bool> {
-        let approved = self
-            .conn
-            .query_row(
-                "
-                SELECT 1
-                FROM spectator_requests
-                WHERE table_code = ?1
-                  AND requester_user_id = ?2
-                  AND status = 'approved'
-                ORDER BY id DESC
-                LIMIT 1
-                ",
-                params![table_code, requester_user_id],
-                |_row| Ok(true),
-            )
-            .optional()?
-            .unwrap_or(false);
-        Ok(approved)
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn accept_table_invite_and_reserve_seat(
         &self,
@@ -1855,32 +1584,6 @@ impl Database {
                 }
             }
 
-            for fan_stat in &input.fan_stats {
-                conn.execute(
-                    "
-                    INSERT INTO user_fan_stats (
-                        user_id,
-                        fan_key,
-                        fan_label,
-                        count,
-                        last_seen_at
-                    )
-                    VALUES (?1, ?2, ?3, ?4, ?5)
-                    ON CONFLICT(user_id, fan_key) DO UPDATE
-                    SET fan_label = excluded.fan_label,
-                        count = user_fan_stats.count + excluded.count,
-                        last_seen_at = excluded.last_seen_at
-                    ",
-                    params![
-                        fan_stat.user_id,
-                        fan_stat.fan_key,
-                        fan_stat.fan_label,
-                        fan_stat.count,
-                        fan_stat.last_seen_at
-                    ],
-                )?;
-            }
-
             Ok(ArchiveRoundOutcome {
                 inserted: true,
                 #[cfg(test)]
@@ -1965,7 +1668,6 @@ impl Database {
                             ended_at: row.get(7)?,
                             round_count: row.get(8)?,
                             opponent_names: Vec::new(),
-                            player_summary: None,
                         },
                         row.get::<_, Option<String>>(9)?,
                     ))
@@ -2022,149 +1724,6 @@ impl Database {
             final_room_json,
             rounds,
         }))
-    }
-
-    fn user_game_player_summary(
-        &self,
-        user_id: i64,
-        game_id: i64,
-    ) -> Result<UserGamePlayerSummaryRecord> {
-        let mut statement = self.conn.prepare(
-            "
-            SELECT
-                round_player_results.seat_index,
-                round_player_results.score_delta,
-                round_player_results.cumulative_score,
-                round_player_results.is_winner,
-                round_player_results.win_type,
-                round_records.settlement_json
-            FROM round_records
-            JOIN round_player_results
-              ON round_player_results.round_record_id = round_records.id
-            WHERE round_records.game_record_id = ?1
-              AND round_player_results.user_id = ?2
-            ORDER BY round_records.ended_at ASC, round_records.id ASC
-            ",
-        )?;
-        let mut summary = UserGamePlayerSummaryBuilder::default();
-        let rows = statement.query_map(params![game_id, user_id], |row| {
-            Ok((
-                row.get::<_, i64>(0)? as usize,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)? != 0,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-            ))
-        })?;
-        for row in rows {
-            let (seat_index, score_delta, cumulative_score, is_winner, win_type, settlement_json) =
-                row?;
-            summary.add_round(
-                seat_index,
-                score_delta,
-                cumulative_score,
-                is_winner,
-                win_type.as_deref(),
-                &settlement_json,
-            )?;
-        }
-        Ok(summary.build())
-    }
-
-    fn opponent_names_for_user_game(&self, user_id: i64, game_id: i64) -> Result<Vec<String>> {
-        let mut statement = self.conn.prepare(
-            "
-            SELECT MIN(round_player_results.nickname_snapshot) AS nickname_snapshot
-            FROM round_records
-            JOIN round_player_results
-              ON round_player_results.round_record_id = round_records.id
-            WHERE round_records.game_record_id = ?1
-              AND round_player_results.user_id != ?2
-            GROUP BY round_player_results.user_id
-            ORDER BY MIN(round_player_results.seat_index) ASC,
-                     round_player_results.user_id ASC
-            LIMIT 3
-            ",
-        )?;
-        let names = statement
-            .query_map(params![game_id, user_id], |row| row.get::<_, String>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(names)
-    }
-
-    fn list_games_for_user(&self, user_id: i64, limit: usize) -> Result<Vec<GameSummaryRecord>> {
-        let mut statement = self.conn.prepare(
-            "
-            SELECT
-                game_records.id,
-                game_records.table_code,
-                game_records.owner_user_id,
-                users.display_name,
-                users.points,
-                game_records.multiplier,
-                game_records.started_at,
-                game_records.ended_at,
-                COUNT(round_records.id) AS round_count,
-                COALESCE(game_records.final_room_json, tables.room_json) AS room_json
-            FROM game_records
-            JOIN users ON users.id = game_records.owner_user_id
-            LEFT JOIN tables ON tables.table_code = game_records.table_code
-            LEFT JOIN round_records ON round_records.game_record_id = game_records.id
-            WHERE EXISTS (
-                SELECT 1
-                FROM round_records user_round_records
-                JOIN round_player_results
-                  ON round_player_results.round_record_id = user_round_records.id
-                WHERE user_round_records.game_record_id = game_records.id
-                  AND round_player_results.user_id = ?1
-            )
-              AND EXISTS (
-                SELECT 1
-                FROM round_records opponent_round_records
-                JOIN round_player_results opponent_results
-                  ON opponent_results.round_record_id = opponent_round_records.id
-                WHERE opponent_round_records.game_record_id = game_records.id
-                  AND opponent_results.user_id != ?1
-            )
-            GROUP BY game_records.id
-            ORDER BY COALESCE(game_records.ended_at, MAX(round_records.ended_at), game_records.started_at) DESC,
-                     game_records.id DESC
-            ",
-        )?;
-        let rows = statement
-            .query_map(params![user_id], Self::game_summary_with_room_json_from_row)?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let mut games = Vec::new();
-        for (game, room_json) in rows {
-            if room_json_has_independent_bot_seat(room_json.as_deref())? {
-                continue;
-            }
-            games.push(game);
-            if games.len() >= limit {
-                break;
-            }
-        }
-        for game in &mut games {
-            game.player_summary = Some(self.user_game_player_summary(user_id, game.game_id)?);
-            game.opponent_names = self.opponent_names_for_user_game(user_id, game.game_id)?;
-        }
-        Ok(games)
-    }
-
-    fn list_user_fan_stats(&self, user_id: i64) -> Result<Vec<UserFanStatRecord>> {
-        let mut statement = self.conn.prepare(
-            "
-            SELECT user_id, fan_key, fan_label, count, last_seen_at
-            FROM user_fan_stats
-            WHERE user_id = ?1
-            ORDER BY count DESC, fan_key ASC
-            ",
-        )?;
-        let rows = statement
-            .query_map(params![user_id], Self::user_fan_stat_from_row)?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
     }
 
     fn list_users_by_points(&self, limit: usize) -> Result<Vec<UserRecord>> {
@@ -2376,53 +1935,6 @@ impl DbWorker {
     ) -> Result<Option<TableInviteRecord>> {
         let rejected_at = rejected_at.to_string();
         self.call(move |db| db.reject_table_invite(invite_id, invitee_user_id, &rejected_at))
-            .await
-    }
-
-    pub(crate) async fn create_spectator_request(
-        &self,
-        table_code: &str,
-        requester_user_id: i64,
-        owner_user_id: i64,
-        created_at: &str,
-    ) -> Result<SpectatorRequestRecord> {
-        let table_code = table_code.to_string();
-        let created_at = created_at.to_string();
-        self.call(move |db| {
-            db.create_spectator_request(&table_code, requester_user_id, owner_user_id, &created_at)
-        })
-        .await
-    }
-
-    pub(crate) async fn list_spectator_requests_for_user(
-        &self,
-        user_id: i64,
-    ) -> Result<Vec<SpectatorRequestRecord>> {
-        self.call(move |db| db.list_spectator_requests_for_user(user_id))
-            .await
-    }
-
-    pub(crate) async fn decide_spectator_request(
-        &self,
-        request_id: i64,
-        owner_user_id: i64,
-        approved: bool,
-        decided_at: &str,
-    ) -> Result<Option<SpectatorRequestRecord>> {
-        let decided_at = decided_at.to_string();
-        self.call(move |db| {
-            db.decide_spectator_request(request_id, owner_user_id, approved, &decided_at)
-        })
-        .await
-    }
-
-    pub(crate) async fn has_approved_spectator_request(
-        &self,
-        table_code: &str,
-        requester_user_id: i64,
-    ) -> Result<bool> {
-        let table_code = table_code.to_string();
-        self.call(move |db| db.has_approved_spectator_request(&table_code, requester_user_id))
             .await
     }
 
@@ -2676,19 +2188,6 @@ impl DbWorker {
 
     pub(crate) async fn get_game_detail(&self, game_id: i64) -> Result<Option<GameRecordDetail>> {
         self.call(move |db| db.get_game_detail(game_id)).await
-    }
-
-    pub(crate) async fn list_games_for_user(
-        &self,
-        user_id: i64,
-        limit: usize,
-    ) -> Result<Vec<GameSummaryRecord>> {
-        self.call(move |db| db.list_games_for_user(user_id, limit))
-            .await
-    }
-
-    pub(crate) async fn list_user_fan_stats(&self, user_id: i64) -> Result<Vec<UserFanStatRecord>> {
-        self.call(move |db| db.list_user_fan_stats(user_id)).await
     }
 
     pub(crate) async fn list_users_by_points(&self, limit: usize) -> Result<Vec<UserRecord>> {
@@ -3034,178 +2533,6 @@ mod tests {
                 Some("2026-04-06T02:00:00Z".to_string()),
             ]
         );
-        Ok(())
-    }
-
-    #[test]
-    fn list_games_for_user_returns_all_played_human_games() -> Result<()> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-        db.conn.execute(
-            "
-            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
-            VALUES
-                (1, 'owner', 'Owner', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z'),
-                (2, 'guest', 'Guest', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z')
-            ",
-            [],
-        )?;
-
-        insert_finished_game_fixture(
-            &db,
-            1,
-            "DONE01",
-            r#"{"phase":"finished","match_state":{"match_finished":true}}"#,
-        )?;
-        insert_finished_game_fixture(
-            &db,
-            2,
-            "LEFT01",
-            r#"{"phase":"settlement","match_state":{"match_finished":false}}"#,
-        )?;
-        insert_finished_game_fixture(
-            &db,
-            3,
-            "OPEN01",
-            r#"{"phase":"playing","match_state":{"match_finished":false}}"#,
-        )?;
-        db.conn.execute(
-            "UPDATE game_records SET ended_at = NULL, final_room_json = NULL WHERE id = 3",
-            [],
-        )?;
-
-        let user_games = db.list_games_for_user(1, 10)?;
-        let table_codes = user_games
-            .iter()
-            .map(|game| game.table_code.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(table_codes, vec!["LEFT01", "DONE01", "OPEN01"]);
-        assert!(
-            user_games
-                .iter()
-                .all(|game| game.opponent_names == vec!["Guest"])
-        );
-        assert_eq!(
-            user_games
-                .iter()
-                .find(|game| game.table_code == "OPEN01")
-                .and_then(|game| game.player_summary.as_ref())
-                .map(|summary| summary.round_count),
-            Some(1)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn list_games_for_user_excludes_standalone_bot_games() -> Result<()> {
-        let db = in_memory_database("")?;
-        db.initialize()?;
-        db.conn.execute(
-            "
-            INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at)
-            VALUES
-                (1, 'owner', 'Owner', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z'),
-                (2, 'guest', 'Guest', 'hash', '2026-05-06T00:00:00Z', '2026-05-06T00:00:00Z')
-            ",
-            [],
-        )?;
-
-        insert_finished_game_fixture(
-            &db,
-            1,
-            "HUMAN1",
-            r#"{"seats":[{"seat_index":0,"seat_type":"human","is_bot":false},{"seat_index":1,"seat_type":"human","is_bot":false}]}"#,
-        )?;
-        insert_finished_game_fixture(
-            &db,
-            2,
-            "BOTMIX",
-            r#"{"seats":[{"seat_index":0,"seat_type":"human","is_bot":false},{"seat_index":1,"seat_type":"bot","is_bot":true},{"seat_index":2,"seat_type":"human","is_bot":false}]}"#,
-        )?;
-        insert_finished_game_fixture(
-            &db,
-            3,
-            "TAKEVR",
-            r#"{"seats":[{"seat_index":0,"seat_type":"human","is_bot":true},{"seat_index":1,"seat_type":"human","is_bot":false}]}"#,
-        )?;
-
-        let user_games = db.list_games_for_user(1, 10)?;
-        let table_codes = user_games
-            .iter()
-            .map(|game| game.table_code.as_str())
-            .collect::<Vec<_>>();
-
-        assert_eq!(table_codes, vec!["TAKEVR", "HUMAN1"]);
-        Ok(())
-    }
-
-    fn insert_finished_game_fixture(
-        db: &Database,
-        game_id: i64,
-        table_code: &str,
-        final_room_json: &str,
-    ) -> Result<()> {
-        db.conn.execute(
-            "
-            INSERT INTO game_records (
-                id,
-                table_code,
-                owner_user_id,
-                multiplier,
-                started_at,
-                ended_at,
-                final_room_json
-            )
-            VALUES (?1, ?2, 1, 1, '2026-05-06T10:00:00Z', '2026-05-06T11:00:00Z', ?3)
-            ",
-            params![game_id, table_code, final_room_json],
-        )?;
-        db.conn.execute(
-            "
-            INSERT INTO round_records (id, game_record_id, round_id, ended_at, settlement_json)
-            VALUES (?1, ?2, ?3, '2026-05-06T10:30:00Z', ?4)
-            ",
-            params![
-                game_id,
-                game_id,
-                format!("{table_code}-round-1"),
-                r#"{"win_type":"self_draw","winning_details":[{"winner_seat":0}]}"#
-            ],
-        )?;
-        db.conn.execute(
-            "
-            INSERT INTO round_player_results (
-                round_record_id,
-                user_id,
-                seat_index,
-                score_delta,
-                point_delta,
-                cumulative_score,
-                is_winner,
-                win_type,
-                nickname_snapshot
-            )
-            VALUES (?1, 1, 0, 16, 0, 16, 1, 'self_draw', 'Owner')
-            ",
-            params![game_id],
-        )?;
-        db.conn.execute(
-            "
-            INSERT INTO round_player_results (
-                round_record_id,
-                user_id,
-                seat_index,
-                score_delta,
-                point_delta,
-                cumulative_score,
-                is_winner,
-                win_type,
-                nickname_snapshot
-            )
-            VALUES (?1, 2, 1, -16, 0, -16, 0, NULL, 'Guest')
-            ",
-            params![game_id],
-        )?;
         Ok(())
     }
 

@@ -4,11 +4,10 @@ use chrono::Utc;
 
 use crate::app::room_runtime::{
     abort_join_handle, close_runtime, remap_connections_to_current_seats, restore_room_snapshot,
-    room_handle, room_has_only_bots, snapshot_connections, snapshot_spectator_connections,
-    snapshot_spectator_identities, unregister_room_handle,
+    room_handle, room_has_only_bots, snapshot_connections, unregister_room_handle,
 };
 use crate::app::{
-    AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles, collect_observer_outbound_from_snapshot,
+    AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
     notify_all_user_connections, pending_timeout_deadline, record_timeout_auto_responses,
     records::archive_current_round_if_needed, room_has_round_state, room_seats, send_outbound,
@@ -139,28 +138,12 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     }
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     let broadcast_handles = connections
         .iter()
         .map(|(_, handle)| handle.clone())
         .collect::<Vec<_>>();
-    let mut broadcast_handles = broadcast_handles;
-    broadcast_handles.extend(
-        spectator_connections
-            .iter()
-            .map(|(_, handle)| handle.clone()),
-    );
-    let mut snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &runtime.room,
-        &spectator_identities,
-        &connections,
-    );
-    snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
-        &runtime.room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let snapshot_outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
     drop(runtime);
     let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&rust_messages));
     outbound.extend(snapshot_outbound);
@@ -216,18 +199,7 @@ async fn process_due_continue_action(state: AppContext, table_code: String, expe
     }
     let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &runtime.room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &runtime.room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
     drop(runtime);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
@@ -271,19 +243,8 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
         runtime.pending_start_match = None;
         let room = runtime.room.clone();
         let connections = snapshot_connections(&runtime);
-        let spectator_connections = snapshot_spectator_connections(&runtime);
-        let spectator_identities = snapshot_spectator_identities(&runtime);
         drop(runtime);
-        let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-            &room,
-            &spectator_identities,
-            &connections,
-        );
-        outbound.extend(collect_observer_outbound_from_snapshot(
-            &room,
-            &spectator_identities,
-            &spectator_connections,
-        ));
+        let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
         send_outbound(outbound);
         schedule_room_tasks_detached(state, table_code);
         return;
@@ -304,8 +265,6 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
@@ -328,16 +287,7 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
         )
         .await;
     }
-    let mut outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     send_outbound(outbound);
     schedule_room_tasks_detached(state, table_code);
 }
@@ -415,33 +365,16 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
     let connections = snapshot_connections(&runtime);
-    let spectator_connections = snapshot_spectator_connections(&runtime);
-    let spectator_identities = snapshot_spectator_identities(&runtime);
     let broadcast_handles = connections
         .iter()
         .map(|(_, handle)| handle.clone())
         .collect::<Vec<_>>();
-    let mut broadcast_handles = broadcast_handles;
-    broadcast_handles.extend(
-        spectator_connections
-            .iter()
-            .map(|(_, handle)| handle.clone()),
-    );
     drop(runtime);
     let room_json = match serialize_room(&room) {
         Ok(value) => value,
         Err(_) => return,
     };
-    let mut snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &connections,
-    );
-    snapshot_outbound.extend(collect_observer_outbound_from_snapshot(
-        &room,
-        &spectator_identities,
-        &spectator_connections,
-    ));
+    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if state
         .inner
         .db

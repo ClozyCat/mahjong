@@ -62,53 +62,6 @@ describe('ConnectGate', () => {
     expect(onJoin).toHaveBeenCalledTimes(1);
   });
 
-  it('renders spectator entry and respects canWatch state', async () => {
-    const user = userEvent.setup();
-    const onWatch = vi.fn();
-
-    const { rerender } = render(
-      <ConnectGate
-        value={{
-          tableCode: 'AB12CD',
-          nickname: 'Viewer',
-        }}
-        status="idle"
-        themeLabel="天水碧"
-        canCreate={true}
-        canJoin={true}
-        canWatch={false}
-        onChange={vi.fn()}
-        onCreate={vi.fn()}
-        onJoin={vi.fn()}
-        onWatch={onWatch}
-      />,
-    );
-
-    expect(screen.getByRole('button', { name: '观战牌桌' })).toBeDisabled();
-
-    rerender(
-      <ConnectGate
-        value={{
-          tableCode: 'AB12CD',
-          nickname: 'Viewer',
-        }}
-        status="idle"
-        themeLabel="天水碧"
-        canCreate={true}
-        canJoin={true}
-        canWatch={true}
-        onChange={vi.fn()}
-        onCreate={vi.fn()}
-        onJoin={vi.fn()}
-        onWatch={onWatch}
-      />,
-    );
-
-    await user.click(screen.getByRole('button', { name: '观战牌桌' }));
-
-    expect(onWatch).toHaveBeenCalledTimes(1);
-  });
-
   it('shows a validation hint and disables create/join when the table code is invalid', () => {
     render(
       <ConnectGate

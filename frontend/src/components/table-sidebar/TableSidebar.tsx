@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 import type { PublicUser } from '../../types/match';
 
-export type TableSidebarTab = 'room' | 'messages' | 'online' | 'spectators';
+export type TableSidebarTab = 'room' | 'messages' | 'online';
 
 export interface TableSidebarPlayer {
   key: string;
@@ -16,12 +16,6 @@ export interface TableSidebarPlayer {
   isBotSeat?: boolean;
   isBotControlled?: boolean;
   profileUser?: PublicUser | null;
-}
-
-export interface TableSidebarSpectator {
-  key: string;
-  label: string;
-  subtitle?: string | null;
 }
 
 type AllPlayerStatusTone = 'online' | 'offline' | 'creating' | 'playing-human' | 'playing-bot';
@@ -39,15 +33,11 @@ interface TableSidebarProps {
   onlineUserIds?: number[];
   creatingTableCodes?: string[];
   currentUserId?: number | null;
-  requestedWatchTableCodes?: Iterable<string>;
-  approvedWatchTableCodes?: Iterable<string>;
-  spectators: TableSidebarSpectator[];
   tabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
   roomPanel?: ReactNode;
   messagesPanel?: ReactNode;
   onToggle: () => void;
   onTabChange: (tab: TableSidebarTab) => void;
-  onWatchUser?: (user: PublicUser) => void;
 }
 
 const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = {
@@ -76,15 +66,6 @@ const TAB_CONFIG: Record<TableSidebarTab, { label: string; icon: ReactNode }> = 
         <circle cx="12" cy="12" r="10" />
         <line x1="2" y1="12" x2="22" y2="12" />
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-      </svg>
-    ),
-  },
-  spectators: {
-    label: '观战者',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-        <circle cx="12" cy="12" r="3" />
       </svg>
     ),
   },
@@ -139,28 +120,21 @@ export function TableSidebar({
   onlineUserIds = [],
   creatingTableCodes = [],
   currentUserId = null,
-  requestedWatchTableCodes = [],
-  approvedWatchTableCodes = [],
-  spectators,
   tabAlerts = {},
   roomPanel,
   messagesPanel,
   onToggle,
   onTabChange,
-  onWatchUser,
 }: TableSidebarProps) {
   const tabs: TableSidebarTab[] = [
     ...(roomPanel ? (['room'] as const) : []),
     ...(messagesPanel ? (['messages'] as const) : []),
     'online',
-    'spectators',
   ];
   const resolvedActiveTab = tabs.includes(activeTab) ? activeTab : tabs[0];
   const hasAnyAlert = tabs.some((tabId) => tabAlerts[tabId]);
   const onlineUserIdSet = new Set(onlineUserIds);
   const creatingTableCodeSet = new Set(creatingTableCodes);
-  const requestedWatchTableCodeSet = new Set(requestedWatchTableCodes);
-  const approvedWatchTableCodeSet = new Set(approvedWatchTableCodes);
   const allUsers = [...onlineUsers].sort((left, right) => right.points - left.points);
   const activeTableUserCounts = allUsers.reduce((counts, user) => {
     if (!user.active_table_code) {
@@ -223,30 +197,6 @@ export function TableSidebar({
                 {allUsers.length === 0 ? <li className="table-sidebar__empty">暂无玩家</li> : null}
                 {allUsers.map((user) => {
                   const isSelf = currentUserId === user.user_id;
-                  const currentUser = typeof currentUserId === 'number'
-                    ? allUsers.find((candidate) => candidate.user_id === currentUserId)
-                    : null;
-                  const isCurrentUserInTable = Boolean(currentUser?.active_table_code);
-                  const isWaitingTable = Boolean(
-                    user.active_table_phase === 'waiting' ||
-                      (user.active_table_code && creatingTableCodeSet.has(user.active_table_code)),
-                  );
-                  const isWatchableTable = user.active_table_phase === 'playing';
-                  const hasRequestedWatch = Boolean(
-                    user.active_table_code && requestedWatchTableCodeSet.has(user.active_table_code),
-                  );
-                  const hasApprovedWatch = Boolean(
-                    user.active_table_code && approvedWatchTableCodeSet.has(user.active_table_code),
-                  );
-                  const canWatch = Boolean(
-                    user.active_table_code &&
-                      !isSelf &&
-                      !user.is_special_bot &&
-                      !isCurrentUserInTable &&
-                      onWatchUser &&
-                      !hasRequestedWatch &&
-                      isWatchableTable,
-                  );
                   const playerStatus = getAllPlayerStatus(
                     user,
                     onlineUserIdSet,
@@ -265,49 +215,10 @@ export function TableSidebar({
                         </strong>
                         <span className="table-sidebar__stat">{user.points} <small>积分</small></span>
                       </div>
-                      <div className="table-sidebar__row-actions">
-                        <button
-                          type="button"
-                          disabled={!canWatch}
-                          title={
-                            hasRequestedWatch
-                              ? `已申请观战 ${user.active_table_code}`
-                              : hasApprovedWatch && !isCurrentUserInTable
-                                ? `进入观战 ${user.active_table_code}`
-                              : canWatch
-                                ? `申请观战 ${user.active_table_code}`
-                              : isCurrentUserInTable && !isSelf
-                                ? '你正在牌局中，不能观战其他玩家'
-                              : isWaitingTable
-                                ? '牌局尚未开始，暂不能观战'
-                              : isSelf
-                                ? '不能观战自己的牌局'
-                              : user.is_special_bot
-                                ? '该BOT不可被观战'
-                              : user.active_table_code
-                                ? '该玩家当前没有可观战的进行中牌局'
-                                : '该玩家当前不在牌局中'
-                          }
-                          onClick={() => onWatchUser?.(user)}
-                        >
-                          {hasRequestedWatch ? '已申请' : hasApprovedWatch ? '进入观战' : '观战'}
-                        </button>
-                      </div>
+                      {isSelf ? <span className="table-sidebar__stat">当前账号</span> : null}
                     </li>
                   );
                 })}
-              </ul>
-            ) : null}
-
-            {resolvedActiveTab === 'spectators' ? (
-              <ul className="table-sidebar__list">
-                {spectators.length === 0 ? <li className="table-sidebar__empty">暂无观战者信息</li> : null}
-                {spectators.map((spectator) => (
-                  <li key={spectator.key} className="table-sidebar__row table-sidebar__row--stacked">
-                    <strong>{spectator.label}</strong>
-                    {spectator.subtitle ? <span>{spectator.subtitle}</span> : null}
-                  </li>
-                ))}
               </ul>
             ) : null}
           </div>

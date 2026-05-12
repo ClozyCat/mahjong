@@ -316,17 +316,6 @@ function createFetchMock(options?: {
   leaderboardResponses?: MockPublicUser[][];
   invites?: typeof DEFAULT_PENDING_INVITE[];
   inviteResponses?: Array<typeof DEFAULT_PENDING_INVITE[]>;
-  spectatorRequestResponses?: Array<
-    Array<{
-      id: number;
-      table_code: string;
-      requester_user_id: number;
-      owner_user_id: number;
-      status: string;
-      created_at: string;
-      decided_at: string | null;
-    }>
-  >;
   createdTableCode?: string;
   acceptInviteStatus?: number;
   acceptInviteDetail?: string;
@@ -338,7 +327,6 @@ function createFetchMock(options?: {
   const leaderboardResponses = options?.leaderboardResponses ? [...options.leaderboardResponses] : null;
   const invites = options?.invites ?? [];
   const inviteResponses = options?.inviteResponses ? [...options.inviteResponses] : null;
-  const spectatorRequestResponses = options?.spectatorRequestResponses ? [...options.spectatorRequestResponses] : null;
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
   const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
   const acceptInviteDetail = options?.acceptInviteDetail;
@@ -390,20 +378,8 @@ function createFetchMock(options?: {
       return createMockResponse(activeTable);
     }
 
-    if (url.endsWith('/api/me/spectator-requests') && method === 'GET') {
-      return createMockResponse(spectatorRequestResponses?.shift() ?? []);
-    }
-
     if (url.endsWith('/api/leaderboard') && method === 'GET') {
       return createMockResponse(leaderboardResponses?.shift() ?? leaderboard);
-    }
-
-    if (/\/api\/users\/\d+\/fans$/.test(url) && method === 'GET') {
-      return createMockResponse([]);
-    }
-
-    if (/\/api\/users\/\d+\/games$/.test(url) && method === 'GET') {
-      return createMockResponse([]);
     }
 
     if (url.endsWith('/api/tables') && method === 'POST') {
@@ -425,22 +401,6 @@ function createFetchMock(options?: {
         inviter_user_id: me.user_id,
         invitee_user_id: Number(body?.invitee_user_id ?? DEFAULT_PENDING_INVITE.invitee_user_id),
       });
-    }
-
-    if (/\/api\/tables\/[^/]+\/spectator-requests$/.test(url) && method === 'POST') {
-      const tableCode = url.match(/\/api\/tables\/([^/]+)\/spectator-requests$/)?.[1] ?? 'ROOM42';
-      return createMockResponse(
-        {
-          id: 11,
-          table_code: tableCode,
-          requester_user_id: me.user_id,
-          owner_user_id: 2,
-          status: 'pending',
-          created_at: '2026-05-06T12:01:00Z',
-          decided_at: null,
-        },
-        201,
-      );
     }
 
     if (/\/api\/invites\/\d+\/accept$/.test(url) && method === 'POST') {
@@ -879,7 +839,6 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [{ seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' }],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -929,7 +888,6 @@ describe('App', () => {
             { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
             { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true },
           ],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -979,7 +937,6 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -1034,7 +991,6 @@ describe('App', () => {
             { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
             { seat_index: 3, nickname: 'Player D', connected: true, ready: true, is_bot: false, seat_type: 'human' },
           ],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -1087,7 +1043,6 @@ describe('App', () => {
             { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
             { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
           ],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -1147,7 +1102,6 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -1161,174 +1115,6 @@ describe('App', () => {
     const currentUserRow = screen.getByText(/Player A（平民）/).closest('li');
     expect(currentUserRow).not.toBeNull();
     expect(within(currentUserRow!).getByText('创建牌局中')).toBeInTheDocument();
-  });
-
-  it('requests spectator approval and enters watch mode after approval when not in another table', async () => {
-    const user = userEvent.setup();
-    const { fetchMock } = await renderAuthenticatedLobby({
-      leaderboard: [
-        DEFAULT_CURRENT_USER,
-        {
-          ...DEFAULT_LEADERBOARD[1]!,
-          active_table_code: 'ROOM42',
-          active_table_phase: 'playing',
-        },
-      ],
-    });
-
-    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
-
-    const playerRow = screen.getByText(/Player B（平民）/).closest('li');
-    expect(playerRow).not.toBeNull();
-    const watchButton = within(playerRow!).getByRole('button', { name: '观战' });
-    expect(watchButton).toBeEnabled();
-
-    await user.click(watchButton);
-
-    expect(findFetchCall(fetchMock, '/api/tables/ROOM42/spectator-requests', 'POST')).toBeDefined();
-    await waitFor(() => {
-      expect(within(playerRow!).getByRole('button', { name: '已申请' })).toBeDisabled();
-    });
-
-    await user.click(within(playerRow!).getByRole('button', { name: '已申请' }));
-
-    expect(
-      fetchMock.mock.calls.filter(([input, init]) => {
-        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
-        return url.endsWith('/api/tables/ROOM42/spectator-requests') && (init?.method ?? 'GET') === 'POST';
-      }),
-    ).toHaveLength(1);
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'spectator_request_decided',
-        payload: {
-          id: 11,
-          table_code: 'ROOM42',
-          requester_user_id: 1,
-          owner_user_id: 2,
-          status: 'approved',
-          created_at: '2026-05-06T12:01:00Z',
-          decided_at: '2026-05-06T12:02:00Z',
-        },
-      });
-    });
-
-    await waitFor(() => {
-      expect(getRoomSocket('ROOM42')).toBeDefined();
-    });
-
-    const spectatorSocket = getRoomSocket('ROOM42');
-    await act(async () => {
-      spectatorSocket!.triggerOpen();
-    });
-
-    expect(JSON.parse(spectatorSocket!.sentMessages[0]!)).toEqual({
-      type: 'watch_table',
-      payload: {
-        session_token: AUTH_SESSION_TOKEN,
-        nickname: DEFAULT_CURRENT_USER.display_name,
-      },
-    });
-
-    await act(async () => {
-      spectatorSocket!.triggerMessage({
-        type: 'room_snapshot',
-        payload: createPlayingSnapshotPayload({
-          table_code: 'ROOM42',
-          local_seat: 1,
-          spectators: [{ user_id: DEFAULT_CURRENT_USER.user_id, display_name: DEFAULT_CURRENT_USER.display_name }],
-        }),
-      });
-    });
-
-    await user.click(await screen.findByRole('button', { name: '打开快捷表情' }));
-    await user.click(await screen.findByRole('menuitem', { name: '发送喝茶表情' }));
-
-    expect(spectatorSocket!.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
-      type: 'quick_chat',
-      payload: {
-        target_seat: 0,
-        emoji: '🍵',
-      },
-    });
-  });
-
-  it('does not auto-enter spectator mode when approval arrives while user is already in a table', async () => {
-    const user = userEvent.setup();
-    const fetchMock = createFetchMock({
-      me: {
-        ...DEFAULT_CURRENT_USER,
-        active_table_code: 'CURRENT',
-        active_table_phase: 'playing',
-      },
-      activeTable: { table_code: 'CURRENT', seat_index: 0, role: 'player' },
-      leaderboard: [
-        {
-          ...DEFAULT_CURRENT_USER,
-          active_table_code: 'CURRENT',
-          active_table_phase: 'playing',
-        },
-        {
-          ...DEFAULT_LEADERBOARD[1]!,
-          active_table_code: 'ROOM42',
-          active_table_phase: 'playing',
-        },
-      ],
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    seedStoredAuthSession({
-      ...DEFAULT_CURRENT_USER,
-      active_table_code: 'CURRENT',
-      active_table_phase: 'playing',
-    });
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(getRoomSocket('CURRENT')).toBeDefined();
-    });
-
-    const currentSocket = getRoomSocket('CURRENT');
-    await act(async () => {
-      currentSocket!.triggerOpen();
-      currentSocket!.triggerMessage({
-        type: 'room_snapshot',
-        payload: createPlayingSnapshotPayload({
-          table_code: 'CURRENT',
-          local_seat: 0,
-          owner_user_id: DEFAULT_CURRENT_USER.user_id,
-        }),
-      });
-    });
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'spectator_request_decided',
-        payload: {
-          id: 11,
-          table_code: 'ROOM42',
-          requester_user_id: 1,
-          owner_user_id: 2,
-          status: 'approved',
-          created_at: '2026-05-06T12:01:00Z',
-          decided_at: '2026-05-06T12:02:00Z',
-        },
-      });
-    });
-
-    expect(await screen.findByText('牌桌 ROOM42 已允许观战。')).toBeInTheDocument();
-    expect(getRoomSocket('ROOM42')).toBeUndefined();
-
-    await user.click(screen.getByRole('tab', { name: '所有玩家' }));
-    const playerRows = screen.getAllByText(/Player B（平民）/);
-    const playerRow = playerRows.at(-1)?.closest('li') ?? null;
-    expect(playerRow).not.toBeNull();
-    expect(within(playerRow!).getByRole('button', { name: '进入观战' })).toBeDisabled();
   });
 
   it('disables sidebar invites when the active table is full and has no replaceable bot seats', async () => {
@@ -1359,7 +1145,6 @@ describe('App', () => {
             { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
             { seat_index: 3, nickname: 'Player D', connected: true, ready: true, is_bot: false, seat_type: 'human' },
           ],
-          spectators: [],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -1482,7 +1267,6 @@ describe('App', () => {
 
     expect(countFetchCalls(fetchMock, '/api/me')).toBeGreaterThanOrEqual(3);
     expect(countFetchCalls(fetchMock, '/api/me/invites')).toBeGreaterThanOrEqual(3);
-    expect(countFetchCalls(fetchMock, '/api/me/spectator-requests')).toBeGreaterThanOrEqual(3);
     expect(countFetchCalls(fetchMock, '/api/leaderboard')).toBeGreaterThanOrEqual(3);
     vi.useRealTimers();
   });
@@ -1648,48 +1432,6 @@ describe('App', () => {
     expect(screen.queryByRole('region', { name: '牌局邀请' })).not.toBeInTheDocument();
     expect(screen.getByText('LATEST')).toBeInTheDocument();
     expect(screen.queryByText('OLDER1')).not.toBeInTheDocument();
-  });
-
-  it('keeps only the latest pending spectator request from the same requester', async () => {
-    const user = userEvent.setup();
-    await renderAuthenticatedLobby();
-
-    await user.click(screen.getByRole('button', { name: /创建.*牌局/u }));
-
-    const meSocket = getMeSocket();
-    expect(meSocket).toBeDefined();
-
-    await act(async () => {
-      meSocket!.triggerMessage({
-        type: 'spectator_request_created',
-        payload: {
-          id: 11,
-          table_code: 'OLDER1',
-          requester_user_id: 2,
-          owner_user_id: 1,
-          status: 'pending',
-          created_at: '2026-05-06T12:00:00Z',
-          decided_at: null,
-        },
-      });
-      meSocket!.triggerMessage({
-        type: 'spectator_request_created',
-        payload: {
-          id: 12,
-          table_code: 'LATEST',
-          requester_user_id: 2,
-          owner_user_id: 1,
-          status: 'pending',
-          created_at: '2026-05-06T12:01:00Z',
-          decided_at: null,
-        },
-      });
-    });
-
-    await user.click(screen.getByRole('tab', { name: '消息' }));
-
-    expect(screen.getByText('申请观战 LATEST')).toBeInTheDocument();
-    expect(screen.queryByText('申请观战 OLDER1')).not.toBeInTheDocument();
   });
 
   it('keeps the messages alert visible while a pending invite remains', async () => {

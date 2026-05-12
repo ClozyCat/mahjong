@@ -23,7 +23,6 @@ import { SnakeOverlay } from './SnakeOverlay';
 import {
   TableSidebar,
   type TableSidebarPlayer,
-  type TableSidebarSpectator,
   type TableSidebarTab,
 } from '../table-sidebar/TableSidebar';
 
@@ -42,7 +41,6 @@ interface BattleScreenProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
-  isSpectator?: boolean;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -54,16 +52,11 @@ interface BattleScreenProps {
   sidebarOnlineUserIds?: number[];
   sidebarCreatingTableCodes?: string[];
   sidebarCurrentUserId?: number | null;
-  sidebarRequestedWatchTableCodes?: Iterable<string>;
-  sidebarApprovedWatchTableCodes?: Iterable<string>;
-  sidebarCurrentUser?: PublicUser | null;
-  sidebarSpectators?: TableSidebarSpectator[];
   sidebarRoomPanel?: ReactNode;
   sidebarMessagesPanel?: ReactNode;
   sidebarDefaultOpen?: boolean;
   sidebarInitialTab?: TableSidebarTab;
   sidebarTabAlerts?: Partial<Record<TableSidebarTab, boolean>>;
-  onSidebarWatchUser?: (user: PublicUser) => void;
 }
 
 const DEFAULT_TABLE_TILE_SCALE = 1.12;
@@ -90,7 +83,6 @@ export function BattleScreen({
   onAddBot,
   onRemoveBot,
   onQuickChat,
-  isSpectator = false,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -102,16 +94,11 @@ export function BattleScreen({
   sidebarOnlineUserIds = [],
   sidebarCreatingTableCodes = [],
   sidebarCurrentUserId = null,
-  sidebarRequestedWatchTableCodes = [],
-  sidebarApprovedWatchTableCodes = [],
-  sidebarCurrentUser = null,
-  sidebarSpectators = [],
   sidebarRoomPanel = null,
   sidebarMessagesPanel = null,
   sidebarDefaultOpen = false,
   sidebarInitialTab = 'online',
   sidebarTabAlerts = {},
-  onSidebarWatchUser,
 }: BattleScreenProps) {
   const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
@@ -432,7 +419,7 @@ export function BattleScreen({
               phaseLabel={viewModel.phaseLabel}
               occupiedSeatCount={occupiedSeatCount}
               seatCapacity={4}
-              preMatchActions={!isSpectator && viewModel.waitingControls ? visiblePreMatchActions : []}
+              preMatchActions={viewModel.waitingControls ? visiblePreMatchActions : []}
               isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
               botCount={viewModel.dealerSelection ? 0 : viewModel.waitingControls?.botCount ?? 0}
               canAddBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canAddBot ?? false)}
@@ -463,11 +450,10 @@ export function BattleScreen({
                 selectedTileCode={viewModel.selectedTileCode}
                 handInsight={viewModel.handInsight}
                 claimCandidates={viewModel.claimCandidates}
-                actions={isSpectator || isBotTakeoverEnabled ? [] : battleActions}
+                actions={isBotTakeoverEnabled ? [] : battleActions}
                 isElevated={viewModel.isActionDockElevated}
                 isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
                 isHandInteractionDisabled={isBotTakeoverEnabled}
-                isSpectator={isSpectator}
                 promptCue={viewModel.promptCue}
                 deadlineAt={viewModel.deadlineAt}
                 onTileSelect={onTileSelect}
@@ -486,15 +472,11 @@ export function BattleScreen({
             onlineUserIds={sidebarOnlineUserIds}
             creatingTableCodes={sidebarCreatingTableCodes}
             currentUserId={sidebarCurrentUserId}
-            requestedWatchTableCodes={sidebarRequestedWatchTableCodes}
-            approvedWatchTableCodes={sidebarApprovedWatchTableCodes}
-            spectators={sidebarSpectators}
             tabAlerts={sidebarTabAlerts}
             roomPanel={sidebarRoomPanel}
             messagesPanel={sidebarMessagesPanel}
             onToggle={() => setIsSidebarOpen((current) => !current)}
             onTabChange={handleSidebarTabChange}
-            onWatchUser={onSidebarWatchUser}
           />
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}
           {visibleResult ? (
