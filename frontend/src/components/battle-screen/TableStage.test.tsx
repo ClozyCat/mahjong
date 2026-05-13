@@ -618,6 +618,56 @@ describe('TableStage', () => {
     expect(topZone?.querySelector('.table-stage__stat-plate--hand')).not.toHaveClass('table-stage__stat-plate--muted');
   });
 
+  it('mutes offline player name, score, flower, and hand stat plates while keeping the name tooltip data', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          {
+            seat: 'bottom',
+            name: 'Online Player',
+            melds: [],
+            score: 25000,
+            flowerCount: 1,
+            concealedCount: 13,
+            connected: true,
+          },
+          {
+            seat: 'top',
+            name: 'Offline Player',
+            melds: [],
+            score: 24000,
+            flowerCount: 2,
+            concealedCount: 12,
+            connected: false,
+          },
+        ]}
+      />,
+    );
+
+    const onlineZone = container.querySelector('.table-stage__seat-zone--bottom');
+    const offlineZone = container.querySelector('.table-stage__seat-zone--top');
+    const offlineNamePlate = offlineZone?.querySelector('.table-stage__stat-plate--seat');
+
+    expect(offlineNamePlate).toHaveClass('table-stage__stat-plate--muted');
+    expect(offlineNamePlate).toHaveAttribute('data-player-name', 'Offline Player');
+    expect(offlineZone?.querySelector('.table-stage__stat-plate--score')).toHaveClass('table-stage__stat-plate--muted');
+    expect(offlineZone?.querySelector('.table-stage__stat-plate--flower')).toHaveClass('table-stage__stat-plate--muted');
+    expect(offlineZone?.querySelector('.table-stage__stat-plate--hand')).toHaveClass('table-stage__stat-plate--muted');
+    expect(onlineZone?.querySelector('.table-stage__stat-plate--seat')).not.toHaveClass('table-stage__stat-plate--muted');
+    expect(onlineZone?.querySelector('.table-stage__stat-plate--score')).not.toHaveClass('table-stage__stat-plate--muted');
+    expect(onlineZone?.querySelector('.table-stage__stat-plate--flower')).not.toHaveClass('table-stage__stat-plate--muted');
+    expect(onlineZone?.querySelector('.table-stage__stat-plate--hand')).not.toHaveClass('table-stage__stat-plate--muted');
+  });
+
   it('shows player initials instead of preset winds while waiting for match start', () => {
     const { container } = render(
       <TableStage

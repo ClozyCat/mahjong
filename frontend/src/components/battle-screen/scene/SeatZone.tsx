@@ -60,6 +60,8 @@ export const SeatZone = memo(function SeatZone({
 }: SeatZoneProps) {
   const { player, seat } = scene;
   const playerInfoName = getPlayerInfoName(player);
+  const isOfflinePlayer = player?.connected === false;
+  const mutedStatPlateClass = scene.shouldMuteWaitingStats || isOfflinePlayer ? ' table-stage__stat-plate--muted' : '';
 
   return (
     <div
@@ -73,7 +75,7 @@ export const SeatZone = memo(function SeatZone({
         >
           <div className="table-stage__player-stats">
             <div
-              className="table-stage__stat-plate table-stage__stat-plate--seat"
+              className={`table-stage__stat-plate table-stage__stat-plate--seat${isOfflinePlayer ? ' table-stage__stat-plate--muted' : ''}`}
               data-player-name={playerInfoName}
               data-absolute-seat={player.absoluteSeat}
               data-player-color-slot={player.colorSlot}
@@ -82,21 +84,21 @@ export const SeatZone = memo(function SeatZone({
               <span className="table-stage__stat-value">{scene.windLabel}</span>
             </div>
             <div
-              className={`table-stage__stat-plate table-stage__stat-plate--score${scene.shouldMuteWaitingStats ? ' table-stage__stat-plate--muted' : ''}`}
+              className={`table-stage__stat-plate table-stage__stat-plate--score${mutedStatPlateClass}`}
               title="分数"
             >
               <IngotIcon className="table-stage__stat-icon" />
               <span className="table-stage__stat-value">{player.score?.toLocaleString() ?? 0}</span>
             </div>
             <div
-              className={`table-stage__stat-plate table-stage__stat-plate--flower${scene.shouldMuteWaitingStats ? ' table-stage__stat-plate--muted' : ''}`}
+              className={`table-stage__stat-plate table-stage__stat-plate--flower${mutedStatPlateClass}`}
               title="花牌数量"
             >
               <LotusIcon className="table-stage__stat-icon" />
               <span className="table-stage__stat-value">{player.flowerCount ?? 0}</span>
             </div>
             <div
-              className={`table-stage__stat-plate table-stage__stat-plate--hand${scene.shouldMuteWaitingStats ? ' table-stage__stat-plate--muted' : ''}`}
+              className={`table-stage__stat-plate table-stage__stat-plate--hand${mutedStatPlateClass}`}
               title="手牌数量"
             >
               <TileStackIcon className="table-stage__stat-icon" />
