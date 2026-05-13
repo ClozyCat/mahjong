@@ -604,7 +604,7 @@
   position: absolute;
   left: var(--intro-left);
   top: var(--intro-top);
-  transform: translate(-50%, -50%) rotate(var(--intro-rotation));
+  transform: translate(var(--intro-translate-x, -50%), -50%) rotate(var(--intro-rotation));
   animation: intro-nameplate-appear 0.8s var(--ease-lux) forwards;
   will-change: transform, opacity;
 }

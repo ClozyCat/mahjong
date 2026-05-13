@@ -35,10 +35,12 @@ export const IntroductionLayer = memo(function IntroductionLayer({
       {players.map((player) => {
         const position = SPOTLIGHT_POSITION_VARS[player.seat];
         const isVertical = player.seat === 'left' || player.seat === 'right';
+        const translateX = player.seat === 'left' ? '-100%' : player.seat === 'right' ? '0%' : '-50%';
         const style = {
           '--intro-left': position.left,
           '--intro-top': position.top,
           '--intro-rotation': position.rotation,
+          '--intro-translate-x': translateX,
         } as CSSProperties;
 
         return (

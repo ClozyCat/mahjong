@@ -280,11 +280,11 @@
 @keyframes intro-nameplate-appear {
   0% {
     opacity: 0;
-    transform: translate(-50%, -30%) rotate(var(--intro-rotation)) scale(0.9);
+    transform: translate(var(--intro-translate-x, -50%), -30%) rotate(var(--intro-rotation)) scale(0.9);
   }
   100% {
     opacity: 1;
-    transform: translate(-50%, -50%) rotate(var(--intro-rotation)) scale(1);
+    transform: translate(var(--intro-translate-x, -50%), -50%) rotate(var(--intro-rotation)) scale(1);
   }
 }
 
