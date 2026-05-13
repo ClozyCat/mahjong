@@ -16,6 +16,14 @@ const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotatio
   right: { left: 'calc(50% + var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '0deg' },
 };
 
+function shouldHideIntroForActionEffect(actionEffect: ActionEffectView | null) {
+  if (!actionEffect) {
+    return false;
+  }
+
+  return actionEffect.emphasis !== 'draw' || actionEffect.label === '摸牌';
+}
+
 export const IntroductionLayer = memo(function IntroductionLayer({
   players,
   discards,
@@ -26,11 +34,9 @@ export const IntroductionLayer = memo(function IntroductionLayer({
     return Object.values(discards).reduce((acc, d) => acc + d.length, 0);
   }, [discards]);
   const hasPlayerAction = useMemo(() => {
-    return Boolean(actionEffect) || players.some((player) =>
-      (player.flowerCount ?? 0) > 0 ||
+    return shouldHideIntroForActionEffect(actionEffect) || players.some((player) =>
       Boolean(player.isReadyHand) ||
-      player.melds.length > 0 ||
-      (player.flowers?.length ?? 0) > 0,
+      player.melds.length > 0,
     );
   }, [actionEffect, players]);
 

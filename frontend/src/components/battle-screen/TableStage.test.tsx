@@ -780,6 +780,29 @@ describe('TableStage', () => {
     );
 
     expect(container.querySelector('.table-stage__intro-layer')).toBeNull();
+
+    rerender(
+      <TableStage
+        discards={emptyDiscards}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { ...players[0], flowerCount: 1, flowers: ['f1'] },
+          players[1],
+        ]}
+        isPlaying
+        actionEffect={{
+          key: 'flower_exposed-{"seat":0}',
+          label: '补花',
+          emphasis: 'draw',
+          seat: 'bottom',
+          calloutTone: null,
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__intro-layer')).not.toBeNull();
   });
 
   it('keeps the player name color slot with the same player after wind rotation moves seats', () => {
