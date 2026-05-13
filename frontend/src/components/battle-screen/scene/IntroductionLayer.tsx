@@ -1,8 +1,9 @@
 import { memo, useMemo, type CSSProperties } from 'react';
-import type { PlayerView, Seat } from '../../../types/match';
+import type { Seat } from '../../../types/match';
+import type { TableStagePlayer } from './types';
 
 interface IntroductionLayerProps {
-  players: PlayerView[];
+  players: TableStagePlayer[];
   discards: Record<Seat, string[]>;
   isPlaying: boolean;
 }
@@ -55,7 +56,7 @@ export const IntroductionLayer = memo(function IntroductionLayer({
               )}
               <span className="table-stage__player-intro-divider">-</span>
               <span className="table-stage__player-intro-points">
-                {player.points.toLocaleString()}
+                {(player.points ?? 0).toLocaleString()}
               </span>
             </div>
           </div>
