@@ -17,6 +17,7 @@ import { MotionLayer } from './scene/MotionLayer';
 import { buildTableSceneModel } from './scene/sceneModel';
 import { SeatZone } from './scene/SeatZone';
 import { QuickChatCluster } from './scene/QuickChatCluster';
+import { IntroductionLayer } from './scene/IntroductionLayer';
 import { TableChrome } from './scene/TableChrome';
 import type { TableStagePlayer } from './scene/types';
 import { useBattleViewport } from './scene/useBattleViewport';
@@ -119,6 +120,7 @@ interface TableStageProps {
   onToggleVoice?: () => void;
   isBotTakeoverEnabled?: boolean;
   onToggleBotTakeover?: (enabled: boolean) => void;
+  isPlaying?: boolean;
   children?: ReactNode;
 }
 
@@ -176,6 +178,7 @@ export function TableStage({
   onToggleVoice,
   isBotTakeoverEnabled = false,
   onToggleBotTakeover,
+  isPlaying = false,
   children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -288,6 +291,11 @@ export function TableStage({
             localPlayerName={scene.localPlayer?.name ?? '本家'}
             localPlayerAbsoluteSeat={scene.localPlayer?.absoluteSeat ?? null}
             onQuickChat={onQuickChat}
+          />
+          <IntroductionLayer
+            players={playersWithColorSlots}
+            discards={discards}
+            isPlaying={isPlaying}
           />
           <MotionLayer
             discards={discards}

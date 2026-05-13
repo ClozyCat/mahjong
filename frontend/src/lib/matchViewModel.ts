@@ -864,6 +864,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         title: privatePlayer?.title ?? seat.title ?? null,
         seatType,
         score: displayedScores[seatKey] ?? 0,
+        points: seat.points ?? 0,
         liveDelta: liveDeltaBySeat[seatKey] ?? 0,
         flowerCount: flowerCountBySeat[seatKey] ?? privatePlayer?.flowers.length ?? 0,
         wind: getWindForSeat(seat.seat_index, dealerSeat),

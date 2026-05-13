@@ -479,6 +479,7 @@ export interface PlayerView {
   title?: string | null;
   seatType?: SeatType;
   score: number;
+  points: number;
   liveDelta: number;
   flowerCount: number;
   wind: 'East' | 'South' | 'West' | 'North';

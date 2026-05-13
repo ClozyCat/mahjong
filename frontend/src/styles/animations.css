@@ -276,6 +276,17 @@
     transform: translateX(0) scale(1);
   }
 }
+ 
+@keyframes intro-nameplate-appear {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -30%) rotate(var(--intro-rotation)) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--intro-rotation)) scale(1);
+  }
+}
 
 
 /* ------- Panel entrance duration ------- */

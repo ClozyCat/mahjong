@@ -591,7 +591,67 @@
   direction: ltr;
 }
 
-/* Dense meld rack (3+ melds) forces 2 rows for top/bottom to save horizontal space */
+/* ------- Player Introduction ------- */
+
+.table-stage__intro-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.table-stage__player-intro {
+  position: absolute;
+  left: var(--intro-left);
+  top: var(--intro-top);
+  transform: translate(-50%, -50%) rotate(var(--intro-rotation));
+  animation: intro-nameplate-appear 0.8s var(--ease-lux) forwards;
+  will-change: transform, opacity;
+}
+
+.table-stage__player-intro-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 1.2rem;
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 45%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  border-radius: 999px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent);
+  color: var(--theme-paper-strong);
+  white-space: nowrap;
+}
+
+.table-stage__player-intro-name {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+
+.table-stage__player-intro-title {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--accent-2);
+  opacity: 0.9;
+}
+
+.table-stage__player-intro-points {
+  font-family: 'Bahnschrift', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--theme-paper-strong);
+}
+
+.table-stage__player-intro-divider {
+  opacity: 0.3;
+  font-weight: 300;
+}
+
+/* ------- Dense meld rack (3+ melds) forces 2 rows for top/bottom to save horizontal space */
 .table-stage__melds--dense .meld-rack {
   grid-template-rows: repeat(2, max-content) !important;
 }
