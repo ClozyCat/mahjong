@@ -11,77 +11,77 @@ struct TitleBand {
 const TITLE_BANDS: [TitleBand; 15] = [
     TitleBand {
         min_points: -50,
-        title: "散财童子",
+        title: "LV1散财童子",
         description: "分低到像是在做慈善，牌桌上的财神爷，专程给三家送温暖。",
     },
     TitleBand {
         min_points: 50,
-        title: "点炮能手",
+        title: "LV2点炮能手",
         description: "别人胡牌你助攻，精准一发点炮，堪称对手的最佳队友。",
     },
     TitleBand {
         min_points: 150,
-        title: "慈善赌王",
+        title: "LV3慈善赌王",
         description: "输得荡气回肠，用实力诠释“重在参与”，善款捐赠量全桌第一。",
     },
     TitleBand {
         min_points: 250,
-        title: "常年陪跑",
+        title: "LV4常年陪跑",
         description: "永远在陪打，从未拿过胜果，存在感约等于牌桌背景板。",
     },
     TitleBand {
         min_points: 350,
-        title: "失魂雀士",
+        title: "LV5失魂雀士",
         description: "摸牌犹犹豫豫，出牌神游天外，魂儿没带来，分被带走了。",
     },
     TitleBand {
         min_points: 450,
-        title: "迷途麻客",
+        title: "LV6迷途麻客",
         description: "知道牌型但不知道方向，经常在“该攻该守”的十字路口迷路。",
     },
     TitleBand {
         min_points: 550,
-        title: "入门雀友",
+        title: "LV7入门雀友",
         description: "终于摸清国标规则，但离赢牌还隔着一整本《麻将高阶走位学》。",
     },
     TitleBand {
         min_points: 650,
-        title: "初露锋芒",
+        title: "LV8初露锋芒",
         description: "偶尔能胡出像样的牌，开始让对手觉得“这人有点意思”。",
     },
     TitleBand {
         min_points: 750,
-        title: "稳扎稳打",
+        title: "LV9稳扎稳打",
         description: "不求惊天动地，只求少点炮、多蹭番，积分渐渐稳住了。",
     },
     TitleBand {
         min_points: 850,
-        title: "牌桌猎手",
+        title: "LV10牌桌猎手",
         description: "听牌快、胡牌准，一旦嗅到机会就像猎手，迅速拿下战果。",
     },
     TitleBand {
         min_points: 950,
-        title: "运筹帷幄",
+        title: "LV11运筹帷幄",
         description: "舍牌有章法，做牌有远见，仿佛手里拿着一本剧本在雀桌上导戏。",
     },
     TitleBand {
         min_points: 1050,
-        title: "不败战将",
+        title: "LV12不败战将",
         description: "败局极少出现，连续获胜已成常态，属于让人不想匹配的存在。",
     },
     TitleBand {
         min_points: 1150,
-        title: "雀坛传说",
+        title: "LV13雀坛传说",
         description: "打法已成谈资，排名名震一方，普通雀友在茶馆里会提到你的大名。",
     },
     TitleBand {
         min_points: 1250,
-        title: "封神雀圣",
+        title: "LV14封神雀圣",
         description: "近乎神化的控局能力，坐上桌就自带压迫光环，只差一个正式加冕。",
     },
     TitleBand {
         min_points: 1350,
-        title: "至尊雀神",
+        title: "LV15至尊雀神",
         description: "国标之巅，俯瞰众生。你的存在本身就是对“运气”二字的不屑。",
     },
 ];
@@ -157,24 +157,24 @@ mod tests {
 
     #[test]
     fn user_title_thresholds_are_lower_inclusive_upper_exclusive() {
-        assert_eq!(title_for_points(-1_000), "散财童子");
-        assert_eq!(title_for_points(-50), "散财童子");
-        assert_eq!(title_for_points(49), "散财童子");
-        assert_eq!(title_for_points(50), "点炮能手");
-        assert_eq!(title_for_points(149), "点炮能手");
-        assert_eq!(title_for_points(150), "慈善赌王");
-        assert_eq!(title_for_points(549), "迷途麻客");
-        assert_eq!(title_for_points(550), "入门雀友");
-        assert_eq!(title_for_points(649), "入门雀友");
-        assert_eq!(title_for_points(650), "初露锋芒");
-        assert_eq!(title_for_points(1_349), "封神雀圣");
-        assert_eq!(title_for_points(1_350), "至尊雀神");
-        assert_eq!(title_for_points(9_999), "至尊雀神");
+        assert_eq!(title_for_points(-1_000), "LV1散财童子");
+        assert_eq!(title_for_points(-50), "LV1散财童子");
+        assert_eq!(title_for_points(49), "LV1散财童子");
+        assert_eq!(title_for_points(50), "LV2点炮能手");
+        assert_eq!(title_for_points(149), "LV2点炮能手");
+        assert_eq!(title_for_points(150), "LV3慈善赌王");
+        assert_eq!(title_for_points(549), "LV6迷途麻客");
+        assert_eq!(title_for_points(550), "LV7入门雀友");
+        assert_eq!(title_for_points(649), "LV7入门雀友");
+        assert_eq!(title_for_points(650), "LV8初露锋芒");
+        assert_eq!(title_for_points(1_349), "LV14封神雀圣");
+        assert_eq!(title_for_points(1_350), "LV15至尊雀神");
+        assert_eq!(title_for_points(9_999), "LV15至尊雀神");
     }
 
     #[test]
     fn user_title_display_label_appends_title_with_parentheses() {
-        assert_eq!(display_label("Alice", 550), "Alice（入门雀友）");
+        assert_eq!(display_label("Alice", 550), "Alice（LV7入门雀友）");
     }
 
     #[test]
