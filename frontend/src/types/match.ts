@@ -476,6 +476,7 @@ export interface PlayerView {
   absoluteSeat?: number;
   userId?: number | null;
   name: string;
+  title?: string | null;
   seatType?: SeatType;
   score: number;
   liveDelta: number;

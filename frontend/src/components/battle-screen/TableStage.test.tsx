@@ -657,6 +657,31 @@ describe('TableStage', () => {
     expect(rightSeatLabel).toHaveTextContent('B');
   });
 
+  it('adds titles to player info names except for normal bots', () => {
+    const { container } = render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={[
+          { seat: 'bottom', name: '小A', title: '至尊雀神', seatType: 'human', melds: [] },
+          { seat: 'right', name: 'bot_1', title: '至尊雀神', seatType: 'bot', melds: [] },
+          { seat: 'top', name: '舒伯特', title: '至尊雀神', seatType: 'special_bot', melds: [] },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="小A-至尊雀神"]')).not.toBeNull();
+    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="bot_1"]')).not.toBeNull();
+    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="舒伯特-至尊雀神"]')).not.toBeNull();
+  });
+
   it('keeps the player name color slot with the same player after wind rotation moves seats', () => {
     const { container, rerender } = render(
       <TableStage
@@ -1476,12 +1501,12 @@ describe('TableStage', () => {
         promptText={null}
         systemBroadcastEvent={{
           key: 'system-1',
-          text: '📣系统播报：小A（概率论博导）宣布听牌。',
+          text: '🎉小A已由“入门雀友”飞升为“至尊雀神”🍾',
         }}
       />,
     );
 
-    expect(screen.getByText('📣系统播报：小A（概率论博导）宣布听牌。')).toBeInTheDocument();
+    expect(screen.getByText('🎉小A已由“入门雀友”飞升为“至尊雀神”🍾')).toBeInTheDocument();
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
 });

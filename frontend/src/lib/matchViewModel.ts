@@ -861,6 +861,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         absoluteSeat: seat.seat_index,
         userId: seat.user_id ?? null,
         name: seat.nickname,
+        title: privatePlayer?.title ?? seat.title ?? null,
         seatType,
         score: displayedScores[seatKey] ?? 0,
         liveDelta: liveDeltaBySeat[seatKey] ?? 0,

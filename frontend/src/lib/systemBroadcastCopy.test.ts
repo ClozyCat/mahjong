@@ -8,24 +8,20 @@ import {
 } from './systemBroadcastCopy';
 
 const seats = [
-  { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: '熟练的码牌工', connected: true },
-  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: '全自动点炮机', connected: true },
-  { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: '言出法随真雀神', connected: true },
+  { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: '入门雀友', connected: true },
+  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: '散财童子', connected: true },
+  { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: '至尊雀神', connected: true },
 ];
-
-function expectSystemPrefix(copy: string | null) {
-  expect(copy).toMatch(/^\p{Emoji}系统播报：/u);
-}
 
 describe('system broadcast copy', () => {
   it('maps player titles with 100-point lower-inclusive bands', () => {
-    expect(titleForPoints(-1000)).toBe('全自动点炮机');
-    expect(titleForPoints(49)).toBe('全自动点炮机');
-    expect(titleForPoints(50)).toBe('首席散财童子');
-    expect(titleForPoints(550)).toBe('熟练的码牌工');
-    expect(titleForPoints(649)).toBe('熟练的码牌工');
-    expect(titleForPoints(650)).toBe('弹性拆牌艺术家');
-    expect(titleForPoints(9999)).toBe('言出法随真雀神');
+    expect(titleForPoints(-1000)).toBe('散财童子');
+    expect(titleForPoints(49)).toBe('散财童子');
+    expect(titleForPoints(50)).toBe('点炮能手');
+    expect(titleForPoints(550)).toBe('入门雀友');
+    expect(titleForPoints(649)).toBe('入门雀友');
+    expect(titleForPoints(650)).toBe('初露锋芒');
+    expect(titleForPoints(9999)).toBe('至尊雀神');
   });
 
   it('does not create a ready-hand system broadcast', () => {
@@ -59,22 +55,38 @@ describe('system broadcast copy', () => {
     expect(copy).toBeNull();
   });
 
-  it('announces title changes with a dynamic event emoji', () => {
+  it('announces title promotions without appending the new title to the player name', () => {
     const copy = createTitleChangeSystemBroadcast({
       user_id: 10,
       display_name: '小A',
       delta: 20,
       old_points: 540,
       points: 560,
-      old_title: '间歇性好运携带者',
-      title: '熟练的码牌工',
+      old_title: '迷途麻客',
+      title: '入门雀友',
       reason: 'round_settlement',
       source_table_code: 'ROOM1',
       source_round_id: 'east-1',
     });
 
-    expect(copy?.startsWith('📣系统播报：')).toBe(true);
-    expect(copy).toContain('小A（熟练的码牌工）成功由“间歇性好运携带者”晋升“熟练的码牌工”');
+    expect(copy).toBe('🎉小A已由“迷途麻客”飞升为“入门雀友”🍾');
+  });
+
+  it('announces title demotions without appending the old title to the player name', () => {
+    const copy = createTitleChangeSystemBroadcast({
+      user_id: 11,
+      display_name: '小B',
+      delta: -20,
+      old_points: 560,
+      points: 540,
+      old_title: '入门雀友',
+      title: '迷途麻客',
+      reason: 'round_settlement',
+      source_table_code: 'ROOM1',
+      source_round_id: 'east-1',
+    });
+
+    expect(copy).toBe('👇小B已由“入门雀友”陨落为“迷途麻客”💩');
   });
 
   it('only creates system broadcasts for title changes', () => {
@@ -95,8 +107,8 @@ describe('system broadcast copy', () => {
       delta: 700,
       old_points: 700,
       points: 1400,
-      old_title: '弹性拆牌艺术家',
-      title: '言出法随真雀神',
+      old_title: '初露锋芒',
+      title: '至尊雀神',
       reason: 'round_settlement',
       source_table_code: 'ROOM1',
       source_round_id: 'east-1',
@@ -106,6 +118,6 @@ describe('system broadcast copy', () => {
     expect(readyHand).toBeNull();
     expect(selfDraw).toBeNull();
     expect(discardWin).toBeNull();
-    expect(titleChange?.startsWith('🏆系统播报：')).toBe(true);
+    expect(titleChange).toBe('🎉小C已由“初露锋芒”飞升为“至尊雀神”🍾');
   });
 });

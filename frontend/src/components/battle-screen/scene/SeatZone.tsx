@@ -37,6 +37,19 @@ function getMeldRackPositionStyle(seat: Seat): CSSProperties {
   };
 }
 
+function getPlayerInfoName(player: TableSeatScene['player']) {
+  if (!player) {
+    return '';
+  }
+
+  const title = player.title?.trim();
+  if (!title || player.seatType === 'bot') {
+    return player.name;
+  }
+
+  return `${player.name}-${title}`;
+}
+
 export const SeatZone = memo(function SeatZone({
   scene,
   discards,
@@ -46,6 +59,7 @@ export const SeatZone = memo(function SeatZone({
   hasSpotlightDiscard,
 }: SeatZoneProps) {
   const { player, seat } = scene;
+  const playerInfoName = getPlayerInfoName(player);
 
   return (
     <div
@@ -60,7 +74,7 @@ export const SeatZone = memo(function SeatZone({
           <div className="table-stage__player-stats">
             <div
               className="table-stage__stat-plate table-stage__stat-plate--seat"
-              data-player-name={player.name}
+              data-player-name={playerInfoName}
               data-absolute-seat={player.absoluteSeat}
               data-player-color-slot={player.colorSlot}
             >
