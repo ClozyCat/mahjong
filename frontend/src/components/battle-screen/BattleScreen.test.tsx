@@ -864,12 +864,14 @@ describe('BattleScreen', () => {
 
     const expandedOverlay = document.body.querySelector('.result-overlay') as HTMLElement;
     expect(expandedOverlay).not.toHaveClass('result-overlay--collapsed');
+    expect(expandedOverlay).toHaveClass('result-overlay--expanded');
 
     await user.click(screen.getByRole('button', { name: '收起面板' }));
 
     const collapsedOverlay = document.body.querySelector('.result-overlay') as HTMLElement;
     expect(screen.getByRole('button', { name: '展开结算面板' })).toBeInTheDocument();
     expect(collapsedOverlay).toHaveClass('result-overlay--collapsed');
+    expect(collapsedOverlay).not.toHaveClass('result-overlay--expanded');
 
     rerender(
       <BattleScreen

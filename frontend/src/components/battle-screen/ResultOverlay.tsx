@@ -348,7 +348,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, players 
     </section>
   ) : (
     <section
-      className="result-overlay"
+      className="result-overlay result-overlay--expanded"
       style={{ '--result-overlay-dynamic-scale': dynamicScale } as CSSProperties}
     >
       <div ref={cardRef} className="result-overlay__card">

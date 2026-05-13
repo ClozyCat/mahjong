@@ -867,6 +867,9 @@
   z-index: 24;
   pointer-events: none;
   background: color-mix(in srgb, var(--theme-veil) 35%, transparent);
+}
+
+.result-overlay--expanded {
   animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
 
