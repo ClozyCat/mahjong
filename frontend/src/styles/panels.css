@@ -14,8 +14,7 @@
 .result-overlay__card,
 .connect-gate__panel,
 .fan-guide__dialog,
-.auth-gate__panel,
-.social-lobby__panel {
+.auth-gate__panel {
   border: 1px solid var(--glass-border);
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 15%, transparent), transparent 50%),
@@ -496,8 +495,7 @@
   justify-content: center;
 }
 
-.auth-gate__panel,
-.social-lobby__panel {
+.auth-gate__panel {
   border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
   background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
   box-shadow: var(--shadow-lg);
@@ -512,14 +510,12 @@
   animation: overlay-fade-in-up 0.6s var(--ease-lux) forwards;
 }
 
-.auth-gate__header h1,
-.social-lobby__hero h1 {
+.auth-gate__header h1 {
   margin: 0;
   font-size: 1.6rem;
 }
 
-.auth-gate__eyebrow,
-.social-lobby__eyebrow {
+.auth-gate__eyebrow {
   margin: 0 0 0.35rem;
   color: var(--muted);
   font-size: 0.8rem;
@@ -527,25 +523,16 @@
   letter-spacing: 0.08em;
 }
 
-.auth-gate__status,
-.social-lobby__meta,
-.social-lobby__hint,
-.social-lobby__message,
-.social-lobby__row span {
+.auth-gate__status {
   color: var(--muted);
 }
 
-.auth-gate__tabs,
-.social-lobby__actions {
+.auth-gate__tabs {
   display: flex;
   gap: 0.75rem;
 }
 
 .auth-gate__tabs button,
-.social-lobby__ghost,
-.social-lobby__primary,
-.social-lobby__secondary,
-.social-lobby__row button,
 .auth-gate__primary {
   border-radius: 0.85rem;
   border: 1px solid var(--glass-border);
@@ -557,7 +544,6 @@
 }
 
 .auth-gate__tabs button.is-active,
-.social-lobby__primary,
 .auth-gate__primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -588,149 +574,6 @@
   background: color-mix(in srgb, var(--theme-panel-bg-strong) 60%, transparent);
   border-color: var(--accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent);
-}
-
-.social-lobby {
-  display: grid;
-  gap: 1rem;
-  align-content: start;
-}
-
-.social-lobby__hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 2rem;
-  padding: 1rem 0.5rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--glass-border);
-}
-
-.social-lobby__brand h1 {
-  margin: 0.25rem 0 0.75rem;
-  font-size: clamp(1.8rem, 5vw, 3rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--theme-paper-strong);
-  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.social-lobby__meta {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.social-lobby__points-badge {
-  padding: 0.4rem 0.9rem;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  color: var(--accent);
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.social-lobby__points-badge strong {
-  font-weight: 800;
-  margin-left: 0.3rem;
-  color: var(--theme-paper-strong);
-}
-
-.social-lobby__status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.social-lobby__status-indicator::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--theme-success);
-  box-shadow: 0 0 10px var(--theme-success);
-}
-
-.social-lobby__logout-btn {
-  padding: 0.6rem 1.25rem;
-  border-radius: 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  background: color-mix(in srgb, var(--theme-panel-bg-soft) 20%, transparent);
-  border: 1px solid var(--glass-border);
-  color: var(--muted);
-  transition: all 0.3s var(--ease-lux);
-}
-
-.social-lobby__logout-btn:hover {
-  background: color-mix(in srgb, var(--theme-danger) 15%, transparent);
-  border-color: color-mix(in srgb, var(--theme-danger) 30%, transparent);
-  color: var(--theme-paper-strong);
-  transform: translateY(-2px);
-}
-
-.social-lobby__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.social-lobby__panel {
-  border-radius: 1.5rem;
-  padding: 1.5rem;
-  display: grid;
-  gap: 1.25rem;
-  transition: transform 0.3s var(--ease-lux);
-}
-
-
-.social-lobby__panel h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.social-lobby__list,
-.social-lobby__ranking {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.75rem;
-}
-
-.social-lobby__row,
-.social-lobby__ranking li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.social-lobby__row > div,
-.social-lobby__ranking li {
-  min-width: 0;
-}
-
-.social-lobby__row strong,
-.social-lobby__ranking span {
-  display: block;
-}
-
-.social-lobby__empty {
-  color: var(--muted);
-}
-
-@media (max-width: 900px) {
-  .social-lobby__grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .connect-gate__admin-link:hover {

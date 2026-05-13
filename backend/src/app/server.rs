@@ -954,7 +954,7 @@ async fn auto_accept_special_bot_invite(
         )
         .await
     {
-        Ok(invite) => invite,
+        Ok(result) => result.accepted,
         Err(error) if error_matches(&error, "table_invite_invalid") => {
             restore_room_snapshot(&room_handle, previous_room).await;
             return json_error(StatusCode::UNPROCESSABLE_ENTITY, "table_invite_invalid");
@@ -1109,7 +1109,48 @@ async fn accept_table_invite(
         )
         .await
     {
-        Ok(invite) => {
+        Ok(result) => {
+            let invite = result.accepted;
+            let accepted_payload = table_invite_response(invite.clone());
+            notify_user_connections(
+                &state,
+                invite.inviter_user_id,
+                json!({
+                    "type": "table_invite_decided",
+                    "payload": accepted_payload.clone(),
+                }),
+            )
+            .await;
+            notify_user_connections(
+                &state,
+                invite.invitee_user_id,
+                json!({
+                    "type": "table_invite_decided",
+                    "payload": accepted_payload,
+                }),
+            )
+            .await;
+            for rejected_invite in result.rejected {
+                let payload = table_invite_response(rejected_invite.clone());
+                notify_user_connections(
+                    &state,
+                    rejected_invite.inviter_user_id,
+                    json!({
+                        "type": "table_invite_decided",
+                        "payload": payload.clone(),
+                    }),
+                )
+                .await;
+                notify_user_connections(
+                    &state,
+                    rejected_invite.invitee_user_id,
+                    json!({
+                        "type": "table_invite_decided",
+                        "payload": payload,
+                    }),
+                )
+                .await;
+            }
             notify_all_user_connections(
                 &state,
                 user_active_table_updated_message(

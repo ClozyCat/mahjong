@@ -57,6 +57,12 @@ pub(crate) struct TableInviteRecord {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct AcceptedTableInvite {
+    pub(crate) accepted: TableInviteRecord,
+    pub(crate) rejected: Vec<TableInviteRecord>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct UserRecord {
     pub(crate) user_id: i64,
     pub(crate) username: String,
@@ -1359,7 +1365,7 @@ impl Database {
         seat_index: usize,
         nickname_snapshot: &str,
         require_invitee_idle: bool,
-    ) -> Result<TableInviteRecord> {
+    ) -> Result<AcceptedTableInvite> {
         self.with_transaction("accept table invite and reserve seat", |conn| {
             if require_invitee_idle {
                 let active_elsewhere = conn.query_row(
@@ -1394,6 +1400,31 @@ impl Database {
                 return Err(anyhow!("table_invite_invalid"));
             }
 
+            let mut rejected_statement = conn.prepare(
+                "
+                SELECT id, table_code, inviter_user_id, invitee_user_id, status, created_at, expires_at, accepted_at
+                FROM table_invites
+                WHERE invitee_user_id = ?1
+                  AND id != ?2
+                  AND status = 'pending'
+                ",
+            )?;
+            let rejected = rejected_statement
+                .query_map(params![invitee_user_id, invite_id], Self::table_invite_from_row)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            drop(rejected_statement);
+
+            conn.execute(
+                "
+                UPDATE table_invites
+                SET status = 'rejected'
+                WHERE invitee_user_id = ?1
+                  AND id != ?2
+                  AND status = 'pending'
+                ",
+                params![invitee_user_id, invite_id],
+            )?;
+
             Self::save_table_with_conn(conn, table_code, created_at, room_json)?;
             Self::upsert_table_participant_with_conn(
                 conn,
@@ -1405,7 +1436,7 @@ impl Database {
                 accepted_at,
             )?;
 
-            conn.query_row(
+            let accepted = conn.query_row(
                 "
                 SELECT id, table_code, inviter_user_id, invitee_user_id, status, created_at, expires_at, accepted_at
                 FROM table_invites
@@ -1413,8 +1444,17 @@ impl Database {
                 ",
                 params![invite_id],
                 Self::table_invite_from_row,
-            )
-            .map_err(Into::into)
+            )?;
+            Ok(AcceptedTableInvite {
+                accepted,
+                rejected: rejected
+                    .into_iter()
+                    .map(|mut invite| {
+                        invite.status = "rejected".to_string();
+                        invite
+                    })
+                    .collect(),
+            })
         })
     }
 
@@ -1993,7 +2033,7 @@ impl DbWorker {
         seat_index: usize,
         nickname_snapshot: &str,
         require_invitee_idle: bool,
-    ) -> Result<TableInviteRecord> {
+    ) -> Result<AcceptedTableInvite> {
         let accepted_at = accepted_at.to_string();
         let table_code = table_code.to_string();
         let room_json = room_json.to_string();

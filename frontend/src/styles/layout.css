@@ -136,8 +136,7 @@
 
 /* ------- Auth gate & Lobby ------- */
 
-.auth-gate,
-.social-lobby {
+.auth-gate {
   min-height: 100dvh;
   padding: 2rem;
   background:
