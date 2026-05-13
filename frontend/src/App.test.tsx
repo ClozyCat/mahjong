@@ -1335,6 +1335,31 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '开始对局' })).toBeDisabled();
   });
 
+  it('creates a replacement table when the leaving socket closes before an accepted message arrives', async () => {
+    const user = userEvent.setup();
+    const { socket } = await joinTable(user, { createdTableCodes: ['OLD123', 'NEW456'] });
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({ table_code: 'OLD123' }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    await act(async () => {
+      socket.close();
+    });
+
+    await waitFor(() => {
+      expect(getRoomSocket('NEW456', socket)).toBeDefined();
+    });
+
+    expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开始对局' })).toBeDisabled();
+  });
+
   it('hides leave controls for a single-player empty waiting table', async () => {
     const user = userEvent.setup();
     const { socket } = await joinTable(user);

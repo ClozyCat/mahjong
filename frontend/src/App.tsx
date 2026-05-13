@@ -919,6 +919,9 @@ export default function App() {
         const current = sessionRef.current;
         if (leavingTableRef.current) {
           handleLeaveToLobby(current.tableCode);
+          if (authSession?.sessionToken && currentUser) {
+            void createAndEnterEmptyTable(authSession.sessionToken, currentUser.display_name);
+          }
           return;
         }
         const activeRestore = activeTableRestoreRef.current;
