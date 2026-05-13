@@ -62,8 +62,10 @@ import type {
   BackendActionType,
   BattleActionId,
   ClaimActionId,
+  CreateTableResponse,
   PublicUser,
   QuickChatEmoji,
+  RoomSnapshotMessage,
   SessionState,
   TableInvite,
 } from './types/match';
@@ -265,6 +267,23 @@ function hasInviteableTableSeat(snapshot: SessionState['roomSnapshot']) {
   }
 
   return false;
+}
+
+function createPendingWaitingRoomSnapshot(table: CreateTableResponse): RoomSnapshotMessage {
+  return {
+    type: 'room_snapshot',
+    payload: {
+      table_code: table.table_code,
+      phase: table.phase,
+      mode: table.mode,
+      owner_user_id: table.owner_user_id,
+      multiplier: table.multiplier,
+      seats: table.seats,
+      local_seat: 0,
+      match_state: null,
+      private_state: null,
+    },
+  } as const;
 }
 
 function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
@@ -946,6 +965,7 @@ export default function App() {
       if (isCancelled()) {
         return;
       }
+      dispatch({ type: 'set_room_snapshot', message: createPendingWaitingRoomSnapshot(table) });
       setActiveLobbyTableCode(table.table_code);
       setSentInviteStatusesByUserId({});
       setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, table.table_code, table.phase));

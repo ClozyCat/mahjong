@@ -322,7 +322,7 @@ export function buildTableSceneModel({
         windLabel: getSeatInfoLabel(player, seat, isWaitingForMatchStart),
         riverColumns,
         hasMelds,
-        shouldMuteWaitingStats: isWaitingForMatchStart && player?.ready === false,
+        shouldMuteWaitingStats: false,
         isDenseMeldRack: shouldPinDenseMeldRack(seat, player?.melds.length ?? 0),
         safeZone: {
           inlinePx: safeZoneInlinePx,

@@ -273,10 +273,10 @@ mod tests {
             "enforce_minimum_eight_fan": true,
             "continue_action": null,
             "seats": [
-                {"seat_index": 0, "nickname": "P0", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 1, "nickname": "P1", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 2, "nickname": "P2", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 3, "nickname": "P3", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+                {"seat_index": 0, "nickname": "P0", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "P1", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
             ],
             "match_state": {
                 "prevailing_wind": "east",
@@ -385,10 +385,10 @@ mod tests {
             "enforce_minimum_eight_fan": true,
             "continue_action": null,
             "seats": [
-                {"seat_index": 0, "nickname": "P0", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 1, "nickname": "P1", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 2, "nickname": "P2", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 3, "nickname": "P3", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+                {"seat_index": 0, "nickname": "P0", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "P1", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
             ],
             "match_state": {
                 "prevailing_wind": "east",
@@ -617,10 +617,10 @@ mod tests {
             "enforce_minimum_eight_fan": true,
             "continue_action": null,
             "seats": [
-                {"seat_index": 0, "nickname": "P0", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 1, "nickname": "P1", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 2, "nickname": "P2", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 3, "nickname": "P3", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+                {"seat_index": 0, "nickname": "P0", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "P1", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
             ],
             "match_state": {
                 "prevailing_wind": "east",
@@ -743,10 +743,10 @@ mod tests {
             "enforce_minimum_eight_fan": true,
             "continue_action": null,
             "seats": [
-                {"seat_index": 0, "nickname": "P0", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 1, "nickname": "P1", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 2, "nickname": "P2", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
-                {"seat_index": 3, "nickname": "P3", "connected": true, "ready": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
+                {"seat_index": 0, "nickname": "P0", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 1, "nickname": "P1", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 2, "nickname": "P2", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null},
+                {"seat_index": 3, "nickname": "P3", "connected": true, "is_bot": false, "seat_type": "human", "bot_persona": null, "bot_aggression": null, "disconnect_deadline_at": null}
             ],
             "match_state": {
                 "prevailing_wind": "east",

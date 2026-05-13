@@ -191,7 +191,6 @@ async fn add_human_to_table(
         points: Some(600),
         title: Some("平民".to_string()),
         connected: true,
-        ready: true,
         is_bot: false,
         seat_type: "human".to_string(),
         bot_persona: None,
@@ -234,7 +233,6 @@ async fn add_bot_takeover_human_to_table(
         points: None,
         title: None,
         connected: true,
-        ready: true,
         is_bot: true,
         seat_type: "human".to_string(),
         bot_persona: None,
@@ -589,7 +587,6 @@ async fn invite_only_create_requires_open_or_replaceable_seat() -> Result<()> {
                 points: None,
                 title: None,
                 connected: true,
-                ready: true,
                 is_bot: false,
                 seat_type: "human".to_string(),
                 bot_persona: None,
@@ -691,7 +688,6 @@ async fn invite_only_full_bot_takeover_human_seat_is_not_replaceable() -> Result
                 points: None,
                 title: None,
                 connected: true,
-                ready: true,
                 is_bot: false,
                 seat_type: "human".to_string(),
                 bot_persona: None,
@@ -1030,7 +1026,6 @@ async fn invite_only_accept_creates_table_participant() -> Result<()> {
         .expect("replaced seat should exist");
     assert_eq!(seat.seat_type, "human");
     assert!(!seat.is_bot);
-    assert!(seat.ready);
     assert_eq!(seat.nickname.as_deref(), Some("Guest"));
     Ok(())
 }
@@ -1099,7 +1094,6 @@ async fn invite_special_bot_auto_accepts_and_reserves_seat() -> Result<()> {
     assert_eq!(seat.seat_type, crate::special_bots::SPECIAL_BOT_SEAT_TYPE);
     assert!(seat.is_bot);
     assert!(seat.connected);
-    assert!(seat.ready);
     Ok(())
 }
 
@@ -1195,12 +1189,11 @@ async fn invite_only_accept_uses_empty_waiting_seat() -> Result<()> {
         .await?
         .expect("table should exist after accepting invite");
     let room = parse_room_json(&table.room_json)?;
-    let seat = room
+    room
         .seats
         .iter()
         .find(|seat| seat.user_id == Some(guest_id))
         .expect("guest seat should exist");
-    assert!(seat.ready);
     Ok(())
 }
 

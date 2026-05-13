@@ -51,7 +51,6 @@ const DEALER_SELECTION_DURATION_MS: u64 = 4_200;
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 enum ClientMessage {
     JoinTable(JoinTableRequest),
-    Ready(ReadyRequest),
     AdjustBots(AdjustBotsRequest),
     SetBotTakeover(SetBotTakeoverRequest),
     StartMatch,
@@ -85,18 +84,6 @@ struct JoinTableRequest {
     #[serde(default)]
     session_token: String,
 }
-#[derive(Debug, Deserialize)]
-struct ReadyRequest {
-    #[serde(default = "default_true")]
-    ready: bool,
-}
-
-impl Default for ReadyRequest {
-    fn default() -> Self {
-        Self { ready: true }
-    }
-}
-
 #[derive(Debug, Default, Deserialize)]
 struct ActionRequest {
     #[serde(default)]
@@ -128,10 +115,6 @@ struct AdjustBotsRequest {
 struct SetBotTakeoverRequest {
     #[serde(default)]
     enabled: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn dealer_selection_reveal_at() -> String {
@@ -285,14 +268,6 @@ async fn handle_client_message(
                 return reject_to(connection, "seat_already_owned");
             }
             handle_join_table(state, table_code, connection, request).await
-        }
-        ClientMessage::Ready(request) => {
-            let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
-            else {
-                return reject_to(connection, "seat_not_owned");
-            };
-            handle_ready(state, table_code, connection, seat_index, request).await
         }
         ClientMessage::AdjustBots(request) => {
             let Some(seat_index) =
@@ -518,7 +493,6 @@ async fn handle_join_table(
                 points: Some(user.points),
                 title: Some(title_for_points(user.points).to_string()),
                 connected: true,
-                ready: true,
                 is_bot: false,
                 seat_type: "human".to_string(),
                 bot_persona: None,
@@ -630,65 +604,6 @@ async fn handle_join_table(
         clear_role: false,
         close_socket: false,
     }
-}
-
-async fn handle_ready(
-    state: AppContext,
-    table_code: &str,
-    connection: &ConnectionHandle,
-    seat_index: usize,
-    request: ReadyRequest,
-) -> MessageOutcome {
-    let ready = request.ready;
-    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
-        return reject_to(connection, "table_not_found");
-    };
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let _persist_guard = room_handle.persist.lock().await;
-    let mut runtime = room_handle.runtime.lock().await;
-    if room_handle.is_closed() {
-        return reject_to(connection, "table_not_found");
-    }
-    let previous_room = runtime.room.clone();
-    if room_has_round_state(&runtime.room) {
-        return reject_to(connection, "room_already_started");
-    }
-    if let Some(seat) = runtime
-        .room
-        .seats
-        .iter_mut()
-        .find(|seat| seat.seat_index == seat_index)
-    {
-        seat.ready = ready;
-    }
-    let created_at = runtime.created_at.clone();
-    let room = runtime.room.clone();
-    let connections = snapshot_connections(&runtime);
-    drop(runtime);
-    let room_json = match serialize_room(&room) {
-        Ok(value) => value,
-        Err(error) => return internal_error_to(connection, error),
-    };
-    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
-    if let Err(error) = state
-        .inner
-        .db
-        .save_table(table_code, &created_at, &room_json)
-        .await
-    {
-        restore_room_snapshot(&room_handle, previous_room).await;
-        return internal_error_to(connection, error);
-    }
-    let outcome = MessageOutcome {
-        outbound,
-        role: None,
-        clear_role: false,
-        close_socket: false,
-    };
-    schedule_room_tasks_detached(state, table_code.to_string());
-    outcome
 }
 
 async fn handle_adjust_bots(
@@ -1356,8 +1271,8 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        ClientMessage, ConnectionRole, JoinTableRequest, ReadyRequest, handle_client_message,
-        handle_disconnect, handle_join_table, handle_leave_table, parse_client_message,
+        ClientMessage, ConnectionRole, JoinTableRequest, handle_disconnect, handle_join_table,
+        handle_leave_table, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1406,7 +1321,6 @@ mod tests {
             points: Some(600),
             title: Some("正分守门员".to_string()),
             connected: input.connected,
-            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,
@@ -1556,7 +1470,6 @@ mod tests {
             points: Some(600),
             title: Some("正分守门员".to_string()),
             connected: false,
-            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,
@@ -1630,6 +1543,13 @@ mod tests {
                 .expect("set_bot_takeover should parse");
 
         assert!(matches!(parsed, ClientMessage::SetBotTakeover(request) if request.enabled));
+    }
+
+    #[test]
+    fn reject_deprecated_ready_message() {
+        let result = parse_client_message(r#"{"type":"ready","payload":{"ready":true}}"#);
+
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1724,7 +1644,6 @@ mod tests {
             .expect("room should be loaded");
         let runtime = room_handle.runtime.lock().await;
         assert!(runtime.room.seats[0].connected);
-        assert!(runtime.room.seats[0].ready);
         Ok(())
     }
 
@@ -1851,48 +1770,6 @@ mod tests {
                 .any(|message| message.connection.id == 2)
         );
 
-        let second_ready = handle_client_message(
-            state.clone(),
-            "ROOM52",
-            &second_connection,
-            ConnectionRole::Player { seat_index: 0 },
-            ClientMessage::Ready(ReadyRequest { ready: true }),
-        )
-        .await;
-        assert!(
-            second_ready
-                .outbound
-                .iter()
-                .any(|message| message.connection.id == 1)
-        );
-        assert!(
-            second_ready
-                .outbound
-                .iter()
-                .any(|message| message.connection.id == 2)
-        );
-
-        let first_ready = handle_client_message(
-            state.clone(),
-            "ROOM52",
-            &first_connection,
-            ConnectionRole::Player { seat_index: 0 },
-            ClientMessage::Ready(ReadyRequest { ready: false }),
-        )
-        .await;
-        assert!(
-            first_ready
-                .outbound
-                .iter()
-                .any(|message| message.connection.id == 1)
-        );
-        assert!(
-            first_ready
-                .outbound
-                .iter()
-                .any(|message| message.connection.id == 2)
-        );
-
         let room_handle = room_handle(&state, "ROOM52")
             .await
             .expect("room should be loaded");
@@ -1904,7 +1781,6 @@ mod tests {
                 .map(|group| group.connections.len()),
             Some(2)
         );
-        assert!(!runtime.room.seats[0].ready);
         Ok(())
     }
 

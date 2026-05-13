@@ -525,6 +525,10 @@ function canLeaveTable(snapshot: SessionState['roomSnapshot']) {
     return false;
   }
 
+  if (payload.phase !== 'waiting') {
+    return typeof payload.local_seat === 'number';
+  }
+
   const localSeatIndex = payload.local_seat;
   return payload.seats.some((seat) => {
     if (typeof localSeatIndex === 'number' && seat.seat_index === localSeatIndex) {
@@ -546,15 +550,12 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   const occupiedSeats = snapshot.seats.length;
   const botCount = snapshot.seats.filter((seat) => getSeatIdentityType(seat) === 'bot').length;
   const dealerSelection = createDealerSelection(state, options);
-  const hasRegularBot = snapshot.seats.some((seat) => getSeatIdentityType(seat) === 'bot');
-  const allReady =
-    (occupiedSeats === 4 || hasRegularBot) &&
-    snapshot.seats.every((seat) => seat.ready && (seat.connected || seat.is_bot));
+  const allSeatsAvailable =
+    occupiedSeats === 4 &&
+    snapshot.seats.every((seat) => seat.connected || seat.is_bot);
 
   return {
-    canReady: false,
-    canStart: allReady && !dealerSelection,
-    isReady: Boolean(localSeatState?.ready),
+    canStart: allSeatsAvailable && !dealerSelection,
     occupiedSeats,
     botCount,
     canAddBot: Boolean(localSeatState) && occupiedSeats < 4 && !dealerSelection,
@@ -870,7 +871,6 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         isLocal: typeof ownSeat === 'number' && seat.seat_index === ownSeat,
         connected: seat.connected,
         isBotControlled,
-        ready: seat.ready,
         isReadyHand: Boolean(privatePlayer?.is_ready_hand),
         concealedCount: privatePlayer?.concealed_count ?? 0,
         meldCount: privatePlayer?.melds.length ?? 0,

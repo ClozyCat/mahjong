@@ -381,7 +381,6 @@ pub(crate) fn add_bot_to_waiting_room(room: &mut RoomState) -> Result<usize, &'s
         points: None,
         title: None,
         connected: true,
-        ready: true,
         is_bot: true,
         seat_type: "bot".to_string(),
         bot_persona: None,
@@ -424,7 +423,6 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
         seat.points = None;
         seat.title = None;
         seat.connected = true;
-        seat.ready = true;
         seat.is_bot = true;
         seat.seat_type = "bot".to_string();
         seat.disconnect_deadline_at = None;
@@ -450,10 +448,6 @@ pub(crate) fn set_seat_bot_takeover(
     seat.is_bot = enabled;
     seat.seat_type = "human".to_string();
     seat.consecutive_timeout_auto_response_count = 0;
-    if enabled {
-        seat.ready = true;
-    }
-
     Ok(())
 }
 
@@ -894,7 +888,6 @@ mod tests {
                 points: None,
                 title: None,
                 connected: true,
-                ready: false,
                 is_bot: false,
                 seat_type: "human".to_string(),
                 bot_persona: None,
@@ -913,7 +906,6 @@ mod tests {
         assert!(seat.is_bot);
         assert_eq!(seat.seat_type, "human");
         assert_eq!(seat.nickname.as_deref(), Some("Alice"));
-        assert!(seat.ready);
 
         set_seat_bot_takeover(&mut room, 0, false).expect("takeover should turn off");
         let seat = room.seats.first().expect("seat should remain");
@@ -938,7 +930,6 @@ mod tests {
                 points: Some(650),
                 title: Some("概率论博导".to_string()),
                 connected: true,
-                ready: false,
                 is_bot: false,
                 seat_type: "human".to_string(),
                 bot_persona: None,
@@ -977,7 +968,6 @@ mod tests {
                     points: None,
                     title: None,
                     connected: true,
-                    ready: true,
                     is_bot: true,
                     seat_type: "human".to_string(),
                     bot_persona: None,
@@ -992,7 +982,6 @@ mod tests {
                     points: None,
                     title: None,
                     connected: true,
-                    ready: true,
                     is_bot: true,
                     seat_type: "bot".to_string(),
                     bot_persona: None,
@@ -1028,7 +1017,6 @@ mod tests {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),
                 connected: true,
-                ready: true,
                 seat_type: "human".to_string(),
                 ..Default::default()
             }],
@@ -1060,7 +1048,6 @@ mod tests {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),
                 connected: true,
-                ready: true,
                 seat_type: "human".to_string(),
                 consecutive_timeout_auto_response_count: 1,
                 ..Default::default()

@@ -438,7 +438,6 @@ mod tests {
                 seat_index,
                 user_id: Some((seat_index as i64 + 1) * 100),
                 connected: true,
-                ready: true,
                 seat_type: "human".to_string(),
                 ..Default::default()
             })

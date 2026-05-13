@@ -116,10 +116,10 @@ function createPlayingSnapshotPayload(overrides: Record<string, unknown> = {}) {
     table_code: 'AB12CD',
     phase: 'playing',
     seats: [
-      { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-      { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
-      { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
-      { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
+      { seat_index: 0, nickname: 'Player A', connected: true },
+      { seat_index: 1, nickname: 'Player B', connected: true },
+      { seat_index: 2, nickname: 'Player C', connected: true },
+      { seat_index: 3, nickname: 'Player D', connected: true },
     ],
     local_seat: 0,
     match_state: {
@@ -317,6 +317,7 @@ function createFetchMock(options?: {
   invites?: typeof DEFAULT_PENDING_INVITE[];
   inviteResponses?: Array<typeof DEFAULT_PENDING_INVITE[]>;
   createdTableCode?: string;
+  createdTableCodes?: string[];
   acceptInviteStatus?: number;
   acceptInviteDetail?: string;
   deferMeResponse?: boolean;
@@ -327,6 +328,7 @@ function createFetchMock(options?: {
   const leaderboardResponses = options?.leaderboardResponses ? [...options.leaderboardResponses] : null;
   const invites = options?.invites ?? [];
   const inviteResponses = options?.inviteResponses ? [...options.inviteResponses] : null;
+  const createdTableCodes = options?.createdTableCodes ? [...options.createdTableCodes] : null;
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
   const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
   const acceptInviteDetail = options?.acceptInviteDetail;
@@ -383,8 +385,9 @@ function createFetchMock(options?: {
     }
 
     if (url.endsWith('/api/tables') && method === 'POST') {
+      const nextCreatedTableCode = createdTableCodes?.shift() ?? createdTableCode;
       return createMockResponse({
-        table_code: createdTableCode,
+        table_code: nextCreatedTableCode,
         phase: 'waiting',
         owner_user_id: me.user_id,
         multiplier: 1,
@@ -395,9 +398,10 @@ function createFetchMock(options?: {
 
     if (/\/api\/tables\/[^/]+\/invites$/.test(url) && method === 'POST') {
       const body = parseRequestBody(init);
+      const tableCode = /\/api\/tables\/([^/]+)\/invites$/.exec(url)?.[1] ?? createdTableCode;
       return createMockResponse({
         ...DEFAULT_PENDING_INVITE,
-        table_code: createdTableCode,
+        table_code: tableCode,
         inviter_user_id: me.user_id,
         invitee_user_id: Number(body?.invitee_user_id ?? DEFAULT_PENDING_INVITE.invitee_user_id),
       });
@@ -443,8 +447,11 @@ function getMeSocket() {
   return MockWebSocket.instances.find((socket) => socket.url.includes('/ws/me'));
 }
 
-function getRoomSocket(tableCode = 'AB12CD') {
-  return MockWebSocket.instances.find((socket) => socket.url.endsWith(`/ws/${tableCode}`));
+function getRoomSocket(tableCode = 'AB12CD', afterSocket?: MockWebSocket) {
+  const startIndex = afterSocket ? MockWebSocket.instances.indexOf(afterSocket) + 1 : 0;
+  return MockWebSocket.instances
+    .slice(Math.max(startIndex, 0))
+    .find((socket) => socket.url.endsWith(`/ws/${tableCode}`));
 }
 
 function getRoomSockets(tableCode = 'AB12CD') {
@@ -473,11 +480,12 @@ async function renderAuthenticatedLobby(
   render(<App />);
 
   await screen.findByLabelText('Mahjong table');
+  const initialCreatedTableCode = options?.createdTableCode ?? options?.createdTableCodes?.[0] ?? 'AB12CD';
   await waitFor(() => {
     expect(getMeSocket()).toBeDefined();
   });
   await waitFor(() => {
-    expect(getRoomSocket(options?.createdTableCode ?? 'AB12CD')).toBeDefined();
+    expect(getRoomSocket(initialCreatedTableCode)).toBeDefined();
   });
 
   return { fetchMock };
@@ -490,10 +498,10 @@ async function joinTable(
   const lobby = await renderAuthenticatedLobby(options);
 
   await waitFor(() => {
-    expect(getRoomSocket(options?.createdTableCode ?? 'AB12CD')).toBeDefined();
+    expect(getRoomSocket(options?.createdTableCode ?? options?.createdTableCodes?.[0] ?? 'AB12CD')).toBeDefined();
   });
 
-  const socket = getRoomSocket(options?.createdTableCode ?? 'AB12CD');
+  const socket = getRoomSocket(options?.createdTableCode ?? options?.createdTableCodes?.[0] ?? 'AB12CD');
   expect(socket).toBeDefined();
   await act(async () => {
     socket!.triggerOpen();
@@ -594,10 +602,10 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
-            { seat_index: 2, nickname: 'Bot 2', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
-            { seat_index: 3, nickname: 'Bot 3', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: true, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Bot 2', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 3, nickname: 'Bot 3', connected: true, is_bot: true, seat_type: 'bot' },
           ],
           local_seat: 0,
         },
@@ -764,7 +772,7 @@ describe('App', () => {
         payload: {
           table_code: 'AB12CD',
           phase: 'waiting',
-          seats: [{ seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' }],
+          seats: [{ seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' }],
           local_seat: 0,
           match_state: null,
           private_state: null,
@@ -809,8 +817,8 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true },
           ],
           local_seat: 0,
           match_state: null,
@@ -910,10 +918,10 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'playing',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
-            { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 3, nickname: 'Player D', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Player C', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 3, nickname: 'Player D', connected: true, is_bot: false, seat_type: 'human' },
           ],
           local_seat: 0,
           match_state: null,
@@ -964,8 +972,8 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'playing',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
           ],
           local_seat: 0,
           match_state: null,
@@ -1026,10 +1034,10 @@ describe('App', () => {
           table_code: 'AB12CD',
           phase: 'waiting',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Player B', connected: true, ready: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 3, nickname: 'Player D', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: true, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Player B', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 2, nickname: 'Player C', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 3, nickname: 'Player D', connected: true, is_bot: false, seat_type: 'human' },
           ],
           local_seat: 0,
           match_state: null,
@@ -1275,6 +1283,58 @@ describe('App', () => {
     expectTableHome();
   });
 
+  it('shows invite and start controls automatically after entering the replacement table', async () => {
+    const user = userEvent.setup();
+    const { socket } = await joinTable(user, { createdTableCodes: ['OLD123', 'NEW456'] });
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({ table_code: 'OLD123' }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: '快捷离开牌桌' }));
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'leave_table_accepted',
+        payload: {
+          table_code: 'OLD123',
+          seat_index: 0,
+        },
+      });
+    });
+
+    const replacementSocket = await waitFor(() => {
+      const nextSocket = getRoomSocket('NEW456', socket);
+      expect(nextSocket).toBeDefined();
+      return nextSocket!;
+    });
+
+    expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开始对局' })).toBeDisabled();
+
+    await act(async () => {
+      replacementSocket.triggerOpen();
+      replacementSocket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'NEW456',
+          phase: 'waiting',
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' }],
+          local_seat: 0,
+          match_state: null,
+          private_state: null,
+          owner_user_id: 1,
+        },
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开始对局' })).toBeDisabled();
+  });
+
   it('hides leave controls for a single-player empty waiting table', async () => {
     const user = userEvent.setup();
     const { socket } = await joinTable(user);
@@ -1285,7 +1345,7 @@ describe('App', () => {
         payload: {
           table_code: 'AB12CD',
           phase: 'waiting',
-          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
           local_seat: 0,
           owner_user_id: 1,
         },

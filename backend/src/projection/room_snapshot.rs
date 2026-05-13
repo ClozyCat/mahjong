@@ -41,7 +41,6 @@ struct PublicSeatView {
     points: Option<i64>,
     title: Option<String>,
     connected: bool,
-    ready: bool,
     is_bot: bool,
     seat_type: String,
 }
@@ -352,7 +351,6 @@ fn public_seats(state: &RoomState) -> Vec<PublicSeatView> {
             points: seat.points,
             title: seat.title.clone(),
             connected: seat.connected,
-            ready: seat.ready,
             is_bot: seat.is_bot,
             seat_type: seat.seat_type.clone(),
         })
@@ -1162,7 +1160,6 @@ mod tests {
             .map(|seat_index| SeatState {
                 seat_index,
                 connected: true,
-                ready: true,
                 seat_type: "human".to_string(),
                 ..Default::default()
             })

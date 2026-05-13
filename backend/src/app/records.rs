@@ -445,7 +445,6 @@ mod tests {
             points: None,
             title: None,
             connected: true,
-            ready: true,
             is_bot,
             seat_type: if is_bot { "bot" } else { "human" }.to_string(),
             bot_persona: None,

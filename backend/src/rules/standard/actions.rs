@@ -2443,7 +2443,6 @@ mod tests {
             points: None,
             title: None,
             connected: true,
-            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,

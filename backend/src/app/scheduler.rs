@@ -518,7 +518,6 @@ mod tests {
             points: Some(600),
             title: Some("正分守门员".to_string()),
             connected: false,
-            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,

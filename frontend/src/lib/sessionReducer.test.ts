@@ -8,7 +8,7 @@ const roomSnapshotMessage: RoomSnapshotMessage = {
   payload: {
     table_code: 'AB12CD',
     phase: 'waiting',
-    seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: false }],
+    seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
     local_seat: 0,
   },
 };
@@ -37,10 +37,10 @@ const playingRoomSnapshotMessage: RoomSnapshotMessage = {
     table_code: 'AB12CD',
     phase: 'playing',
     seats: [
-      { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-      { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
-      { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
-      { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
+      { seat_index: 0, nickname: 'Player A', connected: true },
+      { seat_index: 1, nickname: 'Player B', connected: true },
+      { seat_index: 2, nickname: 'Player C', connected: true },
+      { seat_index: 3, nickname: 'Player D', connected: true },
     ],
     local_seat: 0,
     match_state: {
@@ -226,8 +226,8 @@ describe('sessionReducer', () => {
           table_code: 'AB12CD',
           phase: 'playing',
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-            { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+            { seat_index: 0, nickname: 'Player A', connected: true },
+            { seat_index: 1, nickname: 'Player B', connected: true },
           ],
           local_seat: 0,
           private_state: {
@@ -359,7 +359,7 @@ describe('sessionReducer', () => {
           ...roomSnapshotMessage,
           payload: {
             ...roomSnapshotMessage.payload,
-            seats: [{ seat_index: 0, nickname: '小李', connected: true, ready: false }],
+            seats: [{ seat_index: 0, nickname: '小李', connected: true }],
           },
         },
       },
@@ -398,7 +398,7 @@ describe('sessionReducer', () => {
           payload: {
             table_code: 'AB12CD',
             phase: 'playing',
-            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
             local_seat: 0,
             private_state: {
               round_id: 'round-1',
@@ -447,7 +447,7 @@ describe('sessionReducer', () => {
           payload: {
             table_code: 'AB12CD',
             phase: 'playing',
-            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
             local_seat: 0,
             private_state: {
               round_id: 'round-1',
@@ -502,7 +502,7 @@ describe('sessionReducer', () => {
         payload: {
           table_code: 'AB12CD',
           phase: 'playing',
-          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
           local_seat: 0,
           private_state: {
             round_id: 'round-1',
@@ -551,8 +551,8 @@ describe('sessionReducer', () => {
             table_code: 'AB12CD',
             phase: 'playing',
             seats: [
-              { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-              { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+              { seat_index: 0, nickname: 'Player A', connected: true },
+              { seat_index: 1, nickname: 'Player B', connected: true },
             ],
             local_seat: 0,
             private_state: {
@@ -611,7 +611,7 @@ describe('sessionReducer', () => {
           payload: {
             table_code: 'AB12CD',
             phase: 'playing',
-            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
             local_seat: 0,
             private_state: {
               round_id: 'round-1',
@@ -672,7 +672,7 @@ describe('sessionReducer', () => {
           payload: {
             table_code: 'AB12CD',
             phase: 'playing',
-            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
             local_seat: 0,
             private_state: {
               round_id: 'round-1',
@@ -721,7 +721,7 @@ describe('sessionReducer', () => {
         payload: {
           table_code: 'AB12CD',
           phase: 'playing',
-          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
           local_seat: 0,
           private_state: {
             round_id: 'round-1',
@@ -796,7 +796,7 @@ describe('sessionReducer', () => {
           payload: {
             table_code: 'AB12CD',
             phase: 'playing',
-            seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+            seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
             local_seat: 0,
             private_state: {
               round_id: 'round-1',
@@ -864,7 +864,7 @@ describe('sessionReducer', () => {
         payload: {
           table_code: 'AB12CD',
           phase: 'playing',
-          seats: [{ seat_index: 0, nickname: 'Player A', connected: true, ready: true }],
+          seats: [{ seat_index: 0, nickname: 'Player A', connected: true }],
           local_seat: 0,
           private_state: {
             round_id: 'round-1',

@@ -93,7 +93,6 @@ export interface SeatSnapshot {
   points?: number | null;
   title?: string | null;
   connected: boolean;
-  ready: boolean;
   is_bot?: boolean;
   seat_type?: SeatType;
 }
@@ -487,7 +486,6 @@ export interface PlayerView {
   isLocal: boolean;
   connected: boolean;
   isBotControlled?: boolean;
-  ready: boolean;
   isReadyHand: boolean;
   concealedCount: number;
   meldCount: number;
@@ -508,9 +506,7 @@ export interface DisplayMeldView {
 export type PlayerMeldView = string[] | DisplayMeldView;
 
 export interface WaitingControls {
-  canReady: boolean;
   canStart: boolean;
-  isReady: boolean;
   occupiedSeats: number;
   botCount: number;
   canAddBot: boolean;

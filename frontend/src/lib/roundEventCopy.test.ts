@@ -11,7 +11,7 @@ describe('getRoundEventCopy', () => {
           seat: 0,
           tile_id: 't5#p0-3',
         },
-        [{ seat_index: 0, nickname: '小李', connected: true, ready: true }],
+        [{ seat_index: 0, nickname: '小李', connected: true }],
       ),
     ).toBe('小李打出五条');
   });
@@ -24,7 +24,7 @@ describe('getRoundEventCopy', () => {
           seat: 0,
           tile_id: 't5#p0-3',
         },
-        [{ seat_index: 0, nickname: '小李', connected: true, ready: true }],
+        [{ seat_index: 0, nickname: '小李', connected: true }],
       ),
     ).toBe('小李已点和');
   });
@@ -37,7 +37,7 @@ describe('getRoundEventCopy', () => {
           seat: 0,
           tile_id: 't5#p0-3',
         },
-        [{ seat_index: 0, nickname: '小李', connected: true, ready: true }],
+        [{ seat_index: 0, nickname: '小李', connected: true }],
       ),
     ).toBe('小李宣布听牌');
   });

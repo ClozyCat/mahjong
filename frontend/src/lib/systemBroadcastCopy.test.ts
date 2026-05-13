@@ -8,9 +8,9 @@ import {
 } from './systemBroadcastCopy';
 
 const seats = [
-  { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: '熟练的码牌工', connected: true, ready: true },
-  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: '全自动点炮机', connected: true, ready: true },
-  { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: '言出法随真雀神', connected: true, ready: true },
+  { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: '熟练的码牌工', connected: true },
+  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: '全自动点炮机', connected: true },
+  { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: '言出法随真雀神', connected: true },
 ];
 
 function expectSystemPrefix(copy: string | null) {

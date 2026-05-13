@@ -50,15 +50,11 @@ fn sync_pending_timeout_for_value_room(room: &mut Value) {
 }
 
 pub fn room_ready_to_start(room: &RoomState) -> bool {
-    let has_regular_bot = room.seats.iter().any(crate::special_bots::is_independent_bot_seat);
-    let has_enough_seats = room.seats.len() == MAX_SEATS || has_regular_bot;
-
-    has_enough_seats
-        && !room.seats.is_empty()
+    room.seats.len() == MAX_SEATS
         && room
             .seats
             .iter()
-            .all(|seat| seat.ready && (seat.connected || seat.is_bot))
+            .all(|seat| seat.connected || seat.is_bot)
 }
 
 #[cfg(test)]
@@ -79,7 +75,6 @@ pub fn add_bot_seats_for_test(room: &mut RoomState) {
             points: None,
             title: None,
             connected: true,
-            ready: true,
             is_bot: true,
             seat_type: "bot".to_string(),
             bot_persona: None,
@@ -1067,7 +1062,6 @@ mod tests {
             points: None,
             title: None,
             connected: true,
-            ready: true,
             is_bot: false,
             seat_type: "human".to_string(),
             bot_persona: None,
@@ -1075,6 +1069,55 @@ mod tests {
             disconnect_deadline_at: None,
             consecutive_timeout_auto_response_count: 0,
         }
+    }
+
+    fn ready_room_with_seats(seats: Vec<SeatState>) -> RoomState {
+        RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "waiting".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            seats,
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        }
+    }
+
+    fn regular_bot_seat(seat_index: usize) -> SeatState {
+        SeatState {
+            is_bot: true,
+            seat_type: "bot".to_string(),
+            nickname: Some(format!("Bot {seat_index}")),
+            ..seat_state(seat_index)
+        }
+    }
+
+    #[test]
+    fn room_ready_to_start_requires_four_occupied_seats_even_with_bots() {
+        let room = ready_room_with_seats(vec![
+            seat_state(0),
+            regular_bot_seat(1),
+            regular_bot_seat(2),
+        ]);
+
+        assert!(!room_ready_to_start(&room));
+    }
+
+    #[test]
+    fn room_ready_to_start_allows_full_mixed_room() {
+        let mut special_bot = regular_bot_seat(2);
+        special_bot.seat_type = crate::special_bots::SPECIAL_BOT_SEAT_TYPE.to_string();
+        let room = ready_room_with_seats(vec![
+            seat_state(0),
+            regular_bot_seat(1),
+            special_bot,
+            seat_state(3),
+        ]);
+
+        assert!(room_ready_to_start(&room));
     }
 
     fn flower_action_room() -> RoomState {

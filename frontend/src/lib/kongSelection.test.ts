@@ -26,10 +26,10 @@ function createSessionState(overrides: Partial<SessionState> = {}): SessionState
         table_code: 'AB12CD',
         phase: 'playing',
         seats: [
-          { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-          { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
-          { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
-          { seat_index: 3, nickname: 'Player D', connected: true, ready: true },
+          { seat_index: 0, nickname: 'Player A', connected: true },
+          { seat_index: 1, nickname: 'Player B', connected: true },
+          { seat_index: 2, nickname: 'Player C', connected: true },
+          { seat_index: 3, nickname: 'Player D', connected: true },
         ],
         local_seat: 0,
         private_state: {

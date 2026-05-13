@@ -16,8 +16,8 @@ function createWaitingSessionState(): SessionState {
         table_code: 'AB12CD',
         phase: 'waiting',
         seats: [
-          { seat_index: 0, nickname: 'Player A', connected: true, ready: false },
-          { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
+          { seat_index: 0, nickname: 'Player A', connected: true },
+          { seat_index: 1, nickname: 'Player B', connected: true },
         ],
         local_seat: 0,
       },
@@ -43,10 +43,10 @@ function createPlayingSessionState(overrides: Partial<SessionState> = {}): Sessi
         table_code: 'AB12CD',
         phase: 'playing',
         seats: [
-          { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
-          { seat_index: 1, nickname: 'Player B', connected: true, ready: true, is_bot: false },
-          { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false },
-          { seat_index: 3, nickname: 'Player D', connected: false, ready: true, is_bot: false },
+          { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false },
+          { seat_index: 1, nickname: 'Player B', connected: true, is_bot: false },
+          { seat_index: 2, nickname: 'Player C', connected: true, is_bot: false },
+          { seat_index: 3, nickname: 'Player D', connected: false, is_bot: false },
         ],
         local_seat: 2,
         match_state: {
@@ -259,7 +259,6 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.mode).toBe('disconnected_or_waiting');
     expect(viewModel.canLeaveTable).toBe(true);
-    expect(viewModel.waitingControls?.canReady).toBe(false);
     expect(viewModel.waitingControls?.canStart).toBe(false);
     expect(viewModel.waitingControls?.botCount).toBe(0);
     expect(viewModel.waitingControls?.canAddBot).toBe(true);
@@ -275,10 +274,10 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Alice', connected: true, ready: true },
-            { seat_index: 1, nickname: 'Bob', connected: true, ready: true },
-            { seat_index: 2, nickname: 'Carol', connected: true, ready: true },
-            { seat_index: 3, nickname: 'Dora', connected: true, ready: true },
+            { seat_index: 0, nickname: 'Alice', connected: true },
+            { seat_index: 1, nickname: 'Bob', connected: true },
+            { seat_index: 2, nickname: 'Carol', connected: true },
+            { seat_index: 3, nickname: 'Dora', connected: true },
           ],
         },
       },
@@ -305,12 +304,11 @@ describe('createMatchViewModel', () => {
       durationMs: 4200,
     });
     expect(viewModel.centerStatusText).toBe('抽取东家');
-    expect(viewModel.waitingControls?.canReady).toBe(false);
     expect(viewModel.waitingControls?.canStart).toBe(false);
     expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(false);
   });
 
-  it('keeps waiting rooms ready by default without exposing a ready action', () => {
+  it('keeps waiting rooms without exposing a ready action', () => {
     const base = createWaitingSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -322,7 +320,6 @@ describe('createMatchViewModel', () => {
             seat.seat_index === 0
               ? {
                   ...seat,
-                  ready: true,
                 }
               : seat,
           ),
@@ -330,8 +327,6 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.waitingControls?.isReady).toBe(true);
-    expect(viewModel.waitingControls?.canReady).toBe(false);
     expect(viewModel.actions.some((action) => action.id === 'invite')).toBe(false);
   });
 
@@ -643,10 +638,10 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true },
-            { seat_index: 1, nickname: 'Player B', connected: true, ready: true },
-            { seat_index: 2, nickname: 'Player C', connected: true, ready: true },
-            { seat_index: 3, nickname: 'Player D', connected: false, ready: true },
+            { seat_index: 0, nickname: 'Player A', connected: true },
+            { seat_index: 1, nickname: 'Player B', connected: true },
+            { seat_index: 2, nickname: 'Player C', connected: true },
+            { seat_index: 3, nickname: 'Player D', connected: false },
           ],
         },
       },
@@ -672,9 +667,9 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true },
-            { seat_index: 2, nickname: 'Bot 2', connected: true, ready: true, is_bot: true },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true },
+            { seat_index: 2, nickname: 'Bot 2', connected: true, is_bot: true },
           ],
         },
       },
@@ -685,8 +680,58 @@ describe('createMatchViewModel', () => {
       botCount: 2,
       canAddBot: true,
       canRemoveBot: true,
+      canStart: false,
+    });
+  });
+
+  it('requires all four seats to be occupied before enabling match start', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: '舒伯特', connected: true, is_bot: true, seat_type: 'special_bot' },
+            { seat_index: 3, nickname: 'Player D', connected: true, is_bot: false, seat_type: 'human' },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls).toMatchObject({
+      occupiedSeats: 4,
       canStart: true,
     });
+    expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(true);
+  });
+
+  it('does not require a deprecated ready flag before enabling match start', () => {
+    const base = createWaitingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false },
+            { seat_index: 1, nickname: 'Player B', connected: true, is_bot: false },
+            { seat_index: 2, nickname: 'Bot 1', connected: true, is_bot: true },
+            { seat_index: 3, nickname: 'Bot 2', connected: true, is_bot: true },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.waitingControls).toMatchObject({
+      occupiedSeats: 4,
+      canStart: true,
+    });
+    expect(viewModel.actions.find((action) => action.id === 'start_match')?.enabled).toBe(true);
   });
 
   it('does not count a human bot-takeover seat as a standalone bot in the waiting room', () => {
@@ -698,9 +743,9 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: true, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Bot 1', connected: true, ready: true, is_bot: true, seat_type: 'bot' },
-            { seat_index: 2, nickname: 'Player C', connected: true, ready: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: true, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Player C', connected: true, is_bot: false, seat_type: 'human' },
           ],
         },
       },
@@ -728,8 +773,8 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, ready: true, is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: '舒伯特', connected: true, ready: true, is_bot: true, seat_type: 'special_bot' },
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: '舒伯特', connected: true, is_bot: true, seat_type: 'special_bot' },
           ],
         },
       },
@@ -865,6 +910,27 @@ describe('createMatchViewModel', () => {
     expect(viewModel.topStatusLabel).toBe('对局中');
     expect(viewModel.remainingTileCount).toBe(67);
     expect(viewModel.promptText).toBe('Player C正在执行操作：出牌 / 杠 / 和牌');
+  });
+
+  it('keeps the leave-table entry visible after a bot-only match starts', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Bot 1', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Bot 2', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 3, nickname: 'Bot 3', connected: true, is_bot: true, seat_type: 'bot' },
+          ],
+        },
+      },
+    });
+
+    expect(viewModel.canLeaveTable).toBe(true);
   });
 
   it('keeps the leave-table entry visible after the full match finishes', () => {

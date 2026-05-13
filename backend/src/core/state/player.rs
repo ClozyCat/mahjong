@@ -16,7 +16,6 @@ pub struct SeatState {
     pub points: Option<i64>,
     pub title: Option<String>,
     pub connected: bool,
-    pub ready: bool,
     pub is_bot: bool,
     pub seat_type: String,
     pub bot_persona: Option<String>,

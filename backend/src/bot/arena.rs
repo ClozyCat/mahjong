@@ -266,7 +266,6 @@ pub fn arena_room(table_code: &str) -> RoomState {
                 points: None,
                 title: None,
                 connected: true,
-                ready: true,
                 is_bot: true,
                 seat_type: "bot".to_string(),
                 bot_persona: None,
@@ -1008,13 +1007,13 @@ mod tests {
     }
 
     #[test]
-    fn arena_room_creates_four_ready_bot_seats() {
+    fn arena_room_creates_four_bot_seats() {
         let room = arena_room("AR01");
 
         assert_eq!(room.table_code, "AR01");
         assert_eq!(room.phase, "waiting");
         assert_eq!(room.seats.len(), 4);
-        assert!(room.seats.iter().all(|seat| seat.is_bot && seat.ready));
+        assert!(room.seats.iter().all(|seat| seat.is_bot));
     }
 
     #[test]

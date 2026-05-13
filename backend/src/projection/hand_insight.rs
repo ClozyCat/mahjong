@@ -722,7 +722,6 @@ mod tests {
                 .map(|seat_index| SeatState {
                     seat_index,
                     connected: true,
-                    ready: true,
                     seat_type: "human".to_string(),
                     ..Default::default()
                 })

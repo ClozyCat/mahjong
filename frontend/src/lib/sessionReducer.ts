@@ -23,6 +23,7 @@ export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
   | { type: 'set_credentials'; tableCode?: string; nickname?: string }
   | { type: 'set_connection_status'; status: SessionState['connectionStatus'] }
+  | { type: 'set_room_snapshot'; message: RoomSnapshotMessage }
   | { type: 'queue_optimistic_discard'; tileId: string; actionType: Extract<BackendActionType, 'discard' | 'ready_hand'> }
   | { type: 'queue_optimistic_flower'; tileId: string }
   | { type: 'set_selected_tiles'; tileIds: string[]; mode: SessionState['selectionMode'] }
@@ -416,54 +417,57 @@ export function createInitialSessionState(): SessionState {
   };
 }
 
+function applyRoomSnapshotMessage(state: SessionState, message: RoomSnapshotMessage): SessionState {
+  const localSeat = message.payload.local_seat;
+  const localPlayer =
+    typeof localSeat === 'number'
+      ? message.payload.private_state?.players.find((player) => player.seat_index === localSeat)
+      : null;
+  const restrictedDiscardTileIds =
+    message.payload.private_state?.pending_action?.type === 'active_turn' &&
+    Array.isArray(message.payload.private_state.pending_action.restricted_discard_tile_ids)
+      ? new Set(message.payload.private_state.pending_action.restricted_discard_tile_ids)
+      : new Set<string>();
+  const availableTileIds =
+    localPlayer?.concealed_tiles
+      ?.map((tile) => tile.tile_id)
+      .filter((tileId) => !restrictedDiscardTileIds.has(tileId)) ?? null;
+  const nextSelectedTileIds =
+    availableTileIds === null
+      ? []
+      : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
+  const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
+  const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(
+    state.optimisticDiscard ?? null,
+    message,
+    state.latestRoundEvent ?? null,
+  );
+  const nextOptimisticFlower = reconcileOptimisticFlowerWithSnapshot(state.optimisticFlower ?? null, message);
+  const nextLatestReplacementTileId = reconcileLatestReplacementTileIdWithSnapshot(
+    state.latestReplacementTileId ?? null,
+    message,
+  );
+
+  return {
+    ...state,
+    roomSnapshot: message,
+    tableCode: message.payload.table_code,
+    lastRejectedAction: null,
+    optimisticDiscard: nextOptimisticDiscard,
+    optimisticFlower: nextOptimisticFlower,
+    latestMatchResult: keepLatestResult ? state.latestMatchResult : null,
+    latestActionPrompt: null,
+    selectedTileIds: nextSelectedTileIds,
+    selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
+    matchStatistics: createMatchStatisticsFromSnapshot(message),
+    latestReplacementTileId: nextLatestReplacementTileId,
+  };
+}
+
 function applyServerMessage(state: SessionState, message: ServerMessage): SessionState {
   switch (message.type) {
-    case 'room_snapshot': {
-      const localSeat = message.payload.local_seat;
-      const localPlayer =
-        typeof localSeat === 'number'
-          ? message.payload.private_state?.players.find((player) => player.seat_index === localSeat)
-          : null;
-      const restrictedDiscardTileIds =
-        message.payload.private_state?.pending_action?.type === 'active_turn' &&
-        Array.isArray(message.payload.private_state.pending_action.restricted_discard_tile_ids)
-          ? new Set(message.payload.private_state.pending_action.restricted_discard_tile_ids)
-          : new Set<string>();
-      const availableTileIds =
-        localPlayer?.concealed_tiles
-          ?.map((tile) => tile.tile_id)
-          .filter((tileId) => !restrictedDiscardTileIds.has(tileId)) ?? null;
-      const nextSelectedTileIds =
-        availableTileIds === null
-          ? []
-          : state.selectedTileIds.filter((tileId) => availableTileIds.includes(tileId));
-      const keepLatestResult = message.payload.phase === 'settlement' || message.payload.phase === 'finished';
-      const nextOptimisticDiscard = reconcileOptimisticDiscardWithSnapshot(
-        state.optimisticDiscard ?? null,
-        message,
-        state.latestRoundEvent ?? null,
-      );
-      const nextOptimisticFlower = reconcileOptimisticFlowerWithSnapshot(state.optimisticFlower ?? null, message);
-      const nextLatestReplacementTileId = reconcileLatestReplacementTileIdWithSnapshot(
-        state.latestReplacementTileId ?? null,
-        message,
-      );
-
-      return {
-        ...state,
-        roomSnapshot: message,
-        tableCode: message.payload.table_code,
-        lastRejectedAction: null,
-        optimisticDiscard: nextOptimisticDiscard,
-        optimisticFlower: nextOptimisticFlower,
-        latestMatchResult: keepLatestResult ? state.latestMatchResult : null,
-        latestActionPrompt: null,
-        selectedTileIds: nextSelectedTileIds,
-        selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
-        matchStatistics: createMatchStatisticsFromSnapshot(message),
-        latestReplacementTileId: nextLatestReplacementTileId,
-      };
-    }
+    case 'room_snapshot':
+      return applyRoomSnapshotMessage(state, message);
     case 'action_prompt':
       return {
         ...state,
@@ -562,6 +566,8 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         optimisticDiscard: action.status === 'connected' ? state.optimisticDiscard ?? null : null,
         optimisticFlower: action.status === 'connected' ? state.optimisticFlower ?? null : null,
       };
+    case 'set_room_snapshot':
+      return applyRoomSnapshotMessage(state, action.message);
     case 'queue_optimistic_discard': {
       const optimisticDiscard = createOptimisticDiscard(state, action.tileId, action.actionType);
       if (!optimisticDiscard) {

@@ -201,7 +201,6 @@ mod tests {
                 "seat_index": 0,
                 "nickname": "Alice",
                 "connected": true,
-                "ready": true,
                 "is_bot": false,
                 "seat_type": "human",
                 "bot_persona": null,
