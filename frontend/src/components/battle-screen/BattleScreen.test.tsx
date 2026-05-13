@@ -1284,6 +1284,55 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '收起其他玩家分数' })).toBeNull();
   });
 
+  it('shows settlement melds to the right of each player final hand', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        settlementHands: {
+          bottom: ['w1', 'w2', 'w3', 'w4', 'w5'],
+          right: ['c1', 'c2', 'c3', 'c4', 'c5'],
+        },
+        result: {
+          title: '本局结算',
+          summary: '等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'bottom',
+          discarderSeat: null,
+          winType: 'self_draw',
+          winTypeLabel: '自摸',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
+          scoreDeltaBySeat: {
+            bottom: 8,
+            left: -3,
+            top: -3,
+            right: -2,
+          },
+          seats: [
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
+            { seat: 'right', name: 'Player B', score: 24998, delta: -2 },
+          ],
+          continueAction: null,
+        },
+      }),
+    );
+
+    const playerARow = Array.from(document.body.querySelectorAll('.result-overlay__seat-row'))
+      .find((row) => row.textContent?.includes('Player A'));
+    const playerBRow = Array.from(document.body.querySelectorAll('.result-overlay__seat-row'))
+      .find((row) => row.textContent?.includes('Player B'));
+
+    expect(playerARow).not.toBeNull();
+    expect(playerBRow).not.toBeNull();
+    expect(within(playerARow as HTMLElement).getByLabelText('Player A 最终手牌')).toBeInTheDocument();
+    expect(within(playerARow as HTMLElement).getByLabelText('Player A 副露区')).toBeInTheDocument();
+    expect(within(playerBRow as HTMLElement).getByLabelText('Player B 副露区')).toBeInTheDocument();
+    expect((playerARow as HTMLElement).querySelector('.result-overlay__seat-hand + .result-overlay__seat-melds'))
+      .not.toBeNull();
+  });
+
   it('shows a player statistics tooltip with score trend and win rate when hovering a score row after 0.35s', () => {
     vi.useFakeTimers();
 

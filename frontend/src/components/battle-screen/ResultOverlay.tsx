@@ -2,16 +2,25 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { BattleActionId, PlayerView, ResultView, ResultSeatView, Seat, ResultPageView } from '../../types/match';
+import type {
+  BattleActionId,
+  PlayerMeldView,
+  PlayerView,
+  ResultPageView,
+  ResultSeatView,
+  ResultView,
+  Seat,
+} from '../../types/match';
 import { getFanGuideEntry, getFanLabel } from './fanGuide';
 import { FanGuideCard, getFanColor } from './FanGuideCard';
 import { MahjongTile } from './MahjongTile';
+import { MeldRack } from './MeldRack';
 
 interface ResultOverlayProps {
   result: ResultView;
   settlementKey: string;
   settlementHands?: Partial<Record<Seat, string[]>> | null;
-  players?: Pick<PlayerView, 'seat' | 'absoluteSeat'>[];
+  players?: Pick<PlayerView, 'seat' | 'absoluteSeat' | 'melds'>[];
   onAction: (actionId: BattleActionId) => void;
 }
 
@@ -57,6 +66,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, players 
   const activeResultPage = resultPages[activeResultPageIndex] ?? null;
   const hasFanPanel = activeResultPage?.fanTotal !== null || (activeResultPage?.fanBreakdown.length ?? 0) > 0;
   const seatLabelByAbsoluteSeat = getSeatLabelByAbsoluteSeat(players);
+  const meldsBySeat = getMeldsBySeat(players);
 
   useEffect(() => {
     if (previousSettlementKeyRef.current === settlementKey) {
@@ -359,6 +369,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, players 
             activeIndex={activeScorePageIndex}
             hasFanPanel={hasFanPanel}
             settlementHands={settlementHands}
+            meldsBySeat={meldsBySeat}
             winnerSeat={result.winnerSeat}
             winType={result.winType}
             onPageChange={setActiveScorePageIndex}
@@ -523,6 +534,7 @@ const ScoreSection = memo(({
   activeIndex,
   hasFanPanel,
   settlementHands,
+  meldsBySeat,
   winnerSeat,
   winType,
   onPageChange,
@@ -534,6 +546,7 @@ const ScoreSection = memo(({
   activeIndex: number;
   hasFanPanel: boolean;
   settlementHands?: Partial<Record<Seat, string[]>> | null;
+  meldsBySeat: Partial<Record<Seat, PlayerMeldView[]>>;
   winnerSeat: Seat | null;
   winType: string | null;
   onPageChange: (index: number | ((curr: number) => number)) => void;
@@ -571,6 +584,7 @@ const ScoreSection = memo(({
             seat={seat}
             isActive={index === activeIndex}
             hand={settlementHands?.[seat.seat]}
+            melds={meldsBySeat[seat.seat] ?? []}
             isWinner={winnerSeat === seat.seat}
             winType={winType}
             onHover={onHoverSeat}
@@ -587,6 +601,7 @@ const SeatRow = memo(({
   seat,
   isActive,
   hand,
+  melds,
   isWinner,
   winType,
   onHover,
@@ -596,6 +611,7 @@ const SeatRow = memo(({
   seat: ResultSeatView;
   isActive: boolean;
   hand?: string[];
+  melds: PlayerMeldView[];
   isWinner: boolean;
   winType: string | null;
   onHover: (key: string, seat: ResultSeatView, el: HTMLDivElement) => void;
@@ -607,6 +623,8 @@ const SeatRow = memo(({
   const rowClass = seat.delta && seat.delta > 0 ? 'positive' : seat.delta && seat.delta < 0 ? 'negative' : 'neutral';
   const rowKey = `${seat.seat}-${seat.name}`;
   const displayName = seat.displayLabel ?? seat.name;
+  const hasHandTiles = Boolean(hand && hand.length > 0);
+  const hasMelds = melds.length > 0;
 
   return (
     <div
@@ -624,17 +642,30 @@ const SeatRow = memo(({
           {seat.delta === null ? '总分' : `${seat.delta > 0 ? '+' : ''}${seat.delta}`}
         </span>
       </div>
-      {hand && (
-        <div className="result-overlay__seat-hand">
-          {hand.map((tile, i) => (
-            <MahjongTile
-              key={`${seat.seat}-tile-${i}`}
-              code={tile}
-              variant="discard"
-              isLastDiscard={isWinner && winType === 'discard' && i === hand.length - 1}
-              className="result-overlay__seat-hand-tile"
-            />
-          ))}
+      {(hasHandTiles || hasMelds) && (
+        <div className="result-overlay__seat-tiles">
+          {hasHandTiles && (
+            <div className="result-overlay__seat-hand" aria-label={`${displayName} 最终手牌`}>
+              {hand!.map((tile, i) => (
+                <MahjongTile
+                  key={`${seat.seat}-tile-${i}`}
+                  code={tile}
+                  variant="discard"
+                  isLastDiscard={isWinner && winType === 'discard' && i === hand!.length - 1}
+                  className="result-overlay__seat-hand-tile"
+                />
+              ))}
+            </div>
+          )}
+          {hasMelds && (
+            <div className="result-overlay__seat-melds">
+              <MeldRack
+                seat={seat.seat}
+                melds={melds}
+                ariaLabel={`${displayName} 副露区`}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -680,6 +711,14 @@ function getSeatLabelByAbsoluteSeat(players: Pick<PlayerView, 'seat' | 'absolute
       )
       .map((player) => [player.absoluteSeat, getRelativeSeatLabel(player.seat)]),
   );
+}
+
+function getMeldsBySeat(players: Pick<PlayerView, 'seat' | 'melds'>[]): Partial<Record<Seat, PlayerMeldView[]>> {
+  return Object.fromEntries(
+    players
+      .filter((player) => player.melds.length > 0)
+      .map((player) => [player.seat, player.melds]),
+  ) as Partial<Record<Seat, PlayerMeldView[]>>;
 }
 
 function getResultSeatLabel(seat: Pick<ResultSeatView, 'seat' | 'absoluteSeat'>, labels: SeatLabelByAbsoluteSeat) {
