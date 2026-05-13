@@ -870,6 +870,10 @@
   animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
 
+.result-overlay--collapsed {
+  background: transparent;
+}
+
 .result-overlay__card {
   --result-overlay-ink-soft: color-mix(in srgb, var(--theme-paper-strong) 64%, transparent);
   --result-overlay-label-ink: color-mix(in srgb, var(--theme-paper-strong) 74%, var(--accent-2));
@@ -1373,6 +1377,8 @@
   gap: 0.75rem;
   width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
+  padding-inline: 0.34rem;
 }
 
 .result-overlay__seat-hand {
@@ -1697,6 +1703,7 @@
 
   .result-overlay__seat-tiles {
     gap: 0.45rem;
+    padding-inline: 0.25rem;
   }
 
   .result-overlay__seat-hand {
