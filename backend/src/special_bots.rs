@@ -11,41 +11,21 @@ pub(crate) struct SpecialBotDefinition {
     pub(crate) model_path: &'static str,
 }
 
-const SPECIAL_BOT_DEFINITIONS: [SpecialBotDefinition; 8] = [
+const SPECIAL_BOT_DEFINITIONS: [SpecialBotDefinition; 4] = [
     SpecialBotDefinition {
         username: "bot_schubert",
         display_name: "舒伯特",
         model_path: "backend/assets/model_s/sft.onnx",
     },
     SpecialBotDefinition {
-        username: "bot_shakespeare",
-        display_name: "莎士比亚",
-        model_path: "backend/assets/model_s/sft.onnx",
-    },
-    SpecialBotDefinition {
-        username: "bot_einstein",
-        display_name: "爱因斯坦",
-        model_path: "backend/assets/model_a/aggressive.onnx",
-    },
-    SpecialBotDefinition {
         username: "bot_andersen",
-        display_name: "安徒生",
+        display_name: "爱伦坡",
         model_path: "backend/assets/model_a/aggressive.onnx",
-    },
-    SpecialBotDefinition {
-        username: "bot_bernoulli",
-        display_name: "伯努利",
-        model_path: "backend/assets/model_b/balanced.onnx",
     },
     SpecialBotDefinition {
         username: "bot_balzac",
         display_name: "巴尔扎克",
         model_path: "backend/assets/model_b/balanced.onnx",
-    },
-    SpecialBotDefinition {
-        username: "bot_darwin",
-        display_name: "达尔文",
-        model_path: "backend/assets/model_d/defensive.onnx",
     },
     SpecialBotDefinition {
         username: "bot_dickens",
@@ -121,17 +101,22 @@ mod tests {
             Some("backend/assets/model_s/sft.onnx")
         );
         assert_eq!(
-            model_path_for_display_name("爱因斯坦"),
+            model_path_for_display_name("爱伦坡"),
             Some("backend/assets/model_a/aggressive.onnx")
         );
         assert_eq!(
-            model_path_for_display_name("伯努利"),
+            model_path_for_display_name("巴尔扎克"),
             Some("backend/assets/model_b/balanced.onnx")
         );
         assert_eq!(
-            model_path_for_display_name("达尔文"),
+            model_path_for_display_name("狄更斯"),
             Some("backend/assets/model_d/defensive.onnx")
         );
+        assert_eq!(model_path_for_display_name("爱因斯坦"), None);
+        assert_eq!(model_path_for_display_name("伯努利"), None);
+        assert_eq!(model_path_for_display_name("达尔文"), None);
+        assert_eq!(model_path_for_display_name("莎士比亚"), None);
+        assert_eq!(model_path_for_display_name("安徒生"), None);
     }
 
     #[test]
