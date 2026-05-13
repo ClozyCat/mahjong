@@ -1532,7 +1532,7 @@
   display: flex;
   justify-content: flex-end;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .result-overlay__seat-melds .meld-rack-shell {
@@ -1544,13 +1544,13 @@
   --meld-rack-tile-width: 1.22rem;
   --meld-rack-tile-height: 1.86rem;
   justify-content: end;
-  gap: 0.24rem;
+  gap: 0.08rem;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .result-overlay__seat-melds .meld-rack__group {
-  gap: 0.04rem;
+  gap: 0.08rem;
   grid-template-columns: repeat(4, var(--meld-rack-tile-width));
 }
 
@@ -1849,7 +1849,7 @@
   .result-overlay__seat-melds .meld-rack {
     --meld-rack-tile-width: 1.05rem;
     --meld-rack-tile-height: 1.6rem;
-    gap: 0.18rem;
+    gap: 0.08rem;
   }
 
   .result-overlay__actions {
