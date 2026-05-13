@@ -611,7 +611,7 @@ mod tests {
                     user_id: Some(1),
                     nickname: Some("Owner".to_string()),
                     points: Some(550),
-                    title: Some("LV7入门雀友".to_string()),
+                    title: Some("LV7.入门雀友".to_string()),
                     connected: true,
                     is_bot: false,
                     seat_type: "human".to_string(),
@@ -625,7 +625,7 @@ mod tests {
                     user_id: Some(2),
                     nickname: Some("Guest".to_string()),
                     points: Some(650),
-                    title: Some("LV8初露锋芒".to_string()),
+                    title: Some("LV8.初露锋芒".to_string()),
                     connected: true,
                     is_bot: false,
                     seat_type: "human".to_string(),
@@ -660,9 +660,9 @@ mod tests {
 
         assert!(changed);
         assert_eq!(room.seats[0].points, Some(650));
-        assert_eq!(room.seats[0].title.as_deref(), Some("LV8初露锋芒"));
+        assert_eq!(room.seats[0].title.as_deref(), Some("LV8.初露锋芒"));
         assert_eq!(room.seats[1].points, Some(550));
-        assert_eq!(room.seats[1].title.as_deref(), Some("LV7入门雀友"));
+        assert_eq!(room.seats[1].title.as_deref(), Some("LV7.入门雀友"));
         assert_eq!(room.seats[2].points, None);
         assert_eq!(room.seats[2].title, None);
     }
@@ -680,7 +680,7 @@ mod tests {
                 user_id: Some(1),
                 nickname: Some("Owner".to_string()),
                 points: Some(650),
-                title: Some("LV8初露锋芒".to_string()),
+                title: Some("LV8.初露锋芒".to_string()),
                 connected: true,
                 is_bot: false,
                 seat_type: "human".to_string(),
@@ -706,7 +706,7 @@ mod tests {
 
         assert!(!changed);
         assert_eq!(room.seats[0].points, Some(650));
-        assert_eq!(room.seats[0].title.as_deref(), Some("LV8初露锋芒"));
+        assert_eq!(room.seats[0].title.as_deref(), Some("LV8.初露锋芒"));
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -1375,7 +1375,7 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: base.roomSnapshot!.payload.seats.map((seat) =>
-            seat.seat_index === 1 ? { ...seat, title: 'LV7入门雀友' } : seat,
+            seat.seat_index === 1 ? { ...seat, title: 'LV7.入门雀友' } : seat,
           ),
         },
       },
@@ -1383,8 +1383,8 @@ describe('createMatchViewModel', () => {
 
     const leftSeat = viewModel.result?.seats.find((seat) => seat.seat === 'left');
 
-    expect(leftSeat?.title).toBe('LV7入门雀友');
-    expect(leftSeat?.displayLabel).toBe('Player B（LV7入门雀友）');
+    expect(leftSeat?.title).toBe('LV7.入门雀友');
+    expect(leftSeat?.displayLabel).toBe('Player B（LV7.入门雀友）');
   });
 
   it('uses settlement snapshot cumulative scores without reapplying the current round delta', () => {
