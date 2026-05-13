@@ -10,8 +10,9 @@ use crate::app::{
     AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
     notify_all_user_connections, pending_timeout_deadline, record_timeout_auto_responses,
-    records::archive_current_round_if_needed, room_has_round_state, room_seats, send_outbound,
-    serialize_room, sleep_until, timeout_auto_response_seats, user_active_table_updated_message,
+    records::{apply_point_updates_to_room, archive_current_round_if_needed},
+    room_has_round_state, room_seats, send_outbound, serialize_room, sleep_until,
+    timeout_auto_response_seats, user_active_table_updated_message,
 };
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::rules::standard::actions::apply_discard_action_output_in_room_state;
@@ -131,12 +132,39 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    if let Err(error) =
-        archive_current_round_if_needed(&state, &room, &created_at, &crate::app::now_iso()).await
-    {
-        eprintln!("failed to archive timeout settlement for table {table_code}: {error:#}");
+    let archive_outcome =
+        match archive_current_round_if_needed(&state, &room, &created_at, &crate::app::now_iso())
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                eprintln!("failed to archive timeout settlement for table {table_code}: {error:#}");
+                None
+            }
+        };
+    let mut runtime = room_handle.runtime.lock().await;
+    let point_updates = archive_outcome
+        .as_ref()
+        .map(|outcome| outcome.point_updates.as_slice())
+        .unwrap_or(&[]);
+    let room_points_changed = apply_point_updates_to_room(&mut runtime.room, point_updates);
+    if room_points_changed {
+        let room_json = match serialize_room(&runtime.room) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        drop(runtime);
+        if state
+            .inner
+            .db
+            .save_table(&table_code, &created_at, &room_json)
+            .await
+            .is_err()
+        {
+            eprintln!("failed to persist timeout seat points for table {table_code}");
+        }
+        runtime = room_handle.runtime.lock().await;
     }
-    let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
     let broadcast_handles = connections
         .iter()
@@ -374,7 +402,6 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         Ok(value) => value,
         Err(_) => return,
     };
-    let snapshot_outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
     if state
         .inner
         .db
@@ -385,11 +412,43 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         restore_room_snapshot(&room_handle, previous_room).await;
         return;
     }
-    if let Err(error) =
-        archive_current_round_if_needed(&state, &room, &created_at, &crate::app::now_iso()).await
-    {
-        eprintln!("failed to archive bot settlement for table {table_code}: {error:#}");
+    let archive_outcome =
+        match archive_current_round_if_needed(&state, &room, &created_at, &crate::app::now_iso())
+            .await
+        {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                eprintln!("failed to archive bot settlement for table {table_code}: {error:#}");
+                None
+            }
+        };
+    let mut runtime = room_handle.runtime.lock().await;
+    let point_updates = archive_outcome
+        .as_ref()
+        .map(|outcome| outcome.point_updates.as_slice())
+        .unwrap_or(&[]);
+    let room_points_changed = apply_point_updates_to_room(&mut runtime.room, point_updates);
+    if room_points_changed {
+        let room_json = match serialize_room(&runtime.room) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        drop(runtime);
+        if state
+            .inner
+            .db
+            .save_table(&table_code, &created_at, &room_json)
+            .await
+            .is_err()
+        {
+            eprintln!("failed to persist bot seat points for table {table_code}");
+        }
+        runtime = room_handle.runtime.lock().await;
     }
+    let connections = snapshot_connections(&runtime);
+    let snapshot_outbound =
+        collect_snapshot_and_prompt_outbound_from_snapshot(&runtime.room, &connections);
+    drop(runtime);
     let mut outbound = broadcast_to_handles(&broadcast_handles, Some(&messages));
     outbound.extend(snapshot_outbound);
     send_outbound(outbound);
