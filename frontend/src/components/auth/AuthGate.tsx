@@ -35,7 +35,7 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
       <div className="auth-gate__panel">
         <header className="auth-gate__header">
           <p className="auth-gate__eyebrow">Account</p>
-          <h1>国标麻将听牌版</h1>
+          <h1>国标麻将听多响炮版</h1>
           <p className="auth-gate__status" role="status">
             {statusText}
           </p>

@@ -2296,8 +2296,8 @@
   padding:
     max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
   background: color-mix(in srgb, var(--theme-veil) 35%, transparent);
-  animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
+
 
 .player-list__dialog {
   width: min(44rem, calc(100vw - 1.5rem));
