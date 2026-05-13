@@ -296,6 +296,7 @@ export function TableStage({
             players={playersWithColorSlots}
             discards={discards}
             isPlaying={isPlaying}
+            actionEffect={actionEffect}
           />
           <MotionLayer
             discards={discards}

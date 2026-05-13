@@ -1,11 +1,12 @@
 import { memo, useMemo, type CSSProperties } from 'react';
-import type { Seat } from '../../../types/match';
+import type { ActionEffectView, Seat } from '../../../types/match';
 import type { TableStagePlayer } from './types';
 
 interface IntroductionLayerProps {
   players: TableStagePlayer[];
   discards: Record<Seat, string[]>;
   isPlaying: boolean;
+  actionEffect?: ActionEffectView | null;
 }
 
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotation: string }> = {
@@ -19,12 +20,21 @@ export const IntroductionLayer = memo(function IntroductionLayer({
   players,
   discards,
   isPlaying,
+  actionEffect = null,
 }: IntroductionLayerProps) {
   const totalDiscards = useMemo(() => {
     return Object.values(discards).reduce((acc, d) => acc + d.length, 0);
   }, [discards]);
+  const hasPlayerAction = useMemo(() => {
+    return Boolean(actionEffect) || players.some((player) =>
+      (player.flowerCount ?? 0) > 0 ||
+      Boolean(player.isReadyHand) ||
+      player.melds.length > 0 ||
+      (player.flowers?.length ?? 0) > 0,
+    );
+  }, [actionEffect, players]);
 
-  const isVisible = isPlaying && totalDiscards === 0;
+  const isVisible = isPlaying && totalDiscards === 0 && !hasPlayerAction;
 
   if (!isVisible) {
     return null;

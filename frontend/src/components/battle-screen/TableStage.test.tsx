@@ -735,6 +735,53 @@ describe('TableStage', () => {
     expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="舒伯特-LV15.至尊雀神"]')).not.toBeNull();
   });
 
+  it('shows player introduction nameplates only until the first player action', () => {
+    const emptyDiscards = {
+      top: [],
+      left: [],
+      right: [],
+      bottom: [],
+    };
+    const players = [
+      { seat: 'bottom' as const, name: '小A', title: 'LV7.入门雀友', points: 550, melds: [] },
+      { seat: 'right' as const, name: '小B', title: 'LV1.散财童子', points: -20, melds: [] },
+    ];
+
+    const { container, rerender } = render(
+      <TableStage
+        discards={emptyDiscards}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={players}
+        isPlaying
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__intro-layer')).not.toBeNull();
+    expect(container.querySelector('.table-stage__player-intro--bottom')).toHaveTextContent('小A-LV7.入门雀友-550');
+
+    rerender(
+      <TableStage
+        discards={emptyDiscards}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={players}
+        isPlaying
+        actionEffect={{
+          key: 'tile_drawn-{"seat":0}',
+          label: '摸牌',
+          emphasis: 'draw',
+          seat: 'bottom',
+          calloutTone: null,
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__intro-layer')).toBeNull();
+  });
+
   it('keeps the player name color slot with the same player after wind rotation moves seats', () => {
     const { container, rerender } = render(
       <TableStage
