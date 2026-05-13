@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::persistence::{
     ArchiveRoundInput, ArchiveRoundOutcome, ArchivedRoundPlayerInput, GameRecordDetail,
-    GameSummaryRecord, RoundPlayerResultRecord, TableParticipantRecord,
+    GameSummaryRecord, RoundPlayerResultRecord, TableParticipantRecord, UserPointBalanceRecord,
 };
 use super::users::{display_label, title_for_points};
 use super::{AppContext, notify_user_connections};
@@ -301,6 +301,37 @@ pub(crate) async fn archive_current_round_if_needed(
     Ok(Some(outcome))
 }
 
+pub(crate) fn apply_point_updates_to_room(
+    room: &mut RoomState,
+    point_updates: &[UserPointBalanceRecord],
+) -> bool {
+    let points_by_user = point_updates
+        .iter()
+        .map(|update| (update.user_id, update.points))
+        .collect::<HashMap<_, _>>();
+    if points_by_user.is_empty() {
+        return false;
+    }
+
+    let mut changed = false;
+    for seat in &mut room.seats {
+        let Some(user_id) = seat.user_id else {
+            continue;
+        };
+        let Some(points) = points_by_user.get(&user_id).copied() else {
+            continue;
+        };
+        let title = title_for_points(points).to_string();
+        if seat.points != Some(points) || seat.title.as_deref() != Some(title.as_str()) {
+            seat.points = Some(points);
+            seat.title = Some(title);
+            changed = true;
+        }
+    }
+
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -564,6 +595,118 @@ mod tests {
         assert_eq!(guest.points, INITIAL_USER_POINTS - 8);
 
         Ok(())
+    }
+
+    #[test]
+    fn point_updates_refresh_room_seat_points_and_titles() {
+        let mut room = RoomState {
+            table_code: "ROOMUPD".to_string(),
+            phase: "settlement".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: Some(1),
+            multiplier: 1,
+            seats: vec![
+                SeatState {
+                    seat_index: 0,
+                    user_id: Some(1),
+                    nickname: Some("Owner".to_string()),
+                    points: Some(550),
+                    title: Some("入门雀友".to_string()),
+                    connected: true,
+                    is_bot: false,
+                    seat_type: "human".to_string(),
+                    bot_persona: None,
+                    bot_aggression: None,
+                    disconnect_deadline_at: None,
+                    consecutive_timeout_auto_response_count: 0,
+                },
+                SeatState {
+                    seat_index: 1,
+                    user_id: Some(2),
+                    nickname: Some("Guest".to_string()),
+                    points: Some(650),
+                    title: Some("初露锋芒".to_string()),
+                    connected: true,
+                    is_bot: false,
+                    seat_type: "human".to_string(),
+                    bot_persona: None,
+                    bot_aggression: None,
+                    disconnect_deadline_at: None,
+                    consecutive_timeout_auto_response_count: 0,
+                },
+                seat(2, "bot_1", true),
+            ],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let changed = apply_point_updates_to_room(
+            &mut room,
+            &[
+                UserPointBalanceRecord {
+                    user_id: 1,
+                    delta: 100,
+                    points: 650,
+                },
+                UserPointBalanceRecord {
+                    user_id: 2,
+                    delta: -100,
+                    points: 550,
+                },
+            ],
+        );
+
+        assert!(changed);
+        assert_eq!(room.seats[0].points, Some(650));
+        assert_eq!(room.seats[0].title.as_deref(), Some("初露锋芒"));
+        assert_eq!(room.seats[1].points, Some(550));
+        assert_eq!(room.seats[1].title.as_deref(), Some("入门雀友"));
+        assert_eq!(room.seats[2].points, None);
+        assert_eq!(room.seats[2].title, None);
+    }
+
+    #[test]
+    fn point_updates_report_unchanged_when_room_already_matches() {
+        let mut room = RoomState {
+            table_code: "ROOMSAME".to_string(),
+            phase: "settlement".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: Some(1),
+            multiplier: 1,
+            seats: vec![SeatState {
+                seat_index: 0,
+                user_id: Some(1),
+                nickname: Some("Owner".to_string()),
+                points: Some(650),
+                title: Some("初露锋芒".to_string()),
+                connected: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let changed = apply_point_updates_to_room(
+            &mut room,
+            &[UserPointBalanceRecord {
+                user_id: 1,
+                delta: 0,
+                points: 650,
+            }],
+        );
+
+        assert!(!changed);
+        assert_eq!(room.seats[0].points, Some(650));
+        assert_eq!(room.seats[0].title.as_deref(), Some("初露锋芒"));
     }
 
     #[tokio::test(flavor = "current_thread")]

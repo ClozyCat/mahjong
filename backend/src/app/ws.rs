@@ -17,7 +17,7 @@ use super::protocol::{
     HeartbeatPayload, action_rejected_message, dealer_selection_started_message, heartbeat_message,
     leave_table_accepted_message, quick_chat_message,
 };
-use super::records::archive_current_round_if_needed;
+use super::records::{apply_point_updates_to_room, archive_current_round_if_needed};
 use super::room_runtime::{
     PendingStartMatch, add_seat_connection, broadcast_to_seat_group, close_runtime,
     connection_current_seat, ensure_room_loaded, remap_connections_to_current_seats,
@@ -908,12 +908,45 @@ async fn handle_action_request(
         restore_room_snapshot(&room_handle, previous_room).await;
         return internal_error_to(connection, error);
     }
-    if let Err(error) =
-        archive_current_round_if_needed(&state, &room, &created_at, &super::now_iso()).await
+    let archive_outcome = match archive_current_round_if_needed(
+        &state,
+        &room,
+        &created_at,
+        &super::now_iso(),
+    )
+    .await
     {
-        eprintln!("failed to archive round for table {table_code}: {error:#}");
+        Ok(outcome) => outcome,
+        Err(error) => {
+            eprintln!("failed to archive round for table {table_code}: {error:#}");
+            None
+        }
+    };
+    let mut runtime = room_handle.runtime.lock().await;
+    let point_updates = archive_outcome
+        .as_ref()
+        .map(|outcome| outcome.point_updates.as_slice())
+        .unwrap_or(&[]);
+    let room_points_changed = apply_point_updates_to_room(&mut runtime.room, point_updates);
+    if room_points_changed {
+        let room_json = match serialize_room(&runtime.room) {
+            Ok(value) => value,
+            Err(error) => {
+                drop(runtime);
+                return internal_error_to(connection, error);
+            }
+        };
+        drop(runtime);
+        if let Err(error) = state
+            .inner
+            .db
+            .save_table(table_code, &created_at, &room_json)
+            .await
+        {
+            eprintln!("failed to persist updated seat points for table {table_code}: {error:#}");
+        }
+        runtime = room_handle.runtime.lock().await;
     }
-    let runtime = room_handle.runtime.lock().await;
     let connections = snapshot_connections(&runtime);
     let broadcast_handles = connections
         .iter()
