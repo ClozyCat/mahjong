@@ -9,10 +9,10 @@ interface IntroductionLayerProps {
 }
 
 const SPOTLIGHT_POSITION_VARS: Record<Seat, { left: string; top: string; rotation: string }> = {
-  top: { left: '50%', top: 'calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset))', rotation: '180deg' },
+  top: { left: '50%', top: 'calc(var(--table-stage-center-v) - var(--table-stage-spotlight-offset))', rotation: '0deg' },
   bottom: { left: '50%', top: 'calc(var(--table-stage-center-v) + var(--table-stage-spotlight-offset))', rotation: '0deg' },
-  left: { left: 'calc(50% - var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '90deg' },
-  right: { left: 'calc(50% + var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '-90deg' },
+  left: { left: 'calc(50% - var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '0deg' },
+  right: { left: 'calc(50% + var(--table-stage-spotlight-offset-horizontal))', top: 'var(--table-stage-center-v)', rotation: '0deg' },
 };
 
 export const IntroductionLayer = memo(function IntroductionLayer({
@@ -34,6 +34,7 @@ export const IntroductionLayer = memo(function IntroductionLayer({
     <div className="table-stage__intro-layer" aria-hidden="true">
       {players.map((player) => {
         const position = SPOTLIGHT_POSITION_VARS[player.seat];
+        const isVertical = player.seat === 'left' || player.seat === 'right';
         const style = {
           '--intro-left': position.left,
           '--intro-top': position.top,
@@ -43,7 +44,7 @@ export const IntroductionLayer = memo(function IntroductionLayer({
         return (
           <div
             key={`intro-${player.seat}`}
-            className={`table-stage__player-intro table-stage__player-intro--${player.seat}`}
+            className={`table-stage__player-intro table-stage__player-intro--${player.seat} ${isVertical ? 'table-stage__player-intro--vertical' : ''}`}
             style={style}
           >
             <div className="table-stage__player-intro-content">
