@@ -65,6 +65,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, players 
   const resultPages = getResultPages(result);
   const activeResultPage = resultPages[activeResultPageIndex] ?? null;
   const hasFanPanel = activeResultPage?.fanTotal !== null || (activeResultPage?.fanBreakdown.length ?? 0) > 0;
+  const discardWinnerSeats = getDiscardWinnerSeats(resultPages, result.winType);
   const seatLabelByAbsoluteSeat = getSeatLabelByAbsoluteSeat(players);
   const meldsBySeat = getMeldsBySeat(players);
 
@@ -370,8 +371,7 @@ export function ResultOverlay({ result, settlementKey, settlementHands, players 
             hasFanPanel={hasFanPanel}
             settlementHands={settlementHands}
             meldsBySeat={meldsBySeat}
-            winnerSeat={result.winnerSeat}
-            winType={result.winType}
+            discardWinnerSeats={discardWinnerSeats}
             onPageChange={setActiveScorePageIndex}
             onHoverSeat={scheduleSeatStatsOpen}
             onLeaveSeat={scheduleSeatStatsClose}
@@ -535,8 +535,7 @@ const ScoreSection = memo(({
   hasFanPanel,
   settlementHands,
   meldsBySeat,
-  winnerSeat,
-  winType,
+  discardWinnerSeats,
   onPageChange,
   onHoverSeat,
   onLeaveSeat,
@@ -547,8 +546,7 @@ const ScoreSection = memo(({
   hasFanPanel: boolean;
   settlementHands?: Partial<Record<Seat, string[]>> | null;
   meldsBySeat: Partial<Record<Seat, PlayerMeldView[]>>;
-  winnerSeat: Seat | null;
-  winType: string | null;
+  discardWinnerSeats: ReadonlySet<Seat>;
   onPageChange: (index: number | ((curr: number) => number)) => void;
   onHoverSeat: (key: string, seat: ResultSeatView, el: HTMLDivElement) => void;
   onLeaveSeat: () => void;
@@ -585,8 +583,7 @@ const ScoreSection = memo(({
             isActive={index === activeIndex}
             hand={settlementHands?.[seat.seat]}
             melds={meldsBySeat[seat.seat] ?? []}
-            isWinner={winnerSeat === seat.seat}
-            winType={winType}
+            isDiscardWinner={discardWinnerSeats.has(seat.seat)}
             onHover={onHoverSeat}
             onLeave={onLeaveSeat}
             seatLabel={getResultSeatLabel(seat, seatLabelByAbsoluteSeat)}
@@ -602,8 +599,7 @@ const SeatRow = memo(({
   isActive,
   hand,
   melds,
-  isWinner,
-  winType,
+  isDiscardWinner,
   onHover,
   onLeave,
   seatLabel
@@ -612,8 +608,7 @@ const SeatRow = memo(({
   isActive: boolean;
   hand?: string[];
   melds: PlayerMeldView[];
-  isWinner: boolean;
-  winType: string | null;
+  isDiscardWinner: boolean;
   onHover: (key: string, seat: ResultSeatView, el: HTMLDivElement) => void;
   onLeave: () => void;
   seatLabel: string;
@@ -651,7 +646,7 @@ const SeatRow = memo(({
                   key={`${seat.seat}-tile-${i}`}
                   code={tile}
                   variant="discard"
-                  isLastDiscard={isWinner && winType === 'discard' && i === hand!.length - 1}
+                  isLastDiscard={isDiscardWinner && i === hand!.length - 1}
                   className="result-overlay__seat-hand-tile"
                 />
               ))}
@@ -740,6 +735,14 @@ function getResultPages(result: ResultView): ResultPageView[] {
     flowerCount: result.flowerCount,
     fanBreakdown: result.fanBreakdown,
   }];
+}
+
+function getDiscardWinnerSeats(pages: ResultPageView[], fallbackWinType: string | null) {
+  return new Set(
+    pages
+      .filter((page) => (page.winType ?? fallbackWinType) === 'discard' && page.winnerSeat)
+      .map((page) => page.winnerSeat as Seat),
+  );
 }
 
 function formatResultActor(

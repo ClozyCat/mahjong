@@ -966,6 +966,71 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
+  it('highlights the winning tile for every discard winner in a multi-winner settlement', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        mode: 'resolving',
+        phaseLabel: 'settlement',
+        settlementHands: {
+          right: ['c1', 'c2', 'c3', 'c4', 'c5'],
+          top: ['w1', 'w2', 'w3', 'w4', 'w5'],
+          left: ['b1', 'b2', 'b3', 'b4', 'b5'],
+        },
+        result: {
+          title: '本局结算',
+          summary: '2 家同时和牌，等待下一局',
+          fanTotal: 8,
+          winnerSeat: 'right',
+          discarderSeat: 'left',
+          winType: 'discard',
+          winTypeLabel: '荣和',
+          provisional: false,
+          flowerCount: 0,
+          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          pages: [
+            {
+              fanTotal: 8,
+              winnerSeat: 'right',
+              discarderSeat: 'left',
+              winType: 'discard',
+              winTypeLabel: '荣和',
+              flowerCount: 0,
+              fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            },
+            {
+              fanTotal: 16,
+              winnerSeat: 'top',
+              discarderSeat: 'left',
+              winType: 'discard',
+              winTypeLabel: '荣和',
+              flowerCount: 1,
+              fanBreakdown: [{ fanKey: 'full_flush', fanValue: 16 }],
+            },
+          ],
+          scoreDeltaBySeat: {
+            left: -24,
+            top: 16,
+            right: 8,
+          },
+          seats: [
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'top', name: 'Player Top', score: 26816, delta: 16 },
+            { seat: 'left', name: 'Player Left', score: 24268, delta: -24 },
+          ],
+          continueAction: null,
+        },
+      }),
+    );
+
+    const playerBHand = within(document.body).getByLabelText('Player B 最终手牌');
+    const playerTopHand = within(document.body).getByLabelText('Player Top 最终手牌');
+    const playerLeftHand = within(document.body).getByLabelText('Player Left 最终手牌');
+
+    expect(playerBHand.querySelectorAll('.mahjong-tile--last-discard')).toHaveLength(1);
+    expect(playerTopHand.querySelectorAll('.mahjong-tile--last-discard')).toHaveLength(1);
+    expect(playerLeftHand.querySelector('.mahjong-tile--last-discard')).toBeNull();
+  });
+
   it('shows all multi-winner hu callouts together before opening the settlement overlay', () => {
     vi.useFakeTimers();
 
