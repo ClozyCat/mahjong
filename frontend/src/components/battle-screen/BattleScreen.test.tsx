@@ -674,8 +674,8 @@ describe('BattleScreen', () => {
             right: 8,
           },
           seats: [
-            { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
-            { seat: 'left', name: 'Player Left', score: 24292, points: 0, delta: -8 },
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
           ],
           continueAction: {
             id: 'start_next_round',
@@ -752,8 +752,8 @@ describe('BattleScreen', () => {
             left: -8,
           },
           seats: [
-            { seat: 'right', absoluteSeat: 1, name: 'Player B', score: 25008, points: 0, delta: 8 },
-            { seat: 'left', absoluteSeat: 0, name: 'Player Left', score: 24292, points: 0, delta: -8 },
+            { seat: 'right', absoluteSeat: 1, name: 'Player B', score: 25008, delta: 8 },
+            { seat: 'left', absoluteSeat: 0, name: 'Player Left', score: 24292, delta: -8 },
           ],
           continueAction: {
             id: 'start_next_round',
@@ -795,10 +795,10 @@ describe('BattleScreen', () => {
             right: 8,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', score: 25000, points: 0, delta: 0 },
-            { seat: 'left', name: 'Player Left', score: 24992, points: 0, delta: -8 },
-            { seat: 'top', name: 'Player Top', score: 25000, points: 0, delta: 0 },
-            { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
+            { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
+            { seat: 'left', name: 'Player Left', score: 24992, delta: -8 },
+            { seat: 'top', name: 'Player Top', score: 25000, delta: 0 },
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
           ],
           continueAction: null,
         },
@@ -828,10 +828,10 @@ describe('BattleScreen', () => {
         right: 8,
       },
       seats: [
-        { seat: 'bottom' as const, name: 'Player A', score: 25000, points: 0, delta: 0 },
-        { seat: 'left' as const, name: 'Player Left', score: 24992, points: 0, delta: -8 },
-        { seat: 'top' as const, name: 'Player Top', score: 25000, points: 0, delta: 0 },
-        { seat: 'right' as const, name: 'Player B', score: 25008, points: 0, delta: 8 },
+        { seat: 'bottom' as const, name: 'Player A', score: 25000, delta: 0 },
+        { seat: 'left' as const, name: 'Player Left', score: 24992, delta: -8 },
+        { seat: 'top' as const, name: 'Player Top', score: 25000, delta: 0 },
+        { seat: 'right' as const, name: 'Player B', score: 25008, delta: 8 },
       ],
       continueAction: {
         id: 'start_next_round' as const,
@@ -934,7 +934,7 @@ describe('BattleScreen', () => {
           },
           seats: [
             { seat: 'top', name: 'Player Top', score: 26816, delta: 16 },
-            { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24268, delta: -24 },
           ],
           continueAction: {
@@ -1034,7 +1034,7 @@ describe('BattleScreen', () => {
             },
             seats: [
               { seat: 'top', name: 'Player Top', score: 26816, delta: 16 },
-              { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
               { seat: 'left', name: 'Player Left', score: 24268, delta: -24 },
             ],
             continueAction: {
@@ -1099,7 +1099,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', score: 25008, points: 0, delta: 8 },
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1162,7 +1162,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', score: 25008, points: 0, delta: 8 },
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1208,7 +1208,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', score: 25008, points: 0, delta: 8 },
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1261,7 +1261,7 @@ describe('BattleScreen', () => {
           },
           seats: [
             { seat: 'right', name: 'Player B', score: 24998, delta: -2 },
-            { seat: 'bottom', name: 'Player A', score: 25008, points: 0, delta: 8 },
+            { seat: 'bottom', name: 'Player A', score: 25008, delta: 8 },
             { seat: 'top', name: 'Player Top', score: 26797, delta: -3 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
@@ -1489,9 +1489,9 @@ describe('BattleScreen', () => {
               right: 6,
             },
             seats: [
-              { seat: 'right', name: 'Player B', score: 25000, points: 0, delta: 6 },
-              { seat: 'left', name: 'Player Left', score: 24288, points: 0, delta: -6 },
-              { seat: 'bottom', name: 'Player A', score: 25000, points: 0, delta: 0 },
+              { seat: 'right', name: 'Player B', score: 25000, delta: 6 },
+              { seat: 'left', name: 'Player Left', score: 24288, delta: -6 },
+              { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
             ],
             continueAction: {
               id: 'start_next_round',
@@ -2072,7 +2072,7 @@ describe('BattleScreen', () => {
             right: 8,
           },
           seats: [
-            { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
+            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
             { seat: 'bottom', name: 'Player A', score: 24997, delta: -3 },
           ],
           continueAction: {
@@ -2182,8 +2182,8 @@ describe('BattleScreen', () => {
               right: 8,
             },
             seats: [
-              { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
-              { seat: 'left', name: 'Player Left', score: 24292, points: 0, delta: -8 },
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
             ],
             continueAction: {
               id: 'start_next_round',
@@ -2260,8 +2260,8 @@ describe('BattleScreen', () => {
               right: 8,
             },
             seats: [
-              { seat: 'right', name: 'Player B', score: 25008, points: 0, delta: 8 },
-              { seat: 'left', name: 'Player Left', score: 24292, points: 0, delta: -8 },
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
             ],
             continueAction: {
               id: 'start_next_round',
