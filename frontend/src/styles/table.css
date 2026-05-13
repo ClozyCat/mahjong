@@ -676,7 +676,6 @@
 .table-stage__player-intro--vertical .table-stage__player-intro-points {
   font-size: 1.1rem;
   margin-top: 0.2rem;
-  color: var(--accent-2);
 }
 
 /* ------- Dense meld rack (3+ melds) forces 2 rows for top/bottom to save horizontal space */
