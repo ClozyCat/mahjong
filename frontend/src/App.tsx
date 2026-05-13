@@ -29,6 +29,7 @@ import {
   createJoinTableMessage,
   createLeaveTableMessage,
   createQuickChatMessage,
+  createPointGestureMessage,
   createRestartMatchMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
@@ -1538,6 +1539,10 @@ export default function App() {
     sendMessage(serializeClientMessage(createQuickChatMessage(targetSeat, emoji)));
   }
 
+  function handlePointGesture(targetSeat: number) {
+    sendMessage(serializeClientMessage(createPointGestureMessage(targetSeat)));
+  }
+
   function handleAdjustBots(delta: 1 | -1) {
     sendMessage(serializeClientMessage(createAdjustBotsMessage(delta)));
   }
@@ -1651,6 +1656,7 @@ export default function App() {
         onAddBot={() => handleAdjustBots(1)}
         onRemoveBot={() => handleAdjustBots(-1)}
         onQuickChat={handleQuickChat}
+        onPointGesture={handlePointGesture}
       />
     );
   }

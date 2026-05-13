@@ -110,3 +110,14 @@ export function createQuickChatMessage(targetSeat: number, emoji: QuickChatEmoji
     },
   };
 }
+
+export function createPointGestureMessage(targetSeat: number): ClientMessage {
+  return {
+    type: 'quick_chat',
+    payload: {
+      target_seat: targetSeat,
+      emoji: 'point_gesture',
+      chat_kind: 'point_gesture',
+    },
+  };
+}

@@ -13,6 +13,7 @@ interface SeatZoneProps {
   lastDiscardSeat: Seat | null;
   selectedTileCode: string | null;
   hasSpotlightDiscard: boolean;
+  onPlayerInfoDoubleClick?: (absoluteSeat: number) => void;
 }
 
 function getMeldRackPositionStyle(seat: Seat): CSSProperties {
@@ -57,6 +58,7 @@ export const SeatZone = memo(function SeatZone({
   lastDiscardSeat,
   selectedTileCode,
   hasSpotlightDiscard,
+  onPlayerInfoDoubleClick,
 }: SeatZoneProps) {
   const { player, seat } = scene;
   const playerInfoName = getPlayerInfoName(player);
@@ -79,6 +81,11 @@ export const SeatZone = memo(function SeatZone({
               data-player-name={playerInfoName}
               data-absolute-seat={player.absoluteSeat}
               data-player-color-slot={player.colorSlot}
+              onDoubleClick={() => {
+                if (typeof player.absoluteSeat === 'number') {
+                  onPlayerInfoDoubleClick?.(player.absoluteSeat);
+                }
+              }}
             >
               <FanIcon className="table-stage__stat-icon" />
               <span className="table-stage__stat-value">{scene.windLabel}</span>

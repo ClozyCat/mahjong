@@ -112,6 +112,7 @@ interface TableStageProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
+  onPointGesture?: (targetSeat: number) => void;
   onDecreaseTileScale?: () => void;
   onIncreaseTileScale?: () => void;
   isBgmEnabled?: boolean;
@@ -170,6 +171,7 @@ export function TableStage({
   onAddBot,
   onRemoveBot,
   onQuickChat,
+  onPointGesture,
   onDecreaseTileScale: _onDecreaseTileScale,
   onIncreaseTileScale: _onIncreaseTileScale,
   isBgmEnabled = false,
@@ -187,6 +189,7 @@ export function TableStage({
   const viewport = useBattleViewport(containerRef);
   const shouldShowAspectRatioPrompt = viewport.width < viewport.height;
   const playersWithColorSlots = withPlayerColorSlots(players, playerColorSlotsRef.current);
+  const localPlayerAbsoluteSeat = sceneLocalAbsoluteSeat(playersWithColorSlots);
   const scene = buildTableSceneModel({
     viewport,
     players: playersWithColorSlots,
@@ -285,6 +288,11 @@ export function TableStage({
               lastDiscardSeat={lastDiscardSeat}
               selectedTileCode={selectedTileCode}
               hasSpotlightDiscard={hasSpotlightDiscard}
+              onPlayerInfoDoubleClick={(targetSeat) => {
+                if (targetSeat !== localPlayerAbsoluteSeat) {
+                  onPointGesture?.(targetSeat);
+                }
+              }}
             />
           ))}
           <QuickChatCluster
@@ -330,4 +338,8 @@ export function TableStage({
       {children}
     </section>
   );
+}
+
+function sceneLocalAbsoluteSeat(players: TableStagePlayer[]) {
+  return players.find((player) => player.isLocal)?.absoluteSeat ?? null;
 }

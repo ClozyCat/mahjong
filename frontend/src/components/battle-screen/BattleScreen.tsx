@@ -41,6 +41,7 @@ interface BattleScreenProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
+  onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -78,6 +79,7 @@ export function BattleScreen({
   onAddBot,
   onRemoveBot,
   onQuickChat,
+  onPointGesture,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -399,6 +401,7 @@ export function BattleScreen({
               onAddBot={onAddBot}
               onRemoveBot={onRemoveBot}
               onQuickChat={onQuickChat}
+              onPointGesture={onPointGesture}
               onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
               onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
               isBgmEnabled={isBgmEnabled}

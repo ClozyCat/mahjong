@@ -2641,4 +2641,72 @@ describe('App', () => {
 
     expect(screen.getByText('Player A -> Player B : 🀄')).toBeInTheDocument();
   });
+
+  it('sends a point-gesture quick-chat message when double-clicking another player info plate', async () => {
+    const user = userEvent.setup();
+    const { socket } = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 150 },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 90 },
+            { seat_index: 2, nickname: 'Player C', connected: true, points: 60 },
+            { seat_index: 3, nickname: 'Player D', connected: true, points: 30 },
+          ],
+        }),
+      });
+    });
+
+    const targetPlate = document.querySelector('[data-absolute-seat="1"]') as HTMLElement | null;
+    expect(targetPlate).not.toBeNull();
+
+    await user.dblClick(targetPlate!);
+
+    expect(socket.sentMessages.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'quick_chat',
+      payload: {
+        target_seat: 1,
+        emoji: 'point_gesture',
+        chat_kind: 'point_gesture',
+      },
+    });
+  });
+
+  it('renders the custom barrage line when a point-gesture broadcast arrives from the server', async () => {
+    const user = userEvent.setup();
+    const { socket } = await joinTable(user);
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'room_snapshot',
+        payload: createPlayingSnapshotPayload({
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 150 },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 90 },
+            { seat_index: 2, nickname: 'Player C', connected: true, points: 60 },
+            { seat_index: 3, nickname: 'Player D', connected: true, points: 30 },
+          ],
+        }),
+      });
+    });
+
+    await act(async () => {
+      socket.triggerMessage({
+        type: 'quick_chat',
+        payload: {
+          message_id: 'point-gesture-1',
+          actor_seat: 0,
+          target_seat: 1,
+          chat_kind: 'point_gesture',
+          emoji: 'point_gesture',
+          sent_at: '2026-05-13T12:00:00Z',
+        },
+      });
+    });
+
+    expect(screen.getByText('Player A对Player B指指点点🈯')).toBeInTheDocument();
+  });
 });

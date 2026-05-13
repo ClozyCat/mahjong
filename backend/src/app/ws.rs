@@ -101,6 +101,7 @@ impl ActionRequest {
 #[derive(Debug, Default, Deserialize)]
 struct QuickChatRequest {
     target_seat: Option<usize>,
+    chat_kind: Option<String>,
     #[serde(default)]
     emoji: String,
 }
@@ -975,8 +976,9 @@ async fn handle_quick_chat(
     request: QuickChatRequest,
 ) -> MessageOutcome {
     let target_seat = request.target_seat;
+    let chat_kind = request.chat_kind.as_deref().map(str::trim);
     let emoji = request.emoji.trim().to_string();
-    if emoji.is_empty() {
+    if emoji.is_empty() && chat_kind != Some("point_gesture") {
         return reject_to(connection, "invalid_action");
     }
 
@@ -996,14 +998,36 @@ async fn handle_quick_chat(
     if !occupied_seats(&runtime.room).contains(&target_seat) {
         return reject_to(connection, "invalid_action");
     }
+    if chat_kind == Some("point_gesture") {
+        let actor_points = runtime
+            .room
+            .seats
+            .iter()
+            .find(|seat| seat.seat_index == seat_index)
+            .and_then(|seat| seat.points);
+        let target_points = runtime
+            .room
+            .seats
+            .iter()
+            .find(|seat| seat.seat_index == target_seat)
+            .and_then(|seat| seat.points);
+        if seat_index == target_seat || actor_points.is_none() || target_points.is_none() || actor_points == target_points {
+            return reject_to(connection, "invalid_action");
+        }
+    }
 
     let payload = quick_chat_message(
         generate_short_hex(8),
         seat_index,
         target_seat,
+        chat_kind,
         None,
         None,
-        emoji,
+        if chat_kind == Some("point_gesture") {
+            "point_gesture".to_string()
+        } else {
+            emoji
+        },
         super::now_iso(),
     );
     let connections = snapshot_connections(&runtime);
@@ -1304,8 +1328,8 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        ClientMessage, ConnectionRole, JoinTableRequest, handle_disconnect, handle_join_table,
-        handle_leave_table, parse_client_message,
+        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, handle_disconnect,
+        handle_join_table, handle_leave_table, handle_quick_chat, parse_client_message,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1862,6 +1886,165 @@ mod tests {
         let runtime = room_handle.runtime.lock().await;
         assert!(!runtime.room.seats[0].connected);
         assert!(runtime.connections.get(&0).is_none());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn point_gesture_quick_chat_broadcasts_when_actor_points_are_higher() -> Result<()> {
+        let (state, guest_token) = build_reserved_participant_state("ROOMQCGEST").await?;
+        let db = state.inner.db.clone();
+        let (owner_user_id, _owner_token) =
+            register_ws_test_user(&db, "INVITE200010", "OwnerQCGest").await?;
+        let guest_user_id = db
+            .get_authenticated_user(&hash_session_token(&guest_token), "2026-05-06T00:00:00Z")
+            .await?
+            .map(|user| user.user_id)
+            .ok_or_else(|| anyhow::anyhow!("guest should exist"))?;
+        ensure_room_loaded(&state, "ROOMQCGEST")
+            .await?
+            .expect("room should load");
+
+        let room_handle = room_handle(&state, "ROOMQCGEST")
+            .await
+            .expect("room should be loaded");
+        {
+            let mut runtime = room_handle.runtime.lock().await;
+            runtime.room.owner_user_id = Some(owner_user_id);
+            if let Some(seat) = runtime.room.seats.iter_mut().find(|seat| seat.seat_index == 0) {
+                seat.user_id = Some(guest_user_id);
+                seat.nickname = Some("Guest".to_string());
+                seat.points = Some(1100);
+            }
+            runtime.room.seats.push(SeatState {
+                seat_index: 1,
+                user_id: Some(owner_user_id),
+                nickname: Some("OwnerQCGest".to_string()),
+                points: Some(400),
+                title: Some("正分守门员".to_string()),
+                connected: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
+            });
+        }
+
+        let (guest_connection, _guest_receiver) = test_connection_handle(1, 8);
+        let guest_join = handle_join_table(
+            state.clone(),
+            "ROOMQCGEST",
+            &guest_connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+        assert!(matches!(guest_join.role, Some(ConnectionRole::Player { seat_index: 0 })));
+
+        let outcome = handle_quick_chat(
+            state,
+            "ROOMQCGEST",
+            &guest_connection,
+            0,
+            QuickChatRequest {
+                target_seat: Some(1),
+                chat_kind: Some("point_gesture".to_string()),
+                emoji: "point_gesture".to_string(),
+            },
+        )
+        .await;
+
+        assert_eq!(outcome.outbound.len(), 1);
+        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
+        assert_eq!(payload["type"], "quick_chat");
+        assert_eq!(payload["payload"]["chat_kind"], "point_gesture");
+        assert_eq!(payload["payload"]["actor_seat"], 0);
+        assert_eq!(payload["payload"]["target_seat"], 1);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn point_gesture_quick_chat_rejects_equal_points() -> Result<()> {
+        let (state, guest_token) = build_reserved_participant_state("ROOMQCREJECT").await?;
+        let db = state.inner.db.clone();
+        let (owner_user_id, owner_token) =
+            register_ws_test_user(&db, "INVITE200011", "OwnerQCReject").await?;
+        let guest_user_id = db
+            .get_authenticated_user(&hash_session_token(&guest_token), "2026-05-06T00:00:00Z")
+            .await?
+            .map(|user| user.user_id)
+            .ok_or_else(|| anyhow::anyhow!("guest should exist"))?;
+        ensure_room_loaded(&state, "ROOMQCREJECT")
+            .await?
+            .expect("room should load");
+
+        let room_handle = room_handle(&state, "ROOMQCREJECT")
+            .await
+            .expect("room should be loaded");
+        {
+            let mut runtime = room_handle.runtime.lock().await;
+            runtime.room.owner_user_id = Some(owner_user_id);
+            if let Some(seat) = runtime.room.seats.iter_mut().find(|seat| seat.seat_index == 0) {
+                seat.user_id = Some(guest_user_id);
+                seat.nickname = Some("Guest".to_string());
+                seat.points = Some(600);
+            }
+            runtime.room.seats.push(SeatState {
+                seat_index: 1,
+                user_id: Some(owner_user_id),
+                nickname: Some("OwnerQCReject".to_string()),
+                points: Some(600),
+                title: Some("正分守门员".to_string()),
+                connected: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                bot_persona: None,
+                bot_aggression: None,
+                disconnect_deadline_at: None,
+                consecutive_timeout_auto_response_count: 0,
+            });
+        }
+
+        let (guest_connection, _guest_receiver) = test_connection_handle(1, 8);
+        let _ = handle_join_table(
+            state.clone(),
+            "ROOMQCREJECT",
+            &guest_connection,
+            JoinTableRequest {
+                session_token: guest_token,
+            },
+        )
+        .await;
+
+        let (owner_connection, _owner_receiver) = test_connection_handle(2, 8);
+        let _ = handle_join_table(
+            state.clone(),
+            "ROOMQCREJECT",
+            &owner_connection,
+            JoinTableRequest {
+                session_token: owner_token,
+            },
+        )
+        .await;
+
+        let outcome = handle_quick_chat(
+            state,
+            "ROOMQCREJECT",
+            &owner_connection,
+            1,
+            QuickChatRequest {
+                target_seat: Some(0),
+                chat_kind: Some("point_gesture".to_string()),
+                emoji: "point_gesture".to_string(),
+            },
+        )
+        .await;
+
+        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
+        assert_eq!(payload["type"], "action_rejected");
+        assert_eq!(payload["payload"]["reason"], "invalid_action");
         Ok(())
     }
 }

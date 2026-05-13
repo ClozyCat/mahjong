@@ -265,6 +265,70 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.canRemoveBot).toBe(false);
   });
 
+  it('renders point-gesture barrage copy as 指指点点 when actor points are higher', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 150, is_bot: false },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 90, is_bot: false },
+            { seat_index: 2, nickname: 'Player C', connected: true, points: 60, is_bot: false },
+            { seat_index: 3, nickname: 'Player D', connected: true, points: 30, is_bot: false },
+          ],
+        },
+      },
+      latestQuickChatMessage: {
+        type: 'quick_chat',
+        payload: {
+          message_id: 'gesture-1',
+          actor_seat: 0,
+          target_seat: 1,
+          chat_kind: 'point_gesture',
+          emoji: 'point_gesture',
+          sent_at: '2026-05-13T12:00:00Z',
+        },
+      },
+    });
+
+    expect(viewModel.quickChatEvent?.text).toBe('Player A对Player B指指点点🈯');
+  });
+
+  it('renders point-gesture barrage copy as 五体投地 when actor points are lower', () => {
+    const base = createPlayingSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 150, is_bot: false },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 90, is_bot: false },
+            { seat_index: 2, nickname: 'Player C', connected: true, points: 60, is_bot: false },
+            { seat_index: 3, nickname: 'Player D', connected: true, points: 30, is_bot: false },
+          ],
+        },
+      },
+      latestQuickChatMessage: {
+        type: 'quick_chat',
+        payload: {
+          message_id: 'gesture-2',
+          actor_seat: 1,
+          target_seat: 0,
+          chat_kind: 'point_gesture',
+          emoji: 'point_gesture',
+          sent_at: '2026-05-13T12:00:01Z',
+        },
+      },
+    });
+
+    expect(viewModel.quickChatEvent?.text).toBe('Player B对Player A五体投地🛐');
+  });
+
   it('surfaces dealer selection and disables waiting controls during the draw animation', () => {
     const base = createWaitingSessionState();
     const state: SessionState = {

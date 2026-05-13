@@ -1999,6 +1999,11 @@ function createQuickChatEvent(state: SessionState, options: MatchViewModelOption
   const targetSeat = toRelativeSeat(localSeat, message.payload.target_seat);
   const actorName = message.payload.actor_display_name?.trim() || getSeatName(state, message.payload.actor_seat);
   const targetName = getSeatName(state, message.payload.target_seat);
+  const text = message.payload.chat_kind === 'point_gesture'
+    ? createPointGestureText(state, message.payload.actor_seat, message.payload.target_seat, actorName, targetName)
+    : message.payload.actor_seat === message.payload.target_seat
+      ? `${actorName}：${message.payload.emoji}`
+      : `${actorName} -> ${targetName} : ${message.payload.emoji}`;
 
   return {
     key: message.payload.message_id,
@@ -2007,11 +2012,30 @@ function createQuickChatEvent(state: SessionState, options: MatchViewModelOption
     actorName,
     targetName,
     emoji: message.payload.emoji,
-    text:
-      message.payload.actor_seat === message.payload.target_seat
-        ? `${actorName}：${message.payload.emoji}`
-        : `${actorName} -> ${targetName} : ${message.payload.emoji}`,
+    text,
   };
+}
+
+function createPointGestureText(
+  state: SessionState,
+  actorSeat: number,
+  targetSeat: number,
+  actorName: string,
+  targetName: string,
+) {
+  const actorPoints = getSeatPoints(state, actorSeat);
+  const targetPoints = getSeatPoints(state, targetSeat);
+
+  return typeof actorPoints === 'number' &&
+    typeof targetPoints === 'number' &&
+    actorPoints > targetPoints
+    ? `${actorName}对${targetName}指指点点🈯`
+    : `${actorName}对${targetName}五体投地🛐`;
+}
+
+function getSeatPoints(state: SessionState, seatIndex: number) {
+  const seat = state.roomSnapshot?.payload.seats.find((candidate) => candidate.seat_index === seatIndex);
+  return typeof seat?.points === 'number' ? seat.points : null;
 }
 
 function createContinueActionConfirmation(

@@ -1518,6 +1518,42 @@ describe('TableStage', () => {
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
 
+  it('double-clicks another player info plate to trigger point gesture without triggering self target', async () => {
+    const user = userEvent.setup();
+    const onPointGesture = vi.fn();
+
+    render(
+      <TableStage
+        discards={{
+          top: [],
+          left: [],
+          right: [],
+          bottom: [],
+        }}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        onPointGesture={onPointGesture}
+        players={[
+          { seat: 'bottom', absoluteSeat: 0, isLocal: true, name: 'Player A', melds: [] },
+          { seat: 'right', absoluteSeat: 1, isLocal: false, name: 'Player B', melds: [] },
+        ]}
+      />,
+    );
+
+    const selfPlate = document.querySelector('[data-absolute-seat="0"]') as HTMLElement | null;
+    const targetPlate = document.querySelector('[data-absolute-seat="1"]') as HTMLElement | null;
+
+    expect(selfPlate).not.toBeNull();
+    expect(targetPlate).not.toBeNull();
+
+    await user.dblClick(selfPlate!);
+    await user.dblClick(targetPlate!);
+
+    expect(onPointGesture).toHaveBeenCalledTimes(1);
+    expect(onPointGesture).toHaveBeenCalledWith(1);
+  });
+
   it('keeps quick-chat barrage visible longer than the previous nine-second sweep', () => {
     vi.useFakeTimers();
 

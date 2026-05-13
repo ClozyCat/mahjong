@@ -322,6 +322,7 @@ export interface QuickChatMessage {
     message_id: string;
     actor_seat: number;
     target_seat: number;
+    chat_kind?: 'emoji' | 'point_gesture' | string;
     actor_kind?: 'player' | string;
     actor_display_name?: string | null;
     emoji: QuickChatEmoji;
@@ -398,7 +399,7 @@ export type ClientMessage =
   | { type: 'start_next_round'; payload: Record<string, never> }
   | { type: 'restart_match'; payload: Record<string, never> }
   | { type: 'action_request'; payload: { action_type: ActionRequestType; tile_ids: string[] } }
-  | { type: 'quick_chat'; payload: { target_seat: number; emoji: QuickChatEmoji } }
+  | { type: 'quick_chat'; payload: { target_seat: number; emoji: QuickChatEmoji; chat_kind?: 'emoji' | 'point_gesture' } }
   | { type: 'heartbeat'; payload: { sent_at: string } };
 
 export interface ToastMessage {
