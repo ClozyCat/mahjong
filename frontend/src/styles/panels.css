@@ -2,7 +2,7 @@
    Panels, Overlays, Controls & Shared Components
    Merged from all cascade layers.  Includes:
    - connect-gate, top-match-bar
-   - result-overlay (settlement), fan-guide, ambient-overlay
+   - result-overlay (settlement), fan-guide
    - table-stage sub-elements (action-pointer, table-info,
      lobby-controls, scale-controls, bot-controls)
    ================================================= */
@@ -12,7 +12,6 @@
    ============================== */
 
 .result-overlay__card,
-.connect-gate__panel,
 .fan-guide__dialog,
 .auth-gate__panel {
   border: 1px solid var(--glass-border);
@@ -31,139 +30,7 @@
   isolation: isolate;
   will-change: transform, opacity;
 }
-.user-profile-panel {
-  display: grid;
-  gap: 0.85rem;
-}
 
-.user-profile-panel__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.8rem;
-}
-
-.user-profile-panel__header h3,
-.user-profile-panel__section h4 {
-  margin: 0;
-}
-
-.user-profile-panel__header p,
-.user-profile-panel__bio {
-  margin: 0.2rem 0 0;
-}
-
-.user-profile-panel__section {
-  display: grid;
-  gap: 0.6rem;
-  padding: 1rem;
-  border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--theme-panel-bg-soft) 40%, transparent);
-  border: 1px solid var(--glass-border);
-}
-
-.user-profile-panel__current-user-button {
-  flex: 0 0 auto;
-  min-height: 2.1rem;
-  padding: 0.35rem 0.8rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--glass-border));
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  color: var(--theme-paper-strong);
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.user-profile-panel__current-user-button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--glass-border));
-}
-
-.user-profile-panel__pagination {
-  display: grid;
-  grid-template-columns: minmax(4.5rem, auto) 1fr minmax(4.5rem, auto);
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.user-profile-panel__pagination button {
-  min-height: 2rem;
-  padding: 0.35rem 0.65rem;
-  border: 1px solid var(--glass-border);
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--theme-panel-bg-soft) 34%, transparent);
-  color: var(--theme-paper-strong);
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition:
-    background 0.2s var(--ease-lux),
-    border-color 0.2s var(--ease-lux),
-    opacity 0.2s var(--ease-lux);
-}
-
-.user-profile-panel__pagination button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--theme-panel-bg-soft) 62%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--glass-border));
-}
-
-.user-profile-panel__pagination button:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.user-profile-panel__pagination span {
-  color: color-mix(in srgb, var(--theme-paper) 68%, transparent);
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-align: center;
-}
-
-.user-profile-panel__history-row {
-  display: grid;
-  grid-template-columns: minmax(6.5rem, 0.8fr) minmax(0, 1.2fr);
-  align-items: center;
-  gap: 0.8rem;
-}
-
-.user-profile-panel__history-main,
-.user-profile-panel__history-meta {
-  min-width: 0;
-}
-
-.user-profile-panel__history-main strong,
-.user-profile-panel__history-meta strong {
-  display: block;
-}
-
-.user-profile-panel__history-meta {
-  display: grid;
-  justify-items: end;
-  text-align: right;
-}
-
-.user-profile-panel__history-meta span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-profile-panel__score-delta {
-  color: color-mix(in srgb, var(--theme-paper-strong) 86%, transparent);
-  font-variant-numeric: tabular-nums;
-}
-
-.user-profile-panel__score-delta--positive {
-  color: #22c55e;
-}
-
-.user-profile-panel__score-delta--negative {
-  color: #f87171;
-}
-
-.connect-gate__panel,
 .result-overlay__row,
 .result-overlay__seat-row {
   border-color: var(--theme-border);
@@ -181,7 +48,6 @@
    Connect gate (Modern Glassmorphism)
    ============================== */
 
-.connect-gate__panel h1,
 .result-overlay__card h2,
 .top-match-bar__brand strong,
 .top-match-bar__meta span:first-child {
@@ -709,12 +575,6 @@
   border-color: color-mix(in srgb, var(--theme-danger) 20%, var(--theme-border));
 }
 
-/* ==============================
-   Ambient overlay
-   ============================== */
-
-
-
 .result-overlay__card h2,
 .result-overlay__seat-row strong {
   color: var(--theme-paper-strong);
@@ -1006,6 +866,7 @@
   place-items: center;
   z-index: 24;
   pointer-events: none;
+  animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
 
 .result-overlay__card {
@@ -1874,6 +1735,7 @@
   padding:
     max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
   background: color-mix(in srgb, var(--theme-veil) 35%, transparent);
+  animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
 
 .fan-guide__dialog {
@@ -2296,8 +2158,8 @@
   padding:
     max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
   background: color-mix(in srgb, var(--theme-veil) 35%, transparent);
+  animation: modal-backdrop-fade 0.3s var(--ease-lux) forwards;
 }
-
 
 .player-list__dialog {
   width: min(44rem, calc(100vw - 1.5rem));

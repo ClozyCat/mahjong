@@ -288,9 +288,3 @@
   }
 }
 
-
-/* ------- Panel entrance duration ------- */
-
-.connect-gate__panel {
-  animation: overlay-fade-in-up 0.4s var(--ease-lux) forwards;
-}
