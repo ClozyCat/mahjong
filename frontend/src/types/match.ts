@@ -585,6 +585,8 @@ export interface ResultSeatView {
   seat: Seat;
   absoluteSeat?: number;
   name: string;
+  title?: string | null;
+  displayLabel?: string;
   score: number;
   delta: number | null;
   stats?: {

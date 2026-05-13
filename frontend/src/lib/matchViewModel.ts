@@ -1341,6 +1341,11 @@ function createResultSeatStats(state: SessionState, seatIndex: number, score: nu
   };
 }
 
+function createPlayerDisplayLabel(name: string, title?: string | null) {
+  const normalizedTitle = title?.trim();
+  return normalizedTitle ? `${name}（${normalizedTitle}）` : name;
+}
+
 function createResultSeats(
   state: SessionState,
   scoreDeltaBySeat: Record<string, number> | null,
@@ -1361,6 +1366,8 @@ function createResultSeats(
         seat: toRelativeSeat(localSeat, seat.seat_index),
         absoluteSeat: seat.seat_index,
         name: seat.nickname,
+        title: seat.title ?? null,
+        displayLabel: createPlayerDisplayLabel(seat.nickname, seat.title),
         score: scores[seatKey] ?? 0,
         delta: scoreDeltaBySeat ? (scoreDeltaBySeat[seatKey] ?? 0) : null,
         stats: createResultSeatStats(state, seat.seat_index, scores[seatKey] ?? 0),

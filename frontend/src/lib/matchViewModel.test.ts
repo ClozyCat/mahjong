@@ -1366,6 +1366,27 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('adds player titles to settlement score row display labels', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: base.roomSnapshot!.payload.seats.map((seat) =>
+            seat.seat_index === 1 ? { ...seat, title: 'LV7入门雀友' } : seat,
+          ),
+        },
+      },
+    });
+
+    const leftSeat = viewModel.result?.seats.find((seat) => seat.seat === 'left');
+
+    expect(leftSeat?.title).toBe('LV7入门雀友');
+    expect(leftSeat?.displayLabel).toBe('Player B（LV7入门雀友）');
+  });
+
   it('uses settlement snapshot cumulative scores without reapplying the current round delta', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

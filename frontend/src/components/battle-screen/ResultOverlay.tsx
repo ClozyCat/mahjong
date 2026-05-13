@@ -606,6 +606,7 @@ const SeatRow = memo(({
   const deltaClass = !seat.delta ? 'neutral' : seat.delta > 0 ? 'positive' : 'negative';
   const rowClass = seat.delta && seat.delta > 0 ? 'positive' : seat.delta && seat.delta < 0 ? 'negative' : 'neutral';
   const rowKey = `${seat.seat}-${seat.name}`;
+  const displayName = seat.displayLabel ?? seat.name;
 
   return (
     <div
@@ -615,7 +616,7 @@ const SeatRow = memo(({
     >
       <div className="result-overlay__seat-main">
         <div className="result-overlay__seat-info">
-          <span className="result-overlay__seat-name">{seat.name}</span>
+          <span className="result-overlay__seat-name">{displayName}</span>
           <span className="result-overlay__seat-tag">{seatLabel}</span>
         </div>
         <strong className="result-overlay__seat-score">{seat.score}</strong>
@@ -744,12 +745,13 @@ function SeatStatsTooltip({
   const completed = seat.stats.completedRoundCount;
   const winRate = `${(Math.round(seat.stats.winRate * 1000) / 10).toFixed(1).replace(/\.0$/, '')}%`;
   const seatLabel = getResultSeatLabel(seat, seatLabelByAbsoluteSeat);
+  const displayName = seat.displayLabel ?? seat.name;
 
   return (
     <article className="result-overlay__seat-tooltip-card">
       <div className="result-overlay__seat-tooltip-head">
         <span className="result-overlay__seat-tooltip-eyebrow">本牌局统计</span>
-        <strong>{seat.name}</strong>
+        <strong>{displayName}</strong>
         <span className="result-overlay__seat-tooltip-seat">{seatLabel}</span>
       </div>
       <div className="result-overlay__seat-tooltip-metrics">
