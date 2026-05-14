@@ -29,7 +29,7 @@
 
 .mahjong-tile--discard {
   --tile-w: var(--battle-stage-discard-width, 1.45rem);
-  --tile-h: var(--battle-stage-discard-height, 1.97rem);
+  --tile-h: var(--battle-stage-discard-height, calc(1.45rem * var(--mahjong-discard-tile-ratio, 1.32)));
 }
 
 .mahjong-tile--discard .mahjong-tile__shell {
@@ -47,7 +47,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: max(0.24rem, calc(var(--tile-w, 2rem) * 0.15));
+  border-radius: max(var(--mahjong-tile-corner-min, 0.2rem), calc(var(--tile-w, 2rem) * var(--mahjong-tile-corner-ratio, 0.13)));
   /* Refined, single-stroke border */
   border: max(1px, calc(var(--tile-unit) * 0.5)) solid color-mix(in srgb, var(--theme-paper-edge) 55%, var(--theme-paper-line) 45%);
   box-shadow:
@@ -100,7 +100,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: max(0.08rem, calc(var(--tile-w, 2rem) * 0.065));
+  border-radius: max(var(--mahjong-tile-face-corner-min, 0.07rem), calc(var(--tile-w, 2rem) * var(--mahjong-tile-face-corner-ratio, 0.055)));
   /* Flattened internal background - warm ivory core */
   background: color-mix(in srgb, #fffdf8 92%, var(--theme-paper));
   /* No internal shadow for cleaner look */
@@ -189,7 +189,7 @@
   content: '';
   position: absolute;
   inset: calc(var(--tile-unit) * -3);
-  border-radius: calc(var(--tile-w, 2rem) * 0.3);
+  border-radius: calc(var(--tile-w, 2rem) * 0.26);
   background: radial-gradient(
     circle at 50% 50%,
     color-mix(in srgb, var(--accent) 22%, transparent) 0%,

@@ -26,9 +26,16 @@
   --battle-shell-gap: 1px;
   --battle-shell-top-gap: 1px;
   --battle-shell-bottom-gap: 1px;
+  --mahjong-hand-tile-ratio: 1.52;
+  --mahjong-discard-tile-ratio: 1.32;
+  --mahjong-settlement-tile-ratio: 1.36;
+  --mahjong-tile-corner-min: 0.2rem;
+  --mahjong-tile-corner-ratio: 0.13;
+  --mahjong-tile-face-corner-min: 0.07rem;
+  --mahjong-tile-face-corner-ratio: 0.055;
   --battle-hand-tile-width-base: clamp(1.32rem, 4.6vw, 3.8rem);
   --battle-hand-tile-width: calc(var(--battle-hand-tile-width-base) * var(--table-stage-tile-scale, 1));
-  --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * 1.57);
+  --battle-hand-tile-height: calc(var(--battle-hand-tile-width) * var(--mahjong-hand-tile-ratio));
 
   /* ---- Halo Timer ---- */
   --halo-size: 100%;

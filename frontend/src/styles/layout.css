@@ -71,7 +71,7 @@
 
 .battle-screen {
   --battle-stage-discard-width: clamp(1rem, 3.2vw, 2.28rem);
-  --battle-stage-discard-height: calc(var(--battle-stage-discard-width) * 1.36);
+  --battle-stage-discard-height: calc(var(--battle-stage-discard-width) * var(--mahjong-discard-tile-ratio, 1.32));
   --battle-stage-gap: clamp(1px, 0.06vw, 0.04rem);
   position: relative;
   z-index: 1;

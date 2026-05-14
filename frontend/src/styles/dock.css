@@ -39,7 +39,7 @@
       var(--action-dock-bottom-offset) -
       var(--action-dock-local-info-clearance) -
       var(--action-dock-bottom-padding)
-    ) / 1.57
+    ) / var(--mahjong-hand-tile-ratio, 1.52)
   );
   --action-dock-tile-width: min(
     var(--battle-hand-tile-width, 3.18rem),
@@ -217,9 +217,9 @@
 
 .action-dock .mahjong-tile--hand {
   width: var(--action-dock-tile-width);
-  height: calc(var(--action-dock-tile-width) * 1.57);
+  height: calc(var(--action-dock-tile-width) * var(--mahjong-hand-tile-ratio, 1.52));
   min-width: var(--action-dock-tile-width);
-  min-height: calc(var(--action-dock-tile-width) * 1.57);
+  min-height: calc(var(--action-dock-tile-width) * var(--mahjong-hand-tile-ratio, 1.52));
 }
 
 /* ------- Empty state ------- */
@@ -476,9 +476,9 @@
 
 .action-dock__ready-hand-preview-tile {
   width: 1.28rem;
-  height: calc(1.28rem * 1.36);
+  height: calc(1.28rem * var(--mahjong-discard-tile-ratio, 1.32));
   min-width: 1.28rem;
-  min-height: calc(1.28rem * 1.36);
+  min-height: calc(1.28rem * var(--mahjong-discard-tile-ratio, 1.32));
 }
 
 .action-dock__hand-insight-winning-fans {
@@ -1154,9 +1154,9 @@
 
 .action-dock__claim-preview-tile {
   width: clamp(1.6rem, 2.3vw, 1.95rem);
-  height: calc(clamp(1.6rem, 2.3vw, 1.95rem) * 1.36);
+  height: calc(clamp(1.6rem, 2.3vw, 1.95rem) * var(--mahjong-discard-tile-ratio, 1.32));
   min-width: clamp(1.6rem, 2.3vw, 1.95rem);
-  min-height: calc(clamp(1.6rem, 2.3vw, 1.95rem) * 1.36);
+  min-height: calc(clamp(1.6rem, 2.3vw, 1.95rem) * var(--mahjong-discard-tile-ratio, 1.32));
 }
 
 .action-dock__claim-preview-tile--claim {
@@ -1252,9 +1252,9 @@
 
   .action-dock__claim-preview-tile {
     width: 1.1rem;
-    height: calc(1.1rem * 1.36);
+    height: calc(1.1rem * var(--mahjong-discard-tile-ratio, 1.32));
     min-width: 1.1rem;
-    min-height: calc(1.1rem * 1.36);
+    min-height: calc(1.1rem * var(--mahjong-discard-tile-ratio, 1.32));
   }
 
   .action-dock__fan-detail-popover {

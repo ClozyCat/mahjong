@@ -4,7 +4,9 @@ import type { Seat } from '../../../types/match';
 
 import type { BattleViewportMetrics, TableStagePlayer } from './types';
 
-const DISCARD_TILE_RATIO = 1.3586206897;
+const HAND_TILE_RATIO = 1.52;
+const DISCARD_TILE_RATIO = 1.32;
+const SETTLEMENT_TILE_RATIO = 1.36;
 
 const SEATS: Seat[] = ['top', 'left', 'right', 'bottom'];
 
@@ -292,7 +294,7 @@ export function buildTableSceneModel({
       '--table-stage-spotlight-scale': `${spotlightScale}`,
       '--battle-hand-tile-width-base': `${handBaseWidthPx}px`,
       '--battle-hand-tile-width': `calc(${handBaseWidthPx}px * var(--table-stage-tile-scale, 1))`,
-      '--battle-hand-tile-height': 'calc(var(--battle-hand-tile-width) * 1.57)',
+      '--battle-hand-tile-height': `calc(var(--battle-hand-tile-width) * ${HAND_TILE_RATIO})`,
       '--table-stage-river-columns': `${horizontalRiverColumns}`,
       '--table-stage-meld-rows-h': `${layoutProfile.horizontalMeldRows}`,
       '--table-stage-meld-cols-v': `${layoutProfile.verticalMeldColumns}`,
@@ -301,7 +303,7 @@ export function buildTableSceneModel({
       '--table-stage-river-gap': `${riverGapPx}px`,
       '--table-stage-meld-base-width': `${meldBaseWidthPx}px`,
       '--table-stage-settlement-base-width': `${settlementBaseWidthPx}px`,
-      '--table-stage-settlement-base-height': `${settlementBaseWidthPx * 1.4}px`,
+      '--table-stage-settlement-base-height': `${settlementBaseWidthPx * SETTLEMENT_TILE_RATIO}px`,
       '--table-stage-match-bar-w': `${barWidthPx}px`,
       '--table-stage-match-bar-h': `${barHeightPx}px`,
       '--table-stage-spotlight-offset': `${spotlightOffsetPx}px`,
