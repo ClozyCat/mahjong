@@ -294,7 +294,7 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.quickChatEvent?.text).toBe('Player A对Player B指指点点🈯');
+    expect(viewModel.quickChatEvent?.text).toBe('Player A对Player B指指点点💀');
   });
 
   it('renders point-gesture barrage copy as 五体投地 when actor points are lower', () => {

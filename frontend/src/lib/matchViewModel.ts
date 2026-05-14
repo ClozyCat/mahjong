@@ -1971,7 +1971,7 @@ function createPointGestureText(
   return typeof actorPoints === 'number' &&
     typeof targetPoints === 'number' &&
     actorPoints > targetPoints
-    ? `${actorName}对${targetName}指指点点🈯`
+    ? `${actorName}对${targetName}指指点点💀`
     : `${actorName}对${targetName}五体投地🛐`;
 }
 

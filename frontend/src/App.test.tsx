@@ -2707,6 +2707,6 @@ describe('App', () => {
       });
     });
 
-    expect(screen.getByText('Player A对Player B指指点点🈯')).toBeInTheDocument();
+    expect(screen.getByText('Player A对Player B指指点点💀')).toBeInTheDocument();
   });
 });
