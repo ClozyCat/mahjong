@@ -124,7 +124,9 @@ describe('BottomActionDock', () => {
     const autoPassButton = within(quickControls).getByRole('button', { name: '开启自动过杠' });
 
     expect(botButton).toHaveAttribute('aria-pressed', 'true');
+    expect(botButton).toHaveTextContent('关闭托管');
     expect(autoPassButton).toHaveAttribute('aria-pressed', 'false');
+    expect(autoPassButton).toHaveTextContent('自动过杠');
 
     await user.click(botButton);
     await user.click(autoPassButton);

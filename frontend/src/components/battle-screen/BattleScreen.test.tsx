@@ -2163,6 +2163,7 @@ describe('BattleScreen', () => {
 
     const botButton = screen.getByRole('button', { name: '切换为手动操作' });
     expect(botButton.closest('.action-dock__quick-controls')).not.toBeNull();
+    expect(botButton).toHaveTextContent('关闭托管');
 
     await user.click(botButton);
     expect(onToggleBotTakeover).toHaveBeenCalledWith(false);
@@ -2204,6 +2205,7 @@ describe('BattleScreen', () => {
     const autoPassButton = screen.getByRole('button', { name: '关闭自动过杠' });
 
     expect(autoPassButton).toHaveAttribute('aria-pressed', 'true');
+    expect(autoPassButton).toHaveTextContent('自动过杠');
     await user.click(autoPassButton);
     expect(onToggleAutoPassKong).toHaveBeenCalledWith(false);
   });

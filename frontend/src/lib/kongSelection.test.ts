@@ -228,6 +228,38 @@ describe('kongSelection', () => {
     expect(getAutoPassKongCandidateTileKeys(state)).toEqual([]);
   });
 
+  it('detects auto-pass kong possibilities from a local pung meld and one matching concealed tile', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 5,
+                concealed_tiles: [
+                  { tile_id: 'b7#0', tile_key: 'b7' },
+                  { tile_id: 'w1#0', tile_key: 'w1' },
+                ],
+                melds: [['b7', 'b7', 'b7']],
+                flowers: [],
+                discards: [],
+              },
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(1),
+            ],
+          },
+        },
+      },
+    });
+
+    expect(getAutoPassKongCandidateTileKeys(state)).toEqual(['b7']);
+  });
+
   it('flattens all candidate tile ids for first-click preselection', () => {
     const candidateTileIds = getKongCandidateTileIds(createSessionState());
 

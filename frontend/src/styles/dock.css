@@ -125,7 +125,7 @@
 
 .action-dock__quick-controls {
   position: absolute;
-  right: calc(100% + 0.44rem);
+  right: calc(100% + 0.5rem);
   bottom: 0.18rem;
   z-index: 18;
   display: flex;
@@ -139,9 +139,9 @@
 .action-dock__quick-control {
   display: inline-grid;
   place-items: center;
-  min-width: 2.45rem;
-  height: 1.48rem;
-  padding: 0 0.5rem;
+  min-width: 4.2rem;
+  height: 1.78rem;
+  padding: 0 0.72rem;
   border: 1px solid color-mix(in srgb, var(--theme-paper) 14%, transparent);
   border-radius: 999px;
   background:
@@ -149,7 +149,7 @@
     rgba(12, 12, 12, 0.78);
   color: color-mix(in srgb, var(--theme-paper-strong) 78%, transparent);
   font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', 'Noto Sans SC', sans-serif;
-  font-size: 0.66rem;
+  font-size: 0.74rem;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -1276,15 +1276,15 @@
   }
 
   .action-dock__quick-controls {
-    right: calc(100% + 0.28rem);
+    right: calc(100% + 0.32rem);
     gap: 0.22rem;
   }
 
   .action-dock__quick-control {
-    min-width: 2rem;
-    height: 1.22rem;
-    padding: 0 0.34rem;
-    font-size: 0.56rem;
+    min-width: 3.56rem;
+    height: 1.42rem;
+    padding: 0 0.46rem;
+    font-size: 0.62rem;
   }
 
   .action-dock__response-stack {

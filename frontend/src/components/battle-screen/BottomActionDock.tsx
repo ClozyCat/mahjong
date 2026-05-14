@@ -112,7 +112,7 @@ export function BottomActionDock({
     canToggleBotTakeover && onToggleBotTakeover
       ? {
           key: 'bot-takeover',
-          label: 'BOT',
+          label: '关闭托管',
           title: isBotTakeoverEnabled ? '切换为手动操作' : '切换为 BOT 代打',
           pressed: isBotTakeoverEnabled,
           onClick: () => onToggleBotTakeover(!isBotTakeoverEnabled),
@@ -121,7 +121,7 @@ export function BottomActionDock({
     canToggleAutoPassKong && onToggleAutoPassKong
       ? {
           key: 'auto-pass-kong',
-          label: '过杠',
+          label: '自动过杠',
           title: isAutoPassKongEnabled ? '关闭自动过杠' : '开启自动过杠',
           pressed: isAutoPassKongEnabled,
           onClick: () => onToggleAutoPassKong(!isAutoPassKongEnabled),

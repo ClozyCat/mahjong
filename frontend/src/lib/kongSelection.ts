@@ -244,19 +244,41 @@ function collectKnownOutsideTileKeys(state: SessionState, localSeat: number) {
   return knownTileKeys;
 }
 
+function getLocalPungMeldTileKeys(localPlayer: ReturnType<typeof getLocalPrivatePlayer>) {
+  const tileKeys = new Set<string>();
+
+  for (const meld of localPlayer?.melds ?? []) {
+    if (meld.length !== 3) {
+      continue;
+    }
+
+    const meldKey = normalizeTileKey(meld[0]);
+    if (meldKey && meld.every((tile) => normalizeTileKey(tile) === meldKey)) {
+      tileKeys.add(meldKey);
+    }
+  }
+
+  return tileKeys;
+}
+
 export function getAutoPassKongCandidateTileKeys(state: SessionState): string[] {
   const snapshot = state.roomSnapshot?.payload;
   const localSeat = getLocalSeat(state);
-  const { concealedByKey } = getConcealedByKey(state);
+  const { localPlayer, concealedByKey } = getConcealedByKey(state);
 
   if (snapshot?.phase !== 'playing' || typeof localSeat !== 'number') {
     return [];
   }
 
   const knownOutsideTileKeys = collectKnownOutsideTileKeys(state, localSeat);
+  const localPungMeldTileKeys = getLocalPungMeldTileKeys(localPlayer);
 
   return Array.from(concealedByKey.entries())
-    .filter(([tileKey, tileIds]) => tileIds.length >= 3 && !knownOutsideTileKeys.has(tileKey))
+    .filter(
+      ([tileKey, tileIds]) =>
+        (tileIds.length >= 3 && !knownOutsideTileKeys.has(tileKey)) ||
+        (tileIds.length >= 1 && localPungMeldTileKeys.has(tileKey)),
+    )
     .map(([tileKey]) => tileKey)
     .sort();
 }
