@@ -88,6 +88,51 @@ const matchResultMessage: MatchResultMessage = {
   },
 };
 
+function createPlayingSnapshot(roundId: string): RoomSnapshotMessage {
+  return {
+    ...playingRoomSnapshotMessage,
+    payload: {
+      ...playingRoomSnapshotMessage.payload,
+      private_state: {
+        round_id: roundId,
+        round_wind: 'east',
+        dealer_seat: 0,
+        current_actor: 0,
+        last_discard: null,
+        pending_action: {
+          type: 'active_turn',
+          seat_index: 0,
+          deadline_at: '2026-03-26T06:01:00Z',
+          drawn_tile_id: 'w1#0',
+          options: ['discard'],
+        },
+        players: [
+          {
+            seat_index: 0,
+            nickname: 'Player A',
+            connected: true,
+            concealed_count: 14,
+            concealed_tiles: [{ tile_id: 'w1#0', tile_key: 'w1' }],
+            melds: [],
+            flowers: [],
+            discards: [],
+          },
+          {
+            seat_index: 1,
+            nickname: 'Player B',
+            connected: true,
+            concealed_count: 13,
+            concealed_tiles: [],
+            melds: [],
+            flowers: [],
+            discards: [],
+          },
+        ],
+      },
+    },
+  };
+}
+
 describe('sessionReducer', () => {
   it('stores room snapshot and clears stale rejection errors', () => {
     const next = sessionReducer(
@@ -162,6 +207,45 @@ describe('sessionReducer', () => {
     );
 
     expect(next.latestRoundEvent).toEqual(roundEventMessage);
+  });
+
+  it('clears stale round events when a fresh room snapshot starts a new round', () => {
+    const previousRoundEvent = {
+      type: 'round_event' as const,
+      payload: {
+        event_type: 'tile_discarded',
+        event: {
+          seat: 0,
+          tile_id: 't5#discard',
+        },
+      },
+    };
+    const currentRoundSnapshot = createPlayingSnapshot('round-1');
+    const nextRoundSnapshot = createPlayingSnapshot('round-2');
+
+    const sameRound = sessionReducer(
+      {
+        ...createInitialSessionState(),
+        roomSnapshot: currentRoundSnapshot,
+        latestRoundEvent: previousRoundEvent,
+        recentRoundEvents: [previousRoundEvent],
+      },
+      {
+        type: 'ws_message',
+        message: currentRoundSnapshot,
+      },
+    );
+
+    expect(sameRound.latestRoundEvent).toEqual(previousRoundEvent);
+    expect(sameRound.recentRoundEvents).toEqual([previousRoundEvent]);
+
+    const nextRound = sessionReducer(sameRound, {
+      type: 'ws_message',
+      message: nextRoundSnapshot,
+    });
+
+    expect(nextRound.latestRoundEvent).toBeNull();
+    expect(nextRound.recentRoundEvents).toEqual([]);
   });
 
   it('retains recent round_events so transient cues are not overwritten before rendering', () => {

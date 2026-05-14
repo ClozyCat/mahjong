@@ -147,6 +147,13 @@ function appendRecentRoundEvent(
   return [...(current ?? []), incoming].slice(-RECENT_ROUND_EVENT_LIMIT);
 }
 
+function hasSnapshotRoundChanged(current: RoomSnapshotMessage | null, next: RoomSnapshotMessage) {
+  const currentRoundId = current?.payload.private_state?.round_id;
+  const nextRoundId = next.payload.private_state?.round_id;
+
+  return Boolean(currentRoundId && nextRoundId && currentRoundId !== nextRoundId);
+}
+
 function createMatchStatisticsFromScores(scores: Record<string, number> | null | undefined): MatchStatisticsState | null {
   if (!scores || Object.keys(scores).length === 0) {
     return null;
@@ -417,6 +424,7 @@ export function createInitialSessionState(): SessionState {
 }
 
 function applyRoomSnapshotMessage(state: SessionState, message: RoomSnapshotMessage): SessionState {
+  const hasRoundChanged = hasSnapshotRoundChanged(state.roomSnapshot ?? null, message);
   const localSeat = message.payload.local_seat;
   const localPlayer =
     typeof localSeat === 'number'
@@ -456,6 +464,8 @@ function applyRoomSnapshotMessage(state: SessionState, message: RoomSnapshotMess
     optimisticFlower: nextOptimisticFlower,
     latestMatchResult: keepLatestResult ? state.latestMatchResult : null,
     latestActionPrompt: null,
+    latestRoundEvent: hasRoundChanged ? null : state.latestRoundEvent,
+    recentRoundEvents: hasRoundChanged ? [] : state.recentRoundEvents,
     selectedTileIds: nextSelectedTileIds,
     selectionMode: nextSelectedTileIds.length > 0 ? state.selectionMode : null,
     matchStatistics: createMatchStatisticsFromSnapshot(message),
