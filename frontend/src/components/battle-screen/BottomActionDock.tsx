@@ -332,7 +332,7 @@ export function BottomActionDock({
                   <button
                     key={control.key}
                     type="button"
-                    className={`action-dock__quick-control ${
+                    className={`action-dock__quick-control action-dock__quick-control--${control.key} ${
                       control.pressed ? 'action-dock__quick-control--active' : ''
                     }`.trim()}
                     aria-label={control.title}
