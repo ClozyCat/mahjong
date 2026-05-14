@@ -1361,6 +1361,7 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             value_resolver: None,
             excludes: &[
                 "all_types",
+                "all_terminals_and_honours",
                 "concealed_hand",
                 "fully_concealed_hand",
                 "single_wait",
@@ -1403,6 +1404,7 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
                 "fully_concealed_hand",
                 "one_voided_suit",
                 "no_honours",
+                "single_wait",
             ],
             forbidden_with: &[],
         },
@@ -2773,7 +2775,10 @@ fn is_seven_shifted_pairs_pattern(context: &FanContext) -> bool {
     ranks == (ranks[0]..ranks[0] + 7).collect::<Vec<_>>()
 }
 fn is_nine_gates(context: &FanContext) -> bool {
-    if context.all_tile_keys.len() != 14 || context.all_tile_derived.has_honours {
+    if !context.features.concealed_hand
+        || context.all_tile_keys.len() != 14
+        || context.all_tile_derived.has_honours
+    {
         return false;
     }
     let Some(counts) = context.all_tile_derived.counts else {
@@ -3657,6 +3662,65 @@ mod tests {
     }
 
     #[test]
+    fn thirteen_orphans_scores_without_mixed_terminals_and_honours() {
+        let tile_keys = vec![
+            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red",
+            "green", "white", "white",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        assert!(
+            decompositions
+                .iter()
+                .any(|decomposition| decomposition.kind == "thirteen_orphans")
+        );
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "thirteen_orphans"));
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "all_terminals_and_honours"),
+            "thirteen orphans must not also score mixed terminals and honours, got {:?}",
+            result.fan_keys
+        );
+        assert!(!result.fan_keys.iter().any(|fan| fan == "all_types"));
+        assert!(!result.fan_keys.iter().any(|fan| fan == "fully_concealed_hand"));
+        assert!(!result.fan_keys.iter().any(|fan| fan == "single_wait"));
+        assert!(!result.fan_keys.iter().any(|fan| fan == "outside_hand"));
+    }
+
+    #[test]
     fn scores_nine_gates() {
         let tile_keys = vec![
             "w1", "w1", "w1", "w2", "w3", "w4", "w5", "w5", "w6", "w7", "w8", "w9", "w9", "w9",
@@ -3701,6 +3765,106 @@ mod tests {
                 .fan_keys
                 .iter()
                 .any(|fan| fan == "fully_concealed_hand")
+        );
+    }
+
+    #[test]
+    fn nine_gates_does_not_score_single_wait() {
+        let tile_keys = vec![
+            "w1", "w1", "w1", "w2", "w3", "w4", "w5", "w5", "w6", "w7", "w8", "w9", "w9", "w9",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: Some("w5".to_string()),
+            winning_tile: Some("w5".to_string()),
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "nine_gates"));
+        assert!(
+            !result.fan_keys.iter().any(|fan| fan == "single_wait"),
+            "nine gates must not also score single wait, got {:?}",
+            result.fan_keys
+        );
+    }
+
+    #[test]
+    fn open_hand_does_not_score_nine_gates() {
+        let concealed_tile_keys = vec![
+            "w1", "w1", "w1", "w5", "w5", "w6", "w7", "w8", "w9", "w9", "w9",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let meld_tile_key_groups = vec![vec!["w2".to_string(), "w3".to_string(), "w4".to_string()]];
+        let tile_keys = concealed_tile_keys
+            .iter()
+            .cloned()
+            .chain(meld_tile_key_groups.iter().flatten().cloned())
+            .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand_with_melds(
+            &concealed_tile_keys,
+            &meld_tile_key_groups,
+        );
+        let features = extract_hand_features(
+            &concealed_tile_keys,
+            &meld_tile_key_groups,
+            Some(&[true]),
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys,
+            meld_tile_key_groups: meld_tile_key_groups.clone(),
+            open_meld_tile_key_groups: meld_tile_key_groups,
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(
+            !result.fan_keys.iter().any(|fan| fan == "nine_gates"),
+            "open hand must not score nine gates, got {:?}",
+            result.fan_keys
         );
     }
 

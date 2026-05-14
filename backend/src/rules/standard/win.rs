@@ -999,6 +999,39 @@ mod tests {
     }
 
     #[test]
+    fn can_declare_hu_for_thirteen_orphans_without_mixed_terminals_and_honours() {
+        let tile_keys = [
+            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red",
+            "green", "white", "white",
+        ];
+        let state = test_room_state_with_concealed_tiles(&tile_keys);
+        let cache = RoomScoringCache::from_state(&state);
+
+        assert!(can_declare_hu_with_cache_for_state(
+            &state, &cache, 0, None, None
+        ));
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
+        assert!(
+            settlement
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "thirteen_orphans"),
+            "expected thirteen_orphans, got {:?}",
+            settlement.fan_keys
+        );
+        assert!(
+            !settlement
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "all_terminals_and_honours"),
+            "thirteen orphans must not also score mixed terminals and honours, got {:?}",
+            settlement.fan_keys
+        );
+    }
+
+    #[test]
     fn low_fan_self_draw_keeps_standard_label_and_still_settles() {
         let tile_keys = [
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",

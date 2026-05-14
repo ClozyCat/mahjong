@@ -352,7 +352,7 @@ const FAN_GUIDE_DEFINITIONS: Array<Omit<FanGuideEntry, 'label'>> = [
   {
     fanKey: 'seven_pairs',
     fanValue: 24,
-    intro: '和牌由七个对子组成。',
+    intro: '门清状态下和牌由七个对子组成。',
     example: '11万、22万、33筒、44筒、55条、66条、东东。',
   },
   {
@@ -466,13 +466,13 @@ const FAN_GUIDE_DEFINITIONS: Array<Omit<FanGuideEntry, 'label'>> = [
   {
     fanKey: 'seven_shifted_pairs',
     fanValue: 88,
-    intro: '同一花色内七个连续对子组成和牌。',
+    intro: '门清状态下同一花色内七个连续对子组成和牌。',
     example: '11万、22万、33万、44万、55万、66万、77万。',
   },
   {
     fanKey: 'nine_gates',
     fanValue: 88,
-    intro: '同一花色里以 1112345678999 为骨架，再加该门任意一张和牌。',
+    intro: '同一花色里以 1112345678999 为骨架，门清状态下再加该门任意一张和牌。',
     example: '1112345678999条，加任意一张条子。',
   },
   {
