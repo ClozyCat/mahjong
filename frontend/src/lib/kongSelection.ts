@@ -1,4 +1,4 @@
-import type { BackendActionType, SessionState } from '../types/match';
+import type { BackendActionType, DisplayMeldView, SessionState } from '../types/match';
 
 type MeldAction = Extract<BackendActionType, 'kong' | 'chow' | 'pung'>;
 
@@ -190,6 +190,75 @@ export function getLocalTurnKongCandidateGroups(state: SessionState): string[][]
   }
 
   return collectActiveTurnKongCandidateGroups(localPlayer, concealedByKey);
+}
+
+function addKnownTileKey(knownTileKeys: Set<string>, tileKey: unknown) {
+  if (typeof tileKey !== 'string') {
+    return;
+  }
+
+  const normalized = normalizeTileKey(tileKey);
+  if (normalized) {
+    knownTileKeys.add(normalized);
+  }
+}
+
+function collectDisplayMeldTileKeys(meld: DisplayMeldView, knownTileKeys: Set<string>) {
+  for (const tile of meld.tiles) {
+    if (tile.orientation === 'face_down') {
+      continue;
+    }
+
+    addKnownTileKey(knownTileKeys, tile.code);
+  }
+}
+
+function collectKnownOutsideTileKeys(state: SessionState, localSeat: number) {
+  const players = state.roomSnapshot?.payload.private_state?.players ?? [];
+  const knownTileKeys = new Set<string>();
+
+  for (const player of players) {
+    for (const discard of player.discards) {
+      addKnownTileKey(knownTileKeys, discard);
+    }
+
+    for (const flower of player.flowers) {
+      addKnownTileKey(knownTileKeys, flower);
+    }
+
+    for (const meld of player.display_melds ?? []) {
+      collectDisplayMeldTileKeys(meld, knownTileKeys);
+    }
+
+    if (player.seat_index === localSeat || player.display_melds?.length) {
+      continue;
+    }
+
+    for (const meld of player.melds) {
+      for (const tileKey of meld) {
+        addKnownTileKey(knownTileKeys, tileKey);
+      }
+    }
+  }
+
+  return knownTileKeys;
+}
+
+export function getAutoPassKongCandidateTileKeys(state: SessionState): string[] {
+  const snapshot = state.roomSnapshot?.payload;
+  const localSeat = getLocalSeat(state);
+  const { concealedByKey } = getConcealedByKey(state);
+
+  if (snapshot?.phase !== 'playing' || typeof localSeat !== 'number') {
+    return [];
+  }
+
+  const knownOutsideTileKeys = collectKnownOutsideTileKeys(state, localSeat);
+
+  return Array.from(concealedByKey.entries())
+    .filter(([tileKey, tileIds]) => tileIds.length >= 3 && !knownOutsideTileKeys.has(tileKey))
+    .map(([tileKey]) => tileKey)
+    .sort();
 }
 
 export function getLocalTurnKongPromptSignature(state: SessionState): string | null {

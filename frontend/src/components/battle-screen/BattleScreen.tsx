@@ -46,8 +46,11 @@ interface BattleScreenProps {
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
   isBotTakeoverEnabled?: boolean;
+  isAutoPassKongEnabled?: boolean;
+  canToggleAutoPassKong?: boolean;
   onToggleVoice?: () => void;
   onToggleBotTakeover?: (enabled: boolean) => void;
+  onToggleAutoPassKong?: (enabled: boolean) => void;
   inviteHumanUsers?: InviteDialogUser[];
   inviteAiUsers?: InviteDialogUser[];
   currentUserId?: number | null;
@@ -84,8 +87,11 @@ export function BattleScreen({
   onToggleBgm,
   isVoiceEnabled = true,
   isBotTakeoverEnabled = false,
+  isAutoPassKongEnabled = false,
+  canToggleAutoPassKong = false,
   onToggleVoice,
   onToggleBotTakeover,
+  onToggleAutoPassKong,
   currentUserId = null,
   inviteHumanUsers = [],
   inviteAiUsers = [],
@@ -421,6 +427,10 @@ export function BattleScreen({
                 isElevated={viewModel.isActionDockElevated}
                 isWaitingForMatchStart={Boolean(viewModel.waitingControls)}
                 isHandInteractionDisabled={isBotTakeoverEnabled}
+                isBotTakeoverEnabled={isBotTakeoverEnabled}
+                canToggleBotTakeover={isBotTakeoverEnabled && Boolean(onToggleBotTakeover)}
+                isAutoPassKongEnabled={isAutoPassKongEnabled}
+                canToggleAutoPassKong={canToggleAutoPassKong}
                 promptCue={viewModel.promptCue}
                 deadlineAt={viewModel.deadlineAt}
                 onTileSelect={onTileSelect}
@@ -428,6 +438,8 @@ export function BattleScreen({
                 onClaimCandidateSelect={onClaimCandidateSelect}
                 onClaimCandidateActivate={onClaimCandidateActivate}
                 onAction={handleAction}
+                onToggleBotTakeover={onToggleBotTakeover}
+                onToggleAutoPassKong={onToggleAutoPassKong}
               />
             </TableStage>
           </div>

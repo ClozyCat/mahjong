@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -90,6 +90,47 @@ describe('BottomActionDock', () => {
       'action-dock__action--themed',
       'action-dock__action--themed-pass',
     );
+  });
+
+  it('renders hand-side quick switches for bot takeover and auto-pass kong', async () => {
+    const user = userEvent.setup();
+    const onToggleBotTakeover = vi.fn();
+    const onToggleAutoPassKong = vi.fn();
+
+    render(
+      <BottomActionDock
+        hand={localHand}
+        claimCandidates={[]}
+        actions={[]}
+        isElevated={false}
+        isBotTakeoverEnabled
+        canToggleBotTakeover
+        isAutoPassKongEnabled={false}
+        canToggleAutoPassKong
+        promptCue={null}
+        deadlineAt={null}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onAction={vi.fn()}
+        onToggleBotTakeover={onToggleBotTakeover}
+        onToggleAutoPassKong={onToggleAutoPassKong}
+      />,
+    );
+
+    const quickControls = screen.getByLabelText('手牌快捷开关');
+    const botButton = within(quickControls).getByRole('button', { name: '切换为手动操作' });
+    const autoPassButton = within(quickControls).getByRole('button', { name: '开启自动过杠' });
+
+    expect(botButton).toHaveAttribute('aria-pressed', 'true');
+    expect(autoPassButton).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(botButton);
+    await user.click(autoPassButton);
+
+    expect(onToggleBotTakeover).toHaveBeenCalledWith(false);
+    expect(onToggleAutoPassKong).toHaveBeenCalledWith(true);
   });
 
   it('keeps the ready_hand button to the right of discard with the themed outline style', () => {

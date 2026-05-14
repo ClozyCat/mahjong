@@ -73,6 +73,8 @@ def parse_args() -> argparse.Namespace:
         help="打牌风格：aggressive(进攻型), balanced(平衡型), defensive(防守型)",
     )
     parser.add_argument("--recompute-old-policy-stats", action="store_true")
+    parser.add_argument("--tensor-cache", type=Path, default=None)
+    parser.add_argument("--no-tensor-cache", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="auto")
     return parser.parse_args()
@@ -373,11 +375,18 @@ def main() -> None:
     adjusted_entropy_coef = args.entropy_coef * entropy_multiplier
     adjusted_entropy_end_coef = args.entropy_end_coef * entropy_multiplier
 
+    tensor_cache = None
+    if not args.no_tensor_cache:
+        tensor_cache = args.tensor_cache
+        if tensor_cache is None:
+            tensor_cache = args.trajectories.with_suffix(args.trajectories.suffix + ".pt")
+
     dataset = ArenaTrajectoryDataset(
         args.trajectories,
         gamma=args.gamma,
         gae_lambda=args.gae_lambda,
         policy_id=args.policy_id,
+        cache_path=tensor_cache,
     )
     if trajectory_stats_are_all_zero(dataset) and not args.recompute_old_policy_stats:
         raise SystemExit(

@@ -4,6 +4,7 @@ import type { SessionState } from '../types/match';
 import {
   getActionCandidateGroups,
   getActionCandidateTileIds,
+  getAutoPassKongCandidateTileKeys,
   getFlowerCandidateTileIds,
   getKongCandidateGroups,
   getKongCandidateTileIds,
@@ -154,6 +155,77 @@ describe('kongSelection', () => {
       ['east#0'],
     ]);
     expect(getLocalTurnKongPromptSignature(state)).toContain('turn-kong:round-1:0:2026-03-26T06:01:00Z:w3#3');
+  });
+
+  it('detects auto-pass kong possibilities from three local concealed tiles and no known outside tile', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 6,
+                concealed_tiles: [
+                  { tile_id: 'w5#0', tile_key: 'w5' },
+                  { tile_id: 'w5#1', tile_key: 'w5' },
+                  { tile_id: 'w5#2', tile_key: 'w5' },
+                  { tile_id: 'b1#0', tile_key: 'b1' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(1),
+            ],
+          },
+        },
+      },
+    });
+
+    expect(getAutoPassKongCandidateTileKeys(state)).toEqual(['w5']);
+  });
+
+  it('hides auto-pass kong possibilities once the matching tile is known outside', () => {
+    const state = createSessionState({
+      roomSnapshot: {
+        type: 'room_snapshot',
+        payload: {
+          ...createSessionState().roomSnapshot!.payload,
+          private_state: {
+            ...createSessionState().roomSnapshot!.payload.private_state!,
+            players: [
+              {
+                seat_index: 0,
+                nickname: 'Player A',
+                connected: true,
+                concealed_count: 6,
+                concealed_tiles: [
+                  { tile_id: 'w5#0', tile_key: 'w5' },
+                  { tile_id: 'w5#1', tile_key: 'w5' },
+                  { tile_id: 'w5#2', tile_key: 'w5' },
+                ],
+                melds: [],
+                flowers: [],
+                discards: [],
+              },
+              {
+                ...createSessionState().roomSnapshot!.payload.private_state!.players[1],
+                discards: ['w5'],
+              },
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(2),
+            ],
+          },
+        },
+      },
+    });
+
+    expect(getAutoPassKongCandidateTileKeys(state)).toEqual([]);
   });
 
   it('flattens all candidate tile ids for first-click preselection', () => {

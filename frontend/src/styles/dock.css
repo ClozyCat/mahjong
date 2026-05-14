@@ -123,6 +123,58 @@
   overflow: visible;
 }
 
+.action-dock__quick-controls {
+  position: absolute;
+  right: calc(100% + 0.44rem);
+  bottom: 0.18rem;
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.34rem;
+  width: max-content;
+  pointer-events: auto;
+}
+
+.action-dock__quick-control {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.45rem;
+  height: 1.48rem;
+  padding: 0 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 14%, transparent);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), transparent),
+    rgba(12, 12, 12, 0.78);
+  color: color-mix(in srgb, var(--theme-paper-strong) 78%, transparent);
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', 'Noto Sans SC', sans-serif;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  backdrop-filter: blur(18px) saturate(145%);
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  transition: transform 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.action-dock__quick-control:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-2) 46%, var(--theme-border));
+  color: var(--theme-paper-strong);
+}
+
+.action-dock__quick-control--active {
+  border-color: color-mix(in srgb, var(--theme-warning) 62%, var(--theme-border));
+  color: color-mix(in srgb, var(--theme-paper-strong) 88%, var(--theme-warning));
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.34),
+    0 0 12px color-mix(in srgb, var(--theme-warning) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 10%, transparent);
+}
+
 .action-dock__info-rail {
   position: absolute;
   left: 100%;
@@ -1221,6 +1273,18 @@
   .action-dock {
     --action-dock-bottom-offset: clamp(0.4rem, 2vh, 1rem);
     --action-dock-tile-gap: clamp(1px, 0.05vw, 0.04rem);
+  }
+
+  .action-dock__quick-controls {
+    right: calc(100% + 0.28rem);
+    gap: 0.22rem;
+  }
+
+  .action-dock__quick-control {
+    min-width: 2rem;
+    height: 1.22rem;
+    padding: 0 0.34rem;
+    font-size: 0.56rem;
   }
 
   .action-dock__response-stack {

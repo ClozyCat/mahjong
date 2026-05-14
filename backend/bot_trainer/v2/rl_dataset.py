@@ -18,7 +18,21 @@ class ArenaTrajectoryDataset(Dataset):
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
         policy_id: str | None = None,
+        cache_path: Path | None = None,
     ) -> None:
+        if cache_path is not None:
+            cache = load_or_build_tensor_cache(
+                path,
+                cache_path,
+                gamma=gamma,
+                gae_lambda=gae_lambda,
+                policy_id=policy_id,
+            )
+            self.rows = list(cache["rows"])
+            self.advantages = list(cache["advantages"])
+            self.returns = list(cache["returns"])
+            self.tensors = dict(cache["tensors"])
+            return
         rows = [
             json.loads(line)
             for line in path.read_text(encoding="utf-8-sig").splitlines()
@@ -39,7 +53,89 @@ class ArenaTrajectoryDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         row = dict(self.rows[index])
         row["advantage"] = self.advantages[index]
+        if hasattr(self, "tensors"):
+            item = {
+                key: value[index]
+                for key, value in self.tensors.items()
+            }
+            item["return"] = self.tensors["return"][index]
+            item["advantage"] = self.tensors["advantage"][index]
+            return item
         return encode_row(row, self.returns[index])
+
+
+def cache_metadata(
+    source_path: Path,
+    gamma: float,
+    gae_lambda: float,
+    policy_id: str | None,
+) -> dict[str, object]:
+    stat = source_path.stat()
+    return {
+        "format": "arena_trajectory_tensor_cache_v1",
+        "source_path": str(source_path.resolve()),
+        "source_mtime_ns": stat.st_mtime_ns,
+        "source_size": stat.st_size,
+        "gamma": float(gamma),
+        "gae_lambda": float(gae_lambda),
+        "policy_id": policy_id,
+    }
+
+
+def load_or_build_tensor_cache(
+    source_path: Path,
+    cache_path: Path,
+    gamma: float,
+    gae_lambda: float,
+    policy_id: str | None,
+) -> dict[str, object]:
+    metadata = cache_metadata(source_path, gamma, gae_lambda, policy_id)
+    if cache_path.exists():
+        try:
+            cache = torch.load(cache_path, map_location="cpu", weights_only=False)
+            if isinstance(cache, dict) and cache.get("metadata") == metadata:
+                return cache
+        except Exception:
+            pass
+    return build_tensor_cache(
+        source_path,
+        cache_path,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
+        policy_id=policy_id,
+    )
+
+
+def build_tensor_cache(
+    source_path: Path,
+    cache_path: Path,
+    gamma: float,
+    gae_lambda: float,
+    policy_id: str | None = None,
+) -> dict[str, object]:
+    rows = [
+        json.loads(line)
+        for line in source_path.read_text(encoding="utf-8-sig").splitlines()
+        if line.strip()
+    ]
+    if policy_id is not None:
+        rows = [row for row in rows if row.get("policy_id") == policy_id]
+    advantages, returns = compute_gae_for_rows(
+        rows,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
+    )
+    tensors = encode_rows(rows, advantages, returns)
+    cache = {
+        "metadata": cache_metadata(source_path, gamma, gae_lambda, policy_id),
+        "rows": rows,
+        "advantages": advantages,
+        "returns": returns,
+        "tensors": tensors,
+    }
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(cache, cache_path)
+    return cache
 
 
 def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> dict[str, torch.Tensor]:
@@ -76,6 +172,55 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
             and row.get("global_scalar_features") is not None,
             dtype=torch.bool,
         ),
+    }
+
+
+def encode_rows(
+    rows: list[dict[str, Any]],
+    advantages: list[float],
+    returns: list[float],
+) -> dict[str, torch.Tensor]:
+    if not rows:
+        return empty_tensor_cache()
+    encoded = []
+    for index, row in enumerate(rows):
+        payload = dict(row)
+        payload["advantage"] = advantages[index]
+        encoded.append(encode_row(payload, returns[index]))
+    keys = encoded[0].keys()
+    return {
+        key: torch.stack([item[key] for item in encoded])
+        for key in keys
+    }
+
+
+def empty_tensor_cache() -> dict[str, torch.Tensor]:
+    return {
+        "tile_planes": torch.empty((0, 10, 34), dtype=torch.float32),
+        "scalar_features": torch.empty((0, 12), dtype=torch.float32),
+        "discard_sequence": torch.empty(
+            (0, DISCARD_SEQUENCE_LENGTH, DISCARD_EVENT_FEATURE_COUNT),
+            dtype=torch.float32,
+        ),
+        "discard_mask": torch.empty((0, 34), dtype=torch.bool),
+        "claim_mask": torch.empty((0, 7), dtype=torch.bool),
+        "self_kong_mask": torch.empty((0, 3), dtype=torch.bool),
+        "hu_mask": torch.empty((0, 2), dtype=torch.bool),
+        "action_index": torch.empty((0,), dtype=torch.long),
+        "reward": torch.empty((0,), dtype=torch.float32),
+        "return": torch.empty((0,), dtype=torch.float32),
+        "advantage": torch.empty((0,), dtype=torch.float32),
+        "step_reward": torch.empty((0,), dtype=torch.float32),
+        "terminal_reward": torch.empty((0,), dtype=torch.float32),
+        "shanten_before": torch.empty((0,), dtype=torch.long),
+        "shanten_after": torch.empty((0,), dtype=torch.long),
+        "fan_potential_before": torch.empty((0,), dtype=torch.long),
+        "fan_potential_after": torch.empty((0,), dtype=torch.long),
+        "done": torch.empty((0,), dtype=torch.bool),
+        "old_log_prob": torch.empty((0,), dtype=torch.float32),
+        "old_value": torch.empty((0,), dtype=torch.float32),
+        "action_head": torch.empty((0,), dtype=torch.long),
+        "has_global_state": torch.empty((0,), dtype=torch.bool),
     }
 
 

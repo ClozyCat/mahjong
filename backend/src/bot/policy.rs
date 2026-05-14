@@ -1,11 +1,11 @@
 use super::context::*;
-use super::neural::{
-    NeuralDecisionScores, RankedTileScore, rank_masked_claims, rank_masked_discards,
-};
+use super::features::BotFeaturesV2;
+use super::neural::{NeuralDecisionScores, RankedClaimScore, RankedTileScore};
 use super::search::{
     BotDiscardPlan, STAGE_ONE_DEPTH, SearchEngine, claim_action_bonus, claim_meld_tile_keys,
     simulated_tiles_after_removal,
 };
+use crate::bot::action_space::CLAIM_ACTION_COUNT;
 use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
 use rand::{Rng, rngs::StdRng};
 use std::{env, time::Instant};
@@ -36,6 +36,7 @@ pub(crate) struct BotPolicyDecisionTelemetry {
 pub(crate) struct BotPolicyDecision {
     pub(crate) action: BotAction,
     pub(crate) telemetry: BotPolicyDecisionTelemetry,
+    pub(crate) features: Option<BotFeaturesV2>,
     pub(crate) neural_scores: Option<NeuralDecisionScores>,
 }
 
@@ -63,8 +64,10 @@ fn choose_active_turn_action_inner(
     config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     if policy_mode == BotPolicyMode::Neural {
-        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
-            if let Some(action) = select_neural_only_active_turn_action(context, &scores) {
+        let features = crate::bot::features::encode_bot_context_v2(context);
+        if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
+            if let Some(action) = select_neural_only_active_turn_action(context, &features, &scores)
+            {
                 return Some(action);
             }
         }
@@ -168,17 +171,24 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
     if matches!(config.mode, ArenaPolicyMode::Neural) {
         if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
-                if let Some(scores) = neural_decision_scores_for_policy(context, config) {
+                let features = crate::bot::features::encode_bot_context_v2(context);
+                if let Some(scores) = neural_decision_scores_for_policy_features(&features, config)
+                {
                     telemetry.model_loaded = true;
-                    if let Some(action) =
-                        sample_neural_active_turn_action(context, &scores, config.temperature, rng)
-                    {
+                    if let Some(action) = sample_neural_active_turn_action(
+                        context,
+                        &features,
+                        &scores,
+                        config.temperature,
+                        rng,
+                    ) {
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
                             maybe_same_as_heuristic_active_turn_action(context, &action, config);
                         return Some(BotPolicyDecision {
                             action,
                             telemetry,
+                            features: Some(features),
                             neural_scores: Some(scores),
                         });
                     }
@@ -188,20 +198,24 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
                 return Some(BotPolicyDecision {
                     action,
                     telemetry,
+                    features: None,
                     neural_scores: None,
                 });
             }
         }
 
-        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
+        let features = crate::bot::features::encode_bot_context_v2(context);
+        if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
             telemetry.model_loaded = true;
-            if let Some(action) = select_neural_only_active_turn_action(context, &scores) {
+            if let Some(action) = select_neural_only_active_turn_action(context, &features, &scores)
+            {
                 telemetry.used_neural_action = true;
                 telemetry.same_as_heuristic =
                     maybe_same_as_heuristic_active_turn_action(context, &action, config);
                 return Some(BotPolicyDecision {
                     action,
                     telemetry,
+                    features: Some(features),
                     neural_scores: Some(scores),
                 });
             }
@@ -213,6 +227,7 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
     Some(BotPolicyDecision {
         action,
         telemetry,
+        features: None,
         neural_scores: None,
     })
 }
@@ -235,8 +250,9 @@ fn choose_claim_action_inner(
     config: &ArenaBotPolicyConfig,
 ) -> Option<BotAction> {
     if policy_mode == BotPolicyMode::Neural {
-        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
-            if let Some(action) = select_neural_only_claim(context, &scores) {
+        let features = crate::bot::features::encode_bot_context_v2(context);
+        if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
+            if let Some(action) = select_neural_only_claim(context, &features, &scores) {
                 return Some(action);
             }
         }
@@ -348,17 +364,24 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
     if matches!(config.mode, ArenaPolicyMode::Neural) {
         if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
-                if let Some(scores) = neural_decision_scores_for_policy(context, config) {
+                let features = crate::bot::features::encode_bot_context_v2(context);
+                if let Some(scores) = neural_decision_scores_for_policy_features(&features, config)
+                {
                     telemetry.model_loaded = true;
-                    if let Some(action) =
-                        sample_neural_claim_action(context, &scores, config.temperature, rng)
-                    {
+                    if let Some(action) = sample_neural_claim_action(
+                        context,
+                        &features,
+                        &scores,
+                        config.temperature,
+                        rng,
+                    ) {
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
                             maybe_same_as_heuristic_claim_action(context, &action, config);
                         return Some(BotPolicyDecision {
                             action,
                             telemetry,
+                            features: Some(features),
                             neural_scores: Some(scores),
                         });
                     }
@@ -368,20 +391,23 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
                 return Some(BotPolicyDecision {
                     action,
                     telemetry,
+                    features: None,
                     neural_scores: None,
                 });
             }
         }
 
-        if let Some(scores) = neural_decision_scores_for_policy(context, config) {
+        let features = crate::bot::features::encode_bot_context_v2(context);
+        if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
             telemetry.model_loaded = true;
-            if let Some(action) = select_neural_only_claim(context, &scores) {
+            if let Some(action) = select_neural_only_claim(context, &features, &scores) {
                 telemetry.used_neural_action = true;
                 telemetry.same_as_heuristic =
                     maybe_same_as_heuristic_claim_action(context, &action, config);
                 return Some(BotPolicyDecision {
                     action,
                     telemetry,
+                    features: Some(features),
                     neural_scores: Some(scores),
                 });
             }
@@ -393,6 +419,7 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
     Some(BotPolicyDecision {
         action,
         telemetry,
+        features: None,
         neural_scores: None,
     })
 }
@@ -405,13 +432,14 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
     if !matches!(config.mode, ArenaPolicyMode::Neural) {
         return None;
     }
-    let scores = neural_decision_scores_for_policy(context, config)?;
+    let features = crate::bot::features::encode_bot_context_v2(context);
+    let scores = neural_decision_scores_for_policy_features(&features, config)?;
     let choice = if config.sample_actions {
         rng.as_deref_mut()
-            .and_then(|rng| sample_neural_hu_choice(context, &scores, config.temperature, rng))
-            .or_else(|| select_neural_hu_choice(context, &scores))?
+            .and_then(|rng| sample_neural_hu_choice(&features, &scores, config.temperature, rng))
+            .or_else(|| select_neural_hu_choice(&features, &scores))?
     } else {
-        select_neural_hu_choice(context, &scores)?
+        select_neural_hu_choice(&features, &scores)?
     };
     Some(BotPolicyDecision {
         action: bot_action_for_hu_choice(context.seat_index, choice),
@@ -421,6 +449,7 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
             used_fallback: false,
             same_as_heuristic: None,
         },
+        features: Some(features),
         neural_scores: Some(scores),
     })
 }
@@ -433,13 +462,16 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
     if !matches!(config.mode, ArenaPolicyMode::Neural) {
         return None;
     }
-    let scores = neural_decision_scores_for_policy(context, config)?;
+    let features = crate::bot::features::encode_bot_context_v2(context);
+    let scores = neural_decision_scores_for_policy_features(&features, config)?;
     let action = if config.sample_actions {
         rng.as_deref_mut()
-            .and_then(|rng| sample_neural_claim_action(context, &scores, config.temperature, rng))
-            .or_else(|| select_neural_only_claim(context, &scores))?
+            .and_then(|rng| {
+                sample_neural_claim_action(context, &features, &scores, config.temperature, rng)
+            })
+            .or_else(|| select_neural_only_claim(context, &features, &scores))?
     } else {
-        select_neural_only_claim(context, &scores)?
+        select_neural_only_claim(context, &features, &scores)?
     };
     Some(BotPolicyDecision {
         telemetry: BotPolicyDecisionTelemetry {
@@ -449,6 +481,7 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
             same_as_heuristic: maybe_same_as_heuristic_claim_action(context, &action, config),
         },
         action,
+        features: Some(features),
         neural_scores: Some(scores),
     })
 }
@@ -488,12 +521,12 @@ fn bot_policy_mode_from_config(config: &ArenaBotPolicyConfig) -> BotPolicyMode {
     }
 }
 
-fn neural_decision_scores_for_policy(
-    context: &BotContext,
+fn neural_decision_scores_for_policy_features(
+    features: &BotFeaturesV2,
     config: &ArenaBotPolicyConfig,
 ) -> Option<NeuralDecisionScores> {
     let path = config.model_path.as_deref().map(std::path::Path::new);
-    super::neural::neural_decision_scores_for_model_path(context, path)
+    super::neural::neural_decision_scores_for_features(path, features.clone())
 }
 
 fn trace_discard_decision_if_enabled(
@@ -582,13 +615,13 @@ fn sample_masked_index<const N: usize>(
 
 fn sample_neural_active_turn_action(
     context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
     rng: &mut StdRng,
 ) -> Option<BotAction> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
     if context.self_kong_candidates.is_empty() {
-        return sample_neural_discard_action(context, scores, temperature, rng);
+        return sample_neural_discard_action(context, features, scores, temperature, rng);
     }
 
     let selected = sample_masked_index(
@@ -598,7 +631,7 @@ fn sample_neural_active_turn_action(
         rng,
     )?;
     match selected {
-        0 => sample_neural_discard_action(context, scores, temperature, rng),
+        0 => sample_neural_discard_action(context, features, scores, temperature, rng),
         1 | 2 => {
             let expected_kind = if selected == 1 {
                 BotSelfKongKind::Concealed
@@ -618,19 +651,21 @@ fn sample_neural_active_turn_action(
                     action_type: "kong".to_string(),
                     tile_ids: candidate.tile_ids.clone(),
                 })
-                .or_else(|| sample_neural_discard_action(context, scores, temperature, rng))
+                .or_else(|| {
+                    sample_neural_discard_action(context, features, scores, temperature, rng)
+                })
         }
-        _ => sample_neural_discard_action(context, scores, temperature, rng),
+        _ => sample_neural_discard_action(context, features, scores, temperature, rng),
     }
 }
 
 fn sample_neural_discard_action(
     context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
     rng: &mut StdRng,
 ) -> Option<BotAction> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
     let discard_logits = risk_adjusted_discard_logits(scores);
     let tile_index =
         sample_masked_index(&discard_logits, &features.discard_mask, temperature, rng)?;
@@ -650,11 +685,11 @@ fn sample_neural_discard_action(
 
 fn sample_neural_claim_action(
     context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
     rng: &mut StdRng,
 ) -> Option<BotAction> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
     let selected =
         sample_masked_index(&scores.claim_logits, &features.claim_mask, temperature, rng)?;
     let action_name = crate::bot::action_space::CLAIM_ACTIONS.get(selected)?;
@@ -670,24 +705,22 @@ fn sample_neural_claim_action(
 }
 
 fn sample_neural_hu_choice(
-    context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
     rng: &mut StdRng,
 ) -> Option<NeuralHuChoice> {
-    if should_take_legal_hu(context, scores)? {
+    if should_take_legal_hu(features, scores)? {
         return Some(NeuralHuChoice::Hu);
     }
-    let features = crate::bot::features::encode_bot_context_v2(context);
     let selected = sample_masked_index(&scores.hu_logits, &features.hu_mask, temperature, rng)?;
     neural_hu_choice_for_index(selected)
 }
 
 fn select_neural_hu_choice(
-    context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
 ) -> Option<NeuralHuChoice> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
     if !features.hu_mask[1] {
         return None;
     }
@@ -703,8 +736,7 @@ fn select_neural_hu_choice(
     })
 }
 
-fn should_take_legal_hu(context: &BotContext, scores: &NeuralDecisionScores) -> Option<bool> {
-    let features = crate::bot::features::encode_bot_context_v2(context);
+fn should_take_legal_hu(features: &BotFeaturesV2, scores: &NeuralDecisionScores) -> Option<bool> {
     if !features.hu_mask[1] {
         return Some(false);
     }
@@ -738,18 +770,22 @@ fn bot_action_for_hu_choice(seat_index: usize, choice: NeuralHuChoice) -> BotAct
 
 fn select_neural_only_active_turn_action(
     context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
 ) -> Option<BotAction> {
     if let Some(action) = select_neural_only_self_kong(context, scores) {
         return Some(action);
     }
     let discard_logits = risk_adjusted_discard_logits(scores);
-    select_neural_only_discard_plan(&rank_masked_discards(context, &discard_logits)).map(|plan| {
-        BotAction {
-            seat_index: context.seat_index,
-            action_type: "discard".to_string(),
-            tile_ids: vec![plan.tile_id],
-        }
+    select_neural_only_discard_plan(&rank_masked_discards_with_features(
+        context,
+        features,
+        &discard_logits,
+    ))
+    .map(|plan| BotAction {
+        seat_index: context.seat_index,
+        action_type: "discard".to_string(),
+        tile_ids: vec![plan.tile_id],
     })
 }
 
@@ -759,6 +795,47 @@ fn select_neural_only_discard_plan(neural_scores: &[RankedTileScore]) -> Option<
         tile_key: score.tile_key.clone(),
         score: 0,
     })
+}
+
+fn rank_masked_discards_with_features(
+    context: &BotContext,
+    features: &BotFeaturesV2,
+    logits: &[f32; TILE_KIND_COUNT],
+) -> Vec<RankedTileScore> {
+    let mut scores = Vec::new();
+    let mut visited_tile_keys = std::collections::HashSet::new();
+    for tile in &context.player.concealed_tiles {
+        if tile.is_flower || !visited_tile_keys.insert(tile.tile_key.clone()) {
+            continue;
+        }
+        let Some(index) = tile_index(&tile.tile_key) else {
+            continue;
+        };
+        if !features.discard_mask[index] {
+            continue;
+        }
+        let Some(tile_id) = context
+            .player
+            .concealed_tiles
+            .iter()
+            .find(|candidate| !candidate.is_flower && candidate.tile_key == tile.tile_key)
+            .map(|candidate| candidate.tile_id.clone())
+        else {
+            continue;
+        };
+        scores.push(RankedTileScore {
+            tile_id,
+            tile_key: tile.tile_key.clone(),
+            logit: logits[index],
+        });
+    }
+    scores.sort_by(|left, right| {
+        right
+            .logit
+            .total_cmp(&left.logit)
+            .then_with(|| right.tile_key.cmp(&left.tile_key))
+    });
+    scores
 }
 
 pub(crate) fn risk_adjusted_discard_logits(
@@ -809,9 +886,10 @@ fn sigmoid_probability(logit: f32) -> Option<f32> {
 
 fn select_neural_only_claim(
     context: &BotContext,
+    features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
 ) -> Option<BotAction> {
-    let ranked = rank_masked_claims(context, &scores.claim_logits);
+    let ranked = rank_masked_claims_with_features(context, features, &scores.claim_logits);
     let best = ranked.first()?;
     if best.action_name == "pass" {
         return Some(pass_action(context.seat_index));
@@ -822,6 +900,30 @@ fn select_neural_only_claim(
         action_type: option.action_type.clone(),
         tile_ids: option.tile_ids.clone(),
     })
+}
+
+fn rank_masked_claims_with_features(
+    _context: &BotContext,
+    features: &BotFeaturesV2,
+    logits: &[f32; CLAIM_ACTION_COUNT],
+) -> Vec<RankedClaimScore> {
+    let mut scores = crate::bot::action_space::CLAIM_ACTIONS
+        .iter()
+        .enumerate()
+        .filter_map(|(index, action_name)| {
+            features.claim_mask[index].then_some(RankedClaimScore {
+                action_name,
+                logit: logits[index],
+            })
+        })
+        .collect::<Vec<_>>();
+    scores.sort_by(|left, right| {
+        right
+            .logit
+            .total_cmp(&left.logit)
+            .then_with(|| right.action_name.cmp(left.action_name))
+    });
+    scores
 }
 
 fn select_neural_only_self_kong(
@@ -1240,8 +1342,9 @@ mod tests {
         risk_logits[tile_index("t1").expect("t1")] = -5.0;
         let scores = neural_scores_for_discards(discard_logits, risk_logits, -8.0);
 
-        let action =
-            select_neural_only_active_turn_action(&context, &scores).expect("neural action");
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let action = select_neural_only_active_turn_action(&context, &features, &scores)
+            .expect("neural action");
 
         assert_eq!(action.action_type, "discard");
         assert_eq!(normalized_action_tiles(&context, &action), vec!["t1"]);
@@ -1263,10 +1366,13 @@ mod tests {
         let low_value_scores = neural_scores_for_discards(discard_logits, risk_logits, -8.0);
         let high_value_scores = neural_scores_for_discards(discard_logits, risk_logits, 8.0);
 
-        let low_value_action = select_neural_only_active_turn_action(&context, &low_value_scores)
-            .expect("low value neural action");
-        let high_value_action = select_neural_only_active_turn_action(&context, &high_value_scores)
-            .expect("high value neural action");
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let low_value_action =
+            select_neural_only_active_turn_action(&context, &features, &low_value_scores)
+                .expect("low value neural action");
+        let high_value_action =
+            select_neural_only_active_turn_action(&context, &features, &high_value_scores)
+                .expect("high value neural action");
 
         assert_eq!(
             normalized_action_tiles(&context, &low_value_action),
@@ -1289,7 +1395,8 @@ mod tests {
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [2.0, 1.0];
 
-        let decision = select_neural_hu_choice(&context, &scores).expect("hu decision");
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let decision = select_neural_hu_choice(&features, &scores).expect("hu decision");
 
         assert_eq!(decision, NeuralHuChoice::Hu);
     }
@@ -1305,7 +1412,8 @@ mod tests {
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [5.0, 1.0];
 
-        let decision = select_neural_hu_choice(&context, &scores).expect("hu decision");
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let decision = select_neural_hu_choice(&features, &scores).expect("hu decision");
 
         assert_eq!(decision, NeuralHuChoice::Pass);
     }
@@ -1321,7 +1429,8 @@ mod tests {
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [1.0, 2.0];
 
-        let decision = select_neural_hu_choice(&context, &scores).expect("hu decision");
+        let features = crate::bot::features::encode_bot_context_v2(&context);
+        let decision = select_neural_hu_choice(&features, &scores).expect("hu decision");
 
         assert_eq!(decision, NeuralHuChoice::Hu);
     }

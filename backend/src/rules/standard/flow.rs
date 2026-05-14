@@ -49,11 +49,7 @@ fn sync_pending_timeout_for_value_room(room: &mut Value) {
 }
 
 pub fn room_ready_to_start(room: &RoomState) -> bool {
-    room.seats.len() == MAX_SEATS
-        && room
-            .seats
-            .iter()
-            .all(|seat| seat.connected || seat.is_bot)
+    room.seats.len() == MAX_SEATS && room.seats.iter().all(|seat| seat.connected || seat.is_bot)
 }
 
 #[cfg(test)]

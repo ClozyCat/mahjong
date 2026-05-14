@@ -2150,6 +2150,64 @@ describe('BattleScreen', () => {
     expect(onTileDoubleClick).not.toHaveBeenCalled();
   });
 
+  it('shows a hand-side bot takeover switch only while bot takeover is enabled', async () => {
+    const user = userEvent.setup();
+    const onToggleBotTakeover = vi.fn();
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel(),
+      {
+        isBotTakeoverEnabled: true,
+        onToggleBotTakeover,
+      },
+    );
+
+    const botButton = screen.getByRole('button', { name: '切换为手动操作' });
+    expect(botButton.closest('.action-dock__quick-controls')).not.toBeNull();
+
+    await user.click(botButton);
+    expect(onToggleBotTakeover).toHaveBeenCalledWith(false);
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel()}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
+        onLeaveTable={vi.fn()}
+        isBotTakeoverEnabled={false}
+        onToggleBotTakeover={onToggleBotTakeover}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: '切换为 BOT 代打' })).toBeNull();
+  });
+
+  it('shows a hand-side auto-pass kong switch while the kong possibility is available', async () => {
+    const user = userEvent.setup();
+    const onToggleAutoPassKong = vi.fn();
+
+    renderBattleScreen(
+      createBattleViewModel(),
+      {
+        canToggleAutoPassKong: true,
+        isAutoPassKongEnabled: true,
+        onToggleAutoPassKong,
+      },
+    );
+
+    const autoPassButton = screen.getByRole('button', { name: '关闭自动过杠' });
+
+    expect(autoPassButton).toHaveAttribute('aria-pressed', 'true');
+    await user.click(autoPassButton);
+    expect(onToggleAutoPassKong).toHaveBeenCalledWith(false);
+  });
+
 
   it('does not render an action overlay when a battle action effect is active', () => {
     renderBattleScreen(

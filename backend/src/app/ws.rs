@@ -1001,7 +1001,11 @@ async fn handle_quick_chat(
             .iter()
             .find(|seat| seat.seat_index == target_seat)
             .and_then(|seat| seat.points);
-        if seat_index == target_seat || actor_points.is_none() || target_points.is_none() || actor_points == target_points {
+        if seat_index == target_seat
+            || actor_points.is_none()
+            || target_points.is_none()
+            || actor_points == target_points
+        {
             return reject_to(connection, "invalid_action");
         }
     }
@@ -1896,7 +1900,12 @@ mod tests {
         {
             let mut runtime = room_handle.runtime.lock().await;
             runtime.room.owner_user_id = Some(owner_user_id);
-            if let Some(seat) = runtime.room.seats.iter_mut().find(|seat| seat.seat_index == 0) {
+            if let Some(seat) = runtime
+                .room
+                .seats
+                .iter_mut()
+                .find(|seat| seat.seat_index == 0)
+            {
                 seat.user_id = Some(guest_user_id);
                 seat.nickname = Some("Guest".to_string());
                 seat.points = Some(1100);
@@ -1927,7 +1936,10 @@ mod tests {
             },
         )
         .await;
-        assert!(matches!(guest_join.role, Some(ConnectionRole::Player { seat_index: 0 })));
+        assert!(matches!(
+            guest_join.role,
+            Some(ConnectionRole::Player { seat_index: 0 })
+        ));
 
         let outcome = handle_quick_chat(
             state,
@@ -1972,7 +1984,12 @@ mod tests {
         {
             let mut runtime = room_handle.runtime.lock().await;
             runtime.room.owner_user_id = Some(owner_user_id);
-            if let Some(seat) = runtime.room.seats.iter_mut().find(|seat| seat.seat_index == 0) {
+            if let Some(seat) = runtime
+                .room
+                .seats
+                .iter_mut()
+                .find(|seat| seat.seat_index == 0)
+            {
                 seat.user_id = Some(guest_user_id);
                 seat.nickname = Some("Guest".to_string());
                 seat.points = Some(600);

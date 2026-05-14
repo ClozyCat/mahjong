@@ -863,7 +863,13 @@ async fn invite_only_accept_rejects_other_pending_invites_for_invitee() -> Resul
         .await?;
     assert_eq!(me_invites.status(), StatusCode::OK);
     let invites_body = json_response(me_invites).await;
-    assert_eq!(invites_body.as_array().expect("invites should be an array").len(), 0);
+    assert_eq!(
+        invites_body
+            .as_array()
+            .expect("invites should be an array")
+            .len(),
+        0
+    );
 
     Ok(())
 }
@@ -1279,8 +1285,7 @@ async fn invite_only_accept_uses_empty_waiting_seat() -> Result<()> {
         .await?
         .expect("table should exist after accepting invite");
     let room = parse_room_json(&table.room_json)?;
-    room
-        .seats
+    room.seats
         .iter()
         .find(|seat| seat.user_id == Some(guest_id))
         .expect("guest seat should exist");

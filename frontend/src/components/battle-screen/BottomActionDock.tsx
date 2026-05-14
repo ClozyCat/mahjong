@@ -21,6 +21,10 @@ interface BottomActionDockProps {
   isElevated: boolean;
   isWaitingForMatchStart?: boolean;
   isHandInteractionDisabled?: boolean;
+  isBotTakeoverEnabled?: boolean;
+  canToggleBotTakeover?: boolean;
+  isAutoPassKongEnabled?: boolean;
+  canToggleAutoPassKong?: boolean;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
   onTileSelect: (tileId: string) => void;
@@ -28,6 +32,8 @@ interface BottomActionDockProps {
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
   onClaimCandidateActivate: (actionId: ClaimActionId, tileIds: string[]) => void;
   onAction: (actionId: BattleActionView['id']) => void;
+  onToggleBotTakeover?: (enabled: boolean) => void;
+  onToggleAutoPassKong?: (enabled: boolean) => void;
 }
 
 export function BottomActionDock({
@@ -38,6 +44,10 @@ export function BottomActionDock({
   actions,
   isWaitingForMatchStart = false,
   isHandInteractionDisabled = false,
+  isBotTakeoverEnabled = false,
+  canToggleBotTakeover = false,
+  isAutoPassKongEnabled = false,
+  canToggleAutoPassKong = false,
   promptCue,
   deadlineAt,
   onTileSelect,
@@ -45,6 +55,8 @@ export function BottomActionDock({
   onClaimCandidateSelect,
   onClaimCandidateActivate,
   onAction,
+  onToggleBotTakeover,
+  onToggleAutoPassKong,
 }: BottomActionDockProps) {
   const [isHandInsightPopoverHovered, setIsHandInsightPopoverHovered] = useState(false);
   const [isHandInsightPopoverPinned, setIsHandInsightPopoverPinned] = useState(false);
@@ -96,6 +108,26 @@ export function BottomActionDock({
   const displayedWinningFans = useMemo(() => 
     handInsight ? getDisplayedWinningFans(handInsight) : []
   , [handInsight]);
+  const quickControls = [
+    canToggleBotTakeover && onToggleBotTakeover
+      ? {
+          key: 'bot-takeover',
+          label: 'BOT',
+          title: isBotTakeoverEnabled ? '切换为手动操作' : '切换为 BOT 代打',
+          pressed: isBotTakeoverEnabled,
+          onClick: () => onToggleBotTakeover(!isBotTakeoverEnabled),
+        }
+      : null,
+    canToggleAutoPassKong && onToggleAutoPassKong
+      ? {
+          key: 'auto-pass-kong',
+          label: '过杠',
+          title: isAutoPassKongEnabled ? '关闭自动过杠' : '开启自动过杠',
+          pressed: isAutoPassKongEnabled,
+          onClick: () => onToggleAutoPassKong(!isAutoPassKongEnabled),
+        }
+      : null,
+  ].filter((control): control is NonNullable<typeof control> => Boolean(control));
 
   useEffect(() => {
     if (!isHandInsightPopoverPinned) {
@@ -294,6 +326,25 @@ export function BottomActionDock({
       <div className="action-dock__tableau action-dock__tableau--full">
         <div className="action-dock__hand-zone">
           <div className="action-dock__hand-cluster">
+            {quickControls.length > 0 ? (
+              <div className="action-dock__quick-controls" aria-label="手牌快捷开关">
+                {quickControls.map((control) => (
+                  <button
+                    key={control.key}
+                    type="button"
+                    className={`action-dock__quick-control ${
+                      control.pressed ? 'action-dock__quick-control--active' : ''
+                    }`.trim()}
+                    aria-label={control.title}
+                    aria-pressed={control.pressed}
+                    title={control.title}
+                    onClick={control.onClick}
+                  >
+                    {control.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {hand.length > 0 ? (
               <div className="action-dock__hand" aria-label="Local hand">
                 {hand.map((tile, index) => {

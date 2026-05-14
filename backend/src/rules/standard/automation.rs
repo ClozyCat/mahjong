@@ -38,6 +38,7 @@ type BotPolicyResolver<'a> = &'a dyn Fn(usize) -> ArenaBotPolicyConfig;
 pub(crate) struct BotDecisionTrace {
     pub(crate) decision_kind: String,
     pub(crate) context: crate::bot::context::BotContext,
+    pub(crate) features: Option<crate::bot::features::BotFeaturesV2>,
     pub(crate) action: BotAction,
     pub(crate) telemetry: crate::bot::policy::BotPolicyDecisionTelemetry,
     pub(crate) neural_scores: Option<crate::bot::NeuralDecisionScores>,
@@ -687,6 +688,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                                 decision_kind: "active_turn".to_string(),
                                 context,
                                 action: decision.action,
+                                features: decision.features,
                                 telemetry: decision.telemetry,
                                 neural_scores: decision.neural_scores,
                             });
@@ -711,6 +713,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                 decision_kind: "active_turn".to_string(),
                 context,
                 action: decision.action,
+                features: decision.features,
                 telemetry: decision.telemetry,
                 neural_scores: decision.neural_scores,
             })
@@ -746,6 +749,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                             decision_kind: "claim_window".to_string(),
                             context,
                             action: decision.action,
+                            features: decision.features,
                             telemetry: decision.telemetry,
                             neural_scores: decision.neural_scores,
                         });
@@ -773,6 +777,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     decision_kind: "claim_window".to_string(),
                     context,
                     action: decision.action,
+                    features: decision.features,
                     telemetry: decision.telemetry,
                     neural_scores: decision.neural_scores,
                 })
@@ -808,6 +813,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
                     decision_kind: "claim_window".to_string(),
                     context,
                     action: decision.action,
+                    features: decision.features,
                     telemetry: decision.telemetry,
                     neural_scores: decision.neural_scores,
                 })

@@ -555,7 +555,10 @@ fn trajectory_row_from_trace(
     policy: &ArenaBotPolicyConfig,
     trace: &crate::rules::standard::automation::BotDecisionTrace,
 ) -> Option<ArenaTrajectoryRow> {
-    let features = encode_bot_context_v2(&trace.context);
+    let features = trace
+        .features
+        .clone()
+        .unwrap_or_else(|| encode_bot_context_v2(&trace.context));
     let (action_head, action_index, action_semantic) =
         encode_action_for_trajectory(&trace.decision_kind, &trace.context, &trace.action)?;
     let (log_prob, value) = neural_policy_stats(
@@ -1224,6 +1227,7 @@ mod tests {
                 tile_ids: vec!["w1-0".to_string()],
             },
             context,
+            features: None,
             telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
             neural_scores: Some(NeuralDecisionScores {
                 discard_logits,
@@ -1251,6 +1255,42 @@ mod tests {
     }
 
     #[test]
+    fn trajectory_row_reuses_trace_features() {
+        let context = bot_context_for_discards(&["w1", "w2"]);
+        let mut features = encode_bot_context_v2(&context);
+        let marker = 0.42_f32;
+        features.tile_planes[0] = marker;
+        features.scalar_features[0] = marker;
+        features.discard_sequence[0] = marker;
+        let trace = BotDecisionTrace {
+            decision_kind: "active_turn".to_string(),
+            action: BotAction {
+                seat_index: 0,
+                action_type: "discard".to_string(),
+                tile_ids: vec!["w1-0".to_string()],
+            },
+            context,
+            features: Some(features),
+            telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
+            neural_scores: None,
+        };
+        let policy = ArenaBotPolicyConfig {
+            id: "learner".to_string(),
+            mode: ArenaPolicyMode::Heuristic,
+            model_path: None,
+            sample_actions: false,
+            temperature: 1.0,
+            record_heuristic_comparison: false,
+        };
+
+        let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
+
+        assert_eq!(row.tile_planes[0], marker);
+        assert_eq!(row.scalar_features[0], marker);
+        assert_eq!(row.discard_sequence[0], marker);
+    }
+
+    #[test]
     fn trajectory_log_prob_uses_risk_adjusted_discard_logits() {
         let context = bot_context_for_discards(&["w1", "t1"]);
         let w1_index = tile_index("w1").expect("w1 index");
@@ -1272,6 +1312,7 @@ mod tests {
                 tile_ids: vec!["w1-0".to_string()],
             },
             context,
+            features: None,
             telemetry: crate::bot::policy::BotPolicyDecisionTelemetry::default(),
             neural_scores: Some(scores.clone()),
         };

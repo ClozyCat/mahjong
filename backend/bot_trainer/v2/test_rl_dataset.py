@@ -9,6 +9,7 @@ from rl_dataset import (
     ArenaTrajectoryDataset,
     DISCARD_EVENT_FEATURE_COUNT,
     DISCARD_SEQUENCE_LENGTH,
+    build_tensor_cache,
     compute_discounted_returns_for_rows,
     compute_gae_for_rows,
     compute_returns,
@@ -160,6 +161,40 @@ def test_dataset_accepts_missing_global_state(tmp_path: Path) -> None:
     dataset = ArenaTrajectoryDataset(path, policy_id="learner")
 
     assert dataset[0]["has_global_state"].item() is False
+
+
+def test_dataset_writes_and_reuses_tensor_cache(tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    path = tmp_path / "trajectories.jsonl"
+    cache_path = tmp_path / "trajectories.pt"
+    row = base_trajectory_row("learner", 0, reward=1.0, value=0.2)
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    dataset = ArenaTrajectoryDataset(path, cache_path=cache_path, policy_id="learner")
+
+    assert cache_path.exists()
+    assert dataset[0]["reward"].item() == 1.0
+
+    cached_dataset = ArenaTrajectoryDataset(path, cache_path=cache_path, policy_id="learner")
+
+    assert len(cached_dataset) == 1
+    assert torch.equal(cached_dataset[0]["tile_planes"], dataset[0]["tile_planes"])
+
+
+def test_tensor_cache_rebuilds_when_policy_filter_changes(tmp_path: Path) -> None:
+    path = tmp_path / "trajectories.jsonl"
+    cache_path = tmp_path / "trajectories.pt"
+    rows = [
+        base_trajectory_row("learner", 0, reward=1.0, value=0.2),
+        base_trajectory_row("opponent", 1, reward=9.0, value=0.0),
+    ]
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    build_tensor_cache(path, cache_path, gamma=0.995, gae_lambda=0.95, policy_id="learner")
+    dataset = ArenaTrajectoryDataset(path, cache_path=cache_path, policy_id="opponent")
+
+    assert len(dataset) == 1
+    assert dataset[0]["reward"].item() == 9.0
 
 
 def test_compute_gae_for_rows_is_per_seat_episode() -> None:

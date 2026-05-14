@@ -15,6 +15,7 @@ import {
 import { useSequentialBackgroundMusic } from './lib/backgroundMusic';
 import {
   getActionCandidateGroups,
+  getAutoPassKongCandidateTileKeys,
   getFlowerCandidateTileIds,
   getLocalTurnKongCandidateGroups,
   getLocalTurnKongPromptSignature,
@@ -471,6 +472,7 @@ export default function App() {
   const [dismissedLocalTurnKongPromptSignature, setDismissedLocalTurnKongPromptSignature] = useState<string | null>(null);
   const [dismissedLocalSelfHuPromptSignature, setDismissedLocalSelfHuPromptSignature] = useState<string | null>(null);
   const [dismissedClaimPromptSignature, setDismissedClaimPromptSignature] = useState<string | null>(null);
+  const [isAutoPassKongEnabled, setIsAutoPassKongEnabled] = useState(false);
   const inviteCreatorLabelsByUserId = useMemo(() => {
     const labelsByUserId: Record<number, string> = {};
     for (const user of leaderboard) {
@@ -1086,6 +1088,8 @@ export default function App() {
   const claimPromptSignature = getClaimSelectionSignature(state);
   const isClaimPromptDismissed = claimPromptSignature !== null && claimPromptSignature === dismissedClaimPromptSignature;
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
+  const autoPassKongCandidateTileKeys = getAutoPassKongCandidateTileKeys(state);
+  const canToggleAutoPassKong = autoPassKongCandidateTileKeys.length > 0;
   const hasLocalTurnKongPrompt =
     localTurnKongPromptSignature !== null && localTurnKongPromptSignature !== dismissedLocalTurnKongPromptSignature;
   const localSelfHuPromptSignature = getLocalSelfHuPromptSignature(state);
@@ -1114,6 +1118,14 @@ export default function App() {
   const inviteHumanUsers = inviteUsers.filter(({ user }) => !user.is_special_bot);
   const inviteAiUsers = inviteUsers.filter(({ user }) => user.is_special_bot);
   useSequentialBackgroundMusic(isBgmEnabled && state.roomSnapshot !== null);
+
+  useEffect(() => {
+    if (canToggleAutoPassKong) {
+      return;
+    }
+
+    setIsAutoPassKongEnabled(false);
+  }, [canToggleAutoPassKong]);
 
   useEffect(() => {
     if (claimPromptSignature !== dismissedClaimPromptSignature) {
@@ -1173,6 +1185,36 @@ export default function App() {
     socketRef.current.send(message);
     return true;
   }
+
+  useEffect(() => {
+    const promptOptions = new Set(viewModel.promptCue?.actionIds ?? []);
+    const hasPureLocalKongPrompt =
+      isAutoPassKongEnabled &&
+      hasLocalTurnKongPrompt &&
+      localTurnKongPromptSignature !== null &&
+      viewModel.promptCue?.kind === 'turn_kong' &&
+      promptOptions.has('kong') &&
+      promptOptions.has('pass') &&
+      !promptOptions.has('hu') &&
+      !promptOptions.has('pung');
+
+    if (!hasPureLocalKongPrompt) {
+      return;
+    }
+
+    if (!sendMessage(serializeClientMessage(createActionRequestMessage('pass')))) {
+      return;
+    }
+
+    setDismissedLocalTurnKongPromptSignature(localTurnKongPromptSignature);
+    dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
+  }, [
+    hasLocalTurnKongPrompt,
+    isAutoPassKongEnabled,
+    localTurnKongPromptSignature,
+    viewModel.promptCue?.actionIds,
+    viewModel.promptCue?.kind,
+  ]);
 
   async function handleLogin(value: { identifier: string; password: string }) {
     try {
@@ -1628,7 +1670,10 @@ export default function App() {
           })
         }
         isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
+        isAutoPassKongEnabled={isAutoPassKongEnabled}
+        canToggleAutoPassKong={canToggleAutoPassKong}
         onToggleBotTakeover={handleSetBotTakeover}
+        onToggleAutoPassKong={setIsAutoPassKongEnabled}
         inviteHumanUsers={inviteHumanUsers}
         inviteAiUsers={inviteAiUsers}
         inviteStatusesByUserId={sentInviteStatusesByUserId}

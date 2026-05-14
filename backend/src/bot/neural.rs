@@ -51,6 +51,13 @@ pub(crate) fn neural_decision_scores_for_model_path(
     model_path: Option<&Path>,
 ) -> Option<NeuralDecisionScores> {
     let features = encode_bot_context_v2(context);
+    neural_decision_scores_for_features(model_path, features)
+}
+
+pub(crate) fn neural_decision_scores_for_features(
+    model_path: Option<&Path>,
+    features: BotFeaturesV2,
+) -> Option<NeuralDecisionScores> {
     if let Some(path) = model_path {
         let path = resolve_model_path(path);
         return CACHED_SESSIONS
