@@ -21,7 +21,12 @@ function shouldHideIntroForActionEffect(actionEffect: ActionEffectView | null) {
     return false;
   }
 
-  return actionEffect.emphasis !== 'draw' || actionEffect.label === '摸牌';
+  return (
+    actionEffect.emphasis === 'discard' ||
+    actionEffect.calloutTone === 'chow' ||
+    actionEffect.calloutTone === 'pung' ||
+    actionEffect.calloutTone === 'kong'
+  );
 }
 
 export const IntroductionLayer = memo(function IntroductionLayer({
@@ -35,7 +40,6 @@ export const IntroductionLayer = memo(function IntroductionLayer({
   }, [discards]);
   const hasPlayerAction = useMemo(() => {
     return shouldHideIntroForActionEffect(actionEffect) || players.some((player) =>
-      Boolean(player.isReadyHand) ||
       player.melds.length > 0,
     );
   }, [actionEffect, players]);

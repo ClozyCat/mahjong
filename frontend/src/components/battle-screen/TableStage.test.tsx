@@ -779,7 +779,7 @@ describe('TableStage', () => {
       />,
     );
 
-    expect(container.querySelector('.table-stage__intro-layer')).toBeNull();
+    expect(container.querySelector('.table-stage__intro-layer')).not.toBeNull();
 
     rerender(
       <TableStage
@@ -803,6 +803,66 @@ describe('TableStage', () => {
     );
 
     expect(container.querySelector('.table-stage__intro-layer')).not.toBeNull();
+
+    rerender(
+      <TableStage
+        discards={emptyDiscards}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={players}
+        isPlaying
+        actionEffect={{
+          key: 'ready_hand_declared-{"seat":0}',
+          label: '听',
+          emphasis: 'claim',
+          seat: 'bottom',
+          calloutTone: 'ready_hand',
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__intro-layer')).not.toBeNull();
+
+    rerender(
+      <TableStage
+        discards={emptyDiscards}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={players}
+        isPlaying
+        actionEffect={{
+          key: 'tile_discarded-{"seat":0}',
+          label: '出牌',
+          emphasis: 'discard',
+          seat: 'bottom',
+          calloutTone: null,
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__intro-layer')).toBeNull();
+
+    rerender(
+      <TableStage
+        discards={emptyDiscards}
+        activeSeat="bottom"
+        lastDiscard={null}
+        promptText={null}
+        players={players}
+        isPlaying
+        actionEffect={{
+          key: 'claim_made-{"seat":1,"claim_type":"pung"}',
+          label: '碰',
+          emphasis: 'claim',
+          seat: 'right',
+          calloutTone: 'pung',
+        }}
+      />,
+    );
+
+    expect(container.querySelector('.table-stage__intro-layer')).toBeNull();
   });
 
   it('keeps the player name color slot with the same player after wind rotation moves seats', () => {
