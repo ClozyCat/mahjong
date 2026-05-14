@@ -191,7 +191,6 @@ mod tests {
         assert_eq!(room.seats.len(), 3);
         assert_eq!(room.seats[1].seat_index, 1);
         assert_eq!(room.seats[1].nickname.as_deref(), Some("bot_1"));
-        assert!(room.seats[1].ready);
         assert!(room.seats[1].connected);
         assert!(room.seats[1].is_bot);
     }

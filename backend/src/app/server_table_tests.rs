@@ -115,39 +115,6 @@ async fn create_table(app: &Router, token: &str, multiplier: i64) -> Result<Stri
         .to_string())
 }
 
-async fn invite_and_accept(
-    app: &Router,
-    owner_token: &str,
-    guest_token: &str,
-    guest_id: i64,
-    table_code: &str,
-) -> Result<()> {
-    let invite = app
-        .clone()
-        .oneshot(authed_json_request(
-            Method::POST,
-            &format!("/api/tables/{table_code}/invites"),
-            owner_token,
-            json!({ "invitee_user_id": guest_id }),
-        ))
-        .await?;
-    assert_eq!(invite.status(), StatusCode::CREATED);
-    let invite_body = json_response(invite).await;
-    let invite_id = invite_body["id"].as_i64().expect("invite id should exist");
-
-    let accept = app
-        .clone()
-        .oneshot(authed_json_request(
-            Method::POST,
-            &format!("/api/invites/{invite_id}/accept"),
-            guest_token,
-            json!({}),
-        ))
-        .await?;
-    assert_eq!(accept.status(), StatusCode::OK);
-    Ok(())
-}
-
 async fn add_bots_to_table(
     state: &AppContext,
     worker: &DbWorker,

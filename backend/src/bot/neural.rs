@@ -1,7 +1,11 @@
 use super::action_space::{
-    CLAIM_ACTION_COUNT, CLAIM_ACTIONS, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT, tile_index,
+    CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT,
 };
-use super::context::{BotContext, BotTileView};
+#[cfg(test)]
+use super::action_space::{CLAIM_ACTIONS, tile_index};
+use super::context::BotContext;
+#[cfg(test)]
+use super::context::BotTileView;
 use super::features::{
     BotFeaturesV2, discard_event_feature_count_v2, discard_sequence_length_v2,
     encode_bot_context_v2, scalar_feature_count_v2, tile_plane_count_v2,
@@ -83,7 +87,8 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-pub(crate) fn rank_masked_discards(
+#[cfg(test)]
+fn rank_masked_discards(
     context: &BotContext,
     logits: &[f32; TILE_KIND_COUNT],
 ) -> Vec<RankedTileScore> {
@@ -120,7 +125,8 @@ pub(crate) fn rank_masked_discards(
     scores
 }
 
-pub(crate) fn rank_masked_claims(
+#[cfg(test)]
+fn rank_masked_claims(
     context: &BotContext,
     logits: &[f32; CLAIM_ACTION_COUNT],
 ) -> Vec<RankedClaimScore> {
@@ -286,6 +292,7 @@ fn extract_array<const N: usize>(
     values.get(0..N).ok_or(())?.try_into().map_err(|_| ())
 }
 
+#[cfg(test)]
 fn preferred_discard_tile_id_for_key(
     concealed_tiles: &[BotTileView],
     tile_key: &str,

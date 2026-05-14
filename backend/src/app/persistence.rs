@@ -1050,7 +1050,7 @@ impl Database {
             .conn
             .query_row(
                 "
-                SELECT users.id, users.display_name
+                SELECT users.id
                 FROM auth_sessions
                 JOIN users ON users.id = auth_sessions.user_id
                 WHERE auth_sessions.token_hash = ?1
@@ -1060,7 +1060,6 @@ impl Database {
                 |row| {
                     Ok(AuthenticatedUser {
                         user_id: row.get(0)?,
-                        display_name: row.get(1)?,
                     })
                 },
             )

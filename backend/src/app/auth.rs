@@ -7,7 +7,6 @@ use sha2::{Digest, Sha256};
 
 pub(crate) struct AuthenticatedUser {
     pub(crate) user_id: i64,
-    pub(crate) display_name: String,
 }
 
 pub(crate) fn hash_password(password: &str) -> Result<String> {
