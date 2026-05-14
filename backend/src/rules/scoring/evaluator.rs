@@ -1533,7 +1533,7 @@ pub(crate) fn registered_fan_rules() -> &'static [FanRule] {
             fan_value: 88,
             matcher: match_all_green,
             value_resolver: None,
-            excludes: &[],
+            excludes: &["half_flush"],
             forbidden_with: &[],
         },
         FanRule {
@@ -3866,6 +3866,334 @@ mod tests {
             "open hand must not score nine gates, got {:?}",
             result.fan_keys
         );
+    }
+
+    #[test]
+    fn big_four_winds_does_not_score_implied_wind_and_pung_fans() {
+        let tile_keys = vec![
+            "east", "east", "east", "south", "south", "south", "west", "west", "west", "north",
+            "north", "north", "red", "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "big_four_winds"));
+        for excluded in [
+            "all_pungs",
+            "big_three_winds",
+            "prevalent_wind",
+            "seat_wind",
+            "pung_of_terminals_or_honours",
+        ] {
+            assert!(
+                !result.fan_keys.iter().any(|fan| fan == excluded),
+                "big four winds must not also score {excluded}, got {:?}",
+                result.fan_keys
+            );
+        }
+    }
+
+    #[test]
+    fn big_three_dragons_does_not_score_lower_dragon_pungs() {
+        let tile_keys = vec![
+            "red", "red", "red", "green", "green", "green", "white", "white", "white", "w1",
+            "w2", "w3", "w9", "w9",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "big_three_dragons"));
+        assert!(!result.fan_keys.iter().any(|fan| fan == "two_dragon_pungs"));
+        assert!(!result.fan_keys.iter().any(|fan| fan == "dragon_pung"));
+    }
+
+    #[test]
+    fn all_green_with_green_dragon_does_not_score_half_flush() {
+        let tile_keys = vec![
+            "t2", "t3", "t4", "t2", "t3", "t4", "t6", "t6", "t6", "t8", "t8", "t8", "green",
+            "green",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "all_green"));
+        assert!(
+            !result.fan_keys.iter().any(|fan| fan == "half_flush"),
+            "all green with green dragon must not also score half flush, got {:?}",
+            result.fan_keys
+        );
+    }
+
+    #[test]
+    fn all_green_without_green_dragon_can_score_full_flush() {
+        let tile_keys = vec![
+            "t2", "t2", "t2", "t3", "t3", "t3", "t4", "t4", "t4", "t6", "t6", "t6", "t8",
+            "t8",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: None,
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "all_green"));
+        assert!(result.fan_keys.iter().any(|fan| fan == "full_flush"));
+    }
+
+    #[test]
+    fn four_kongs_does_not_score_lower_kong_pung_or_single_wait_fans() {
+        let tile_keys = vec![
+            "w1", "w1", "w1", "w2", "w2", "w2", "t3", "t3", "t3", "b4", "b4", "b4", "red",
+            "red",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![
+                KongEntry {
+                    kong_type: "concealed_kong".to_string(),
+                    actor_seat: 0,
+                    payer_seats: vec![1, 2, 3],
+                    tile_key: Some("w1".to_string()),
+                },
+                KongEntry {
+                    kong_type: "concealed_kong".to_string(),
+                    actor_seat: 0,
+                    payer_seats: vec![1, 2, 3],
+                    tile_key: Some("w2".to_string()),
+                },
+                KongEntry {
+                    kong_type: "exposed_kong".to_string(),
+                    actor_seat: 0,
+                    payer_seats: vec![1],
+                    tile_key: Some("t3".to_string()),
+                },
+                KongEntry {
+                    kong_type: "exposed_kong".to_string(),
+                    actor_seat: 0,
+                    payer_seats: vec![1],
+                    tile_key: Some("b4".to_string()),
+                },
+            ],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: Some("red".to_string()),
+            winning_tile: Some("red".to_string()),
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "four_kongs"));
+        for excluded in [
+            "all_pungs",
+            "single_wait",
+            "three_kongs",
+            "two_concealed_kongs",
+            "two_melded_kongs",
+            "concealed_kong",
+            "melded_kong",
+            "mixed_kongs",
+        ] {
+            assert!(
+                !result.fan_keys.iter().any(|fan| fan == excluded),
+                "four kongs must not also score {excluded}, got {:?}",
+                result.fan_keys
+            );
+        }
+    }
+
+    #[test]
+    fn seven_shifted_pairs_does_not_score_implied_pair_and_flush_fans() {
+        let tile_keys = vec![
+            "w2", "w2", "w3", "w3", "w4", "w4", "w5", "w5", "w6", "w6", "w7", "w7", "w8",
+            "w8",
+        ]
+        .into_iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+        let decompositions = decompose_winning_hand(&tile_keys);
+        let features = extract_hand_features(
+            &tile_keys,
+            &[],
+            None,
+            None,
+            Some("east"),
+            Some("east"),
+            Some(&decompositions),
+        );
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "self_draw".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: None,
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features,
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys: vec![],
+            meld_tile_key_groups: vec![],
+            open_meld_tile_key_groups: vec![],
+            incoming_tile: None,
+            winning_tile: Some("w8".to_string()),
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "seven_shifted_pairs"));
+        for excluded in [
+            "seven_pairs",
+            "full_flush",
+            "concealed_hand",
+            "fully_concealed_hand",
+            "single_wait",
+            "all_chows",
+        ] {
+            assert!(
+                !result.fan_keys.iter().any(|fan| fan == excluded),
+                "seven shifted pairs must not also score {excluded}, got {:?}",
+                result.fan_keys
+            );
+        }
     }
 
     #[test]

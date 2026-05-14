@@ -25,12 +25,36 @@
       "weight": 1
     },
     {
-      "id": "ppo1",
+      "id": "aggressive",
       "mode": "neural",
-      "model_path": "backend/bot_trainer/v2/rl_runs/202605111808/iter_003/candidate.onnx",
+      "model_path": "backend/assets/model_a/aggressive.onnx",
       "sample_actions": true,
       "temperature": 1.0,
-      "weight": 2
+      "weight": 1
+    },
+    {
+      "id": "balanced",
+      "mode": "neural",
+      "model_path": "backend/assets/model_b/balanced.onnx",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 1
+    },
+    {
+      "id": "defensive",
+      "mode": "neural",
+      "model_path": "backend/assets/model_d/defensive.onnx",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 1
+    },
+    {
+      "id": "sft",
+      "mode": "neural",
+      "model_path": "backend/assets/model_s/sft.onnx",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 1
     }
   ]
 }
