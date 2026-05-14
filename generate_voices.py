@@ -104,7 +104,7 @@ def main():
             except Exception as e:
                 print(f"  [x] 生成失败 {pinyin}.mp3: {e}")
 
-    print("\n🎉 所有语音生成完毕！文件保存在当前目录的 Mahjong_Voices 文件夹下。")
+    print("\n🎉 所有音效生成完毕！文件保存在当前目录的 Mahjong_Voices 文件夹下。")
 
 if __name__ == "__main__":
     main()

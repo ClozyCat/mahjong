@@ -583,7 +583,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '展开牌桌快捷设置' }));
 
     const settings = screen.getByRole('group', { name: '牌桌快捷设置' });
-    const voiceButton = within(settings).getByRole('button', { name: '语音开关' });
+    const voiceButton = within(settings).getByRole('button', { name: '音效开关' });
     expect(voiceButton).toHaveAttribute('aria-pressed', 'false');
 
     await user.click(voiceButton);

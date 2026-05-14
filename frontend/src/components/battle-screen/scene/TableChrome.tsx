@@ -219,9 +219,9 @@ export const TableChrome = memo(function TableChrome({
             <button
               type="button"
               className={`table-stage__quick-setting table-stage__quick-setting--voice ${isVoiceEnabled ? 'table-stage__quick-setting--active' : ''}`.trim()}
-              aria-label="语音开关"
+              aria-label="音效开关"
               aria-pressed={isVoiceEnabled}
-              title={isVoiceEnabled ? '关闭语音' : '开启语音'}
+              title={isVoiceEnabled ? '关闭音效' : '开启音效'}
               onClick={onToggleVoice}
             >
               <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
