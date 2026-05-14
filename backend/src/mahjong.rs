@@ -1980,7 +1980,7 @@ mod tests {
     }
 
     #[test]
-    fn local_restart_match_resets_scores_and_restarts_playing() {
+    fn local_finished_match_rejects_restart_match() {
         let mut room = room_for_local_continue_action();
         room["phase"] = json!("finished");
         room["match_state"]["prevailing_wind"] = json!("north");
@@ -1998,48 +1998,31 @@ mod tests {
             }
         });
 
-        record_continue_action(&mut room, 0, "restart_match").expect("restart should succeed");
+        let result = record_continue_action(&mut room, 0, "restart_match");
 
-        assert_eq!(room["phase"], "playing");
-        assert_eq!(room["match_state"]["prevailing_wind"], "east");
-        assert_eq!(room["match_state"]["hand_number"], 1);
-        assert_eq!(
-            room["match_state"]["cumulative_scores"],
-            json!({"0": 0, "1": 0, "2": 0, "3": 0})
-        );
-        assert_eq!(
-            room["match_state"]["statistics"]["completed_round_count"],
-            0
-        );
-        assert_eq!(
-            room["match_state"]["statistics"]["seat_stats_by_seat"]["0"]["score_history"],
-            json!([0])
-        );
+        assert_eq!(result, Err("invalid_action".to_string()));
+        assert_eq!(room["phase"], "finished");
+        assert_eq!(room["match_state"]["prevailing_wind"], "north");
+        assert_eq!(room["match_state"]["hand_number"], 4);
+        assert_eq!(room["match_state"]["match_finished"], true);
     }
 
     #[test]
-    fn local_final_settlement_restart_match_skips_finished_panel_and_restarts_playing() {
+    fn local_final_settlement_has_no_continue_action_and_rejects_restart_match() {
         let mut room = room_for_local_continue_action();
         room["match_state"]["prevailing_wind"] = json!("north");
         room["match_state"]["hand_number"] = json!(4);
         room["round_state"]["round_wind"] = json!("north");
 
         reconcile_continue_action_state(&mut room).expect("continue action should reconcile");
-        assert_eq!(room["continue_action"]["action_id"], "restart_match");
+        assert_eq!(room["continue_action"], Value::Null);
 
-        record_continue_action(&mut room, 0, "restart_match").expect("restart should succeed");
+        let result = record_continue_action(&mut room, 0, "restart_match");
 
-        assert_eq!(room["phase"], "playing");
-        assert_eq!(room["match_state"]["prevailing_wind"], "east");
-        assert_eq!(room["match_state"]["hand_number"], 1);
-        assert_eq!(
-            room["match_state"]["cumulative_scores"],
-            json!({"0": 0, "1": 0, "2": 0, "3": 0})
-        );
-        assert_eq!(
-            room["match_state"]["statistics"]["completed_round_count"],
-            0
-        );
+        assert_eq!(result, Err("invalid_action".to_string()));
+        assert_eq!(room["phase"], "settlement");
+        assert_eq!(room["match_state"]["prevailing_wind"], "north");
+        assert_eq!(room["match_state"]["hand_number"], 4);
         assert_eq!(room["continue_action"], Value::Null);
     }
 }

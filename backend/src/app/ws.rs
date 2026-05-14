@@ -55,7 +55,6 @@ enum ClientMessage {
     SetBotTakeover(SetBotTakeoverRequest),
     StartMatch,
     StartNextRound,
-    RestartMatch,
     LeaveTable,
     ActionRequest(ActionRequest),
     QuickChat(QuickChatRequest),
@@ -73,7 +72,6 @@ fn parse_client_message(raw: &str) -> Result<ClientMessage, serde_json::Error> {
     match value.get("type").and_then(Value::as_str) {
         Some("start_match") if has_empty_payload(&value) => Ok(ClientMessage::StartMatch),
         Some("start_next_round") if has_empty_payload(&value) => Ok(ClientMessage::StartNextRound),
-        Some("restart_match") if has_empty_payload(&value) => Ok(ClientMessage::RestartMatch),
         Some("leave_table") if has_empty_payload(&value) => Ok(ClientMessage::LeaveTable),
         _ => serde_json::from_value(value),
     }
@@ -308,14 +306,6 @@ async fn handle_client_message(
                 "start_next_round",
             )
             .await
-        }
-        ClientMessage::RestartMatch => {
-            let Some(seat_index) =
-                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
-            else {
-                return reject_to(connection, "seat_not_owned");
-            };
-            handle_continue_action(state, table_code, connection, seat_index, "restart_match").await
         }
         ClientMessage::LeaveTable => {
             let Some(seat_index) =
@@ -1560,10 +1550,6 @@ mod tests {
             (
                 r#"{"type":"start_next_round","payload":{}}"#,
                 ClientMessage::StartNextRound,
-            ),
-            (
-                r#"{"type":"restart_match","payload":{}}"#,
-                ClientMessage::RestartMatch,
             ),
             (
                 r#"{"type":"leave_table","payload":{}}"#,

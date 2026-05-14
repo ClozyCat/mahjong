@@ -205,7 +205,7 @@ export interface RoomSnapshotPayload {
   private_state?: PrivateState | null;
   continue_action?:
     | {
-        action_id: Extract<BattleActionId, 'start_next_round' | 'restart_match'>;
+        action_id: Extract<BattleActionId, 'start_next_round'>;
         confirmed_seats: number[];
         required_seats: number[];
         online_seats: number[];
@@ -397,7 +397,6 @@ export type ClientMessage =
   | { type: 'set_bot_takeover'; payload: { enabled: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
-  | { type: 'restart_match'; payload: Record<string, never> }
   | { type: 'action_request'; payload: { action_type: ActionRequestType; tile_ids: string[] } }
   | { type: 'quick_chat'; payload: { target_seat: number; emoji: QuickChatEmoji; chat_kind?: 'emoji' | 'point_gesture' } }
   | { type: 'heartbeat'; payload: { sent_at: string } };
@@ -462,7 +461,7 @@ export type BattleActionId =
   | 'invite'
   | 'start_match'
   | 'start_next_round'
-  | 'restart_match'
+  | 'match_decided'
   | BackendActionType;
 
 export interface BattleActionView {
@@ -636,7 +635,7 @@ export interface ResultView {
   seats: ResultSeatView[];
   continueAction:
     | {
-        id: Extract<BattleActionId, 'start_next_round' | 'restart_match'>;
+        id: Extract<BattleActionId, 'start_next_round' | 'match_decided'>;
         label: string;
         enabled: boolean;
         confirmation?: {

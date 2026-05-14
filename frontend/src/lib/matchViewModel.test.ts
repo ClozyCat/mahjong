@@ -1002,10 +1002,10 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.mode).toBe('finished');
     expect(viewModel.canLeaveTable).toBe(true);
-    expect(viewModel.topStatusLabel).toBe('等待再来一局');
+    expect(viewModel.topStatusLabel).toBe('整场结束');
   });
 
-  it('keeps the restart action clickable for players who have not confirmed yet', () => {
+  it('shows only a disabled final placeholder after the full match finishes', () => {
     const base = createFinishedSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -1014,7 +1014,7 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           continue_action: {
-            action_id: 'restart_match',
+            action_id: 'start_next_round',
             confirmed_seats: [1],
             required_seats: [0, 1, 2, 3],
             online_seats: [0, 1, 2],
@@ -1024,14 +1024,9 @@ describe('createMatchViewModel', () => {
     });
 
     expect(viewModel.result?.continueAction).toMatchObject({
-      id: 'restart_match',
-      label: '再来一局',
-      enabled: true,
-      confirmation: {
-        confirmedCount: 1,
-        requiredCount: 4,
-        isLocalConfirmed: false,
-      },
+      id: 'match_decided',
+      label: '大局已定',
+      enabled: false,
     });
   });
 
@@ -1502,7 +1497,7 @@ describe('createMatchViewModel', () => {
     });
   });
 
-  it('uses final-score copy for the north-four settlement action', () => {
+  it('uses a disabled final placeholder for the north-four settlement action', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({
       ...base,
@@ -1523,11 +1518,11 @@ describe('createMatchViewModel', () => {
       },
     });
 
-    expect(viewModel.actions.find((action) => action.id === 'restart_match')?.label).toBe('再来一局');
+    expect(viewModel.actions.map((action) => String(action.id))).not.toContain('restart_match');
     expect(viewModel.result?.continueAction).toMatchObject({
-      id: 'restart_match',
-      label: '再来一局',
-      enabled: true,
+      id: 'match_decided',
+      label: '大局已定',
+      enabled: false,
     });
   });
 

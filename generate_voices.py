@@ -8,15 +8,9 @@ API_URL = "https://tts.060889.xyz/v1/audio/speech"
 # README中提供的所有男女声音色
 VOICES = [
     # 女声
-    "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-XiaochenNeural",
-    "zh-CN-XiaohanNeural", "zh-CN-XiaomengNeural", "zh-CN-XiaomoNeural",
-    "zh-CN-XiaoqiuNeural", "zh-CN-XiaoruiNeural", "zh-CN-XiaoshuangNeural",
-    "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural", "zh-CN-XiaoyouNeural",
-    "zh-CN-XiaozhenNeural",
+    "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-XiaohanNeural",
     # 男声
     "zh-CN-YunxiNeural", "zh-CN-YunyangNeural", "zh-CN-YunjianNeural",
-    "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural", "zh-CN-YunxiaNeural",
-    "zh-CN-YunyeNeural", "zh-CN-YunzeNeural"
 ]
 
 # 生成麻将词汇和对应的拼音文件名映射
@@ -42,14 +36,14 @@ mahjong_terms.extend([
     ("杠", "gang"),
     ("碰", "peng"),
     ("吃", "chi"),
-    ("胡", "hu"),   # 注意“和”在这里读 hu
-    ("东", "dong"),
-    ("南", "nan"),
-    ("西", "xi"),
-    ("北", "bei"),
-    ("中", "zhong"),
-    ("发", "fa"),
-    ("白", "bai")
+    ("胡", "hu"),
+    ("东风", "dong"),
+    ("南风", "nan"),
+    ("西风", "xi"),
+    ("北风", "bei"),
+    ("红中", "zhong"),
+    ("发财", "fa"),
+    ("白板", "bai")
 ])
 
 def main():
@@ -80,9 +74,9 @@ def main():
             payload = {
                 "input": text,
                 "voice": voice,
-                "speed": 1.0,
-                "pitch": "0",
-                "style": "assistant"
+                "speed": 2.0,
+                "pitch": "50",
+                "style": "cheerful"
             }
 
             try:

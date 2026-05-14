@@ -12,3 +12,4 @@ node_modules/
 backend/bot_trainer/datasets
 .venv/
 *.pyc
+Mahjong_Voices/

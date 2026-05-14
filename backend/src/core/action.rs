@@ -25,7 +25,6 @@ pub enum GameCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContinueActionKind {
     StartNextRound,
-    RestartMatch,
     Other(String),
 }
 

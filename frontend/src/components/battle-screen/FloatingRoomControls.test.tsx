@@ -51,7 +51,6 @@ describe('FloatingRoomControls', () => {
           { id: 'invite', label: '邀请', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
           { id: 'start_next_round', label: '下一局', enabled: true, emphasis: 'high' },
-          { id: 'restart_match', label: '再来一局', enabled: false, emphasis: 'medium' },
         ]}
         tableCode="AB12CD"
         canLeaveTable

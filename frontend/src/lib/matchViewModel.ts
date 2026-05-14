@@ -38,7 +38,6 @@ const WINDS: PlayerView['wind'][] = ['East', 'South', 'West', 'North'];
 const ACTION_ORDER: BattleActionId[] = [
   'start_match',
   'start_next_round',
-  'restart_match',
   'discard',
   'ready_hand',
   'flower',
@@ -64,7 +63,7 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   invite: '邀请',
   start_match: '开始对局',
   start_next_round: '下一局',
-  restart_match: '再来一局',
+  match_decided: '大局已定',
   discard: '出牌',
   ready_hand: '听',
   flower: '补花',
@@ -362,7 +361,7 @@ function createPromptText(state: SessionState, options: MatchViewModelOptions = 
   }
 
   if (state.roomSnapshot?.payload.phase === 'finished') {
-    return '整场对局已结束，可发起再来一局';
+    return '整场对局已结束';
   }
 
   return null;
@@ -652,8 +651,6 @@ function createActionViews(
 ): BattleActionView[] {
   const snapshot = state.roomSnapshot?.payload;
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
-  const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
-  const settlementContinueActionId = getSettlementContinueActionId(state);
   const promptOptions = new Set<BackendActionType>(getPromptOptions(state, options));
   const localTurnKongCandidateGroups = getLocalTurnKongCandidateGroups(state);
   const kongCandidateGroups = options.showLocalTurnKongPrompt
@@ -682,12 +679,6 @@ function createActionViews(
     !localReadyHandLocked &&
     Boolean(selectedReadyHandPreview?.is_tenpai);
   const canContinueRound = snapshot?.phase === 'settlement' && typeof snapshot.local_seat === 'number';
-  const canRestartMatchFromSettlement = canContinueRound && settlementContinueActionId === 'restart_match';
-  const canRestartMatch =
-    canRestartMatchFromSettlement ||
-    (snapshot?.phase === 'finished' &&
-      snapshot.match_state?.match_finished === true &&
-      typeof snapshot.local_seat === 'number');
 
   return ACTION_ORDER.map((id) => {
     let enabled = false;
@@ -697,10 +688,8 @@ function createActionViews(
     } else if (id === 'start_next_round') {
       enabled =
         canContinueRound &&
-        settlementContinueActionId === 'start_next_round' &&
+        !isFinalSettlement(state) &&
         !nextRoundConfirmation?.isLocalConfirmed;
-    } else if (id === 'restart_match') {
-      enabled = canRestartMatch && !restartMatchConfirmation?.isLocalConfirmed;
     } else if (options.showLocalTurnKongPrompt && id === 'kong') {
       enabled = kongCandidateGroups.length > 0;
     } else if (options.showLocalTurnKongPrompt && id === 'pass') {
@@ -737,7 +726,7 @@ function createActionViews(
     }
 
     const emphasis =
-      id === 'start_match' || id === 'start_next_round' || id === 'restart_match' || (id === 'discard' && enabled)
+      id === 'start_match' || id === 'start_next_round' || (id === 'discard' && enabled)
         ? 'high'
         : enabled
           ? 'medium'
@@ -746,7 +735,6 @@ function createActionViews(
       id,
       label: getActionLabel(state, id, waitingControls, {
         startNextRound: nextRoundConfirmation,
-        restartMatch: restartMatchConfirmation,
       }),
       enabled,
       emphasis,
@@ -760,15 +748,9 @@ function getActionLabel(
   waitingControls: WaitingControls | null,
   continueActionConfirmations?: {
     startNextRound: ReturnType<typeof createContinueActionConfirmation>;
-    restartMatch: ReturnType<typeof createContinueActionConfirmation>;
   },
 ) {
-  const confirmation =
-    id === 'start_next_round'
-      ? continueActionConfirmations?.startNextRound
-      : id === 'restart_match'
-        ? continueActionConfirmations?.restartMatch
-        : null;
+  const confirmation = id === 'start_next_round' ? continueActionConfirmations?.startNextRound : null;
   if (confirmation?.countdownDeadlineAt) {
     return formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt);
   }
@@ -1385,13 +1367,10 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
   const isConnectionInteractive = state.connectionStatus === 'connected';
   const localSeat = getPerspectiveSeat(state, options);
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
-  const restartMatchConfirmation = createContinueActionConfirmation(state, 'restart_match');
 
   if (snapshot.phase === 'settlement' && state.latestMatchResult) {
     const result = state.latestMatchResult.payload;
-    const continueActionId = getSettlementContinueActionId(state);
-    const continueActionConfirmation =
-      continueActionId === 'restart_match' ? restartMatchConfirmation : nextRoundConfirmation;
+    const isFinalHand = isFinalSettlement(state);
     const pages = createResultPages(result, localSeat);
     const primaryPage = pages[0] ?? null;
     const scoreDeltaBySeat: Partial<Record<Seat, number>> = {};
@@ -1429,27 +1408,9 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
       pages,
       scoreDeltaBySeat,
       seats: createResultSeats(state, result.score_delta.total_delta_by_seat, options),
-      continueAction: {
-        id: continueActionId,
-        label: !isConnectionInteractive
-          ? '重连中...'
-          : continueActionConfirmation?.countdownDeadlineAt
-            ? formatContinueActionCountdownLabel(continueActionConfirmation.countdownDeadlineAt)
-            : continueActionConfirmation?.isLocalConfirmed
-              ? formatContinueActionConfirmedLabel(
-                  continueActionConfirmation.confirmedCount,
-                  continueActionConfirmation.requiredCount,
-                )
-              : continueActionId === 'restart_match'
-                ? ACTION_LABELS.restart_match
-                : getStartNextRoundLabel(state),
-        enabled:
-          isConnectionInteractive &&
-          typeof snapshot.local_seat === 'number' &&
-          !continueActionConfirmation?.isLocalConfirmed,
-        countdownDeadlineAt: continueActionConfirmation?.countdownDeadlineAt ?? undefined,
-        confirmation: continueActionConfirmation ?? undefined,
-      },
+      continueAction: isFinalHand
+        ? createMatchDecidedPlaceholder()
+        : createStartNextRoundContinueAction(state, nextRoundConfirmation, isConnectionInteractive),
     };
   }
 
@@ -1457,7 +1418,7 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
     return {
       roundId: snapshot.match_state?.last_completed_round_id ?? null,
       title: '整场结束',
-      summary: '本桌完整对局已经结束，可以直接发起再来一局。',
+      summary: '本桌完整对局已经结束，只能退出牌桌。',
       fanTotal: null,
       winnerSeat: null,
       discarderSeat: null,
@@ -1468,26 +1429,7 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
       fanBreakdown: [],
       scoreDeltaBySeat: {},
       seats: createResultSeats(state, null, options),
-      continueAction: {
-        id: 'restart_match',
-        label: !isConnectionInteractive
-          ? '重连中...'
-          : restartMatchConfirmation?.countdownDeadlineAt
-            ? formatContinueActionCountdownLabel(restartMatchConfirmation.countdownDeadlineAt)
-            : restartMatchConfirmation?.isLocalConfirmed
-              ? formatContinueActionConfirmedLabel(
-                  restartMatchConfirmation.confirmedCount,
-                  restartMatchConfirmation.requiredCount,
-                )
-              : ACTION_LABELS.restart_match,
-        enabled:
-          isConnectionInteractive &&
-          snapshot.match_state?.match_finished === true &&
-          typeof snapshot.local_seat === 'number' &&
-          !restartMatchConfirmation?.isLocalConfirmed,
-        countdownDeadlineAt: restartMatchConfirmation?.countdownDeadlineAt ?? undefined,
-        confirmation: restartMatchConfirmation ?? undefined,
-      },
+      continueAction: createMatchDecidedPlaceholder(),
     };
   }
 
@@ -1900,7 +1842,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     topStatusLabel: isReconnecting
       ? '正在重连'
       : snapshot?.phase === 'finished'
-        ? '等待再来一局'
+        ? '整场结束'
         : snapshot?.phase === 'settlement'
           ? '结算中'
           : dealerSelection
@@ -2038,10 +1980,7 @@ function getSeatPoints(state: SessionState, seatIndex: number) {
   return typeof seat?.points === 'number' ? seat.points : null;
 }
 
-function createContinueActionConfirmation(
-  state: SessionState,
-  actionId: Extract<BattleActionId, 'start_next_round' | 'restart_match'>,
-) {
+function createContinueActionConfirmation(state: SessionState, actionId: Extract<BattleActionId, 'start_next_round'>) {
   const snapshot = state.roomSnapshot?.payload;
   const continueAction = snapshot?.continue_action;
   const localSeat = snapshot?.local_seat;
@@ -2077,15 +2016,36 @@ function getStartNextRoundLabel(_state: SessionState) {
   return ACTION_LABELS.start_next_round;
 }
 
-function getSettlementContinueActionId(
-  state: SessionState,
-): Extract<BattleActionId, 'start_next_round' | 'restart_match'> {
-  const advertisedActionId = state.roomSnapshot?.payload.continue_action?.action_id;
-  if (advertisedActionId === 'start_next_round' || advertisedActionId === 'restart_match') {
-    return advertisedActionId;
-  }
+function createMatchDecidedPlaceholder(): NonNullable<BattleViewModel['result']>['continueAction'] {
+  return {
+    id: 'match_decided',
+    label: ACTION_LABELS.match_decided,
+    enabled: false,
+  };
+}
 
-  return isFinalSettlement(state) ? 'restart_match' : 'start_next_round';
+function createStartNextRoundContinueAction(
+  state: SessionState,
+  confirmation: ReturnType<typeof createContinueActionConfirmation>,
+  isConnectionInteractive: boolean,
+): NonNullable<BattleViewModel['result']>['continueAction'] {
+  const snapshot = state.roomSnapshot?.payload;
+  return {
+    id: 'start_next_round',
+    label: !isConnectionInteractive
+      ? '重连中...'
+      : confirmation?.countdownDeadlineAt
+        ? formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt)
+        : confirmation?.isLocalConfirmed
+          ? formatContinueActionConfirmedLabel(confirmation.confirmedCount, confirmation.requiredCount)
+          : getStartNextRoundLabel(state),
+    enabled:
+      isConnectionInteractive &&
+      typeof snapshot?.local_seat === 'number' &&
+      !confirmation?.isLocalConfirmed,
+    countdownDeadlineAt: confirmation?.countdownDeadlineAt ?? undefined,
+    confirmation: confirmation ?? undefined,
+  };
 }
 
 function isFinalSettlement(state: SessionState) {

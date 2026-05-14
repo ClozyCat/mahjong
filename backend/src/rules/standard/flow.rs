@@ -1,5 +1,4 @@
 use chrono::{SecondsFormat, TimeDelta, Utc};
-use rand::Rng;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -126,7 +125,6 @@ pub fn record_continue_action_in_room_state(
     if current_action != action_id {
         return Err(match action_id {
             "start_next_round" => "round_not_ready".to_string(),
-            "restart_match" => "match_not_finished".to_string(),
             _ => "invalid_action".to_string(),
         });
     }
@@ -208,7 +206,6 @@ pub fn record_continue_action(
     if current_action != action_id {
         return Err(match action_id {
             "start_next_round" => "round_not_ready".to_string(),
-            "restart_match" => "match_not_finished".to_string(),
             _ => "invalid_action".to_string(),
         });
     }
@@ -491,7 +488,7 @@ fn remap_seat_keyed_map<T>(
 
 #[cfg(test)]
 #[allow(dead_code)]
-fn settlement_uses_restart_match(room: &Value) -> bool {
+fn settlement_is_final_hand(room: &Value) -> bool {
     room.get("phase").and_then(Value::as_str) == Some("settlement")
         && room
             .get("match_state")
@@ -507,7 +504,7 @@ fn settlement_uses_restart_match(room: &Value) -> bool {
             .unwrap_or(false)
 }
 
-fn settlement_uses_restart_match_in_room_state(room: &RoomState) -> bool {
+fn settlement_is_final_hand_in_room_state(room: &RoomState) -> bool {
     room.phase == "settlement"
         && room
             .match_state
@@ -522,24 +519,14 @@ fn settlement_uses_restart_match_in_room_state(room: &RoomState) -> bool {
 #[allow(dead_code)]
 fn current_continue_action_id(room: &Value) -> Option<&'static str> {
     match room.get("phase").and_then(Value::as_str) {
-        Some("settlement") => Some(if settlement_uses_restart_match(room) {
-            "restart_match"
-        } else {
-            "start_next_round"
-        }),
-        Some("finished") => Some("restart_match"),
+        Some("settlement") if !settlement_is_final_hand(room) => Some("start_next_round"),
         _ => None,
     }
 }
 
 fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static str> {
     match room.phase.as_str() {
-        "settlement" => Some(if settlement_uses_restart_match_in_room_state(room) {
-            "restart_match"
-        } else {
-            "start_next_round"
-        }),
-        "finished" => Some("restart_match"),
+        "settlement" if !settlement_is_final_hand_in_room_state(room) => Some("start_next_round"),
         _ => None,
     }
 }
@@ -616,26 +603,6 @@ fn current_confirmed_continue_seats_in_room_state(room: &RoomState, action_id: &
         .filter(|action| action.action_id == action_id)
         .map(|action| action.confirmed_seats.clone())
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn continue_all_occupied_seats(room: &Value) -> Vec<usize> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
-        })
-        .collect()
-}
-
-fn continue_all_occupied_seats_in_room_state(room: &RoomState) -> Vec<usize> {
-    room.seats.iter().map(|seat| seat.seat_index).collect()
 }
 
 #[cfg(test)]
@@ -779,13 +746,6 @@ fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), Str
     })?;
     match action_id {
         "start_next_round" => complete_start_next_round(room),
-        "restart_match" => {
-            if room.get("phase").and_then(Value::as_str) == Some("settlement") {
-                complete_restart_match_from_settlement(room)
-            } else {
-                complete_restart_match(room)
-            }
-        }
         _ => Err("invalid_action".to_string()),
     }
 }
@@ -797,52 +757,8 @@ fn complete_continue_action_in_room_state(
     room.continue_action = None;
     match action_id {
         "start_next_round" => complete_start_next_round_in_room_state(room),
-        "restart_match" => {
-            if room.phase == "settlement" {
-                complete_restart_match_from_settlement_in_room_state(room)
-            } else {
-                complete_restart_match_in_room_state(room)
-            }
-        }
         _ => Err("invalid_action".to_string()),
     }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn complete_restart_match(room: &mut Value) -> Result<(), String> {
-    let occupied = continue_all_occupied_seats(room);
-    if occupied.is_empty() {
-        return Err("invalid_action".to_string());
-    }
-    let mut rng = rand::rng();
-    let dealer_index = rng.random_range(0..occupied.len());
-    start_match(room, occupied[dealer_index], rand::random::<u64>());
-    Ok(())
-}
-
-fn complete_restart_match_in_room_state(room: &mut RoomState) -> Result<(), String> {
-    let occupied = continue_all_occupied_seats_in_room_state(room);
-    if occupied.is_empty() {
-        return Err("invalid_action".to_string());
-    }
-    let mut rng = rand::rng();
-    let dealer_index = rng.random_range(0..occupied.len());
-    start_match_in_room_state(room, occupied[dealer_index], rand::random::<u64>())
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn complete_restart_match_from_settlement(room: &mut Value) -> Result<(), String> {
-    apply_settlement_to_match(room);
-    complete_restart_match(room)
-}
-
-fn complete_restart_match_from_settlement_in_room_state(
-    room: &mut RoomState,
-) -> Result<(), String> {
-    apply_settlement_to_match_in_room_state(room);
-    complete_restart_match_in_room_state(room)
 }
 
 #[cfg(test)]
@@ -1425,6 +1341,56 @@ mod tests {
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "north");
         assert_eq!(match_state.hand_number, 1);
+    }
+
+    #[test]
+    fn north_four_settlement_has_no_continue_action_and_rejects_restart() {
+        let mut room = settlement_room_at_wind_end("north");
+
+        reconcile_continue_action_in_room_state(&mut room)
+            .expect("final settlement should reconcile");
+
+        assert!(room.continue_action.is_none());
+        assert_eq!(
+            record_continue_action_in_room_state(&mut room, 0, "restart_match"),
+            Err("invalid_action".to_string())
+        );
+        assert_eq!(room.phase, "settlement");
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "north");
+        assert_eq!(match_state.hand_number, 4);
+    }
+
+    #[test]
+    fn finished_match_has_no_continue_action_and_rejects_restart() {
+        let mut room = settlement_room_at_wind_end("north");
+        room.phase = "finished".to_string();
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.match_finished = true;
+        room.continue_action = Some(ContinueActionState {
+            action_id: "restart_match".to_string(),
+            confirmed_seats: Vec::new(),
+            required_seats: Vec::new(),
+            online_seats: Vec::new(),
+            auto_advance_deadline_at: None,
+        });
+
+        reconcile_continue_action_in_room_state(&mut room)
+            .expect("finished match should reconcile");
+
+        assert!(room.continue_action.is_none());
+        assert_eq!(
+            record_continue_action_in_room_state(&mut room, 0, "restart_match"),
+            Err("invalid_action".to_string())
+        );
+        assert_eq!(room.phase, "finished");
+        assert_eq!(
+            room.match_state
+                .as_ref()
+                .expect("match should exist")
+                .match_finished,
+            true
+        );
     }
 
     #[test]

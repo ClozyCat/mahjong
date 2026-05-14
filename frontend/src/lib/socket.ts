@@ -75,13 +75,6 @@ export function createStartNextRoundMessage(): ClientMessage {
   };
 }
 
-export function createRestartMatchMessage(): ClientMessage {
-  return {
-    type: 'restart_match',
-    payload: {},
-  };
-}
-
 export function createActionRequestMessage(actionType: ActionRequestType, tileIds?: string[]): ClientMessage {
   return {
     type: 'action_request',

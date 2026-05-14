@@ -30,7 +30,6 @@ import {
   createLeaveTableMessage,
   createQuickChatMessage,
   createPointGestureMessage,
-  createRestartMatchMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
   createStartNextRoundMessage,
@@ -82,7 +81,6 @@ const CLAIM_RESPONSE_ACTION_IDS = ['chow', 'pung', 'kong', 'hu'] as const;
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'start_match',
   'start_next_round',
-  'restart_match',
 ]);
 type AuthStatus = 'loading' | 'anonymous' | 'ready';
 type SentInviteStatus = 'pending' | 'rejected';
@@ -1376,11 +1374,6 @@ export default function App() {
 
     if (actionId === 'start_next_round') {
       sendMessage(serializeClientMessage(createStartNextRoundMessage()));
-      return;
-    }
-
-    if (actionId === 'restart_match') {
-      sendMessage(serializeClientMessage(createRestartMatchMessage()));
       return;
     }
 

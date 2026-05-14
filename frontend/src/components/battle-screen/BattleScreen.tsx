@@ -459,7 +459,7 @@ export function BattleScreen({
 }
 
 const PRE_MATCH_ACTION_IDS: BattleActionId[] = ['start_match'];
-const HIDDEN_TABLE_ACTION_IDS: BattleActionId[] = ['start_next_round', 'restart_match'];
+const HIDDEN_TABLE_ACTION_IDS: BattleActionId[] = ['start_next_round'];
 const TABLE_ONLY_ACTION_IDS: BattleActionId[] = ['invite', ...PRE_MATCH_ACTION_IDS, ...HIDDEN_TABLE_ACTION_IDS];
 
 function hasInviteableSeat(viewModel: BattleViewModel) {
