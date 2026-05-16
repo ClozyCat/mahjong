@@ -94,7 +94,7 @@ pub fn try_process_due_timeout_in_room_state(
             let extra = match_state.extra_time_pool.get(&timeout_seat).copied().unwrap_or(0);
             if extra > 0 {
                 // 使用所有剩余额外时间延长倒计时
-                let new_deadline = (Utc::now() + chrono::TimeDelta::seconds(15 + extra))
+                let new_deadline = (Utc::now() + chrono::TimeDelta::seconds(extra))
                     .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                 if let Some(ref mut pt) = room.pending_timeout {
                     pt.deadline_at = Some(new_deadline);

@@ -265,7 +265,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   const shouldShowActionArrow = Boolean(stableDealerSelection || stableActionSeat);
   const visibleActionLabel = shouldShowActionArrow ? null : WAITING_ACTION_LABEL;
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
-  const isExtraTime = remainingSeconds !== null && remainingSeconds > NORMAL_TIMEOUT_SECONDS;
+  const isExtraTime = remainingExtraTime > 0;
 
   useLayoutEffect(() => {
     reportStatusBarSize(statusBarRef.current, onSizeChange);

@@ -40,10 +40,10 @@ fn refund_unused_extra_time(room: &mut RoomState) {
     let now = Utc::now();
     if deadline > now {
         let remaining = (deadline - now).num_seconds().max(0);
-        // 截止时间 = now + 15 + extra，剩余超过15s的部分即为未使用的额外时间
+        // 截止时间 = now + extra，剩余全部为额外时间
+        // remaining > 15 说明确实有额外时间（正常15s倒计时不会超过15）
         if remaining > PENDING_TIMEOUT_SECONDS {
-            let extra_unused = remaining - PENDING_TIMEOUT_SECONDS;
-            *match_state.extra_time_pool.entry(seat).or_insert(0) += extra_unused;
+            *match_state.extra_time_pool.entry(seat).or_insert(0) += remaining;
         }
     }
 }
