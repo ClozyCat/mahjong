@@ -2665,11 +2665,19 @@ fn has_three_suited_terminal_chows(context: &FanContext) -> bool {
     terminal_suits.len() >= 2
 }
 fn has_pure_terminal_chows(context: &FanContext) -> bool {
-    for starts in sequence_start_counts_by_suit(context).values() {
-        if starts.contains_key(&1)
-            && starts.contains_key(&7)
-            && starts.get(&1).copied().unwrap_or(0) >= 2
+    // Must be a single suit hand (no honours)
+    if !context.features.pure_one_suit {
+        return false;
+    }
+    // Pair must be 5 in the same suit
+    let pair = match pair_tile(context) {
+        Some(p) => p,
+        None => return false,
+    };
+    for (suit, starts) in sequence_start_counts_by_suit(context) {
+        if starts.get(&1).copied().unwrap_or(0) >= 2
             && starts.get(&7).copied().unwrap_or(0) >= 2
+            && pair == format!("{suit}5")
         {
             return true;
         }
