@@ -815,7 +815,6 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -859,7 +858,6 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -904,7 +902,6 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -961,7 +958,6 @@ mod tests {
                 seat_index: 1,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -1008,7 +1004,6 @@ mod tests {
                 seat_index: 1,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -1056,7 +1051,6 @@ mod tests {
                 seat_index: 1,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -1113,7 +1107,6 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };
@@ -1165,7 +1158,6 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         };

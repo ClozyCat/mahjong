@@ -2540,7 +2540,6 @@ mod tests {
                 seat_index: 0,
                 deadline_at: None,
                 drawn_tile_id: Some("east#discard".to_string()),
-                granted_extra_seconds: None,
             }),
             continue_action: None,
         }
@@ -2678,7 +2677,6 @@ mod tests {
             seat_index: 0,
             deadline_at: None,
             drawn_tile_id: None,
-            granted_extra_seconds: None,
         });
 
         let output = apply_claim_window_action_in_room_state(
@@ -2726,7 +2724,6 @@ mod tests {
             seat_index: 0,
             deadline_at: None,
             drawn_tile_id: Some("w3#0d".to_string()),
-            granted_extra_seconds: None,
         });
 
         let output = try_handle_self_kong_action_output_in_room_state(
