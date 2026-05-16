@@ -2656,13 +2656,29 @@ fn has_two_terminal_chows(context: &FanContext) -> bool {
         .any(|starts| starts.contains_key(&1) && starts.contains_key(&7))
 }
 fn has_three_suited_terminal_chows(context: &FanContext) -> bool {
-    let mut terminal_suits = HashSet::new();
-    for (suit, starts) in sequence_start_counts_by_suit(context) {
-        if starts.contains_key(&1) && starts.contains_key(&7) {
-            terminal_suits.insert(suit);
-        }
+    // No honours allowed
+    if context.all_tile_derived.has_honours {
+        return false;
     }
-    terminal_suits.len() >= 2
+    // Pair must be 5 in some suited suit
+    let pair = match pair_tile(context) {
+        Some(p) => p,
+        None => return false,
+    };
+    let pair_suit = match pair {
+        "w5" => 'w',
+        "t5" => 't',
+        "b5" => 'b',
+        _ => return false,
+    };
+    // Two suits (not the pair suit) must each have at least one 123 and one 789
+    let terminal_suit_count = sequence_start_counts_by_suit(context)
+        .iter()
+        .filter(|(suit, starts)| {
+            **suit != pair_suit && starts.contains_key(&1) && starts.contains_key(&7)
+        })
+        .count();
+    terminal_suit_count == 2
 }
 fn has_pure_terminal_chows(context: &FanContext) -> bool {
     // Must be a single suit hand (no honours)
