@@ -21,6 +21,7 @@ const SEAT_LABELS: Record<Seat, string> = {
 };
 
 const WAITING_ACTION_LABEL = '等待中';
+const NORMAL_TIMEOUT_SECONDS = 15;
 
 function getDealerSelectionTransitionMs(dealerSelection: DealerSelectionView) {
   const remainingMs = new Date(dealerSelection.revealAt).getTime() - Date.now();
@@ -264,6 +265,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   const shouldShowActionArrow = Boolean(stableDealerSelection || stableActionSeat);
   const visibleActionLabel = shouldShowActionArrow ? null : WAITING_ACTION_LABEL;
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
+  const isExtraTime = remainingSeconds !== null && remainingSeconds > NORMAL_TIMEOUT_SECONDS;
 
   useLayoutEffect(() => {
     reportStatusBarSize(statusBarRef.current, onSizeChange);
@@ -344,7 +346,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
 
       <div className="match-status-bar__section">
         <span className="match-status-bar__label">倒数</span>
-        <span className={`match-status-bar__value ${showUrgent ? 'match-status-bar__value--urgent' : ''} ${remainingExtraTime > 0 ? 'match-status-bar__value--extra-time' : ''}`}>
+        <span className={`match-status-bar__value ${showUrgent ? 'match-status-bar__value--urgent' : ''} ${isExtraTime ? 'match-status-bar__value--extra-time' : ''}`}>
           {remainingSeconds !== null ? `${remainingSeconds}s` : '--'}
         </span>
       </div>
