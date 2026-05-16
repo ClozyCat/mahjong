@@ -12,7 +12,9 @@
       "Bash(rustfmt backend/src/bot/reward.rs)",
       "Bash(python -c \"import re; f=open\\('backend/src/bot/reward.rs','r'\\).read\\(\\); print\\('All function brackets balanced:', f.count\\('{'\\) == f.count\\('}'\\)\\); print\\('fn count:', len\\(re.findall\\(r'fn\\\\s+\\\\w+', f\\)\\)\\)\")",
       "Bash(python -c ' *)",
-      "Bash(cargo check *)"
+      "Bash(cargo check *)",
+      "Bash(cargo test *)",
+      "Bash(cargo build *)"
     ]
   }
 }
