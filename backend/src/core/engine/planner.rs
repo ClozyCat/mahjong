@@ -10,7 +10,7 @@ use crate::core::state::{
 use crate::core::tile::Tile;
 
 const MAX_SEATS: usize = 4;
-const PENDING_TIMEOUT_SECONDS: i64 = 30;
+const PENDING_TIMEOUT_SECONDS: i64 = 15;
 
 #[derive(Debug, Clone)]
 pub struct PlannedFlowerAction {

@@ -5,7 +5,7 @@ use crate::core::engine::planner::compute_pending_timeout_value;
 use crate::core::state::RoomState;
 use crate::core::tile::Tile;
 
-const PENDING_TIMEOUT_SECONDS: i64 = 30;
+const PENDING_TIMEOUT_SECONDS: i64 = 15;
 
 #[cfg(test)]
 pub fn project_room_state(room: &Value) -> Result<RoomState, String> {
@@ -13,7 +13,39 @@ pub fn project_room_state(room: &Value) -> Result<RoomState, String> {
 }
 
 pub fn sync_pending_timeout_in_room_state(room: &mut RoomState) {
+    refund_unused_extra_time(room);
     room.pending_timeout = compute_pending_timeout_value(room, deadline_iso());
+}
+
+/// 在重新计算倒计时前，将当前回合未用完的额外思考时间退还到时间池
+fn refund_unused_extra_time(room: &mut RoomState) {
+    let pending_timeout = match room.pending_timeout.as_ref() {
+        Some(t) => t.clone(),
+        None => return,
+    };
+    let deadline_str = match pending_timeout.deadline_at.as_ref() {
+        Some(s) => s.clone(),
+        None => return,
+    };
+    let deadline = match chrono::DateTime::parse_from_rfc3339(&deadline_str) {
+        Ok(dt) => dt,
+        Err(_) => return,
+    };
+    let match_state = match room.match_state.as_mut() {
+        Some(s) => s,
+        None => return,
+    };
+    let seat = pending_timeout.seat_index;
+
+    let now = Utc::now();
+    if deadline > now {
+        let remaining = (deadline - now).num_seconds().max(0);
+        // 如果剩余时间超过正常15s倒计时，说明有额外时间未被使用
+        if remaining > PENDING_TIMEOUT_SECONDS {
+            let extra_unused = remaining - PENDING_TIMEOUT_SECONDS;
+            *match_state.extra_time_pool.entry(seat).or_insert(0) += extra_unused;
+        }
+    }
 }
 
 pub fn round_event_message(event_type: &str, event: Value) -> Value {

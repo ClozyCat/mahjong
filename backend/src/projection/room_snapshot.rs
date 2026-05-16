@@ -121,6 +121,7 @@ pub enum PendingActionView {
         drawn_tile_id: Option<String>,
         restricted_discard_tile_ids: Vec<String>,
         options: Vec<String>,
+        remaining_extra_time: Option<i64>,
     },
     #[serde(rename = "claim_window")]
     ClaimWindow {
@@ -128,6 +129,7 @@ pub enum PendingActionView {
         deadline_at: Option<String>,
         responded_seats: Vec<Seat>,
         options: Vec<String>,
+        remaining_extra_time: Option<i64>,
     },
     #[serde(rename = "rob_kong_window")]
     RobKongWindow {
@@ -136,6 +138,7 @@ pub enum PendingActionView {
         deadline_at: Option<String>,
         responded_seats: Vec<Seat>,
         options: Vec<String>,
+        remaining_extra_time: Option<i64>,
     },
 }
 
@@ -193,6 +196,11 @@ pub fn build_pending_action_view(
         .find(|player| player.seat == local_seat);
     let is_local_ready_hand = local_player.is_some_and(|player| player.is_ready_hand);
 
+    let remaining_extra_time = state
+        .match_state
+        .as_ref()
+        .and_then(|ms| ms.extra_time_pool.get(&pending_timeout.seat_index).copied());
+
     match pending_timeout.kind.as_str() {
         "active_turn" => {
             let is_local_turn = pending_timeout.seat_index == local_seat;
@@ -236,6 +244,7 @@ pub fn build_pending_action_view(
                     Vec::new()
                 },
                 options,
+                remaining_extra_time,
             })
         }
         "claim_window" => match round.pending_action.as_ref()? {
@@ -273,6 +282,7 @@ pub fn build_pending_action_view(
                     deadline_at,
                     responded_seats: claim.responded_seats.clone(),
                     options: payload_options,
+                    remaining_extra_time,
                 })
             }
             PendingAction::RobKongWindow(rob) => Some(rob_kong_pending_action_view(
@@ -280,6 +290,7 @@ pub fn build_pending_action_view(
                 local_seat,
                 rob,
                 deadline_at,
+                remaining_extra_time,
             )),
         },
         "rob_kong_window" => {
@@ -291,6 +302,7 @@ pub fn build_pending_action_view(
                 local_seat,
                 rob,
                 deadline_at,
+                remaining_extra_time,
             ))
         }
         _ => None,
@@ -319,6 +331,7 @@ fn rob_kong_pending_action_view(
     local_seat: Seat,
     rob: &crate::core::state::RobKongWindowAction,
     deadline_at: Option<String>,
+    remaining_extra_time: Option<i64>,
 ) -> PendingActionView {
     let offered = rob.offered_hu_seats.contains(&local_seat);
     let is_responded = rob.responded_seats.contains(&local_seat);
@@ -337,6 +350,7 @@ fn rob_kong_pending_action_view(
         deadline_at,
         responded_seats: rob.responded_seats.clone(),
         options,
+        remaining_extra_time,
     }
 }
 

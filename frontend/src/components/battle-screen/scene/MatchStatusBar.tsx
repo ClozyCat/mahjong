@@ -10,6 +10,7 @@ interface MatchStatusBarProps {
   isAmbiguous?: boolean;
   shouldDebounceWaiting?: boolean;
   onSizeChange?: (size: { width: number; height: number }) => void;
+  remainingExtraTime?: number;
 }
 
 const SEAT_LABELS: Record<Seat, string> = {
@@ -178,6 +179,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   isAmbiguous: isAmbiguousProp = false,
   shouldDebounceWaiting = false,
   onSizeChange,
+  remainingExtraTime = 0,
 }: MatchStatusBarProps) {
   const statusBarRef = useRef<HTMLDivElement | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -342,7 +344,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
 
       <div className="match-status-bar__section">
         <span className="match-status-bar__label">倒数</span>
-        <span className={`match-status-bar__value ${showUrgent ? 'match-status-bar__value--urgent' : ''}`}>
+        <span className={`match-status-bar__value ${showUrgent ? 'match-status-bar__value--urgent' : ''} ${remainingExtraTime > 0 ? 'match-status-bar__value--extra-time' : ''}`}>
           {remainingSeconds !== null ? `${remainingSeconds}s` : '--'}
         </span>
       </div>

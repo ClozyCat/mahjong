@@ -122,6 +122,7 @@ interface TableStageProps {
   isBotTakeoverEnabled?: boolean;
   onToggleBotTakeover?: (enabled: boolean) => void;
   isPlaying?: boolean;
+  remainingExtraTime?: number;
   children?: ReactNode;
 }
 
@@ -181,6 +182,7 @@ export function TableStage({
   isBotTakeoverEnabled = false,
   onToggleBotTakeover,
   isPlaying = false,
+  remainingExtraTime = 0,
   children,
 }: TableStageProps) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -278,6 +280,7 @@ export function TableStage({
             isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
             shouldDebounceWaiting={shouldDebounceWaitingStatus}
             onSizeChange={handleCenterStatusSizeChange}
+            remainingExtraTime={remainingExtraTime}
           />
           {scene.seats.map((seatScene) => (
             <SeatZone

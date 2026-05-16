@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use chrono::Utc;
 use serde_json::Value;
 
 use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
@@ -81,6 +82,29 @@ pub fn try_process_due_timeout_in_room_state(
         Some(round) => round,
         None => return Ok(None),
     };
+
+    // 检查当前超时座位是否有额外思考时间
+    let timeout_seat = match pending_timeout.kind.as_str() {
+        "active_turn" => round.current_actor,
+        "claim_window" => pending_timeout.seat_index,
+        _ => return Ok(None),
+    };
+    if !seat_is_bot(room, timeout_seat) {
+        if let Some(match_state) = room.match_state.as_mut() {
+            let extra = match_state.extra_time_pool.get(&timeout_seat).copied().unwrap_or(0);
+            if extra > 0 {
+                // 使用所有剩余额外时间延长倒计时
+                let new_deadline = (Utc::now() + chrono::TimeDelta::seconds(extra))
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                if let Some(ref mut pt) = room.pending_timeout {
+                    pt.deadline_at = Some(new_deadline);
+                }
+                match_state.extra_time_pool.insert(timeout_seat, 0);
+                // 返回空消息向量，通知调度器需要重新保存和调度
+                return Ok(Some(Vec::new()));
+            }
+        }
+    }
 
     match pending_timeout.kind.as_str() {
         "active_turn" => {

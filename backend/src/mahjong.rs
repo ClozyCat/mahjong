@@ -24,7 +24,7 @@ use crate::rules::standard::{
 };
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
-const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 30;
+const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 15;
 
 #[cfg(test)]
 fn action_prompt(room: &Value, local_seat: usize) -> Option<Value> {

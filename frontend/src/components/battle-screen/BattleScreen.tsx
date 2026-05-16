@@ -417,6 +417,7 @@ export function BattleScreen({
               isBotTakeoverEnabled={isBotTakeoverEnabled}
               onToggleBotTakeover={onToggleBotTakeover}
               isPlaying={viewModel.mode === 'watching' || viewModel.mode === 'my_turn'}
+              remainingExtraTime={viewModel.remainingExtraTime}
             >
               <BottomActionDock
                 hand={viewModel.localHand}

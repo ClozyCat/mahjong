@@ -34,6 +34,18 @@ pub struct MatchState {
     pub last_completed_round_id: Option<RoundId>,
     #[serde(default, deserialize_with = "super::null_default")]
     pub statistics: MatchStatistics,
+    /// 每位玩家在一整局(16小局)中的额外思考时长(秒)
+    #[serde(default)]
+    pub extra_time_pool: BTreeMap<Seat, i64>,
+}
+
+impl MatchState {
+    /// 初始化额外时间池，每位玩家获得90秒
+    pub fn initialize_extra_time_pool(&mut self) {
+        for seat in 0..4 {
+            self.extra_time_pool.insert(seat, 90);
+        }
+    }
 }
 
 impl MatchState {

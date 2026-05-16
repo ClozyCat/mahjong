@@ -297,6 +297,13 @@
   }
 }
 
+.match-status-bar__value--extra-time {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
 .match-status-bar__divider {
   width: 1px;
   height: clamp(0.7rem, 1.8vw, 1.25rem);

@@ -29,7 +29,7 @@ use super::settlement::{apply_settlement_to_match, settle_exhaustive_draw_output
 use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
-const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 30;
+const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 15;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 
 #[cfg(test)]
@@ -100,6 +100,7 @@ pub fn start_match_in_room_state(
         statistics: Default::default(),
     };
     match_state.sync_statistics_to_cumulative_scores();
+    match_state.initialize_extra_time_pool();
     room.match_state = Some(match_state);
     start_round_in_room_state(
         room,

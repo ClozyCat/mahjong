@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 
 import type { DealerSelectionView, Seat } from '../../../types/match';
 
-const PENDING_ACTION_DURATION_MS = 30_000;
+const PENDING_ACTION_DURATION_MS = 15_000;
 const COUNTDOWN_RING_STROKE_WIDTH = 3;
 
 interface CenterIndicatorProps {

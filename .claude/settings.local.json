@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(awk -F: '{print $1}')"
+      "Bash(awk -F: '{print $1}')",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\" -Depth 1)",
+      "Bash(Select-Object FullName, Mode)",
+      "Bash(Format-Table -AutoSize)"
     ]
   }
 }

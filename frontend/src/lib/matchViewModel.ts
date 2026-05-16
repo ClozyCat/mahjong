@@ -224,6 +224,18 @@ function createPublicTurnPrompt(state: SessionState) {
   return createActorPrompt(getSeatName(state, actorSeat), ['discard']);
 }
 
+function getRemainingExtraTime(state: SessionState): number {
+  const snapshot = state.roomSnapshot?.payload;
+  const pendingAction = snapshot?.private_state?.pending_action;
+  if (pendingAction && 'remaining_extra_time' in pendingAction && typeof pendingAction.remaining_extra_time === 'number') {
+    return pendingAction.remaining_extra_time;
+  }
+  if (state.latestActionPrompt?.payload.remaining_extra_time != null) {
+    return state.latestActionPrompt.payload.remaining_extra_time;
+  }
+  return 0;
+}
+
 function createCenterDeadlineAt(state: SessionState, options: MatchViewModelOptions = {}) {
   const snapshot = state.roomSnapshot?.payload;
   const pendingAction = snapshot?.private_state?.pending_action;
@@ -1813,6 +1825,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
   const activePlayerSeat =
     typeof activePlayerSeatIndex === 'number' ? toRelativeSeat(localSeat, activePlayerSeatIndex) : 'bottom';
   const deadlineAt = createCenterDeadlineAt(state, options);
+  const remainingExtraTime = getRemainingExtraTime(state);
   const promptCue = createPromptCue(state, options);
   const actionIndicatorSeat = createActionIndicatorSeat(state, options);
   const mode = !snapshot
@@ -1839,6 +1852,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     roundLabel: createRoundLabel(state),
     scoreSummaryLabel: createScoreSummaryLabel(state, options),
     deadlineAt,
+    remainingExtraTime,
     topStatusLabel: isReconnecting
       ? '正在重连'
       : snapshot?.phase === 'finished'

@@ -162,6 +162,7 @@ export type PendingAction =
       drawn_tile_id?: string;
       restricted_discard_tile_ids?: string[];
       options: PromptActionType[];
+      remaining_extra_time?: number;
     }
   | {
       type: 'claim_window';
@@ -169,6 +170,7 @@ export type PendingAction =
       deadline_at: string;
       responded_seats: number[];
       options: PromptActionType[];
+      remaining_extra_time?: number;
     }
   | {
       type: 'rob_kong_window';
@@ -177,6 +179,7 @@ export type PendingAction =
       deadline_at: string;
       responded_seats: number[];
       options: PromptActionType[];
+      remaining_extra_time?: number;
     }
   | Record<string, unknown>;
 
@@ -270,6 +273,7 @@ export interface ActionPromptMessage {
     seat_index: number;
     options: PromptActionType[];
     deadline_at: string;
+    remaining_extra_time?: number;
   };
 }
 
@@ -702,6 +706,7 @@ export interface BattleViewModel {
   roundLabel: string;
   scoreSummaryLabel: string;
   deadlineAt: string | null;
+  remainingExtraTime: number;
   topStatusLabel: string;
   activePlayerSeat: Seat;
   actionIndicatorSeat: Seat | null;

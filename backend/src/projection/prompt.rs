@@ -18,6 +18,7 @@ struct ActionPromptPayload {
     seat_index: Seat,
     options: Vec<String>,
     deadline_at: Option<String>,
+    remaining_extra_time: Option<i64>,
 }
 
 pub fn action_prompt_message(
@@ -36,6 +37,7 @@ pub fn action_prompt_message(
             seat_index: pending.seat_index().unwrap_or(local_seat),
             options,
             deadline_at: pending.deadline_at(),
+            remaining_extra_time: pending.remaining_extra_time(),
         },
     })
     .ok()
@@ -62,6 +64,14 @@ impl PendingActionView {
         match self {
             Self::ActiveTurn { seat_index, .. } => Some(*seat_index),
             Self::ClaimWindow { .. } | Self::RobKongWindow { .. } => None,
+        }
+    }
+
+    pub fn remaining_extra_time(&self) -> Option<i64> {
+        match self {
+            Self::ActiveTurn { remaining_extra_time, .. }
+            | Self::ClaimWindow { remaining_extra_time, .. }
+            | Self::RobKongWindow { remaining_extra_time, .. } => *remaining_extra_time,
         }
     }
 }
