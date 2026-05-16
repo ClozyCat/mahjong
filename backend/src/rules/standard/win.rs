@@ -1302,6 +1302,7 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
+                extra_time_pool: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "east-1-dealer-0".to_string(),

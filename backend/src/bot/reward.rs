@@ -785,9 +785,9 @@ mod tests {
 
     #[test]
     fn fan_potential_prefers_one_suit_honor_heavy_shape() {
-        // Mixed hand without 三色同顺 patterns (scattered tiles)
+        // Mixed hand scattered across suits with few structural patterns
         let mixed = string_keys(&[
-            "w1", "w2", "w4", "t2", "t5", "t7", "b3", "b6", "b8", "east", "south",
+            "w2", "w4", "w6", "t2", "t4", "t6", "b2", "b4", "b6", "east", "south",
         ]);
         let one_suit_honors = string_keys(&[
             "w1", "w2", "w3", "w4", "w5", "w6", "east", "east", "red", "red", "white",

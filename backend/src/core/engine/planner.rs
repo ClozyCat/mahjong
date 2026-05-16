@@ -153,6 +153,7 @@ pub fn plan_round_start_payload(
         seat_index: current_actor,
         deadline_at: Some(deadline_iso()),
         drawn_tile_id: round_state.last_action_context.tile_id.clone(),
+        granted_extra_seconds: None,
     };
 
     (round_state, pending_timeout)
@@ -223,18 +224,21 @@ pub fn compute_pending_timeout_value(
             seat_index: claim.discarder_seat,
             deadline_at: Some(deadline_at),
             drawn_tile_id: None,
+            granted_extra_seconds: None,
         }),
         Some(PendingAction::RobKongWindow(rob)) => Some(PendingTimeout {
             kind: "claim_window".to_string(),
             seat_index: rob.actor_seat,
             deadline_at: Some(deadline_at),
             drawn_tile_id: None,
+            granted_extra_seconds: None,
         }),
         _ => Some(PendingTimeout {
             kind: "active_turn".to_string(),
             seat_index: round.current_actor,
             deadline_at: Some(deadline_at),
             drawn_tile_id: active_turn_drawn_tile_id(state, round.current_actor),
+            granted_extra_seconds: None,
         }),
     }
 }
@@ -784,6 +788,7 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
+                extra_time_pool: Default::default(),
             }),
             round_state: Some(round.clone()),
             pending_timeout: None,

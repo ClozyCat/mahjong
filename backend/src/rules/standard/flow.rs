@@ -1112,6 +1112,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: None,
                 drawn_tile_id: Some("f1#0".to_string()),
+                granted_extra_seconds: None,
             }),
             continue_action: None,
         }
@@ -1137,6 +1138,7 @@ mod tests {
             match_finished: false,
             last_completed_round_id: None,
             statistics: Default::default(),
+            extra_time_pool: Default::default(),
         });
         if let Some(round) = room.round_state.as_mut() {
             round.phase = "settlement".to_string();

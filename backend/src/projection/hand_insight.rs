@@ -574,6 +574,7 @@ mod tests {
             seat_index: 0,
             deadline_at: None,
             drawn_tile_id: Some("b9#0".to_string()),
+            granted_extra_seconds: None,
         });
 
         let support = SeatProjectionSupport {
@@ -734,6 +735,7 @@ mod tests {
                 match_finished: false,
                 last_completed_round_id: None,
                 statistics: Default::default(),
+                extra_time_pool: Default::default(),
             }),
             round_state: Some(RoundState {
                 round_id: "round-1".to_string(),
