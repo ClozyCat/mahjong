@@ -1112,6 +1112,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: None,
                 drawn_tile_id: Some("f1#0".to_string()),
+                extended_with_extra: false,
             }),
             continue_action: None,
         }

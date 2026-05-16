@@ -122,6 +122,7 @@ pub enum PendingActionView {
         restricted_discard_tile_ids: Vec<String>,
         options: Vec<String>,
         remaining_extra_time: Option<i64>,
+        extended_with_extra: bool,
     },
     #[serde(rename = "claim_window")]
     ClaimWindow {
@@ -130,6 +131,7 @@ pub enum PendingActionView {
         responded_seats: Vec<Seat>,
         options: Vec<String>,
         remaining_extra_time: Option<i64>,
+        extended_with_extra: bool,
     },
     #[serde(rename = "rob_kong_window")]
     RobKongWindow {
@@ -139,6 +141,7 @@ pub enum PendingActionView {
         responded_seats: Vec<Seat>,
         options: Vec<String>,
         remaining_extra_time: Option<i64>,
+        extended_with_extra: bool,
     },
 }
 
@@ -245,6 +248,7 @@ pub fn build_pending_action_view(
                 },
                 options,
                 remaining_extra_time,
+                extended_with_extra: pending_timeout.extended_with_extra,
             })
         }
         "claim_window" => match round.pending_action.as_ref()? {
@@ -283,6 +287,7 @@ pub fn build_pending_action_view(
                     responded_seats: claim.responded_seats.clone(),
                     options: payload_options,
                     remaining_extra_time,
+                    extended_with_extra: pending_timeout.extended_with_extra,
                 })
             }
             PendingAction::RobKongWindow(rob) => Some(rob_kong_pending_action_view(
@@ -351,6 +356,7 @@ fn rob_kong_pending_action_view(
         responded_seats: rob.responded_seats.clone(),
         options,
         remaining_extra_time,
+        extended_with_extra: state.pending_timeout.as_ref().map_or(false, |pt| pt.extended_with_extra),
     }
 }
 
@@ -815,6 +821,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -858,6 +865,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -902,6 +910,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: Some("w3#draw".to_string()),
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -958,6 +967,7 @@ mod tests {
                 seat_index: 1,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -1004,6 +1014,7 @@ mod tests {
                 seat_index: 1,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -1051,6 +1062,7 @@ mod tests {
                 seat_index: 1,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -1107,6 +1119,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
+                extended_with_extra: false,
             }),
             continue_action: None,
         };
@@ -1158,6 +1171,7 @@ mod tests {
                 seat_index: 0,
                 deadline_at: Some("2026-04-20T12:00:30.000Z".to_string()),
                 drawn_tile_id: None,
+                extended_with_extra: false,
             }),
             continue_action: None,
         };

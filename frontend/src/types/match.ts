@@ -163,6 +163,7 @@ export type PendingAction =
       restricted_discard_tile_ids?: string[];
       options: PromptActionType[];
       remaining_extra_time?: number;
+      extended_with_extra?: boolean;
     }
   | {
       type: 'claim_window';
@@ -171,6 +172,7 @@ export type PendingAction =
       responded_seats: number[];
       options: PromptActionType[];
       remaining_extra_time?: number;
+      extended_with_extra?: boolean;
     }
   | {
       type: 'rob_kong_window';
@@ -180,6 +182,7 @@ export type PendingAction =
       responded_seats: number[];
       options: PromptActionType[];
       remaining_extra_time?: number;
+      extended_with_extra?: boolean;
     }
   | Record<string, unknown>;
 

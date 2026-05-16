@@ -12,6 +12,8 @@ pub struct PendingTimeout {
     pub seat_index: Seat,
     pub deadline_at: Option<String>,
     pub drawn_tile_id: Option<TileId>,
+    #[serde(default)]
+    pub extended_with_extra: bool,
 }
 
 impl PendingTimeout {
@@ -29,6 +31,10 @@ impl PendingTimeout {
                 .unwrap_or(0),
             deadline_at: string_opt(value, "deadline_at"),
             drawn_tile_id: string_opt(value, "drawn_tile_id"),
+            extended_with_extra: value
+                .get("extended_with_extra")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         }
     }
 }

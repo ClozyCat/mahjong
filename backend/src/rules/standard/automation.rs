@@ -98,6 +98,7 @@ pub fn try_process_due_timeout_in_room_state(
                     .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                 if let Some(ref mut pt) = room.pending_timeout {
                     pt.deadline_at = Some(new_deadline);
+                    pt.extended_with_extra = true;
                 }
                 match_state.extra_time_pool.insert(timeout_seat, 0);
                 // 返回空消息向量，通知调度器需要重新保存和调度

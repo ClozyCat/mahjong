@@ -10,7 +10,7 @@ interface MatchStatusBarProps {
   isAmbiguous?: boolean;
   shouldDebounceWaiting?: boolean;
   onSizeChange?: (size: { width: number; height: number }) => void;
-  remainingExtraTime?: number;
+  extendedWithExtra?: boolean;
 }
 
 const SEAT_LABELS: Record<Seat, string> = {
@@ -180,7 +180,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   isAmbiguous: isAmbiguousProp = false,
   shouldDebounceWaiting = false,
   onSizeChange,
-  remainingExtraTime = 0,
+  extendedWithExtra = false,
 }: MatchStatusBarProps) {
   const statusBarRef = useRef<HTMLDivElement | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -265,7 +265,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   const shouldShowActionArrow = Boolean(stableDealerSelection || stableActionSeat);
   const visibleActionLabel = shouldShowActionArrow ? null : WAITING_ACTION_LABEL;
   const showUrgent = remainingSeconds !== null && remainingSeconds <= 5;
-  const isExtraTime = remainingExtraTime > 0;
+  const isExtraTime = extendedWithExtra;
 
   useLayoutEffect(() => {
     reportStatusBarSize(statusBarRef.current, onSizeChange);
