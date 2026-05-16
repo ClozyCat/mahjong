@@ -142,6 +142,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     shouldAutoReturnLastDiscardToRiver: false,
     actionEffect: null,
     dealerSelection: null,
+    remainingExtraTime: 0,
     toasts: [],
     ...overrides,
   };
