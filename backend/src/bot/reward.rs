@@ -100,6 +100,7 @@ pub(crate) fn reward_snapshot_for_tile_keys(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn fan_potential_for_tile_keys(
     tile_keys: &[String],
     seat_wind: Option<&str>,
