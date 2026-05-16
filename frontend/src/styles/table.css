@@ -99,11 +99,11 @@
   background:
     /* Ambient light from top */
     linear-gradient(180deg, color-mix(in srgb, var(--theme-paper) 6%, transparent), transparent 42%),
-    /* Concave dip gradient */
-    radial-gradient(circle at 50% 45%,
-      var(--table-2) 0%,
-      color-mix(in srgb, var(--table) 97%, var(--table-2)) 65%,
-      var(--table) 100%);
+    /* Watery depth gradient (Light center, Deep edges) */
+    radial-gradient(circle at 50% 50%,
+      color-mix(in srgb, var(--table) 32%, var(--theme-paper-strong)) 0%,
+      var(--table) 48%,
+      var(--table-2) 100%);
   box-shadow:
     /* Precise inner rim highlight */
     inset 0 0 0 1px color-mix(in srgb, var(--theme-paper) 5%, transparent),
@@ -456,7 +456,7 @@
 .table-stage__seat-panel--left,
 .table-stage__seat-panel--right {
   --seat-panel-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0.16), transparent 48%);
-  transform: perspective(18rem) rotateX(7deg);
+  transform: perspective(22rem) rotateX(-5deg);
   transform-origin: center bottom;
 }
 
@@ -465,12 +465,12 @@
 }
 
 .table-stage__seat-panel--top {
-  transform: perspective(18rem) rotateX(5deg);
+  transform: perspective(22rem) rotateX(-5deg);
   transform-origin: center bottom;
 }
 
 .table-stage__seat-panel--bottom {
-  transform: perspective(18rem) rotateX(3deg);
+  transform: perspective(22rem) rotateX(-5deg);
   transform-origin: center bottom;
 }
 
