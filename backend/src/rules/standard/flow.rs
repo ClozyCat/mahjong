@@ -98,6 +98,7 @@ pub fn start_match_in_room_state(
         match_finished: false,
         last_completed_round_id: None,
         statistics: Default::default(),
+        extra_time_pool: Default::default(),
     };
     match_state.sync_statistics_to_cumulative_scores();
     match_state.initialize_extra_time_pool();
@@ -183,6 +184,7 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         match_finished: false,
         last_completed_round_id: None,
         statistics: Default::default(),
+        extra_time_pool: Default::default(),
     };
     match_state.sync_statistics_to_cumulative_scores();
     let _ = update_room_state(room, |state| {

@@ -27,8 +27,8 @@ fn refund_unused_extra_time(room: &mut RoomState) {
         Some(s) => s.clone(),
         None => return,
     };
-    let deadline = match chrono::DateTime::parse_from_rfc3339(&deadline_str) {
-        Ok(dt) => dt,
+    let deadline: chrono::DateTime<chrono::Utc> = match chrono::DateTime::parse_from_rfc3339(&deadline_str) {
+        Ok(dt) => dt.into(),
         Err(_) => return,
     };
     let match_state = match room.match_state.as_mut() {
