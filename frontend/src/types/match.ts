@@ -709,7 +709,7 @@ export interface BattleViewModel {
   roundLabel: string;
   scoreSummaryLabel: string;
   deadlineAt: string | null;
-  remainingExtraTime: number;
+  extendedWithExtra: boolean;
   topStatusLabel: string;
   activePlayerSeat: Seat;
   actionIndicatorSeat: Seat | null;
