@@ -54,16 +54,30 @@ if nn is not None:
             return torch.relu(self.norm(self.net(x)) + x)
 
 
+    class GroupAttention(nn.Module):
+        def __init__(self, channels: int, num_heads: int = 4) -> None:
+            super().__init__()
+            self.norm = nn.LayerNorm(channels)
+            self.attn = nn.MultiheadAttention(channels, num_heads, batch_first=True)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            attended, _ = self.attn(self.norm(x), self.norm(x), self.norm(x))
+            return x + attended  # residual
+
     class SuitFusionTileEncoder(nn.Module):
         def __init__(
             self,
             tile_plane_count: int,
             embedding_size: int = 512,
             channels: int = 128,
+            use_attention: bool = False,
         ) -> None:
             super().__init__()
+            self.use_attention = use_attention
             self.suited_encoder = self._make_encoder(tile_plane_count, channels, 3)
             self.honor_encoder = self._make_encoder(tile_plane_count, channels, 2)
+            if use_attention:
+                self.group_attention = GroupAttention(channels)
             self.fusion = nn.Sequential(
                 nn.Linear(channels * 4, channels * 4),
                 nn.ReLU(),
@@ -93,7 +107,15 @@ if nn is not None:
                 for start in (0, 9, 18)
             ]
             honor_embedding = self.honor_encoder(tile_planes[:, :, 27:34])
-            return self.fusion(torch.cat([*suit_embeddings, honor_embedding], dim=1))
+            if self.use_attention:
+                group_embeds = torch.stack(
+                    [*suit_embeddings, honor_embedding], dim=1
+                )
+                group_embeds = self.group_attention(group_embeds)
+                combined = group_embeds.reshape(group_embeds.size(0), -1)
+            else:
+                combined = torch.cat([*suit_embeddings, honor_embedding], dim=1)
+            return self.fusion(combined)
 
 
     class DiscardSequenceEncoder(nn.Module):
@@ -145,7 +167,12 @@ if nn is not None:
             self.discard_event_feature_count = config.discard_event_feature_count
 
             self.policy_tile_encoder = SuitFusionTileEncoder(config.tile_plane_count)
-            self.value_tile_encoder = SuitFusionTileEncoder(config.tile_plane_count)
+            self.value_tile_encoder = SuitFusionTileEncoder(
+                config.tile_plane_count, use_attention=True,
+            )
+            self.risk_tile_encoder = SuitFusionTileEncoder(
+                config.tile_plane_count, use_attention=True,
+            )
             self.scalar_encoder = nn.Sequential(
                 nn.Linear(config.scalar_feature_count, 160),
                 nn.ReLU(),
@@ -173,9 +200,11 @@ if nn is not None:
             return nn.Sequential(
                 nn.Linear(input_size, hidden_size),
                 nn.ReLU(),
+                nn.Dropout(0.15),
                 nn.LayerNorm(hidden_size),
                 nn.Linear(hidden_size, output_size),
                 nn.ReLU(),
+                nn.Dropout(0.15),
                 nn.LayerNorm(output_size),
             )
 
@@ -203,9 +232,17 @@ if nn is not None:
                 ],
                 dim=1,
             )
+            risk_features = torch.cat(
+                [
+                    self.risk_tile_encoder(tile_planes),
+                    scalar_embedding,
+                    sequence_embedding,
+                ],
+                dim=1,
+            )
             policy_hidden = self.policy_trunk(policy_features)
             value_hidden = self.value_trunk(value_features)
-            risk_hidden = self.risk_trunk(policy_features)
+            risk_hidden = self.risk_trunk(risk_features)
             return {
                 "discard_logits": self.discard_head(policy_hidden),
                 "claim_logits": self.claim_head(policy_hidden),

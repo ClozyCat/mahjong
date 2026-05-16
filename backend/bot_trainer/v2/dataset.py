@@ -19,7 +19,7 @@ SCALAR_FEATURE_COUNT = 12
 DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 6
+DISK_CACHE_VERSION = 7
 STANDARD_WIND_ORDER = ("east", "south", "west", "north")
 ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
@@ -347,7 +347,7 @@ def encode_row(
         "claim_target": np.asarray(claim_target(row, claim_to_index, tile_to_index), dtype=np.int64),
         "self_kong_target": np.asarray(self_kong_target(row, self_kong_to_index), dtype=np.int64),
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
-        "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 100.0], dtype=np.float32),
+        "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 1000.0], dtype=np.float32),
         "risk_target": risk_target(row, tile_to_index),
         "fan_target": np.asarray([float(row["outcome"].get("fan_count", 0)) / 10.0], dtype=np.float32),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),

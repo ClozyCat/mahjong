@@ -78,6 +78,7 @@ def main() -> None:
             print("Warning: 当前硬件后端 (如 DirectML/CPU) 暂不支持 torch.compile，已跳过。")
             
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr_min)
     scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
     print(f"device={device} amp={use_amp} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
     best_metric = math.inf
@@ -97,22 +98,25 @@ def main() -> None:
             fan_start=args.fan_loss_start_weight,
             fan_target=args.fan_loss_weight,
         )
+        loss_weights["risk_pos_weight"] = args.risk_pos_weight
+        current_lr = optimizer.param_groups[0]["lr"]
         train_metrics = run_epoch(
-            model, train_loader, optimizer, device, scaler, use_amp, 
+            model, train_loader, optimizer, device, scaler, use_amp,
             loss_weights=loss_weights,
             epoch_desc=f"Train Epoch {epoch}/{args.epochs}"
         )
-        
+        scheduler.step()
+
         val_metrics = (
             run_epoch(
-                model, val_loader, None, device, scaler, use_amp, 
+                model, val_loader, None, device, scaler, use_amp,
                 loss_weights=loss_weights,
                 epoch_desc=f"Val Epoch {epoch}/{args.epochs}"
             )
             if val_loader is not None
             else train_metrics
         )
-        
+
         selection_metric = val_metrics["loss"]
         if selection_metric < best_metric:
             best_metric = selection_metric
@@ -128,6 +132,7 @@ def main() -> None:
 
         print(
             f"Epoch {epoch} Summary: "
+            f"lr={current_lr:.2e} | "
             f"train_loss={train_metrics['loss']:.4f} | "
             f"val_loss={val_metrics['loss']:.4f} | "
             f"discard_top1={val_metrics['discard_top1']:.4f} | "
@@ -152,6 +157,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr-min", type=float, default=1e-5, help="Minimum learning rate for cosine annealing scheduler")
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--num-workers", type=int, default=0)
@@ -166,6 +172,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--value-loss-weight", type=float, default=0.75)
     parser.add_argument("--risk-loss-weight", type=float, default=1.0)
     parser.add_argument("--fan-loss-weight", type=float, default=0.5)
+    parser.add_argument("--risk-pos-weight", type=float, default=300.0,
+        help="Positive class weight for risk BCE loss. Mitigates extreme class imbalance (~0.3%% positive positions).")
     parser.add_argument("--value-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--risk-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--fan-loss-start-weight", type=float, default=0.25)
@@ -281,13 +289,18 @@ def compute_losses(
     value_weight: float = 0.25,
     risk_weight: float = 0.25,
     fan_weight: float = 0.25,
+    risk_pos_weight: float = 300.0,
 ) -> dict[str, torch.Tensor]:
     discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
     claim_loss = masked_cross_entropy(outputs["claim_logits"], batch["claim_mask"], batch["claim_target"])
     self_kong_loss = masked_cross_entropy(outputs["self_kong_logits"], batch["self_kong_mask"], batch["self_kong_target"])
     hu_loss = masked_cross_entropy(outputs["hu_logits"], batch["hu_mask"], batch["hu_target"])
     value_loss = F.mse_loss(outputs["value"], batch["value_target"].float())
-    risk_loss = F.binary_cross_entropy_with_logits(outputs["risk_logits"], batch["risk_target"].float())
+    risk_loss = F.binary_cross_entropy_with_logits(
+        outputs["risk_logits"],
+        batch["risk_target"].float(),
+        pos_weight=torch.tensor(risk_pos_weight, device=outputs["risk_logits"].device),
+    )
     fan_loss = F.mse_loss(outputs["fan_logits"], batch["fan_target"].float())
     loss = (
         discard_loss

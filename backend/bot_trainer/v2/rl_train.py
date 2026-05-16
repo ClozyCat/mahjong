@@ -234,7 +234,9 @@ def load_checkpoint_if_present(model: torch.nn.Module, checkpoint: Path | None) 
         )
     payload = torch.load(checkpoint, map_location="cpu")
     state = payload.get("model_state", payload)
-    model.load_state_dict(state)
+    missing, _ = model.load_state_dict(state, strict=False)
+    if missing:
+        print(f"Checkpoint missing keys (new params initialized fresh): {missing}")
 
 
 def model_config_from_checkpoint(checkpoint: Path | None) -> ModelConfig:

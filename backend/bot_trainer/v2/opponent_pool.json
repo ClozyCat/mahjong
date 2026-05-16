@@ -14,6 +14,38 @@
       "model_path": null,
       "sample_actions": false,
       "temperature": 1.0,
+      "weight": 2
+    },
+    {
+      "id": "sft_deterministic",
+      "mode": "neural",
+      "model_path": "backend/assets/model_s/sft.onnx",
+      "sample_actions": true,
+      "temperature": 0.3,
+      "weight": 1
+    },
+    {
+      "id": "sft",
+      "mode": "neural",
+      "model_path": "backend/assets/model_s/sft.onnx",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 2
+    },
+    {
+      "id": "sft_exploratory",
+      "mode": "neural",
+      "model_path": "backend/assets/model_s/sft.onnx",
+      "sample_actions": true,
+      "temperature": 2.0,
+      "weight": 1
+    },
+    {
+      "id": "backup_deterministic",
+      "mode": "neural",
+      "model_path": "backend/assets/backup_model/backup.onnx",
+      "sample_actions": true,
+      "temperature": 0.3,
       "weight": 1
     },
     {
@@ -22,6 +54,14 @@
       "model_path": "backend/assets/backup_model/backup.onnx",
       "sample_actions": true,
       "temperature": 1.0,
+      "weight": 2
+    },
+    {
+      "id": "backup_exploratory",
+      "mode": "neural",
+      "model_path": "backend/assets/backup_model/backup.onnx",
+      "sample_actions": true,
+      "temperature": 2.0,
       "weight": 1
     },
     {
@@ -29,7 +69,7 @@
       "mode": "neural",
       "model_path": "backend/assets/model_a/aggressive.onnx",
       "sample_actions": true,
-      "temperature": 1.0,
+      "temperature": 0.8,
       "weight": 1
     },
     {
@@ -45,15 +85,7 @@
       "mode": "neural",
       "model_path": "backend/assets/model_d/defensive.onnx",
       "sample_actions": true,
-      "temperature": 1.0,
-      "weight": 1
-    },
-    {
-      "id": "sft",
-      "mode": "neural",
-      "model_path": "backend/assets/model_s/sft.onnx",
-      "sample_actions": true,
-      "temperature": 1.0,
+      "temperature": 1.2,
       "weight": 1
     }
   ]

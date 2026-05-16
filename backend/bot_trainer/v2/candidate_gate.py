@@ -34,7 +34,7 @@ def evaluate_candidate(
         failures.append("avg_score_delta")
     if candidate["win_rate"] < baseline["win_rate"]:
         failures.append("win_rate")
-    if candidate["deal_in_rate"] > baseline["deal_in_rate"] + 0.02:
+    if candidate["deal_in_rate"] > baseline["deal_in_rate"] + 0.01:
         failures.append("deal_in_rate")
     tenpai_turn_ok = (
         baseline["avg_first_tenpai_turn"] is None

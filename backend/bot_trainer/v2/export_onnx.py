@@ -47,7 +47,9 @@ def main() -> None:
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
     model = build_model(model_config)
-    model.load_state_dict(checkpoint["model_state"])
+    missing, _ = model.load_state_dict(checkpoint["model_state"], strict=False)
+    if missing:
+        print(f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}", file=sys.stderr)
     model.eval()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

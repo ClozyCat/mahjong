@@ -37,7 +37,7 @@ def summarize_candidate(entry: dict[str, Any]) -> dict[str, Any]:
     candidate = gate["candidate"]
     score_margin = metric(candidate, "avg_score_delta") - metric(baseline, "avg_score_delta")
     win_margin = metric(candidate, "win_rate") - metric(baseline, "win_rate")
-    deal_in_margin = metric(baseline, "deal_in_rate") + 0.02 - metric(candidate, "deal_in_rate")
+    deal_in_margin = metric(baseline, "deal_in_rate") + 0.01 - metric(candidate, "deal_in_rate")
     final_tenpai_margin = metric(candidate, "final_tenpai_rate") - metric(
         baseline,
         "final_tenpai_rate",

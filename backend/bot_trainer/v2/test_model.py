@@ -36,10 +36,12 @@ def test_sequence_aware_model_output_shapes() -> None:
     assert outputs["fan_logits"].shape == (2, 1)
 
 
-def test_sequence_aware_model_uses_no_dropout() -> None:
+def test_sequence_aware_model_uses_dropout_with_correct_rate() -> None:
     model = build_model(sequence_aware_config())
 
-    assert not any(isinstance(module, torch.nn.Dropout) for module in model.modules())
+    dropouts = [m for m in model.modules() if isinstance(m, torch.nn.Dropout)]
+    assert len(dropouts) > 0
+    assert all(d.p == 0.15 for d in dropouts)
 
 
 def test_legacy_compatible_loader_is_removed() -> None:

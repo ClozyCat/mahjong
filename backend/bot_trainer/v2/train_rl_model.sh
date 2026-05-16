@@ -16,15 +16,15 @@ MAX_ACTIONS_PER_MATCH=2400
 EPOCHS=1
 BATCH_SIZE=256
 LEARNING_RATE=0.000003
-GAMMA=0.995
+GAMMA=0.97
 GAE_LAMBDA=0.95
 CLIP_EPSILON=0.2
 VALUE_CLIP_EPSILON=0.2
-ENTROPY_COEF=0.02
-ENTROPY_END_COEF=0.005
+ENTROPY_COEF=0.03
+ENTROPY_END_COEF=0.015
 ENTROPY_DECAY_STEPS=0
 KL_COEF=0.01
-KL_END_COEF=0.0
+KL_END_COEF=0.005
 TARGET_KL=0.03
 PLAY_STYLE=balanced
 PLAY_STYLES=""
@@ -75,11 +75,11 @@ Options:
   --gae-lambda VALUE               GAE lambda.
   --clip-epsilon VALUE             PPO clipping epsilon.
   --value-clip-epsilon VALUE       PPO value clipping epsilon.
-  --entropy-coef VALUE             PPO entropy coefficient.
-  --entropy-end-coef VALUE         PPO final entropy coefficient after decay.
+  --entropy-coef VALUE             PPO entropy coefficient. Default 0.03.
+  --entropy-end-coef VALUE         PPO final entropy coefficient after decay. Default 0.015.
   --entropy-decay-steps N          Linear entropy decay steps. Use 0 for full training.
   --kl-coef VALUE                  Supervised policy KL coefficient. Default 0.01.
-  --kl-end-coef VALUE              Final KL coefficient after decay.
+  --kl-end-coef VALUE              Final KL coefficient after decay. Default 0.005.
   --target-kl VALUE                Stop PPO epoch loop when approximate KL exceeds this value.
   --play-style STYLE               Play style: aggressive, balanced, or defensive. Default balanced.
   --play-styles LIST               Comma-separated play styles trained in parallel on shared trajectories.
@@ -518,7 +518,8 @@ echo "Iterations:          $ITERATIONS"
 echo "Matches/iteration:   $ITERATION_MATCHES"
 echo "PPO epochs/iter:     $EPOCHS"
 echo "Gamma:               $GAMMA"
-echo "KL coef:             $KL_COEF"
+echo "KL coef start/end:  $KL_COEF / $KL_END_COEF"
+echo "Entropy start/end:  $ENTROPY_COEF / $ENTROPY_END_COEF"
 echo "Opponent pool:       $OPPONENT_POOL"
 echo "Learner policy id:   $LEARNER_POLICY_ID"
 echo "Eval matches:        $EVAL_MATCHES"
@@ -792,14 +793,20 @@ PY
 
             echo "  Iteration $iter style=$style: score_margin=$iter_score_margin accepted=$iter_accepted"
 
-            if (( iter_accepted == 1 )) || "${PYTHON_CMD[@]}" -c "exit(0 if float('$iter_score_margin') > float('${best_score_margin_by_style[$style]}') else 1)"; then
+            if (( iter_accepted == 1 )); then
                 best_score_margin_by_style["$style"]="$iter_score_margin"
                 best_checkpoint_by_style["$style"]="$selected_checkpoint"
                 best_onnx_by_style["$style"]="$STYLE_CANDIDATE_ONNX"
                 best_iter_by_style["$style"]="$iter"
                 current_checkpoint_by_style["$style"]="$selected_checkpoint"
                 current_onnx_by_style["$style"]="$STYLE_CANDIDATE_ONNX"
-                echo "  Style $style advanced (score_margin=$iter_score_margin, accepted=$iter_accepted)"
+                echo "  Style $style advanced: candidate accepted (score_margin=$iter_score_margin)"
+            elif (( $(echo "$iter_score_margin > ${best_score_margin_by_style[$style]}" | bc -l) )); then
+                best_score_margin_by_style["$style"]="$iter_score_margin"
+                best_checkpoint_by_style["$style"]="$selected_checkpoint"
+                best_onnx_by_style["$style"]="$STYLE_CANDIDATE_ONNX"
+                best_iter_by_style["$style"]="$iter"
+                echo "  Style $style: candidate rejected but score_margin improved (rollout NOT updated, score_margin=$iter_score_margin)"
             else
                 echo "  Style $style kept current best (best_score_margin=${best_score_margin_by_style[$style]})"
             fi
