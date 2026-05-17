@@ -217,7 +217,19 @@ function mockAudioPlayback() {
   const play = vi.fn(() => Promise.resolve());
   const audio = vi.fn((url: string) => {
     void url;
-    return { play };
+    const handlers = new Map<string, () => void>();
+
+    return {
+      addEventListener: vi.fn((eventName: string, handler: () => void) => {
+        handlers.set(eventName, handler);
+      }),
+      removeEventListener: vi.fn(),
+      play: vi.fn(() => {
+        play();
+        handlers.get('ended')?.();
+        return Promise.resolve();
+      }),
+    };
   });
   const originalAudio = globalThis.Audio;
 
@@ -611,6 +623,44 @@ describe('BattleScreen', () => {
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
+    }
+  });
+
+  it('plays each queued action voice even when one player repeats the same operation quickly', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+    const firstPungEffect = {
+      key: 'claim_made:seat-1:pung:first',
+      label: '碰',
+      emphasis: 'claim',
+      seat: 'left',
+      calloutTone: 'pung',
+    } satisfies NonNullable<BattleViewModel['actionEffect']>;
+    const secondPungEffect = {
+      key: 'claim_made:seat-1:pung:second',
+      label: '碰',
+      emphasis: 'claim',
+      seat: 'left',
+      calloutTone: 'pung',
+    } satisfies NonNullable<BattleViewModel['actionEffect']>;
+    const viewModel = {
+      ...createBattleViewModel({
+        actionEffect: secondPungEffect,
+      }),
+      actionEffects: [firstPungEffect, secondPungEffect],
+    } as BattleViewModel;
+
+    try {
+      renderBattleScreen(viewModel);
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(2);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
+      expect(String(audioMock.audio.mock.calls[1][0])).toContain('peng');
+      expect(audioMock.play).toHaveBeenCalledTimes(2);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
     }
   });
 

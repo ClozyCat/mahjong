@@ -465,8 +465,6 @@
 .table-stage__seat-panel--left,
 .table-stage__seat-panel--right {
   --seat-panel-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0.16), transparent 48%);
-  transform: perspective(22rem) rotateX(-5deg);
-  transform-origin: center bottom;
 }
 
 .table-stage__seat-panel--right {
@@ -474,12 +472,10 @@
 }
 
 .table-stage__seat-panel--top {
-  transform: perspective(22rem) rotateX(-5deg);
   transform-origin: center bottom;
 }
 
 .table-stage__seat-panel--bottom {
-  transform: perspective(22rem) rotateX(-5deg);
   transform-origin: center bottom;
 }
 

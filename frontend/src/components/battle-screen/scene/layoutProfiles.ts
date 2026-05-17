@@ -70,10 +70,10 @@ export const TABLE_LAYOUT_PROFILES: TableLayoutProfile[] = [
       height: { ratio: 0.045, minPx: 36, maxPx: 56 },
     },
     spotlightGap: 8,
-    riverBaseWidth: { ratio: 0.024, minPx: 12, maxPx: 34 },
+    riverBaseWidth: { ratio: 0.0336, minPx: 16.8, maxPx: 47.6 },
     riverGap: { ratio: 0.0008, minPx: 0.01, maxPx: 2 },
-    handBaseWidth: { ratio: 0.034, minPx: 16, maxPx: 48 },
-    meldBaseWidth: { ratio: 0.019, minPx: 12, maxPx: 26 },
+    handBaseWidth: { ratio: 0.0476, minPx: 22.4, maxPx: 67.2 },
+    meldBaseWidth: { ratio: 0.0266, minPx: 16.8, maxPx: 36.4 },
     settlementBaseWidth: { ratio: 0.013, minPx: 12, maxPx: 20 },
   },
 ];

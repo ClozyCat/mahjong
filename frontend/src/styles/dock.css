@@ -1229,10 +1229,10 @@
 }
 
 .action-dock__claim-preview-tile {
-  width: clamp(1.6rem, 2.3vw, 1.95rem);
-  height: calc(clamp(1.6rem, 2.3vw, 1.95rem) * var(--mahjong-discard-tile-ratio, 1.32));
-  min-width: clamp(1.6rem, 2.3vw, 1.95rem);
-  min-height: calc(clamp(1.6rem, 2.3vw, 1.95rem) * var(--mahjong-discard-tile-ratio, 1.32));
+  width: clamp(2.24rem, 3.22vw, 2.73rem);
+  height: calc(clamp(2.24rem, 3.22vw, 2.73rem) * var(--mahjong-discard-tile-ratio, 1.32));
+  min-width: clamp(2.24rem, 3.22vw, 2.73rem);
+  min-height: calc(clamp(2.24rem, 3.22vw, 2.73rem) * var(--mahjong-discard-tile-ratio, 1.32));
 }
 
 .action-dock__claim-preview-tile--claim {
@@ -1339,10 +1339,10 @@
   }
 
   .action-dock__claim-preview-tile {
-    width: 1.1rem;
-    height: calc(1.1rem * var(--mahjong-discard-tile-ratio, 1.32));
-    min-width: 1.1rem;
-    min-height: calc(1.1rem * var(--mahjong-discard-tile-ratio, 1.32));
+    width: 1.54rem;
+    height: calc(1.54rem * var(--mahjong-discard-tile-ratio, 1.32));
+    min-width: 1.54rem;
+    min-height: calc(1.54rem * var(--mahjong-discard-tile-ratio, 1.32));
   }
 
   .action-dock__fan-detail-popover {

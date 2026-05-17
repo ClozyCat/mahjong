@@ -80,17 +80,77 @@ describe('voicePacks', () => {
     expect(url).toBe(`/assets/${packName}/yi_wan.mp3`);
   });
 
-  it('silently starts audio playback when the browser Audio API is available', () => {
+  it('silently starts audio playback when the browser Audio API is available', async () => {
+    let endedHandler: (() => void) | null = null;
     const play = vi.fn(() => Promise.resolve());
-    const audio = vi.fn(() => ({ play }));
+    const audio = vi.fn(() => ({
+      addEventListener: vi.fn((eventName: string, handler: () => void) => {
+        if (eventName === 'ended') {
+          endedHandler = handler;
+        }
+      }),
+      removeEventListener: vi.fn(),
+      play,
+    }));
     const originalAudio = globalThis.Audio;
 
     globalThis.Audio = audio as unknown as typeof Audio;
-    playVoiceClip('/assets/alpha/peng.mp3');
+    const playback = playVoiceClip('/assets/alpha/peng.mp3');
+
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(audio).toHaveBeenCalledWith('/assets/alpha/peng.mp3');
     expect(play).toHaveBeenCalled();
 
+    endedHandler?.();
+    await playback;
+
     globalThis.Audio = originalAudio;
+  });
+
+  it('queues voice playback so overlapping clips are played one after another', async () => {
+    type EventHandler = () => void;
+
+    const handlersByUrl = new Map<string, Map<string, EventHandler>>();
+    const play = vi.fn(() => Promise.resolve());
+    const audio = vi.fn((url: string) => {
+      const handlers = new Map<string, EventHandler>();
+      handlersByUrl.set(url, handlers);
+
+      return {
+        addEventListener: vi.fn((eventName: string, handler: EventHandler) => {
+          handlers.set(eventName, handler);
+        }),
+        removeEventListener: vi.fn(),
+        play,
+      };
+    });
+    const originalAudio = globalThis.Audio;
+
+    globalThis.Audio = audio as unknown as typeof Audio;
+
+    try {
+      const firstPlayback = playVoiceClip('/assets/alpha/peng.mp3');
+      const secondPlayback = playVoiceClip('/assets/alpha/gang.mp3');
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(audio).toHaveBeenCalledTimes(1);
+      expect(audio).toHaveBeenCalledWith('/assets/alpha/peng.mp3');
+
+      handlersByUrl.get('/assets/alpha/peng.mp3')?.get('ended')?.();
+      await firstPlayback;
+      await Promise.resolve();
+
+      expect(audio).toHaveBeenCalledTimes(2);
+      expect(audio).toHaveBeenLastCalledWith('/assets/alpha/gang.mp3');
+
+      handlersByUrl.get('/assets/alpha/gang.mp3')?.get('ended')?.();
+      await secondPlayback;
+    } finally {
+      globalThis.Audio = originalAudio;
+    }
   });
 });

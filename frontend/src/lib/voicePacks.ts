@@ -49,6 +49,14 @@ export interface VoiceCue {
   clipName: string;
 }
 
+interface QueuedVoiceClip {
+  url: string;
+  resolve: () => void;
+}
+
+let isVoiceClipPlaying = false;
+const pendingVoiceClips: QueuedVoiceClip[] = [];
+
 export function getVoiceClipNameForTile(tileCode: string | null | undefined): string | null {
   if (!tileCode) {
     return null;
@@ -114,20 +122,85 @@ export function resolveVoiceClipUrl(
   return assets[`../../voices/${packName}/${clipName}.mp3`] ?? null;
 }
 
-export function playVoiceClip(url: string) {
-  if (typeof Audio !== 'function') {
+export function playVoiceClip(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    pendingVoiceClips.push({ url, resolve });
+
+    if (!isVoiceClipPlaying) {
+      playNextVoiceClip();
+    }
+  });
+}
+
+function playNextVoiceClip() {
+  const nextClip = pendingVoiceClips.shift();
+  if (!nextClip) {
+    isVoiceClipPlaying = false;
     return;
   }
 
-  try {
-    const audio = new Audio(url);
-    const playResult = audio.play();
-    if (playResult && typeof playResult.catch === 'function') {
-      playResult.catch(() => {});
-    }
-  } catch {
-    // Browser autoplay policies or unsupported media APIs should not interrupt the game.
+  isVoiceClipPlaying = true;
+  playVoiceClipNow(nextClip.url, () => {
+    nextClip.resolve();
+    playNextVoiceClip();
+  });
+}
+
+function playVoiceClipNow(url: string, onSettled?: () => void): Promise<void> {
+  if (typeof Audio !== 'function') {
+    onSettled?.();
+    return Promise.resolve();
   }
+
+  return new Promise((resolve) => {
+    let audio: HTMLAudioElement;
+
+    try {
+      audio = new Audio(url);
+    } catch {
+      // Browser autoplay policies or unsupported media APIs should not interrupt the game.
+      onSettled?.();
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      removeAudioEventListener?.('ended', finish);
+      removeAudioEventListener?.('error', finish);
+      onSettled?.();
+      resolve();
+    };
+    const addAudioEventListener =
+      typeof audio.addEventListener === 'function' ? audio.addEventListener.bind(audio) : null;
+    const removeAudioEventListener =
+      typeof audio.removeEventListener === 'function' ? audio.removeEventListener.bind(audio) : null;
+
+    if (addAudioEventListener) {
+      addAudioEventListener('ended', finish, { once: true });
+      addAudioEventListener('error', finish, { once: true });
+    }
+
+    try {
+      const playResult = audio.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        if (addAudioEventListener) {
+          playResult.catch(finish);
+        } else {
+          playResult.then(finish, finish);
+        }
+      } else if (!addAudioEventListener) {
+        finish();
+      }
+    } catch {
+      finish();
+    }
+  });
 }
 
 function hashString(value: string) {
