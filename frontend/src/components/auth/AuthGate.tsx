@@ -28,6 +28,9 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
   const [displayName, setDisplayName] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const disabled = status === 'loading';
+  const canSubmitLogin = identifier.trim().length > 0 && loginPassword.trim().length > 0;
+  const canSubmitRegister =
+    inviteCode.trim().length > 0 && displayName.trim().length > 0 && registerPassword.trim().length > 0;
   const statusText = message ?? (disabled ? '正在处理请求...' : '登录后即可进入牌桌。');
 
   return (
@@ -68,8 +71,8 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
             onSubmit={(event) => {
               event.preventDefault();
               onLogin({
-                identifier,
-                password: loginPassword,
+                identifier: identifier.trim(),
+                password: loginPassword.trim(),
               });
             }}
           >
@@ -79,6 +82,8 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
                 value={identifier}
                 onChange={(event) => setIdentifier(event.target.value)}
                 disabled={disabled}
+                autoComplete="username"
+                required
               />
             </label>
             <label className="auth-gate__field">
@@ -88,9 +93,11 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
                 value={loginPassword}
                 onChange={(event) => setLoginPassword(event.target.value)}
                 disabled={disabled}
+                autoComplete="current-password"
+                required
               />
             </label>
-            <button type="submit" className="auth-gate__primary" disabled={disabled}>
+            <button type="submit" className="auth-gate__primary" disabled={disabled || !canSubmitLogin}>
               登录
             </button>
           </form>
@@ -100,9 +107,9 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
             onSubmit={(event) => {
               event.preventDefault();
               onRegister({
-                inviteCode,
-                displayName,
-                password: registerPassword,
+                inviteCode: inviteCode.trim(),
+                displayName: displayName.trim(),
+                password: registerPassword.trim(),
               });
             }}
           >
@@ -112,6 +119,8 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
                 value={inviteCode}
                 onChange={(event) => setInviteCode(event.target.value)}
                 disabled={disabled}
+                autoComplete="one-time-code"
+                required
               />
             </label>
             <label className="auth-gate__field">
@@ -120,6 +129,8 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
                 disabled={disabled}
+                autoComplete="nickname"
+                required
               />
             </label>
             <label className="auth-gate__field">
@@ -129,9 +140,11 @@ export function AuthGate({ status, message, onLogin, onRegister }: AuthGateProps
                 value={registerPassword}
                 onChange={(event) => setRegisterPassword(event.target.value)}
                 disabled={disabled}
+                autoComplete="new-password"
+                required
               />
             </label>
-            <button type="submit" className="auth-gate__primary" disabled={disabled}>
+            <button type="submit" className="auth-gate__primary" disabled={disabled || !canSubmitRegister}>
               注册并登录
             </button>
           </form>

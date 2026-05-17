@@ -99,9 +99,6 @@ interface TableStageProps {
   botCount?: number;
   canAddBot?: boolean;
   canRemoveBot?: boolean;
-  tileScale?: number;
-  canDecreaseTileScale?: boolean;
-  canIncreaseTileScale?: boolean;
   canLeaveTable?: boolean;
   themeId?: ThemeId;
   themeLabel?: string;
@@ -113,8 +110,6 @@ interface TableStageProps {
   onRemoveBot?: () => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
-  onDecreaseTileScale?: () => void;
-  onIncreaseTileScale?: () => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -159,9 +154,6 @@ export function TableStage({
   botCount = 0,
   canAddBot = false,
   canRemoveBot = false,
-  tileScale = 1,
-  canDecreaseTileScale: _canDecreaseTileScale = false,
-  canIncreaseTileScale: _canIncreaseTileScale = false,
   canLeaveTable = false,
   themeId = 'tian-shui-bi',
   themeLabel = '天水碧',
@@ -173,8 +165,6 @@ export function TableStage({
   onRemoveBot,
   onQuickChat,
   onPointGesture,
-  onDecreaseTileScale: _onDecreaseTileScale,
-  onIncreaseTileScale: _onIncreaseTileScale,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -195,7 +185,6 @@ export function TableStage({
   const scene = buildTableSceneModel({
     viewport,
     players: playersWithColorSlots,
-    tileScale,
     occupiedSeatCount,
     seatCapacity,
     isWaitingForMatchStart,

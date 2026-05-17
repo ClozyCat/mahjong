@@ -27,7 +27,6 @@ const WIND_NAME_TO_CHAR: Record<string, string> = {
 interface BuildTableSceneModelParams {
   viewport: BattleViewportMetrics;
   players: TableStagePlayer[];
-  tileScale: number;
   occupiedSeatCount?: number;
   seatCapacity: number;
   isWaitingForMatchStart: boolean;
@@ -182,7 +181,6 @@ function shouldPinDenseMeldRack(seat: Seat, meldCount: number) {
 export function buildTableSceneModel({
   viewport,
   players,
-  tileScale,
   occupiedSeatCount,
   seatCapacity,
   isWaitingForMatchStart,
@@ -236,17 +234,16 @@ export function buildTableSceneModel({
     layoutProfile.riverGap.minPx,
     layoutProfile.riverGap.maxPx,
   );
-  const scaledRiverWidthPx = riverBaseWidthPx * tileScale;
   const horizontalRiverColumns = calculateColumns(
     horizontalSafeInlinePx,
-    scaledRiverWidthPx,
+    riverBaseWidthPx,
     riverGapPx,
     layoutProfile.horizontalRiverColumns.min,
     layoutProfile.horizontalRiverColumns.max,
   );
   const verticalRiverColumns = calculateColumns(
     verticalSafeInlinePx,
-    scaledRiverWidthPx,
+    riverBaseWidthPx,
     riverGapPx,
     layoutProfile.verticalRiverColumns.min,
     layoutProfile.verticalRiverColumns.max,
@@ -277,29 +274,28 @@ export function buildTableSceneModel({
     layoutProfile.matchBarSize.height.minPx,
     layoutProfile.matchBarSize.height.maxPx,
   );
-  const scaledRiverHeightPx = scaledRiverWidthPx * DISCARD_TILE_RATIO;
+  const riverBaseHeightPx = riverBaseWidthPx * DISCARD_TILE_RATIO;
   const spotlightScale = viewport.effectMode === 'lowFx'
     ? Math.min(layoutProfile.spotlightScale, 1.16)
     : layoutProfile.spotlightScale;
 
-  const spotlightOffsetPx = (barHeightPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + layoutProfile.spotlightGap * 2;
-  const spotlightOffsetHorizontalPx = (barWidthPx / 2) + (scaledRiverHeightPx * spotlightScale / 2) + (layoutProfile.spotlightGap * 2);
+  const spotlightOffsetPx = (barHeightPx / 2) + (riverBaseHeightPx * spotlightScale / 2) + layoutProfile.spotlightGap * 2;
+  const spotlightOffsetHorizontalPx = (barWidthPx / 2) + (riverBaseHeightPx * spotlightScale / 2) + (layoutProfile.spotlightGap * 2);
   const localPlayer = players.find((player) => player.isLocal) ?? playerBySeat.get('bottom');
 
   return {
     effectMode: viewport.effectMode,
     layoutId: layoutProfile.id,
     stageStyle: {
-      '--table-stage-tile-scale': `${tileScale}`,
       '--table-stage-spotlight-scale': `${spotlightScale}`,
       '--battle-hand-tile-width-base': `${handBaseWidthPx}px`,
-      '--battle-hand-tile-width': `calc(${handBaseWidthPx}px * var(--table-stage-tile-scale, 1))`,
+      '--battle-hand-tile-width': `${handBaseWidthPx}px`,
       '--battle-hand-tile-height': `calc(var(--battle-hand-tile-width) * ${HAND_TILE_RATIO})`,
       '--table-stage-river-columns': `${horizontalRiverColumns}`,
       '--table-stage-meld-rows-h': `${layoutProfile.horizontalMeldRows}`,
       '--table-stage-meld-cols-v': `${layoutProfile.verticalMeldColumns}`,
       '--table-stage-river-base-width': `${riverBaseWidthPx}px`,
-      '--table-stage-river-base-height': `${scaledRiverHeightPx}px`,
+      '--table-stage-river-base-height': `${riverBaseHeightPx}px`,
       '--table-stage-river-gap': `${riverGapPx}px`,
       '--table-stage-meld-base-width': `${meldBaseWidthPx}px`,
       '--table-stage-settlement-base-width': `${settlementBaseWidthPx}px`,

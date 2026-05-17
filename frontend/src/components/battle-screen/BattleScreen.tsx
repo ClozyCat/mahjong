@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import type {
   BattleActionId,
@@ -58,10 +58,6 @@ interface BattleScreenProps {
   pendingInvitePanel?: ReactNode;
 }
 
-const DEFAULT_TABLE_TILE_SCALE = 1.12;
-const TABLE_TILE_SCALE_STEP = 0.06;
-const MIN_TABLE_TILE_SCALE = 0.88;
-const MAX_TABLE_TILE_SCALE = 1.3;
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
 const READY_HAND_CALLOUT_LINGER_MS = 1000;
 const VOICE_CUE_DEDUP_MS = 1200;
@@ -98,7 +94,6 @@ export function BattleScreen({
   inviteStatusesByUserId = {},
   pendingInvitePanel = null,
 }: BattleScreenProps) {
-  const [tableTileScale, setTableTileScale] = useState(DEFAULT_TABLE_TILE_SCALE);
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
@@ -129,8 +124,6 @@ export function BattleScreen({
       ];
   const battleActions = viewModel.actions.filter((action) => !TABLE_ONLY_ACTION_IDS.includes(action.id));
   const occupiedSeatCount = viewModel.players.filter((player) => player.seatType !== 'bot').length;
-  const canDecreaseTableTileScale = tableTileScale > MIN_TABLE_TILE_SCALE;
-  const canIncreaseTableTileScale = tableTileScale < MAX_TABLE_TILE_SCALE;
   const shouldReturnLastDiscardToRiver =
     Boolean(viewModel.result) &&
     Boolean(viewModel.lastDiscard) &&
@@ -151,14 +144,6 @@ export function BattleScreen({
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
   const settlementResetKey = getSettlementResetKey(viewModel);
 
-  function adjustTableTileScale(offset: number) {
-    setTableTileScale((currentScale) => {
-      const nextScale = Number((currentScale + offset).toFixed(2));
-
-      return Math.min(MAX_TABLE_TILE_SCALE, Math.max(MIN_TABLE_TILE_SCALE, nextScale));
-    });
-  }
-
   function handleAction(actionId: BattleActionId) {
     if (actionId === 'invite') {
       setIsInviteDialogOpen(true);
@@ -167,10 +152,6 @@ export function BattleScreen({
 
     onAction(actionId);
   }
-
-  const battleStageStyle = {
-    '--table-stage-tile-scale': `${tableTileScale}`,
-  } as CSSProperties;
 
   useEffect(() => {
     consumedActionEffectRef.current = consumedActionEffect;
@@ -359,7 +340,7 @@ export function BattleScreen({
   return (
     <main className="battle-screen">
       <div className="battle-shell">
-        <div className="battle-stage" style={battleStageStyle}>
+        <div className="battle-stage">
           <div className="battle-stage__table-wrap">
             <TableStage
               discards={viewModel.discards}
@@ -394,9 +375,6 @@ export function BattleScreen({
               botCount={viewModel.dealerSelection ? 0 : viewModel.waitingControls?.botCount ?? 0}
               canAddBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canAddBot ?? false)}
               canRemoveBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canRemoveBot ?? false)}
-              tileScale={tableTileScale}
-              canDecreaseTileScale={canDecreaseTableTileScale}
-              canIncreaseTileScale={canIncreaseTableTileScale}
               canLeaveTable={viewModel.canLeaveTable}
               themeId={themeId}
               themeLabel={themeLabel}
@@ -408,8 +386,6 @@ export function BattleScreen({
               onRemoveBot={onRemoveBot}
               onQuickChat={onQuickChat}
               onPointGesture={onPointGesture}
-              onDecreaseTileScale={() => adjustTableTileScale(-TABLE_TILE_SCALE_STEP)}
-              onIncreaseTileScale={() => adjustTableTileScale(TABLE_TILE_SCALE_STEP)}
               isBgmEnabled={isBgmEnabled}
               onToggleBgm={onToggleBgm}
               isVoiceEnabled={isVoiceEnabled}
