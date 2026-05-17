@@ -25,15 +25,16 @@ describe('getTileAsset', () => {
     });
   });
 
-  it('normalizes svg assets into a full-tile viewBox data uri', () => {
+  it('keeps svg assets as external urls so tile art does not inflate the main bundle', () => {
     const tile = getTileAsset('c7');
 
     expect(tile).toMatchObject({
       kind: 'image',
       assetName: '0307七條.svg',
     });
-    expect(tile.kind === 'image' ? tile.src : '').toContain('viewBox');
-    expect(tile.kind === 'image' ? tile.src : '').toContain('preserveAspectRatio');
+    expect(tile.kind === 'image' ? tile.src : '').toContain('0307');
+    expect(tile.kind === 'image' ? tile.src : '').toContain('.svg');
+    expect(tile.kind === 'image' ? tile.src : '').not.toContain('data:image/svg+xml');
   });
 
   it('maps honors and dragon aliases to the expected assets', () => {

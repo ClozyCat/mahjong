@@ -1,12 +1,42 @@
-import { useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, type MutableRefObject } from 'react';
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState } from 'react';
 
+import {
+  ACTIVE_TABLE_LOOKUP_MESSAGE,
+  ACTIVE_TABLE_RETRY_MESSAGE,
+  HEARTBEAT_INTERVAL_MS,
+  SOCIAL_REFRESH_INTERVAL_MS,
+  SOCIAL_SOCKET_RECONNECT_MS,
+  getDefaultConfig,
+  type AuthStatus,
+  type RoomSocketOptions,
+  type SentInviteStatus,
+} from './app/config';
+import { closeSocket } from './app/socketLifecycle';
+import { getRejectedMessage, getSocialStatusCopy } from './app/statusCopy';
+import {
+  canQuickDiscard,
+  canUseClaimMultiSelect,
+  createInviteDialogUsers,
+  createPendingWaitingRoomSnapshot,
+  getClaimSelectionSignature,
+  getDefaultClaimCandidateSelection,
+  getInviteCreatorLabel,
+  getPendingTableInvites,
+  getUserDisplayName,
+  hasInviteableTableSeat,
+  isActionBlockedByOptimisticDiscard,
+  isStaleTableInviteError,
+  removeInviteById,
+  updateLeaderboardUserActiveTableCode,
+  updateLeaderboardUserPoints,
+  updateUserActiveTableCode,
+  updateUserPoints,
+  upsertInvite,
+} from './app/tableHelpers';
 import { AuthGate } from './components/auth/AuthGate';
-import { BattleScreen } from './components/battle-screen/BattleScreen';
-import type { InviteDialogUser, PlayerInviteStatus } from './components/battle-screen/PlayerInviteDialog';
 import {
   clearStoredAuthSession,
   getMe,
-  loadStoredAuthSession,
   loginWithPassword,
   logoutSession,
   registerWithInvite,
@@ -21,7 +51,7 @@ import {
   getLocalTurnKongPromptSignature,
   getMatchingActionGroup,
 } from './lib/kongSelection';
-import { createClaimCandidates, createMatchViewModel, getLocalSelfHuPromptSignature } from './lib/matchViewModel';
+import { createMatchViewModel, getLocalSelfHuPromptSignature } from './lib/matchViewModel';
 import {
   buildWebSocketUrl,
   createAdjustBotsMessage,
@@ -48,7 +78,6 @@ import {
   rejectTableInvite,
 } from './lib/socialApi';
 import { createInitialSessionState, sessionReducer } from './lib/sessionReducer';
-import { titleForPoints } from './lib/systemBroadcastCopy';
 import {
   clearStoredSession,
   loadStoredThemeId,
@@ -63,369 +92,18 @@ import type {
   BackendActionType,
   BattleActionId,
   ClaimActionId,
-  CreateTableResponse,
   PublicUser,
   QuickChatEmoji,
-  RoomSnapshotMessage,
   SessionState,
   TableInvite,
 } from './types/match';
-
-const HEARTBEAT_INTERVAL_MS = 20_000;
-const SOCIAL_REFRESH_INTERVAL_MS = 15_000;
-const SOCIAL_SOCKET_RECONNECT_MS = 1_000;
-const TABLE_SEAT_CAPACITY = 4;
-const ACTIVE_TABLE_LOOKUP_MESSAGE = '正在检查当前账号所在牌桌...';
-const ACTIVE_TABLE_RETRY_MESSAGE = '牌桌连接已断开，正在重连你当前所在的牌桌。';
-const CLAIM_ACTION_IDS = ['chow', 'pung', 'kong'] as const;
-const CLAIM_RESPONSE_ACTION_IDS = ['chow', 'pung', 'kong', 'hu'] as const;
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'start_match',
   'start_next_round',
 ]);
-type AuthStatus = 'loading' | 'anonymous' | 'ready';
-type SentInviteStatus = 'pending' | 'rejected';
-type RoomSocketOptions = {
-  tableCode: string;
-  nickname: string;
-  wsBaseUrl: string;
-  sessionToken?: string | null;
-  reconnect?: boolean;
-};
-
-function getRuntimeDefaultBaseUrls() {
-  if (typeof window === 'undefined') {
-    return {
-      apiBaseUrl: 'http://localhost:8000',
-      wsBaseUrl: 'ws://localhost:8000',
-    };
-  }
-
-  const { origin, protocol, host } = window.location;
-  return {
-    apiBaseUrl: origin,
-    wsBaseUrl: `${protocol === 'https:' ? 'wss' : 'ws'}://${host}`,
-  };
-}
-
-function getDefaultConfig() {
-  const env = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {});
-  const runtimeDefaults = getRuntimeDefaultBaseUrls();
-  const defaults = {
-    apiBaseUrl: env.VITE_API_BASE_URL ?? runtimeDefaults.apiBaseUrl,
-    wsBaseUrl: env.VITE_WS_BASE_URL ?? runtimeDefaults.wsBaseUrl,
-  };
-  const storedAuthSession = loadStoredAuthSession();
-
-  return {
-    defaults,
-    storedAuthSession,
-  };
-}
-
-function getRejectedMessage(reason: string) {
-  const lookup: Record<string, string> = {
-    table_not_found: '牌桌不存在或已关闭。',
-    table_closed: '牌桌已关闭，请返回大厅重新进入。',
-    table_full: '本牌局人数已满。',
-  };
-
-  return lookup[reason] ?? '请求未被服务器接受，请按最新房间状态重试。';
-}
-
-function getSocialStatusCopy(detail: string) {
-  const lookup: Record<string, string> = {
-    auth_required: '登录状态已失效，请重新登录。',
-    invite_code_invalid: '邀请码无效或已被使用。',
-    invalid_credentials: '账号或密码错误。',
-    username_taken: '该账号名已被占用。',
-    target_player_busy: '该玩家正在牌局中，请稍后重试。',
-    target_already_in_table: '该玩家已在本牌局中。',
-    only_owner_can_invite: '只有房主可以邀请玩家。',
-    table_multiplier_locked: '牌局已开始，无法再修改牌局设置。',
-    table_not_found: '牌桌不存在或已关闭。',
-  };
-
-  return lookup[detail] ?? detail;
-}
-
-function closeSocket(socketRef: MutableRefObject<WebSocket | null>, heartbeatTimerRef: MutableRefObject<number | null>) {
-  if (heartbeatTimerRef.current !== null) {
-    window.clearInterval(heartbeatTimerRef.current);
-    heartbeatTimerRef.current = null;
-  }
-
-  if (!socketRef.current) {
-    return;
-  }
-
-  socketRef.current.onclose = null;
-  socketRef.current.close();
-  socketRef.current = null;
-}
-
-function hasClaimAction(options: BackendActionType[]) {
-  return CLAIM_RESPONSE_ACTION_IDS.some((actionId) => options.includes(actionId));
-}
-
-function getClaimSelectionSignature(state: SessionState) {
-  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
-
-  if (pendingAction?.type === 'claim_window' && Array.isArray(pendingAction.options)) {
-    const options = pendingAction.options
-      .filter((option): option is BackendActionType => typeof option === 'string')
-      .filter((option): option is (typeof CLAIM_RESPONSE_ACTION_IDS)[number] =>
-        CLAIM_RESPONSE_ACTION_IDS.includes(option as (typeof CLAIM_RESPONSE_ACTION_IDS)[number]),
-      );
-    return options.length > 0 ? `claim:${pendingAction.deadline_at}:${options.slice().sort().join(',')}` : null;
-  }
-
-  const promptOptions = (state.latestActionPrompt?.payload.options ?? []).filter(
-    (option): option is BackendActionType =>
-      CLAIM_RESPONSE_ACTION_IDS.includes(option as (typeof CLAIM_RESPONSE_ACTION_IDS)[number]) || option === 'pass',
-  );
-  if (promptOptions.includes('pass') && hasClaimAction(promptOptions)) {
-    const options = promptOptions.filter((option): option is (typeof CLAIM_RESPONSE_ACTION_IDS)[number] =>
-      CLAIM_RESPONSE_ACTION_IDS.includes(option as (typeof CLAIM_RESPONSE_ACTION_IDS)[number]),
-    );
-    return options.length > 0 ? `claim:${state.latestActionPrompt?.payload.deadline_at ?? ''}:${options.slice().sort().join(',')}` : null;
-  }
-
-  return null;
-}
-
-function canUseClaimMultiSelect(state: SessionState) {
-  return getClaimSelectionSignature(state) !== null;
-}
-
-function getDefaultClaimCandidateSelection(state: SessionState) {
-  const firstCandidate = createClaimCandidates(state)[0];
-
-  if (!firstCandidate) {
-    return null;
-  }
-
-  return {
-    actionId: firstCandidate.actionId,
-    tileIds: firstCandidate.tileIds,
-  };
-}
-
-function canQuickDiscard(state: SessionState, hasLocalTurnKongPrompt: boolean) {
-  if (state.optimisticDiscard) {
-    return false;
-  }
-
-  if (
-    hasLocalTurnKongPrompt ||
-    canUseClaimMultiSelect(state) ||
-    state.selectionMode === 'kong' ||
-    state.selectionMode === 'chow' ||
-    state.selectionMode === 'pung'
-  ) {
-    return false;
-  }
-
-  const localSeat = state.roomSnapshot?.payload.local_seat;
-  if (typeof localSeat !== 'number') {
-    return false;
-  }
-
-  const pendingAction = state.roomSnapshot?.payload.private_state?.pending_action;
-  if (
-    pendingAction?.type === 'active_turn' &&
-    pendingAction.seat_index === localSeat &&
-    Array.isArray(pendingAction.options) &&
-    pendingAction.options.includes('discard')
-  ) {
-    return true;
-  }
-
-  return state.latestActionPrompt?.payload.seat_index === localSeat && state.latestActionPrompt.payload.options.includes('discard');
-}
-
-function isStandaloneBotSeat(seat: { seat_type?: string; is_bot?: boolean }) {
-  if (seat.seat_type) {
-    return seat.seat_type === 'bot';
-  }
-
-  return Boolean(seat.is_bot);
-}
-
-function hasInviteableTableSeat(snapshot: SessionState['roomSnapshot']) {
-  const payload = snapshot?.payload;
-  if (!payload) {
-    return false;
-  }
-
-  if (payload.seats.some(isStandaloneBotSeat)) {
-    return true;
-  }
-
-  if (payload.phase === 'waiting' && payload.seats.length < TABLE_SEAT_CAPACITY) {
-    return true;
-  }
-
-  return false;
-}
-
-function createPendingWaitingRoomSnapshot(table: CreateTableResponse): RoomSnapshotMessage {
-  return {
-    type: 'room_snapshot',
-    payload: {
-      table_code: table.table_code,
-      phase: table.phase,
-      mode: table.mode,
-      owner_user_id: table.owner_user_id,
-      multiplier: table.multiplier,
-      seats: table.seats,
-      local_seat: 0,
-      match_state: null,
-      private_state: null,
-    },
-  } as const;
-}
-
-function isActionBlockedByOptimisticDiscard(actionId: BattleActionId) {
-  return (
-    actionId === 'discard' ||
-    actionId === 'ready_hand' ||
-    actionId === 'flower' ||
-    actionId === 'kong' ||
-    actionId === 'hu' ||
-    actionId === 'chow' ||
-    actionId === 'pung' ||
-    actionId === 'pass'
-  );
-}
-
-function upsertInvite(current: TableInvite[], nextInvite: TableInvite) {
-  if (!isPendingTableInvite(nextInvite)) {
-    return removeInviteById(current, nextInvite.id);
-  }
-
-  return [
-    nextInvite,
-    ...current.filter(
-      (invite) => invite.id !== nextInvite.id && invite.inviter_user_id !== nextInvite.inviter_user_id,
-    ),
-  ];
-}
-
-function removeInviteById(current: TableInvite[], inviteId: number) {
-  return current.filter((invite) => invite.id !== inviteId);
-}
-
-function isPendingTableInvite(invite: TableInvite) {
-  return invite.status === 'pending';
-}
-
-function getPendingTableInvites(invites: TableInvite[]) {
-  return invites
-    .filter(isPendingTableInvite)
-    .reduceRight<TableInvite[]>((current, invite) => upsertInvite(current, invite), []);
-}
-
-function updateUserPoints(user: PublicUser | null, userId: number, points: number, title?: string) {
-  if (!user || user.user_id !== userId) {
-    return user;
-  }
-
-  const nextTitle = title ?? titleForPoints(points);
-  return {
-    ...user,
-    points,
-    title: nextTitle,
-    display_label: `${user.display_name}（${nextTitle}）`,
-  };
-}
-
-function updateLeaderboardUserPoints(leaderboard: PublicUser[], userId: number, points: number, title?: string) {
-  return leaderboard.map((user) => updateUserPoints(user, userId, points, title) ?? user);
-}
-
-function updateUserActiveTableCode(
-  user: PublicUser | null,
-  userId: number,
-  tableCode: string | null,
-  tablePhase?: PublicUser['active_table_phase'],
-) {
-  if (!user || user.user_id !== userId) {
-    return user;
-  }
-
-  return {
-    ...user,
-    active_table_code: tableCode,
-    active_table_phase: tableCode ? tablePhase ?? user.active_table_phase ?? null : null,
-  };
-}
-
-function updateLeaderboardUserActiveTableCode(
-  leaderboard: PublicUser[],
-  userId: number,
-  tableCode: string | null,
-  tablePhase?: PublicUser['active_table_phase'],
-) {
-  return leaderboard.map((user) =>
-    user.user_id === userId
-      ? {
-          ...user,
-          active_table_code: tableCode,
-          active_table_phase: tableCode ? tablePhase ?? user.active_table_phase ?? null : null,
-        }
-      : user,
-  );
-}
-
-function isStaleTableInviteError(error: unknown) {
-  return error instanceof Error && error.message === 'table_not_found';
-}
-
-function getUserDisplayName(users: PublicUser[], userId: number) {
-  return users.find((user) => user.user_id === userId)?.display_name ?? `用户 #${userId}`;
-}
-
-function getInviteCreatorLabel(invite: TableInvite, labelsByUserId: Record<number, string>) {
-  return labelsByUserId[invite.inviter_user_id] ?? `用户 #${invite.inviter_user_id}`;
-}
-
-function createInviteDialogUsers(users: PublicUser[], onlineUserIds: number[]): InviteDialogUser[] {
-  const onlineUserIdSet = new Set(onlineUserIds);
-  const activeTableUserCounts = users.reduce((counts, user) => {
-    if (!user.active_table_code) {
-      return counts;
-    }
-
-    counts.set(user.active_table_code, (counts.get(user.active_table_code) ?? 0) + 1);
-    return counts;
-  }, new Map<string, number>());
-
-  return users.map((user) => ({
-    user,
-    status: getInviteDialogStatus(user, onlineUserIdSet, activeTableUserCounts),
-  }));
-}
-
-function getInviteDialogStatus(
-  user: PublicUser,
-  onlineUserIdSet: Set<number>,
-  activeTableUserCounts: Map<string, number>,
-): PlayerInviteStatus {
-  if (user.is_special_bot) {
-    return user.active_table_code ? 'playing' : 'online';
-  }
-
-  if (!onlineUserIdSet.has(user.user_id)) {
-    return 'offline';
-  }
-
-  if (!user.active_table_code) {
-    return 'online';
-  }
-
-  return (activeTableUserCounts.get(user.active_table_code) ?? 0) > 1 ? 'playing' : 'online';
-}
+const BattleScreen = lazy(() =>
+  import('./components/battle-screen/BattleScreen').then((module) => ({ default: module.BattleScreen })),
+);
 
 export default function App() {
   const [isBgmEnabled, setIsBgmEnabled] = useState(() => loadStoredBgmEnabled());
@@ -1640,49 +1318,51 @@ export default function App() {
 
   function renderBattleScreen() {
     return (
-      <BattleScreen
-        isBgmEnabled={isBgmEnabled}
-        onToggleBgm={() =>
-          setIsBgmEnabled((current) => {
-            const next = !current;
-            saveStoredBgmEnabled(next);
-            return next;
-          })
-        }
-        isVoiceEnabled={isVoiceEnabled}
-        onToggleVoice={() =>
-          setIsVoiceEnabled((current) => {
-            const next = !current;
-            saveStoredVoiceEnabled(next);
-            return next;
-          })
-        }
-        isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
-        isAutoPassKongEnabled={isAutoPassKongEnabled}
-        canToggleAutoPassKong={canToggleAutoPassKong}
-        onToggleBotTakeover={handleSetBotTakeover}
-        onToggleAutoPassKong={setIsAutoPassKongEnabled}
-        inviteHumanUsers={inviteHumanUsers}
-        inviteAiUsers={inviteAiUsers}
-        inviteStatusesByUserId={sentInviteStatusesByUserId}
-        pendingInvitePanel={pendingInvitePanel}
-        currentUserId={currentUser?.user_id ?? null}
-        viewModel={viewModel}
-        themeId={themeId}
-        themeLabel={getThemeLabel(themeId)}
-        onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
-        onTileSelect={handleTileSelect}
-        onTileDoubleClick={handleTileDoubleClick}
-        onClaimCandidateSelect={handleClaimCandidateSelect}
-        onClaimCandidateActivate={handleClaimCandidateActivate}
-        onAction={handleAction}
-        onLeaveTable={handleLeaveTable}
-        onInvitePlayer={handleInvitePlayer}
-        onAddBot={() => handleAdjustBots(1)}
-        onRemoveBot={() => handleAdjustBots(-1)}
-        onQuickChat={handleQuickChat}
-        onPointGesture={handlePointGesture}
-      />
+      <Suspense fallback={null}>
+        <BattleScreen
+          isBgmEnabled={isBgmEnabled}
+          onToggleBgm={() =>
+            setIsBgmEnabled((current) => {
+              const next = !current;
+              saveStoredBgmEnabled(next);
+              return next;
+            })
+          }
+          isVoiceEnabled={isVoiceEnabled}
+          onToggleVoice={() =>
+            setIsVoiceEnabled((current) => {
+              const next = !current;
+              saveStoredVoiceEnabled(next);
+              return next;
+            })
+          }
+          isBotTakeoverEnabled={isLocalBotTakeoverEnabled}
+          isAutoPassKongEnabled={isAutoPassKongEnabled}
+          canToggleAutoPassKong={canToggleAutoPassKong}
+          onToggleBotTakeover={handleSetBotTakeover}
+          onToggleAutoPassKong={setIsAutoPassKongEnabled}
+          inviteHumanUsers={inviteHumanUsers}
+          inviteAiUsers={inviteAiUsers}
+          inviteStatusesByUserId={sentInviteStatusesByUserId}
+          pendingInvitePanel={pendingInvitePanel}
+          currentUserId={currentUser?.user_id ?? null}
+          viewModel={viewModel}
+          themeId={themeId}
+          themeLabel={getThemeLabel(themeId)}
+          onCycleTheme={() => setThemeId((currentThemeId) => getNextThemeId(currentThemeId))}
+          onTileSelect={handleTileSelect}
+          onTileDoubleClick={handleTileDoubleClick}
+          onClaimCandidateSelect={handleClaimCandidateSelect}
+          onClaimCandidateActivate={handleClaimCandidateActivate}
+          onAction={handleAction}
+          onLeaveTable={handleLeaveTable}
+          onInvitePlayer={handleInvitePlayer}
+          onAddBot={() => handleAdjustBots(1)}
+          onRemoveBot={() => handleAdjustBots(-1)}
+          onQuickChat={handleQuickChat}
+          onPointGesture={handlePointGesture}
+        />
+      </Suspense>
     );
   }
 

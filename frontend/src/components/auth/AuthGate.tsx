@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+import './AuthGate.css';
+
 type AuthMode = 'login' | 'register';
 
 interface LoginValue {

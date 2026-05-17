@@ -37,38 +37,15 @@ const FLOWER_ASSET_NAMES: Record<string, string> = {
   f8: '0507菊.svg',
 };
 
-const SVG_VIEWBOX = '0 0 320 446';
-const SVG_SOURCE_MAP = import.meta.glob('../../images/*.svg', {
+const SVG_URL_MAP = import.meta.glob('../../images/*.svg', {
   eager: true,
-  query: '?raw',
+  query: '?url',
   import: 'default',
 }) as Record<string, string>;
 
-function normalizeSvgMarkup(svgText: string) {
-  return svgText.replace(/<svg\b([^>]*)>/i, (match, attributes) => {
-    let nextAttributes = attributes;
-
-    if (!/viewBox=/i.test(nextAttributes)) {
-      nextAttributes += ` viewBox="${SVG_VIEWBOX}"`;
-    }
-
-    if (!/preserveAspectRatio=/i.test(nextAttributes)) {
-      nextAttributes += ' preserveAspectRatio="xMidYMid meet"';
-    }
-
-    return `<svg${nextAttributes}>`;
-  });
-}
-
 function assetUrl(fileName: string) {
   const filePath = `../../images/${fileName}`;
-  const rawSvg = SVG_SOURCE_MAP[filePath];
-
-  if (!rawSvg) {
-    return new URL(filePath, import.meta.url).href;
-  }
-
-  return `data:image/svg+xml,${encodeURIComponent(normalizeSvgMarkup(rawSvg))}`;
+  return SVG_URL_MAP[filePath] ?? new URL(filePath, import.meta.url).href;
 }
 
 export type TileAsset =

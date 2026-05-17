@@ -12,8 +12,7 @@
    ============================== */
 
 .result-overlay__card,
-.fan-guide__dialog,
-.auth-gate__panel {
+.fan-guide__dialog {
   border: 1px solid var(--glass-border);
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 15%, transparent), transparent 50%),
@@ -353,93 +352,6 @@
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
-}
-
-.auth-gate {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.auth-gate__panel {
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 10%, transparent);
-  background: color-mix(in srgb, var(--theme-panel-bg) 92%, transparent);
-  box-shadow: var(--shadow-lg);
-}
-
-.auth-gate__panel {
-  width: min(100%, 30rem);
-  border-radius: 1.75rem;
-  padding: clamp(1.5rem, 5vw, 2.8rem);
-  display: grid;
-  gap: 2.2rem;
-  animation: overlay-fade-in-up 0.6s var(--ease-lux) forwards;
-}
-
-.auth-gate__header h1 {
-  margin: 0;
-  font-size: 1.6rem;
-}
-
-.auth-gate__eyebrow {
-  margin: 0 0 0.35rem;
-  color: var(--muted);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.auth-gate__status {
-  color: var(--muted);
-}
-
-.auth-gate__tabs {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.auth-gate__tabs button,
-.auth-gate__primary {
-  border-radius: 0.85rem;
-  border: 1px solid var(--glass-border);
-  background: color-mix(in srgb, var(--theme-panel-bg-soft) 30%, transparent);
-  color: var(--theme-paper-strong);
-  padding: 0.75rem 1.25rem;
-  font-weight: 600;
-  transition: all 0.3s var(--ease-spring);
-}
-
-.auth-gate__tabs button.is-active,
-.auth-gate__primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.auth-gate__form {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.auth-gate__field {
-  display: grid;
-  gap: 0.4rem;
-}
-
-.auth-gate__field input {
-  width: 100%;
-  padding: 0.9rem 1.1rem;
-  border-radius: 0.85rem;
-  border: 1px solid var(--glass-border);
-  background: color-mix(in srgb, var(--theme-panel-bg-strong) 40%, transparent);
-  color: var(--theme-paper-strong);
-  transition: all 0.3s var(--ease-lux);
-}
-
-.auth-gate__field input:focus {
-  background: color-mix(in srgb, var(--theme-panel-bg-strong) 60%, transparent);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .connect-gate__admin-link:hover {
