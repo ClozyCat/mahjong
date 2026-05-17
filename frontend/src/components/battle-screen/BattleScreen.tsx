@@ -35,7 +35,6 @@ interface BattleScreenProps {
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
   onClaimCandidateActivate: (actionId: ClaimActionId, tileIds: string[]) => void;
   onAction: (actionId: BattleActionId) => void;
-  onCopyTableCode: () => void;
   onLeaveTable: () => void;
   onInvitePlayer?: (userId: number) => void;
   onAddBot?: () => void;
@@ -72,7 +71,6 @@ export function BattleScreen({
   onClaimCandidateSelect,
   onClaimCandidateActivate,
   onAction,
-  onCopyTableCode,
   onLeaveTable,
   onInvitePlayer,
   onAddBot,

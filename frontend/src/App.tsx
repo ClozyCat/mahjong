@@ -1607,18 +1607,6 @@ export default function App() {
     dispatch({ type: 'set_selected_tiles', tileIds: [], mode: null });
   }
 
-  function handleCopyTableCode() {
-    if (!state.tableCode && !activeLobbyTableCode) {
-      return;
-    }
-
-    const tableCode = state.tableCode || activeLobbyTableCode || '';
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(tableCode).catch(() => undefined);
-    }
-    setStatusMessage(`已复制牌桌编号 ${tableCode}。`);
-  }
-
   const activePendingInvite = pendingInvites[0] ?? null;
   const pendingInvitePanel = activePendingInvite ? (
     <div className="table-invite-popup" role="dialog" aria-modal="false" aria-label="收到牌局邀请">
@@ -1688,7 +1676,6 @@ export default function App() {
         onClaimCandidateSelect={handleClaimCandidateSelect}
         onClaimCandidateActivate={handleClaimCandidateActivate}
         onAction={handleAction}
-        onCopyTableCode={handleCopyTableCode}
         onLeaveTable={handleLeaveTable}
         onInvitePlayer={handleInvitePlayer}
         onAddBot={() => handleAdjustBots(1)}

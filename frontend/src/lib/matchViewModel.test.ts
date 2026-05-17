@@ -971,7 +971,6 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.actions.find((item) => item.id === 'discard')?.label).toBe('出牌');
     expect(viewModel.canLeaveTable).toBe(true);
-    expect(viewModel.topStatusLabel).toBe('对局中');
     expect(viewModel.remainingTileCount).toBe(67);
     expect(viewModel.promptText).toBe('Player C正在执行操作：出牌 / 杠 / 和牌');
   });
@@ -1002,7 +1001,6 @@ describe('createMatchViewModel', () => {
 
     expect(viewModel.mode).toBe('finished');
     expect(viewModel.canLeaveTable).toBe(true);
-    expect(viewModel.topStatusLabel).toBe('整场结束');
   });
 
   it('shows only a disabled final placeholder after the full match finishes', () => {

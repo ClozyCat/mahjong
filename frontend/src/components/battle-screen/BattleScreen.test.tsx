@@ -28,9 +28,7 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     canLeaveTable: false,
     phaseLabel: 'playing',
     roundLabel: 'round-123',
-    scoreSummaryLabel: '总分 12',
     deadlineAt: null,
-    topStatusLabel: 'Live Match',
     activePlayerSeat: 'bottom',
     actionIndicatorSeat: null,
     isActionDockElevated: false,
@@ -131,7 +129,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     handInsight: null,
     claimCandidates: [],
     drawnTileId: 'w2#2',
-    centerBanner: 'Opponent Turn',
     centerStatusText: null,
     promptText: null,
     promptCue: null,
@@ -143,7 +140,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     actionEffect: null,
     dealerSelection: null,
     extendedWithExtra: false,
-    toasts: [],
     ...overrides,
   };
 }
@@ -170,7 +166,6 @@ function renderBattleScreenAtViewport(
       onTileDoubleClick={vi.fn()}
       onClaimCandidateSelect={vi.fn()}
       onClaimCandidateActivate={vi.fn()}
-      onCopyTableCode={vi.fn()}
       onLeaveTable={vi.fn()}
       {...overrides}
     />,
@@ -341,7 +336,6 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
-          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -412,7 +406,6 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
-          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -481,7 +474,6 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
-          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -552,7 +544,6 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
-          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -849,7 +840,6 @@ describe('BattleScreen', () => {
       onTileDoubleClick: vi.fn(),
       onClaimCandidateSelect: vi.fn(),
       onClaimCandidateActivate: vi.fn(),
-      onCopyTableCode: vi.fn(),
       onLeaveTable: vi.fn(),
     };
     const { rerender } = render(
@@ -1125,7 +1115,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1630,7 +1619,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1793,7 +1781,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1855,7 +1842,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1920,7 +1906,6 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
-          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -1989,7 +1974,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2064,7 +2048,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2099,7 +2082,6 @@ describe('BattleScreen', () => {
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
         waitingControls: null,
-        centerBanner: 'Reconnecting',
         promptText: 'Trying to restore your seat.',
       }),
     );
@@ -2180,7 +2162,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
         isBotTakeoverEnabled={false}
         onToggleBotTakeover={onToggleBotTakeover}
@@ -2307,7 +2288,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2382,7 +2362,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2460,7 +2439,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2486,7 +2464,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2558,7 +2535,6 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
-        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2626,26 +2602,6 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText('请旋转屏幕或调整窗口比例')).toBeNull();
-  });
-
-
-  it('does not render any log window affordance even when toasts exist', () => {
-    renderBattleScreen(
-      createBattleViewModel({
-        toasts: [
-          { id: 't1', kind: 'event', text: '提示1', createdAt: '2026-03-30T12:10:36+08:00' },
-          { id: 't2', kind: 'event', text: '提示2', createdAt: '2026-03-30T12:10:37+08:00' },
-          { id: 't3', kind: 'event', text: '提示3', createdAt: '2026-03-30T12:10:38+08:00' },
-          { id: 't4', kind: 'event', text: '提示4', createdAt: '2026-03-30T12:10:39+08:00' },
-          { id: 't5', kind: 'event', text: '提示5', createdAt: '2026-03-30T12:10:40+08:00' },
-        ],
-      }),
-    );
-
-    expect(screen.queryByText('提示1')).not.toBeInTheDocument();
-    expect(screen.queryByText('提示5')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '展开日志窗口' })).toBeNull();
-    expect(screen.queryByLabelText('日志窗口')).toBeNull();
   });
 
   it('renders pre-match room controls in the table center instead of the hand dock', () => {

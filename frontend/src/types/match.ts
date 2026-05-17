@@ -707,10 +707,8 @@ export interface BattleViewModel {
   canLeaveTable: boolean;
   phaseLabel: string;
   roundLabel: string;
-  scoreSummaryLabel: string;
   deadlineAt: string | null;
   extendedWithExtra: boolean;
-  topStatusLabel: string;
   activePlayerSeat: Seat;
   actionIndicatorSeat: Seat | null;
   shouldDebounceCenterWaiting?: boolean;
@@ -724,7 +722,6 @@ export interface BattleViewModel {
   handInsight: HandInsightView | null;
   claimCandidates: ClaimCandidateView[];
   drawnTileId: string | null;
-  centerBanner: string | null;
   centerStatusText: string | null;
   remainingTileCount?: number | null;
   promptText: string | null;
@@ -739,5 +736,4 @@ export interface BattleViewModel {
   dealerSelection: DealerSelectionView | null;
   quickChatEvent?: QuickChatEventView | null;
   systemBroadcastEvent?: SystemBroadcastEventView | null;
-  toasts: ToastMessage[];
 }

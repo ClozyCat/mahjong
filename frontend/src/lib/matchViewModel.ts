@@ -1521,45 +1521,6 @@ function createRoundLabel(state: SessionState) {
   return snapshot?.private_state?.round_id ?? '等待牌桌';
 }
 
-function createScoreSummaryLabel(state: SessionState, options: MatchViewModelOptions = {}) {
-  const snapshot = state.roomSnapshot?.payload;
-  if (!snapshot) {
-    return '等待分数同步';
-  }
-
-  const localSeat = getPerspectiveSeat(state, options);
-  const seatKey = String(localSeat);
-  const score = getDisplayedScores(state)[seatKey];
-  const liveDelta = getLiveDeltaBySeat(state)[seatKey] ?? 0;
-
-  if (typeof score !== 'number') {
-    return '等待分数同步';
-  }
-
-  return `总分 ${score}${liveDelta !== 0 ? ` · 本局 ${formatSignedNumber(liveDelta)}` : ''}`;
-}
-
-function createCenterBanner(state: SessionState) {
-  const snapshot = state.roomSnapshot?.payload;
-  if (!snapshot) {
-    return null;
-  }
-
-  if (snapshot.phase === 'settlement') {
-    return '本局结算';
-  }
-
-  if (snapshot.phase === 'finished') {
-    return '整场结束';
-  }
-
-  if (snapshot.phase === 'waiting') {
-    return '等待牌手加入';
-  }
-
-  return snapshot.private_state?.last_discard ?? null;
-}
-
 function createCenterStatusText(state: SessionState) {
   return null;
 }
@@ -1847,20 +1808,8 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     canLeaveTable: canLeaveTable(state.roomSnapshot),
     phaseLabel: snapshot ? PHASE_LABELS[snapshot.phase] : PHASE_LABELS.waiting,
     roundLabel: createRoundLabel(state),
-    scoreSummaryLabel: createScoreSummaryLabel(state, options),
     deadlineAt,
     extendedWithExtra,
-    topStatusLabel: isReconnecting
-      ? '正在重连'
-      : snapshot?.phase === 'finished'
-        ? '整场结束'
-        : snapshot?.phase === 'settlement'
-          ? '结算中'
-          : dealerSelection
-            ? '抽取东家'
-          : snapshot?.phase === 'waiting'
-            ? '等待牌手'
-            : '对局中',
     activePlayerSeat,
     actionIndicatorSeat,
     shouldDebounceCenterWaiting: Boolean(optimisticDiscard),
@@ -1874,7 +1823,6 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     handInsight: createHandInsight(state),
     claimCandidates: createClaimCandidates(state, options),
     drawnTileId: createDrawnTileId(state),
-    centerBanner: createCenterBanner(state),
     centerStatusText: dealerSelection ? '抽取东家' : createCenterStatusText(state),
     remainingTileCount: createRemainingTileCount(state),
     promptText: createPromptText(state, options),
@@ -1889,7 +1837,6 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     dealerSelection,
     quickChatEvent: createQuickChatEvent(state, options),
     systemBroadcastEvent: state.latestSystemBroadcast ?? null,
-    toasts: state.toasts,
   };
 }
 
