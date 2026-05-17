@@ -45,6 +45,7 @@ export type VoiceAssets = Record<string, string>;
 
 export interface VoiceCue {
   key: string;
+  dedupKey?: string;
   absoluteSeat: number;
   clipName: string;
 }

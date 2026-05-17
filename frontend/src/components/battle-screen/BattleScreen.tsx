@@ -99,6 +99,7 @@ export function BattleScreen({
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
+  const playedVoiceCueDedupKeysRef = useRef<Set<string>>(new Set());
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
@@ -158,11 +159,18 @@ export function BattleScreen({
 
     for (const actionEffect of actionEffects) {
       const voiceCue = createVoiceCue(viewModel, actionEffect);
-      if (!voiceCue || playedVoiceCueKeysRef.current.has(voiceCue.key)) {
+      if (
+        !voiceCue ||
+        playedVoiceCueKeysRef.current.has(voiceCue.key) ||
+        (voiceCue.dedupKey && playedVoiceCueDedupKeysRef.current.has(voiceCue.dedupKey))
+      ) {
         continue;
       }
 
       playedVoiceCueKeysRef.current.add(voiceCue.key);
+      if (voiceCue.dedupKey) {
+        playedVoiceCueDedupKeysRef.current.add(voiceCue.dedupKey);
+      }
       if (!isVoiceEnabled) {
         continue;
       }
@@ -488,6 +496,14 @@ function createVoiceCue(
 
       return {
         key: cueKey,
+        dedupKey: getDiscardVoiceCueDedupKey(
+          viewModel,
+          actionEffect,
+          absoluteSeat,
+          discardSeat,
+          discardCount,
+          voiceTileCode,
+        ),
         absoluteSeat,
         clipName: tileClipName,
       };
@@ -495,6 +511,32 @@ function createVoiceCue(
   }
 
   return null;
+}
+
+function getDiscardVoiceCueDedupKey(
+  viewModel: BattleViewModel,
+  actionEffect: NonNullable<BattleViewModel['actionEffect']>,
+  absoluteSeat: number,
+  discardSeat: string | null,
+  discardCount: number,
+  tileCode: string | null | undefined,
+) {
+  const tileIdentity = getTileIdentityFromActionEffectKey(actionEffect.key);
+  if (tileIdentity) {
+    return `discard:${absoluteSeat}:tile:${tileIdentity}`;
+  }
+
+  return `discard:${absoluteSeat}:river:${discardSeat ?? 'unknown'}:${discardCount}:${tileCode ?? viewModel.lastDiscard ?? 'unknown'}`;
+}
+
+function getTileIdentityFromActionEffectKey(actionEffectKey: string) {
+  const directTileId = actionEffectKey.match(/(?:^|:)([a-z]+\d?#[^:]+)$/i)?.[1];
+  if (directTileId) {
+    return directTileId;
+  }
+
+  const eventTileId = actionEffectKey.match(/"tile_id":"([^"]+)"/)?.[1];
+  return eventTileId ?? null;
 }
 
 function getAbsoluteSeatForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {
