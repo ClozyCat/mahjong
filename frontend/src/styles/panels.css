@@ -536,16 +536,6 @@
   pointer-events: auto;
 }
 
-.table-stage__settings-summary {
-  max-width: min(17rem, 44vw);
-  color: color-mix(in srgb, var(--theme-paper-strong) 58%, var(--accent-2)) !important;
-  font-size: clamp(0.48rem, 0.43rem + 0.34vw, 0.66rem) !important;
-  letter-spacing: 0.03em !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .table-stage__seat-add {
   width: 1.05rem;
   height: 1.05rem;
