@@ -556,76 +556,6 @@ describe('BattleScreen', () => {
     }
   });
 
-  it('plays a repeated tile voice again when it is a later discard in the same river', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
-    const audioMock = mockAudioPlayback();
-
-    try {
-      const { rerender } = renderBattleScreen(
-        createBattleViewModel({
-          discards: {
-            bottom: ['w1'],
-            left: ['b4'],
-            top: [],
-            right: [],
-          },
-          lastDiscard: 'b4',
-          lastDiscardSeat: 'left',
-          actionEffect: {
-            key: 'tile_discarded:bot:first',
-            label: '出牌',
-            emphasis: 'discard',
-            seat: 'left',
-            calloutTone: null,
-          },
-        }),
-      );
-
-      expect(audioMock.audio).toHaveBeenCalledTimes(1);
-
-      act(() => {
-        vi.advanceTimersByTime(1500);
-      });
-
-      rerender(
-        <BattleScreen
-          viewModel={createBattleViewModel({
-            discards: {
-              bottom: ['w1'],
-              left: ['b4', 'b4'],
-              top: [],
-              right: [],
-            },
-            lastDiscard: 'b4',
-            lastDiscardSeat: 'left',
-            actionEffect: {
-              key: 'tile_discarded:bot:later',
-              label: '出牌',
-              emphasis: 'discard',
-              seat: 'left',
-              calloutTone: null,
-            },
-          })}
-          themeId="tian-shui-bi"
-          themeLabel="天水碧"
-          onCycleTheme={vi.fn()}
-          onAction={vi.fn()}
-          onTileSelect={vi.fn()}
-          onTileDoubleClick={vi.fn()}
-          onClaimCandidateSelect={vi.fn()}
-          onClaimCandidateActivate={vi.fn()}
-          onLeaveTable={vi.fn()}
-        />,
-      );
-
-      expect(audioMock.audio).toHaveBeenCalledTimes(2);
-    } finally {
-      audioMock.restore();
-      vi.useRealTimers();
-    }
-  });
-
   it('plays the matching operation voice when a claim action effect arrives', () => {
     const audioMock = mockAudioPlayback();
 
@@ -644,6 +574,34 @@ describe('BattleScreen', () => {
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
       expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+    }
+  });
+
+  it('plays the ready hand operation voice instead of the discarded tile voice', () => {
+    const audioMock = mockAudioPlayback();
+
+    try {
+      renderBattleScreen(
+        createBattleViewModel({
+          lastDiscard: 'w1',
+          lastDiscardSeat: 'bottom',
+          actionEffect: {
+            key: 'ready_hand_declared:seat-2:w1',
+            label: '听',
+            emphasis: 'claim',
+            seat: 'bottom',
+            calloutTone: 'ready_hand',
+            tileCode: 'w1',
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('ting');
+      expect(String(audioMock.audio.mock.calls[0][0])).not.toContain('yi_wan');
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();

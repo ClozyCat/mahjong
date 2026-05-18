@@ -76,7 +76,7 @@ def main():
                 "input": text,
                 "voice": voice,
                 "speed": 1.5,
-                "pitch": "25",
+                "pitch": "0",
                 "style": "cheerful"
             }
 

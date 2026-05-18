@@ -39,6 +39,7 @@ const ACTION_VOICE_NAMES: Partial<Record<NonNullable<ActionEffectView['calloutTo
   pung: 'peng',
   kong: 'gang',
   hu: 'hu',
+  ready_hand: 'ting',
 };
 
 export type VoiceAssets = Record<string, string>;
