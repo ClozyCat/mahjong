@@ -43,7 +43,8 @@ mahjong_terms.extend([
     ("北风", "bei"),
     ("红中", "zhong"),
     ("发财", "fa"),
-    ("白板", "bai")
+    ("白板", "bai"),
+    ("听牌", "ting")
 ])
 
 def main():
@@ -74,8 +75,8 @@ def main():
             payload = {
                 "input": text,
                 "voice": voice,
-                "speed": 2.0,
-                "pitch": "50",
+                "speed": 1.5,
+                "pitch": "25",
                 "style": "cheerful"
             }
 

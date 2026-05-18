@@ -15,7 +15,9 @@
       "Bash(cargo check *)",
       "Bash(cargo test *)",
       "Bash(cargo build *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npm test *)",
+      "PowerShell(git add *)"
     ]
   }
 }
