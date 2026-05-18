@@ -81,8 +81,11 @@ def main() -> None:
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr_min)
     scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
     print(f"device={device} amp={use_amp} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
+    print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
     best_metric = math.inf
     best_metrics: dict[str, float] = {}
+    epochs_without_improvement = 0
+    nan_count = 0
     
     for epoch in range(1, args.epochs + 1):
         loss_weights = loss_weights_for_epoch(
@@ -103,15 +106,30 @@ def main() -> None:
         train_metrics = run_epoch(
             model, train_loader, optimizer, device, scaler, use_amp,
             loss_weights=loss_weights,
-            epoch_desc=f"Train Epoch {epoch}/{args.epochs}"
+            epoch_desc=f"Train Epoch {epoch}/{args.epochs}",
+            grad_clip_norm=args.grad_clip_norm,
         )
+
+        # NaN检测和early stopping
+        if math.isnan(train_metrics["loss"]) or math.isinf(train_metrics["loss"]):
+            nan_count += 1
+            print(f"⚠️  Warning: NaN/Inf detected in training loss (count: {nan_count}/{args.max_nan_tolerance})")
+            if nan_count >= args.max_nan_tolerance:
+                print(f"❌ Training stopped: NaN/Inf loss exceeded tolerance ({args.max_nan_tolerance} times)")
+                break
+            # 跳过这个epoch，不更新scheduler
+            continue
+        else:
+            nan_count = 0  # 重置计数器
+
         scheduler.step()
 
         val_metrics = (
             run_epoch(
                 model, val_loader, None, device, scaler, use_amp,
                 loss_weights=loss_weights,
-                epoch_desc=f"Val Epoch {epoch}/{args.epochs}"
+                epoch_desc=f"Val Epoch {epoch}/{args.epochs}",
+                grad_clip_norm=None,  # 验证时不需要梯度裁剪
             )
             if val_loader is not None
             else train_metrics
@@ -121,6 +139,7 @@ def main() -> None:
         if selection_metric < best_metric:
             best_metric = selection_metric
             best_metrics = val_metrics
+            epochs_without_improvement = 0
             save_checkpoint(
                 args.output / "best.pt",
                 model,
@@ -129,6 +148,11 @@ def main() -> None:
                 epoch,
                 model_config,
             )
+        else:
+            epochs_without_improvement += 1
+            if args.early_stop_patience > 0 and epochs_without_improvement >= args.early_stop_patience:
+                print(f"Early stopping: no improvement for {args.early_stop_patience} epochs")
+                break
 
         print(
             f"Epoch {epoch} Summary: "
@@ -178,6 +202,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--risk-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--fan-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--aux-loss-warmup-epochs", type=int, default=4)
+    parser.add_argument("--grad-clip-norm", type=float, default=1.0,
+        help="Maximum gradient norm for clipping. Set to 0 to disable.")
+    parser.add_argument("--max-nan-tolerance", type=int, default=2,
+        help="Maximum number of consecutive NaN losses before stopping training.")
+    parser.add_argument("--early-stop-patience", type=int, default=0,
+        help="Stop training if validation loss doesn't improve for N epochs. 0 to disable.")
     return parser.parse_args()
 
 def model_config_from_args(args: argparse.Namespace) -> ModelConfig:
@@ -249,6 +279,7 @@ def run_epoch(
     use_amp: bool,
     loss_weights: dict[str, float] | None = None,
     epoch_desc: str = "",
+    grad_clip_norm: float | None = None,
 ) -> dict[str, float]:
     if loader is None:
         return empty_metrics()
@@ -259,6 +290,8 @@ def run_epoch(
     amp_device_type = "cuda" if device.type == "cuda" else "cpu"
 
     pbar = tqdm(loader, desc=epoch_desc, leave=False, dynamic_ncols=True)
+    nan_batch_count = 0
+    max_nan_batches = 5  # 单个epoch内最多容忍5个NaN batch
 
     for i, batch in enumerate(pbar):
         batch = move_batch(batch, device)
@@ -267,14 +300,53 @@ def run_epoch(
                 outputs = forward_model(model, batch)
                 losses = compute_losses(outputs, batch, **(loss_weights or {}))
             loss = losses["loss"]
+
+            # NaN/Inf检测
+            if torch.isnan(loss) or torch.isinf(loss):
+                nan_batch_count += 1
+                print(f"\n⚠️  Batch {i}: NaN/Inf loss detected, skipping batch ({nan_batch_count}/{max_nan_batches})")
+                if nan_batch_count >= max_nan_batches:
+                    print(f"❌ Too many NaN batches in this epoch, stopping epoch early")
+                    break
+                continue
+
             if is_training:
                 optimizer.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward()
+
+                # 梯度裁剪
+                if grad_clip_norm is not None and grad_clip_norm > 0:
+                    scaler.unscale_(optimizer)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+
+                    # 检测梯度异常
+                    if torch.isnan(grad_norm) or torch.isinf(grad_norm):
+                        print(f"\n⚠️  Batch {i}: NaN/Inf gradient detected, skipping batch")
+                        optimizer.zero_grad(set_to_none=True)
+                        scaler.update()  # 必须调用update()重置scaler状态
+                        continue
+
+                    if i % 100 == 0 and grad_norm > grad_clip_norm * 0.8:
+                        pbar.set_postfix({"loss": f"{loss.item():.4f}", "grad_norm": f"{grad_norm:.2f}"})
+                else:
+                    # 没有梯度裁剪时也需要检查梯度
+                    scaler.unscale_(optimizer)
+                    has_nan = False
+                    for param in model.parameters():
+                        if param.grad is not None and (torch.isnan(param.grad).any() or torch.isinf(param.grad).any()):
+                            has_nan = True
+                            break
+                    if has_nan:
+                        print(f"\n⚠️  Batch {i}: NaN/Inf gradient detected, skipping batch")
+                        optimizer.zero_grad(set_to_none=True)
+                        scaler.update()
+                        continue
+
                 scaler.step(optimizer)
                 scaler.update()
-        
+
         totals.update(outputs, batch, losses)
-        
+
         if i % 10 == 0:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
@@ -295,13 +367,20 @@ def compute_losses(
     claim_loss = masked_cross_entropy(outputs["claim_logits"], batch["claim_mask"], batch["claim_target"])
     self_kong_loss = masked_cross_entropy(outputs["self_kong_logits"], batch["self_kong_mask"], batch["self_kong_target"])
     hu_loss = masked_cross_entropy(outputs["hu_logits"], batch["hu_mask"], batch["hu_target"])
+
+    # 添加数值稳定性保护
     value_loss = F.mse_loss(outputs["value"], batch["value_target"].float())
+    value_loss = torch.clamp(value_loss, max=100.0)  # 防止MSE爆炸
+
     risk_loss = F.binary_cross_entropy_with_logits(
         outputs["risk_logits"],
         batch["risk_target"].float(),
         pos_weight=torch.tensor(risk_pos_weight, device=outputs["risk_logits"].device),
     )
+
     fan_loss = F.mse_loss(outputs["fan_logits"], batch["fan_target"].float())
+    fan_loss = torch.clamp(fan_loss, max=100.0)  # 防止MSE爆炸
+
     loss = (
         discard_loss
         + claim_weight * claim_loss
@@ -354,6 +433,10 @@ def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch
     if not torch.any(active):
         return logits.sum() * 0.0
     masked_logits = logits.masked_fill(~mask.bool(), -1.0e4)
+
+    # 数值稳定性：裁剪logits防止exp溢出
+    masked_logits = torch.clamp(masked_logits, min=-100.0, max=100.0)
+
     return F.cross_entropy(masked_logits[active], target[active].long())
 
 

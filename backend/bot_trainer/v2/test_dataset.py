@@ -174,7 +174,8 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
 
     losses = compute_losses(outputs, batch, value_weight=0.0, risk_weight=0.0, hu_weight=1.0)
 
-    assert losses["value_loss"].item() > 1000.0
+    # value_loss和fan_loss被裁剪到max=100.0以防止数值爆炸
+    assert losses["value_loss"].item() == 100.0
     assert losses["risk_loss"].item() > 100.0
     assert losses["loss"].item() < 0.1
 

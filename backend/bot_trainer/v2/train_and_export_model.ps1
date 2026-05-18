@@ -18,6 +18,9 @@ param(
     [double]$ValueLossWeight = 0.25,
     [double]$RiskLossWeight = 0.25,
     [double]$FanLossWeight = 0.25,
+    [double]$GradClipNorm = 1.0,
+    [int]$MaxNanTolerance = 2,
+    [int]$EarlyStopPatience = 0,
     [switch]$RebuildDataCache,
     [switch]$NoAmp,
     [switch]$CompileModel,
@@ -156,6 +159,9 @@ try {
     Write-Host "Batch size:  $BatchSize"
     Write-Host "Workers:     $NumWorkers"
     Write-Host "Data cache:  $ResolvedDataCacheDir"
+    Write-Host "Grad clip:   $GradClipNorm"
+    Write-Host "NaN tolerance: $MaxNanTolerance"
+    Write-Host "Early stop:  $EarlyStopPatience"
     Write-Host "Python:      $PythonExe $PythonVersion"
 
     if (-not $SkipTests) {
@@ -190,7 +196,10 @@ try {
         "--hu-loss-weight", "$HuLossWeight",
         "--value-loss-weight", "$ValueLossWeight",
         "--risk-loss-weight", "$RiskLossWeight",
-        "--fan-loss-weight", "$FanLossWeight"
+        "--fan-loss-weight", "$FanLossWeight",
+        "--grad-clip-norm", "$GradClipNorm",
+        "--max-nan-tolerance", "$MaxNanTolerance",
+        "--early-stop-patience", "$EarlyStopPatience"
     )
     if (-not $NoAmp) {
         $trainArgs += "--amp"

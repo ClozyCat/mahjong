@@ -17,7 +17,10 @@
       "Bash(cargo build *)",
       "Bash(npx tsc *)",
       "Bash(npm test *)",
-      "PowerShell(git add *)"
+      "PowerShell(git add *)",
+      "Bash(python -c \"import train; print\\('✓ Syntax check passed'\\)\")",
+      "Bash(python -c \"import train; print\\('Syntax check passed'\\)\")",
+      "Bash(python -m pytest test_dataset.py::test_auxiliary_loss_weights_can_disable_value_and_risk -v)"
     ]
   }
 }

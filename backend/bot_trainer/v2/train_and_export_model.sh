@@ -16,6 +16,9 @@ HU_LOSS_WEIGHT=1.0
 VALUE_LOSS_WEIGHT=0.75
 RISK_LOSS_WEIGHT=1.0
 FAN_LOSS_WEIGHT=0.5
+GRAD_CLIP_NORM=1.0
+MAX_NAN_TOLERANCE=2
+EARLY_STOP_PATIENCE=0
 DEVICE="cuda"
 NO_AMP=0
 COMPILE_MODEL=0
@@ -44,6 +47,9 @@ Options:
   --value-loss-weight VALUE Value head loss weight.
   --risk-loss-weight VALUE  Risk head loss weight.
   --fan-loss-weight VALUE   Fan head loss weight.
+  --grad-clip-norm VALUE    Gradient clipping norm (0 to disable).
+  --max-nan-tolerance N     Max consecutive NaN epochs before stopping.
+  --early-stop-patience N   Early stopping patience (0 to disable).
   --no-amp                  Do not pass --amp to train.py.
   --compile                 Pass --compile to train.py.
   --skip-tests              Skip pytest before training.
@@ -141,6 +147,21 @@ while [[ $# -gt 0 ]]; do
         --fan-loss-weight)
             require_value "$1" "${2:-}"
             FAN_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
+        --grad-clip-norm)
+            require_value "$1" "${2:-}"
+            GRAD_CLIP_NORM="$2"
+            shift 2
+            ;;
+        --max-nan-tolerance)
+            require_value "$1" "${2:-}"
+            MAX_NAN_TOLERANCE="$2"
+            shift 2
+            ;;
+        --early-stop-patience)
+            require_value "$1" "${2:-}"
+            EARLY_STOP_PATIENCE="$2"
             shift 2
             ;;
         --no-amp)
@@ -246,6 +267,9 @@ fi
 echo "Epochs:      $EPOCHS"
 echo "Batch size:  $BATCH_SIZE"
 echo "Workers:     $NUM_WORKERS"
+echo "Grad clip:   $GRAD_CLIP_NORM"
+echo "NaN tolerance: $MAX_NAN_TOLERANCE"
+echo "Early stop:  $EARLY_STOP_PATIENCE"
 echo "Python:      ${PYTHON_CMD[*]}"
 
 if (( SKIP_TESTS == 0 )); then
@@ -272,6 +296,9 @@ train_args=(
     --value-loss-weight "$VALUE_LOSS_WEIGHT"
     --risk-loss-weight "$RISK_LOSS_WEIGHT"
     --fan-loss-weight "$FAN_LOSS_WEIGHT"
+    --grad-clip-norm "$GRAD_CLIP_NORM"
+    --max-nan-tolerance "$MAX_NAN_TOLERANCE"
+    --early-stop-patience "$EARLY_STOP_PATIENCE"
 )
 
 if (( NO_AMP == 0 )); then
