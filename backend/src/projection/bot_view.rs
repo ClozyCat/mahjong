@@ -48,6 +48,7 @@ pub struct BotContextView {
     pub seat_count: usize,
     pub dealer_seat: usize,
     pub round_wind: Option<String>,
+    pub minimum_hu_fan: i64,
     pub cumulative_scores: Vec<i64>,
     pub wall_tiles_remaining: i64,
     pub visible_tile_keys: Vec<String>,
@@ -66,7 +67,7 @@ pub struct BotContextView {
 
 pub fn build_bot_context_view(
     cache: &RoomScoringCache,
-    _state: &RoomState,
+    state: &RoomState,
     seat_index: usize,
     claim_options: Vec<BotClaimOption>,
     self_kong_candidates: Vec<BotSelfKongCandidate>,
@@ -78,6 +79,7 @@ pub fn build_bot_context_view(
         seat_count: cache.seat_count,
         dealer_seat: cache.dealer_seat,
         round_wind: cache.round_wind.clone(),
+        minimum_hu_fan: state.minimum_hu_fan,
         cumulative_scores: cache.cumulative_scores.clone(),
         wall_tiles_remaining: cache.wall_tiles_remaining,
         visible_tile_keys: cache.visible_tile_keys.clone(),
@@ -236,6 +238,7 @@ mod tests {
         .expect("seat should exist");
 
         assert_eq!(context.cumulative_scores, vec![12]);
+        assert_eq!(context.minimum_hu_fan, state.minimum_hu_fan);
         assert_eq!(context.wall_tiles_remaining, 7);
         assert_eq!(context.player.concealed_tiles.len(), 4);
         assert!(

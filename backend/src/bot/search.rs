@@ -2,9 +2,9 @@ use super::context::*;
 use crate::rules::scoring::{
     EvaluationInput as ScoringEvaluationInput, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
-    evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
+    evaluate_fans_with_minimum as scoring_evaluate_fans_with_minimum,
+    extract_hand_features as scoring_extract_hand_features,
 };
-use crate::rules::standard::win::BOT_MINIMUM_HU_FAN;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
 use std::env;
@@ -1405,31 +1405,34 @@ impl SearchEngine {
             context.round_wind.as_deref(),
             Some(&decompositions),
         );
-        let result = scoring_evaluate_fans(ScoringEvaluationInput {
-            win_type: "self_draw".to_string(),
-            winner_seat: Some(context.seat_index),
-            discarder_seat: None,
-            ready_hand_declared: false,
-            flower_count: context.player.flower_count,
-            seat_count: context.seat_count,
-            features,
-            timing: ScoringTimingFeatures::default(),
-            kong_entries: context.kong_entries.clone(),
-            tile_keys: player_tile_keys_from_parts(
-                &concealed_tile_keys,
-                meld_tile_key_groups,
-                Some(incoming_tile),
-            ),
-            visible_tile_keys: context.visible_tile_keys.clone(),
-            concealed_tile_keys,
-            meld_tile_key_groups: meld_tile_key_groups.to_vec(),
-            open_meld_tile_key_groups: analysis.open_meld_tile_key_groups.clone(),
-            incoming_tile: Some(incoming_tile.to_string()),
-            winning_tile: Some(incoming_tile.to_string()),
-            decompositions,
-        });
-        let score =
-            (result.minimum_qualifying_fan_total >= BOT_MINIMUM_HU_FAN).then_some(result.fan_total);
+        let result = scoring_evaluate_fans_with_minimum(
+            ScoringEvaluationInput {
+                win_type: "self_draw".to_string(),
+                winner_seat: Some(context.seat_index),
+                discarder_seat: None,
+                ready_hand_declared: false,
+                flower_count: context.player.flower_count,
+                seat_count: context.seat_count,
+                features,
+                timing: ScoringTimingFeatures::default(),
+                kong_entries: context.kong_entries.clone(),
+                tile_keys: player_tile_keys_from_parts(
+                    &concealed_tile_keys,
+                    meld_tile_key_groups,
+                    Some(incoming_tile),
+                ),
+                visible_tile_keys: context.visible_tile_keys.clone(),
+                concealed_tile_keys,
+                meld_tile_key_groups: meld_tile_key_groups.to_vec(),
+                open_meld_tile_key_groups: analysis.open_meld_tile_key_groups.clone(),
+                incoming_tile: Some(incoming_tile.to_string()),
+                winning_tile: Some(incoming_tile.to_string()),
+                decompositions,
+            },
+            context.minimum_hu_fan,
+        );
+        let score = (result.minimum_qualifying_fan_total >= context.minimum_hu_fan.max(0))
+            .then_some(result.fan_total);
         self.winning_fan_cache.insert(key, score);
         score
     }
@@ -3252,6 +3255,7 @@ mod tests {
             seat_count: 4,
             dealer_seat: 0,
             round_wind: Some("east".to_string()),
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             cumulative_scores: vec![0, 0, 0, 0],
             wall_tiles_remaining: 40,
             visible_tile_keys: Vec::new(),
@@ -3778,6 +3782,29 @@ mod tests {
         );
 
         assert_eq!(fan_total, None);
+    }
+
+    #[test]
+    fn low_fan_self_draw_uses_custom_minimum_hu_fan() {
+        let mut context = base_context();
+        context.minimum_hu_fan = 4;
+        let concealed_counts = tile_counts34(
+            [
+                "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red",
+            ]
+            .into_iter(),
+        );
+        let mut engine = SearchEngine::new(&context);
+
+        let fan_total = engine.hypothetical_self_draw_fan_total(
+            &context,
+            &concealed_counts,
+            &[],
+            &[],
+            tile_index("red").expect("tile index"),
+        );
+
+        assert_eq!(fan_total, Some(5));
     }
 
     #[test]

@@ -157,7 +157,7 @@ describe('kongSelection', () => {
     expect(getLocalTurnKongPromptSignature(state)).toContain('turn-kong:round-1:0:2026-03-26T06:01:00Z:w3#3');
   });
 
-  it('detects auto-pass kong possibilities from three local concealed tiles and no known outside tile', () => {
+  it('detects auto-pass kong possibilities from four matching concealed tiles', () => {
     const state = createSessionState({
       roomSnapshot: {
         type: 'room_snapshot',
@@ -175,6 +175,7 @@ describe('kongSelection', () => {
                   { tile_id: 'w5#0', tile_key: 'w5' },
                   { tile_id: 'w5#1', tile_key: 'w5' },
                   { tile_id: 'w5#2', tile_key: 'w5' },
+                  { tile_id: 'w5#3', tile_key: 'w5' },
                   { tile_id: 'b1#0', tile_key: 'b1' },
                 ],
                 melds: [],
@@ -191,7 +192,7 @@ describe('kongSelection', () => {
     expect(getAutoPassKongCandidateTileKeys(state)).toEqual(['w5']);
   });
 
-  it('hides auto-pass kong possibilities once the matching tile is known outside', () => {
+  it('hides auto-pass kong possibilities when only three matching concealed tiles exist', () => {
     const state = createSessionState({
       roomSnapshot: {
         type: 'room_snapshot',
@@ -214,11 +215,7 @@ describe('kongSelection', () => {
                 flowers: [],
                 discards: [],
               },
-              {
-                ...createSessionState().roomSnapshot!.payload.private_state!.players[1],
-                discards: ['w5'],
-              },
-              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(2),
+              ...createSessionState().roomSnapshot!.payload.private_state!.players.slice(1),
             ],
           },
         },

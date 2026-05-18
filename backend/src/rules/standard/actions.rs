@@ -28,7 +28,7 @@ use super::runtime::{
 use super::settlement::settle_exhaustive_draw_output_in_room_state;
 use super::win::{
     apply_hu_settlement_output_in_room_state, compute_hu_settlement_for_state,
-    compute_multi_hu_settlement_for_state, settlement_meets_minimum_hu_fan,
+    compute_multi_hu_settlement_for_state, settlement_meets_minimum_hu_fan_for_state,
 };
 
 #[cfg(test)]
@@ -486,7 +486,7 @@ fn validate_claim_hu_before_recording_response(
     seat_index: usize,
 ) -> Result<(), String> {
     match compute_hu_settlement_for_state(room, seat_index, "discard") {
-        Ok(settlement) if settlement_meets_minimum_hu_fan(&settlement) => Ok(()),
+        Ok(settlement) if settlement_meets_minimum_hu_fan_for_state(room, &settlement) => Ok(()),
         _ => Err("invalid_action".to_string()),
     }
 }
@@ -1756,7 +1756,8 @@ fn apply_selected_claim(
 ) -> Result<EngineOutput, String> {
     if action_type == "hu" {
         let settlement = compute_hu_settlement(room, seat_index, "discard")?;
-        if !settlement_meets_minimum_hu_fan(&settlement) {
+        let state = project_room_state(room)?;
+        if !settlement_meets_minimum_hu_fan_for_state(&state, &settlement) {
             return Err("invalid_action".to_string());
         }
         return apply_hu_settlement_output(room, seat_index, "discard", settlement);
@@ -1793,7 +1794,7 @@ fn apply_selected_claim_in_room_state(
 ) -> Result<EngineOutput, String> {
     if action_type == "hu" {
         let settlement = compute_hu_settlement_for_state(room, seat_index, "discard")?;
-        if !settlement_meets_minimum_hu_fan(&settlement) {
+        if !settlement_meets_minimum_hu_fan_for_state(room, &settlement) {
             return Err("invalid_action".to_string());
         }
         return apply_hu_settlement_output_in_room_state(room, seat_index, "discard", settlement);
@@ -2384,7 +2385,7 @@ fn validate_rob_kong_hu_before_recording_response(
     seat_index: usize,
 ) -> Result<(), String> {
     match compute_hu_settlement_for_state(room, seat_index, "discard") {
-        Ok(settlement) if settlement_meets_minimum_hu_fan(&settlement) => Ok(()),
+        Ok(settlement) if settlement_meets_minimum_hu_fan_for_state(room, &settlement) => Ok(()),
         _ => Err("invalid_action".to_string()),
     }
 }

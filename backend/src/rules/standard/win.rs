@@ -13,8 +13,8 @@ use crate::rules::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
     KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
-    extract_hand_features as scoring_extract_hand_features,
     evaluate_fans_with_minimum as scoring_evaluate_fans_with_minimum,
+    extract_hand_features as scoring_extract_hand_features,
 };
 
 use super::runtime::round_event_message;
@@ -27,8 +27,6 @@ use crate::core::engine::reducer::update_room_state;
 const MAX_SEATS: usize = 4;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 const MULTI_HU_WIN_LABEL: &str = "一炮多响";
-pub(crate) const MINIMUM_HU_FAN: i64 = 8;
-pub(crate) const BOT_MINIMUM_HU_FAN: i64 = MINIMUM_HU_FAN;
 
 struct PreparedWinEvaluation {
     concealed_tile_keys: Vec<String>,
@@ -445,10 +443,6 @@ pub(crate) fn settlement_meets_minimum_hu_fan_for_state(
     settlement: &RoundSettlement,
 ) -> bool {
     settlement.score_delta.minimum_qualifying_fan_total >= state.minimum_hu_fan.max(0)
-}
-
-pub(crate) fn settlement_meets_minimum_hu_fan(settlement: &RoundSettlement) -> bool {
-    settlement.score_delta.minimum_qualifying_fan_total >= MINIMUM_HU_FAN
 }
 
 pub(crate) fn compute_hu_settlement_for_state(

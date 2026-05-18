@@ -1462,6 +1462,7 @@ mod tests {
             seat_count: 4,
             dealer_seat: 0,
             round_wind: Some("east".to_string()),
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             cumulative_scores: vec![0, 0, 0, 0],
             wall_tiles_remaining: 18,
             visible_tile_keys: Vec::new(),
