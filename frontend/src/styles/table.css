@@ -1223,6 +1223,8 @@
 
 .table-stage__quick-chat-menu {
   position: absolute;
+  width: 0;
+  height: 0;
   pointer-events: none;
   z-index: 1;
 }
@@ -1317,6 +1319,23 @@
   color: white;
 }
 
+.table-stage__quick-chat-composer {
+  position: absolute;
+  right: calc(100% + 0.55rem);
+  top: -3.2rem;
+  width: min(16rem, calc(100vw - 6rem));
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  border-radius: 0.75rem;
+  background: rgba(14, 14, 14, 0.85);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  backdrop-filter: blur(24px) saturate(130%);
+  pointer-events: auto;
+}
 
 .table-stage__quick-chat-composer::after {
   content: '';
