@@ -1,8 +1,7 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useState } from 'react';
 
 import type { ThemeId } from '../../../lib/themes';
 import type { BattleActionView, MinimumHuFan } from '../../../types/match';
-import { FAN_GUIDE_ENTRIES, type FanGuideEntry } from '../fanGuide';
 import { FanGuideDialog } from '../FanGuideDialog';
 
 interface TableChromeProps {
@@ -79,31 +78,6 @@ export const TableChrome = memo(function TableChrome({
   const [isFanGuideOpen, setIsFanGuideOpen] = useState(false);
   const [areQuickSettingsOpen, setAreQuickSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [pinnedFanKeys, setPinnedFanKeys] = useState<string[]>(() => {
-    if (typeof window === 'undefined') {
-      return [];
-    }
-
-    const stored = localStorage.getItem('mahjong_pinned_fans');
-    if (!stored) {
-      return [];
-    }
-
-    try {
-      return JSON.parse(stored) as string[];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    if (pinnedFanKeys.length > 0) {
-      localStorage.setItem('mahjong_pinned_fans', JSON.stringify(pinnedFanKeys));
-      return;
-    }
-
-    localStorage.removeItem('mahjong_pinned_fans');
-  }, [pinnedFanKeys]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -399,126 +373,7 @@ export const TableChrome = memo(function TableChrome({
       <FanGuideDialog
         isOpen={isFanGuideOpen}
         onClose={() => setIsFanGuideOpen(false)}
-        pinnedFanKeys={pinnedFanKeys}
-        onPinFan={(key) =>
-          setPinnedFanKeys((previousKeys) =>
-            previousKeys.includes(key)
-              ? previousKeys.filter((previousKey) => previousKey !== key)
-              : [...previousKeys, key],
-          )
-        }
       />
-      {pinnedFanKeys.length > 0 ? (
-        <PinnedFanOverlay
-          entries={pinnedFanKeys
-            .map((key) => FAN_GUIDE_ENTRIES.find((entry) => entry.fanKey === key))
-            .filter((entry): entry is FanGuideEntry => Boolean(entry))}
-          onRemove={(key) =>
-            setPinnedFanKeys((previousKeys) =>
-              previousKeys.filter((previousKey) => previousKey !== key),
-            )
-          }
-        />
-      ) : null}
     </>
   );
 });
-
-function PinnedFanOverlay({
-  entries,
-  onRemove,
-}: {
-  entries: FanGuideEntry[];
-  onRemove: (key: string) => void;
-}) {
-  const [position, setPosition] = useState(() => {
-    if (typeof window === 'undefined') {
-      return { x: 20, y: 80 };
-    }
-
-    const stored = localStorage.getItem('mahjong_pinned_fan_pos');
-    if (!stored) {
-      return { x: 20, y: 80 };
-    }
-
-    try {
-      return JSON.parse(stored) as { x: number; y: number };
-    } catch {
-      return { x: 20, y: 80 };
-    }
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartPos = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    localStorage.setItem('mahjong_pinned_fan_pos', JSON.stringify(position));
-  }, [position]);
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('.pinned-fan-overlay__close')) {
-      return;
-    }
-
-    setIsDragging(true);
-    dragStartPos.current = { x: event.clientX - position.x, y: event.clientY - position.y };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isDragging) {
-      return;
-    }
-
-    const nextX = event.clientX - dragStartPos.current.x;
-    const nextY = event.clientY - dragStartPos.current.y;
-    const x = Math.max(0, Math.min(window.innerWidth - 40, nextX));
-    const y = Math.max(0, Math.min(window.innerHeight - 40, nextY));
-    setPosition({ x, y });
-  };
-
-  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    setIsDragging(false);
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-
-  return (
-    <div
-      className={`pinned-fan-list ${isDragging ? 'pinned-fan-list--dragging' : ''}`.trim()}
-      style={{ left: position.x, top: position.y } as CSSProperties}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-    >
-      <div className="pinned-fan-list__handle">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-          <line x1="8" y1="9" x2="16" y2="9" />
-          <line x1="8" y1="15" x2="16" y2="15" />
-        </svg>
-      </div>
-      <div className="pinned-fan-list__items">
-        {entries.map((entry) => (
-          <div key={entry.fanKey} className="pinned-fan-overlay">
-            <div className="pinned-fan-overlay__header">
-              <strong className="pinned-fan-overlay__title">{entry.label}</strong>
-              <div className="pinned-fan-overlay__fan-value">
-                <span>{entry.fanValue}</span>
-                <small>番</small>
-              </div>
-              <button
-                type="button"
-                className="pinned-fan-overlay__close"
-                onClick={() => onRemove(entry.fanKey)}
-                aria-label="取消固定"
-              >
-                ×
-              </button>
-            </div>
-            <div className="pinned-fan-overlay__body">
-              <p>{entry.intro}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}

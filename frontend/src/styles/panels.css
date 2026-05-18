@@ -1969,7 +1969,8 @@
 }
 
 .fan-guide__card {
-  padding: 1.1rem 1.35rem;
+  position: relative;
+  padding: 1.1rem 4.2rem 1.1rem 1.35rem;
   border-radius: 1.5rem;
   border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   background: color-mix(in srgb, var(--theme-paper) 2%, transparent);
@@ -1987,6 +1988,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  min-height: 1.9rem;
 }
 
 .fan-guide__card-title strong {
@@ -1999,6 +2001,9 @@
 
 /* Cinnabar Seal style pill */
 .fan-guide__fan-pill {
+  position: absolute;
+  top: 0.9rem;
+  right: 1rem;
   padding: 0.2rem 0.6rem;
   background: var(--fan-bg, #1e4d2b);
   border-radius: 0.4rem;
@@ -2008,34 +2013,6 @@
   gap: 2px;
   border: 1px solid color-mix(in srgb, var(--fan-bg, var(--theme-paper)) 30%, transparent);
   flex: 0 0 auto;
-}
-
-.fan-guide__pin-btn {
-  margin-left: 0.5rem;
-  padding: 0.35rem;
-  border-radius: 0.4rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s var(--ease-lux);
-  cursor: pointer;
-}
-
-.fan-guide__pin-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: color-mix(in srgb, var(--accent-2) 60%, transparent);
-  color: var(--theme-paper-strong);
-  transform: translateY(-1px);
-}
-
-.fan-guide__pin-btn--active {
-  background: var(--accent-2);
-  border-color: var(--accent-2);
-  color: white;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-2) 40%, transparent);
 }
 
 .fan-guide__pill-value {

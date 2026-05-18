@@ -7,8 +7,6 @@ import { FanGuideCard, getFanColor } from './FanGuideCard';
 interface FanGuideDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  pinnedFanKeys: string[];
-  onPinFan: (key: string) => void;
 }
 
 /**
@@ -49,7 +47,7 @@ function LazySection({ children, label, value }: { children: React.ReactNode; la
   );
 }
 
-export function FanGuideDialog({ isOpen, onClose, pinnedFanKeys, onPinFan }: FanGuideDialogProps) {
+export function FanGuideDialog({ isOpen, onClose }: FanGuideDialogProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const [activeTab, setActiveTab] = useState<number | null>(null);
@@ -219,8 +217,6 @@ export function FanGuideDialog({ isOpen, onClose, pinnedFanKeys, onPinFan }: Fan
                     <FanGuideCard 
                       key={entry.fanKey} 
                       entry={entry} 
-                      isPinned={pinnedFanKeys.includes(entry.fanKey)}
-                      onPin={() => onPinFan(entry.fanKey)}
                     />
                   ))}
                 </LazySection>
