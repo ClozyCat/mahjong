@@ -123,30 +123,28 @@ export const SeatZone = memo(function SeatZone({
       ) : null}
 
       <div className={`table-stage__seat-group table-stage__seat-group--${seat}`}>
-        <div className={`table-stage__seat-panel table-stage__seat-panel--${seat}`}>
+        <div
+          className={`table-stage__river table-stage__river--${seat} ${activeSeat === seat ? 'table-stage__river--active' : ''}`.trim()}
+        >
           <div
-            className={`table-stage__river table-stage__river--${seat} ${activeSeat === seat ? 'table-stage__river--active' : ''}`.trim()}
+            className={`table-stage__river-track table-stage__river-track--${seat}`}
+            style={scene.trackStyle}
           >
-            <div
-              className={`table-stage__river-track table-stage__river-track--${seat}`}
-              style={scene.trackStyle}
-            >
-              {discards.map((tile, index) => {
-                const isLastDiscard = lastDiscardSeat === seat && index === discards.length - 1;
-                const isSpotlightHidden = isLastDiscard && hasSpotlightDiscard;
+            {discards.map((tile, index) => {
+              const isLastDiscard = lastDiscardSeat === seat && index === discards.length - 1;
+              const isSpotlightHidden = isLastDiscard && hasSpotlightDiscard;
 
-                return (
-                  <MahjongTile
-                    key={`river-${seat}-${index}-${tile}`}
-                    code={tile}
-                    variant="discard"
-                    isLastDiscard={isLastDiscard}
-                    relatedTileCode={selectedTileCode}
-                    style={isSpotlightHidden ? { visibility: 'hidden' } : undefined}
-                  />
-                );
-              })}
-            </div>
+              return (
+                <MahjongTile
+                  key={`river-${seat}-${index}-${tile}`}
+                  code={tile}
+                  variant="discard"
+                  isLastDiscard={isLastDiscard}
+                  relatedTileCode={selectedTileCode}
+                  style={isSpotlightHidden ? { visibility: 'hidden' } : undefined}
+                />
+              );
+            })}
           </div>
         </div>
 

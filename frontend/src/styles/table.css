@@ -396,25 +396,41 @@
 /* ------- Rivers ------- */
 
 .table-stage__river {
+  --seat-panel-sheen: linear-gradient(135deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), transparent 45%);
   position: relative;
   display: flex;
   justify-content: center;
   width: max-content;
-  border-radius: calc(var(--table-stage-river-tile-radius) + 0.24rem);
-  padding: 0.28rem;
-  background: color-mix(in srgb, var(--theme-paper) 12%, transparent);
+  border-radius: calc(var(--table-stage-river-tile-radius) + 0.48rem);
+  padding: calc(var(--table-stage-seat-panel-padding-block) + 0.28rem) calc(var(--table-stage-seat-panel-padding-inline) + 0.28rem);
+  background:
+    var(--seat-panel-sheen),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--table) 8%, transparent),
+      color-mix(in srgb, var(--table-2) 4%, transparent)),
+    color-mix(in srgb, var(--theme-paper) 12%, transparent);
   backdrop-filter: blur(14px) saturate(1.15);
-  border: 0.5px solid color-mix(in srgb, var(--theme-paper-strong) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
   box-shadow:
-    0 10px 28px -8px var(--theme-shadow-soft),
+    0 12px 32px -8px var(--theme-shadow-soft),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper-strong) 12%, transparent);
   z-index: 1;
   isolation: auto;
 }
 
-.table-stage__river::before,
-.table-stage__river::after {
+.table-stage__river::before {
   content: none;
+}
+
+.table-stage__river::after {
+  content: '';
+  position: absolute;
+  inset: 0.26rem;
+  border-radius: inherit;
+  /* Delicate inner gold line */
+  border: 0.5px solid color-mix(in srgb, var(--accent-2) 12%, transparent);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .table-stage__river--top,
@@ -424,58 +440,20 @@
   width: auto;
 }
 
-
-
-/* ------- Seat panels ------- */
-
-.table-stage__seat-panel {
-  --seat-panel-sheen: linear-gradient(135deg, color-mix(in srgb, var(--theme-paper) 8%, transparent), transparent 45%);
-  position: relative;
-  display: block;
-  padding: var(--table-stage-seat-panel-padding-block) var(--table-stage-seat-panel-padding-inline);
-  border-radius: calc(var(--table-stage-river-tile-radius) + 0.48rem);
-  /* Extremely faint, integrated background */
-  background:
-    var(--seat-panel-sheen),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--table) 8%, transparent),
-      color-mix(in srgb, var(--table-2) 4%, transparent));
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 6%, transparent);
-  box-shadow:
-    0 10px 18px var(--theme-shadow-soft),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 3%, transparent);
-  backdrop-filter: blur(3px);
-}
-
-.table-stage__seat-panel::after {
-  content: '';
-  position: absolute;
-  inset: 0.26rem;
-  border-radius: inherit;
-  /* Delicate inner gold line */
-  border: 0.5px solid color-mix(in srgb, var(--accent-2) 12%, transparent);
-  pointer-events: none;
-}
-
-.table-stage__seat-panel--top,
-.table-stage__seat-panel--bottom {
-  align-items: flex-start;
-}
-
-.table-stage__seat-panel--left,
-.table-stage__seat-panel--right {
+.table-stage__river--left,
+.table-stage__river--right {
   --seat-panel-sheen: linear-gradient(90deg, rgba(255, 255, 255, 0.16), transparent 48%);
 }
 
-.table-stage__seat-panel--right {
+.table-stage__river--right {
   --seat-panel-sheen: linear-gradient(270deg, rgba(255, 255, 255, 0.16), transparent 48%);
 }
 
-.table-stage__seat-panel--top {
+.table-stage__river--top {
   transform-origin: center bottom;
 }
 
-.table-stage__seat-panel--bottom {
+.table-stage__river--bottom {
   transform-origin: center bottom;
 }
 
@@ -732,7 +710,7 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper-strong) 6%, transparent);
 }
 
-.table-stage[data-fx='lowFx'] .table-stage__seat-panel,
+.table-stage[data-fx='lowFx'] .table-stage__river,
 .table-stage[data-fx='lowFx'] .table-stage__stat-plate,
 .table-stage[data-fx='lowFx'] .table-stage__barrage-message,
 .table-stage[data-fx='lowFx'] .table-stage__quick-chat-item,
@@ -1887,10 +1865,10 @@
     --table-stage-spotlight-scale: 1.1;
   }
 
-  .table-stage__seat-panel--left,
-  .table-stage__seat-panel--right,
-  .table-stage__seat-panel--top,
-  .table-stage__seat-panel--bottom {
+  .table-stage__river--left,
+  .table-stage__river--right,
+  .table-stage__river--top,
+  .table-stage__river--bottom {
     transform: none;
   }
 
