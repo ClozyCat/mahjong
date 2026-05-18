@@ -127,6 +127,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![
                 SeatState {
                     seat_index: 0,

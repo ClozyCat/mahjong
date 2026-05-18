@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 import type { ThemeId } from '../../../lib/themes';
-import type { BattleActionView } from '../../../types/match';
+import type { BattleActionView, MinimumHuFan } from '../../../types/match';
 import { FAN_GUIDE_ENTRIES, type FanGuideEntry } from '../fanGuide';
 import { FanGuideDialog } from '../FanGuideDialog';
 
@@ -16,6 +16,9 @@ interface TableChromeProps {
   botCount: number;
   canAddBot: boolean;
   canRemoveBot: boolean;
+  minimumHuFan: MinimumHuFan;
+  canDecreaseMinimumHuFan: boolean;
+  canIncreaseMinimumHuFan: boolean;
   canLeaveTable: boolean;
   onLeaveTable?: () => void;
   onOpenInviteDialog?: () => void;
@@ -23,6 +26,7 @@ interface TableChromeProps {
   onAction?: (actionId: BattleActionView['id']) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
+  onMinimumHuFanChange?: (minimumHuFan: MinimumHuFan) => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -42,6 +46,9 @@ export const TableChrome = memo(function TableChrome({
   botCount,
   canAddBot,
   canRemoveBot,
+  minimumHuFan,
+  canDecreaseMinimumHuFan,
+  canIncreaseMinimumHuFan,
   canLeaveTable,
   onLeaveTable,
   onOpenInviteDialog,
@@ -49,6 +56,7 @@ export const TableChrome = memo(function TableChrome({
   onAction,
   onAddBot,
   onRemoveBot,
+  onMinimumHuFanChange,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -110,7 +118,14 @@ export const TableChrome = memo(function TableChrome({
   const shouldShowPreMatchActions = preMatchActions.length > 0;
   const shouldShowBotControls =
     shouldShowPreMatchActions || botCount > 0 || canAddBot || canRemoveBot;
+  const shouldShowMinimumHuFanControls =
+    shouldShowPreMatchActions || canDecreaseMinimumHuFan || canIncreaseMinimumHuFan;
   const canOpenSeatInvite = resolvedOccupiedSeatCount < seatCapacity;
+  const minimumHuFanOptions: MinimumHuFan[] = [0, 2, 4, 6, 8];
+  const minimumHuFanIndex = minimumHuFanOptions.indexOf(minimumHuFan);
+  const decreaseMinimumHuFan = minimumHuFanOptions[Math.max(0, minimumHuFanIndex - 1)];
+  const increaseMinimumHuFan =
+    minimumHuFanOptions[Math.min(minimumHuFanOptions.length - 1, minimumHuFanIndex + 1)];
 
   return (
     <>
@@ -267,7 +282,7 @@ export const TableChrome = memo(function TableChrome({
           </div>
         ) : null}
       </div>
-      {shouldShowPreMatchActions || shouldShowBotControls ? (
+      {shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls ? (
         <div className="table-stage__lobby-controls">
           {shouldShowPreMatchActions ? (
             <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
@@ -305,6 +320,32 @@ export const TableChrome = memo(function TableChrome({
                 aria-label="增加 BOT"
                 disabled={!canAddBot}
                 onClick={onAddBot}
+              >
+                +
+              </button>
+            </div>
+          ) : null}
+          {shouldShowMinimumHuFanControls ? (
+            <div className="table-stage__bot-controls" role="group" aria-label="起和番数控制">
+              <span className="table-stage__bot-label">起和番数</span>
+              <button
+                type="button"
+                className="table-stage__bot-button"
+                aria-label="降低起和番数"
+                disabled={!canDecreaseMinimumHuFan}
+                onClick={() => onMinimumHuFanChange?.(decreaseMinimumHuFan)}
+              >
+                -
+              </button>
+              <strong className="table-stage__bot-count" aria-label={`当前起和番数 ${minimumHuFan} 番`}>
+                {minimumHuFan}
+              </strong>
+              <button
+                type="button"
+                className="table-stage__bot-button"
+                aria-label="提高起和番数"
+                disabled={!canIncreaseMinimumHuFan}
+                onClick={() => onMinimumHuFanChange?.(increaseMinimumHuFan)}
               >
                 +
               </button>

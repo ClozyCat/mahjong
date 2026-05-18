@@ -52,6 +52,7 @@ const DEALER_SELECTION_DURATION_MS: u64 = 4_200;
 enum ClientMessage {
     JoinTable(JoinTableRequest),
     AdjustBots(AdjustBotsRequest),
+    SetMinimumHuFan(SetMinimumHuFanRequest),
     SetBotTakeover(SetBotTakeoverRequest),
     StartMatch,
     StartNextRound,
@@ -108,6 +109,12 @@ struct QuickChatRequest {
 struct AdjustBotsRequest {
     #[serde(default)]
     delta: i64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SetMinimumHuFanRequest {
+    #[serde(default)]
+    minimum_hu_fan: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -276,6 +283,14 @@ async fn handle_client_message(
             };
             handle_adjust_bots(state, table_code, connection, seat_index, request).await
         }
+        ClientMessage::SetMinimumHuFan(request) => {
+            let Some(seat_index) =
+                assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
+            else {
+                return reject_to(connection, "seat_not_owned");
+            };
+            handle_set_minimum_hu_fan(state, table_code, connection, seat_index, request).await
+        }
         ClientMessage::SetBotTakeover(request) => {
             let Some(seat_index) =
                 assert_active_owned_seat(&state, table_code, connection, role.owned_seat()).await
@@ -341,6 +356,10 @@ async fn handle_client_message(
             close_socket: false,
         },
     }
+}
+
+fn normalize_minimum_hu_fan(value: i64) -> Option<i64> {
+    [0, 2, 4, 6, 8].contains(&value).then_some(value)
 }
 
 async fn assert_active_owned_seat(
@@ -629,6 +648,65 @@ async fn handle_adjust_bots(
     if let Err(reason) = update_result {
         return reject_to(connection, reason);
     }
+
+    let created_at = runtime.created_at.clone();
+    let room = runtime.room.clone();
+    let connections = snapshot_connections(&runtime);
+    drop(runtime);
+    let room_json = match serialize_room(&room) {
+        Ok(value) => value,
+        Err(error) => return internal_error_to(connection, error),
+    };
+    let outbound = collect_snapshot_and_prompt_outbound_from_snapshot(&room, &connections);
+    if let Err(error) = state
+        .inner
+        .db
+        .save_table(table_code, &created_at, &room_json)
+        .await
+    {
+        restore_room_snapshot(&room_handle, previous_room).await;
+        return internal_error_to(connection, error);
+    }
+    let outcome = MessageOutcome {
+        outbound,
+        role: None,
+        clear_role: false,
+        close_socket: false,
+    };
+    schedule_room_tasks_detached(state, table_code.to_string());
+    outcome
+}
+
+async fn handle_set_minimum_hu_fan(
+    state: AppContext,
+    table_code: &str,
+    connection: &ConnectionHandle,
+    seat_index: usize,
+    request: SetMinimumHuFanRequest,
+) -> MessageOutcome {
+    let Some(minimum_hu_fan) = normalize_minimum_hu_fan(request.minimum_hu_fan) else {
+        return reject_to(connection, "invalid_minimum_hu_fan");
+    };
+    let Some(room_handle) = ensure_room_loaded(&state, table_code).await.ok().flatten() else {
+        return reject_to(connection, "table_not_found");
+    };
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let _persist_guard = room_handle.persist.lock().await;
+    let mut runtime = room_handle.runtime.lock().await;
+    if room_handle.is_closed() {
+        return reject_to(connection, "table_not_found");
+    }
+    let previous_room = runtime.room.clone();
+    if !seat_exists(&runtime.room, seat_index) {
+        return reject_to(connection, "seat_not_owned");
+    }
+    if room_phase(&runtime.room) != "waiting" || room_has_round_state(&runtime.room) {
+        return reject_to(connection, "room_already_started");
+    }
+
+    runtime.room.minimum_hu_fan = minimum_hu_fan;
 
     let created_at = runtime.created_at.clone();
     let room = runtime.room.clone();
@@ -1590,6 +1668,18 @@ mod tests {
                 .expect("set_bot_takeover should parse");
 
         assert!(matches!(parsed, ClientMessage::SetBotTakeover(request) if request.enabled));
+    }
+
+    #[test]
+    fn parse_set_minimum_hu_fan() {
+        let parsed =
+            parse_client_message(r#"{"type":"set_minimum_hu_fan","payload":{"minimum_hu_fan":4}}"#)
+                .expect("set_minimum_hu_fan should parse");
+
+        assert!(matches!(
+            parsed,
+            ClientMessage::SetMinimumHuFan(request) if request.minimum_hu_fan == 4
+        ));
     }
 
     #[test]

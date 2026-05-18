@@ -434,6 +434,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: Some(1),
             multiplier,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats,
             match_state: Some(MatchState {
                 cumulative_scores: cumulative_scores
@@ -605,6 +606,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: Some(1),
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![
                 SeatState {
                     seat_index: 0,
@@ -675,6 +677,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: Some(1),
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: Some(1),

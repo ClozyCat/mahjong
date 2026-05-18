@@ -26,6 +26,7 @@ struct PlayerRoomSnapshot {
     mode: String,
     owner_user_id: Option<i64>,
     multiplier: i64,
+    minimum_hu_fan: i64,
     seats: Vec<PublicSeatView>,
     local_seat: Seat,
     match_state: Option<MatchState>,
@@ -156,6 +157,7 @@ pub fn room_snapshot_message(
         mode: state.mode.clone(),
         owner_user_id: state.owner_user_id,
         multiplier: state.multiplier,
+        minimum_hu_fan: state.minimum_hu_fan,
         seats: public_seats(state),
         local_seat,
         match_state: state.match_state.clone(),
@@ -736,6 +738,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
@@ -805,6 +808,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -849,6 +853,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -894,6 +899,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -939,6 +945,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -991,6 +998,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1035,6 +1043,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1091,6 +1100,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1143,6 +1153,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1269,6 +1280,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {

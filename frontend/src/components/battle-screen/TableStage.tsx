@@ -6,6 +6,7 @@ import type {
   BattleActionView,
   BattlePromptView,
   DealerSelectionView,
+  MinimumHuFan,
   QuickChatEmoji,
   QuickChatEventView,
   Seat,
@@ -99,6 +100,9 @@ interface TableStageProps {
   botCount?: number;
   canAddBot?: boolean;
   canRemoveBot?: boolean;
+  minimumHuFan?: MinimumHuFan;
+  canDecreaseMinimumHuFan?: boolean;
+  canIncreaseMinimumHuFan?: boolean;
   canLeaveTable?: boolean;
   themeId?: ThemeId;
   themeLabel?: string;
@@ -108,6 +112,7 @@ interface TableStageProps {
   onAction?: (actionId: BattleActionView['id']) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
+  onMinimumHuFanChange?: (minimumHuFan: MinimumHuFan) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
@@ -154,6 +159,9 @@ export function TableStage({
   botCount = 0,
   canAddBot = false,
   canRemoveBot = false,
+  minimumHuFan = 8,
+  canDecreaseMinimumHuFan = false,
+  canIncreaseMinimumHuFan = false,
   canLeaveTable = false,
   themeId = 'tian-shui-bi',
   themeLabel = '天水碧',
@@ -163,6 +171,7 @@ export function TableStage({
   onAction,
   onAddBot,
   onRemoveBot,
+  onMinimumHuFanChange,
   onQuickChat,
   onPointGesture,
   isBgmEnabled = false,
@@ -247,6 +256,9 @@ export function TableStage({
             botCount={botCount}
             canAddBot={canAddBot}
             canRemoveBot={canRemoveBot}
+            minimumHuFan={minimumHuFan}
+            canDecreaseMinimumHuFan={canDecreaseMinimumHuFan}
+            canIncreaseMinimumHuFan={canIncreaseMinimumHuFan}
             canLeaveTable={canLeaveTable}
             onLeaveTable={onLeaveTable}
             onOpenInviteDialog={onOpenInviteDialog}
@@ -254,6 +266,7 @@ export function TableStage({
             onAction={onAction}
             onAddBot={onAddBot}
             onRemoveBot={onRemoveBot}
+            onMinimumHuFanChange={onMinimumHuFanChange}
             isBgmEnabled={isBgmEnabled}
             onToggleBgm={onToggleBgm}
             isVoiceEnabled={isVoiceEnabled}

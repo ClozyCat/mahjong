@@ -26,8 +26,7 @@ const KNITTED_PATTERNS: [[&str; 9]; 6] = [
 const TILE_KIND_COUNT: usize = 34;
 const HONOR_TILE_START: usize = 27;
 const THIRTEEN_ORPHAN_INDICES: [usize; 13] = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
-const BONUS_FAN_THRESHOLD: i64 = 8;
-const BONUS_FAN_VALUE: i64 = 8;
+const DEFAULT_MINIMUM_HU_FAN: i64 = 8;
 const DECOMPOSITION_CACHE_LIMIT: usize = 4096;
 const HAND_FEATURE_CACHE_LIMIT: usize = 4096;
 const FAN_RESULT_CACHE_LIMIT: usize = 2048;
@@ -399,8 +398,8 @@ fn hand_feature_cache() -> &'static OnceLock<RwLock<HashMap<HandFeatureCacheKey,
     &CACHE
 }
 
-fn fan_result_cache() -> &'static OnceLock<RwLock<HashMap<EvaluationInput, FanResult>>> {
-    static CACHE: OnceLock<RwLock<HashMap<EvaluationInput, FanResult>>> = OnceLock::new();
+fn fan_result_cache() -> &'static OnceLock<RwLock<HashMap<(EvaluationInput, i64), FanResult>>> {
+    static CACHE: OnceLock<RwLock<HashMap<(EvaluationInput, i64), FanResult>>> = OnceLock::new();
     &CACHE
 }
 
@@ -520,16 +519,21 @@ impl StandardScoreEvaluator {
 }
 
 pub fn evaluate_fans(input: EvaluationInput) -> FanResult {
+    evaluate_fans_with_minimum(input, DEFAULT_MINIMUM_HU_FAN)
+}
+
+pub fn evaluate_fans_with_minimum(input: EvaluationInput, minimum_hu_fan: i64) -> FanResult {
+    let minimum_hu_fan = minimum_hu_fan.max(0);
     let cache_key = canonicalize_evaluation_input(input.clone());
     cached_clone(
         fan_result_cache(),
         FAN_RESULT_CACHE_LIMIT,
-        cache_key,
-        || evaluate_fans_uncached(input),
+        (cache_key, minimum_hu_fan),
+        || evaluate_fans_uncached(input, minimum_hu_fan),
     )
 }
 
-fn evaluate_fans_uncached(input: EvaluationInput) -> FanResult {
+fn evaluate_fans_uncached(input: EvaluationInput, minimum_hu_fan: i64) -> FanResult {
     let context = FanContext::from_input(input);
     let best_result = fan_scenarios(&context)
         .into_iter()
@@ -550,13 +554,14 @@ fn evaluate_fans_uncached(input: EvaluationInput) -> FanResult {
 
     let kong_entries = normalize_kong_entries(&context.kong_entries, context.seat_count);
     let kong_delta_by_seat = sum_delta_by_seat(&kong_entries, context.seat_count);
-    let fan_delta_by_seat = fan_delta_by_seat(
+    let fan_delta_by_seat = fan_delta_by_seat_with_minimum(
         &context.win_type,
         context.winner_seat,
         context.discarder_seat,
         best_result.fan_total,
         best_result.minimum_qualifying_fan_total,
         context.seat_count,
+        minimum_hu_fan,
     );
     let total_delta_by_seat = fan_delta_by_seat
         .iter()
@@ -1040,6 +1045,7 @@ fn sum_delta_by_seat(entries: &[KongScoreDetailEntry], seat_count: usize) -> Vec
     totals
 }
 
+#[cfg(test)]
 fn fan_delta_by_seat(
     win_type: &str,
     winner_seat: Option<usize>,
@@ -1047,6 +1053,26 @@ fn fan_delta_by_seat(
     fan_total: i64,
     minimum_qualifying_fan_total: i64,
     seat_count: usize,
+) -> Vec<i64> {
+    fan_delta_by_seat_with_minimum(
+        win_type,
+        winner_seat,
+        discarder_seat,
+        fan_total,
+        minimum_qualifying_fan_total,
+        seat_count,
+        DEFAULT_MINIMUM_HU_FAN,
+    )
+}
+
+fn fan_delta_by_seat_with_minimum(
+    win_type: &str,
+    winner_seat: Option<usize>,
+    discarder_seat: Option<usize>,
+    fan_total: i64,
+    minimum_qualifying_fan_total: i64,
+    seat_count: usize,
+    minimum_hu_fan: i64,
 ) -> Vec<i64> {
     let mut deltas = vec![0_i64; seat_count];
     let Some(winner_seat) = winner_seat else {
@@ -1057,8 +1083,8 @@ fn fan_delta_by_seat(
     }
 
     if win_type == "self_draw" {
-        let payment = if minimum_qualifying_fan_total >= BONUS_FAN_THRESHOLD {
-            fan_total + BONUS_FAN_VALUE
+        let payment = if minimum_qualifying_fan_total >= minimum_hu_fan {
+            fan_total + minimum_hu_fan
         } else {
             fan_total
         };
@@ -1074,13 +1100,13 @@ fn fan_delta_by_seat(
 
     if let Some(discarder_seat) = discarder_seat {
         if discarder_seat < seat_count && discarder_seat != winner_seat {
-            let discarder_payment = if minimum_qualifying_fan_total >= BONUS_FAN_THRESHOLD {
-                fan_total + BONUS_FAN_VALUE
+            let discarder_payment = if minimum_qualifying_fan_total >= minimum_hu_fan {
+                fan_total + minimum_hu_fan
             } else {
                 fan_total
             };
-            let side_payment = if minimum_qualifying_fan_total >= BONUS_FAN_THRESHOLD {
-                BONUS_FAN_VALUE
+            let side_payment = if minimum_qualifying_fan_total >= minimum_hu_fan {
+                minimum_hu_fan
             } else {
                 0
             };
@@ -4488,6 +4514,22 @@ mod tests {
         assert_eq!(
             fan_delta_by_seat("discard", Some(2), Some(1), 10, 8, 4),
             vec![-8, -18, 34, -8]
+        );
+    }
+
+    #[test]
+    fn self_draw_at_custom_minimum_fan_adds_custom_bonus_for_each_other_seat() {
+        assert_eq!(
+            fan_delta_by_seat_with_minimum("self_draw", Some(0), None, 10, 6, 4, 6),
+            vec![48, -16, -16, -16]
+        );
+    }
+
+    #[test]
+    fn discard_at_custom_minimum_fan_adds_custom_side_payments_and_bonus_to_discarder() {
+        assert_eq!(
+            fan_delta_by_seat_with_minimum("discard", Some(2), Some(1), 10, 6, 4, 6),
+            vec![-6, -16, 28, -6]
         );
     }
 

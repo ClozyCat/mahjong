@@ -172,6 +172,12 @@ function renderBattleScreenAtViewport(
   );
 }
 
+const waitingControlDefaults = {
+  minimumHuFan: 8 as const,
+  canDecreaseMinimumHuFan: true,
+  canIncreaseMinimumHuFan: false,
+};
+
 function mockResultOverlayScrollLayout({ panelHeight }: { panelHeight: number }) {
   const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement | null;
   const fanPanel = document.body.querySelector('.result-overlay__fan-panel') as HTMLElement | null;
@@ -687,6 +693,7 @@ describe('BattleScreen', () => {
         mode: 'disconnected_or_waiting',
         phaseLabel: 'waiting',
         waitingControls: {
+          ...waitingControlDefaults,
           canStart: true,
           occupiedSeats: 4,
           botCount: 0,
@@ -2672,6 +2679,8 @@ describe('BattleScreen', () => {
   });
 
   it('renders pre-match room controls in the table center instead of the hand dock', () => {
+    const onMinimumHuFanChange = vi.fn();
+
     renderBattleScreen(
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
@@ -2680,21 +2689,31 @@ describe('BattleScreen', () => {
           { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
         ],
         waitingControls: {
+          ...waitingControlDefaults,
           canStart: true,
           occupiedSeats: 4,
           botCount: 0,
           canAddBot: false,
           canRemoveBot: false,
+          minimumHuFan: 8,
+          canDecreaseMinimumHuFan: true,
+          canIncreaseMinimumHuFan: false,
         },
       }),
-      { onInvitePlayer: vi.fn() },
+      { onInvitePlayer: vi.fn(), onMinimumHuFanChange },
     );
 
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '起和番数控制' })).toBeInTheDocument();
+    expect(screen.getByLabelText('当前起和番数 8 番')).toBeInTheDocument();
     expect(screen.queryByText('等待牌手')).toBeNull();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
     expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '降低起和番数' }));
+
+    expect(onMinimumHuFanChange).toHaveBeenCalledWith(6);
   });
 
   it('hides pre-match room and bot controls while dealer selection is spinning', () => {
@@ -2705,6 +2724,7 @@ describe('BattleScreen', () => {
           { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
         ],
         waitingControls: {
+          ...waitingControlDefaults,
           canStart: false,
           occupiedSeats: 4,
           botCount: 2,
@@ -2724,6 +2744,7 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByRole('group', { name: '开局前房间操作' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'BOT 数量控制' })).toBeNull();
+    expect(screen.queryByRole('group', { name: '起和番数控制' })).toBeNull();
     expect(screen.queryByRole('button', { name: '开始对局' })).toBeNull();
     expect(screen.queryByRole('button', { name: '增加 BOT' })).toBeNull();
     expect(screen.queryByRole('button', { name: '减少 BOT' })).toBeNull();
@@ -2740,6 +2761,7 @@ describe('BattleScreen', () => {
           { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
         ],
         waitingControls: {
+          ...waitingControlDefaults,
           canStart: false,
           occupiedSeats: 2,
           botCount: 0,
@@ -2793,6 +2815,7 @@ describe('BattleScreen', () => {
         mode: 'disconnected_or_waiting',
         phaseLabel: 'waiting',
         waitingControls: {
+          ...waitingControlDefaults,
           canStart: false,
           occupiedSeats: 2,
           botCount: 0,

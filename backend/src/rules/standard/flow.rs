@@ -993,6 +993,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats,
             match_state: None,
             round_state: None,
@@ -1042,6 +1043,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {

@@ -39,6 +39,7 @@ interface BattleScreenProps {
   onInvitePlayer?: (userId: number) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
+  onMinimumHuFanChange?: (minimumHuFan: NonNullable<BattleViewModel['waitingControls']>['minimumHuFan']) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
@@ -74,6 +75,7 @@ export function BattleScreen({
   onInvitePlayer,
   onAddBot,
   onRemoveBot,
+  onMinimumHuFanChange,
   onQuickChat,
   onPointGesture,
   isBgmEnabled = false,
@@ -368,6 +370,13 @@ export function BattleScreen({
               botCount={viewModel.dealerSelection ? 0 : viewModel.waitingControls?.botCount ?? 0}
               canAddBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canAddBot ?? false)}
               canRemoveBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canRemoveBot ?? false)}
+              minimumHuFan={viewModel.waitingControls?.minimumHuFan ?? 8}
+              canDecreaseMinimumHuFan={
+                !viewModel.dealerSelection && (viewModel.waitingControls?.canDecreaseMinimumHuFan ?? false)
+              }
+              canIncreaseMinimumHuFan={
+                !viewModel.dealerSelection && (viewModel.waitingControls?.canIncreaseMinimumHuFan ?? false)
+              }
               canLeaveTable={viewModel.canLeaveTable}
               themeId={themeId}
               themeLabel={themeLabel}
@@ -377,6 +386,7 @@ export function BattleScreen({
               onAction={handleAction}
               onAddBot={onAddBot}
               onRemoveBot={onRemoveBot}
+              onMinimumHuFanChange={onMinimumHuFanChange}
               onQuickChat={onQuickChat}
               onPointGesture={onPointGesture}
               isBgmEnabled={isBgmEnabled}

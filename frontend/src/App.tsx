@@ -61,6 +61,7 @@ import {
   createLeaveTableMessage,
   createQuickChatMessage,
   createPointGestureMessage,
+  createSetMinimumHuFanMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
   createStartNextRoundMessage,
@@ -92,6 +93,7 @@ import type {
   BackendActionType,
   BattleActionId,
   ClaimActionId,
+  MinimumHuFan,
   PublicUser,
   QuickChatEmoji,
   SessionState,
@@ -1260,6 +1262,10 @@ export default function App() {
     sendMessage(serializeClientMessage(createAdjustBotsMessage(delta)));
   }
 
+  function handleSetMinimumHuFan(minimumHuFan: MinimumHuFan) {
+    sendMessage(serializeClientMessage(createSetMinimumHuFanMessage(minimumHuFan)));
+  }
+
   function handleSetBotTakeover(enabled: boolean) {
     sendMessage(serializeClientMessage(createSetBotTakeoverMessage(enabled)));
   }
@@ -1359,6 +1365,7 @@ export default function App() {
           onInvitePlayer={handleInvitePlayer}
           onAddBot={() => handleAdjustBots(1)}
           onRemoveBot={() => handleAdjustBots(-1)}
+          onMinimumHuFanChange={handleSetMinimumHuFan}
           onQuickChat={handleQuickChat}
           onPointGesture={handlePointGesture}
         />

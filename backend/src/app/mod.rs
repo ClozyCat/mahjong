@@ -224,6 +224,7 @@ pub(crate) fn initial_room_state_with_owner(
         mode: "normal".to_string(),
         owner_user_id,
         multiplier,
+        minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
         seats: Vec::new(),
         match_state: None,
         round_state: None,
@@ -881,6 +882,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,
@@ -923,6 +925,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![SeatState {
                 seat_index: 2,
                 user_id: Some(7),
@@ -960,6 +963,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![
                 SeatState {
                     seat_index: 0,
@@ -1013,6 +1017,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),
@@ -1044,6 +1049,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),

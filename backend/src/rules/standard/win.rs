@@ -13,7 +13,8 @@ use crate::rules::scoring::{
     Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
     KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
-    evaluate_fans as scoring_evaluate_fans, extract_hand_features as scoring_extract_hand_features,
+    extract_hand_features as scoring_extract_hand_features,
+    evaluate_fans_with_minimum as scoring_evaluate_fans_with_minimum,
 };
 
 use super::runtime::round_event_message;
@@ -74,7 +75,7 @@ pub(crate) fn compute_multi_hu_settlement_for_state(
     };
     if winner_seats.len() == 1 {
         let settlement = compute_hu_settlement_for_state(state, primary_winner_seat, "discard")?;
-        if !settlement_meets_minimum_hu_fan(&settlement) {
+        if !settlement_meets_minimum_hu_fan_for_state(state, &settlement) {
             return Err("invalid_action".to_string());
         }
         return Ok(settlement);
@@ -87,7 +88,7 @@ pub(crate) fn compute_multi_hu_settlement_for_state(
         .collect::<Result<Vec<_>, _>>()?;
     if settlements
         .iter()
-        .any(|settlement| !settlement_meets_minimum_hu_fan(settlement))
+        .any(|settlement| !settlement_meets_minimum_hu_fan_for_state(state, settlement))
     {
         return Err("invalid_action".to_string());
     }
@@ -416,7 +417,7 @@ pub fn apply_hu_action_output_in_room_state(
         return Err("invalid_action".to_string());
     };
     let settlement = compute_hu_settlement_for_state(room, seat_index, hu_context)?;
-    if !settlement_meets_minimum_hu_fan(&settlement) {
+    if !settlement_meets_minimum_hu_fan_for_state(room, &settlement) {
         return Err("invalid_action".to_string());
     }
     apply_hu_settlement_output_in_room_state(room, seat_index, hu_context, settlement)
@@ -436,7 +437,14 @@ pub(crate) fn hu_meets_minimum_fan_for_state(
     hu_context: &str,
 ) -> bool {
     compute_hu_settlement_for_state(state, winner_seat, hu_context)
-        .is_ok_and(|settlement| settlement_meets_minimum_hu_fan(&settlement))
+        .is_ok_and(|settlement| settlement_meets_minimum_hu_fan_for_state(state, &settlement))
+}
+
+pub(crate) fn settlement_meets_minimum_hu_fan_for_state(
+    state: &RoomState,
+    settlement: &RoundSettlement,
+) -> bool {
+    settlement.score_delta.minimum_qualifying_fan_total >= state.minimum_hu_fan.max(0)
 }
 
 pub(crate) fn settlement_meets_minimum_hu_fan(settlement: &RoundSettlement) -> bool {
@@ -742,7 +750,9 @@ pub fn can_declare_hu_with_cache_for_state(
     discarder_seat: Option<usize>,
 ) -> bool {
     fan_result_for_win_with_state(state, cache, seat_index, incoming_tile, discarder_seat)
-        .is_ok_and(|evaluated| evaluated.fan_result.minimum_qualifying_fan_total >= MINIMUM_HU_FAN)
+        .is_ok_and(|evaluated| {
+            evaluated.fan_result.minimum_qualifying_fan_total >= state.minimum_hu_fan.max(0)
+        })
 }
 
 #[cfg(test)]
@@ -837,7 +847,7 @@ fn fan_result_for_win_with_state(
         winning_tile,
         decompositions,
     };
-    let result = scoring_evaluate_fans(evaluation);
+    let result = scoring_evaluate_fans_with_minimum(evaluation, state.minimum_hu_fan);
     Ok(EvaluatedWinResult { fan_result: result })
 }
 
@@ -1149,6 +1159,44 @@ mod tests {
     }
 
     #[test]
+    fn low_fan_self_draw_is_allowed_when_minimum_hu_fan_is_zero() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        state.minimum_hu_fan = 0;
+
+        let output = apply_hu_action_output_in_room_state(&mut state, 0)
+            .expect("zero minimum fan should allow low fan hu");
+
+        assert!(output.events.len() >= 2);
+    }
+
+    #[test]
+    fn low_fan_self_draw_respects_custom_minimum_hu_fan() {
+        let tile_keys = [
+            "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        state.minimum_hu_fan = 6;
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
+        assert!(
+            settlement.score_delta.minimum_qualifying_fan_total < 6,
+            "test hand should be below custom minimum, got {:?}",
+            settlement.fan_breakdown
+        );
+
+        let result = apply_hu_action_output_in_room_state(&mut state, 0);
+
+        assert_eq!(
+            result.expect_err("below custom minimum hu should fail"),
+            "invalid_action"
+        );
+    }
+
+    #[test]
     fn bot_minimum_hu_fan_excludes_flower_tiles() {
         let tile_keys = [
             "w1", "w2", "w3", "t4", "t5", "t6", "b3", "b4", "b5", "w6", "w7", "w8", "red", "red",
@@ -1288,6 +1336,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: None,
             multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: (0..4)
                 .map(|seat_index| SeatState {
                     seat_index,

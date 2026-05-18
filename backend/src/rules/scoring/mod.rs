@@ -5,7 +5,7 @@ pub mod model;
 #[allow(unused_imports)]
 pub use evaluator::{
     StandardScoreEvaluator, decompose_winning_hand, decompose_winning_hand_with_melds,
-    evaluate_fans, extract_hand_features, is_winning_hand,
+    evaluate_fans, evaluate_fans_with_minimum, extract_hand_features, is_winning_hand,
 };
 #[allow(unused_imports)]
 pub use model::{

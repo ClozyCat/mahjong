@@ -2,6 +2,7 @@ export type Seat = 'bottom' | 'left' | 'top' | 'right';
 export type TableMode = 'normal';
 export type SeatType = 'human' | 'bot' | 'special_bot';
 export type TableMultiplier = 1;
+export type MinimumHuFan = 0 | 2 | 4 | 6 | 8;
 
 export type MatchPhase =
   | 'loading'
@@ -205,6 +206,7 @@ export interface RoomSnapshotPayload {
   mode?: TableMode;
   owner_user_id?: number | null;
   multiplier?: TableMultiplier;
+  minimum_hu_fan?: MinimumHuFan;
   seats: SeatSnapshot[];
   local_seat?: number | null;
   match_state?: MatchState | null;
@@ -401,6 +403,7 @@ export type ClientMessage =
   | { type: 'join_table'; payload: { session_token: string } }
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
+  | { type: 'set_minimum_hu_fan'; payload: { minimum_hu_fan: MinimumHuFan } }
   | { type: 'set_bot_takeover'; payload: { enabled: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
@@ -520,6 +523,9 @@ export interface WaitingControls {
   botCount: number;
   canAddBot: boolean;
   canRemoveBot: boolean;
+  minimumHuFan: MinimumHuFan;
+  canDecreaseMinimumHuFan: boolean;
+  canIncreaseMinimumHuFan: boolean;
 }
 
 export interface LocalTileView {

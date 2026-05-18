@@ -12,6 +12,7 @@ import type {
   DealerSelectionView,
   DisplayMeldView,
   MatchResultPayload,
+  MinimumHuFan,
   PlayerView,
   PrivatePlayerState,
   PrivateState,
@@ -73,6 +74,12 @@ const ACTION_LABELS: Record<BattleActionId, string> = {
   pung: '碰',
   pass: '过',
 } as const satisfies Record<BattleActionId, string>;
+
+const MINIMUM_HU_FAN_OPTIONS: MinimumHuFan[] = [0, 2, 4, 6, 8];
+
+function normalizeMinimumHuFan(value: number | undefined): MinimumHuFan {
+  return MINIMUM_HU_FAN_OPTIONS.includes(value as MinimumHuFan) ? (value as MinimumHuFan) : 8;
+}
 
 function isBackendActionType(value: unknown): value is BackendActionType {
   return (
@@ -557,6 +564,8 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   const localSeatState = typeof localSeat === 'number' ? snapshot.seats.find((seat) => seat.seat_index === localSeat) : null;
   const occupiedSeats = snapshot.seats.length;
   const botCount = snapshot.seats.filter((seat) => getSeatIdentityType(seat) === 'bot').length;
+  const minimumHuFan = normalizeMinimumHuFan(snapshot.minimum_hu_fan);
+  const minimumHuFanIndex = MINIMUM_HU_FAN_OPTIONS.indexOf(minimumHuFan);
   const dealerSelection = createDealerSelection(state, options);
   const allSeatsAvailable =
     occupiedSeats === 4 &&
@@ -568,6 +577,10 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
     botCount,
     canAddBot: Boolean(localSeatState) && occupiedSeats < 4 && !dealerSelection,
     canRemoveBot: Boolean(localSeatState) && botCount > 0 && !dealerSelection,
+    minimumHuFan,
+    canDecreaseMinimumHuFan: Boolean(localSeatState) && minimumHuFanIndex > 0 && !dealerSelection,
+    canIncreaseMinimumHuFan:
+      Boolean(localSeatState) && minimumHuFanIndex < MINIMUM_HU_FAN_OPTIONS.length - 1 && !dealerSelection,
   };
 }
 

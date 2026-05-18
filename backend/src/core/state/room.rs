@@ -16,6 +16,8 @@ pub struct RoomState {
     pub owner_user_id: Option<i64>,
     #[serde(default = "default_multiplier")]
     pub multiplier: i64,
+    #[serde(default = "default_minimum_hu_fan")]
+    pub minimum_hu_fan: i64,
     pub seats: Vec<SeatState>,
     pub match_state: Option<MatchState>,
     pub round_state: Option<RoundState>,
@@ -25,6 +27,10 @@ pub struct RoomState {
 
 fn default_multiplier() -> i64 {
     1
+}
+
+pub fn default_minimum_hu_fan() -> i64 {
+    8
 }
 
 impl RoomState {
@@ -78,6 +84,7 @@ mod tests {
         assert_eq!(parsed.phase, "waiting");
         assert_eq!(parsed.owner_user_id, None);
         assert_eq!(parsed.multiplier, 1);
+        assert_eq!(parsed.minimum_hu_fan, 8);
         assert_eq!(parsed.seats.len(), 1);
         assert!(parsed.round_state.is_none());
         assert!(parsed.continue_action.is_none());
@@ -312,6 +319,7 @@ mod tests {
             mode: "normal".to_string(),
             owner_user_id: Some(7),
             multiplier: 3,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,

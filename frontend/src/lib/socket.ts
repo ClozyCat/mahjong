@@ -1,4 +1,4 @@
-import type { ActionRequestType, ClientMessage, QuickChatEmoji, ServerMessage } from '../types/match';
+import type { ActionRequestType, ClientMessage, MinimumHuFan, QuickChatEmoji, ServerMessage } from '../types/match';
 
 function normalizeBaseUrl(baseUrl: string) {
   const trimmed = baseUrl.replace(/\/+$/, '');
@@ -57,6 +57,15 @@ export function createSetBotTakeoverMessage(enabled: boolean): ClientMessage {
     type: 'set_bot_takeover',
     payload: {
       enabled,
+    },
+  };
+}
+
+export function createSetMinimumHuFanMessage(minimumHuFan: MinimumHuFan): ClientMessage {
+  return {
+    type: 'set_minimum_hu_fan',
+    payload: {
+      minimum_hu_fan: minimumHuFan,
     },
   };
 }
