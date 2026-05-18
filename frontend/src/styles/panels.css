@@ -613,202 +613,402 @@
 /* --- Lobby controls --- */
 .table-stage__lobby-controls {
   position: absolute;
-  top: calc(var(--table-stage-center-v) + (var(--table-stage-match-bar-h) / 2) + 0.8rem);
+  top: var(--table-stage-center-v);
   left: 50%;
   z-index: 5;
-  display: grid;
-  justify-items: center;
-  gap: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: max-content;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
 }
 
+/* Visually link the capsule and our panel with a decorative golden hanger */
+.table-stage__lobby-controls::before {
+  display: none;
+}
+
+/* The elegant unified glassmorphic Chinese panel */
+.table-stage__lobby-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1.15rem 1.45rem;
+  border-radius: 4px;
+  
+  /* Ink Jade Glassmorphism (墨玉琉璃) */
+  background: linear-gradient(180deg, 
+    rgba(14, 18, 16, 0.76) 0%, 
+    rgba(8, 10, 9, 0.85) 100%
+  );
+  border: 1px solid rgba(212, 175, 55, 0.22);
+  backdrop-filter: blur(24px) saturate(135%);
+  box-shadow:
+    0 16px 48px -12px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 20px rgba(212, 175, 55, 0.04);
+  
+  transition: all 0.3s var(--ease-lux);
+}
+
+/* Symmetrical Chinese corner brackets (金石回纹角) */
+.table-stage__lobby-panel-corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(212, 175, 55, 0.55);
+  pointer-events: none;
+  opacity: 0.85;
+  transition: border-color 0.3s ease;
+}
+.table-stage__lobby-panel-corner--tl {
+  top: 4px;
+  left: 4px;
+  border-right: none;
+  border-bottom: none;
+}
+.table-stage__lobby-panel-corner--tr {
+  top: 4px;
+  right: 4px;
+  border-left: none;
+  border-bottom: none;
+}
+.table-stage__lobby-panel-corner--bl {
+  bottom: 4px;
+  left: 4px;
+  border-right: none;
+  border-top: none;
+}
+.table-stage__lobby-panel-corner--br {
+  bottom: 4px;
+  right: 4px;
+  border-left: none;
+  border-top: none;
+}
+
+.table-stage__lobby-panel:hover .table-stage__lobby-panel-corner {
+  border-color: rgba(212, 175, 55, 0.8);
+}
+
+/* Action Buttons: 邀请 & 开始对局 */
 .table-stage__room-actions {
   display: flex;
   justify-content: center;
-  gap: 0.65rem;
+  gap: 0.8rem;
+  width: 100%;
 }
 
 .table-stage__room-action {
-  min-width: clamp(4.8rem, 15vw, 5.8rem);
-  min-height: clamp(1.85rem, 6vw, 2.3rem);
-  padding: 0.35rem clamp(0.6rem, 2vw, 1.1rem);
-  border-radius: 999px;
-  background: rgba(14, 14, 14, 0.45);
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
-  color: var(--theme-paper-strong);
-  font-size: clamp(0.72rem, 0.65rem + 0.4vw, 0.88rem);
+  min-width: clamp(5.4rem, 16vw, 6.6rem);
+  min-height: clamp(2.1rem, 6.5vw, 2.5rem);
+  padding: 0.4rem clamp(0.7rem, 2vw, 1.2rem);
+  border-radius: 1.25rem;
+  font-size: clamp(0.76rem, 0.65rem + 0.45vw, 0.92rem);
   font-weight: 700;
-  letter-spacing: 0.08em;
-  backdrop-filter: blur(16px) saturate(130%);
-  transition: all 0.3s var(--ease-spring);
-  box-shadow: 
-    0 8px 24px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
+  letter-spacing: 0.1em;
+  font-family: 'Noto Sans SC', sans-serif;
   cursor: pointer;
+  transition: all 0.28s var(--ease-spring);
 }
 
-.table-stage__room-action:hover:not(:disabled) {
-  background: rgba(14, 14, 14, 0.65);
-  border-color: color-mix(in srgb, var(--theme-paper) 40%, transparent);
+/* Secondary Button: 邀请 */
+.table-stage__room-action--medium,
+.table-stage__room-action:not(.table-stage__room-action--high) {
+  /* Emerald Jade Tinted Glass */
+  background: linear-gradient(135deg, 
+    rgba(27, 77, 62, 0.55) 0%, 
+    rgba(15, 45, 36, 0.7) 100%
+  );
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.table-stage__room-action--medium:hover:not(:disabled),
+.table-stage__room-action:not(.table-stage__room-action--high):hover:not(:disabled) {
+  background: linear-gradient(135deg, 
+    rgba(37, 97, 78, 0.72) 0%, 
+    rgba(20, 55, 44, 0.82) 100%
+  );
+  border-color: rgba(212, 175, 55, 0.55);
+  color: #fff;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 6px 18px rgba(0, 0, 0, 0.35),
+    0 0 10px rgba(212, 175, 55, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Primary Button: 开始对局 (Crimson Jade 朱砂红) */
+.table-stage__room-action--high {
+  background: linear-gradient(135deg, 
+    #b22222 0%, 
+    #801818 100%
+  );
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 
+    0 4px 15px rgba(178, 34, 34, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.table-stage__room-action--high:hover:not(:disabled) {
+  background: linear-gradient(135deg, 
+    #c82e2e 0%, 
+    #961e1e 100%
+  );
+  border-color: rgba(255, 223, 118, 0.85);
   transform: translateY(-2px) scale(1.03);
   box-shadow: 
-    0 12px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 12%, transparent);
+    0 8px 22px rgba(178, 34, 34, 0.5),
+    0 0 15px rgba(212, 175, 55, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .table-stage__room-action:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.table-stage__room-action--high:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 12%, rgba(14, 14, 14, 0.55));
-  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
-  color: var(--theme-paper-strong);
-}
-
-.table-stage__room-action--high:not(:disabled):hover {
-  background: color-mix(in srgb, var(--accent) 18%, rgba(14, 14, 14, 0.75));
-  border-color: var(--accent);
-  box-shadow: 
-    0 12px 32px color-mix(in srgb, var(--accent) 24%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent);
-}
-
-.table-stage__room-action--medium:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-2) 12%, rgba(14, 14, 14, 0.55));
-  border-color: color-mix(in srgb, var(--accent-2) 42%, transparent);
-}
-
-.table-stage__room-action--medium:not(:disabled):hover {
-  background: color-mix(in srgb, var(--accent-2) 18%, rgba(14, 14, 14, 0.75));
-  border-color: var(--accent-2);
-  box-shadow: 
-    0 12px 32px color-mix(in srgb, var(--accent-2) 24%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 14%, transparent);
+  transform: scale(0.96) translateY(0);
 }
 
 .table-stage__room-action:disabled {
-  opacity: 0.38;
-  filter: grayscale(0.5);
+  opacity: 0.35;
+  filter: grayscale(0.6);
   cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
-/* --- Bot controls --- */
-.table-stage__bot-controls {
-  margin-top: 0.2rem;
-  display: inline-flex;
+/* Elegant Chinese Divider */
+.table-stage__lobby-divider {
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.65rem;
+  gap: 0.6rem;
+  width: 100%;
+  margin-block: 0.2rem;
+  opacity: 0.75;
+}
+
+.table-stage__lobby-divider-line {
+  flex-grow: 1;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(212, 175, 55, 0.22) 50%, 
+    transparent
+  );
+}
+
+.table-stage__lobby-divider-symbol {
+  font-size: 0.72rem;
+  color: rgba(212, 175, 55, 0.65);
+  text-shadow: 0 0 4px rgba(212, 175, 55, 0.3);
+  font-family: Arial, sans-serif;
+  user-select: none;
+}
+
+.table-stage__lobby-divider--small {
+  margin-block: 0.1rem;
+}
+
+.table-stage__lobby-divider--small .table-stage__lobby-divider-line {
+  background: rgba(212, 175, 55, 0.12);
+}
+
+/* Settings Grid: Side-by-side layout for BOT Count & Min Fan Count */
+.table-stage__settings-grid {
+  display: flex;
+  gap: 0.8rem;
+  width: 100%;
+  justify-content: center;
+}
+
+/* Individual setting panel - beautifully simplified glass card */
+.table-stage__bot-controls {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  min-width: 8.8rem;
+  padding: 0.3rem 0.55rem;
   border-radius: 999px;
-  background: rgba(14, 14, 14, 0.45);
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
-  backdrop-filter: blur(16px) saturate(130%);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   box-shadow: 
-    0 8px 24px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.25s ease;
+}
+
+.table-stage__bot-controls:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(212, 175, 55, 0.14);
 }
 
 .table-stage__bot-label {
-  padding-inline: 0.25rem 0.15rem;
-  color: color-mix(in srgb, var(--theme-paper-strong) 64%, var(--accent-2));
+  padding-left: 0.4rem;
+  color: rgba(255, 255, 255, 0.64);
   font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: 'Noto Sans SC', sans-serif;
+  white-space: nowrap;
 }
 
+/* Symmetrical circular operators */
 .table-stage__bot-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: clamp(1.3rem, 4.5vw, 1.65rem);
-  height: clamp(1.3rem, 4.5vw, 1.65rem);
+  width: 1.45rem;
+  height: 1.45rem;
   border-radius: 50%;
-  background: rgba(14, 14, 14, 0.65);
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
-  color: var(--theme-paper-strong);
-  font-size: 1.05rem;
-  font-weight: 500;
-  transition: all 0.25s var(--ease-spring);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all 0.22s var(--ease-spring);
   cursor: pointer;
 }
 
 .table-stage__bot-button:hover:not(:disabled) {
   transform: scale(1.15);
-  background: rgba(14, 14, 14, 0.85);
-  border-color: var(--accent-3);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-3) 24%, transparent);
+  background: rgba(212, 175, 55, 0.15);
+  border-color: rgba(212, 175, 55, 0.7);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.25);
 }
 
 .table-stage__bot-button:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(0.9);
 }
 
 .table-stage__bot-button:disabled {
-  opacity: 0.35;
+  opacity: 0.25;
   filter: grayscale(0.6);
   cursor: not-allowed;
+  transform: none !important;
 }
 
 .table-stage__bot-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.6rem;
-  color: var(--theme-paper-strong);
-  font-family: 'Bahnschrift', sans-serif;
+  min-width: 1.2rem;
+  color: #fff;
+  font-family: 'Bahnschrift', 'Segoe UI Variable Display', sans-serif;
   font-size: 0.94rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--theme-paper-strong) 15%, transparent);
 }
 
+/* Rule Toggles (连庄 & 庄家翻倍) */
 .table-stage__rule-toggles {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  max-width: min(86vw, 22rem);
+  gap: 0.65rem;
+  width: 100%;
 }
 
 .table-stage__rule-toggle {
+  flex: 1;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.38rem;
-  min-height: 1.8rem;
+  justify-content: center;
+  min-width: 5.6rem;
+  min-height: 1.9rem;
   padding: 0.35rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
   border-radius: 999px;
-  background: rgba(14, 14, 14, 0.45);
-  color: var(--theme-paper-strong);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.25s var(--ease-lux);
+  
+  /* Unchecked State */
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.58);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  backdrop-filter: blur(16px) saturate(130%);
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent);
+  font-family: 'Noto Sans SC', sans-serif;
 }
 
-.table-stage__rule-toggle:has(input:checked) {
-  border-color: color-mix(in srgb, var(--accent-3) 45%, transparent);
-  background: color-mix(in srgb, var(--accent-3) 13%, rgba(14, 14, 14, 0.55));
-}
-
+/* Hide native checkbox visually */
 .table-stage__rule-toggle input {
-  width: 0.95rem;
-  height: 0.95rem;
-  accent-color: var(--accent-3);
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
 }
 
+/* Custom Diamond Indicator using CSS pseudo-elements */
+.table-stage__rule-toggle::before {
+  content: '◇';
+  font-size: 0.75rem;
+  margin-right: 0.35rem;
+  color: rgba(255, 255, 255, 0.4);
+  transition: all 0.25s ease;
+}
+
+/* Hover Unchecked State */
+.table-stage__rule-toggle:hover:not(:has(input:disabled)) {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(212, 175, 55, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.table-stage__rule-toggle:hover:not(:has(input:disabled))::before {
+  color: rgba(212, 175, 55, 0.45);
+}
+
+/* Active / Checked State */
+.table-stage__rule-toggle:has(input:checked) {
+  background: linear-gradient(135deg, 
+    rgba(212, 175, 55, 0.15) 0%, 
+    rgba(212, 175, 55, 0.05) 100%
+  );
+  border-color: rgba(212, 175, 55, 0.5);
+  color: #d4af37; /* Imperial Gold */
+  box-shadow: 
+    0 4px 12px rgba(212, 175, 55, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.table-stage__rule-toggle:has(input:checked)::before {
+  content: '◆';
+  color: #d4af37;
+  text-shadow: 0 0 6px rgba(212, 175, 55, 0.55);
+}
+
+/* Disabled Toggle State */
 .table-stage__rule-toggle:has(input:disabled) {
-  opacity: 0.45;
+  opacity: 0.3;
   cursor: not-allowed;
 }
+
+@media (max-width: 480px) {
+  .table-stage__settings-grid {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .table-stage__bot-controls {
+    width: 100%;
+  }
+  .table-stage__lobby-panel {
+    padding: 0.9rem 1.1rem;
+    border-radius: 1.25rem;
+  }
+}
+
 
 
 /* ==============================

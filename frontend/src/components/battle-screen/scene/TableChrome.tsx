@@ -278,95 +278,123 @@ export const TableChrome = memo(function TableChrome({
       </div>
       {shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls || shouldShowDealerRuleControls ? (
         <div className="table-stage__lobby-controls">
-          {shouldShowPreMatchActions ? (
-            <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
-              {preMatchActions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className={`table-stage__room-action table-stage__room-action--${action.emphasis}`}
-                  disabled={!action.enabled}
-                  onClick={() => (action.id === 'invite' ? onOpenInviteDialog?.() : onAction?.(action.id))}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {shouldShowBotControls ? (
-            <div className="table-stage__bot-controls" role="group" aria-label="BOT 数量控制">
-              <span className="table-stage__bot-label">BOT 数量</span>
-              <button
-                type="button"
-                className="table-stage__bot-button"
-                aria-label="减少 BOT"
-                disabled={!canRemoveBot}
-                onClick={onRemoveBot}
-              >
-                -
-              </button>
-              <strong className="table-stage__bot-count" aria-label={`当前 BOT 数量 ${botCount}`}>
-                {botCount}
-              </strong>
-              <button
-                type="button"
-                className="table-stage__bot-button"
-                aria-label="增加 BOT"
-                disabled={!canAddBot}
-                onClick={onAddBot}
-              >
-                +
-              </button>
-            </div>
-          ) : null}
-          {shouldShowMinimumHuFanControls ? (
-            <div className="table-stage__bot-controls" role="group" aria-label="起和番数控制">
-              <span className="table-stage__bot-label">起和番数</span>
-              <button
-                type="button"
-                className="table-stage__bot-button"
-                aria-label="降低起和番数"
-                disabled={!canDecreaseMinimumHuFan}
-                onClick={() => onMinimumHuFanChange?.(decreaseMinimumHuFan)}
-              >
-                -
-              </button>
-              <strong className="table-stage__bot-count" aria-label={`当前起和番数 ${minimumHuFan} 番`}>
-                {minimumHuFan}
-              </strong>
-              <button
-                type="button"
-                className="table-stage__bot-button"
-                aria-label="提高起和番数"
-                disabled={!canIncreaseMinimumHuFan}
-                onClick={() => onMinimumHuFanChange?.(increaseMinimumHuFan)}
-              >
-                +
-              </button>
-            </div>
-          ) : null}
-          {shouldShowDealerRuleControls ? (
-            <div className="table-stage__rule-toggles" role="group" aria-label="开局规则选项">
-              <label className="table-stage__rule-toggle">
-                <input
-                  type="checkbox"
-                  checked={dealerRepeatEnabled}
-                  disabled={!canToggleDealerRepeat}
-                  onChange={(event) => onDealerRepeatChange?.(event.currentTarget.checked)}
-                />
-                <span>连庄</span>
-              </label>
-              <label className="table-stage__rule-toggle">
-                <input
-                  type="checkbox"
-                  checked={dealerDoubleEnabled}
-                  disabled={!canToggleDealerDouble}
-                  onChange={(event) => onDealerDoubleChange?.(event.currentTarget.checked)}
-                />
-                <span>庄家翻倍</span>
-              </label>
-            </div>
-          ) : null}
+          <div className="table-stage__lobby-panel">
+            <div className="table-stage__lobby-panel-corner table-stage__lobby-panel-corner--tl" />
+            <div className="table-stage__lobby-panel-corner table-stage__lobby-panel-corner--tr" />
+            <div className="table-stage__lobby-panel-corner table-stage__lobby-panel-corner--bl" />
+            <div className="table-stage__lobby-panel-corner table-stage__lobby-panel-corner--br" />
+
+            {shouldShowPreMatchActions ? (
+              <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
+                {preMatchActions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className={`table-stage__room-action table-stage__room-action--${action.emphasis}`}
+                    disabled={!action.enabled}
+                    onClick={() => (action.id === 'invite' ? onOpenInviteDialog?.() : onAction?.(action.id))}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {shouldShowPreMatchActions && (shouldShowBotControls || shouldShowMinimumHuFanControls || shouldShowDealerRuleControls) ? (
+              <div className="table-stage__lobby-divider">
+                <span className="table-stage__lobby-divider-line"></span>
+                <span className="table-stage__lobby-divider-symbol">❖</span>
+                <span className="table-stage__lobby-divider-line"></span>
+              </div>
+            ) : null}
+
+            {shouldShowBotControls || shouldShowMinimumHuFanControls ? (
+              <div className="table-stage__settings-grid">
+                {shouldShowBotControls ? (
+                  <div className="table-stage__bot-controls" role="group" aria-label="BOT 数量控制">
+                    <span className="table-stage__bot-label">BOT 数量</span>
+                    <button
+                      type="button"
+                      className="table-stage__bot-button"
+                      aria-label="减少 BOT"
+                      disabled={!canRemoveBot}
+                      onClick={onRemoveBot}
+                    >
+                      -
+                    </button>
+                    <strong className="table-stage__bot-count" aria-label={`当前 BOT 数量 ${botCount}`}>
+                      {botCount}
+                    </strong>
+                    <button
+                      type="button"
+                      className="table-stage__bot-button"
+                      aria-label="增加 BOT"
+                      disabled={!canAddBot}
+                      onClick={onAddBot}
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : null}
+
+                {shouldShowMinimumHuFanControls ? (
+                  <div className="table-stage__bot-controls" role="group" aria-label="起和番数控制">
+                    <span className="table-stage__bot-label">起和番数</span>
+                    <button
+                      type="button"
+                      className="table-stage__bot-button"
+                      aria-label="降低起和番数"
+                      disabled={!canDecreaseMinimumHuFan}
+                      onClick={() => onMinimumHuFanChange?.(decreaseMinimumHuFan)}
+                    >
+                      -
+                    </button>
+                    <strong className="table-stage__bot-count" aria-label={`当前起和番数 ${minimumHuFan} 番`}>
+                      {minimumHuFan}
+                    </strong>
+                    <button
+                      type="button"
+                      className="table-stage__bot-button"
+                      aria-label="提高起和番数"
+                      disabled={!canIncreaseMinimumHuFan}
+                      onClick={() => onMinimumHuFanChange?.(increaseMinimumHuFan)}
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {shouldShowDealerRuleControls && (shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls) ? (
+              <div className="table-stage__lobby-divider table-stage__lobby-divider--small">
+                <span className="table-stage__lobby-divider-line"></span>
+              </div>
+            ) : null}
+
+            {shouldShowDealerRuleControls ? (
+              <div className="table-stage__rule-toggles" role="group" aria-label="开局规则选项">
+                <label className="table-stage__rule-toggle">
+                  <input
+                    type="checkbox"
+                    checked={dealerRepeatEnabled}
+                    disabled={!canToggleDealerRepeat}
+                    onChange={(event) => onDealerRepeatChange?.(event.currentTarget.checked)}
+                  />
+                  <span>连庄</span>
+                </label>
+                <label className="table-stage__rule-toggle">
+                  <input
+                    type="checkbox"
+                    checked={dealerDoubleEnabled}
+                    disabled={!canToggleDealerDouble}
+                    onChange={(event) => onDealerDoubleChange?.(event.currentTarget.checked)}
+                  />
+                  <span>庄家翻倍</span>
+                </label>
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {tableSummary ? <div className="table-stage__status-summary">{tableSummary}</div> : null}
