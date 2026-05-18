@@ -55,8 +55,7 @@ interface QueuedVoiceClip {
   resolve: () => void;
 }
 
-let isVoiceClipPlaying = false;
-const pendingVoiceClips: QueuedVoiceClip[] = [];
+const activeAudioBySeat = new Map<number, HTMLAudioElement>();
 
 export function getVoiceClipNameForTile(tileCode: string | null | undefined): string | null {
   if (!tileCode) {
@@ -123,37 +122,31 @@ export function resolveVoiceClipUrl(
   return assets[`../../voices/${packName}/${clipName}.mp3`] ?? null;
 }
 
-export function playVoiceClip(url: string): Promise<void> {
-  return new Promise((resolve) => {
-    pendingVoiceClips.push({ url, resolve });
-
-    if (!isVoiceClipPlaying) {
-      playNextVoiceClip();
-    }
-  });
+export function playVoiceClip(url: string, absoluteSeat?: number): Promise<void> {
+  return playVoiceClipNow(url, absoluteSeat);
 }
 
-function playNextVoiceClip() {
-  const nextClip = pendingVoiceClips.shift();
-  if (!nextClip) {
-    isVoiceClipPlaying = false;
-    return;
-  }
-
-  isVoiceClipPlaying = true;
-  playVoiceClipNow(nextClip.url, () => {
-    nextClip.resolve();
-    playNextVoiceClip();
-  });
-}
-
-function playVoiceClipNow(url: string, onSettled?: () => void): Promise<void> {
+function playVoiceClipNow(url: string, absoluteSeat?: number, onSettled?: () => void): Promise<void> {
   if (typeof Audio !== 'function') {
     onSettled?.();
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
+    // Stop and remove any existing audio for this seat
+    if (typeof absoluteSeat === 'number') {
+      const existingAudio = activeAudioBySeat.get(absoluteSeat);
+      if (existingAudio) {
+        try {
+          existingAudio.pause();
+          existingAudio.currentTime = 0;
+        } catch {
+          // Ignore errors when stopping audio
+        }
+        activeAudioBySeat.delete(absoluteSeat);
+      }
+    }
+
     let audio: HTMLAudioElement;
 
     try {
@@ -165,6 +158,11 @@ function playVoiceClipNow(url: string, onSettled?: () => void): Promise<void> {
       return;
     }
 
+    // Track this audio by seat
+    if (typeof absoluteSeat === 'number') {
+      activeAudioBySeat.set(absoluteSeat, audio);
+    }
+
     let settled = false;
     const finish = () => {
       if (settled) {
@@ -174,6 +172,12 @@ function playVoiceClipNow(url: string, onSettled?: () => void): Promise<void> {
       settled = true;
       removeAudioEventListener?.('ended', finish);
       removeAudioEventListener?.('error', finish);
+
+      // Clean up tracking
+      if (typeof absoluteSeat === 'number' && activeAudioBySeat.get(absoluteSeat) === audio) {
+        activeAudioBySeat.delete(absoluteSeat);
+      }
+
       onSettled?.();
       resolve();
     };

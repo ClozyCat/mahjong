@@ -180,7 +180,7 @@ export function BattleScreen({
         continue;
       }
 
-      playVoiceClip(voiceUrl);
+      playVoiceClip(voiceUrl, voiceCue.absoluteSeat);
     }
   }, [
     viewModel.actionEffect,
@@ -526,7 +526,8 @@ function getDiscardVoiceCueDedupKey(
     return `discard:${absoluteSeat}:tile:${tileIdentity}`;
   }
 
-  return `discard:${absoluteSeat}:river:${discardSeat ?? 'unknown'}:${discardCount}:${tileCode ?? viewModel.lastDiscard ?? 'unknown'}`;
+  // Remove discardCount from dedupKey to prevent duplicate voice for same tile
+  return `discard:${absoluteSeat}:river:${discardSeat ?? 'unknown'}:${tileCode ?? viewModel.lastDiscard ?? 'unknown'}`;
 }
 
 function getTileIdentityFromActionEffectKey(actionEffectKey: string) {

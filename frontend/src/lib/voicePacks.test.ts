@@ -81,7 +81,7 @@ describe('voicePacks', () => {
   });
 
   it('silently starts audio playback when the browser Audio API is available', async () => {
-    let endedHandler: (() => void) | null = null;
+    let endedHandler: (() => void) | undefined;
     const play = vi.fn(() => Promise.resolve());
     const audio = vi.fn(() => ({
       addEventListener: vi.fn((eventName: string, handler: () => void) => {
@@ -109,14 +109,17 @@ describe('voicePacks', () => {
     globalThis.Audio = originalAudio;
   });
 
-  it('queues voice playback so overlapping clips are played one after another', async () => {
+  it('allows concurrent voice playback and stops previous audio for the same seat', async () => {
     type EventHandler = () => void;
 
     const handlersByUrl = new Map<string, Map<string, EventHandler>>();
+    const pauseFnsByUrl = new Map<string, ReturnType<typeof vi.fn>>();
     const play = vi.fn(() => Promise.resolve());
     const audio = vi.fn((url: string) => {
       const handlers = new Map<string, EventHandler>();
       handlersByUrl.set(url, handlers);
+      const pause = vi.fn();
+      pauseFnsByUrl.set(url, pause);
 
       return {
         addEventListener: vi.fn((eventName: string, handler: EventHandler) => {
@@ -124,6 +127,8 @@ describe('voicePacks', () => {
         }),
         removeEventListener: vi.fn(),
         play,
+        pause,
+        currentTime: 0,
       };
     });
     const originalAudio = globalThis.Audio;
@@ -131,24 +136,29 @@ describe('voicePacks', () => {
     globalThis.Audio = audio as unknown as typeof Audio;
 
     try {
-      const firstPlayback = playVoiceClip('/assets/alpha/peng.mp3');
-      const secondPlayback = playVoiceClip('/assets/alpha/gang.mp3');
+      const firstPlayback = playVoiceClip('/assets/alpha/peng.mp3', 0);
+      const secondPlayback = playVoiceClip('/assets/alpha/gang.mp3', 1);
 
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(audio).toHaveBeenCalledTimes(1);
+      // Both should start playing immediately
+      expect(audio).toHaveBeenCalledTimes(2);
       expect(audio).toHaveBeenCalledWith('/assets/alpha/peng.mp3');
+      expect(audio).toHaveBeenCalledWith('/assets/alpha/gang.mp3');
+
+      // Now play another clip for seat 0, should stop the first one
+      const thirdPlayback = playVoiceClip('/assets/alpha/hu.mp3', 0);
+      await Promise.resolve();
+
+      expect(pauseFnsByUrl.get('/assets/alpha/peng.mp3')).toHaveBeenCalled();
+      expect(audio).toHaveBeenCalledTimes(3);
+      expect(audio).toHaveBeenLastCalledWith('/assets/alpha/hu.mp3');
 
       handlersByUrl.get('/assets/alpha/peng.mp3')?.get('ended')?.();
-      await firstPlayback;
-      await Promise.resolve();
-
-      expect(audio).toHaveBeenCalledTimes(2);
-      expect(audio).toHaveBeenLastCalledWith('/assets/alpha/gang.mp3');
-
       handlersByUrl.get('/assets/alpha/gang.mp3')?.get('ended')?.();
-      await secondPlayback;
+      handlersByUrl.get('/assets/alpha/hu.mp3')?.get('ended')?.();
+      await Promise.all([firstPlayback, secondPlayback, thirdPlayback]);
     } finally {
       globalThis.Audio = originalAudio;
     }
