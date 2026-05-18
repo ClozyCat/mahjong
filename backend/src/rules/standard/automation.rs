@@ -91,7 +91,11 @@ pub fn try_process_due_timeout_in_room_state(
     };
     if !seat_is_bot(room, timeout_seat) {
         if let Some(match_state) = room.match_state.as_mut() {
-            let extra = match_state.extra_time_pool.get(&timeout_seat).copied().unwrap_or(0);
+            let extra = match_state
+                .extra_time_pool
+                .get(&timeout_seat)
+                .copied()
+                .unwrap_or(0);
             if extra > 0 {
                 // 使用所有剩余额外时间延长倒计时
                 let new_deadline = (Utc::now() + chrono::TimeDelta::seconds(extra))

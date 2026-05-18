@@ -581,6 +581,10 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
     canDecreaseMinimumHuFan: Boolean(localSeatState) && minimumHuFanIndex > 0 && !dealerSelection,
     canIncreaseMinimumHuFan:
       Boolean(localSeatState) && minimumHuFanIndex < MINIMUM_HU_FAN_OPTIONS.length - 1 && !dealerSelection,
+    dealerRepeatEnabled: snapshot.dealer_repeat_enabled ?? false,
+    dealerDoubleEnabled: snapshot.dealer_double_enabled ?? false,
+    canToggleDealerRepeat: Boolean(localSeatState) && !dealerSelection,
+    canToggleDealerDouble: Boolean(localSeatState) && !dealerSelection,
   };
 }
 
@@ -1528,10 +1532,36 @@ function createRoundLabel(state: SessionState) {
   const roundWind = snapshot?.private_state?.round_wind ?? matchState?.prevailing_wind;
 
   if (matchState && roundWind) {
-    return `${WIND_COPY[roundWind]}${matchState.hand_number}局`;
+    const baseLabel = `${WIND_COPY[roundWind]}${formatChineseCount(matchState.hand_number)}场`;
+    const repeatLabel = formatDealerRepeatCount(matchState.dealer_repeat_count ?? 0);
+    return repeatLabel ? `${baseLabel} | ${repeatLabel}` : baseLabel;
   }
 
   return snapshot?.private_state?.round_id ?? '等待牌桌';
+}
+
+function formatDealerRepeatCount(count: number) {
+  if (count <= 0) {
+    return null;
+  }
+
+  return `${formatChineseCount(count)}连庄`;
+}
+
+function formatChineseCount(count: number) {
+  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (count <= 10) {
+    return count === 10 ? '十' : digits[count] ?? String(count);
+  }
+  if (count < 20) {
+    return `十${digits[count - 10]}`;
+  }
+  if (count < 100) {
+    const tens = Math.floor(count / 10);
+    const ones = count % 10;
+    return `${digits[tens]}十${ones === 0 ? '' : digits[ones]}`;
+  }
+  return String(count);
 }
 
 function createCenterStatusText(state: SessionState) {

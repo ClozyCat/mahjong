@@ -94,6 +94,7 @@ pub fn start_match_in_room_state(
         prevailing_wind: "east".to_string(),
         hand_number: 1,
         dealer_seat,
+        dealer_repeat_count: 0,
         cumulative_scores,
         match_finished: false,
         last_completed_round_id: None,
@@ -180,6 +181,7 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         prevailing_wind: "east".to_string(),
         hand_number: 1,
         dealer_seat,
+        dealer_repeat_count: 0,
         cumulative_scores,
         match_finished: false,
         last_completed_round_id: None,
@@ -846,15 +848,24 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
     let prevailing_wind = prevailing_wind.as_str();
     let hand_number = match_state.hand_number as usize;
     let dealer_seat = match_state.dealer_seat;
+    let dealer_repeats = room.dealer_repeat_enabled && settlement_keeps_dealer(room, dealer_seat);
     let current_wind_index = WIND_ORDER
         .iter()
         .position(|wind| *wind == prevailing_wind)
         .unwrap_or(0);
-    let next_dealer = (dealer_seat + 1) % MAX_SEATS;
-    let mut next_hand_number = hand_number + 1;
+    let next_dealer = if dealer_repeats {
+        dealer_seat
+    } else {
+        (dealer_seat + 1) % MAX_SEATS
+    };
+    let mut next_hand_number = if dealer_repeats {
+        hand_number
+    } else {
+        hand_number + 1
+    };
     let mut next_wind = prevailing_wind.to_string();
     let mut match_finished = false;
-    if next_hand_number > MAX_SEATS {
+    if !dealer_repeats && next_hand_number > MAX_SEATS {
         next_hand_number = 1;
         if current_wind_index == WIND_ORDER.len() - 1 {
             match_finished = true;
@@ -878,6 +889,13 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
             dealer_seat
         } else {
             next_dealer
+        };
+        match_state.dealer_repeat_count = if match_finished {
+            match_state.dealer_repeat_count
+        } else if dealer_repeats {
+            match_state.dealer_repeat_count + 1
+        } else {
+            0
         };
         match_state.match_finished = match_finished;
     }
@@ -906,6 +924,17 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
     Ok(())
 }
 
+fn settlement_keeps_dealer(room: &RoomState, dealer_seat: usize) -> bool {
+    let Some(settlement) = room
+        .round_state
+        .as_ref()
+        .and_then(|round| round.settlement.as_ref())
+    else {
+        return false;
+    };
+    settlement.win_type == "draw" || settlement.winning_seats().contains(&dealer_seat)
+}
+
 fn replacement_draw_message(seat_index: usize, tile: &Tile) -> Value {
     round_event_message(
         "replacement_draw",
@@ -924,7 +953,7 @@ mod tests {
     use crate::core::state::match_state::MatchSeatStatistics;
     use crate::core::state::{
         ContinueActionState, LastActionContext, PendingTimeout, PlayerRoundState,
-        RoundScoreTrackers, RoundState, RuleRuntimeState, SeatState, WallState,
+        RoundScoreTrackers, RoundSettlement, RoundState, RuleRuntimeState, SeatState, WallState,
     };
 
     fn suit(tile_key: &str, tile_id: &str) -> Tile {
@@ -994,6 +1023,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats,
             match_state: None,
             round_state: None,
@@ -1044,6 +1075,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1136,6 +1169,7 @@ mod tests {
             prevailing_wind: prevailing_wind.to_string(),
             hand_number: 4,
             dealer_seat: 3,
+            dealer_repeat_count: 0,
             cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
             match_finished: false,
             last_completed_round_id: None,
@@ -1234,6 +1268,84 @@ mod tests {
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "east");
         assert_eq!(match_state.hand_number, 4);
+    }
+
+    #[test]
+    fn dealer_repeat_keeps_dealer_and_hand_when_dealer_wins() {
+        let mut room = settlement_room_at_wind_end("east");
+        room.dealer_repeat_enabled = true;
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.hand_number = 2;
+        match_state.dealer_seat = 1;
+        if let Some(round) = room.round_state.as_mut() {
+            round.dealer_seat = 1;
+            round.settlement = Some(RoundSettlement {
+                win_type: "self_draw".to_string(),
+                winner_seat: Some(1),
+                ..Default::default()
+            });
+        }
+
+        complete_start_next_round_in_room_state(&mut room).expect("next round should start");
+
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "east");
+        assert_eq!(match_state.hand_number, 2);
+        assert_eq!(match_state.dealer_seat, 1);
+        assert_eq!(match_state.dealer_repeat_count, 1);
+        assert_eq!(
+            room.round_state.as_ref().map(|round| round.dealer_seat),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn dealer_repeat_keeps_dealer_and_hand_after_draw() {
+        let mut room = settlement_room_at_wind_end("east");
+        room.dealer_repeat_enabled = true;
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.hand_number = 2;
+        match_state.dealer_seat = 1;
+        if let Some(round) = room.round_state.as_mut() {
+            round.dealer_seat = 1;
+            round.settlement = Some(RoundSettlement {
+                win_type: "draw".to_string(),
+                ..Default::default()
+            });
+        }
+
+        complete_start_next_round_in_room_state(&mut room).expect("next round should start");
+
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.hand_number, 2);
+        assert_eq!(match_state.dealer_seat, 1);
+        assert_eq!(match_state.dealer_repeat_count, 1);
+    }
+
+    #[test]
+    fn dealer_repeat_resets_when_non_dealer_wins() {
+        let mut room = settlement_room_at_wind_end("east");
+        room.dealer_repeat_enabled = true;
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.hand_number = 2;
+        match_state.dealer_seat = 1;
+        match_state.dealer_repeat_count = 2;
+        if let Some(round) = room.round_state.as_mut() {
+            round.dealer_seat = 1;
+            round.settlement = Some(RoundSettlement {
+                win_type: "discard".to_string(),
+                winner_seat: Some(2),
+                discarder_seat: Some(1),
+                ..Default::default()
+            });
+        }
+
+        complete_start_next_round_in_room_state(&mut room).expect("next round should start");
+
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.hand_number, 3);
+        assert_eq!(match_state.dealer_seat, 2);
+        assert_eq!(match_state.dealer_repeat_count, 0);
     }
 
     #[test]

@@ -263,6 +263,38 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.botCount).toBe(0);
     expect(viewModel.waitingControls?.canAddBot).toBe(true);
     expect(viewModel.waitingControls?.canRemoveBot).toBe(false);
+    expect(viewModel.waitingControls?.dealerRepeatEnabled).toBe(false);
+    expect(viewModel.waitingControls?.dealerDoubleEnabled).toBe(false);
+    expect(viewModel.waitingControls?.canToggleDealerRepeat).toBe(true);
+    expect(viewModel.waitingControls?.canToggleDealerDouble).toBe(true);
+  });
+
+  it('exposes waiting dealer rule toggles from the room snapshot', () => {
+    const state = createWaitingSessionState();
+    state.roomSnapshot!.payload.dealer_repeat_enabled = true;
+    state.roomSnapshot!.payload.dealer_double_enabled = true;
+
+    const viewModel = createMatchViewModel(state);
+
+    expect(viewModel.waitingControls?.dealerRepeatEnabled).toBe(true);
+    expect(viewModel.waitingControls?.dealerDoubleEnabled).toBe(true);
+    expect(viewModel.waitingControls?.canToggleDealerRepeat).toBe(true);
+    expect(viewModel.waitingControls?.canToggleDealerDouble).toBe(true);
+  });
+
+  it('appends dealer repeat count to the round label after repeating dealer', () => {
+    const state = createPlayingSessionState();
+    state.roomSnapshot!.payload.match_state!.dealer_repeat_count = 2;
+
+    const viewModel = createMatchViewModel(state);
+
+    expect(viewModel.roundLabel).toBe('东一场 | 二连庄');
+  });
+
+  it('uses Chinese hand copy without dealer repeat by default', () => {
+    const viewModel = createMatchViewModel(createPlayingSessionState());
+
+    expect(viewModel.roundLabel).toBe('东一场');
   });
 
   it('renders point-gesture barrage copy as 指指点点 when actor points are higher', () => {

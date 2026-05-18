@@ -1,6 +1,6 @@
 use super::{
-    action_space::{tile_index, TILE_KIND_COUNT},
-    context::{seat_wind_key, BotContext},
+    action_space::{TILE_KIND_COUNT, tile_index},
+    context::{BotContext, seat_wind_key},
     search::min_shanten_for_counts,
 };
 use crate::core::state::RoomState;
@@ -130,16 +130,26 @@ pub(crate) fn fan_potential_for_tile_keys(
 fn fan_type_base_potential(fan_key: &str) -> i32 {
     match fan_key {
         // 1 Fan — common padding that almost any hand can pick up
-        "pung_of_terminals_or_honours" | "one_voided_suit" | "no_honours"
-        | "short_straight" | "two_terminal_chows" | "pure_double_chow" => 1,
+        "pung_of_terminals_or_honours"
+        | "one_voided_suit"
+        | "no_honours"
+        | "short_straight"
+        | "two_terminal_chows"
+        | "pure_double_chow" => 1,
         // 1 Fan — situational / wait-type / undetectable at decision time
-        "self_drawn" | "flower_tiles" | "melded_kong" | "edge_wait"
-        | "closed_wait" | "single_wait" | "mixed_double_chow" => 0,
+        "self_drawn" | "flower_tiles" | "melded_kong" | "edge_wait" | "closed_wait"
+        | "single_wait" | "mixed_double_chow" => 0,
 
         // 2 Fan — common modifiers that pair with backbone types to reach 8
-        "all_simples" | "dragon_pung" | "seat_wind" | "prevalent_wind"
-        | "double_pung" | "two_concealed_pungs" | "tile_hog"
-        | "all_chows" | "concealed_hand" => 2,
+        "all_simples"
+        | "dragon_pung"
+        | "seat_wind"
+        | "prevalent_wind"
+        | "double_pung"
+        | "two_concealed_pungs"
+        | "tile_hog"
+        | "all_chows"
+        | "concealed_hand" => 2,
         "concealed_kong" | "ready_hand_win" => 0,
 
         // 4 Fan
@@ -157,8 +167,12 @@ fn fan_type_base_potential(fan_key: &str) -> i32 {
         // 8 Fan — standalone 8-fan types (being these IS a valid win)
         "mixed_triple_chow" | "mixed_straight" => 5,
         "mixed_shifted_pungs" | "reversible_tiles" => 3,
-        "out_with_replacement_tile" | "last_tile_draw" | "last_tile_claim"
-        | "robbing_the_kong" | "two_concealed_kongs" | "chicken_hand" => 0,
+        "out_with_replacement_tile"
+        | "last_tile_draw"
+        | "last_tile_claim"
+        | "robbing_the_kong"
+        | "two_concealed_kongs"
+        | "chicken_hand" => 0,
 
         // 12 Fan
         "upper_four" | "lower_four" | "big_three_winds" => 3,
@@ -171,8 +185,8 @@ fn fan_type_base_potential(fan_key: &str) -> i32 {
 
         // 24 Fan — high-value, harder to build; modest boost to avoid over-chase
         "full_flush" => 5,
-        "seven_pairs" | "all_even_pungs" | "upper_tiles" | "lower_tiles"
-        | "middle_tiles" | "pure_shifted_pungs" | "pure_triple_chow" => 3,
+        "seven_pairs" | "all_even_pungs" | "upper_tiles" | "lower_tiles" | "middle_tiles"
+        | "pure_shifted_pungs" | "pure_triple_chow" => 3,
         "greater_honours_and_knitted_tiles" => 0,
 
         // 32 Fan
@@ -189,8 +203,12 @@ fn fan_type_base_potential(fan_key: &str) -> i32 {
 
         // 88 Fan — extreme/special hands, not practical to chase
         "big_three_dragons" | "all_terminals" => 3,
-        "big_four_winds" | "all_green" | "thirteen_orphans"
-        | "seven_shifted_pairs" | "nine_gates" | "four_kongs" => 0,
+        "big_four_winds"
+        | "all_green"
+        | "thirteen_orphans"
+        | "seven_shifted_pairs"
+        | "nine_gates"
+        | "four_kongs" => 0,
 
         _ => 0,
     }
@@ -425,7 +443,8 @@ fn fan_potential_for_counts(
     let has_all_suits = (0..9).any(|i| all_counts[i] > 0)
         && (9..18).any(|i| all_counts[i] > 0)
         && (18..27).any(|i| all_counts[i] > 0);
-    let has_all_honor_types = (27..31).any(|i| all_counts[i] > 0) && (31..34).any(|i| all_counts[i] > 0);
+    let has_all_honor_types =
+        (27..31).any(|i| all_counts[i] > 0) && (31..34).any(|i| all_counts[i] > 0);
     if has_all_suits && has_all_honor_types {
         detected.push("all_types");
     }
@@ -531,7 +550,9 @@ fn fan_potential_for_counts(
     // A simple heuristic: each suit has tiles in one specific range
     for suit_a in 0..3 {
         for suit_b in 0..3 {
-            if suit_b == suit_a { continue; }
+            if suit_b == suit_a {
+                continue;
+            }
             let suit_c = 3 - suit_a - suit_b;
             let a_base = suit_a * 9;
             let b_base = suit_b * 9;
@@ -697,7 +718,9 @@ fn fan_potential_for_counts(
     // === 全双刻 (all_even_pungs, 24) ===
     if honor_count == 0 && total_tiles > 0 {
         let all_even_tiles = (0..27).all(|i| {
-            if all_counts[i] == 0 { return true; }
+            if all_counts[i] == 0 {
+                return true;
+            }
             let num = i % 9; // 0=1, 1=2, ..., 8=9
             num == 1 || num == 3 || num == 5 || num == 7 // 2, 4, 6, 8
         });
@@ -710,13 +733,15 @@ fn fan_potential_for_counts(
     // Reversible tiles: b1, b2, b4, b5, b8, t2, t4, t5, white
     const REVERSIBLE_INDICES: [usize; 9] = [
         18, 19, 21, 22, 25, // b1, b2, b4, b5, b8
-        11, 13, 14,          // t2, t4, t5
-        33,                   // white
+        11, 13, 14, // t2, t4, t5
+        33, // white
     ];
     if honor_count == 0 || (honor_count > 0 && (27..33).all(|i| all_counts[i] == 0)) {
         // No non-white honors
         let only_reversible = (0..34).all(|i| {
-            if all_counts[i] == 0 { return true; }
+            if all_counts[i] == 0 {
+                return true;
+            }
             REVERSIBLE_INDICES.contains(&i)
         });
         if only_reversible {
@@ -752,7 +777,10 @@ pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f
     // 国标 requires minimum 8番 to win. Penalize entering tenpai when fan potential
     // is too low — the hand can't legally win and is just dealing-in bait.
     // Scales from 0 at threshold to fully negating tenpai_bonus at 3 below threshold.
-    let tenpai_quality_penalty = if before.shanten > 0 && after.shanten == 0 && after.fan_potential < MIN_FAN_POTENTIAL_FOR_TENPAI {
+    let tenpai_quality_penalty = if before.shanten > 0
+        && after.shanten == 0
+        && after.fan_potential < MIN_FAN_POTENTIAL_FOR_TENPAI
+    {
         let deficit = (MIN_FAN_POTENTIAL_FOR_TENPAI - after.fan_potential).min(3) as f32;
         -0.05 * deficit
     } else {

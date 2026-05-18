@@ -69,9 +69,18 @@ impl PendingActionView {
 
     pub fn remaining_extra_time(&self) -> Option<i64> {
         match self {
-            Self::ActiveTurn { remaining_extra_time, .. }
-            | Self::ClaimWindow { remaining_extra_time, .. }
-            | Self::RobKongWindow { remaining_extra_time, .. } => *remaining_extra_time,
+            Self::ActiveTurn {
+                remaining_extra_time,
+                ..
+            }
+            | Self::ClaimWindow {
+                remaining_extra_time,
+                ..
+            }
+            | Self::RobKongWindow {
+                remaining_extra_time,
+                ..
+            } => *remaining_extra_time,
         }
     }
 }

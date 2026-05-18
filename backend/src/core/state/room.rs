@@ -18,6 +18,10 @@ pub struct RoomState {
     pub multiplier: i64,
     #[serde(default = "default_minimum_hu_fan")]
     pub minimum_hu_fan: i64,
+    #[serde(default)]
+    pub dealer_repeat_enabled: bool,
+    #[serde(default)]
+    pub dealer_double_enabled: bool,
     pub seats: Vec<SeatState>,
     pub match_state: Option<MatchState>,
     pub round_state: Option<RoundState>,
@@ -320,6 +324,8 @@ mod tests {
             owner_user_id: Some(7),
             multiplier: 3,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: true,
+            dealer_double_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,
@@ -356,5 +362,30 @@ mod tests {
             "2026-04-07T10:10:00Z"
         );
         assert!(value.get("start_next_round_confirmed_seats").is_none());
+    }
+
+    #[test]
+    fn parses_rule_toggle_defaults_and_values() {
+        let default_room = RoomState::from_room_value(&json!({
+            "table_code": "RULE",
+            "phase": "waiting",
+            "mode": "normal",
+            "seats": []
+        }))
+        .expect("room should parse");
+        assert!(!default_room.dealer_repeat_enabled);
+        assert!(!default_room.dealer_double_enabled);
+
+        let enabled_room = RoomState::from_room_value(&json!({
+            "table_code": "RULE",
+            "phase": "waiting",
+            "mode": "normal",
+            "dealer_repeat_enabled": true,
+            "dealer_double_enabled": true,
+            "seats": []
+        }))
+        .expect("room should parse");
+        assert!(enabled_room.dealer_repeat_enabled);
+        assert!(enabled_room.dealer_double_enabled);
     }
 }

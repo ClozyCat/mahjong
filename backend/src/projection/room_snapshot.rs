@@ -27,6 +27,8 @@ struct PlayerRoomSnapshot {
     owner_user_id: Option<i64>,
     multiplier: i64,
     minimum_hu_fan: i64,
+    dealer_repeat_enabled: bool,
+    dealer_double_enabled: bool,
     seats: Vec<PublicSeatView>,
     local_seat: Seat,
     match_state: Option<MatchState>,
@@ -158,6 +160,8 @@ pub fn room_snapshot_message(
         owner_user_id: state.owner_user_id,
         multiplier: state.multiplier,
         minimum_hu_fan: state.minimum_hu_fan,
+        dealer_repeat_enabled: state.dealer_repeat_enabled,
+        dealer_double_enabled: state.dealer_double_enabled,
         seats: public_seats(state),
         local_seat,
         match_state: state.match_state.clone(),
@@ -177,6 +181,9 @@ pub fn room_snapshot_message(
                 "mode": state.mode,
                 "owner_user_id": state.owner_user_id,
                 "multiplier": state.multiplier,
+                "minimum_hu_fan": state.minimum_hu_fan,
+                "dealer_repeat_enabled": state.dealer_repeat_enabled,
+                "dealer_double_enabled": state.dealer_double_enabled,
                 "seats": [],
                 "local_seat": local_seat,
                 "match_state": Value::Null,
@@ -358,7 +365,10 @@ fn rob_kong_pending_action_view(
         responded_seats: rob.responded_seats.clone(),
         options,
         remaining_extra_time,
-        extended_with_extra: state.pending_timeout.as_ref().map_or(false, |pt| pt.extended_with_extra),
+        extended_with_extra: state
+            .pending_timeout
+            .as_ref()
+            .map_or(false, |pt| pt.extended_with_extra),
     }
 }
 
@@ -739,11 +749,14 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: Some(MatchState {
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 0,
+                dealer_repeat_count: 0,
                 cumulative_scores: BTreeMap::from([(0, -9), (1, 9), (2, 0), (3, 0)]),
                 match_finished: false,
                 last_completed_round_id: Some("round-1".to_string()),
@@ -801,6 +814,41 @@ mod tests {
     }
 
     #[test]
+    fn room_snapshot_includes_dealer_rule_options_and_repeat_count() {
+        let state = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: true,
+            dealer_double_enabled: true,
+            seats: seats(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                dealer_repeat_count: 2,
+                cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                extra_time_pool: Default::default(),
+            }),
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let snapshot = room_snapshot_message(&state, 0, &SeatProjectionSupport::default());
+
+        assert_eq!(snapshot["payload"]["dealer_repeat_enabled"], true);
+        assert_eq!(snapshot["payload"]["dealer_double_enabled"], true);
+        assert_eq!(snapshot["payload"]["match_state"]["dealer_repeat_count"], 2);
+    }
+
+    #[test]
     fn active_turn_projection_includes_pass_for_self_hu() {
         let state = RoomState {
             table_code: "ROOM42".to_string(),
@@ -809,6 +857,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -854,6 +904,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -900,6 +952,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -946,6 +1000,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -999,6 +1055,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1044,6 +1102,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1101,6 +1161,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1154,6 +1216,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1281,6 +1345,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {

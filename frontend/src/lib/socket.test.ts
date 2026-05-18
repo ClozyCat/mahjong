@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createJoinTableMessage, createSetBotTakeoverMessage } from './socket';
+import { createJoinTableMessage, createSetBotTakeoverMessage, createSetDealerDoubleMessage, createSetDealerRepeatMessage } from './socket';
 
 describe('socket message builders', () => {
   it('creates an authenticated join_table message', () => {
@@ -17,6 +17,21 @@ describe('socket message builders', () => {
       type: 'set_bot_takeover',
       payload: {
         enabled: true,
+      },
+    });
+  });
+
+  it('creates dealer rule toggle messages', () => {
+    expect(createSetDealerRepeatMessage(true)).toEqual({
+      type: 'set_dealer_repeat',
+      payload: {
+        enabled: true,
+      },
+    });
+    expect(createSetDealerDoubleMessage(false)).toEqual({
+      type: 'set_dealer_double',
+      payload: {
+        enabled: false,
       },
     });
   });

@@ -1,6 +1,4 @@
-use super::action_space::{
-    CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT,
-};
+use super::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT};
 #[cfg(test)]
 use super::action_space::{CLAIM_ACTIONS, tile_index};
 use super::context::BotContext;

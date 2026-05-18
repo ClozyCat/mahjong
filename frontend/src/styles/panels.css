@@ -766,6 +766,50 @@
   text-shadow: 0 0 8px color-mix(in srgb, var(--theme-paper-strong) 15%, transparent);
 }
 
+.table-stage__rule-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  max-width: min(86vw, 22rem);
+}
+
+.table-stage__rule-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 1.8rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--theme-paper) 15%, transparent);
+  border-radius: 999px;
+  background: rgba(14, 14, 14, 0.45);
+  color: var(--theme-paper-strong);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(16px) saturate(130%);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 6%, transparent);
+}
+
+.table-stage__rule-toggle:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent-3) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-3) 13%, rgba(14, 14, 14, 0.55));
+}
+
+.table-stage__rule-toggle input {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--accent-3);
+}
+
+.table-stage__rule-toggle:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 
 /* ==============================
    Result overlay (settlement)

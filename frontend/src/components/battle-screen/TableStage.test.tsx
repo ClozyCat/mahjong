@@ -531,6 +531,8 @@ describe('TableStage', () => {
     const onAddBot = vi.fn();
     const onRemoveBot = vi.fn();
     const onMinimumHuFanChange = vi.fn();
+    const onDealerRepeatChange = vi.fn();
+    const onDealerDoubleChange = vi.fn();
 
     render(
       <TableStage
@@ -555,6 +557,12 @@ describe('TableStage', () => {
         canDecreaseMinimumHuFan
         canIncreaseMinimumHuFan
         onMinimumHuFanChange={onMinimumHuFanChange}
+        dealerRepeatEnabled
+        canToggleDealerRepeat
+        dealerDoubleEnabled={false}
+        canToggleDealerDouble
+        onDealerRepeatChange={onDealerRepeatChange}
+        onDealerDoubleChange={onDealerDoubleChange}
         preMatchActions={[
           { id: 'invite', label: '邀请', enabled: true, emphasis: 'medium' },
           { id: 'start_match', label: '开始对局', enabled: true, emphasis: 'high' },
@@ -574,16 +582,22 @@ describe('TableStage', () => {
     expect(screen.getByRole('button', { name: '提高起和番数' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '降低起和番数' })).toBeInTheDocument();
     expect(screen.getByLabelText('当前起和番数 4 番')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '连庄' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '庄家翻倍' })).not.toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: '增加 BOT' }));
     fireEvent.click(screen.getByRole('button', { name: '减少 BOT' }));
     fireEvent.click(screen.getByRole('button', { name: '提高起和番数' }));
     fireEvent.click(screen.getByRole('button', { name: '降低起和番数' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '连庄' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '庄家翻倍' }));
 
     expect(onAddBot).toHaveBeenCalledTimes(1);
     expect(onRemoveBot).toHaveBeenCalledTimes(1);
     expect(onMinimumHuFanChange).toHaveBeenNthCalledWith(1, 6);
     expect(onMinimumHuFanChange).toHaveBeenNthCalledWith(2, 2);
+    expect(onDealerRepeatChange).toHaveBeenCalledWith(false);
+    expect(onDealerDoubleChange).toHaveBeenCalledWith(true);
   });
 
   it('does not mute score, flower, and hand stat plates by deprecated ready state while waiting for match start', () => {

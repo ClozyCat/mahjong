@@ -40,6 +40,8 @@ interface BattleScreenProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onMinimumHuFanChange?: (minimumHuFan: NonNullable<BattleViewModel['waitingControls']>['minimumHuFan']) => void;
+  onDealerRepeatChange?: (enabled: boolean) => void;
+  onDealerDoubleChange?: (enabled: boolean) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
@@ -76,6 +78,8 @@ export function BattleScreen({
   onAddBot,
   onRemoveBot,
   onMinimumHuFanChange,
+  onDealerRepeatChange,
+  onDealerDoubleChange,
   onQuickChat,
   onPointGesture,
   isBgmEnabled = false,
@@ -377,6 +381,14 @@ export function BattleScreen({
               canIncreaseMinimumHuFan={
                 !viewModel.dealerSelection && (viewModel.waitingControls?.canIncreaseMinimumHuFan ?? false)
               }
+              dealerRepeatEnabled={viewModel.waitingControls?.dealerRepeatEnabled ?? false}
+              dealerDoubleEnabled={viewModel.waitingControls?.dealerDoubleEnabled ?? false}
+              canToggleDealerRepeat={
+                !viewModel.dealerSelection && (viewModel.waitingControls?.canToggleDealerRepeat ?? false)
+              }
+              canToggleDealerDouble={
+                !viewModel.dealerSelection && (viewModel.waitingControls?.canToggleDealerDouble ?? false)
+              }
               canLeaveTable={viewModel.canLeaveTable}
               themeId={themeId}
               themeLabel={themeLabel}
@@ -387,6 +399,8 @@ export function BattleScreen({
               onAddBot={onAddBot}
               onRemoveBot={onRemoveBot}
               onMinimumHuFanChange={onMinimumHuFanChange}
+              onDealerRepeatChange={onDealerRepeatChange}
+              onDealerDoubleChange={onDealerDoubleChange}
               onQuickChat={onQuickChat}
               onPointGesture={onPointGesture}
               isBgmEnabled={isBgmEnabled}

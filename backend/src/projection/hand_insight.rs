@@ -720,6 +720,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: (0..4)
                 .map(|seat_index| SeatState {
                     seat_index,
@@ -732,6 +734,7 @@ mod tests {
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 0,
+                dealer_repeat_count: 0,
                 cumulative_scores: BTreeMap::from([(0, 0), (1, 0), (2, 0), (3, 0)]),
                 match_finished: false,
                 last_completed_round_id: None,

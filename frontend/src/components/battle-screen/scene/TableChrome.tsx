@@ -19,6 +19,10 @@ interface TableChromeProps {
   minimumHuFan: MinimumHuFan;
   canDecreaseMinimumHuFan: boolean;
   canIncreaseMinimumHuFan: boolean;
+  dealerRepeatEnabled: boolean;
+  dealerDoubleEnabled: boolean;
+  canToggleDealerRepeat: boolean;
+  canToggleDealerDouble: boolean;
   canLeaveTable: boolean;
   onLeaveTable?: () => void;
   onOpenInviteDialog?: () => void;
@@ -27,6 +31,8 @@ interface TableChromeProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onMinimumHuFanChange?: (minimumHuFan: MinimumHuFan) => void;
+  onDealerRepeatChange?: (enabled: boolean) => void;
+  onDealerDoubleChange?: (enabled: boolean) => void;
   isBgmEnabled?: boolean;
   onToggleBgm?: () => void;
   isVoiceEnabled?: boolean;
@@ -49,6 +55,10 @@ export const TableChrome = memo(function TableChrome({
   minimumHuFan,
   canDecreaseMinimumHuFan,
   canIncreaseMinimumHuFan,
+  dealerRepeatEnabled,
+  dealerDoubleEnabled,
+  canToggleDealerRepeat,
+  canToggleDealerDouble,
   canLeaveTable,
   onLeaveTable,
   onOpenInviteDialog,
@@ -57,6 +67,8 @@ export const TableChrome = memo(function TableChrome({
   onAddBot,
   onRemoveBot,
   onMinimumHuFanChange,
+  onDealerRepeatChange,
+  onDealerDoubleChange,
   isBgmEnabled = false,
   onToggleBgm,
   isVoiceEnabled = true,
@@ -120,6 +132,8 @@ export const TableChrome = memo(function TableChrome({
     shouldShowPreMatchActions || botCount > 0 || canAddBot || canRemoveBot;
   const shouldShowMinimumHuFanControls =
     shouldShowPreMatchActions || canDecreaseMinimumHuFan || canIncreaseMinimumHuFan;
+  const shouldShowDealerRuleControls =
+    shouldShowPreMatchActions || canToggleDealerRepeat || canToggleDealerDouble;
   const canOpenSeatInvite = resolvedOccupiedSeatCount < seatCapacity;
   const minimumHuFanOptions: MinimumHuFan[] = [0, 2, 4, 6, 8];
   const minimumHuFanIndex = minimumHuFanOptions.indexOf(minimumHuFan);
@@ -282,7 +296,7 @@ export const TableChrome = memo(function TableChrome({
           </div>
         ) : null}
       </div>
-      {shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls ? (
+      {shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls || shouldShowDealerRuleControls ? (
         <div className="table-stage__lobby-controls">
           {shouldShowPreMatchActions ? (
             <div className="table-stage__room-actions" role="group" aria-label="开局前房间操作">
@@ -349,6 +363,28 @@ export const TableChrome = memo(function TableChrome({
               >
                 +
               </button>
+            </div>
+          ) : null}
+          {shouldShowDealerRuleControls ? (
+            <div className="table-stage__rule-toggles" role="group" aria-label="开局规则选项">
+              <label className="table-stage__rule-toggle">
+                <input
+                  type="checkbox"
+                  checked={dealerRepeatEnabled}
+                  disabled={!canToggleDealerRepeat}
+                  onChange={(event) => onDealerRepeatChange?.(event.currentTarget.checked)}
+                />
+                <span>连庄</span>
+              </label>
+              <label className="table-stage__rule-toggle">
+                <input
+                  type="checkbox"
+                  checked={dealerDoubleEnabled}
+                  disabled={!canToggleDealerDouble}
+                  onChange={(event) => onDealerDoubleChange?.(event.currentTarget.checked)}
+                />
+                <span>庄家翻倍</span>
+              </label>
             </div>
           ) : null}
         </div>

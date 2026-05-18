@@ -103,6 +103,10 @@ interface TableStageProps {
   minimumHuFan?: MinimumHuFan;
   canDecreaseMinimumHuFan?: boolean;
   canIncreaseMinimumHuFan?: boolean;
+  dealerRepeatEnabled?: boolean;
+  dealerDoubleEnabled?: boolean;
+  canToggleDealerRepeat?: boolean;
+  canToggleDealerDouble?: boolean;
   canLeaveTable?: boolean;
   themeId?: ThemeId;
   themeLabel?: string;
@@ -113,6 +117,8 @@ interface TableStageProps {
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onMinimumHuFanChange?: (minimumHuFan: MinimumHuFan) => void;
+  onDealerRepeatChange?: (enabled: boolean) => void;
+  onDealerDoubleChange?: (enabled: boolean) => void;
   onQuickChat?: (targetSeat: number, emoji: QuickChatEmoji) => void;
   onPointGesture?: (targetSeat: number) => void;
   isBgmEnabled?: boolean;
@@ -162,6 +168,10 @@ export function TableStage({
   minimumHuFan = 8,
   canDecreaseMinimumHuFan = false,
   canIncreaseMinimumHuFan = false,
+  dealerRepeatEnabled = false,
+  dealerDoubleEnabled = false,
+  canToggleDealerRepeat = false,
+  canToggleDealerDouble = false,
   canLeaveTable = false,
   themeId = 'tian-shui-bi',
   themeLabel = '天水碧',
@@ -172,6 +182,8 @@ export function TableStage({
   onAddBot,
   onRemoveBot,
   onMinimumHuFanChange,
+  onDealerRepeatChange,
+  onDealerDoubleChange,
   onQuickChat,
   onPointGesture,
   isBgmEnabled = false,
@@ -259,6 +271,10 @@ export function TableStage({
             minimumHuFan={minimumHuFan}
             canDecreaseMinimumHuFan={canDecreaseMinimumHuFan}
             canIncreaseMinimumHuFan={canIncreaseMinimumHuFan}
+            dealerRepeatEnabled={dealerRepeatEnabled}
+            dealerDoubleEnabled={dealerDoubleEnabled}
+            canToggleDealerRepeat={canToggleDealerRepeat}
+            canToggleDealerDouble={canToggleDealerDouble}
             canLeaveTable={canLeaveTable}
             onLeaveTable={onLeaveTable}
             onOpenInviteDialog={onOpenInviteDialog}
@@ -267,6 +283,8 @@ export function TableStage({
             onAddBot={onAddBot}
             onRemoveBot={onRemoveBot}
             onMinimumHuFanChange={onMinimumHuFanChange}
+            onDealerRepeatChange={onDealerRepeatChange}
+            onDealerDoubleChange={onDealerDoubleChange}
             isBgmEnabled={isBgmEnabled}
             onToggleBgm={onToggleBgm}
             isVoiceEnabled={isVoiceEnabled}

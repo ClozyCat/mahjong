@@ -118,6 +118,7 @@ export interface MatchState {
   prevailing_wind: 'east' | 'south' | 'west' | 'north';
   hand_number: number;
   dealer_seat: number;
+  dealer_repeat_count?: number;
   cumulative_scores: Record<string, number>;
   match_finished: boolean;
   last_completed_round_id: string | null;
@@ -207,6 +208,8 @@ export interface RoomSnapshotPayload {
   owner_user_id?: number | null;
   multiplier?: TableMultiplier;
   minimum_hu_fan?: MinimumHuFan;
+  dealer_repeat_enabled?: boolean;
+  dealer_double_enabled?: boolean;
   seats: SeatSnapshot[];
   local_seat?: number | null;
   match_state?: MatchState | null;
@@ -404,6 +407,8 @@ export type ClientMessage =
   | { type: 'leave_table'; payload: Record<string, never> }
   | { type: 'adjust_bots'; payload: { delta: 1 | -1 } }
   | { type: 'set_minimum_hu_fan'; payload: { minimum_hu_fan: MinimumHuFan } }
+  | { type: 'set_dealer_repeat'; payload: { enabled: boolean } }
+  | { type: 'set_dealer_double'; payload: { enabled: boolean } }
   | { type: 'set_bot_takeover'; payload: { enabled: boolean } }
   | { type: 'start_match'; payload: Record<string, never> }
   | { type: 'start_next_round'; payload: Record<string, never> }
@@ -526,6 +531,10 @@ export interface WaitingControls {
   minimumHuFan: MinimumHuFan;
   canDecreaseMinimumHuFan: boolean;
   canIncreaseMinimumHuFan: boolean;
+  dealerRepeatEnabled: boolean;
+  dealerDoubleEnabled: boolean;
+  canToggleDealerRepeat: boolean;
+  canToggleDealerDouble: boolean;
 }
 
 export interface LocalTileView {

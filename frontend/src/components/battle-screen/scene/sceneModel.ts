@@ -90,10 +90,6 @@ function getBottomSeatAnchorPx(centerYPx: number, seatTopPx: number, bottomInset
 }
 
 function buildTableSummary(roundLabel: string, phaseLabel: string) {
-  if (roundLabel && phaseLabel) {
-    return `${roundLabel} | ${phaseLabel}`;
-  }
-
   return roundLabel || phaseLabel || null;
 }
 

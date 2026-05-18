@@ -62,6 +62,8 @@ import {
   createQuickChatMessage,
   createPointGestureMessage,
   createSetMinimumHuFanMessage,
+  createSetDealerDoubleMessage,
+  createSetDealerRepeatMessage,
   createSetBotTakeoverMessage,
   createStartMatchMessage,
   createStartNextRoundMessage,
@@ -1266,6 +1268,14 @@ export default function App() {
     sendMessage(serializeClientMessage(createSetMinimumHuFanMessage(minimumHuFan)));
   }
 
+  function handleSetDealerRepeat(enabled: boolean) {
+    sendMessage(serializeClientMessage(createSetDealerRepeatMessage(enabled)));
+  }
+
+  function handleSetDealerDouble(enabled: boolean) {
+    sendMessage(serializeClientMessage(createSetDealerDoubleMessage(enabled)));
+  }
+
   function handleSetBotTakeover(enabled: boolean) {
     sendMessage(serializeClientMessage(createSetBotTakeoverMessage(enabled)));
   }
@@ -1366,6 +1376,8 @@ export default function App() {
           onAddBot={() => handleAdjustBots(1)}
           onRemoveBot={() => handleAdjustBots(-1)}
           onMinimumHuFanChange={handleSetMinimumHuFan}
+          onDealerRepeatChange={handleSetDealerRepeat}
+          onDealerDoubleChange={handleSetDealerDouble}
           onQuickChat={handleQuickChat}
           onPointGesture={handlePointGesture}
         />

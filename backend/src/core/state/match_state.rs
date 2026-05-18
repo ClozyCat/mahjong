@@ -29,6 +29,7 @@ pub struct MatchState {
     pub prevailing_wind: String,
     pub hand_number: u32,
     pub dealer_seat: Seat,
+    pub dealer_repeat_count: u32,
     pub cumulative_scores: BTreeMap<Seat, i64>,
     pub match_finished: bool,
     pub last_completed_round_id: Option<RoundId>,

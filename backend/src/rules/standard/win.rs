@@ -200,7 +200,7 @@ pub fn compute_hu_settlement(
         .unwrap_or(0);
     let display_win_label = None;
 
-    Ok(RoundSettlement {
+    let mut settlement = RoundSettlement {
         provisional: true,
         win_type: hu_context.to_string(),
         winner_seat: Some(winner_seat),
@@ -267,7 +267,9 @@ pub fn compute_hu_settlement(
                     .collect(),
             })
             .collect(),
-    })
+    };
+    apply_dealer_double_to_settlement(&state, &mut settlement);
+    Ok(settlement)
 }
 
 #[cfg(test)]
@@ -505,7 +507,7 @@ pub(crate) fn compute_hu_settlement_for_state(
         .unwrap_or(0);
     let display_win_label = None;
 
-    Ok(RoundSettlement {
+    let mut settlement = RoundSettlement {
         provisional: true,
         win_type: hu_context.to_string(),
         winner_seat: Some(winner_seat),
@@ -572,7 +574,75 @@ pub(crate) fn compute_hu_settlement_for_state(
                     .collect(),
             })
             .collect(),
-    })
+    };
+    apply_dealer_double_to_settlement(state, &mut settlement);
+    Ok(settlement)
+}
+
+fn apply_dealer_double_to_settlement(state: &RoomState, settlement: &mut RoundSettlement) {
+    if !state.dealer_double_enabled {
+        return;
+    }
+    let Some(winner_seat) = settlement.winner_seat else {
+        return;
+    };
+    let dealer_seat = state
+        .round_state
+        .as_ref()
+        .map(|round| round.dealer_seat)
+        .or_else(|| {
+            state
+                .match_state
+                .as_ref()
+                .map(|match_state| match_state.dealer_seat)
+        })
+        .unwrap_or(0);
+    let payer_seats = settlement
+        .score_delta
+        .fan_delta_by_seat
+        .iter()
+        .filter_map(|(&seat, &delta)| {
+            (seat != winner_seat
+                && delta < 0
+                && (seat == dealer_seat || winner_seat == dealer_seat))
+                .then_some((seat, -delta))
+        })
+        .collect::<Vec<_>>();
+
+    if payer_seats.is_empty() {
+        return;
+    }
+    for (payer_seat, extra_payment) in payer_seats {
+        *settlement
+            .score_delta
+            .fan_delta_by_seat
+            .entry(payer_seat)
+            .or_default() -= extra_payment;
+        *settlement
+            .score_delta
+            .fan_delta_by_seat
+            .entry(winner_seat)
+            .or_default() += extra_payment;
+    }
+
+    for seat in 0..MAX_SEATS {
+        let fan_delta = settlement
+            .score_delta
+            .fan_delta_by_seat
+            .get(&seat)
+            .copied()
+            .unwrap_or(0);
+        let kong_delta = settlement
+            .score_delta
+            .kong_delta_by_seat
+            .get(&seat)
+            .copied()
+            .unwrap_or(0);
+        settlement
+            .score_delta
+            .total_delta_by_seat
+            .insert(seat, fan_delta + kong_delta);
+    }
 }
 
 pub fn apply_hu_settlement_output_in_room_state(
@@ -1005,8 +1075,8 @@ mod tests {
     #[test]
     fn can_declare_hu_for_thirteen_orphans_without_mixed_terminals_and_honours() {
         let tile_keys = [
-            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red",
-            "green", "white", "white",
+            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red", "green",
+            "white", "white",
         ];
         let state = test_room_state_with_concealed_tiles(&tile_keys);
         let cache = RoomScoringCache::from_state(&state);
@@ -1323,6 +1393,116 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dealer_double_doubles_each_self_draw_payment_when_dealer_wins() {
+        let tile_keys = [
+            "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&tile_keys);
+        state.dealer_double_enabled = true;
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 0, "self_draw").expect("settlement");
+        let payment = settlement.fan_total + state.minimum_hu_fan;
+
+        assert_eq!(
+            settlement.score_delta.fan_delta_by_seat,
+            std::collections::BTreeMap::from([
+                (0, payment * 6),
+                (1, -payment * 2),
+                (2, -payment * 2),
+                (3, -payment * 2),
+            ])
+        );
+    }
+
+    #[test]
+    fn dealer_double_doubles_dealer_payment_on_non_dealer_self_draw() {
+        let tile_keys = [
+            "w1", "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
+        ];
+        let mut state = test_room_state_with_concealed_tiles(&[]);
+        state.dealer_double_enabled = true;
+        {
+            let round = state.round_state.as_mut().expect("round should exist");
+            round.current_actor = 1;
+            round.players[1].concealed_tiles = tile_keys
+                .iter()
+                .enumerate()
+                .map(|(index, tile_key)| Tile {
+                    tile_id: format!("{tile_key}#{index}"),
+                    tile_key: (*tile_key).to_string(),
+                    ..Default::default()
+                })
+                .collect();
+            round.last_action_context = LastActionContext {
+                kind: "draw".to_string(),
+                seat: 1,
+                tile_id: Some("red#13".to_string()),
+                ..Default::default()
+            };
+        }
+
+        let settlement =
+            compute_hu_settlement_for_state(&state, 1, "self_draw").expect("settlement");
+        let payment = settlement.fan_total + state.minimum_hu_fan;
+
+        assert_eq!(
+            settlement.score_delta.fan_delta_by_seat,
+            std::collections::BTreeMap::from([
+                (0, -payment * 2),
+                (1, payment * 4),
+                (2, -payment),
+                (3, -payment),
+            ])
+        );
+    }
+
+    #[test]
+    fn dealer_double_doubles_dealer_discard_payment() {
+        let mut state = test_room_state_with_concealed_tiles(&[]);
+        state.dealer_double_enabled = true;
+        let winning_tiles = [
+            "w2", "w3", "w4", "w5", "w6", "t1", "t2", "t3", "b1", "b2", "b3", "red", "red",
+        ];
+        {
+            let round = state.round_state.as_mut().expect("round should exist");
+            round.current_actor = 0;
+            round.players[1].concealed_tiles = winning_tiles
+                .iter()
+                .enumerate()
+                .map(|(index, tile_key)| Tile {
+                    tile_id: format!("{tile_key}#{index}"),
+                    tile_key: (*tile_key).to_string(),
+                    ..Default::default()
+                })
+                .collect();
+            round.last_discard = Some(Tile {
+                tile_id: "w1#discard".to_string(),
+                tile_key: "w1".to_string(),
+                ..Default::default()
+            });
+            round.pending_action = Some(PendingAction::ClaimWindow(ClaimWindowAction {
+                discarder_seat: 0,
+                claim_window: vec![vec![], vec!["hu".to_string()], vec![], vec![]],
+                responded_seats: vec![],
+                claim_responses: vec![],
+            }));
+        }
+
+        let settlement = compute_hu_settlement_for_state(&state, 1, "discard").expect("settlement");
+        let discarder_payment = settlement.fan_total + state.minimum_hu_fan;
+
+        assert_eq!(
+            settlement.score_delta.fan_delta_by_seat.get(&0),
+            Some(&(-discarder_payment * 2))
+        );
+        assert_eq!(
+            settlement.score_delta.fan_delta_by_seat.get(&1),
+            Some(&(discarder_payment * 2 + state.minimum_hu_fan * 2))
+        );
+    }
+
     fn test_room_state_with_concealed_tiles(tile_keys: &[&str]) -> RoomState {
         RoomState {
             table_code: "ROOM7P".to_string(),
@@ -1331,6 +1511,8 @@ mod tests {
             owner_user_id: None,
             multiplier: 1,
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
             seats: (0..4)
                 .map(|seat_index| SeatState {
                     seat_index,
@@ -1341,6 +1523,7 @@ mod tests {
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 0,
+                dealer_repeat_count: 0,
                 cumulative_scores: (0..4).map(|seat| (seat, 0)).collect(),
                 match_finished: false,
                 last_completed_round_id: None,

@@ -3714,8 +3714,8 @@ mod tests {
     #[test]
     fn thirteen_orphans_scores_without_mixed_terminals_and_honours() {
         let tile_keys = vec![
-            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red",
-            "green", "white", "white",
+            "w1", "w9", "t1", "t9", "b1", "b9", "east", "south", "west", "north", "red", "green",
+            "white", "white",
         ]
         .into_iter()
         .map(ToString::to_string)
@@ -3765,7 +3765,12 @@ mod tests {
             result.fan_keys
         );
         assert!(!result.fan_keys.iter().any(|fan| fan == "all_types"));
-        assert!(!result.fan_keys.iter().any(|fan| fan == "fully_concealed_hand"));
+        assert!(
+            !result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "fully_concealed_hand")
+        );
         assert!(!result.fan_keys.iter().any(|fan| fan == "single_wait"));
         assert!(!result.fan_keys.iter().any(|fan| fan == "outside_hand"));
     }
@@ -3878,10 +3883,8 @@ mod tests {
             .cloned()
             .chain(meld_tile_key_groups.iter().flatten().cloned())
             .collect::<Vec<_>>();
-        let decompositions = decompose_winning_hand_with_melds(
-            &concealed_tile_keys,
-            &meld_tile_key_groups,
-        );
+        let decompositions =
+            decompose_winning_hand_with_melds(&concealed_tile_keys, &meld_tile_key_groups);
         let features = extract_hand_features(
             &concealed_tile_keys,
             &meld_tile_key_groups,
@@ -3976,8 +3979,8 @@ mod tests {
     #[test]
     fn big_three_dragons_does_not_score_lower_dragon_pungs() {
         let tile_keys = vec![
-            "red", "red", "red", "green", "green", "green", "white", "white", "white", "w1",
-            "w2", "w3", "w9", "w9",
+            "red", "red", "red", "green", "green", "green", "white", "white", "white", "w1", "w2",
+            "w3", "w9", "w9",
         ]
         .into_iter()
         .map(ToString::to_string)
@@ -4067,8 +4070,7 @@ mod tests {
     #[test]
     fn all_green_without_green_dragon_can_score_full_flush() {
         let tile_keys = vec![
-            "t2", "t2", "t2", "t3", "t3", "t3", "t4", "t4", "t4", "t6", "t6", "t6", "t8",
-            "t8",
+            "t2", "t2", "t2", "t3", "t3", "t3", "t4", "t4", "t4", "t6", "t6", "t6", "t8", "t8",
         ]
         .into_iter()
         .map(ToString::to_string)
@@ -4110,8 +4112,7 @@ mod tests {
     #[test]
     fn four_kongs_does_not_score_lower_kong_pung_or_single_wait_fans() {
         let tile_keys = vec![
-            "w1", "w1", "w1", "w2", "w2", "w2", "t3", "t3", "t3", "b4", "b4", "b4", "red",
-            "red",
+            "w1", "w1", "w1", "w2", "w2", "w2", "t3", "t3", "t3", "b4", "b4", "b4", "red", "red",
         ]
         .into_iter()
         .map(ToString::to_string)
@@ -4193,8 +4194,7 @@ mod tests {
     #[test]
     fn seven_shifted_pairs_does_not_score_implied_pair_and_flush_fans() {
         let tile_keys = vec![
-            "w2", "w2", "w3", "w3", "w4", "w4", "w5", "w5", "w6", "w6", "w7", "w7", "w8",
-            "w8",
+            "w2", "w2", "w3", "w3", "w4", "w4", "w5", "w5", "w6", "w6", "w7", "w7", "w8", "w8",
         ]
         .into_iter()
         .map(ToString::to_string)
@@ -4229,7 +4229,12 @@ mod tests {
             decompositions,
         });
 
-        assert!(result.fan_keys.iter().any(|fan| fan == "seven_shifted_pairs"));
+        assert!(
+            result
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "seven_shifted_pairs")
+        );
         for excluded in [
             "seven_pairs",
             "full_flush",

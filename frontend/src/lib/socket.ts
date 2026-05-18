@@ -70,6 +70,24 @@ export function createSetMinimumHuFanMessage(minimumHuFan: MinimumHuFan): Client
   };
 }
 
+export function createSetDealerRepeatMessage(enabled: boolean): ClientMessage {
+  return {
+    type: 'set_dealer_repeat',
+    payload: {
+      enabled,
+    },
+  };
+}
+
+export function createSetDealerDoubleMessage(enabled: boolean): ClientMessage {
+  return {
+    type: 'set_dealer_double',
+    payload: {
+      enabled,
+    },
+  };
+}
+
 export function createStartMatchMessage(): ClientMessage {
   return {
     type: 'start_match',
