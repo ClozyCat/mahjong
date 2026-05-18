@@ -11,6 +11,7 @@ export const THEME_OPTIONS = [
   { id: 'xuan-qing', label: '玄青' },
   { id: 'zhu-sha', label: '朱砂' },
   { id: 'tan-xiang-zi', label: '檀香紫' },
+  { id: 'hello-kitty', label: 'Hello Kitty' },
 ] as const;
 
 export type ThemeId = (typeof THEME_OPTIONS)[number]['id'];

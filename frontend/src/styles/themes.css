@@ -460,3 +460,42 @@
   --theme-warning: #d3ac79;
   --theme-info: #97a7b0;
 }
+
+:root[data-theme='hello-kitty'] {
+  color-scheme: light;
+  --text: #4a2c3d;
+  --muted: rgba(74, 44, 61, 0.65);
+  --accent: #ff69b4;
+  --accent-2: #ffb6d9;
+  --accent-3: #ff1493;
+  --desktop: #ffe4f0;
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-strong: rgba(255, 250, 253, 0.96);
+  --line: rgba(255, 105, 180, 0.2);
+  --table: #ffb6d9;
+  --table-2: #ffd4e8;
+  --theme-glow-a: rgba(255, 105, 180, 0.35);
+  --theme-glow-b: rgba(255, 182, 217, 0.3);
+  --theme-glow-c: rgba(255, 20, 147, 0.25);
+  --theme-veil: rgba(255, 228, 240, 0.6);
+  --theme-sheen: rgba(255, 255, 255, 0.8);
+  --theme-border: rgba(255, 105, 180, 0.25);
+  --theme-border-strong: rgba(255, 105, 180, 0.4);
+  --theme-shadow: rgba(255, 105, 180, 0.15);
+  --theme-shadow-soft: rgba(255, 105, 180, 0.08);
+  --theme-panel-bg: rgba(255, 250, 253, 0.88);
+  --theme-panel-bg-strong: rgba(255, 245, 250, 0.94);
+  --theme-panel-bg-soft: rgba(255, 105, 180, 0.08);
+  --theme-panel-bg-softer: rgba(255, 105, 180, 0.04);
+  --theme-panel-head: rgba(255, 182, 217, 0.5);
+  --theme-panel-head-accent: rgba(255, 105, 180, 0.3);
+  --theme-paper: #ffffff;
+  --theme-paper-strong: #fffafd;
+  --theme-paper-edge: #ffb6d9;
+  --theme-paper-line: #ff69b4;
+  --theme-paper-line-strong: #ff1493;
+  --theme-danger: #ff1493;
+  --theme-success: #ff69b4;
+  --theme-warning: #ffb6d9;
+  --theme-info: #ffc0e0;
+}
