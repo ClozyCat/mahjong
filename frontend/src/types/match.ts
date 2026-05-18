@@ -537,6 +537,12 @@ export interface WaitingControls {
   canToggleDealerDouble: boolean;
 }
 
+export interface TableSettingsView {
+  minimumHuFan: MinimumHuFan;
+  dealerRepeatEnabled: boolean;
+  dealerDoubleEnabled: boolean;
+}
+
 export interface LocalTileView {
   tileId: string;
   code: string;
@@ -731,6 +737,7 @@ export interface BattleViewModel {
   players: PlayerView[];
   actions: BattleActionView[];
   waitingControls: WaitingControls | null;
+  tableSettings: TableSettingsView;
   discards: Record<Seat, string[]>;
   selectedTileCode?: string | null;
   localHand: LocalTileView[];

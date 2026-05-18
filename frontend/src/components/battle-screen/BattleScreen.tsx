@@ -374,15 +374,15 @@ export function BattleScreen({
               botCount={viewModel.dealerSelection ? 0 : viewModel.waitingControls?.botCount ?? 0}
               canAddBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canAddBot ?? false)}
               canRemoveBot={!viewModel.dealerSelection && (viewModel.waitingControls?.canRemoveBot ?? false)}
-              minimumHuFan={viewModel.waitingControls?.minimumHuFan ?? 8}
+              minimumHuFan={viewModel.tableSettings.minimumHuFan}
               canDecreaseMinimumHuFan={
                 !viewModel.dealerSelection && (viewModel.waitingControls?.canDecreaseMinimumHuFan ?? false)
               }
               canIncreaseMinimumHuFan={
                 !viewModel.dealerSelection && (viewModel.waitingControls?.canIncreaseMinimumHuFan ?? false)
               }
-              dealerRepeatEnabled={viewModel.waitingControls?.dealerRepeatEnabled ?? false}
-              dealerDoubleEnabled={viewModel.waitingControls?.dealerDoubleEnabled ?? false}
+              dealerRepeatEnabled={viewModel.tableSettings.dealerRepeatEnabled}
+              dealerDoubleEnabled={viewModel.tableSettings.dealerDoubleEnabled}
               canToggleDealerRepeat={
                 !viewModel.dealerSelection && (viewModel.waitingControls?.canToggleDealerRepeat ?? false)
               }

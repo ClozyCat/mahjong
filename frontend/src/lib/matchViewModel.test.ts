@@ -280,6 +280,27 @@ describe('createMatchViewModel', () => {
     expect(viewModel.waitingControls?.dealerDoubleEnabled).toBe(true);
     expect(viewModel.waitingControls?.canToggleDealerRepeat).toBe(true);
     expect(viewModel.waitingControls?.canToggleDealerDouble).toBe(true);
+    expect(viewModel.tableSettings).toEqual({
+      minimumHuFan: 8,
+      dealerRepeatEnabled: true,
+      dealerDoubleEnabled: true,
+    });
+  });
+
+  it('keeps table settings available after the match starts', () => {
+    const state = createPlayingSessionState();
+    state.roomSnapshot!.payload.minimum_hu_fan = 4;
+    state.roomSnapshot!.payload.dealer_repeat_enabled = true;
+    state.roomSnapshot!.payload.dealer_double_enabled = false;
+
+    const viewModel = createMatchViewModel(state);
+
+    expect(viewModel.waitingControls).toBeNull();
+    expect(viewModel.tableSettings).toEqual({
+      minimumHuFan: 4,
+      dealerRepeatEnabled: true,
+      dealerDoubleEnabled: false,
+    });
   });
 
   it('appends dealer repeat count to the round label after repeating dealer', () => {

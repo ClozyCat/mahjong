@@ -140,6 +140,11 @@ export const TableChrome = memo(function TableChrome({
   const decreaseMinimumHuFan = minimumHuFanOptions[Math.max(0, minimumHuFanIndex - 1)];
   const increaseMinimumHuFan =
     minimumHuFanOptions[Math.min(minimumHuFanOptions.length - 1, minimumHuFanIndex + 1)];
+  const tableSettingsSummary = [
+    `${minimumHuFan}番起和`,
+    dealerRepeatEnabled ? '连庄' : null,
+    dealerDoubleEnabled ? '庄家翻倍' : null,
+  ].filter(Boolean).join(' | ');
 
   return (
     <>
@@ -161,6 +166,7 @@ export const TableChrome = memo(function TableChrome({
               </button>
             ) : null}
           </span>
+          <span className="table-stage__settings-summary">{tableSettingsSummary}</span>
         </div>
       ) : null}
       <div className="table-stage__corner-controls">

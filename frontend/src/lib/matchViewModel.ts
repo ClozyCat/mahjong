@@ -23,6 +23,7 @@ import type {
   SeatSnapshot,
   SeatType,
   SessionState,
+  TableSettingsView,
   HandInsightView,
   WaitingControls,
 } from '../types/match';
@@ -585,6 +586,16 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
     dealerDoubleEnabled: snapshot.dealer_double_enabled ?? false,
     canToggleDealerRepeat: Boolean(localSeatState) && !dealerSelection,
     canToggleDealerDouble: Boolean(localSeatState) && !dealerSelection,
+  };
+}
+
+function createTableSettings(state: SessionState): TableSettingsView {
+  const snapshot = state.roomSnapshot?.payload;
+
+  return {
+    minimumHuFan: normalizeMinimumHuFan(snapshot?.minimum_hu_fan),
+    dealerRepeatEnabled: snapshot?.dealer_repeat_enabled ?? false,
+    dealerDoubleEnabled: snapshot?.dealer_double_enabled ?? false,
   };
 }
 
@@ -1860,6 +1871,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     players: createPlayers(state, options),
     actions: createActionViews(state, waitingControls, options),
     waitingControls,
+    tableSettings: createTableSettings(state),
     discards: createDiscards(state, options),
     selectedTileCode: createSelectedTileCode(state, options),
     localHand: createLocalHand(state, options),

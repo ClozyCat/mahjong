@@ -116,6 +116,11 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     ],
     actions: [],
     waitingControls: null,
+    tableSettings: {
+      minimumHuFan: 8,
+      dealerRepeatEnabled: false,
+      dealerDoubleEnabled: false,
+    },
     discards: {
       bottom: ['w1'],
       left: [],
@@ -2718,6 +2723,21 @@ describe('BattleScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: '降低起和番数' }));
 
     expect(onMinimumHuFanChange).toHaveBeenCalledWith(6);
+  });
+
+  it('renders the current table settings below the room seat count', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        tableSettings: {
+          minimumHuFan: 0,
+          dealerRepeatEnabled: false,
+          dealerDoubleEnabled: true,
+        },
+      }),
+    );
+
+    expect(screen.getByText('房间座位数：4/4')).toBeInTheDocument();
+    expect(screen.getByText('0番起和 | 庄家翻倍')).toBeInTheDocument();
   });
 
   it('hides pre-match room and bot controls while dealer selection is spinning', () => {
