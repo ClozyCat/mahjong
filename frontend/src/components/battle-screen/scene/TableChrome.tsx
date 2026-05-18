@@ -150,7 +150,8 @@ export const TableChrome = memo(function TableChrome({
     <>
       {tableCode || seatCapacity > 0 ? (
         <div className="table-stage__table-info" aria-label="牌桌信息">
-          {tableCode ? <span>编号：{tableCode}</span> : null}
+          {tableCode ? <span>牌桌编号：{tableCode}</span> : null}
+          <span>设定：{tableSettingsSummary}</span>
           <span className="table-stage__seat-count">
             座位数：{resolvedOccupiedSeatCount}/{seatCapacity}
             {onOpenInviteDialog ? (
@@ -166,7 +167,6 @@ export const TableChrome = memo(function TableChrome({
               </button>
             ) : null}
           </span>
-          <span>设定：{tableSettingsSummary}</span>
         </div>
       ) : null}
       <div className="table-stage__corner-controls">

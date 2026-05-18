@@ -2633,7 +2633,7 @@ describe('BattleScreen', () => {
     expect(container.querySelector('.stage-background')).toBeNull();
     expect(container.querySelector('.battle-shell')).not.toBeNull();
     expect(container.querySelector('.table-stage > .action-dock')).not.toBeNull();
-    expect(screen.getByText('编号：AB12CD')).toBeInTheDocument();
+    expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
     expect(screen.getByText('座位数：4/4')).toBeInTheDocument();
     expect(screen.getByText('round-123')).toBeInTheDocument();
   });
@@ -2736,7 +2736,7 @@ describe('BattleScreen', () => {
       }),
     );
 
-    expect(screen.getByText('编号：AB12CD')).toBeInTheDocument();
+    expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
     expect(screen.getByText('座位数：4/4')).toBeInTheDocument();
     expect(screen.getByText('设定：0番起和 | 庄家翻倍')).toBeInTheDocument();
   });
