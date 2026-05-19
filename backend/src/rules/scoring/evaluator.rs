@@ -2352,8 +2352,25 @@ fn match_melded_hand(context: &FanContext) -> usize {
     usize::from(
         context.win_type == "discard"
             && context.open_meld_tile_key_groups.len() == 4
-            && context.concealed_tile_keys.len() == 2,
+            && concealed_tiles_form_claimed_pair(
+                &context.concealed_tile_keys,
+                &context.winning_tile,
+            ),
     )
+}
+
+fn concealed_tiles_form_claimed_pair(
+    concealed_tile_keys: &[String],
+    winning_tile: &Option<String>,
+) -> bool {
+    let Some(winning_tile) = winning_tile.as_deref() else {
+        return concealed_tile_keys.len() == 2 && concealed_tile_keys[0] == concealed_tile_keys[1];
+    };
+    match concealed_tile_keys {
+        [tile] => tile == winning_tile,
+        [left, right] => left == right && left == winning_tile,
+        _ => false,
+    }
 }
 fn match_flower_tiles(context: &FanContext) -> usize {
     context.flower_count
@@ -4733,6 +4750,65 @@ mod tests {
         });
 
         assert!(!result.fan_keys.iter().any(|fan| fan == "melded_hand"));
+    }
+
+    #[test]
+    fn discard_win_with_four_open_melds_and_single_concealed_tile_scores_melded_hand() {
+        let concealed_tile_keys = vec!["red"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let meld_tile_key_groups = vec![
+            vec!["w1", "w2", "w3"],
+            vec!["w4", "w5", "w6"],
+            vec!["t1", "t2", "t3"],
+            vec!["b4", "b5", "b6"],
+        ]
+        .into_iter()
+        .map(|meld| {
+            meld.into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+        let tile_keys = concealed_tile_keys
+            .iter()
+            .cloned()
+            .chain(
+                meld_tile_key_groups
+                    .iter()
+                    .flat_map(|meld| meld.iter().cloned()),
+            )
+            .chain(std::iter::once("red".to_string()))
+            .collect::<Vec<_>>();
+        let decompositions = vec![Decomposition {
+            kind: "standard".to_string(),
+            pair: Some("red".to_string()),
+            melds: meld_tile_key_groups.clone(),
+            ..Default::default()
+        }];
+
+        let result = evaluate_fans(EvaluationInput {
+            win_type: "discard".to_string(),
+            winner_seat: Some(0),
+            discarder_seat: Some(1),
+            ready_hand_declared: false,
+            flower_count: 0,
+            seat_count: 4,
+            features: HandFeatures::default(),
+            timing: TimingFeatures::default(),
+            kong_entries: vec![],
+            tile_keys,
+            visible_tile_keys: vec![],
+            concealed_tile_keys,
+            meld_tile_key_groups: meld_tile_key_groups.clone(),
+            open_meld_tile_key_groups: meld_tile_key_groups,
+            incoming_tile: Some("red".to_string()),
+            winning_tile: Some("red".to_string()),
+            decompositions,
+        });
+
+        assert!(result.fan_keys.iter().any(|fan| fan == "melded_hand"));
     }
 
     #[test]
