@@ -186,24 +186,24 @@
   box-shadow:
     0 8px 24px -6px var(--theme-shadow-soft),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  color: var(--theme-paper-strong);
-  pointer-events: none;
-  transition: all 0.2s var(--ease-lux);
-}
+    color: var(--theme-paper-strong);
+    pointer-events: none;
+    transition: border-color 0.16s var(--ease-lux), background-color 0.16s var(--ease-lux), box-shadow 0.16s var(--ease-lux);
+  }
 
-.match-status-bar[data-active-seat] {
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
-  background: color-mix(in srgb, var(--theme-panel-bg-strong) 60%, transparent);
-}
+  .match-status-bar[data-active-seat] {
+    border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+    background: color-mix(in srgb, var(--theme-panel-bg-strong) 60%, transparent);
+  }
 
-.match-status-bar::before {
-  content: '';
-  position: absolute;
-  inset: -1.5px;
-  border-radius: inherit;
-  border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
-  pointer-events: none;
-  transition: all 0.2s var(--ease-lux);
+  .match-status-bar::before {
+    content: '';
+    position: absolute;
+    inset: -1.5px;
+    border-radius: inherit;
+    border: 1px solid color-mix(in srgb, var(--theme-paper) 8%, transparent);
+    pointer-events: none;
+    transition: border-color 0.16s var(--ease-lux);
   z-index: 0;
 }
 
@@ -819,7 +819,7 @@
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 4%, transparent);
   transform: translate3d(0, 0, 0) scale(1);
   will-change: transform;
-  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux);
+  transition: transform 0.16s var(--ease-lux), border-color 0.16s var(--ease-lux), background-color 0.16s var(--ease-lux);
   pointer-events: auto;
   min-width: clamp(2rem, 10vmin, 3.8rem);
   padding: 0.12rem clamp(0.25rem, 1.2vmin, 0.56rem);
@@ -827,7 +827,7 @@
 }
 
 .table-stage__stat-plate:hover {
-  transform: translate3d(0, -1px, 0) scale(1.02);
+  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-2) 24%, transparent);
   background: color-mix(in srgb, var(--theme-panel-bg-strong) 52%, transparent);
 }
@@ -1167,14 +1167,14 @@
   backdrop-filter: blur(24px) saturate(140%);
   transform: translate3d(0, 0, 0);
   will-change: transform;
-  transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
+  transition: transform 0.16s var(--ease-lux), border-color 0.16s var(--ease-lux), background-color 0.16s var(--ease-lux), box-shadow 0.16s var(--ease-lux), color 0.16s var(--ease-lux);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
 }
 
 .table-stage__global-emoji-trigger:hover {
-  transform: scale(1.1) translateY(-2px);
+  transform: scale(1.08) translateY(-1.5px);
   border-color: var(--accent-2);
   background: rgba(14, 14, 14, 0.85);
   box-shadow:
@@ -1629,7 +1629,7 @@
   backdrop-filter: blur(24px) saturate(160%);
   transform: translate3d(0, 0, 0);
   will-change: transform;
-  transition: transform 0.22s var(--ease-lux), border-color 0.25s var(--ease-lux), background 0.25s var(--ease-lux), box-shadow 0.25s var(--ease-lux), color 0.2s;
+  transition: transform 0.16s var(--ease-lux), border-color 0.16s var(--ease-lux), background-color 0.16s var(--ease-lux), box-shadow 0.16s var(--ease-lux), color 0.16s var(--ease-lux);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 color-mix(in srgb, var(--theme-paper) 8%, transparent);
@@ -1647,7 +1647,7 @@
 .table-stage__help-button:hover,
 .table-stage__theme-button:hover,
 .table-stage__leave-button:hover {
-  transform: scale(1.1) translate3d(0, -1px, 0);
+  transform: translateY(-1.5px) scale(1.04);
   background: rgba(14, 14, 14, 0.82);
   color: var(--theme-paper-strong);
   box-shadow:
@@ -1809,7 +1809,7 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: all 0.2s var(--ease-lux);
+  transition: border-color 0.16s var(--ease-lux), background-color 0.16s var(--ease-lux), color 0.16s var(--ease-lux), box-shadow 0.16s var(--ease-lux);
 }
 
 .table-stage__quick-setting:hover {

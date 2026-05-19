@@ -85,9 +85,9 @@
     );
     
   transition:
-    transform 0.22s var(--ease-lux),
-    box-shadow 0.22s var(--ease-lux),
-    border-color 0.22s var(--ease-lux);
+    transform 0.16s var(--ease-lux),
+    box-shadow 0.16s var(--ease-lux),
+    border-color 0.16s var(--ease-lux);
   transform-origin: center bottom;
 }
 
