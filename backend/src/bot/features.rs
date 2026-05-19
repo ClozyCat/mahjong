@@ -449,10 +449,12 @@ pub(crate) fn encode_global_features_v2(
     (global_tile_planes, global_scalar_features)
 }
 
+#[cfg(test)]
 pub(crate) fn global_tile_plane_count_v2() -> usize {
     GLOBAL_TILE_PLANE_COUNT
 }
 
+#[cfg(test)]
 pub(crate) fn global_scalar_feature_count_v2() -> usize {
     GLOBAL_SCALAR_FEATURE_COUNT
 }

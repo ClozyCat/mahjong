@@ -644,6 +644,7 @@ fn trajectory_row_from_trace_with_state(
     })
 }
 
+#[cfg(test)]
 fn trajectory_row_from_trace(
     match_id: &str,
     decision_index: u64,

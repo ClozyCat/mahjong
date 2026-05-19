@@ -56,11 +56,13 @@ pub(crate) fn definition_for_display_name(display_name: &str) -> Option<&'static
         .find(|bot| bot.display_name == display_name)
 }
 
+#[cfg(test)]
 pub(crate) fn model_path_for_display_name(display_name: &str) -> Option<&'static str> {
     definition_for_display_name(display_name)
         .map(|bot| bot.model_path)
 }
 
+#[cfg(test)]
 pub(crate) fn temperature_for_display_name(display_name: &str) -> Option<f32> {
     definition_for_display_name(display_name).map(|bot| bot.temperature)
 }
