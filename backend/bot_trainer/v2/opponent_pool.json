@@ -70,7 +70,11 @@
       "model_path": "backend/assets/model_a/aggressive.onnx",
       "sample_actions": true,
       "temperature": 0.8,
-      "weight": 1
+      "weight": 1,
+      "discard_base_risk_weight": 0.60,
+      "discard_value_risk_range": 0.40,
+      "discard_min_risk_weight": 0.15,
+      "discard_max_risk_weight": 1.00
     },
     {
       "id": "balanced",
@@ -78,7 +82,11 @@
       "model_path": "backend/assets/model_b/balanced.onnx",
       "sample_actions": true,
       "temperature": 1.0,
-      "weight": 1
+      "weight": 1,
+      "discard_base_risk_weight": 0.90,
+      "discard_value_risk_range": 0.55,
+      "discard_min_risk_weight": 0.25,
+      "discard_max_risk_weight": 1.45
     },
     {
       "id": "defensive",
@@ -86,7 +94,11 @@
       "model_path": "backend/assets/model_d/defensive.onnx",
       "sample_actions": true,
       "temperature": 1.2,
-      "weight": 1
+      "weight": 1,
+      "discard_base_risk_weight": 1.05,
+      "discard_value_risk_range": 0.60,
+      "discard_min_risk_weight": 0.30,
+      "discard_max_risk_weight": 1.65
     }
   ]
 }

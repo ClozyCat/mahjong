@@ -38,12 +38,12 @@ PLAY_STYLE_CONFIGS = {
         "description": "平衡型：攻守兼备的标准打法",
     },
     "defensive": {
-        "base_risk_weight": 1.20,
-        "value_risk_range": 0.70,
-        "min_risk_weight": 0.40,
-        "max_risk_weight": 1.80,
-        "entropy_multiplier": 0.7,
-        "description": "防守型：保守稳健的打法，注重防守和风险控制",
+        "base_risk_weight": 1.05,
+        "value_risk_range": 0.60,
+        "min_risk_weight": 0.30,
+        "max_risk_weight": 1.65,
+        "entropy_multiplier": 0.9,
+        "description": "防守型：稳健打法，注重防守和风险控制",
     },
 }
 

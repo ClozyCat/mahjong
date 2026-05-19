@@ -8,17 +8,29 @@
         {
             "id": "aggressive",
             "mode": "neural",
-            "model_path": "backend/assets/model_a/aggressive.onnx"
+            "model_path": "backend/assets/model_a/aggressive.onnx",
+            "discard_base_risk_weight": 0.60,
+            "discard_value_risk_range": 0.40,
+            "discard_min_risk_weight": 0.15,
+            "discard_max_risk_weight": 1.00
         },
         {
             "id": "balanced",
             "mode": "neural",
-            "model_path": "backend/assets/model_b/balanced.onnx"
+            "model_path": "backend/assets/model_b/balanced.onnx",
+            "discard_base_risk_weight": 0.90,
+            "discard_value_risk_range": 0.55,
+            "discard_min_risk_weight": 0.25,
+            "discard_max_risk_weight": 1.45
         },
         {
             "id": "defensive",
             "mode": "neural",
-            "model_path": "backend/assets/model_d/defensive.onnx"
+            "model_path": "backend/assets/model_d/defensive.onnx",
+            "discard_base_risk_weight": 1.20,
+            "discard_value_risk_range": 0.70,
+            "discard_min_risk_weight": 0.40,
+            "discard_max_risk_weight": 1.80
         }
     ]
 }

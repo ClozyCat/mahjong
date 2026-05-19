@@ -55,6 +55,14 @@ pub struct ArenaBotPolicyConfig {
     pub temperature: f32,
     #[serde(default)]
     pub record_heuristic_comparison: bool,
+    #[serde(default = "default_discard_base_risk_weight")]
+    pub discard_base_risk_weight: f32,
+    #[serde(default = "default_discard_value_risk_range")]
+    pub discard_value_risk_range: f32,
+    #[serde(default = "default_discard_min_risk_weight")]
+    pub discard_min_risk_weight: f32,
+    #[serde(default = "default_discard_max_risk_weight")]
+    pub discard_max_risk_weight: f32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -155,6 +163,22 @@ fn default_policy_temperature() -> f32 {
     1.0
 }
 
+fn default_discard_base_risk_weight() -> f32 {
+    0.90
+}
+
+fn default_discard_value_risk_range() -> f32 {
+    0.55
+}
+
+fn default_discard_min_risk_weight() -> f32 {
+    0.25
+}
+
+fn default_discard_max_risk_weight() -> f32 {
+    1.45
+}
+
 fn default_seat_rotation() -> ArenaSeatRotation {
     ArenaSeatRotation::Fixed
 }
@@ -168,6 +192,10 @@ impl ArenaBotPolicyConfig {
             sample_actions: false,
             temperature: 1.0,
             record_heuristic_comparison: false,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
         }
     }
 }
@@ -640,9 +668,10 @@ fn neural_policy_stats(
             &computed_scores
         }
     };
+    let risk_config = super::policy::RiskConfig::from_arena_config(policy);
     let log_prob = match action_head {
         "discard" => {
-            let discard_logits = risk_adjusted_discard_logits(scores);
+            let discard_logits = risk_adjusted_discard_logits(scores, Some(&risk_config));
             masked_log_prob(
                 &discard_logits,
                 &features.discard_mask,
@@ -926,6 +955,10 @@ mod tests {
                     sample_actions: false,
                     temperature: 1.0,
                     record_heuristic_comparison: false,
+                    discard_base_risk_weight: default_discard_base_risk_weight(),
+                    discard_value_risk_range: default_discard_value_risk_range(),
+                    discard_min_risk_weight: default_discard_min_risk_weight(),
+                    discard_max_risk_weight: default_discard_max_risk_weight(),
                 })
                 .collect(),
         };
@@ -960,6 +993,10 @@ mod tests {
                     sample_actions: false,
                     temperature: 1.0,
                     record_heuristic_comparison: false,
+                    discard_base_risk_weight: default_discard_base_risk_weight(),
+                    discard_value_risk_range: default_discard_value_risk_range(),
+                    discard_min_risk_weight: default_discard_min_risk_weight(),
+                    discard_max_risk_weight: default_discard_max_risk_weight(),
                 })
                 .collect(),
         };
@@ -1062,6 +1099,10 @@ mod tests {
                 sample_actions: false,
                 temperature: 1.0,
                 record_heuristic_comparison: false,
+                discard_base_risk_weight: default_discard_base_risk_weight(),
+                discard_value_risk_range: default_discard_value_risk_range(),
+                discard_min_risk_weight: default_discard_min_risk_weight(),
+                discard_max_risk_weight: default_discard_max_risk_weight(),
             }],
         };
         let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
@@ -1248,6 +1289,10 @@ mod tests {
             sample_actions: true,
             temperature: 1.0,
             record_heuristic_comparison: false,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
         };
 
         let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
@@ -1284,6 +1329,10 @@ mod tests {
             sample_actions: false,
             temperature: 1.0,
             record_heuristic_comparison: false,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
         };
 
         let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
@@ -1326,11 +1375,15 @@ mod tests {
             sample_actions: true,
             temperature: 1.0,
             record_heuristic_comparison: false,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
         };
 
         let row = trajectory_row_from_trace("arena-test", 0, &policy, &trace).expect("row");
         let features = encode_bot_context_v2(&trace.context);
-        let adjusted = risk_adjusted_discard_logits(&scores);
+        let adjusted = risk_adjusted_discard_logits(&scores, None);
         let expected = masked_log_prob(&adjusted, &features.discard_mask, w1_index).expect("prob");
         let raw_expected =
             masked_log_prob(&scores.discard_logits, &features.discard_mask, w1_index)

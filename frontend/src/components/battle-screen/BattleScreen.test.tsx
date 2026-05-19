@@ -313,6 +313,82 @@ describe('BattleScreen', () => {
     }
   });
 
+  it('keeps the same operation voice for the same player after wind rotation moves seats', () => {
+    const audioMock = mockAudioPlayback();
+    const playerB = {
+      seat: 'left' as const,
+      absoluteSeat: 1,
+      userId: 102,
+      name: 'Player B',
+      score: 25000,
+      points: 0,
+      liveDelta: 0,
+      flowerCount: 0,
+      wind: 'South' as const,
+      isDealer: false,
+      isActive: false,
+      isLocal: false,
+      connected: true,
+      isReadyHand: false,
+      concealedCount: 13,
+      meldCount: 0,
+      melds: [],
+      flowers: [],
+      statusText: 'Live',
+    };
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          actionEffect: {
+            key: 'claim_made:before-rotation:pung',
+            label: '碰',
+            emphasis: 'claim',
+            seat: 'left',
+            calloutTone: 'pung',
+          },
+          players: [playerB],
+        }),
+      );
+      const firstVoiceUrl = String(audioMock.audio.mock.calls[0][0]);
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            actionEffect: {
+              key: 'claim_made:after-rotation:pung',
+              label: '碰',
+              emphasis: 'claim',
+              seat: 'right',
+              calloutTone: 'pung',
+            },
+            players: [
+              {
+                ...playerB,
+                seat: 'right',
+                absoluteSeat: 0,
+              },
+            ],
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(2);
+      expect(String(audioMock.audio.mock.calls[1][0])).toBe(firstVoiceUrl);
+    } finally {
+      audioMock.restore();
+    }
+  });
+
   it('does not play operation voice while the voice switch is off', () => {
     const audioMock = mockAudioPlayback();
 

@@ -18,11 +18,11 @@ export type VoiceAssets = Record<string, string>;
 
 export interface VoiceCue {
   key: string;
-  absoluteSeat: number;
+  voiceKey: string | number;
   clipName: string;
 }
 
-const activeAudioBySeat = new Map<number, HTMLAudioElement>();
+const activeAudioByVoiceKey = new Map<string, HTMLAudioElement>();
 
 export function getVoiceClipNameForAction(calloutTone: ActionEffectView['calloutTone']): string | null {
   if (!calloutTone) {
@@ -44,7 +44,7 @@ export function getVoicePackNames(assets: VoiceAssets = VOICE_ASSETS): string[] 
 
 export function selectVoicePackName(
   tableCode: string,
-  absoluteSeat: number,
+  voiceKey: string | number,
   assets: VoiceAssets = VOICE_ASSETS,
 ): string | null {
   const packNames = getVoicePackNames(assets);
@@ -52,17 +52,17 @@ export function selectVoicePackName(
     return null;
   }
 
-  const hash = hashString(`${tableCode}:${absoluteSeat}`);
+  const hash = hashString(`${tableCode}:${voiceKey}`);
   return packNames[hash % packNames.length] ?? null;
 }
 
 export function resolveVoiceClipUrl(
   tableCode: string,
-  absoluteSeat: number,
+  voiceKey: string | number,
   clipName: string,
   assets: VoiceAssets = VOICE_ASSETS,
 ): string | null {
-  const packName = selectVoicePackName(tableCode, absoluteSeat, assets);
+  const packName = selectVoicePackName(tableCode, voiceKey, assets);
   if (!packName) {
     return null;
   }
@@ -70,28 +70,31 @@ export function resolveVoiceClipUrl(
   return assets[`../../voices/${packName}/${clipName}.mp3`] ?? null;
 }
 
-export function playVoiceClip(url: string, absoluteSeat?: number): Promise<void> {
-  return playVoiceClipNow(url, absoluteSeat);
+export function playVoiceClip(url: string, voiceKey?: string | number): Promise<void> {
+  return playVoiceClipNow(url, voiceKey);
 }
 
-function playVoiceClipNow(url: string, absoluteSeat?: number, onSettled?: () => void): Promise<void> {
+function playVoiceClipNow(url: string, voiceKey?: string | number, onSettled?: () => void): Promise<void> {
   if (typeof Audio !== 'function') {
     onSettled?.();
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
-    // Stop and remove any existing audio for this seat
-    if (typeof absoluteSeat === 'number') {
-      const existingAudio = activeAudioBySeat.get(absoluteSeat);
+    const normalizedVoiceKey = typeof voiceKey === 'undefined' ? null : String(voiceKey);
+
+    if (normalizedVoiceKey) {
+      const existingAudio = activeAudioByVoiceKey.get(normalizedVoiceKey);
       if (existingAudio) {
         try {
-          existingAudio.pause();
+          if (!existingAudio.paused) {
+            existingAudio.pause();
+          }
           existingAudio.currentTime = 0;
         } catch {
           // Ignore errors when stopping audio
         }
-        activeAudioBySeat.delete(absoluteSeat);
+        activeAudioByVoiceKey.delete(normalizedVoiceKey);
       }
     }
 
@@ -106,9 +109,8 @@ function playVoiceClipNow(url: string, absoluteSeat?: number, onSettled?: () => 
       return;
     }
 
-    // Track this audio by seat
-    if (typeof absoluteSeat === 'number') {
-      activeAudioBySeat.set(absoluteSeat, audio);
+    if (normalizedVoiceKey) {
+      activeAudioByVoiceKey.set(normalizedVoiceKey, audio);
     }
 
     let settled = false;
@@ -121,9 +123,8 @@ function playVoiceClipNow(url: string, absoluteSeat?: number, onSettled?: () => 
       removeAudioEventListener?.('ended', finish);
       removeAudioEventListener?.('error', finish);
 
-      // Clean up tracking
-      if (typeof absoluteSeat === 'number' && activeAudioBySeat.get(absoluteSeat) === audio) {
-        activeAudioBySeat.delete(absoluteSeat);
+      if (normalizedVoiceKey && activeAudioByVoiceKey.get(normalizedVoiceKey) === audio) {
+        activeAudioByVoiceKey.delete(normalizedVoiceKey);
       }
 
       onSettled?.();

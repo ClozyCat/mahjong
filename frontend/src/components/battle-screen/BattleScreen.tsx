@@ -175,12 +175,12 @@ export function BattleScreen({
         continue;
       }
 
-      const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.absoluteSeat, voiceCue.clipName);
+      const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.voiceKey, voiceCue.clipName);
       if (!voiceUrl) {
         continue;
       }
 
-      playVoiceClip(voiceUrl, voiceCue.absoluteSeat);
+      playVoiceClip(voiceUrl, voiceCue.voiceKey);
     }
   }, [
     viewModel.actionEffect,
@@ -485,8 +485,8 @@ function createVoiceCue(
     return null;
   }
 
-  const absoluteSeat = getAbsoluteSeatForRelativeSeat(viewModel, actionEffect.seat);
-  if (typeof absoluteSeat !== 'number') {
+  const player = getPlayerForRelativeSeat(viewModel, actionEffect.seat);
+  if (!player) {
     return null;
   }
 
@@ -496,18 +496,31 @@ function createVoiceCue(
   }
 
   return {
-    key: `action:${actionEffect.key}:${absoluteSeat}:${clipName}`,
-    absoluteSeat,
+    key: `action:${actionEffect.key}:${getVoiceIdentityKey(player)}:${clipName}`,
+    voiceKey: getVoiceIdentityKey(player),
     clipName,
   };
 }
 
-function getAbsoluteSeatForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {
+function getPlayerForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {
   if (!seat) {
     return null;
   }
 
-  return viewModel.players.find((player) => player.seat === seat)?.absoluteSeat ?? null;
+  return viewModel.players.find((player) => player.seat === seat) ?? null;
+}
+
+function getVoiceIdentityKey(player: BattleViewModel['players'][number]) {
+  if (typeof player.userId === 'number') {
+    return `user:${player.userId}`;
+  }
+
+  const name = player.name.trim();
+  if (name) {
+    return `name:${name}`;
+  }
+
+  return `seat:${player.absoluteSeat ?? player.seat}`;
 }
 
 function getSettlementPanelDelayMs(

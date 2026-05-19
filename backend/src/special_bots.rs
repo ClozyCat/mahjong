@@ -87,6 +87,10 @@ pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> Are
         sample_actions: false,
         temperature: 1.0,
         record_heuristic_comparison: false,
+        discard_base_risk_weight: 0.90,
+        discard_value_risk_range: 0.55,
+        discard_min_risk_weight: 0.25,
+        discard_max_risk_weight: 1.45,
     }
 }
 

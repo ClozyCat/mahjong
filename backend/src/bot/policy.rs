@@ -11,12 +11,38 @@ use rand::{Rng, rngs::StdRng};
 use std::{env, time::Instant};
 
 const POLICY_ENV: &str = "MAHJONG_BOT_POLICY";
-const NEURAL_DISCARD_BASE_RISK_WEIGHT: f32 = 0.90;
-const NEURAL_DISCARD_VALUE_RISK_RANGE: f32 = 0.55;
 const NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
-const NEURAL_DISCARD_MIN_RISK_WEIGHT: f32 = 0.25;
-const NEURAL_DISCARD_MAX_RISK_WEIGHT: f32 = 1.45;
 const NEURAL_HU_PASS_MARGIN: f32 = 3.0;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RiskConfig {
+    pub base_risk_weight: f32,
+    pub value_risk_range: f32,
+    pub min_risk_weight: f32,
+    pub max_risk_weight: f32,
+}
+
+impl Default for RiskConfig {
+    fn default() -> Self {
+        Self {
+            base_risk_weight: 0.90,
+            value_risk_range: 0.55,
+            min_risk_weight: 0.25,
+            max_risk_weight: 1.45,
+        }
+    }
+}
+
+impl RiskConfig {
+    pub fn from_arena_config(config: &ArenaBotPolicyConfig) -> Self {
+        Self {
+            base_risk_weight: config.discard_base_risk_weight,
+            value_risk_range: config.discard_value_risk_range,
+            min_risk_weight: config.discard_min_risk_weight,
+            max_risk_weight: config.discard_max_risk_weight,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BotPolicyMode {
@@ -66,8 +92,13 @@ fn choose_active_turn_action_inner(
     if policy_mode == BotPolicyMode::Neural {
         let features = crate::bot::features::encode_bot_context_v2(context);
         if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
-            if let Some(action) = select_neural_only_active_turn_action(context, &features, &scores)
-            {
+            let risk_config = RiskConfig::from_arena_config(config);
+            if let Some(action) = select_neural_only_active_turn_action(
+                context,
+                &features,
+                &scores,
+                Some(&risk_config),
+            ) {
                 return Some(action);
             }
         }
@@ -169,6 +200,7 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
 ) -> Option<BotPolicyDecision> {
     let mut telemetry = BotPolicyDecisionTelemetry::default();
     if matches!(config.mode, ArenaPolicyMode::Neural) {
+        let risk_config = RiskConfig::from_arena_config(config);
         if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
                 let features = crate::bot::features::encode_bot_context_v2(context);
@@ -181,6 +213,7 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
                         &scores,
                         config.temperature,
                         rng,
+                        Some(&risk_config),
                     ) {
                         telemetry.used_neural_action = true;
                         telemetry.same_as_heuristic =
@@ -207,8 +240,12 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
         let features = crate::bot::features::encode_bot_context_v2(context);
         if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
             telemetry.model_loaded = true;
-            if let Some(action) = select_neural_only_active_turn_action(context, &features, &scores)
-            {
+            if let Some(action) = select_neural_only_active_turn_action(
+                context,
+                &features,
+                &scores,
+                Some(&risk_config),
+            ) {
                 telemetry.used_neural_action = true;
                 telemetry.same_as_heuristic =
                     maybe_same_as_heuristic_active_turn_action(context, &action, config);
@@ -504,6 +541,10 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         sample_actions: false,
         temperature: 1.0,
         record_heuristic_comparison: false,
+        discard_base_risk_weight: 0.90,
+        discard_value_risk_range: 0.55,
+        discard_min_risk_weight: 0.25,
+        discard_max_risk_weight: 1.45,
     }
 }
 
@@ -619,9 +660,10 @@ fn sample_neural_active_turn_action(
     scores: &NeuralDecisionScores,
     temperature: f32,
     rng: &mut StdRng,
+    risk_config: Option<&RiskConfig>,
 ) -> Option<BotAction> {
     if context.self_kong_candidates.is_empty() {
-        return sample_neural_discard_action(context, features, scores, temperature, rng);
+        return sample_neural_discard_action(context, features, scores, temperature, rng, risk_config);
     }
 
     let selected = sample_masked_index(
@@ -631,7 +673,7 @@ fn sample_neural_active_turn_action(
         rng,
     )?;
     match selected {
-        0 => sample_neural_discard_action(context, features, scores, temperature, rng),
+        0 => sample_neural_discard_action(context, features, scores, temperature, rng, risk_config),
         1 | 2 => {
             let expected_kind = if selected == 1 {
                 BotSelfKongKind::Concealed
@@ -652,10 +694,10 @@ fn sample_neural_active_turn_action(
                     tile_ids: candidate.tile_ids.clone(),
                 })
                 .or_else(|| {
-                    sample_neural_discard_action(context, features, scores, temperature, rng)
+                    sample_neural_discard_action(context, features, scores, temperature, rng, risk_config)
                 })
         }
-        _ => sample_neural_discard_action(context, features, scores, temperature, rng),
+        _ => sample_neural_discard_action(context, features, scores, temperature, rng, risk_config),
     }
 }
 
@@ -665,8 +707,9 @@ fn sample_neural_discard_action(
     scores: &NeuralDecisionScores,
     temperature: f32,
     rng: &mut StdRng,
+    risk_config: Option<&RiskConfig>,
 ) -> Option<BotAction> {
-    let discard_logits = risk_adjusted_discard_logits(scores);
+    let discard_logits = risk_adjusted_discard_logits(scores, risk_config);
     let tile_index =
         sample_masked_index(&discard_logits, &features.discard_mask, temperature, rng)?;
     let tile_key = tile_key_for_index(tile_index);
@@ -772,11 +815,12 @@ fn select_neural_only_active_turn_action(
     context: &BotContext,
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
+    risk_config: Option<&RiskConfig>,
 ) -> Option<BotAction> {
     if let Some(action) = select_neural_only_self_kong(context, scores) {
         return Some(action);
     }
-    let discard_logits = risk_adjusted_discard_logits(scores);
+    let discard_logits = risk_adjusted_discard_logits(scores, risk_config);
     select_neural_only_discard_plan(&rank_masked_discards_with_features(
         context,
         features,
@@ -840,8 +884,10 @@ fn rank_masked_discards_with_features(
 
 pub(crate) fn risk_adjusted_discard_logits(
     scores: &NeuralDecisionScores,
+    risk_config: Option<&RiskConfig>,
 ) -> [f32; TILE_KIND_COUNT] {
-    let risk_weight = neural_discard_risk_weight(scores.value);
+    let risk_config = risk_config.copied().unwrap_or_default();
+    let risk_weight = neural_discard_risk_weight(scores.value, &risk_config);
     let mut adjusted = scores.discard_logits;
     for (index, logit) in adjusted.iter_mut().enumerate() {
         let policy_logit = scores.discard_logits[index];
@@ -859,15 +905,15 @@ pub(crate) fn risk_adjusted_discard_logits(
     adjusted
 }
 
-fn neural_discard_risk_weight(value: f32) -> f32 {
+fn neural_discard_risk_weight(value: f32, risk_config: &RiskConfig) -> f32 {
     let normalized_value = if value.is_finite() {
         (value / NEURAL_DISCARD_VALUE_SCALE).clamp(-1.0, 1.0)
     } else {
         0.0
     };
-    (NEURAL_DISCARD_BASE_RISK_WEIGHT - NEURAL_DISCARD_VALUE_RISK_RANGE * normalized_value).clamp(
-        NEURAL_DISCARD_MIN_RISK_WEIGHT,
-        NEURAL_DISCARD_MAX_RISK_WEIGHT,
+    (risk_config.base_risk_weight - risk_config.value_risk_range * normalized_value).clamp(
+        risk_config.min_risk_weight,
+        risk_config.max_risk_weight,
     )
 }
 
@@ -1215,6 +1261,10 @@ mod tests {
             sample_actions: false,
             temperature: 1.0,
             record_heuristic_comparison: false,
+            discard_base_risk_weight: 0.90,
+            discard_value_risk_range: 0.55,
+            discard_min_risk_weight: 0.25,
+            discard_max_risk_weight: 1.45,
         };
 
         let decision = choose_active_turn_decision_with_config_and_rng(&context, &config, None)
@@ -1344,7 +1394,7 @@ mod tests {
         let scores = neural_scores_for_discards(discard_logits, risk_logits, -8.0);
 
         let features = crate::bot::features::encode_bot_context_v2(&context);
-        let action = select_neural_only_active_turn_action(&context, &features, &scores)
+        let action = select_neural_only_active_turn_action(&context, &features, &scores, None)
             .expect("neural action");
 
         assert_eq!(action.action_type, "discard");
@@ -1369,10 +1419,10 @@ mod tests {
 
         let features = crate::bot::features::encode_bot_context_v2(&context);
         let low_value_action =
-            select_neural_only_active_turn_action(&context, &features, &low_value_scores)
+            select_neural_only_active_turn_action(&context, &features, &low_value_scores, None)
                 .expect("low value neural action");
         let high_value_action =
-            select_neural_only_active_turn_action(&context, &features, &high_value_scores)
+            select_neural_only_active_turn_action(&context, &features, &high_value_scores, None)
                 .expect("high value neural action");
 
         assert_eq!(

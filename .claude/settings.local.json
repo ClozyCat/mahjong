@@ -41,7 +41,8 @@
       "Bash(mv backend/assets/model_a/epoch_001.onnx.data backend/assets/model_a/weights.data)",
       "Bash(mv backend/assets/model_b/epoch_004.onnx.data backend/assets/model_b/weights.data)",
       "Bash(mv backend/assets/model_s/backup.onnx.data backend/assets/model_s/weights.data)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(Select-String -Pattern \"^test result\")"
     ]
   }
 }
