@@ -3,11 +3,15 @@ use super::action_space::{
     self_kong_action_index, tile_index,
 };
 use super::context::{BotContext, BotSelfKongKind, seat_wind_key};
+use crate::room_scoring::RoomScoringCache;
 
 const TILE_PLANE_COUNT: usize = 10;
 const SCALAR_FEATURE_COUNT: usize = 12;
 const DISCARD_SEQUENCE_LENGTH: usize = 32;
 const DISCARD_EVENT_FEATURE_COUNT: usize = 40;
+
+const GLOBAL_TILE_PLANE_COUNT: usize = 40;
+const GLOBAL_SCALAR_FEATURE_COUNT: usize = 20;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BotFeaturesV2 {
@@ -433,5 +437,299 @@ mod tests {
         );
         assert_eq!(encoded.discard_sequence[latest + TILE_KIND_COUNT + 2], 1.0);
         assert_eq!(encoded.discard_sequence[latest + 39], 1.0);
+    }
+}
+
+pub(crate) fn encode_global_features_v2(
+    cache: &RoomScoringCache,
+    current_seat: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let global_tile_planes = encode_global_tile_planes_v2(cache, current_seat);
+    let global_scalar_features = encode_global_scalar_features_v2(cache, current_seat);
+    (global_tile_planes, global_scalar_features)
+}
+
+pub(crate) fn global_tile_plane_count_v2() -> usize {
+    GLOBAL_TILE_PLANE_COUNT
+}
+
+pub(crate) fn global_scalar_feature_count_v2() -> usize {
+    GLOBAL_SCALAR_FEATURE_COUNT
+}
+
+fn encode_global_tile_planes_v2(cache: &RoomScoringCache, current_seat: usize) -> Vec<f32> {
+    let mut planes = vec![0.0_f32; GLOBAL_TILE_PLANE_COUNT * TILE_KIND_COUNT];
+
+    for player_offset in 0..cache.seat_count.min(4) {
+        let absolute_seat = (current_seat + player_offset) % cache.seat_count.max(1);
+        let base_plane = player_offset * TILE_PLANE_COUNT;
+
+        if let Some(player) = cache.player(absolute_seat) {
+            set_count_plane(
+                &mut planes,
+                base_plane,
+                player.concealed_tile_keys.iter().map(String::as_str),
+            );
+
+            set_count_plane(
+                &mut planes,
+                base_plane + 1,
+                player
+                    .meld_tile_key_groups
+                    .iter()
+                    .flat_map(|group| group.iter().map(String::as_str)),
+            );
+        }
+
+        set_count_plane(
+            &mut planes,
+            base_plane + 2,
+            cache.visible_tile_keys.iter().map(String::as_str),
+        );
+
+        for opponent_offset in 1..=3 {
+            let opponent_seat = (absolute_seat + opponent_offset) % cache.seat_count.max(1);
+            if let Some(discards) = cache.opponent_discards_by_seat.get(opponent_seat) {
+                set_count_plane(
+                    &mut planes,
+                    base_plane + 2 + opponent_offset * 2 - 1,
+                    discards.iter().map(String::as_str),
+                );
+            }
+            if let Some(melds) = cache.opponent_melds_by_seat.get(opponent_seat) {
+                set_count_plane(
+                    &mut planes,
+                    base_plane + 2 + opponent_offset * 2,
+                    melds
+                        .iter()
+                        .flat_map(|group| group.iter().map(String::as_str)),
+                );
+            }
+        }
+
+        if let Some(tile_key) = cache.last_discard_tile_key.as_deref() {
+            set_binary_tile(&mut planes, base_plane + 9, tile_key);
+        }
+    }
+
+    planes
+}
+
+fn encode_global_scalar_features_v2(cache: &RoomScoringCache, current_seat: usize) -> Vec<f32> {
+    let mut features = vec![0.0_f32; GLOBAL_SCALAR_FEATURE_COUNT];
+    let seat_count = cache.seat_count.max(1);
+
+    for player_offset in 0..cache.seat_count.min(4) {
+        let absolute_seat = (current_seat + player_offset) % seat_count;
+        let base_idx = player_offset * 4;
+
+        features[base_idx] = player_offset as f32 / 3.0;
+
+        if let Some(player) = cache.player(absolute_seat) {
+            features[base_idx + 1] = player.meld_tile_key_groups.len() as f32 / 4.0;
+            features[base_idx + 2] = player.flower_count as f32 / 8.0;
+        }
+
+        features[base_idx + 3] = cache
+            .cumulative_scores
+            .get(absolute_seat)
+            .copied()
+            .unwrap_or(0) as f32
+            / 100.0;
+    }
+
+    features[16] = cache.dealer_seat as f32 / 3.0;
+    features[17] = cache.wall_tiles_remaining.max(0) as f32 / 84.0;
+
+    let round_wind_index = standard_wind_index(cache.round_wind.as_deref().unwrap_or("east"));
+    features[18] = round_wind_index as f32 / 3.0;
+
+    features[19] = f32::from(cache.drawn_tile_id.is_some());
+
+    features
+}
+
+#[cfg(test)]
+mod global_features_tests {
+    use super::*;
+    use crate::core::state::{
+        LastActionContext, MatchState, PendingTimeout, PlayerRoundState, RoomState,
+        RoundScoreTrackers, RoundState, RuleRuntimeState, WallState,
+    };
+    use crate::core::tile::Tile;
+    use crate::room_scoring::RoomScoringCache;
+    use std::collections::BTreeMap;
+
+    fn sample_global_cache() -> RoomScoringCache {
+        let state = RoomState {
+            table_code: "TEST".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
+            seats: Vec::new(),
+            match_state: Some(MatchState {
+                prevailing_wind: "east".to_string(),
+                hand_number: 1,
+                dealer_seat: 0,
+                dealer_repeat_count: 0,
+                cumulative_scores: BTreeMap::from([(0, 100), (1, -50), (2, 0), (3, 50)]),
+                match_finished: false,
+                last_completed_round_id: None,
+                statistics: Default::default(),
+                extra_time_pool: Default::default(),
+            }),
+            round_state: Some(RoundState {
+                round_id: "round-1".to_string(),
+                dealer_seat: 0,
+                round_wind: "east".to_string(),
+                current_actor: 0,
+                phase: "playing".to_string(),
+                wall: WallState {
+                    tiles: Vec::new(),
+                    head_index: 0,
+                    tail_index: 41,
+                },
+                players: vec![
+                    PlayerRoundState {
+                        seat: 0,
+                        is_ready_hand: false,
+                        concealed_tiles: vec![
+                            Tile::tile_key_only("w1"),
+                            Tile::tile_key_only("w2"),
+                            Tile::tile_key_only("w3"),
+                        ],
+                        melds: vec![vec!["t1".to_string(), "t2".to_string(), "t3".to_string()]],
+                        display_melds: Vec::new(),
+                        discards: vec![Tile::tile_key_only("w9")],
+                        flowers: vec![Tile::tile_key_only("plum")],
+                    },
+                    PlayerRoundState {
+                        seat: 1,
+                        is_ready_hand: false,
+                        concealed_tiles: vec![
+                            Tile::tile_key_only("b5"),
+                            Tile::tile_key_only("b6"),
+                        ],
+                        melds: Vec::new(),
+                        display_melds: Vec::new(),
+                        discards: vec![Tile::tile_key_only("t9")],
+                        flowers: Vec::new(),
+                    },
+                    PlayerRoundState {
+                        seat: 2,
+                        is_ready_hand: false,
+                        concealed_tiles: vec![
+                            Tile::tile_key_only("red"),
+                            Tile::tile_key_only("green"),
+                        ],
+                        melds: Vec::new(),
+                        display_melds: Vec::new(),
+                        discards: Vec::new(),
+                        flowers: vec![
+                            Tile::tile_key_only("orchid"),
+                            Tile::tile_key_only("bamboo"),
+                        ],
+                    },
+                    PlayerRoundState {
+                        seat: 3,
+                        is_ready_hand: false,
+                        concealed_tiles: vec![Tile::tile_key_only("east")],
+                        melds: Vec::new(),
+                        display_melds: Vec::new(),
+                        discards: Vec::new(),
+                        flowers: Vec::new(),
+                    },
+                ],
+                discard_history: Vec::new(),
+                pending_action: None,
+                last_discard: Some(Tile::tile_key_only("w9")),
+                restricted_discard_tile_key: None,
+                score_trackers: RoundScoreTrackers::default(),
+                last_action_context: LastActionContext::default(),
+                rule_state: RuleRuntimeState {},
+                settlement: None,
+                version: 1,
+            }),
+            pending_timeout: Some(PendingTimeout {
+                kind: "active_turn".to_string(),
+                seat_index: 0,
+                deadline_at: None,
+                drawn_tile_id: Some("tile#123".to_string()),
+                extended_with_extra: false,
+            }),
+            continue_action: None,
+        };
+
+        RoomScoringCache::from_state(&state)
+    }
+
+    #[test]
+    fn global_feature_shapes_are_correct() {
+        let cache = sample_global_cache();
+        let (tile_planes, scalar_features) = encode_global_features_v2(&cache, 0);
+
+        assert_eq!(
+            tile_planes.len(),
+            global_tile_plane_count_v2() * TILE_KIND_COUNT
+        );
+        assert_eq!(scalar_features.len(), global_scalar_feature_count_v2());
+        assert_eq!(tile_planes.len(), 40 * 34);
+        assert_eq!(scalar_features.len(), 20);
+    }
+
+    #[test]
+    fn global_tile_planes_encode_all_players() {
+        let cache = sample_global_cache();
+        let (tile_planes, _) = encode_global_features_v2(&cache, 0);
+
+        let player0_base = 0 * TILE_KIND_COUNT;
+        assert_eq!(tile_planes[player0_base + tile_index("w1").unwrap()], 1.0);
+        assert_eq!(tile_planes[player0_base + tile_index("w2").unwrap()], 1.0);
+
+        let player1_base = 10 * TILE_KIND_COUNT;
+        assert_eq!(tile_planes[player1_base + tile_index("b5").unwrap()], 1.0);
+    }
+
+    #[test]
+    fn global_scalar_features_encode_per_player_stats() {
+        let cache = sample_global_cache();
+        let (_, scalar_features) = encode_global_features_v2(&cache, 0);
+
+        assert_eq!(scalar_features[0], 0.0 / 3.0);
+        assert_eq!(scalar_features[1], 1.0 / 4.0);
+        assert_eq!(scalar_features[2], 1.0 / 8.0);
+        assert_eq!(scalar_features[3], 100.0 / 100.0);
+
+        assert_eq!(scalar_features[4], 1.0 / 3.0);
+        assert_eq!(scalar_features[5], 0.0 / 4.0);
+        assert_eq!(scalar_features[6], 0.0 / 8.0);
+        assert_eq!(scalar_features[7], -50.0 / 100.0);
+    }
+
+    #[test]
+    fn global_scalar_features_encode_shared_stats() {
+        let cache = sample_global_cache();
+        let (_, scalar_features) = encode_global_features_v2(&cache, 0);
+
+        assert_eq!(scalar_features[16], 0.0 / 3.0);
+        assert_eq!(scalar_features[17], 42.0 / 84.0);
+        assert_eq!(scalar_features[18], 0.0 / 3.0);
+        assert_eq!(scalar_features[19], 1.0);
+    }
+
+    #[test]
+    fn global_features_handle_relative_seat_transformation() {
+        let cache = sample_global_cache();
+        let (tile_planes, scalar_features) = encode_global_features_v2(&cache, 1);
+
+        let player0_base = 0 * TILE_KIND_COUNT;
+        assert_eq!(tile_planes[player0_base + tile_index("b5").unwrap()], 1.0);
+
+        assert_eq!(scalar_features[0], 0.0 / 3.0);
+        assert_eq!(scalar_features[3], -50.0 / 100.0);
     }
 }

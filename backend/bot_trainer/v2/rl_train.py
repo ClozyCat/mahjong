@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from model import ModelConfig, build_model
+from model import ModelConfig, build_model, build_actor_critic
 from rl_dataset import ArenaTrajectoryDataset, trajectory_diagnostics
 
 
@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=3e-6)
+    parser.add_argument("--critic-lr-multiplier", type=float, default=2.0)
+    parser.add_argument("--use-actor-critic", action="store_true")
     parser.add_argument("--gamma", type=float, default=0.995)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--policy-id", default=None)
@@ -159,7 +161,7 @@ def entropy_coef_for_progress(
 
 
 def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
-    return (
+    base_msg = (
         "RL train epoch "
         f"{int(metrics['epoch'])}/{total_epochs}: "
         f"loss={metrics['loss']:.6f} "
@@ -173,6 +175,16 @@ def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
         f"clip_fraction={metrics.get('clip_fraction', 0.0):.6f} "
         f"value_ev={metrics.get('value_explained_variance', 0.0):.6f}"
     )
+
+    # Add critic-specific metrics if available
+    if 'value_mse' in metrics:
+        base_msg += f" value_mse={metrics['value_mse']:.6f}"
+    if 'advantage_mean' in metrics:
+        base_msg += f" adv_mean={metrics['advantage_mean']:.6f}"
+    if 'advantage_std' in metrics:
+        base_msg += f" adv_std={metrics['advantage_std']:.6f}"
+
+    return base_msg
 
 
 def epoch_checkpoint_name(epoch: int) -> str:
@@ -274,10 +286,20 @@ def forward_model(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
+    has_global = batch.get("has_global_state")
+    if has_global is not None and torch.any(has_global):
+        global_tile_planes = batch.get("global_tile_planes")
+        global_scalar_features = batch.get("global_scalar_features")
+    else:
+        global_tile_planes = None
+        global_scalar_features = None
+
     return model(
         batch["tile_planes"].float(),
         batch["scalar_features"].float(),
         batch["discard_sequence"].float(),
+        global_tile_planes=global_tile_planes.float() if global_tile_planes is not None else None,
+        global_scalar_features=global_scalar_features.float() if global_scalar_features is not None else None,
     )
 
 
@@ -398,7 +420,14 @@ def main() -> None:
     diagnostics = trajectory_diagnostics(dataset.rows)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     model_config = model_config_from_checkpoint(args.checkpoint)
-    model = build_model(model_config).to(device)
+
+    if args.use_actor_critic:
+        model = build_actor_critic(model_config).to(device)
+        print("Using separate actor-critic architecture with global features")
+    else:
+        model = build_model(model_config).to(device)
+        print("Using shared policy-value network")
+
     load_checkpoint_if_present(model, args.checkpoint)
     old_policy_model = (
         build_old_policy_model(args.checkpoint, device)
@@ -406,7 +435,18 @@ def main() -> None:
         else None
     )
     teacher_model = build_old_policy_model(args.checkpoint, device) if args.kl_coef > 0.0 else None
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+
+    if args.use_actor_critic:
+        actor_params = list(model.actor.parameters())
+        critic_params = list(model.critic.parameters())
+        critic_lr = args.lr * args.critic_lr_multiplier
+        optimizer = torch.optim.AdamW([
+            {"params": actor_params, "lr": args.lr},
+            {"params": critic_params, "lr": critic_lr},
+        ])
+        print(f"Using separate optimizers: actor_lr={args.lr:.6f}, critic_lr={critic_lr:.6f}")
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     print(
         "RL train: "
@@ -432,6 +472,9 @@ def main() -> None:
         total_approx_kl = 0.0
         total_clip_fraction = 0.0
         total_value_explained_variance = 0.0
+        total_value_mse = 0.0
+        total_advantage_mean = 0.0
+        total_advantage_std = 0.0
         batch_count = 0
         for batch in loader:
             batch = {key: value.to(device) for key, value in batch.items()}
@@ -459,6 +502,12 @@ def main() -> None:
             log_probs = select_action_log_probs(outputs, batch, style_config)
             returns = batch["return"].float()
             advantages = batch["advantage"].float()
+
+            # Track raw advantage statistics before normalization
+            with torch.no_grad():
+                raw_advantage_mean = advantages.mean()
+                raw_advantage_std = advantages.std(unbiased=False)
+
             advantages = (advantages - advantages.mean()) / (
                 advantages.std(unbiased=False) + 1.0e-8
             )
@@ -488,6 +537,11 @@ def main() -> None:
                     teacher_outputs = forward_model(teacher_model, batch)
                 kl_loss = select_action_head_kl(teacher_outputs, outputs, batch, style_config)
             explained_variance = value_explained_variance(values.detach(), returns)
+
+            # Compute value MSE for monitoring
+            with torch.no_grad():
+                value_mse = (values - returns).pow(2).mean()
+
             loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -502,6 +556,9 @@ def main() -> None:
             total_approx_kl += float(approx_kl.detach().cpu())
             total_clip_fraction += float(clip_fraction.detach().cpu())
             total_value_explained_variance += float(explained_variance.detach().cpu())
+            total_value_mse += float(value_mse.detach().cpu())
+            total_advantage_mean += float(raw_advantage_mean.detach().cpu())
+            total_advantage_std += float(raw_advantage_std.detach().cpu())
             batch_count += 1
             global_step += 1
         epoch_metrics = {
@@ -516,6 +573,9 @@ def main() -> None:
             "approx_kl": total_approx_kl / max(batch_count, 1),
             "clip_fraction": total_clip_fraction / max(batch_count, 1),
             "value_explained_variance": total_value_explained_variance / max(batch_count, 1),
+            "value_mse": total_value_mse / max(batch_count, 1),
+            "advantage_mean": total_advantage_mean / max(batch_count, 1),
+            "advantage_std": total_advantage_std / max(batch_count, 1),
         }
         history.append(epoch_metrics)
         print(format_epoch_metrics(epoch_metrics, args.epochs))

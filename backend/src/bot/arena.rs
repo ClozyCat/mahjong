@@ -9,7 +9,7 @@ use std::sync::{
 use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
-    features::encode_bot_context_v2,
+    features::{encode_bot_context_v2, encode_global_features_v2},
     neural::{NeuralDecisionScores, neural_decision_scores_for_model_path},
     policy::risk_adjusted_discard_logits,
     reward::{
@@ -520,11 +520,12 @@ fn run_arena_match(
                 if let Some(trace) = trace.as_ref() {
                     let policy = policy_for_match_seat(config, match_index, action_seat);
                     let reward_after = reward_snapshot_from_room(&room, action_seat);
-                    if let Some(mut row) = trajectory_row_from_trace(
+                    if let Some(mut row) = trajectory_row_from_trace_with_state(
                         &match_id,
                         trajectories.len() as u64,
                         &policy,
                         trace,
+                        &room,
                     ) {
                         apply_shaping_reward(&mut row, reward_before, reward_after);
                         trajectories.push(row);
@@ -580,6 +581,69 @@ fn policy_for_match_seat(
     policy
 }
 
+fn trajectory_row_from_trace_with_state(
+    match_id: &str,
+    decision_index: u64,
+    policy: &ArenaBotPolicyConfig,
+    trace: &crate::rules::standard::automation::BotDecisionTrace,
+    state: &RoomState,
+) -> Option<ArenaTrajectoryRow> {
+    let features = trace
+        .features
+        .clone()
+        .unwrap_or_else(|| encode_bot_context_v2(&trace.context));
+
+    let (global_tile_planes, global_scalar_features) = {
+        use crate::room_scoring::RoomScoringCache;
+
+        let cache = RoomScoringCache::from_state(state);
+        let (tile_planes, scalar_features) = encode_global_features_v2(&cache, trace.action.seat_index);
+        (Some(tile_planes), Some(scalar_features))
+    };
+
+    let (action_head, action_index, action_semantic) =
+        encode_action_for_trajectory(&trace.decision_kind, &trace.context, &trace.action)?;
+    let (log_prob, value) = neural_policy_stats(
+        policy,
+        &trace.context,
+        &features,
+        &action_head,
+        action_index,
+        trace.neural_scores.as_ref(),
+    )
+    .unwrap_or((0.0, 0.0));
+    Some(ArenaTrajectoryRow {
+        schema_version: 1,
+        match_id: match_id.to_string(),
+        decision_index,
+        seat_index: trace.action.seat_index,
+        policy_id: policy.id.clone(),
+        decision_kind: trace.decision_kind.clone(),
+        tile_planes: features.tile_planes,
+        scalar_features: features.scalar_features,
+        discard_sequence: features.discard_sequence,
+        discard_mask: features.discard_mask.to_vec(),
+        claim_mask: features.claim_mask.to_vec(),
+        self_kong_mask: features.self_kong_mask.to_vec(),
+        hu_mask: features.hu_mask.to_vec(),
+        action_head,
+        action_index,
+        action_semantic,
+        log_prob,
+        value,
+        reward: 0.0,
+        step_reward: 0.0,
+        terminal_reward: 0.0,
+        shanten_before: None,
+        shanten_after: None,
+        fan_potential_before: None,
+        fan_potential_after: None,
+        global_tile_planes,
+        global_scalar_features,
+        done: false,
+    })
+}
+
 fn trajectory_row_from_trace(
     match_id: &str,
     decision_index: u64,
@@ -590,6 +654,7 @@ fn trajectory_row_from_trace(
         .features
         .clone()
         .unwrap_or_else(|| encode_bot_context_v2(&trace.context));
+
     let (action_head, action_index, action_semantic) =
         encode_action_for_trajectory(&trace.decision_kind, &trace.context, &trace.action)?;
     let (log_prob, value) = neural_policy_stats(

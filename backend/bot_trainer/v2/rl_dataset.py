@@ -139,7 +139,12 @@ def build_tensor_cache(
 
 
 def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> dict[str, torch.Tensor]:
-    return {
+    has_global = (
+        row.get("global_tile_planes") is not None
+        and row.get("global_scalar_features") is not None
+    )
+
+    result = {
         "tile_planes": torch.tensor(row["tile_planes"], dtype=torch.float32).view(-1, 34),
         "scalar_features": torch.tensor(row["scalar_features"], dtype=torch.float32),
         "discard_sequence": torch.tensor(
@@ -167,12 +172,18 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
         "old_log_prob": torch.tensor(row["log_prob"], dtype=torch.float32),
         "old_value": torch.tensor(row["value"], dtype=torch.float32),
         "action_head": torch.tensor(action_head_index(row["action_head"]), dtype=torch.long),
-        "has_global_state": torch.tensor(
-            row.get("global_tile_planes") is not None
-            and row.get("global_scalar_features") is not None,
-            dtype=torch.bool,
-        ),
+        "has_global_state": torch.tensor(has_global, dtype=torch.bool),
     }
+
+    if has_global:
+        result["global_tile_planes"] = torch.tensor(
+            row["global_tile_planes"], dtype=torch.float32
+        ).view(-1, 34)
+        result["global_scalar_features"] = torch.tensor(
+            row["global_scalar_features"], dtype=torch.float32
+        )
+
+    return result
 
 
 def encode_rows(
@@ -221,6 +232,8 @@ def empty_tensor_cache() -> dict[str, torch.Tensor]:
         "old_value": torch.empty((0,), dtype=torch.float32),
         "action_head": torch.empty((0,), dtype=torch.long),
         "has_global_state": torch.empty((0,), dtype=torch.bool),
+        "global_tile_planes": torch.empty((0, 40, 34), dtype=torch.float32),
+        "global_scalar_features": torch.empty((0, 20), dtype=torch.float32),
     }
 
 

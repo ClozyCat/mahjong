@@ -13,7 +13,7 @@ try:
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("PyTorch is required: pip install torch") from exc
 
-from model import ModelConfig, build_model
+from model import ModelConfig, build_model, build_actor_critic
 
 
 OUTPUT_NAMES = [
@@ -46,10 +46,25 @@ def main() -> None:
     args = parse_args()
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
-    model = build_model(model_config)
-    missing, _ = model.load_state_dict(checkpoint["model_state"], strict=False)
-    if missing:
-        print(f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}", file=sys.stderr)
+
+    # Detect if checkpoint is from actor-critic training
+    state_dict = checkpoint["model_state"]
+    is_actor_critic = any(key.startswith("actor.") or key.startswith("critic.") for key in state_dict.keys())
+
+    if is_actor_critic:
+        print("Detected actor-critic checkpoint, exporting actor only")
+        full_model = build_actor_critic(model_config)
+        missing, _ = full_model.load_state_dict(state_dict, strict=False)
+        if missing:
+            print(f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}", file=sys.stderr)
+        model = full_model.actor
+    else:
+        print("Detected shared policy-value checkpoint")
+        model = build_model(model_config)
+        missing, _ = model.load_state_dict(state_dict, strict=False)
+        if missing:
+            print(f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}", file=sys.stderr)
+
     model.eval()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -96,7 +111,7 @@ def main() -> None:
         dummy_scalar_features,
         dummy_discard_sequence,
     )
-    write_export_manifest(args.output, args.checkpoint, checkpoint, model_config)
+    write_export_manifest(args.output, args.checkpoint, checkpoint, model_config, is_actor_critic)
     print(f"exported {args.output}")
 
 
@@ -137,6 +152,7 @@ def write_export_manifest(
     checkpoint_path: Path,
     checkpoint: dict[str, object],
     model_config: ModelConfig,
+    is_actor_critic: bool = False,
 ) -> None:
     manifest = {
         "created_at_utc": datetime.now(UTC).isoformat(),
@@ -146,6 +162,8 @@ def write_export_manifest(
         "checkpoint_created_at_utc": checkpoint.get("created_at_utc"),
         "model_config": model_config.to_dict(),
         "outputs": OUTPUT_NAMES,
+        "is_actor_critic": is_actor_critic,
+        "exported_component": "actor" if is_actor_critic else "full_model",
     }
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
     manifest_path.write_text(
