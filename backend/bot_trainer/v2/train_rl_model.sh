@@ -572,6 +572,15 @@ if (( ALLOW_RL_BASELINE_CHECKPOINT == 1 )); then
 fi
 "${PYTHON_CMD[@]}" "${baseline_guard_args[@]}"
 
+checkpoint_architecture_guard_args=(
+    backend/bot_trainer/v2/checkpoint_architecture_guard.py
+    --checkpoint "$BASELINE_CHECKPOINT"
+)
+if (( USE_ACTOR_CRITIC == 1 )); then
+    checkpoint_architecture_guard_args+=(--use-actor-critic)
+fi
+"${PYTHON_CMD[@]}" "${checkpoint_architecture_guard_args[@]}"
+
 if (( SKIP_TESTS == 0 )); then
     PYTHONPATH="$PYTEST_SITE_DIR${PYTHONPATH:+:$PYTHONPATH}" "${PYTHON_CMD[@]}" -m pytest \
         backend/bot_trainer/v2/test_rl_dataset.py \

@@ -175,9 +175,35 @@ Arena 轨迹包含可选的全局信息字段：
 
 启用 actor-critic 后，actor 仍只使用本地观测，critic 会优先使用全局信息；旧轨迹没有全局字段时会回退到本地上下文。
 
+首次启用 actor-critic 前，先从 SFT/shared checkpoint 生成一次性 bootstrap checkpoint。后续
+`--use-actor-critic` / `-UseActorCritic` 只接受 actor-critic checkpoint，避免旧 checkpoint
+让 actor/critic 参数静默随机初始化并污染训练结果。
+
+```powershell
+python backend/bot_trainer/v2/bootstrap_actor_critic_checkpoint.py `
+  --source backend/bot_trainer/v2/checkpoints/best.pt `
+  --output backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt
+
+python backend/bot_trainer/v2/export_onnx.py `
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
+  --output backend/assets/ppo/actor_critic_bootstrap.onnx
+```
+
+```bash
+python backend/bot_trainer/v2/bootstrap_actor_critic_checkpoint.py \
+  --source backend/bot_trainer/v2/checkpoints/best.pt \
+  --output backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt
+
+python backend/bot_trainer/v2/export_onnx.py \
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt \
+  --output backend/assets/ppo/actor_critic_bootstrap.onnx
+```
+
 ```powershell
 .\backend\bot_trainer\v2\train_rl_model.ps1 `
   -OutputDir backend/bot_trainer/v2/rl_runs/global_critic_smoke `
+  -BaselineCheckpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
+  -BaselineOnnx backend/assets/ppo/actor_critic_bootstrap.onnx `
   -IterationMatches 8 `
   -EvalMatches 4 `
   -Epochs 1 `
@@ -191,6 +217,8 @@ Arena 轨迹包含可选的全局信息字段：
 ```bash
 ./backend/bot_trainer/v2/train_rl_model.sh \
   --output-dir backend/bot_trainer/v2/rl_runs/global_critic_smoke \
+  --baseline-checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt \
+  --baseline-onnx backend/assets/ppo/actor_critic_bootstrap.onnx \
   --iteration-matches 8 \
   --eval-matches 4 \
   --epochs 1 \

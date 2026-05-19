@@ -454,6 +454,28 @@ def test_rollout_state_advances_when_candidate_is_accepted() -> None:
     assert selected["onnx"] == candidate["onnx"]
 
 
+def test_actor_critic_training_rejects_shared_policy_checkpoint(tmp_path: Path) -> None:
+    import torch
+    from rl_train import validate_checkpoint_architecture
+
+    checkpoint = tmp_path / "shared_policy.pt"
+    torch.save({"model_state": {"policy_trunk.0.weight": torch.zeros((1, 1))}}, checkpoint)
+
+    with pytest.raises(SystemExit, match="requires an actor-critic checkpoint"):
+        validate_checkpoint_architecture(checkpoint, use_actor_critic=True)
+
+
+def test_shared_policy_training_rejects_actor_critic_checkpoint(tmp_path: Path) -> None:
+    import torch
+    from rl_train import validate_checkpoint_architecture
+
+    checkpoint = tmp_path / "actor_critic.pt"
+    torch.save({"model_state": {"actor.policy_trunk.0.weight": torch.zeros((1, 1))}}, checkpoint)
+
+    with pytest.raises(SystemExit, match="requires a shared policy checkpoint"):
+        validate_checkpoint_architecture(checkpoint, use_actor_critic=False)
+
+
 def test_discard_log_probs_use_risk_adjusted_logits() -> None:
     import math
     import torch

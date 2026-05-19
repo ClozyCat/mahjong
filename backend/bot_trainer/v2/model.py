@@ -219,6 +219,8 @@ if nn is not None:
             tile_planes: torch.Tensor,
             scalar_features: torch.Tensor,
             discard_sequence: torch.Tensor,
+            global_tile_planes: torch.Tensor | None = None,
+            global_scalar_features: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             scalar_embedding = self.scalar_encoder(scalar_features)
             sequence_embedding = self.discard_sequence_encoder(discard_sequence)
@@ -320,6 +322,10 @@ if nn is not None:
         def __init__(self, config: ModelConfig) -> None:
             super().__init__()
             self.config = config
+            self.tile_plane_count = config.tile_plane_count
+            self.scalar_feature_count = config.scalar_feature_count
+            self.discard_sequence_length = config.discard_sequence_length
+            self.discard_event_feature_count = config.discard_event_feature_count
 
             # Local feature encoders
             self.tile_encoder = SuitFusionTileEncoder(config.tile_plane_count)
@@ -473,6 +479,10 @@ if nn is not None:
         def __init__(self, config: ModelConfig) -> None:
             super().__init__()
             self.config = config
+            self.tile_plane_count = config.tile_plane_count
+            self.scalar_feature_count = config.scalar_feature_count
+            self.discard_sequence_length = config.discard_sequence_length
+            self.discard_event_feature_count = config.discard_event_feature_count
             self.actor = MahjongActorNetV2(config)
             self.critic = MahjongCriticNetV2(config, use_local_context=True)
 

@@ -9,14 +9,6 @@
   },
   "opponents": [
     {
-      "id": "heuristic",
-      "mode": "heuristic",
-      "model_path": null,
-      "sample_actions": false,
-      "temperature": 1.0,
-      "weight": 2
-    },
-    {
       "id": "sft_deterministic",
       "mode": "neural",
       "model_path": "backend/assets/sft/sft.onnx",

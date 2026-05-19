@@ -27,6 +27,13 @@ OUTPUT_NAMES = [
 INPUT_NAMES = ["tile_planes", "scalar_features", "discard_sequence"]
 
 
+def make_exporter_logging_windows_safe() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 class OnnxWrapper(nn.Module):
     def __init__(self, model: nn.Module) -> None:
         super().__init__()
@@ -42,28 +49,35 @@ class OnnxWrapper(nn.Module):
         return tuple(outputs[name] for name in OUTPUT_NAMES)
 
 
-def main() -> None:
-    args = parse_args()
-    checkpoint = torch.load(args.checkpoint, map_location="cpu")
+def load_export_model(checkpoint_path: Path) -> tuple[nn.Module, ModelConfig, bool]:
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
-
-    # Detect if checkpoint is from actor-critic training
     state_dict = checkpoint["model_state"]
-    is_actor_critic = any(key.startswith("actor.") or key.startswith("critic.") for key in state_dict.keys())
+    is_actor_critic = any(
+        key.startswith("actor.") or key.startswith("critic.")
+        for key in state_dict.keys()
+    )
 
     if is_actor_critic:
-        print("Detected actor-critic checkpoint, exporting actor only")
-        full_model = build_actor_critic(model_config)
-        missing, _ = full_model.load_state_dict(state_dict, strict=False)
-        if missing:
-            print(f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}", file=sys.stderr)
-        model = full_model.actor
+        print("Detected actor-critic checkpoint, exporting local inference wrapper")
+        model = build_actor_critic(model_config)
     else:
         print("Detected shared policy-value checkpoint")
         model = build_model(model_config)
-        missing, _ = model.load_state_dict(state_dict, strict=False)
-        if missing:
-            print(f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}", file=sys.stderr)
+    missing, _ = model.load_state_dict(state_dict, strict=False)
+    if missing:
+        print(
+            f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}",
+            file=sys.stderr,
+        )
+    return model, model_config, is_actor_critic
+
+
+def main() -> None:
+    make_exporter_logging_windows_safe()
+    args = parse_args()
+    model, model_config, is_actor_critic = load_export_model(args.checkpoint)
+    checkpoint = torch.load(args.checkpoint, map_location="cpu")
 
     model.eval()
 
@@ -163,7 +177,11 @@ def write_export_manifest(
         "model_config": model_config.to_dict(),
         "outputs": OUTPUT_NAMES,
         "is_actor_critic": is_actor_critic,
-        "exported_component": "actor" if is_actor_critic else "full_model",
+        "exported_component": (
+            "actor_critic_local_inference_wrapper"
+            if is_actor_critic
+            else "full_model"
+        ),
     }
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
     manifest_path.write_text(

@@ -248,6 +248,31 @@ def checkpoint_uses_actor_critic(checkpoint: Path) -> bool:
     return any(key.startswith("actor.") or key.startswith("critic.") for key in state)
 
 
+def validate_checkpoint_architecture(
+    checkpoint: Path | None,
+    use_actor_critic: bool,
+) -> None:
+    if checkpoint is None:
+        return
+    if not checkpoint.exists():
+        return
+
+    uses_actor_critic = checkpoint_uses_actor_critic(checkpoint)
+    if use_actor_critic and not uses_actor_critic:
+        raise SystemExit(
+            "Checkpoint architecture mismatch: --use-actor-critic requires an "
+            "actor-critic checkpoint, but this checkpoint looks like an older "
+            "shared policy/SFT checkpoint. Refusing to train because fresh "
+            "actor/critic parameters would affect results."
+        )
+    if not use_actor_critic and uses_actor_critic:
+        raise SystemExit(
+            "Checkpoint architecture mismatch: shared policy training requires "
+            "a shared policy checkpoint, but this checkpoint uses actor-critic "
+            "state keys. Pass --use-actor-critic or choose a matching checkpoint."
+        )
+
+
 def select_action_log_probs(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
@@ -381,6 +406,7 @@ def build_old_policy_model(
 
 def main() -> None:
     args = parse_args()
+    validate_checkpoint_architecture(args.checkpoint, args.use_actor_critic)
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
 

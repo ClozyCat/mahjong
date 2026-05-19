@@ -1,7 +1,7 @@
 param(
     [string]$OutputDir = "backend/bot_trainer/v2/rl_runs/$(Get-Date -Format 'yyyyMMddHHmm')",
-    [string]$BaselineCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt",
-    [string]$BaselineOnnx = "backend/assets/sft/sft.onnx",
+    [string]$BaselineCheckpoint = "backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt",
+    [string]$BaselineOnnx = "backend/assets/ppo/actor_critic_bootstrap.onnx",
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
@@ -13,7 +13,7 @@ param(
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
     [int]$Epochs = 1,
-    [int]$BatchSize = 4096,
+    [int]$BatchSize = 2048,
     [double]$LearningRate = 0.000003,
     [double]$Gamma = 0.995,
     [double]$GaeLambda = 0.95,
@@ -346,6 +346,15 @@ try {
         $baselineGuardArgs += @("--allow-rl-checkpoint")
     }
     Invoke-TrainingPython $baselineGuardArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $checkpointArchitectureGuardArgs = @(
+        "backend/bot_trainer/v2/checkpoint_architecture_guard.py",
+        "--checkpoint", $BaselineCheckpoint
+    )
+    if ($UseActorCritic) {
+        $checkpointArchitectureGuardArgs += @("--use-actor-critic")
+    }
+    Invoke-TrainingPython $checkpointArchitectureGuardArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if (-not $SkipTests) {
