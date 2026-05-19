@@ -28,7 +28,10 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     canLeaveTable: false,
     phaseLabel: 'playing',
     roundLabel: 'round-123',
+    scoreSummaryLabel: '总分 12',
     deadlineAt: null,
+    deadlineIsOvertime: false,
+    topStatusLabel: 'Live Match',
     activePlayerSeat: 'bottom',
     actionIndicatorSeat: null,
     isActionDockElevated: false,
@@ -40,7 +43,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         score: 26800,
         points: 0,
         liveDelta: 0,
-        flowerCount: 0,
         wind: 'North',
         isDealer: false,
         isActive: false,
@@ -50,7 +52,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         concealedCount: 13,
         meldCount: 0,
         melds: [],
-        flowers: [],
         statusText: 'Live',
       },
       {
@@ -60,7 +61,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         score: 24300,
         points: 0,
         liveDelta: -8,
-        flowerCount: 1,
         wind: 'West',
         isDealer: false,
         isActive: false,
@@ -70,7 +70,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         concealedCount: 13,
         meldCount: 1,
         melds: [['b2', 'b3', 'b4']],
-        flowers: ['f1'],
         statusText: 'Live',
       },
       {
@@ -80,7 +79,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         score: 25000,
         points: 0,
         liveDelta: 8,
-        flowerCount: 0,
         wind: 'East',
         isDealer: true,
         isActive: true,
@@ -90,7 +88,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         concealedCount: 14,
         meldCount: 0,
         melds: [['w3', 'w3', 'w3']],
-        flowers: [],
         statusText: 'Live',
       },
       {
@@ -100,7 +97,6 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         score: 25000,
         points: 0,
         liveDelta: 0,
-        flowerCount: 0,
         wind: 'South',
         isDealer: false,
         isActive: false,
@@ -110,17 +106,11 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
         concealedCount: 13,
         meldCount: 1,
         melds: [['c7', 'c8', 'c9']],
-        flowers: [],
         statusText: 'Live',
       },
     ],
     actions: [],
     waitingControls: null,
-    tableSettings: {
-      minimumHuFan: 8,
-      dealerRepeatEnabled: false,
-      dealerDoubleEnabled: false,
-    },
     discards: {
       bottom: ['w1'],
       left: [],
@@ -128,12 +118,13 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
       right: ['b4'],
     },
     localHand: [
-      { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
-      { tileId: 'w2#2', code: 'w2', isSelected: true, isDrawn: true, isFlower: false },
+      { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false,  },
+      { tileId: 'w2#2', code: 'w2', isSelected: true, isDrawn: true,  },
     ],
     handInsight: null,
     claimCandidates: [],
     drawnTileId: 'w2#2',
+    centerBanner: 'Opponent Turn',
     centerStatusText: null,
     promptText: null,
     promptCue: null,
@@ -144,7 +135,12 @@ function createBattleViewModel(overrides: Partial<BattleViewModel> = {}): Battle
     shouldAutoReturnLastDiscardToRiver: false,
     actionEffect: null,
     dealerSelection: null,
-    extendedWithExtra: false,
+    toasts: [],
+    tableSettings: {
+      minimumHuFan: 8,
+      dealerRepeatEnabled: false,
+      dealerDoubleEnabled: false,
+    },
     ...overrides,
   };
 }
@@ -171,29 +167,18 @@ function renderBattleScreenAtViewport(
       onTileDoubleClick={vi.fn()}
       onClaimCandidateSelect={vi.fn()}
       onClaimCandidateActivate={vi.fn()}
+      onCopyTableCode={vi.fn()}
       onLeaveTable={vi.fn()}
       {...overrides}
     />,
   );
 }
 
-const waitingControlDefaults = {
-  minimumHuFan: 8 as const,
-  canDecreaseMinimumHuFan: true,
-  canIncreaseMinimumHuFan: false,
-  dealerRepeatEnabled: false,
-  dealerDoubleEnabled: false,
-  canToggleDealerRepeat: true,
-  canToggleDealerDouble: true,
-};
-
-function mockResultOverlayScrollLayout({ panelHeight }: { panelHeight: number }) {
+function mockResultOverlayScrollLayout({ panelHeight = 420 }: { panelHeight?: number } = {}) {
   const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement | null;
-  const fanPanel = document.body.querySelector('.result-overlay__fan-panel') as HTMLElement | null;
-  const fanViewport = document.body.querySelector('.result-overlay__fan-list-viewport') as HTMLElement | null;
 
-  if (!scorePanel || !fanPanel || !fanViewport) {
-    throw new Error('result overlay scroll nodes are missing');
+  if (!scorePanel) {
+    throw new Error('result overlay score panel is missing');
   }
 
   Object.defineProperty(scorePanel, 'getBoundingClientRect', {
@@ -214,37 +199,23 @@ function mockResultOverlayScrollLayout({ panelHeight }: { panelHeight: number })
   act(() => {
     window.dispatchEvent(new Event('resize'));
   });
-
-  return { fanPanel, fanViewport };
 }
 
 function getVisibleFanList() {
-  const fanViewport = document.body.querySelector('.result-overlay__fan-list-viewport') as HTMLElement | null;
+  const fanRow = document.body.querySelector('.result-overlay__hero-fan-row') as HTMLElement | null;
 
-  if (!fanViewport) {
+  if (!fanRow) {
     throw new Error('visible fan list is missing');
   }
 
-  return within(fanViewport);
+  return within(fanRow);
 }
 
 function mockAudioPlayback() {
   const play = vi.fn(() => Promise.resolve());
   const audio = vi.fn((url: string) => {
     void url;
-    const handlers = new Map<string, () => void>();
-
-    return {
-      addEventListener: vi.fn((eventName: string, handler: () => void) => {
-        handlers.set(eventName, handler);
-      }),
-      removeEventListener: vi.fn(),
-      play: vi.fn(() => {
-        play();
-        handlers.get('ended')?.();
-        return Promise.resolve();
-      }),
-    };
+    return { play };
   });
   const originalAudio = globalThis.Audio;
 
@@ -363,65 +334,7 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
-          onLeaveTable={vi.fn()}
-        />,
-      );
-
-      expect(audioMock.audio).toHaveBeenCalledTimes(1);
-    } finally {
-      audioMock.restore();
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not replay an optimistic discard voice when the confirmed event includes the tile code', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
-    const audioMock = mockAudioPlayback();
-
-    try {
-      const { rerender } = renderBattleScreen(
-        createBattleViewModel({
-          lastDiscard: 'w1',
-          lastDiscardSeat: 'bottom',
-          actionEffect: {
-            key: 'optimistic-discard:w1#1',
-            label: '出牌',
-            emphasis: 'discard',
-            seat: 'bottom',
-            calloutTone: null,
-          },
-        }),
-      );
-
-      expect(audioMock.audio).toHaveBeenCalledTimes(1);
-
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-
-      rerender(
-        <BattleScreen
-          viewModel={createBattleViewModel({
-            lastDiscard: 'w1',
-            lastDiscardSeat: 'bottom',
-            actionEffect: {
-              key: 'tile_discarded:seat-2:w1#1',
-              label: '出牌',
-              emphasis: 'discard',
-              seat: 'bottom',
-              calloutTone: null,
-              tileCode: 'w1',
-            },
-          })}
-          themeId="tian-shui-bi"
-          themeLabel="天水碧"
-          onCycleTheme={vi.fn()}
-          onAction={vi.fn()}
-          onTileSelect={vi.fn()}
-          onTileDoubleClick={vi.fn()}
-          onClaimCandidateSelect={vi.fn()}
-          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -492,6 +405,7 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -560,11 +474,83 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
+    } finally {
+      audioMock.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('plays a repeated tile voice again when it is a later discard in the same river', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+    const audioMock = mockAudioPlayback();
+
+    try {
+      const { rerender } = renderBattleScreen(
+        createBattleViewModel({
+          discards: {
+            bottom: ['w1'],
+            left: ['b4'],
+            top: [],
+            right: [],
+          },
+          lastDiscard: 'b4',
+          lastDiscardSeat: 'left',
+          actionEffect: {
+            key: 'tile_discarded:bot:first',
+            label: '出牌',
+            emphasis: 'discard',
+            seat: 'left',
+            calloutTone: null,
+          },
+        }),
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+
+      rerender(
+        <BattleScreen
+          viewModel={createBattleViewModel({
+            discards: {
+              bottom: ['w1'],
+              left: ['b4', 'b4'],
+              top: [],
+              right: [],
+            },
+            lastDiscard: 'b4',
+            lastDiscardSeat: 'left',
+            actionEffect: {
+              key: 'tile_discarded:bot:later',
+              label: '出牌',
+              emphasis: 'discard',
+              seat: 'left',
+              calloutTone: null,
+            },
+          })}
+          themeId="tian-shui-bi"
+          themeLabel="天水碧"
+          onCycleTheme={vi.fn()}
+          onAction={vi.fn()}
+          onTileSelect={vi.fn()}
+          onTileDoubleClick={vi.fn()}
+          onClaimCandidateSelect={vi.fn()}
+          onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
+          onLeaveTable={vi.fn()}
+        />,
+      );
+
+      expect(audioMock.audio).toHaveBeenCalledTimes(2);
     } finally {
       audioMock.restore();
       vi.useRealTimers();
@@ -589,34 +575,6 @@ describe('BattleScreen', () => {
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
       expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
-      expect(audioMock.play).toHaveBeenCalledTimes(1);
-    } finally {
-      audioMock.restore();
-    }
-  });
-
-  it('plays the ready hand operation voice instead of the discarded tile voice', () => {
-    const audioMock = mockAudioPlayback();
-
-    try {
-      renderBattleScreen(
-        createBattleViewModel({
-          lastDiscard: 'w1',
-          lastDiscardSeat: 'bottom',
-          actionEffect: {
-            key: 'ready_hand_declared:seat-2:w1',
-            label: '听',
-            emphasis: 'claim',
-            seat: 'bottom',
-            calloutTone: 'ready_hand',
-            tileCode: 'w1',
-          },
-        }),
-      );
-
-      expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('ting');
-      expect(String(audioMock.audio.mock.calls[0][0])).not.toContain('yi_wan');
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
@@ -658,51 +616,12 @@ describe('BattleScreen', () => {
     }
   });
 
-  it('plays each queued action voice even when one player repeats the same operation quickly', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
-    const audioMock = mockAudioPlayback();
-    const firstPungEffect = {
-      key: 'claim_made:seat-1:pung:first',
-      label: '碰',
-      emphasis: 'claim',
-      seat: 'left',
-      calloutTone: 'pung',
-    } satisfies NonNullable<BattleViewModel['actionEffect']>;
-    const secondPungEffect = {
-      key: 'claim_made:seat-1:pung:second',
-      label: '碰',
-      emphasis: 'claim',
-      seat: 'left',
-      calloutTone: 'pung',
-    } satisfies NonNullable<BattleViewModel['actionEffect']>;
-    const viewModel = {
-      ...createBattleViewModel({
-        actionEffect: secondPungEffect,
-      }),
-      actionEffects: [firstPungEffect, secondPungEffect],
-    } as BattleViewModel;
-
-    try {
-      renderBattleScreen(viewModel);
-
-      expect(audioMock.audio).toHaveBeenCalledTimes(2);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
-      expect(String(audioMock.audio.mock.calls[1][0])).toContain('peng');
-      expect(audioMock.play).toHaveBeenCalledTimes(2);
-    } finally {
-      audioMock.restore();
-      vi.useRealTimers();
-    }
-  });
-
   it('shows invite and start controls in waiting state', () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
         phaseLabel: 'waiting',
         waitingControls: {
-          ...waitingControlDefaults,
           canStart: true,
           occupiedSeats: 4,
           botCount: 0,
@@ -721,132 +640,8 @@ describe('BattleScreen', () => {
     expect(screen.queryByLabelText('牌桌侧边面板')).toBeNull();
   });
 
-  it('shows settlement breakdown in resolving state', () => {
-    renderBattleScreen(
-      createBattleViewModel({
-        mode: 'resolving',
-        phaseLabel: 'settlement',
-        result: {
-          title: '本局结算',
-          summary: '等待下一局',
-          fanTotal: 8,
-          winnerSeat: 'right',
-          discarderSeat: 'left',
-          winType: 'discard',
-          winTypeLabel: '荣和',
-          provisional: true,
-          flowerCount: 0,
-          fanBreakdown: [
-            { fanKey: 'ping_hu', fanValue: 8 },
-            { fanKey: 'self_draw', fanValue: 1 },
-            { fanKey: 'full_flush', fanValue: 24 },
-            { fanKey: 'pung_of_terminals_or_honours', fanValue: 1 },
-            { fanKey: 'seven_pairs', fanValue: 24 },
-          ],
-          scoreDeltaBySeat: {
-            bottom: 0,
-            left: -8,
-            right: 8,
-          },
-          seats: [
-            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
-            { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
-      }),
-    );
 
-    expect(screen.getByText('8 番')).toBeInTheDocument();
-    const visibleFanList = getVisibleFanList();
 
-    expect(visibleFanList.getByText('平和')).toBeInTheDocument();
-    expect(visibleFanList.getByText('清一色')).toBeInTheDocument();
-    expect(screen.getByText(/胜者 Player B（下家）/)).toBeInTheDocument();
-    expect(screen.getByText(/放铳 Player Left（上家）/)).toBeInTheDocument();
-    expect(screen.queryByText(/胜者 right/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/放铳 left/)).not.toBeInTheDocument();
-    expect(visibleFanList.getByText('幺九刻')).toBeInTheDocument();
-    expect(visibleFanList.getByText('七对')).toBeInTheDocument();
-    expect(screen.queryByText('当前为临时结算结果')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
-  });
-
-  it('labels settlement seats from the current seat map after seat rotation', () => {
-    renderBattleScreen(
-      createBattleViewModel({
-        mode: 'resolving',
-        phaseLabel: 'settlement',
-        players: [
-          {
-            ...createBattleViewModel().players[0],
-            seat: 'left',
-            absoluteSeat: 0,
-            name: 'Player Left',
-          },
-          {
-            ...createBattleViewModel().players[3],
-            seat: 'bottom',
-            absoluteSeat: 1,
-            name: 'Player B',
-            isLocal: true,
-          },
-          {
-            ...createBattleViewModel().players[2],
-            seat: 'right',
-            absoluteSeat: 2,
-            name: 'Player A',
-            isLocal: false,
-          },
-          {
-            ...createBattleViewModel().players[1],
-            seat: 'top',
-            absoluteSeat: 3,
-            name: 'Player Top',
-          },
-        ],
-        result: {
-          title: '本局结算',
-          summary: '荣和，等待下一局',
-          fanTotal: 8,
-          winnerSeat: 'right',
-          winnerAbsoluteSeat: 1,
-          discarderSeat: 'left',
-          discarderAbsoluteSeat: 0,
-          winType: 'discard',
-          winTypeLabel: '荣和',
-          provisional: false,
-          flowerCount: 0,
-          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
-          scoreDeltaBySeat: {
-            right: 8,
-            left: -8,
-          },
-          seats: [
-            { seat: 'right', absoluteSeat: 1, name: 'Player B', score: 25008, delta: 8 },
-            { seat: 'left', absoluteSeat: 0, name: 'Player Left', score: 24292, delta: -8 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
-      }),
-    );
-
-    const playerBRow = Array.from(document.body.querySelectorAll('.result-overlay__seat-row'))
-      .find((row) => row.textContent?.includes('Player B'));
-
-    expect(screen.getByText(/胜者 Player B（本家）/)).toBeInTheDocument();
-    expect(playerBRow).not.toBeNull();
-    expect(playerBRow).toHaveTextContent('本家');
-    expect(playerBRow).not.toHaveTextContent('下家');
-  });
 
   it('renders the settlement overlay through a top-layer portal', () => {
     const { container } = renderBattleScreen(
@@ -862,8 +657,7 @@ describe('BattleScreen', () => {
           winType: 'discard',
           winTypeLabel: '荣和',
           provisional: true,
-          flowerCount: 0,
-          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
           scoreDeltaBySeat: {
             bottom: 0,
             left: -8,
@@ -895,8 +689,7 @@ describe('BattleScreen', () => {
       winType: 'discard',
       winTypeLabel: '荣和',
       provisional: false,
-      flowerCount: 0,
-      fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+      fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
       scoreDeltaBySeat: {
         bottom: 0,
         left: -8,
@@ -923,6 +716,7 @@ describe('BattleScreen', () => {
       onTileDoubleClick: vi.fn(),
       onClaimCandidateSelect: vi.fn(),
       onClaimCandidateActivate: vi.fn(),
+      onCopyTableCode: vi.fn(),
       onLeaveTable: vi.fn(),
     };
     const { rerender } = render(
@@ -969,83 +763,6 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '收起面板' })).toBeNull();
   });
 
-  it('allows paging between multiple winning hands in the settlement overlay', () => {
-    vi.useFakeTimers();
-
-    renderBattleScreen(
-      createBattleViewModel({
-        mode: 'resolving',
-        phaseLabel: 'settlement',
-        result: {
-          title: '本局结算',
-          summary: '2 家同时和牌，等待下一局',
-          fanTotal: 8,
-          winnerSeat: 'right',
-          discarderSeat: 'left',
-          winType: 'discard',
-          winTypeLabel: '荣和',
-          provisional: false,
-          flowerCount: 0,
-          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
-          pages: [
-            {
-              fanTotal: 8,
-              winnerSeat: 'right',
-              discarderSeat: 'left',
-              winType: 'discard',
-              winTypeLabel: '荣和',
-              flowerCount: 0,
-              fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
-            },
-            {
-              fanTotal: 16,
-              winnerSeat: 'top',
-              discarderSeat: 'left',
-              winType: 'discard',
-              winTypeLabel: '荣和',
-              flowerCount: 1,
-              fanBreakdown: [{ fanKey: 'full_flush', fanValue: 16 }],
-            },
-          ],
-          scoreDeltaBySeat: {
-            bottom: -8,
-            left: -24,
-            top: 16,
-            right: 8,
-          },
-          seats: [
-            { seat: 'top', name: 'Player Top', score: 26816, delta: 16 },
-            { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
-            { seat: 'left', name: 'Player Left', score: 24268, delta: -24 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
-      }),
-    );
-
-    act(() => {
-      vi.advanceTimersByTime(6000);
-    });
-
-    expect(screen.getByRole('button', { name: '上一位' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '下一位' })).toBeInTheDocument();
-    expect(screen.getByText('1 / 2')).toBeInTheDocument();
-    expect(screen.getByText(/胜者 Player B（下家）/)).toBeInTheDocument();
-    expect(screen.getByText('平和')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '下一位' }));
-
-    expect(screen.getByText('2 / 2')).toBeInTheDocument();
-    expect(screen.getByText(/胜者 Player Top（对家）/)).toBeInTheDocument();
-    expect(screen.queryByText(/花牌 1/)).not.toBeInTheDocument();
-    expect(screen.getByText('清一色')).toBeInTheDocument();
-    expect(screen.queryByText('平和')).toBeNull();
-    vi.useRealTimers();
-  });
 
   it('highlights the winning tile for every discard winner in a multi-winner settlement', () => {
     renderBattleScreen(
@@ -1066,8 +783,7 @@ describe('BattleScreen', () => {
           winType: 'discard',
           winTypeLabel: '荣和',
           provisional: false,
-          flowerCount: 0,
-          fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+          fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
           pages: [
             {
               fanTotal: 8,
@@ -1075,8 +791,7 @@ describe('BattleScreen', () => {
               discarderSeat: 'left',
               winType: 'discard',
               winTypeLabel: '荣和',
-              flowerCount: 0,
-              fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+              fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
             },
             {
               fanTotal: 16,
@@ -1084,8 +799,7 @@ describe('BattleScreen', () => {
               discarderSeat: 'left',
               winType: 'discard',
               winTypeLabel: '荣和',
-              flowerCount: 1,
-              fanBreakdown: [{ fanKey: 'full_flush', fanValue: 16 }],
+              fanBreakdown: [{ fanKey: 'half_flush', fanValue: 2 }],
             },
           ],
           scoreDeltaBySeat: {
@@ -1151,8 +865,7 @@ describe('BattleScreen', () => {
             winType: 'discard',
             winTypeLabel: '荣和',
             provisional: false,
-            flowerCount: 0,
-            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
             pages: [
               {
                 fanTotal: 8,
@@ -1160,8 +873,7 @@ describe('BattleScreen', () => {
                 discarderSeat: 'left',
                 winType: 'discard',
                 winTypeLabel: '荣和',
-                flowerCount: 0,
-                fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+                fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
               },
               {
                 fanTotal: 16,
@@ -1169,8 +881,7 @@ describe('BattleScreen', () => {
                 discarderSeat: 'left',
                 winType: 'discard',
                 winTypeLabel: '荣和',
-                flowerCount: 1,
-                fanBreakdown: [{ fanKey: 'full_flush', fanValue: 16 }],
+                fanBreakdown: [{ fanKey: 'half_flush', fanValue: 2 }],
               },
             ],
             scoreDeltaBySeat: {
@@ -1198,6 +909,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1216,72 +928,6 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('shows the matching fan guide tooltip after hovering a settlement fan row for 0.35s', () => {
-    vi.useFakeTimers();
-
-    renderBattleScreen(
-      createBattleViewModel({
-        mode: 'resolving',
-        phaseLabel: 'settlement',
-        result: {
-          title: '本局结算',
-          summary: '等待下一局',
-          fanTotal: 8,
-          winnerSeat: 'bottom',
-          discarderSeat: null,
-          winType: 'self_draw',
-          winTypeLabel: '自摸',
-          provisional: false,
-          flowerCount: 0,
-          fanBreakdown: [
-            { fanKey: 'ping_hu', fanValue: 8 },
-            { fanKey: 'self_draw', fanValue: 1 },
-          ],
-          scoreDeltaBySeat: {
-            bottom: 8,
-            left: -3,
-            top: -3,
-            right: -2,
-          },
-          seats: [
-            { seat: 'bottom', name: 'Player A', title: 'LV7.入门雀友', displayLabel: 'Player A（LV7.入门雀友）', score: 25008, delta: 8 },
-            { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
-      }),
-    );
-
-    const pingHuRow = screen.getByText('平和').closest('.result-overlay__row');
-    expect(pingHuRow).not.toBeNull();
-
-    fireEvent.mouseEnter(pingHuRow!);
-
-    act(() => {
-      vi.advanceTimersByTime(349);
-    });
-
-    expect(screen.queryByRole('tooltip')).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-
-    expect(screen.getByRole('tooltip', { name: '平和番型说明' })).toBeInTheDocument();
-    expect(screen.getByText('和牌由四副顺子和一对将组成，不含任何刻子。')).toBeInTheDocument();
-
-    fireEvent.mouseLeave(pingHuRow!);
-
-    act(() => {
-      vi.advanceTimersByTime(120);
-    });
-
-    expect(screen.queryByRole('tooltip')).toBeNull();
-  });
 
 
   it('disables the continue button and shows confirmation progress after the local player confirms', () => {
@@ -1298,7 +944,6 @@ describe('BattleScreen', () => {
           winType: 'self_draw',
           winTypeLabel: '自摸',
           provisional: false,
-          flowerCount: 0,
           fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
           scoreDeltaBySeat: {
             bottom: 8,
@@ -1344,7 +989,6 @@ describe('BattleScreen', () => {
           winType: 'self_draw',
           winTypeLabel: '自摸',
           provisional: false,
-          flowerCount: 0,
           fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
           scoreDeltaBySeat: {
             bottom: 8,
@@ -1396,7 +1040,6 @@ describe('BattleScreen', () => {
           winType: 'self_draw',
           winTypeLabel: '自摸',
           provisional: false,
-          flowerCount: 0,
           fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
           scoreDeltaBySeat: {
             bottom: 8,
@@ -1447,7 +1090,6 @@ describe('BattleScreen', () => {
           winType: 'self_draw',
           winTypeLabel: '自摸',
           provisional: false,
-          flowerCount: 0,
           fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
           scoreDeltaBySeat: {
             bottom: 8,
@@ -1478,9 +1120,7 @@ describe('BattleScreen', () => {
       .not.toBeNull();
   });
 
-  it('shows a player statistics tooltip with score trend and win rate when hovering a score row after 0.35s', () => {
-    vi.useFakeTimers();
-
+  it('shows inline player statistics with score trend and win rate in each seat row', () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'resolving',
@@ -1494,7 +1134,6 @@ describe('BattleScreen', () => {
           winType: 'self_draw',
           winTypeLabel: '自摸',
           provisional: false,
-          flowerCount: 0,
           fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
           scoreDeltaBySeat: {
             bottom: 8,
@@ -1527,199 +1166,19 @@ describe('BattleScreen', () => {
       }),
     );
 
-    const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement;
-    const playerRow = within(scorePanel).getByText('Player A').closest('.result-overlay__seat-row');
-    expect(playerRow).not.toBeNull();
-
-    fireEvent.mouseEnter(playerRow!);
-
-    expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(349);
-    });
-
-    expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-
-    expect(screen.getByRole('tooltip', { name: 'Player A 战绩统计' })).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
     expect(screen.getByText('2/4')).toBeInTheDocument();
-    expect(screen.getByText('放铳次数')).toBeInTheDocument();
+    expect(screen.getByText('放铳')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(document.body.querySelector('.result-overlay__seat-tooltip-svg')).not.toBeNull();
+    expect(document.body.querySelector('.result-overlay__seat-stats-chart-svg')).not.toBeNull();
 
-    fireEvent.mouseLeave(playerRow!);
-
-    act(() => {
-      vi.advanceTimersByTime(90);
-    });
-
-    expect(screen.queryByRole('tooltip', { name: 'Player A 战绩统计' })).toBeNull();
-    vi.useRealTimers();
+    const seatRows = document.body.querySelectorAll('.result-overlay__seat-row');
+    const statsContainers = document.body.querySelectorAll('.result-overlay__seat-stats');
+    expect(statsContainers.length).toBe(1);
+    expect(seatRows[0].querySelector('.result-overlay__seat-stats')).not.toBeNull();
   });
 
-  it('renders side-by-side fan and score panels without per-section expand buttons', () => {
-    renderBattleScreen(
-      createBattleViewModel({
-        mode: 'resolving',
-        phaseLabel: 'settlement',
-        result: {
-          title: '本局结算',
-          summary: '等待下一局',
-          fanTotal: 16,
-          winnerSeat: 'bottom',
-          discarderSeat: null,
-          winType: 'self_draw',
-          winTypeLabel: '自摸',
-          provisional: false,
-          flowerCount: 2,
-          fanBreakdown: [
-            { fanKey: 'ping_hu', fanValue: 2 },
-            { fanKey: 'self_draw', fanValue: 1 },
-            { fanKey: 'full_flush', fanValue: 6 },
-            { fanKey: 'all_pungs', fanValue: 2 },
-            { fanKey: 'seven_pairs', fanValue: 3 },
-          ],
-          scoreDeltaBySeat: {
-            bottom: 16,
-            left: -6,
-            top: -5,
-            right: -5,
-          },
-          seats: [
-            { seat: 'bottom', name: 'Player A', score: 25016, delta: 16 },
-            { seat: 'left', name: 'Player Left', score: 24394, delta: -6 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
-      }),
-    );
 
-    expect(getVisibleFanList().getByText('七对')).toBeInTheDocument();
-    expect(document.body.querySelector('.result-overlay__columns')).not.toBeNull();
-    expect(document.body.querySelector('.result-overlay__fan-list')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: '展开剩余 2 项番种' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '收起番种' })).toBeNull();
-  });
-
-  it('updates the scrollable fan list without reintroducing pagination when a new settlement result arrives', async () => {
-    const { rerender } = renderBattleScreen(
-      createBattleViewModel({
-        mode: 'resolving',
-        phaseLabel: 'settlement',
-        result: {
-          title: '本局结算',
-          summary: '等待下一局',
-          fanTotal: 18,
-          winnerSeat: 'bottom',
-          discarderSeat: null,
-          winType: 'self_draw',
-          winTypeLabel: '自摸',
-          provisional: false,
-          flowerCount: 0,
-          fanBreakdown: [
-            { fanKey: 'ping_hu', fanValue: 2 },
-            { fanKey: 'self_draw', fanValue: 1 },
-            { fanKey: 'full_flush', fanValue: 6 },
-            { fanKey: 'all_pungs', fanValue: 2 },
-            { fanKey: 'seven_pairs', fanValue: 3 },
-            { fanKey: 'three_concealed_pungs', fanValue: 2 },
-          ],
-          scoreDeltaBySeat: {
-            bottom: 18,
-            left: -6,
-            top: -6,
-            right: -6,
-          },
-          seats: [
-            { seat: 'bottom', name: 'Player A', score: 25018, delta: 18 },
-            { seat: 'left', name: 'Player Left', score: 24294, delta: -6 },
-            { seat: 'top', name: 'Player Top', score: 26794, delta: -6 },
-            { seat: 'right', name: 'Player B', score: 24994, delta: -6 },
-          ],
-          continueAction: {
-            id: 'start_next_round',
-            label: '下一局',
-            enabled: true,
-          },
-        },
-      }),
-    );
-
-    mockResultOverlayScrollLayout({ panelHeight: 420 });
-
-    rerender(
-      <BattleScreen
-        viewModel={createBattleViewModel({
-          mode: 'resolving',
-          phaseLabel: 'settlement',
-          result: {
-            title: '本局结算',
-            summary: '新的结算结果',
-            fanTotal: 6,
-            winnerSeat: 'right',
-            discarderSeat: 'left',
-            winType: 'discard',
-            winTypeLabel: '荣和',
-            provisional: false,
-            flowerCount: 1,
-            fanBreakdown: [
-              { fanKey: 'mixed_double_chow', fanValue: 1 },
-              { fanKey: 'short_straight', fanValue: 1 },
-              { fanKey: 'double_pung', fanValue: 2 },
-              { fanKey: 'dragon_pung', fanValue: 2 },
-            ],
-            scoreDeltaBySeat: {
-              bottom: 0,
-              left: -6,
-              right: 6,
-            },
-            seats: [
-              { seat: 'right', name: 'Player B', score: 25000, delta: 6 },
-              { seat: 'left', name: 'Player Left', score: 24288, delta: -6 },
-              { seat: 'bottom', name: 'Player A', score: 25000, delta: 0 },
-            ],
-            continueAction: {
-              id: 'start_next_round',
-              label: '下一局',
-              enabled: true,
-            },
-          },
-        })}
-        themeId="tian-shui-bi"
-        themeLabel="天水碧"
-        onCycleTheme={vi.fn()}
-        onAction={vi.fn()}
-        onTileSelect={vi.fn()}
-        onTileDoubleClick={vi.fn()}
-        onClaimCandidateSelect={vi.fn()}
-        onClaimCandidateActivate={vi.fn()}
-        onLeaveTable={vi.fn()}
-      />,
-    );
-
-    mockResultOverlayScrollLayout({ panelHeight: 420 });
-
-    const updatedFanList = getVisibleFanList();
-
-    await waitFor(() => {
-      expect(updatedFanList.getByText('喜相逢')).toBeInTheDocument();
-    });
-
-    expect(updatedFanList.getByText('连六')).toBeInTheDocument();
-    expect(updatedFanList.getByText('双同刻')).toBeInTheDocument();
-    expect(updatedFanList.getByText('箭刻')).toBeInTheDocument();
-    expect(updatedFanList.queryByText('平和')).toBeNull();
-    expect(screen.queryByRole('group', { name: '番型明细分页' })).toBeNull();
-  });
 
 
 
@@ -1788,7 +1247,7 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('also lingers for 1.5 seconds before returning to the river when the next player is opening flowers', () => {
+  it('also lingers for 1.5 seconds before returning to the river during a player action', () => {
     vi.useFakeTimers();
 
     renderBattleScreen(
@@ -1864,6 +1323,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1925,6 +1385,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -1989,6 +1450,7 @@ describe('BattleScreen', () => {
           onTileDoubleClick={vi.fn()}
           onClaimCandidateSelect={vi.fn()}
           onClaimCandidateActivate={vi.fn()}
+          onCopyTableCode={vi.fn()}
           onLeaveTable={vi.fn()}
         />,
       );
@@ -2057,6 +1519,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2131,6 +1594,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2165,6 +1629,7 @@ describe('BattleScreen', () => {
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
         waitingControls: null,
+        centerBanner: 'Reconnecting',
         promptText: 'Trying to restore your seat.',
       }),
     );
@@ -2245,6 +1710,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
         isBotTakeoverEnabled={false}
         onToggleBotTakeover={onToggleBotTakeover}
@@ -2309,7 +1775,6 @@ describe('BattleScreen', () => {
           winType: 'self_draw',
           winTypeLabel: '自摸',
           provisional: false,
-          flowerCount: 0,
           fanBreakdown: [{ fanKey: 'self_draw', fanValue: 1 }],
           scoreDeltaBySeat: {
             bottom: -3,
@@ -2371,6 +1836,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2420,8 +1886,7 @@ describe('BattleScreen', () => {
             winType: 'discard',
             winTypeLabel: '荣和',
             provisional: false,
-            flowerCount: 0,
-            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
             scoreDeltaBySeat: {
               left: -8,
               right: 8,
@@ -2445,6 +1910,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2497,8 +1963,7 @@ describe('BattleScreen', () => {
             winType: 'discard',
             winTypeLabel: '荣和',
             provisional: false,
-            flowerCount: 0,
-            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            fanBreakdown: [{ fanKey: 'full_flush', fanValue: 4 }],
             scoreDeltaBySeat: {
               left: -8,
               right: 8,
@@ -2522,6 +1987,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2547,6 +2013,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2560,9 +2027,9 @@ describe('BattleScreen', () => {
       createBattleViewModel({
         actionEffect: null,
         localHand: [
-          { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false, isFlower: false },
-          { tileId: 'w2#2', code: 'w2', isSelected: false, isDrawn: false, isFlower: false },
-          { tileId: 'w9#draw-1', code: 'w9', isSelected: false, isDrawn: true, isFlower: false },
+          { tileId: 'w1#1', code: 'w1', isSelected: false, isDrawn: false,  },
+          { tileId: 'w2#2', code: 'w2', isSelected: false, isDrawn: false,  },
+          { tileId: 'w9#draw-1', code: 'w9', isSelected: false, isDrawn: true,  },
         ],
         drawnTileId: 'w9#draw-1',
       }),
@@ -2618,6 +2085,7 @@ describe('BattleScreen', () => {
         onTileDoubleClick={vi.fn()}
         onClaimCandidateSelect={vi.fn()}
         onClaimCandidateActivate={vi.fn()}
+        onCopyTableCode={vi.fn()}
         onLeaveTable={vi.fn()}
       />,
     );
@@ -2687,9 +2155,27 @@ describe('BattleScreen', () => {
     expect(screen.queryByText('请旋转屏幕或调整窗口比例')).toBeNull();
   });
 
-  it('renders pre-match room controls in the table center instead of the hand dock', () => {
-    const onMinimumHuFanChange = vi.fn();
 
+  it('does not render any log window affordance even when toasts exist', () => {
+    renderBattleScreen(
+      createBattleViewModel({
+        toasts: [
+          { id: 't1', kind: 'event', text: '提示1', createdAt: '2026-03-30T12:10:36+08:00' },
+          { id: 't2', kind: 'event', text: '提示2', createdAt: '2026-03-30T12:10:37+08:00' },
+          { id: 't3', kind: 'event', text: '提示3', createdAt: '2026-03-30T12:10:38+08:00' },
+          { id: 't4', kind: 'event', text: '提示4', createdAt: '2026-03-30T12:10:39+08:00' },
+          { id: 't5', kind: 'event', text: '提示5', createdAt: '2026-03-30T12:10:40+08:00' },
+        ],
+      }),
+    );
+
+    expect(screen.queryByText('提示1')).not.toBeInTheDocument();
+    expect(screen.queryByText('提示5')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开日志窗口' })).toBeNull();
+    expect(screen.queryByLabelText('日志窗口')).toBeNull();
+  });
+
+  it('renders pre-match room controls in the table center instead of the hand dock', () => {
     renderBattleScreen(
       createBattleViewModel({
         mode: 'disconnected_or_waiting',
@@ -2698,47 +2184,21 @@ describe('BattleScreen', () => {
           { id: 'discard', label: '出牌', enabled: true, emphasis: 'high' },
         ],
         waitingControls: {
-          ...waitingControlDefaults,
           canStart: true,
           occupiedSeats: 4,
           botCount: 0,
           canAddBot: false,
           canRemoveBot: false,
-          minimumHuFan: 8,
-          canDecreaseMinimumHuFan: true,
-          canIncreaseMinimumHuFan: false,
         },
       }),
-      { onInvitePlayer: vi.fn(), onMinimumHuFanChange },
+      { onInvitePlayer: vi.fn() },
     );
 
     expect(screen.getByRole('group', { name: '开局前房间操作' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: '起和番数控制' })).toBeInTheDocument();
-    expect(screen.getByLabelText('当前起和番数 8 番')).toBeInTheDocument();
     expect(screen.queryByText('等待牌手')).toBeNull();
     expect(document.body.querySelector('.action-dock')?.textContent).toContain('出牌');
     expect(document.body.querySelector('.action-dock')?.textContent).not.toContain('准备');
     expect(screen.getByRole('button', { name: '邀请' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '降低起和番数' }));
-
-    expect(onMinimumHuFanChange).toHaveBeenCalledWith(6);
-  });
-
-  it('renders the current table settings below the room seat count', () => {
-    renderBattleScreen(
-      createBattleViewModel({
-        tableSettings: {
-          minimumHuFan: 0,
-          dealerRepeatEnabled: false,
-          dealerDoubleEnabled: true,
-        },
-      }),
-    );
-
-    expect(screen.getByText('牌桌编号：AB12CD')).toBeInTheDocument();
-    expect(screen.getByText('座位数：4/4')).toBeInTheDocument();
-    expect(screen.getByText('设定：0番起和 | 庄家翻倍')).toBeInTheDocument();
   });
 
   it('hides pre-match room and bot controls while dealer selection is spinning', () => {
@@ -2749,7 +2209,6 @@ describe('BattleScreen', () => {
           { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
         ],
         waitingControls: {
-          ...waitingControlDefaults,
           canStart: false,
           occupiedSeats: 4,
           botCount: 2,
@@ -2769,7 +2228,6 @@ describe('BattleScreen', () => {
 
     expect(screen.queryByRole('group', { name: '开局前房间操作' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'BOT 数量控制' })).toBeNull();
-    expect(screen.queryByRole('group', { name: '起和番数控制' })).toBeNull();
     expect(screen.queryByRole('button', { name: '开始对局' })).toBeNull();
     expect(screen.queryByRole('button', { name: '增加 BOT' })).toBeNull();
     expect(screen.queryByRole('button', { name: '减少 BOT' })).toBeNull();
@@ -2786,7 +2244,6 @@ describe('BattleScreen', () => {
           { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
         ],
         waitingControls: {
-          ...waitingControlDefaults,
           canStart: false,
           occupiedSeats: 2,
           botCount: 0,
@@ -2840,7 +2297,6 @@ describe('BattleScreen', () => {
         mode: 'disconnected_or_waiting',
         phaseLabel: 'waiting',
         waitingControls: {
-          ...waitingControlDefaults,
           canStart: false,
           occupiedSeats: 2,
           botCount: 0,

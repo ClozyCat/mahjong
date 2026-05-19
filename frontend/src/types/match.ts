@@ -612,6 +612,7 @@ export interface HandInsightView {
 export interface ResultSeatView {
   seat: Seat;
   absoluteSeat?: number;
+  wind?: string;
   name: string;
   title?: string | null;
   displayLabel?: string;
