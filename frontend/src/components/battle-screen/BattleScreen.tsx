@@ -9,7 +9,6 @@ import type {
 import type { ThemeId } from '../../lib/themes';
 import {
   getVoiceClipNameForAction,
-  getVoiceClipNameForTile,
   playVoiceClip,
   resolveVoiceClipUrl,
   type VoiceCue,
@@ -105,7 +104,6 @@ export function BattleScreen({
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
-  const playedVoiceCueDedupKeysRef = useRef<Set<string>>(new Set());
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
@@ -167,16 +165,12 @@ export function BattleScreen({
       const voiceCue = createVoiceCue(viewModel, actionEffect);
       if (
         !voiceCue ||
-        playedVoiceCueKeysRef.current.has(voiceCue.key) ||
-        (voiceCue.dedupKey && playedVoiceCueDedupKeysRef.current.has(voiceCue.dedupKey))
+        playedVoiceCueKeysRef.current.has(voiceCue.key)
       ) {
         continue;
       }
 
       playedVoiceCueKeysRef.current.add(voiceCue.key);
-      if (voiceCue.dedupKey) {
-        playedVoiceCueDedupKeysRef.current.add(voiceCue.dedupKey);
-      }
       if (!isVoiceEnabled) {
         continue;
       }
@@ -191,9 +185,6 @@ export function BattleScreen({
   }, [
     viewModel.actionEffect,
     viewModel.actionEffects,
-    viewModel.discards,
-    viewModel.lastDiscard,
-    viewModel.lastDiscardSeat,
     viewModel.players,
     viewModel.tableCode,
     isVoiceEnabled,
@@ -499,69 +490,16 @@ function createVoiceCue(
     return null;
   }
 
-  const actionClipName = getVoiceClipNameForAction(actionEffect.calloutTone);
-  if (actionClipName) {
-    return {
-      key: `action:${actionEffect.key}:${absoluteSeat}:${actionClipName}`,
-      absoluteSeat,
-      clipName: actionClipName,
-    };
+  const clipName = getVoiceClipNameForAction(actionEffect.calloutTone);
+  if (!clipName) {
+    return null;
   }
 
-  if (actionEffect.emphasis === 'discard' || actionEffect.calloutTone === 'ready_hand') {
-    const voiceTileCode = actionEffect.tileCode ?? viewModel.lastDiscard;
-    const tileClipName = getVoiceClipNameForTile(voiceTileCode);
-    if (tileClipName) {
-      const discardSeat = viewModel.lastDiscardSeat ?? actionEffect.seat;
-      const discardCount = discardSeat ? viewModel.discards[discardSeat]?.length ?? 0 : 0;
-      const cueKey = actionEffect.tileCode
-        ? `discard-event:${actionEffect.key}:${absoluteSeat}:${actionEffect.tileCode}:${tileClipName}`
-        : `discard:${absoluteSeat}:${discardSeat ?? 'unknown'}:${discardCount}:${viewModel.lastDiscard}:${tileClipName}`;
-
-      return {
-        key: cueKey,
-        dedupKey: getDiscardVoiceCueDedupKey(
-          viewModel,
-          actionEffect,
-          absoluteSeat,
-          discardSeat,
-          discardCount,
-          voiceTileCode,
-        ),
-        absoluteSeat,
-        clipName: tileClipName,
-      };
-    }
-  }
-
-  return null;
-}
-
-function getDiscardVoiceCueDedupKey(
-  viewModel: BattleViewModel,
-  actionEffect: NonNullable<BattleViewModel['actionEffect']>,
-  absoluteSeat: number,
-  discardSeat: string | null,
-  discardCount: number,
-  tileCode: string | null | undefined,
-) {
-  const tileIdentity = getTileIdentityFromActionEffectKey(actionEffect.key);
-  if (tileIdentity) {
-    return `discard:${absoluteSeat}:tile:${tileIdentity}`;
-  }
-
-  // Remove discardCount from dedupKey to prevent duplicate voice for same tile
-  return `discard:${absoluteSeat}:river:${discardSeat ?? 'unknown'}:${tileCode ?? viewModel.lastDiscard ?? 'unknown'}`;
-}
-
-function getTileIdentityFromActionEffectKey(actionEffectKey: string) {
-  const directTileId = actionEffectKey.match(/(?:^|:)([a-z]+\d?#[^:]+)$/i)?.[1];
-  if (directTileId) {
-    return directTileId;
-  }
-
-  const eventTileId = actionEffectKey.match(/"tile_id":"([^"]+)"/)?.[1];
-  return eventTileId ?? null;
+  return {
+    key: `action:${actionEffect.key}:${absoluteSeat}:${clipName}`,
+    absoluteSeat,
+    clipName,
+  };
 }
 
 function getAbsoluteSeatForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {

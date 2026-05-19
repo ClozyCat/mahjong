@@ -6,34 +6,6 @@ const VOICE_ASSETS = import.meta.glob('../../voices/*/*.mp3', {
   import: 'default',
 }) as Record<string, string>;
 
-const RANK_VOICE_NAMES = ['yi', 'er', 'san', 'si', 'wu', 'liu', 'qi', 'ba', 'jiu'] as const;
-
-const SUIT_VOICE_NAMES = {
-  w: 'wan',
-  m: 'wan',
-  b: 'tong',
-  p: 'tong',
-  c: 'tiao',
-  t: 'tiao',
-} as const;
-
-const HONOR_VOICE_NAMES: Record<string, string> = {
-  east: 'dong',
-  south: 'nan',
-  west: 'xi',
-  north: 'bei',
-  red: 'zhong',
-  green: 'fa',
-  white: 'bai',
-  d1: 'dong',
-  d2: 'nan',
-  d3: 'xi',
-  d4: 'bei',
-  d5: 'zhong',
-  d6: 'fa',
-  d7: 'bai',
-};
-
 const ACTION_VOICE_NAMES: Partial<Record<NonNullable<ActionEffectView['calloutTone']>, string>> = {
   chow: 'chi',
   pung: 'peng',
@@ -46,36 +18,11 @@ export type VoiceAssets = Record<string, string>;
 
 export interface VoiceCue {
   key: string;
-  dedupKey?: string;
   absoluteSeat: number;
   clipName: string;
 }
 
-interface QueuedVoiceClip {
-  url: string;
-  resolve: () => void;
-}
-
 const activeAudioBySeat = new Map<number, HTMLAudioElement>();
-
-export function getVoiceClipNameForTile(tileCode: string | null | undefined): string | null {
-  if (!tileCode) {
-    return null;
-  }
-
-  const normalized = tileCode.trim().toLowerCase();
-  const suited = normalized.match(/^([wbcmpt])([1-9])$/);
-  if (!suited) {
-    return HONOR_VOICE_NAMES[normalized] ?? null;
-  }
-
-  const [, suit, rankText] = suited;
-  const rankIndex = Number(rankText) - 1;
-  const rankName = RANK_VOICE_NAMES[rankIndex];
-  const suitName = SUIT_VOICE_NAMES[suit as keyof typeof SUIT_VOICE_NAMES];
-
-  return rankName && suitName ? `${rankName}_${suitName}` : null;
-}
 
 export function getVoiceClipNameForAction(calloutTone: ActionEffectView['calloutTone']): string | null {
   if (!calloutTone) {

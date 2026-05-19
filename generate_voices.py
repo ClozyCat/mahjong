@@ -13,39 +13,14 @@ VOICES = [
     "zh-CN-YunxiNeural", "zh-CN-YunyangNeural", "zh-CN-YunjianNeural",
 ]
 
-# 生成麻将词汇和对应的拼音文件名映射
-numbers_zh = ["一", "二", "三", "四", "五", "六", "七", "八", "九"]
-numbers_py = ["yi", "er", "san", "si", "wu", "liu", "qi", "ba", "jiu"]
-
-mahjong_terms = []
-
-# 生成 1-9 条
-for z, p in zip(numbers_zh, numbers_py):
-    mahjong_terms.append((f"{z}条", f"{p}_tiao"))
-    
-# 生成 1-9 万
-for z, p in zip(numbers_zh, numbers_py):
-    mahjong_terms.append((f"{z}万", f"{p}_wan"))
-    
-# 生成 1-9 筒
-for z, p in zip(numbers_zh, numbers_py):
-    mahjong_terms.append((f"{z}筒", f"{p}_tong"))
-
-# 添加特殊动作牌和字牌（东南西北中发白）
-mahjong_terms.extend([
+# 只生成动作音效，不再生成弃牌报牌语音
+mahjong_terms = [
     ("杠", "gang"),
     ("碰", "peng"),
     ("吃", "chi"),
+    ("听牌", "ting"),
     ("胡", "hu"),
-    ("东风", "dong"),
-    ("南风", "nan"),
-    ("西风", "xi"),
-    ("北风", "bei"),
-    ("红中", "zhong"),
-    ("发财", "fa"),
-    ("白板", "bai"),
-    ("听牌", "ting")
-])
+]
 
 def main():
     # 创建基础文件夹
