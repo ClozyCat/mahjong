@@ -24,7 +24,7 @@ use super::runtime::{
     current_actor, is_last_live_tile_point, project_room_state, replacement_tile_from_tail,
 };
 #[cfg(test)]
-use super::settlement::{apply_settlement_to_match, settle_exhaustive_draw_output};
+use super::settlement::settle_exhaustive_draw_output;
 #[cfg(test)]
 use crate::core::engine::reducer::update_room_state;
 
@@ -193,61 +193,6 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         state.match_state = Some(match_state);
         Ok(())
     });
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-pub fn record_continue_action(
-    room: &mut Value,
-    seat_index: usize,
-    action_id: &str,
-) -> Result<(), String> {
-    let current_action =
-        current_continue_action_id(room).ok_or_else(|| "invalid_action".to_string())?;
-    if current_action != action_id {
-        return Err(match action_id {
-            "start_next_round" => "round_not_ready".to_string(),
-            _ => "invalid_action".to_string(),
-        });
-    }
-    update_room_state(room, |state| {
-        let action = state
-            .continue_action
-            .get_or_insert_with(|| ContinueActionState {
-                action_id: action_id.to_string(),
-                confirmed_seats: Vec::new(),
-                required_seats: Vec::new(),
-                online_seats: Vec::new(),
-                auto_advance_deadline_at: None,
-            });
-        action.action_id = action_id.to_string();
-        if !action.confirmed_seats.contains(&seat_index) {
-            action.confirmed_seats.push(seat_index);
-        }
-        Ok(())
-    })?;
-    reconcile_continue_action(room)?;
-    Ok(())
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-pub fn process_due_continue_action(room: &mut Value) -> Result<bool, String> {
-    let action_id = current_continue_action_id(room).ok_or_else(|| "invalid_action".to_string())?;
-    let deadline = project_room_state(room)?
-        .continue_action
-        .and_then(|action| action.auto_advance_deadline_at);
-    if deadline.is_none() {
-        return Ok(false);
-    }
-    complete_continue_action(room, action_id)?;
-    Ok(true)
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-pub fn reconcile_continue_action_state(room: &mut Value) -> Result<(), String> {
-    reconcile_continue_action(room)
 }
 
 #[cfg(test)]
@@ -487,42 +432,21 @@ fn remap_seat_keyed_map<T>(
     }
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-fn settlement_is_final_hand(room: &Value) -> bool {
-    room.get("phase").and_then(Value::as_str) == Some("settlement")
-        && room
-            .get("match_state")
-            .and_then(Value::as_object)
-            .map(|match_state| {
-                match_state.get("prevailing_wind").and_then(Value::as_str) == Some("north")
-                    && match_state
-                        .get("hand_number")
-                        .and_then(Value::as_u64)
-                        .unwrap_or_default()
-                        >= 4
-            })
-            .unwrap_or(false)
-}
-
 fn settlement_is_final_hand_in_room_state(room: &RoomState) -> bool {
     room.phase == "settlement"
         && room
             .match_state
             .as_ref()
             .map(|match_state| {
-                match_state.prevailing_wind == "north" && match_state.hand_number >= 4
+                match_state.prevailing_wind == "north"
+                    && match_state.hand_number >= 4
+                    && !settlement_repeats_dealer_in_room_state(room, match_state.dealer_seat)
             })
             .unwrap_or(false)
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-fn current_continue_action_id(room: &Value) -> Option<&'static str> {
-    match room.get("phase").and_then(Value::as_str) {
-        Some("settlement") if !settlement_is_final_hand(room) => Some("start_next_round"),
-        _ => None,
-    }
+fn settlement_repeats_dealer_in_room_state(room: &RoomState, dealer_seat: usize) -> bool {
+    room.dealer_repeat_enabled && settlement_keeps_dealer(room, dealer_seat)
 }
 
 fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static str> {
@@ -530,56 +454,6 @@ fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static
         "settlement" if !settlement_is_final_hand_in_room_state(room) => Some("start_next_round"),
         _ => None,
     }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn continue_required_human_seats(room: &Value) -> Vec<usize> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|seat| !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-        .filter_map(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn continue_online_human_seats(room: &Value) -> Vec<usize> {
-    room.get("seats")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|seat| {
-            seat.get("connected")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        })
-        .filter(|seat| !seat.get("is_bot").and_then(Value::as_bool).unwrap_or(false))
-        .filter_map(|seat| {
-            seat.get("seat_index")
-                .and_then(Value::as_u64)
-                .map(|value| value as usize)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn current_confirmed_continue_seats(room: &Value, action_id: &str) -> Vec<usize> {
-    project_room_state(room)
-        .ok()
-        .and_then(|state| state.continue_action)
-        .filter(|action| action.action_id == action_id)
-        .map(|action| action.confirmed_seats)
-        .unwrap_or_default()
 }
 
 fn continue_required_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
@@ -604,75 +478,6 @@ fn current_confirmed_continue_seats_in_room_state(room: &RoomState, action_id: &
         .filter(|action| action.action_id == action_id)
         .map(|action| action.confirmed_seats.clone())
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn reconcile_continue_action(room: &mut Value) -> Result<(), String> {
-    let Some(action_id) = current_continue_action_id(room) else {
-        update_room_state(room, |state| {
-            state.continue_action = None;
-            Ok(())
-        })?;
-        return Ok(());
-    };
-    let required = continue_required_human_seats(room);
-    let confirmed = current_confirmed_continue_seats(room, action_id);
-    let online = continue_online_human_seats(room);
-
-    if required.iter().all(|seat| confirmed.contains(seat)) {
-        complete_continue_action(room, action_id)?;
-        return Ok(());
-    }
-
-    let online_unconfirmed = online
-        .iter()
-        .filter(|seat| !confirmed.contains(seat))
-        .copied()
-        .collect::<Vec<_>>();
-    if !online_unconfirmed.is_empty() {
-        update_room_state(room, |state| {
-            if let Some(action) = state.continue_action.as_mut() {
-                action.auto_advance_deadline_at = None;
-            }
-            Ok(())
-        })?;
-        return Ok(());
-    }
-
-    let offline_unconfirmed = required
-        .iter()
-        .filter(|seat| !online.contains(seat) && !confirmed.contains(seat))
-        .copied()
-        .collect::<Vec<_>>();
-    if offline_unconfirmed.is_empty() {
-        complete_continue_action(room, action_id)?;
-        return Ok(());
-    }
-
-    let has_deadline = project_room_state(room)?
-        .continue_action
-        .and_then(|action| action.auto_advance_deadline_at)
-        .is_some();
-    if !has_deadline {
-        let deadline = (Utc::now() + TimeDelta::seconds(CONTINUE_ACTION_AUTO_ADVANCE_SECONDS))
-            .to_rfc3339_opts(SecondsFormat::Micros, true);
-        update_room_state(room, |state| {
-            let action = state
-                .continue_action
-                .get_or_insert_with(|| ContinueActionState {
-                    action_id: action_id.to_string(),
-                    confirmed_seats: Vec::new(),
-                    required_seats: Vec::new(),
-                    online_seats: Vec::new(),
-                    auto_advance_deadline_at: None,
-                });
-            action.action_id = action_id.to_string();
-            action.auto_advance_deadline_at = Some(deadline);
-            Ok(())
-        })?;
-    }
-    Ok(())
 }
 
 fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), String> {
@@ -738,19 +543,6 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
     Ok(())
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-fn complete_continue_action(room: &mut Value, action_id: &str) -> Result<(), String> {
-    update_room_state(room, |state| {
-        state.continue_action = None;
-        Ok(())
-    })?;
-    match action_id {
-        "start_next_round" => complete_start_next_round(room),
-        _ => Err("invalid_action".to_string()),
-    }
-}
-
 fn complete_continue_action_in_room_state(
     room: &mut RoomState,
     action_id: &str,
@@ -760,82 +552,6 @@ fn complete_continue_action_in_room_state(
         "start_next_round" => complete_start_next_round_in_room_state(room),
         _ => Err("invalid_action".to_string()),
     }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn complete_start_next_round(room: &mut Value) -> Result<(), String> {
-    apply_settlement_to_match(room);
-    let state = project_room_state(room)?;
-    let match_state = state
-        .match_state
-        .as_ref()
-        .ok_or_else(|| "invalid_action".to_string())?;
-    let prevailing_wind = match_state.prevailing_wind.clone();
-    let prevailing_wind = prevailing_wind.as_str();
-    let hand_number = match_state.hand_number as usize;
-    let dealer_seat = match_state.dealer_seat;
-    let current_wind_index = WIND_ORDER
-        .iter()
-        .position(|wind| *wind == prevailing_wind)
-        .unwrap_or(0);
-    let next_dealer = (dealer_seat + 1) % MAX_SEATS;
-    let mut next_hand_number = hand_number + 1;
-    let mut next_wind = prevailing_wind.to_string();
-    let mut match_finished = false;
-    if next_hand_number > MAX_SEATS {
-        next_hand_number = 1;
-        if current_wind_index == WIND_ORDER.len() - 1 {
-            match_finished = true;
-        } else {
-            next_wind = WIND_ORDER[current_wind_index + 1].to_string();
-        }
-    }
-
-    update_room_state(room, |state| {
-        let match_state = state
-            .match_state
-            .as_mut()
-            .ok_or_else(|| "invalid_action".to_string())?;
-        match_state.prevailing_wind = next_wind.clone();
-        match_state.hand_number = if match_finished {
-            hand_number as u32
-        } else {
-            next_hand_number as u32
-        };
-        match_state.dealer_seat = if match_finished {
-            dealer_seat
-        } else {
-            next_dealer
-        };
-        match_state.match_finished = match_finished;
-        if !match_finished && next_hand_number == 1 {
-            rotate_seats_after_wind_end(state, prevailing_wind);
-        }
-        Ok(())
-    })?;
-
-    if match_finished {
-        update_room_state(room, |state| {
-            state.phase = "finished".to_string();
-            state.pending_timeout = None;
-            Ok(())
-        })?;
-        return Ok(());
-    }
-
-    let round_id = format!(
-        "{next_wind}-{next_hand_number}-dealer-{next_dealer}-{}",
-        rand::random::<u64>()
-    );
-    start_round(
-        room,
-        next_dealer,
-        &next_wind,
-        round_id,
-        rand::random::<u64>(),
-    );
-    Ok(())
 }
 
 fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), String> {
@@ -1474,6 +1190,38 @@ mod tests {
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "north");
         assert_eq!(match_state.hand_number, 4);
+    }
+
+    #[test]
+    fn north_four_dealer_repeat_draw_still_allows_next_round() {
+        let mut room = settlement_room_at_wind_end("north");
+        room.dealer_repeat_enabled = true;
+        if let Some(round) = room.round_state.as_mut() {
+            round.settlement = Some(RoundSettlement {
+                win_type: "draw".to_string(),
+                ..Default::default()
+            });
+        }
+
+        reconcile_continue_action_in_room_state(&mut room)
+            .expect("repeat settlement should reconcile");
+
+        assert_eq!(
+            room.continue_action
+                .as_ref()
+                .map(|action| action.action_id.as_str()),
+            Some("start_next_round")
+        );
+
+        complete_start_next_round_in_room_state(&mut room).expect("repeat round should start");
+
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(room.phase, "playing");
+        assert_eq!(match_state.prevailing_wind, "north");
+        assert_eq!(match_state.hand_number, 4);
+        assert_eq!(match_state.dealer_seat, 3);
+        assert_eq!(match_state.dealer_repeat_count, 1);
+        assert!(!match_state.match_finished);
     }
 
     #[test]
