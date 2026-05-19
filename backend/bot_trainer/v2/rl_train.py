@@ -20,30 +20,14 @@ DISCARD_MIN_RISK_WEIGHT = 0.25
 DISCARD_MAX_RISK_WEIGHT = 1.45
 
 
-PLAY_STYLE_CONFIGS = {
-    "aggressive": {
-        "base_risk_weight": 0.60,
-        "value_risk_range": 0.40,
-        "min_risk_weight": 0.15,
-        "max_risk_weight": 1.00,
-        "entropy_multiplier": 1.3,
-        "description": "进攻型：更激进的打法，愿意冒险追求高番",
-    },
-    "balanced": {
+POLICY_CONFIGS = {
+    "ppo": {
         "base_risk_weight": 0.90,
         "value_risk_range": 0.55,
         "min_risk_weight": 0.25,
         "max_risk_weight": 1.45,
         "entropy_multiplier": 1.0,
-        "description": "平衡型：攻守兼备的标准打法",
-    },
-    "defensive": {
-        "base_risk_weight": 1.05,
-        "value_risk_range": 0.60,
-        "min_risk_weight": 0.30,
-        "max_risk_weight": 1.65,
-        "entropy_multiplier": 0.9,
-        "description": "防守型：稳健打法，注重防守和风险控制",
+        "description": "PPO 策略：基于自博弈强化学习的生产策略",
     },
 }
 
@@ -69,10 +53,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kl-end-coef", type=float, default=0.0)
     parser.add_argument("--target-kl", type=float, default=0.03)
     parser.add_argument(
-        "--play-style",
-        choices=["aggressive", "balanced", "defensive"],
-        default="balanced",
-        help="打牌风格：aggressive(进攻型), balanced(平衡型), defensive(防守型)",
+        "--policy",
+        choices=["ppo"],
+        default="ppo",
+        help="训练策略：ppo。运行时用 temperature 区分 bot 行为。",
     )
     parser.add_argument("--recompute-old-policy-stats", action="store_true")
     parser.add_argument("--tensor-cache", type=Path, default=None)
@@ -94,7 +78,7 @@ def masked_head_log_probs(
 
 def risk_adjusted_discard_logits(
     outputs: dict[str, torch.Tensor],
-    style_config: dict[str, float] | None = None,
+    policy_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     discard_logits = outputs["discard_logits"]
     risk_logits = outputs.get("risk_logits")
@@ -102,16 +86,16 @@ def risk_adjusted_discard_logits(
     if risk_logits is None or value is None:
         return discard_logits
 
-    if style_config is None:
+    if policy_config is None:
         base_risk_weight = DISCARD_BASE_RISK_WEIGHT
         value_risk_range = DISCARD_VALUE_RISK_RANGE
         min_risk_weight = DISCARD_MIN_RISK_WEIGHT
         max_risk_weight = DISCARD_MAX_RISK_WEIGHT
     else:
-        base_risk_weight = style_config["base_risk_weight"]
-        value_risk_range = style_config["value_risk_range"]
-        min_risk_weight = style_config["min_risk_weight"]
-        max_risk_weight = style_config["max_risk_weight"]
+        base_risk_weight = policy_config["base_risk_weight"]
+        value_risk_range = policy_config["value_risk_range"]
+        min_risk_weight = policy_config["min_risk_weight"]
+        max_risk_weight = policy_config["max_risk_weight"]
 
     values = value.squeeze(-1)
     normalized_value = torch.clamp(values / DISCARD_VALUE_SCALE, -1.0, 1.0)
@@ -129,10 +113,10 @@ def risk_adjusted_discard_logits(
 def head_logits(
     outputs: dict[str, torch.Tensor],
     logits_key: str,
-    style_config: dict[str, float] | None = None,
+    policy_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     if logits_key == "discard_logits":
-        return risk_adjusted_discard_logits(outputs, style_config)
+        return risk_adjusted_discard_logits(outputs, policy_config)
     return outputs[logits_key]
 
 
@@ -258,10 +242,16 @@ def model_config_from_checkpoint(checkpoint: Path | None) -> ModelConfig:
     return ModelConfig.from_dict(payload.get("model_config", {}))
 
 
+def checkpoint_uses_actor_critic(checkpoint: Path) -> bool:
+    payload = torch.load(checkpoint, map_location="cpu")
+    state = payload.get("model_state", payload)
+    return any(key.startswith("actor.") or key.startswith("critic.") for key in state)
+
+
 def select_action_log_probs(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
-    style_config: dict[str, float] | None = None,
+    policy_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros_like(batch["reward"].float())
     heads = [
@@ -273,7 +263,7 @@ def select_action_log_probs(
     for head_index, logits_key, mask_key in heads:
         active = batch["action_head"] == head_index
         if torch.any(active):
-            logits = head_logits(outputs, logits_key, style_config)
+            logits = head_logits(outputs, logits_key, policy_config)
             result[active] = masked_head_log_probs(
                 logits[active],
                 batch[mask_key][active],
@@ -306,7 +296,7 @@ def forward_model(
 def select_action_entropy(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
-    style_config: dict[str, float] | None = None,
+    policy_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros_like(batch["reward"].float())
     heads = [
@@ -318,7 +308,7 @@ def select_action_entropy(
     for head_index, logits_key, mask_key in heads:
         active = batch["action_head"] == head_index
         if torch.any(active):
-            logits = head_logits(outputs, logits_key, style_config)
+            logits = head_logits(outputs, logits_key, policy_config)
             masked = logits[active].masked_fill(
                 ~batch[mask_key][active].bool(),
                 -1.0e4,
@@ -333,7 +323,7 @@ def select_action_head_kl(
     teacher_outputs: dict[str, torch.Tensor],
     student_outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
-    style_config: dict[str, float] | None = None,
+    policy_config: dict[str, float] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros((), device=batch["reward"].device)
     count = 0
@@ -347,8 +337,8 @@ def select_action_head_kl(
         active = batch["action_head"] == head_index
         if torch.any(active):
             result = result + masked_categorical_kl(
-                head_logits(teacher_outputs, logits_key, style_config)[active],
-                head_logits(student_outputs, logits_key, style_config)[active],
+                head_logits(teacher_outputs, logits_key, policy_config)[active],
+                head_logits(student_outputs, logits_key, policy_config)[active],
                 batch[mask_key][active],
             )
             count += 1
@@ -377,7 +367,11 @@ def build_old_policy_model(
 ) -> torch.nn.Module | None:
     if checkpoint is None:
         return None
-    model = build_model(model_config_from_checkpoint(checkpoint)).to(device)
+    model_config = model_config_from_checkpoint(checkpoint)
+    if checkpoint_uses_actor_critic(checkpoint):
+        model = build_actor_critic(model_config).to(device)
+    else:
+        model = build_model(model_config).to(device)
     load_checkpoint_if_present(model, checkpoint)
     model.eval()
     for parameter in model.parameters():
@@ -390,12 +384,10 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
 
-    # 获取打牌风格配置
-    style_config = PLAY_STYLE_CONFIGS[args.play_style]
-    print(f"Play style: {args.play_style} - {style_config['description']}")
+    policy_config = POLICY_CONFIGS[args.policy]
+    print(f"Policy: {args.policy} - {policy_config['description']}")
 
-    # 应用风格的熵系数调整
-    entropy_multiplier = style_config["entropy_multiplier"]
+    entropy_multiplier = policy_config["entropy_multiplier"]
     adjusted_entropy_coef = args.entropy_coef * entropy_multiplier
     adjusted_entropy_end_coef = args.entropy_end_coef * entropy_multiplier
 
@@ -494,12 +486,12 @@ def main() -> None:
             if old_policy_model is not None:
                 with torch.no_grad():
                     old_outputs = forward_model(old_policy_model, batch)
-                    old_log_probs = select_action_log_probs(old_outputs, batch, style_config)
+                    old_log_probs = select_action_log_probs(old_outputs, batch, policy_config)
                     old_values = old_outputs["value"].squeeze(1)
             else:
                 old_log_probs = batch["old_log_prob"].float()
                 old_values = batch["old_value"].float()
-            log_probs = select_action_log_probs(outputs, batch, style_config)
+            log_probs = select_action_log_probs(outputs, batch, policy_config)
             returns = batch["return"].float()
             advantages = batch["advantage"].float()
 
@@ -530,12 +522,12 @@ def main() -> None:
                 returns,
                 args.value_clip_epsilon,
             )
-            entropy = select_action_entropy(outputs, batch, style_config)
+            entropy = select_action_entropy(outputs, batch, policy_config)
             kl_loss = torch.zeros((), device=device)
             if teacher_model is not None:
                 with torch.no_grad():
                     teacher_outputs = forward_model(teacher_model, batch)
-                kl_loss = select_action_head_kl(teacher_outputs, outputs, batch, style_config)
+                kl_loss = select_action_head_kl(teacher_outputs, outputs, batch, policy_config)
             explained_variance = value_explained_variance(values.detach(), returns)
 
             # Compute value MSE for monitoring
@@ -594,8 +586,8 @@ def main() -> None:
 
     checkpoint_path = args.output / "best.pt"
     payload = checkpoint_payload(model, model_config, history)
-    payload["play_style"] = args.play_style
-    payload["style_config"] = style_config
+    payload["policy"] = args.policy
+    payload["policy_config"] = policy_config
     torch.save(payload, checkpoint_path)
     (args.output / "trajectory_diagnostics.json").write_text(
         json.dumps(diagnostics, indent=2, ensure_ascii=False),
@@ -606,8 +598,9 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"RL train saved checkpoint: {checkpoint_path}")
-    print(f"Play style: {args.play_style}")
+    print(f"Policy: {args.policy}")
 
 
 if __name__ == "__main__":
     main()
+

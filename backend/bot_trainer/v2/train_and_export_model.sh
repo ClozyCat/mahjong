@@ -3,7 +3,7 @@ set -euo pipefail
 
 DATA_DIR="backend/bot_trainer/v2/out"
 CHECKPOINT_DIR="backend/bot_trainer/v2/checkpoints"
-ONNX_OUTPUT="backend/assets/backup_model/backup.onnx"
+ONNX_OUTPUT="backend/assets/sft/sft.onnx"
 EPOCHS=20
 BATCH_SIZE=4096
 NUM_WORKERS=0

@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--baseline-onnx",
         type=Path,
-        default=Path("backend/assets/backup_model/backup.onnx"),
+        default=Path("backend/assets/sft/sft.onnx"),
     )
     parser.add_argument("--record-heuristic-comparison", action="store_true")
     return parser.parse_args()

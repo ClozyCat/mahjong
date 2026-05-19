@@ -331,7 +331,7 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
         "learner": {
             "id": "learner",
             "mode": "neural",
-            "model_path": "backend/assets/models/mahjong_policy_net.onnx",
+            "model_path": "backend/assets/sft/sft.onnx",
             "sample_actions": True,
             "temperature": 1.0,
         },
@@ -339,7 +339,7 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
             {
                 "id": "sft_default",
                 "mode": "neural",
-                "model_path": "backend/assets/history_models/sft.onnx",
+                "model_path": "backend/assets/sft/sft.onnx",
                 "sample_actions": False,
                 "temperature": 1.0,
                 "weight": 1,
@@ -358,7 +358,7 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
     apply_rollout_model_override(pool, Path("runs/iter_001/candidate.onnx"))
 
     assert pool["learner"]["model_path"] == "runs/iter_001/candidate.onnx"
-    assert pool["opponents"][0]["model_path"] == "backend/assets/history_models/sft.onnx"
+    assert pool["opponents"][0]["model_path"] == "backend/assets/sft/sft.onnx"
     assert pool["opponents"][1]["model_path"] is None
 
 
@@ -746,7 +746,7 @@ def test_candidate_selector_uses_margin_score_when_all_rejected() -> None:
     assert selected["score_margin"] == -2.0
 
 
-def test_candidate_selector_preserves_play_style_metadata() -> None:
+def test_candidate_selector_preserves_policy_metadata() -> None:
     from candidate_selector import select_best_candidate
 
     baseline = {
@@ -760,9 +760,9 @@ def test_candidate_selector_preserves_play_style_metadata() -> None:
     selected = select_best_candidate([
         {
             "epoch": 1,
-            "play_style": "defensive",
-            "checkpoint": "defensive/epoch_001.pt",
-            "onnx": "defensive/epoch_001.onnx",
+            "policy": "ppo",
+            "checkpoint": "ppo/epoch_001.pt",
+            "onnx": "ppo/epoch_001.onnx",
             "gate": {
                 "accepted": True,
                 "failures": [],
@@ -779,8 +779,8 @@ def test_candidate_selector_preserves_play_style_metadata() -> None:
         }
     ])
 
-    assert selected["play_style"] == "defensive"
-    assert selected["selected"]["play_style"] == "defensive"
+    assert selected["policy"] == "ppo"
+    assert selected["selected"]["policy"] == "ppo"
 
 
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:

@@ -1,8 +1,17 @@
-# Mahjong Bot Trainer V2
+# 麻将 Bot 训练 V2
 
-V2 uses Rust to parse BotZone match records and export backend-native decision samples. Python trains a multi-head ResNet policy/value model and exports the production ONNX file used by the Rust bot.
+本目录包含当前生产 bot 的数据导出、监督训练、PPO 自博弈训练、ONNX 导出与候选评估脚本。
 
-## Export Data
+当前模型资产只保留两套：
+
+- `backend/assets/sft/sft.onnx`：监督学习基线模型，也是普通 bot 与训练脚本的默认兜底模型。
+- `backend/assets/ppo/ppo.onnx`：PPO 训练后的生产策略模型。多个 bot 的差异不再来自不同 ONNX，而是来自同一 PPO 模型的 temperature。
+
+旧模型目录和旧 policy 命名已废弃，不再提供兼容入口。PPO 训练入口只接受 `ppo`。
+
+## 1. 导出监督数据
+
+默认数据源是 `backend/bot_trainer/datasets/data.txt`，导出结果写入 `backend/bot_trainer/v2/out`。
 
 ```powershell
 .\backend\bot_trainer\v2\export_full_dataset.ps1 -ProgressEvery 100
@@ -12,7 +21,7 @@ V2 uses Rust to parse BotZone match records and export backend-native decision s
 ./backend/bot_trainer/v2/export_full_dataset.sh --progress-every 100
 ```
 
-Small export:
+小样本导出：
 
 ```powershell
 .\backend\bot_trainer\v2\export_full_dataset.ps1 -OutputDir backend/bot_trainer/v2/out_smoke -MaxMatches 100 -ProgressEvery 10
@@ -22,11 +31,9 @@ Small export:
 ./backend/bot_trainer/v2/export_full_dataset.sh --output backend/bot_trainer/v2/out_smoke --max-matches 100 --progress-every 10
 ```
 
-Default dataset path is `backend/bot_trainer/datasets/data.txt`.
+## 2. 监督训练 SFT
 
-## GPU Training
-
-The training wrapper defaults to the local `python` executable, automatic device selection, AMP, and batch size `4096`.
+监督训练脚本会训练多头策略/价值网络，并默认导出到 `backend/assets/sft/sft.onnx`。
 
 ```powershell
 .\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 4096 -Device cuda -NumWorkers 0
@@ -36,114 +43,100 @@ The training wrapper defaults to the local `python` executable, automatic device
 ./backend/bot_trainer/v2/train_and_export_model.sh --epochs 20 --batch-size 4096 --device cuda --num-workers 0
 ```
 
-If VRAM is tight, reduce the batch size to `1024`. If you want CPU training, use `-Device cpu -NoAmp` on Windows or `--device cpu --no-amp` on Linux.
+显存不足时先降 `BatchSize` 到 `1024`。CPU 训练可用 PowerShell 的 `-Device cpu -NoAmp`，或 Bash 的 `--device cpu --no-amp`。
 
-The wrapper writes:
+主要产物：
 
 - `backend/bot_trainer/v2/checkpoints/best.pt`
 - `backend/bot_trainer/v2/checkpoints/metrics.json`
-- `backend/assets/models/mahjong_policy_net.onnx`
+- `backend/assets/sft/sft.onnx`
 
-After ONNX export, it runs the Rust ONNX smoke test.
+导出 ONNX 后，脚本会运行 Rust ONNX smoke test。
 
-## Direct Commands
+## 3. 模型结构与 ONNX 合约
 
-```powershell
-python backend/bot_trainer/v2/train.py --data backend/bot_trainer/v2/out --epochs 20 --batch-size 2048 --output backend/bot_trainer/v2/checkpoints --device cuda --amp
-python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --output backend/assets/models/mahjong_policy_net.onnx
-```
+模型输入：
 
-## Model Outputs
+- `tile_planes`：`batch x 10 x 34`
+- `scalar_features`：`batch x 12`
+- `discard_sequence`：`batch x 32 x 40`
 
-- `discard_logits`: 34 tile logits.
-- `claim_logits`: 7 claim logits: pass, hu, pung, kong, chow_left, chow_mid, chow_right.
-- `self_kong_logits`: 3 logits: pass, concealed_kong, add_kong.
-- `hu_logits`: 2 logits.
-- `value`: expected score delta.
-- `risk_logits`: 34 tile risk logits.
+模型输出：
 
-## Model Architecture
+- `discard_logits`：34 个弃牌 logits
+- `claim_logits`：7 个响应 logits，顺序为 pass、hu、pung、kong、chow_left、chow_mid、chow_right
+- `self_kong_logits`：3 个自杠 logits，顺序为 pass、concealed_kong、add_kong
+- `hu_logits`：2 个自摸/不自摸 logits
+- `value`：预期分差
+- `risk_logits`：34 个牌风险 logits
 
-The policy uses a sequence-aware ONNX contract:
+`discard_sequence` 右对齐保存最近 32 个公开弃牌事件。每个事件包含 34 维牌 one-hot、4 维相对座位 one-hot、1 维进度、1 维最新事件标记。
 
-- inputs: `tile_planes` shaped `batch x 10 x 34`, `scalar_features` shaped `batch x 12`, `discard_sequence` shaped `batch x 32 x 40`
-- outputs: `discard_logits`, `claim_logits`, `self_kong_logits`, `hu_logits`, `value`, `risk_logits`
+## 4. Arena 评估
 
-`discard_sequence` is right-aligned and stores the latest 32 public discard events. Each event has 34 tile one-hot features, 4 relative-seat one-hot features, one slot-progress feature, and one latest-event marker.
-
-The tile encoder is suit-aware: 万/条/筒 each pass through a shared 1D residual convolution encoder over rank order, while honors use a separate encoder. The four embeddings are fused by an MLP before reaching the heads, so cross-suit patterns are learned explicitly. Policy, value, and risk use separate trunks, and action/risk/fan heads use task-specific MLP adapters.
-
-Old two-input checkpoints and ONNX files are not compatible with this architecture; train and export a fresh model after regenerating the v2 tensor cache.
-
-## Arena Evaluation
-
-Smoke:
+基础 smoke：
 
 ```powershell
 cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl
 ```
 
-Trajectory smoke:
+轨迹 smoke：
 
 ```powershell
 cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl
 ```
 
-Windows matrix:
+矩阵评估使用 `arena_policy_pool.json`。当前池里只应出现 `sft` 与 `ppo` 相关模型路径。
 
 ```powershell
 .\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429
 ```
 
-Linux matrix:
-
 ```bash
 MATCHES=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
 ```
 
-`arena_matrix` accepts one or more policies from `arena_policy_pool.json`. It keeps the pool order fixed
-in each generated config and asks the Rust arena to rotate seats cyclically per match, using
-`seat_rotation_offset` to continue the cycle across progress chunks. With the default single-policy pool,
-all seats use `sft_default`.
+主要评估指标：
 
-Primary model-selection metrics:
+- 平均分差
+- 胜率
+- 放铳率
+- 首次听牌巡目
+- 终局听牌率
+- 平均决策耗时
 
-- average score delta
-- win rate
-- deal-in rate
-- first-tenpai turn
-- final-tenpai rate
-- average decision latency
+## 5. PPO 自博弈训练
 
-## RL Training Smoke
+PPO 从 SFT checkpoint 与 SFT ONNX 开始。默认：
 
-Run the full RL pipeline with a small smoke configuration:
+- checkpoint：`backend/bot_trainer/v2/checkpoints/best.pt`
+- baseline ONNX：`backend/assets/sft/sft.onnx`
+- policy：`ppo`
+- opponent pool：`backend/bot_trainer/v2/opponent_pool.json`
+
+快速 smoke：
 
 ```powershell
-.\backend\bot_trainer\v2\train_rl_model.ps1 -OutputDir backend/bot_trainer/v2/rl_runs/smoke -TrajectoryMatches 1 -EvalMatches 1 -Epochs 1 -BatchSize 64 -Device cpu
+.\backend\bot_trainer\v2\train_rl_model.ps1 -OutputDir backend/bot_trainer/v2/rl_runs/smoke -IterationMatches 1 -EvalMatches 1 -Epochs 1 -BatchSize 64 -Device cpu -Policy ppo
 ```
 
 ```bash
-./backend/bot_trainer/v2/train_rl_model.sh --output-dir backend/bot_trainer/v2/rl_runs/smoke --trajectory-matches 1 --eval-matches 1 --epochs 1 --batch-size 64 --device cpu
+./backend/bot_trainer/v2/train_rl_model.sh --output-dir backend/bot_trainer/v2/rl_runs/smoke --iteration-matches 1 --eval-matches 1 --epochs 1 --batch-size 64 --device cpu --policy ppo
 ```
 
-For a normal local run, increase `-TrajectoryMatches` / `--trajectory-matches` and `-EvalMatches` / `--eval-matches` to at least `200`.
-If your shell does not resolve the intended tools, pass `-PythonExe` / `--python-exe` or `-CargoExe` / `--cargo-exe` explicitly.
-RL starts from a supervised checkpoint. By default the scripts expect `backend/bot_trainer/v2/checkpoints/best.pt` and `backend/assets/models/mahjong_policy_net.onnx`; pass `-BaselineCheckpoint` / `--baseline-checkpoint` and `-BaselineOnnx` / `--baseline-onnx` if your baseline files are elsewhere.
-Trajectory generation prints progress every 20 matches by default. Use `-TrajectoryProgressEvery 10` or `--trajectory-progress-every 10` for more frequent updates, or `0` to disable script-level arena progress.
-Arena self-play and candidate evaluation run in parallel by default from these scripts. Use `-ArenaJobs 4` or `--arena-jobs 4` to pin worker count; `0` means all available cores.
-The script prints PPO epoch losses during `rl_train.py`, writes `epoch_*.pt` checkpoints, evaluates each epoch candidate by default, then promotes the best evaluated epoch to `candidate.onnx`. Use `-CandidateSelectionMode final` or `--candidate-selection-mode final` to keep the old "last checkpoint only" flow.
+本地正式实验建议把 `IterationMatches` / `--iteration-matches` 和 `EvalMatches` / `--eval-matches` 提高到至少 `200`。
 
-### PPO League Training
+常用 PPO league 命令：
 
 ```powershell
 .\backend\bot_trainer\v2\train_rl_model.ps1 `
-  -OutputDir backend/bot_trainer/v2/rl_runs/league_smoke `
-  -TrajectoryMatches 8 `
+  -OutputDir backend/bot_trainer/v2/rl_runs/ppo_smoke `
+  -IterationMatches 8 `
   -EvalMatches 4 `
   -Epochs 1 `
   -BatchSize 64 `
   -Device cpu `
+  -Policy ppo `
   -LearnerPolicyId learner `
   -GaeLambda 0.95 `
   -KlCoef 0.01
@@ -151,80 +144,107 @@ The script prints PPO epoch losses during `rl_train.py`, writes `epoch_*.pt` che
 
 ```bash
 ./backend/bot_trainer/v2/train_rl_model.sh \
-  --output-dir backend/bot_trainer/v2/rl_runs/league_smoke \
-  --trajectory-matches 8 \
+  --output-dir backend/bot_trainer/v2/rl_runs/ppo_smoke \
+  --iteration-matches 8 \
   --eval-matches 4 \
   --epochs 1 \
   --batch-size 64 \
   --device cpu \
+  --policy ppo \
   --learner-policy-id learner \
   --gae-lambda 0.95 \
   --kl-coef 0.01
 ```
 
-The generated trajectory configs rotate the sampled `learner` policy through all four seats and fill the other seats from `opponent_pool.json`. PPO filters rows by `policy_id=learner`, so frozen opponents do not train the learner.
+脚本流程：
 
-Manual PPO training command:
+1. 用当前 rollout ONNX 生成 arena 轨迹。
+2. PPO 只读取 `policy_id=learner` 的轨迹。
+3. 每个 epoch 保存 `epoch_*.pt`。
+4. 默认评估每个 epoch 的候选 ONNX，并选出最优 epoch。
+5. 最终产物写入运行目录下的 `candidate.onnx` 和 `checkpoints/best.pt`。
 
-```powershell
-python backend/bot_trainer/v2/rl_train.py --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl --checkpoint backend/bot_trainer/v2/checkpoints/best.pt --epochs 1 --batch-size 64 --output backend/bot_trainer/v2/checkpoints_rl_smoke --device cpu --entropy-coef 0.02 --entropy-end-coef 0.005
-```
+若只想评估最后一个 checkpoint，可使用 `-CandidateSelectionMode final` 或 `--candidate-selection-mode final`。
 
-RL uses linear entropy decay. `--entropy-coef` is the starting exploration weight and `--entropy-end-coef` is the final weight. If `--entropy-decay-steps` is omitted or `0`, decay spans the full training run. Epoch logs and `rl_metrics.json` include average `entropy` and `entropy_coef` so collapse can be spotted during training.
+## 6. 全局信息 Critic
 
-If you train from old trajectories that contain placeholder `log_prob=0` and `value=0`, pass `--recompute-old-policy-stats` with the rollout checkpoint. New neural-backed arena trajectories emit old log-prob/value directly.
+Arena 轨迹包含可选的全局信息字段：
 
-Arena trajectory rows now split reward fields:
+- `global_tile_planes`
+- `global_scalar_features`
 
-- `step_reward`: small fan-aware shanten shaping reward
-- `terminal_reward`: score/win/deal-in result on the seat's final row
-- `reward`: `step_reward`, plus `terminal_reward` only on that seat's final row
-- `shanten_before` / `shanten_after`
-- `fan_potential_before` / `fan_potential_after`
-
-### Centralized Critic Boundary
-
-Trajectory rows reserve `global_tile_planes` and `global_scalar_features` for a future centralized critic. They are currently `null` and ignored by PPO. Actor inputs remain strictly local observations, so exported ONNX policy behavior is unchanged.
-
-Export a trained RL checkpoint with the same ONNX exporter:
+启用 actor-critic 后，actor 仍只使用本地观测，critic 会优先使用全局信息；旧轨迹没有全局字段时会回退到本地上下文。
 
 ```powershell
-python backend/bot_trainer/v2/export_onnx.py --checkpoint backend/bot_trainer/v2/checkpoints_rl_smoke/best.pt --output backend/bot_trainer/v2/checkpoints_rl_smoke/candidate.onnx
+.\backend\bot_trainer\v2\train_rl_model.ps1 `
+  -OutputDir backend/bot_trainer/v2/rl_runs/global_critic_smoke `
+  -IterationMatches 8 `
+  -EvalMatches 4 `
+  -Epochs 1 `
+  -BatchSize 64 `
+  -Device cpu `
+  -Policy ppo `
+  -UseActorCritic `
+  -CriticLrMultiplier 2.0
 ```
 
-## RL Candidate Acceptance
+```bash
+./backend/bot_trainer/v2/train_rl_model.sh \
+  --output-dir backend/bot_trainer/v2/rl_runs/global_critic_smoke \
+  --iteration-matches 8 \
+  --eval-matches 4 \
+  --epochs 1 \
+  --batch-size 64 \
+  --device cpu \
+  --policy ppo \
+  --use-actor-critic \
+  --critic-lr-multiplier 2.0
+```
 
-An RL candidate can replace the production model only when arena evaluation shows:
+`CriticLrMultiplier` / `--critic-lr-multiplier` 默认是 `2.0`。
 
-- average score delta improves over the current production baseline
-- win rate does not regress
-- deal-in rate does not increase by more than 2 percentage points
-- first-tenpai turn or final-tenpai rate improves, or stays neutral
-- average decision latency remains under 200 ms
+## 7. 候选验收与上线
 
-The production policy modes are `heuristic` and `neural`. Keep `heuristic` as the fallback and promote a neural candidate only after it wins the rotated arena matrix without a higher deal-in rate.
+候选 PPO 模型替换 `backend/assets/ppo/ppo.onnx` 前，应至少满足：
 
-### Candidate Gate
+- 平均分差优于 SFT baseline。
+- 胜率不回退。
+- 放铳率不增加超过 2 个百分点。
+- 首次听牌巡目或终局听牌率不退化。
+- 平均决策耗时低于 200 ms。
 
-By default the RL wrapper writes `candidate_gate.json` but does not stop local experimentation when a model is rejected. Use `-EnforceCandidateGate` or `--enforce-candidate-gate` for promotion runs.
-Promotion runs use epoch candidate selection by default, so `candidate_selection.json` records every evaluated epoch and the chosen checkpoint. If all epochs are rejected, the wrapper still selects the least-regressed candidate for local inspection unless `-EnforceCandidateGate` / `--enforce-candidate-gate` is set.
+Promotion 示例：
 
 ```powershell
 .\backend\bot_trainer\v2\train_rl_model.ps1 `
   -OutputDir backend/bot_trainer/v2/rl_runs/promotion `
-  -TrajectoryMatches 400 `
+  -IterationMatches 400 `
   -EvalMatches 400 `
   -Epochs 3 `
   -Device cuda `
+  -Policy ppo `
   -EnforceCandidateGate
 ```
 
 ```bash
 ./backend/bot_trainer/v2/train_rl_model.sh \
   --output-dir backend/bot_trainer/v2/rl_runs/promotion \
-  --trajectory-matches 400 \
+  --iteration-matches 400 \
   --eval-matches 400 \
   --epochs 3 \
   --device cuda \
+  --policy ppo \
   --enforce-candidate-gate
 ```
+
+通过验收后，将选中的候选 ONNX 覆盖到 `backend/assets/ppo/ppo.onnx`。配套的外部权重文件 `weights.data` 必须和 ONNX 同目录保留。
+
+## 8. 生产 bot 差异
+
+生产特殊 bot 使用同一个 `backend/assets/ppo/ppo.onnx`，通过 temperature 区分行为：
+
+- focused：`0.3`
+- default：`1.0`
+- exploratory：`2.0`
+
+普通 bot 和缺省神经模型路径使用 `backend/assets/sft/sft.onnx`。

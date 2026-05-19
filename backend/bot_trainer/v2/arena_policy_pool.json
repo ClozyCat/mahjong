@@ -3,34 +3,37 @@
         {
             "id": "sft",
             "mode": "neural",
-            "model_path": "backend/assets/backup_model/backup.onnx"
+            "model_path": "backend/assets/sft/sft.onnx"
         },
         {
-            "id": "aggressive",
+            "id": "ppo_focused",
             "mode": "neural",
-            "model_path": "backend/assets/model_a/aggressive.onnx",
-            "discard_base_risk_weight": 0.60,
-            "discard_value_risk_range": 0.40,
-            "discard_min_risk_weight": 0.15,
-            "discard_max_risk_weight": 1.00
-        },
-        {
-            "id": "balanced",
-            "mode": "neural",
-            "model_path": "backend/assets/model_b/balanced.onnx",
+            "model_path": "backend/assets/ppo/ppo.onnx",
+            "temperature": 0.3,
             "discard_base_risk_weight": 0.90,
             "discard_value_risk_range": 0.55,
             "discard_min_risk_weight": 0.25,
             "discard_max_risk_weight": 1.45
         },
         {
-            "id": "defensive",
+            "id": "ppo",
             "mode": "neural",
-            "model_path": "backend/assets/model_d/defensive.onnx",
-            "discard_base_risk_weight": 1.20,
-            "discard_value_risk_range": 0.70,
-            "discard_min_risk_weight": 0.40,
-            "discard_max_risk_weight": 1.80
+            "model_path": "backend/assets/ppo/ppo.onnx",
+            "temperature": 1.0,
+            "discard_base_risk_weight": 0.90,
+            "discard_value_risk_range": 0.55,
+            "discard_min_risk_weight": 0.25,
+            "discard_max_risk_weight": 1.45
+        },
+        {
+            "id": "ppo_exploratory",
+            "mode": "neural",
+            "model_path": "backend/assets/ppo/ppo.onnx",
+            "temperature": 2.0,
+            "discard_base_risk_weight": 0.90,
+            "discard_value_risk_range": 0.55,
+            "discard_min_risk_weight": 0.25,
+            "discard_max_risk_weight": 1.45
         }
     ]
 }

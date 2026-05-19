@@ -3,7 +3,7 @@
   "learner": {
     "id": "learner",
     "mode": "neural",
-    "model_path": "backend/assets/backup_model/backup.onnx",
+    "model_path": "backend/assets/sft/sft.onnx",
     "sample_actions": true,
     "temperature": 1.0
   },
@@ -19,7 +19,7 @@
     {
       "id": "sft_deterministic",
       "mode": "neural",
-      "model_path": "backend/assets/model_s/sft.onnx",
+      "model_path": "backend/assets/sft/sft.onnx",
       "sample_actions": true,
       "temperature": 0.3,
       "weight": 1
@@ -27,7 +27,7 @@
     {
       "id": "sft",
       "mode": "neural",
-      "model_path": "backend/assets/model_s/sft.onnx",
+      "model_path": "backend/assets/sft/sft.onnx",
       "sample_actions": true,
       "temperature": 1.0,
       "weight": 2
@@ -35,70 +35,34 @@
     {
       "id": "sft_exploratory",
       "mode": "neural",
-      "model_path": "backend/assets/model_s/sft.onnx",
+      "model_path": "backend/assets/sft/sft.onnx",
       "sample_actions": true,
       "temperature": 2.0,
       "weight": 1
     },
     {
-      "id": "backup_deterministic",
+      "id": "ppo_focused",
       "mode": "neural",
-      "model_path": "backend/assets/backup_model/backup.onnx",
+      "model_path": "backend/assets/ppo/ppo.onnx",
       "sample_actions": true,
       "temperature": 0.3,
       "weight": 1
     },
     {
-      "id": "self",
+      "id": "ppo",
       "mode": "neural",
-      "model_path": "backend/assets/backup_model/backup.onnx",
+      "model_path": "backend/assets/ppo/ppo.onnx",
       "sample_actions": true,
       "temperature": 1.0,
       "weight": 2
     },
     {
-      "id": "backup_exploratory",
+      "id": "ppo_exploratory",
       "mode": "neural",
-      "model_path": "backend/assets/backup_model/backup.onnx",
+      "model_path": "backend/assets/ppo/ppo.onnx",
       "sample_actions": true,
       "temperature": 2.0,
       "weight": 1
-    },
-    {
-      "id": "aggressive",
-      "mode": "neural",
-      "model_path": "backend/assets/model_a/aggressive.onnx",
-      "sample_actions": true,
-      "temperature": 0.8,
-      "weight": 1,
-      "discard_base_risk_weight": 0.60,
-      "discard_value_risk_range": 0.40,
-      "discard_min_risk_weight": 0.15,
-      "discard_max_risk_weight": 1.00
-    },
-    {
-      "id": "balanced",
-      "mode": "neural",
-      "model_path": "backend/assets/model_b/balanced.onnx",
-      "sample_actions": true,
-      "temperature": 1.0,
-      "weight": 1,
-      "discard_base_risk_weight": 0.90,
-      "discard_value_risk_range": 0.55,
-      "discard_min_risk_weight": 0.25,
-      "discard_max_risk_weight": 1.45
-    },
-    {
-      "id": "defensive",
-      "mode": "neural",
-      "model_path": "backend/assets/model_d/defensive.onnx",
-      "sample_actions": true,
-      "temperature": 1.2,
-      "weight": 1,
-      "discard_base_risk_weight": 1.05,
-      "discard_value_risk_range": 0.60,
-      "discard_min_risk_weight": 0.30,
-      "discard_max_risk_weight": 1.65
     }
   ]
 }

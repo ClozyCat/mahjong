@@ -18,10 +18,10 @@ use std::{
 };
 
 const DEFAULT_MODEL_PATHS: [&str; 4] = [
-    "/app/assets/backup_model/backup.onnx",
-    "assets/backup_model/backup.onnx",
-    "backend/assets/backup_model/backup.onnx",
-    "backup.onnx",
+    "/app/assets/sft/sft.onnx",
+    "assets/sft/sft.onnx",
+    "backend/assets/sft/sft.onnx",
+    "sft.onnx",
 ];
 const MODEL_PATH_ENV: &str = "MAHJONG_BOT_MODEL_PATH";
 
@@ -445,14 +445,14 @@ mod tests {
 
     #[test]
     fn explicit_backend_asset_path_resolves_to_runtime_asset_path_when_available() {
-        let path = PathBuf::from("backend/assets/backup_model/backup.onnx");
+        let path = PathBuf::from("backend/assets/sft/sft.onnx");
         let resolved = resolve_model_path(&path);
-        if Path::new("assets/backup_model/backup.onnx").exists() {
-            assert_eq!(resolved, PathBuf::from("assets/backup_model/backup.onnx"));
-        } else if Path::new("/app/assets/backup_model/backup.onnx").exists() {
+        if Path::new("assets/sft/sft.onnx").exists() {
+            assert_eq!(resolved, PathBuf::from("assets/sft/sft.onnx"));
+        } else if Path::new("/app/assets/sft/sft.onnx").exists() {
             assert_eq!(
                 resolved,
-                PathBuf::from("/app/assets/backup_model/backup.onnx")
+                PathBuf::from("/app/assets/sft/sft.onnx")
             );
         } else {
             assert_eq!(resolved, path);

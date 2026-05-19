@@ -1,7 +1,7 @@
 param(
     [string]$OutputDir = "backend/bot_trainer/v2/rl_runs/$(Get-Date -Format 'yyyyMMddHHmm')",
     [string]$BaselineCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt",
-    [string]$BaselineOnnx = "backend/assets/backup_model/backup.onnx",
+    [string]$BaselineOnnx = "backend/assets/sft/sft.onnx",
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
@@ -25,11 +25,13 @@ param(
     [double]$KlCoef = 0.01,
     [double]$KlEndCoef = 0.0,
     [double]$TargetKl = 0.03,
-    [ValidateSet("aggressive", "balanced", "defensive")]
-    [string]$PlayStyle = "balanced",
-    [string[]]$PlayStyles = @(),
-    [ValidateSet("", "aggressive", "balanced", "defensive")]
-    [string]$TrajectoryRolloutStyle = "",
+    [ValidateSet("ppo")]
+    [string]$Policy = "ppo",
+    [string[]]$Policies = @(),
+    [ValidateSet("", "ppo")]
+    [string]$TrajectoryRolloutPolicy = "",
+    [switch]$UseActorCritic,
+    [double]$CriticLrMultiplier = 2.0,
     [string]$Device = "auto",
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
@@ -163,46 +165,46 @@ function Invoke-CandidateEvaluation {
     }
 }
 
-function Resolve-ActivePlayStyles {
-    $sourceStyles = if ($PlayStyles.Count -gt 0) { $PlayStyles } else { @($PlayStyle) }
-    $activeStyles = @()
-    $validStyles = @("aggressive", "balanced", "defensive")
-    foreach ($styleValue in $sourceStyles) {
-        foreach ($style in ([string]$styleValue -split ",")) {
-            $normalizedStyle = $style.Trim()
-            if ([string]::IsNullOrWhiteSpace($normalizedStyle)) {
+function Resolve-ActivePolicies {
+    $sourcePolicies = if ($Policies.Count -gt 0) { $Policies } else { @($Policy) }
+    $activePolicyList = @()
+    $validPolicies = @("ppo")
+    foreach ($policyValue in $sourcePolicies) {
+        $policyParts = [string]$policyValue -split ","; foreach ($policyName in $policyParts) {
+            $normalizedPolicy = $policyName.Trim()
+            if ([string]::IsNullOrWhiteSpace($normalizedPolicy)) {
                 continue
             }
-            if ($validStyles -notcontains $normalizedStyle) {
-                throw "Invalid play style '$normalizedStyle'. Expected one of: $($validStyles -join ', ')"
+            if ($validPolicies -notcontains $normalizedPolicy) {
+                throw "Invalid policy '$normalizedPolicy'. Expected one of: $($validPolicies -join ', ')"
             }
-            if ($activeStyles -notcontains $normalizedStyle) {
-                $activeStyles += $normalizedStyle
+            if ($activePolicyList -notcontains $normalizedPolicy) {
+                $activePolicyList += $normalizedPolicy
             }
         }
     }
-    return $activeStyles
+    return $activePolicyList
 }
 
-function Get-StyleArtifactPaths {
+function Get-PolicyArtifactPaths {
     param(
         [string]$IterationDir,
-        [string]$Style,
-        [bool]$UseStyleSubdir
+        [string]$PolicyName,
+        [bool]$UsePolicySubdir
     )
 
-    $styleDir = if ($UseStyleSubdir) { Join-Path (Join-Path $IterationDir "styles") $Style } else { $IterationDir }
+    $policyDir = if ($UsePolicySubdir) { Join-Path (Join-Path $IterationDir "policies") $PolicyName } else { $IterationDir }
     return [ordered]@{
-        style_dir = $styleDir
-        checkpoint_dir = Join-Path $styleDir "checkpoints"
-        candidate_onnx = Join-Path $styleDir "candidate.onnx"
-        eval_dir = Join-Path $styleDir "eval"
+        policy_dir = $policyDir
+        checkpoint_dir = Join-Path $policyDir "checkpoints"
+        candidate_onnx = Join-Path $policyDir "candidate.onnx"
+        eval_dir = Join-Path $policyDir "eval"
     }
 }
 
-function Invoke-PlayStyleTraining {
+function Invoke-PolicyTraining {
     param(
-        [string]$Style,
+        [string]$PolicyName,
         [string]$TrajectoryJsonl,
         [string]$Checkpoint,
         [string]$CheckpointDir
@@ -215,6 +217,7 @@ function Invoke-PlayStyleTraining {
         "--epochs", "$Epochs",
         "--batch-size", "$BatchSize",
         "--lr", "$LearningRate",
+        "--critic-lr-multiplier", "$CriticLrMultiplier",
         "--gamma", "$Gamma",
         "--gae-lambda", "$GaeLambda",
         "--policy-id", $LearnerPolicyId,
@@ -225,12 +228,15 @@ function Invoke-PlayStyleTraining {
         "--kl-coef", "$KlCoef",
         "--kl-end-coef", "$KlEndCoef",
         "--target-kl", "$TargetKl",
-        "--play-style", $Style,
+        "--policy", $PolicyName,
         "--output", $CheckpointDir,
         "--device", $Device
     )
     if ($EntropyDecaySteps -gt 0) {
         $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
+    }
+    if ($UseActorCritic) {
+        $rlTrainArgs += @("--use-actor-critic")
     }
     if ($RecomputeOldPolicyStats) {
         $rlTrainArgs += @("--recompute-old-policy-stats")
@@ -295,10 +301,10 @@ try {
     $env:TEMP = (Resolve-Path $TempDir).Path
     $env:TMP = $env:TEMP
     $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
-    $activePlayStyles = Resolve-ActivePlayStyles
-    $multiStyleTraining = $activePlayStyles.Count -gt 1
-    if (-not [string]::IsNullOrWhiteSpace($TrajectoryRolloutStyle)) {
-        Write-Warning "-TrajectoryRolloutStyle is ignored because each play_style now generates its own trajectories."
+    $activePolicies = Resolve-ActivePolicies
+    $multiPolicyTraining = $activePolicies.Count -gt 1
+    if (-not [string]::IsNullOrWhiteSpace($TrajectoryRolloutPolicy)) {
+        Write-Warning "-TrajectoryRolloutPolicy is ignored because each policy now generates its own trajectories."
     }
 
     Write-Host "Mahjong RL training (iterative self-play)"
@@ -310,11 +316,13 @@ try {
     Write-Host "PPO epochs/iter:     $Epochs"
     Write-Host "Gamma:               $Gamma"
     Write-Host "KL coef:             $KlCoef"
+    Write-Host "Actor-critic:        $([bool]$UseActorCritic)"
+    Write-Host "Critic LR x:         $CriticLrMultiplier"
     Write-Host "Opponent pool:       $OpponentPool"
     Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"
     Write-Host "Device:              $Device"
-    Write-Host "Play styles:         $($activePlayStyles -join ', ')"
+    Write-Host "Policies:            $($activePolicies -join ', ')"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
     $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
@@ -367,9 +375,9 @@ try {
     }
 
     # Iterative Self-Play Loop
-    $styleStates = @{}
-    foreach ($style in $activePlayStyles) {
-        $styleStates[$style] = [ordered]@{
+    $policyStates = @{}
+    foreach ($style in $activePolicies) {
+        $policyStates[$style] = [ordered]@{
             current_onnx = $BaselineOnnx
             current_checkpoint = $BaselineCheckpoint
             best_onnx = $BaselineOnnx
@@ -390,20 +398,20 @@ try {
         Write-Host ("  Iteration {0} / {1}" -f $iter, $Iterations)
         Write-Host "==============================================================="
 
-        # Step 1/2/3/4: Generate trajectories, train, export, and evaluate each style serially.
-        foreach ($style in $activePlayStyles) {
-            $paths = Get-StyleArtifactPaths -IterationDir $iterDir -Style $style -UseStyleSubdir $multiStyleTraining
-            $iterTrajectoryConfigDir = Join-Path $paths.style_dir "trajectory_configs"
-            $iterTrajectoryJsonl = Join-Path $paths.style_dir "trajectories.jsonl"
+        # Step 1/2/3/4: Generate trajectories, train, export, and evaluate each policy serially.
+        foreach ($style in $activePolicies) {
+            $paths = Get-PolicyArtifactPaths -IterationDir $iterDir -PolicyName $style -UsePolicySubdir $multiPolicyTraining
+            $iterTrajectoryConfigDir = Join-Path $paths.policy_dir "trajectory_configs"
+            $iterTrajectoryJsonl = Join-Path $paths.policy_dir "trajectories.jsonl"
             New-Item -ItemType Directory -Force -Path $paths.checkpoint_dir | Out-Null
             $iterCheckpointDir = [string]$paths.checkpoint_dir
             $iterCandidateOnnx = [string]$paths.candidate_onnx
             $iterEvalDir = [string]$paths.eval_dir
-            $styleState = $styleStates[$style]
-            $rolloutOnnx = [string]$styleState.current_onnx
+            $policyState = $policyStates[$style]
+            $rolloutOnnx = [string]$policyState.current_onnx
             $currentOnnxLeaf = Split-Path -Leaf $rolloutOnnx
 
-            Write-Host ("  Generating trajectories: style={0} rollout={1}" -f $style, $currentOnnxLeaf)
+            Write-Host ("  Generating trajectories: policy={0} rollout={1}" -f $style, $currentOnnxLeaf)
             New-Item -ItemType Directory -Force -Path $iterTrajectoryConfigDir | Out-Null
             $trajectoryConfigArgs = @(
                 "backend/bot_trainer/v2/league_config.py",
@@ -426,8 +434,8 @@ try {
                 Sort-Object Name |
                 ForEach-Object {
                     $index = [System.IO.Path]::GetFileNameWithoutExtension($_.Name).Replace("trajectory_config_", "")
-                    $partialReport = Join-Path $paths.style_dir "trajectory_arena_report_$index.jsonl"
-                    $partialTrajectory = Join-Path $paths.style_dir "trajectories_$index.jsonl"
+                    $partialReport = Join-Path $paths.policy_dir "trajectory_arena_report_$index.jsonl"
+                    $partialTrajectory = Join-Path $paths.policy_dir "trajectories_$index.jsonl"
                     $trajectoryFiles += $partialTrajectory
                     $arenaArgs = @(
                         "run",
@@ -451,13 +459,13 @@ try {
             }
             Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
 
-            Write-Host ("  Starting PPO training: style={0}" -f $style)
-            Invoke-PlayStyleTraining `
-                -Style $style `
+            Write-Host ("  Starting PPO training: policy={0}" -f $style)
+            Invoke-PolicyTraining `
+                -PolicyName $style `
                 -TrajectoryJsonl $iterTrajectoryJsonl `
-                -Checkpoint ([string]$styleState.current_checkpoint) `
+                -Checkpoint ([string]$policyState.current_checkpoint) `
                 -CheckpointDir $iterCheckpointDir
-            Write-Host ("  PPO training finished: style={0}" -f $style)
+            Write-Host ("  PPO training finished: policy={0}" -f $style)
 
             $iterBestPt = Join-Path $iterCheckpointDir "best.pt"
             $selectedCheckpoint = $iterBestPt
@@ -475,14 +483,14 @@ try {
             }
 
             if (($CandidateSelectionMode -eq "epoch") -and (-not $SkipOnnxExport) -and (-not $SkipEval)) {
-                $candidateManifest = Join-Path $paths.style_dir "candidate_manifest.json"
-                $candidateSelection = Join-Path $paths.style_dir "candidate_selection.json"
+                $candidateManifest = Join-Path $paths.policy_dir "candidate_manifest.json"
+                $candidateSelection = Join-Path $paths.policy_dir "candidate_selection.json"
                 $candidateEntries = @()
                 Get-ChildItem -LiteralPath $iterCheckpointDir -Filter "epoch_*.pt" |
                     Sort-Object Name |
                     ForEach-Object {
                         $epochName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-                        $epochOnnx = Join-Path $paths.style_dir "$epochName.onnx"
+                        $epochOnnx = Join-Path $paths.policy_dir "$epochName.onnx"
                         $epochEvalDir = Join-Path $iterEvalDir $epochName
                         Invoke-TrainingPython @(
                             "backend/bot_trainer/v2/export_onnx.py",
@@ -496,7 +504,7 @@ try {
                             -EvalBaselineOnnx $BaselineOnnx
                         $epochNumber = [int]$epochName.Replace("epoch_", "")
                         $candidateEntries += [ordered]@{
-                            play_style = $style
+                            policy = $style
                             epoch = $epochNumber
                             checkpoint = $_.FullName
                             onnx = $epochOnnx
@@ -527,7 +535,7 @@ try {
 
             $iterResult = [ordered]@{
                 iteration = $iter
-                play_style = $style
+                policy = $style
                 checkpoint = $selectedCheckpoint
                 onnx = $iterCandidateOnnx
                 accepted = $false
@@ -552,50 +560,50 @@ try {
                 $scoreMargin = $gateOutput.candidate.avg_score_delta - $gateOutput.baseline.avg_score_delta
                 $iterResult.score_margin = [math]::Round($scoreMargin, 4)
 
-                Write-Host ("  Iteration {0} style={1}: score_margin={2} accepted={3}" -f $iter, $style, $iterResult.score_margin, $iterResult.accepted)
+                Write-Host ("  Iteration {0} policy={1}: score_margin={2} accepted={3}" -f $iter, $style, $iterResult.score_margin, $iterResult.accepted)
 
-                if ($iterResult.accepted -or ($iterResult.score_margin -gt [double]$styleState.best_score_margin)) {
-                    $styleState.best_score_margin = $iterResult.score_margin
-                    $styleState.best_checkpoint = $selectedCheckpoint
-                    $styleState.best_onnx = $iterCandidateOnnx
-                    $styleState.best_iteration = $iter
-                    $styleState.current_checkpoint = $selectedCheckpoint
-                    $styleState.current_onnx = $iterCandidateOnnx
-                    Write-Host ("  Style {0} advanced (score_margin={1}, accepted={2})" -f $style, $iterResult.score_margin, $iterResult.accepted)
+                if ($iterResult.accepted -or ($iterResult.score_margin -gt [double]$policyState.best_score_margin)) {
+                    $policyState.best_score_margin = $iterResult.score_margin
+                    $policyState.best_checkpoint = $selectedCheckpoint
+                    $policyState.best_onnx = $iterCandidateOnnx
+                    $policyState.best_iteration = $iter
+                    $policyState.current_checkpoint = $selectedCheckpoint
+                    $policyState.current_onnx = $iterCandidateOnnx
+                    Write-Host ("  Policy {0} advanced (score_margin={1}, accepted={2})" -f $style, $iterResult.score_margin, $iterResult.accepted)
                 }
                 else {
-                    Write-Host ("  Style {0} kept current best (best_score_margin={1})" -f $style, $styleState.best_score_margin)
+                    Write-Host ("  Policy {0} kept current best (best_score_margin={1})" -f $style, $policyState.best_score_margin)
                 }
             }
 
-            $styleState.history = @($styleState.history) + $iterResult
+            $policyState.history = @($policyState.history) + $iterResult
         }
     }
 
-    # Finalize: copy each play style's own best result.
+    # Finalize: copy each policy's own best result.
     $allAccepted = @()
-    $historyByStyle = [ordered]@{}
+    $historyByPolicy = [ordered]@{}
     $finalOutputs = [ordered]@{}
 
-    foreach ($style in $activePlayStyles) {
-        $styleState = $styleStates[$style]
-        $styleOutputDir = if ($multiStyleTraining) { Join-Path (Join-Path $OutputDir "styles") $style } else { $OutputDir }
-        $FinalCandidateOnnx = Join-Path $styleOutputDir "candidate.onnx"
-        $FinalCheckpointDir = Join-Path $styleOutputDir "checkpoints"
-        $FinalEvalSummary = Join-Path $styleOutputDir "candidate_eval_summary.json"
-        $FinalGateOutput = Join-Path $styleOutputDir "candidate_gate.json"
+    foreach ($style in $activePolicies) {
+        $policyState = $policyStates[$style]
+        $policyOutputDir = if ($multiPolicyTraining) { Join-Path (Join-Path $OutputDir "policies") $style } else { $OutputDir }
+        $FinalCandidateOnnx = Join-Path $policyOutputDir "candidate.onnx"
+        $FinalCheckpointDir = Join-Path $policyOutputDir "checkpoints"
+        $FinalEvalSummary = Join-Path $policyOutputDir "candidate_eval_summary.json"
+        $FinalGateOutput = Join-Path $policyOutputDir "candidate_gate.json"
 
         New-Item -ItemType Directory -Force -Path $FinalCheckpointDir | Out-Null
-        Copy-RequiredFile -SourcePath ([string]$styleState.best_checkpoint) -TargetPath (Join-Path $FinalCheckpointDir "best.pt")
+        Copy-RequiredFile -SourcePath ([string]$policyState.best_checkpoint) -TargetPath (Join-Path $FinalCheckpointDir "best.pt")
         if (-not $SkipOnnxExport) {
-            Copy-RequiredFile -SourcePath ([string]$styleState.best_onnx) -TargetPath $FinalCandidateOnnx
+            Copy-RequiredFile -SourcePath ([string]$policyState.best_onnx) -TargetPath $FinalCandidateOnnx
         }
 
-        $bestIteration = [int]$styleState.best_iteration
+        $bestIteration = [int]$policyState.best_iteration
         $bestIterTag = if ($bestIteration -gt 0) { "iter_{0:D3}" -f $bestIteration } else { "baseline" }
         if ($bestIteration -gt 0) {
             $bestIterDir = Join-Path $OutputDir $bestIterTag
-            $bestIterPaths = Get-StyleArtifactPaths -IterationDir $bestIterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            $bestIterPaths = Get-PolicyArtifactPaths -IterationDir $bestIterDir -PolicyName $style -UsePolicySubdir $multiPolicyTraining
             $bestIterEvalDir = [string]$bestIterPaths.eval_dir
             if (Test-Path -LiteralPath "$bestIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
                 Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
@@ -604,10 +612,10 @@ try {
                 Copy-RequiredFile -SourcePath "$bestIterEvalDir/candidate_gate.json" -TargetPath $FinalGateOutput
             }
         }
-        elseif (@($styleState.history).Count -gt 0) {
-            $lastIterTag = "iter_{0:D3}" -f @($styleState.history)[-1].iteration
+        elseif (@($policyState.history).Count -gt 0) {
+            $lastIterTag = "iter_{0:D3}" -f @($policyState.history)[-1].iteration
             $lastIterDir = Join-Path $OutputDir $lastIterTag
-            $lastIterPaths = Get-StyleArtifactPaths -IterationDir $lastIterDir -Style $style -UseStyleSubdir $multiStyleTraining
+            $lastIterPaths = Get-PolicyArtifactPaths -IterationDir $lastIterDir -PolicyName $style -UsePolicySubdir $multiPolicyTraining
             $lastIterEvalDir = [string]$lastIterPaths.eval_dir
             if (Test-Path -LiteralPath "$lastIterEvalDir/candidate_eval_summary.json" -PathType Leaf) {
                 Copy-RequiredFile -SourcePath "$lastIterEvalDir/candidate_eval_summary.json" -TargetPath $FinalEvalSummary
@@ -617,37 +625,37 @@ try {
             }
         }
 
-        $historyByStyle[$style] = @($styleState.history)
+        $historyByPolicy[$style] = @($policyState.history)
         $finalOutputs[$style] = [ordered]@{
             best_iteration = $bestIterTag
-            best_score_margin = $styleState.best_score_margin
+            best_score_margin = $policyState.best_score_margin
             checkpoint = Join-Path $FinalCheckpointDir "best.pt"
             candidate = $FinalCandidateOnnx
-            history = if ($multiStyleTraining) { Join-Path $styleOutputDir "iteration_history.json" } else { Join-Path $OutputDir "iteration_history.json" }
+            history = if ($multiPolicyTraining) { Join-Path $policyOutputDir "iteration_history.json" } else { Join-Path $OutputDir "iteration_history.json" }
         }
 
-        if ($multiStyleTraining) {
-            Write-Utf8NoBom -Path $finalOutputs[$style].history -Content ((@($styleState.history) | ConvertTo-Json -Depth 8) + "`n")
+        if ($multiPolicyTraining) {
+            Write-Utf8NoBom -Path $finalOutputs[$style].history -Content ((@($policyState.history) | ConvertTo-Json -Depth 8) + "`n")
         }
-        $acceptedForStyle = (@($styleState.history) | Where-Object { $_.accepted }) | Select-Object -First 1
+        $acceptedForStyle = (@($policyState.history) | Where-Object { $_.accepted }) | Select-Object -First 1
         if ($null -ne $acceptedForStyle) {
             $allAccepted += $acceptedForStyle
         }
         elseif (-not $EnforceCandidateGate) {
-            Write-Warning "No iteration passed the candidate gate for play_style=$style. Best score_margin=$($styleState.best_score_margin). See $FinalGateOutput"
+            Write-Warning "No iteration passed the candidate gate for policy=$style. Best score_margin=$($policyState.best_score_margin). See $FinalGateOutput"
         }
     }
 
     $historyPath = Join-Path $OutputDir "iteration_history.json"
-    if ($multiStyleTraining) {
+    if ($multiPolicyTraining) {
         $historyDocument = [ordered]@{
-            trajectory_scope = "per_play_style"
-            styles = $historyByStyle
+            trajectory_scope = "per_policy"
+            policies = $historyByPolicy
         }
         Write-Utf8NoBom -Path $historyPath -Content (($historyDocument | ConvertTo-Json -Depth 10) + "`n")
     }
     else {
-        Write-Utf8NoBom -Path $historyPath -Content ((@($styleStates[$activePlayStyles[0]].history) | ConvertTo-Json -Depth 8) + "`n")
+        Write-Utf8NoBom -Path $historyPath -Content ((@($policyStates[$activePolicies[0]].history) | ConvertTo-Json -Depth 8) + "`n")
     }
 
     if ($EnforceCandidateGate -and $allAccepted.Count -eq 0) {
@@ -658,7 +666,7 @@ try {
     Write-Host ""
     Write-Host "RL iterative self-play pipeline finished."
     Write-Host "Iterations:     $Iterations"
-    foreach ($style in $activePlayStyles) {
+    foreach ($style in $activePolicies) {
         $output = $finalOutputs[$style]
         Write-Host ("[{0}] Best iteration: {1} (score_margin={2})" -f $style, $output.best_iteration, $output.best_score_margin)
         Write-Host ("[{0}] Checkpoint:     {1}" -f $style, $output.checkpoint)
@@ -677,3 +685,5 @@ finally {
         $env:PYTEST_DEBUG_TEMPROOT = (Resolve-Path -LiteralPath $PreviousPytestTempRoot).Path
     }
 }
+
+

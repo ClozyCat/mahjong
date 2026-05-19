@@ -46,7 +46,7 @@ def summarize_candidate(entry: dict[str, Any]) -> dict[str, Any]:
     latency_margin = CANDIDATE_LATENCY_LIMIT_MS - metric(candidate, "avg_latency_ms_per_decision")
     return {
         "epoch": entry.get("epoch"),
-        "play_style": entry.get("play_style"),
+        "policy": entry.get("policy"),
         "checkpoint": entry.get("checkpoint"),
         "onnx": entry.get("onnx"),
         "summary": entry.get("summary"),
@@ -93,7 +93,7 @@ def select_best_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "selected": selected,
         "epoch": selected["epoch"],
-        "play_style": selected.get("play_style"),
+        "policy": selected.get("policy"),
         "checkpoint": selected["checkpoint"],
         "onnx": selected["onnx"],
         "accepted": selected["accepted"],
