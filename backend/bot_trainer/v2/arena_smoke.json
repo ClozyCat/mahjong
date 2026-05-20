@@ -4,7 +4,7 @@
   "max_actions_per_match": 2400,
   "report_trajectories": false,
   "policies": [
-    {"id": "heuristic", "mode": "heuristic", "model_path": null},
-    {"id": "neural", "mode": "neural", "model_path": "backend/assets/sft/sft.onnx"}
+    {"id": "sft", "model_path": "backend/assets/sft/sft.onnx"},
+    {"id": "ppo", "model_path": "backend/assets/ppo/ppo.onnx"}
   ]
 }

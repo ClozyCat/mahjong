@@ -450,10 +450,7 @@ mod tests {
         if Path::new("assets/sft/sft.onnx").exists() {
             assert_eq!(resolved, PathBuf::from("assets/sft/sft.onnx"));
         } else if Path::new("/app/assets/sft/sft.onnx").exists() {
-            assert_eq!(
-                resolved,
-                PathBuf::from("/app/assets/sft/sft.onnx")
-            );
+            assert_eq!(resolved, PathBuf::from("/app/assets/sft/sft.onnx"));
         } else {
             assert_eq!(resolved, path);
         }

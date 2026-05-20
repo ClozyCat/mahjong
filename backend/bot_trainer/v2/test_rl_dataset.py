@@ -297,7 +297,6 @@ def test_league_config_rotates_learner_seat() -> None:
 
     learner = {
         "id": "learner",
-        "mode": "neural",
         "model_path": "candidate.onnx",
         "sample_actions": True,
         "temperature": 1.0,
@@ -306,9 +305,8 @@ def test_league_config_rotates_learner_seat() -> None:
         "learner": learner,
         "opponents": [
             {
-                "id": "heuristic",
-                "mode": "heuristic",
-                "model_path": None,
+                "id": "sft_default",
+                "model_path": "backend/assets/sft/sft.onnx",
                 "sample_actions": False,
                 "temperature": 1.0,
                 "weight": 1,
@@ -321,7 +319,7 @@ def test_league_config_rotates_learner_seat() -> None:
     assert len(configs) == 4
     assert [config["policies"].index(learner) for config in configs] == [0, 1, 2, 3]
     assert all(config["matches"] == 2 for config in configs)
-    assert all(config["record_heuristic_comparison"] is False for config in configs)
+    assert all("record_heuristic_comparison" not in config for config in configs)
 
 
 def test_rollout_override_keeps_neural_opponents_frozen() -> None:
@@ -330,7 +328,6 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
     pool = {
         "learner": {
             "id": "learner",
-            "mode": "neural",
             "model_path": "backend/assets/sft/sft.onnx",
             "sample_actions": True,
             "temperature": 1.0,
@@ -338,16 +335,7 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
         "opponents": [
             {
                 "id": "sft_default",
-                "mode": "neural",
                 "model_path": "backend/assets/sft/sft.onnx",
-                "sample_actions": False,
-                "temperature": 1.0,
-                "weight": 1,
-            },
-            {
-                "id": "heuristic",
-                "mode": "heuristic",
-                "model_path": None,
                 "sample_actions": False,
                 "temperature": 1.0,
                 "weight": 1,
@@ -359,10 +347,9 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
 
     assert pool["learner"]["model_path"] == "runs/iter_001/candidate.onnx"
     assert pool["opponents"][0]["model_path"] == "backend/assets/sft/sft.onnx"
-    assert pool["opponents"][1]["model_path"] is None
 
 
-def test_eval_config_disables_heuristic_comparison() -> None:
+def test_eval_config_has_no_heuristic_comparison() -> None:
     from league_config import build_eval_config
 
     config = build_eval_config(
@@ -373,7 +360,7 @@ def test_eval_config_disables_heuristic_comparison() -> None:
         max_actions=2400,
     )
 
-    assert config["record_heuristic_comparison"] is False
+    assert "record_heuristic_comparison" not in config
 
 
 def test_eval_config_uses_cyclic_rotation() -> None:
@@ -523,7 +510,6 @@ def test_candidate_gate_rejects_excessive_claim_rate() -> None:
                 "final_tenpai_rate": 0.55,
                 "avg_latency_ms_per_decision": 20.0,
                 "avg_claims": 2.0,
-                "same_as_heuristic_rate": 0.40,
             },
             "rl_candidate_neural": {
                 "avg_score_delta": 1.5,
@@ -533,7 +519,6 @@ def test_candidate_gate_rejects_excessive_claim_rate() -> None:
                 "final_tenpai_rate": 0.55,
                 "avg_latency_ms_per_decision": 22.0,
                 "avg_claims": 6.0,
-                "same_as_heuristic_rate": 0.39,
             },
         }
     }
@@ -828,11 +813,7 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
                 "decision_count": 4,
                 "decision_latency_ms_sum": 20,
                 "model_loaded": True,
-                "fallback_count": 1,
                 "neural_action_count": 3,
-                "same_as_heuristic_count": 2,
-                "heuristic_comparison_count": 3,
-                "same_as_heuristic_rate": 2 / 3,
             },
             {
                 "seat_index": 1,
@@ -858,8 +839,8 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     assert summary["policies"]["a"]["win_rate"] == 1.0
     assert summary["policies"]["a"]["avg_first_tenpai_turn"] == 4.0
     assert summary["policies"]["a"]["model_loaded_seats"] == 1
-    assert summary["policies"]["a"]["fallback_count"] == 1
     assert summary["policies"]["a"]["neural_action_count"] == 3
-    assert summary["policies"]["a"]["same_as_heuristic_rate"] == 2 / 3
+    assert "fallback_count" not in summary["policies"]["a"]
+    assert "same_as_heuristic_rate" not in summary["policies"]["a"]
     assert summary["policies"]["b"]["deal_in_rate"] == 1.0
     assert summary["policies"]["b"]["avg_first_tenpai_turn"] is None

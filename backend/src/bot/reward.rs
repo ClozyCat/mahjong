@@ -1,7 +1,7 @@
 use super::{
     action_space::{TILE_KIND_COUNT, tile_index},
     context::{BotContext, seat_wind_key},
-    search::min_shanten_for_counts,
+    shanten::min_shanten_for_counts,
 };
 use crate::core::state::RoomState;
 

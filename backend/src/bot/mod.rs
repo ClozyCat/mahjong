@@ -5,7 +5,7 @@ pub(crate) mod features;
 mod neural;
 pub mod policy;
 pub(crate) mod reward;
-mod search;
+mod shanten;
 
 pub use context::BotAction;
 pub(crate) use neural::NeuralDecisionScores;

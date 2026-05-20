@@ -84,20 +84,12 @@ for index, source in enumerate(raw_policies):
     if not isinstance(source, dict):
         print(f"Policy at index {index} must be an object.", file=sys.stderr)
         raise SystemExit(2)
-    for required in ("id", "mode"):
+    for required in ("id", "model_path"):
         if not source.get(required):
             print(f"Policy at index {index} must define '{required}'.", file=sys.stderr)
             raise SystemExit(2)
-    mode = str(source["mode"]).strip().lower()
-    if mode not in {"heuristic", "neural"}:
-        print(
-            f"Policy '{source['id']}' has unsupported mode '{source['mode']}'. Expected heuristic or neural.",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
     policy = {
         "id": str(source["id"]),
-        "mode": mode,
         "model_path": source.get("model_path"),
     }
     if "sample_actions" in source:
@@ -248,13 +240,7 @@ for policy_id in sorted(groups):
     decisions = sum(row.get("decision_count", 0) for row in rows)
     latency_sum = sum(row.get("decision_latency_ms_sum", 0) for row in rows)
     model_loaded = sum(1 for row in rows if row.get("model_loaded"))
-    fallback_count = sum(row.get("fallback_count", 0) for row in rows)
     neural_actions = sum(row.get("neural_action_count", 0) for row in rows)
-    same_as_heuristic = sum(row.get("same_as_heuristic_count", 0) for row in rows)
-    heuristic_comparisons = sum(row.get("heuristic_comparison_count", 0) for row in rows)
-    same_rate = (
-        same_as_heuristic / heuristic_comparisons if heuristic_comparisons else 0.0
-    )
     avg_score = score_sum / len(rows) if rows else 0.0
     avg_latency = latency_sum / decisions if decisions else 0.0
     tenpai = sum(1 for row in rows if row.get("final_tenpai"))
@@ -263,8 +249,7 @@ for policy_id in sorted(groups):
         f"dealt_in={dealt_in:3d} score_sum={score_sum:7d} "
         f"avg_score={avg_score:7.1f} decisions={decisions:6d} "
         f"avg_latency_ms={avg_latency:6.1f} final_tenpai={tenpai:3d} "
-        f"model_loaded={model_loaded:4d} fallback={fallback_count:5d} "
-        f"neural_actions={neural_actions:5d} same_as_heuristic={same_rate:5.2f}"
+        f"model_loaded={model_loaded:4d} neural_actions={neural_actions:5d}"
     )
 PY
 }

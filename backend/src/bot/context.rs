@@ -3,7 +3,6 @@ pub(crate) use crate::projection::bot_view::{
     BotClaimOption, BotContextView as BotContext, BotPlayerView as BotPlayerContext,
     BotSelfKongKind, BotTileCounts as ProjectionTileCounts, BotTileView,
 };
-pub(crate) use crate::rules::scoring::KongEntry as ScoringKongEntry;
 
 pub(crate) const TILE_KIND_COUNT: usize = 34;
 pub(crate) const HONOR_TILE_START: usize = 27;
@@ -25,38 +24,6 @@ pub struct BotAction {
 
 pub(crate) fn seat_wind_key(seat_index: usize, dealer_seat: usize) -> String {
     WIND_ORDER[(seat_index + 4 - dealer_seat) % 4].to_string()
-}
-
-pub(crate) fn player_tile_keys_from_parts(
-    concealed_tile_keys: &[String],
-    meld_tile_key_groups: &[Vec<String>],
-    incoming_tile: Option<&str>,
-) -> Vec<String> {
-    let meld_tile_count = meld_tile_key_groups
-        .iter()
-        .map(|meld| {
-            if meld.len() == 4 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
-                3
-            } else {
-                meld.len()
-            }
-        })
-        .sum::<usize>();
-    let mut tile_keys = Vec::with_capacity(
-        concealed_tile_keys.len() + meld_tile_count + usize::from(incoming_tile.is_some()),
-    );
-    tile_keys.extend(concealed_tile_keys.iter().cloned());
-    for meld in meld_tile_key_groups {
-        if meld.len() == 4 && meld.iter().all(|tile_key| tile_key == &meld[0]) {
-            tile_keys.extend(meld.iter().take(3).cloned());
-        } else {
-            tile_keys.extend(meld.iter().cloned());
-        }
-    }
-    if let Some(tile_key) = incoming_tile {
-        tile_keys.push(tile_key.to_string());
-    }
-    tile_keys
 }
 
 #[cfg(test)]

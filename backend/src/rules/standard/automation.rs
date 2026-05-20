@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::Utc;
 use serde_json::Value;
 
-use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
+use crate::bot::arena::ArenaBotPolicyConfig;
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
@@ -368,7 +368,8 @@ fn active_turn_hu_options(can_hu: bool) -> Vec<BotClaimOption> {
 }
 
 fn policy_is_neural(policy_config: &ArenaBotPolicyConfig) -> bool {
-    matches!(policy_config.mode, ArenaPolicyMode::Neural)
+    let _ = policy_config;
+    true
 }
 
 #[allow(dead_code)]
@@ -2075,7 +2076,7 @@ mod tests {
     }
 
     #[test]
-    fn ready_hand_bot_one_tile_low_fan_self_draw_discards_drawn_pair() {
+    fn ready_hand_bot_one_tile_low_fan_self_draw_randomly_discards_legal_pair_tile() {
         let mut room = ready_hand_auto_room_state("w3", "w3#draw");
         room.seats.get_mut(0).expect("seat should exist").is_bot = true;
         let round = room.round_state.as_mut().expect("round should exist");
@@ -2109,9 +2110,14 @@ mod tests {
             action.as_ref().map(|action| action.action_type.as_str()),
             Some("discard")
         );
-        assert_eq!(
-            action.as_ref().map(|action| action.tile_ids.as_slice()),
-            Some(&["red#draw".to_string()][..])
+        let tile_ids = action
+            .as_ref()
+            .map(|action| action.tile_ids.as_slice())
+            .expect("discard should choose a tile");
+        assert_eq!(tile_ids.len(), 1);
+        assert!(
+            matches!(tile_ids[0].as_str(), "red#pair" | "red#draw"),
+            "random fallback must discard one legal red tile"
         );
 
         let emitted = try_process_due_timeout_in_room_state(&mut room)

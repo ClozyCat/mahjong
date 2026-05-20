@@ -2,24 +2,20 @@
     "policies": [
         {
             "id": "sft",
-            "mode": "neural",
             "model_path": "backend/assets/sft/sft.onnx"
         },
         {
             "id": "ppo_focused",
-            "mode": "neural",
             "model_path": "backend/assets/ppo/ppo.onnx",
             "temperature": 0.3
         },
         {
             "id": "ppo",
-            "mode": "neural",
             "model_path": "backend/assets/ppo/ppo.onnx",
             "temperature": 1.0
         },
         {
             "id": "ppo1",
-            "mode": "neural",
             "model_path": "backend/bot_trainer/v2/rl_runs/202605192147/iter_012/candidate.onnx",
             "temperature": 1.0
         }

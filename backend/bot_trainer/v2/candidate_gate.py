@@ -8,10 +8,6 @@ from typing import Any
 
 CLAIM_RATE_ABSOLUTE_DRIFT_LIMIT = 2.0
 CLAIM_RATE_RATIO_LIMIT = 2.0
-SAME_AS_HEURISTIC_MIN_RATE = 0.15
-SAME_AS_HEURISTIC_DRIFT_LIMIT = 0.10
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=Path, required=True)
@@ -48,8 +44,6 @@ def evaluate_candidate(
         failures.append("tenpai")
     if claim_rate_is_excessive(baseline, candidate):
         failures.append("claim_rate")
-    if same_as_heuristic_collapsed(baseline, candidate):
-        failures.append("same_as_heuristic")
 
     return {
         "accepted": not failures,
@@ -72,20 +66,6 @@ def claim_rate_is_excessive(
     absolute_limit = baseline_value + CLAIM_RATE_ABSOLUTE_DRIFT_LIMIT
     ratio_limit = baseline_value * CLAIM_RATE_RATIO_LIMIT
     return candidate_value > max(absolute_limit, ratio_limit)
-
-
-def same_as_heuristic_collapsed(
-    baseline: dict[str, Any],
-    candidate: dict[str, Any],
-) -> bool:
-    baseline_rate = baseline.get("same_as_heuristic_rate")
-    candidate_rate = candidate.get("same_as_heuristic_rate")
-    if baseline_rate is None or candidate_rate is None:
-        return False
-    baseline_value = float(baseline_rate)
-    candidate_value = float(candidate_rate)
-    min_allowed = max(SAME_AS_HEURISTIC_MIN_RATE, baseline_value - SAME_AS_HEURISTIC_DRIFT_LIMIT)
-    return candidate_value < min_allowed
 
 
 def main() -> None:

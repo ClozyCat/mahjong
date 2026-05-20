@@ -9,9 +9,7 @@ services:
     restart: unless-stopped
     environment:
       MAHJONG_DATABASE_URL: ${MAHJONG_DATABASE_URL:-sqlite+pysqlite:////data/mahjong.db}
-      MAHJONG_BOT_POLICY: ${MAHJONG_BOT_POLICY:-neural}
-      MAHJONG_BOT_MODEL_PATH: ${MAHJONG_BOT_MODEL_PATH:-/app/assets/backup_model/backup.onnx}
-      MAHJONG_BOT_STRENGTH: ${MAHJONG_BOT_STRENGTH:-strong}
+      MAHJONG_BOT_MODEL_PATH: ${MAHJONG_BOT_MODEL_PATH:-/app/assets/sft/sft.onnx}
     volumes:
       - type: bind
         source: ${MAHJONG_DATA_DIR:-/opt/mahjong-data}

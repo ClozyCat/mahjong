@@ -36,15 +36,12 @@ param(
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
     [string]$SelfPlayPolicyId = "selfplay_neural",
-    [ValidateSet("heuristic", "neural")]
-    [string]$SelfPlayPolicyMode = "neural",
     [switch]$SkipTests,
     [switch]$SkipOnnxExport,
     [switch]$SkipEval,
     [switch]$EnforceCandidateGate,
     [switch]$AllowRlBaselineCheckpoint,
     [switch]$RecomputeOldPolicyStats,
-    [switch]$RecordHeuristicComparison,
     [ValidateSet("epoch", "final")]
     [string]$CandidateSelectionMode = "epoch"
 )
@@ -126,9 +123,6 @@ function Invoke-CandidateEvaluation {
         "--candidate-onnx", $CandidateModel,
         "--baseline-onnx", $EvalBaselineOnnx
     )
-    if ($RecordHeuristicComparison) {
-        $evalConfigArgs += @("--record-heuristic-comparison")
-    }
     Invoke-TrainingPython $evalConfigArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -327,7 +321,6 @@ try {
     Write-Host "Cargo:               $CargoExe"
     $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
     Write-Host ("Arena jobs:          {0}" -f $arenaJobsLabel)
-    Write-Host ("Heuristic compare:   {0}" -f ([bool]$RecordHeuristicComparison))
 
     Assert-FileExists `
         $BaselineCheckpoint `
@@ -432,9 +425,6 @@ try {
                 "--mode", "trajectory",
                 "--rollout-onnx", $rolloutOnnx
             )
-            if ($RecordHeuristicComparison) {
-                $trajectoryConfigArgs += @("--record-heuristic-comparison")
-            }
             Invoke-TrainingPython $trajectoryConfigArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -694,5 +684,4 @@ finally {
         $env:PYTEST_DEBUG_TEMPROOT = (Resolve-Path -LiteralPath $PreviousPytestTempRoot).Path
     }
 }
-
 

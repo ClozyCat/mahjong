@@ -35,14 +35,12 @@ DEVICE=auto
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
 LEARNER_POLICY_ID="learner"
 SELFPLAY_POLICY_ID="selfplay_neural"
-SELFPLAY_POLICY_MODE=neural
 SKIP_TESTS=0
 SKIP_ONNX_EXPORT=0
 SKIP_EVAL=0
 ENFORCE_CANDIDATE_GATE=0
 ALLOW_RL_BASELINE_CHECKPOINT=0
 RECOMPUTE_OLD_POLICY_STATS=0
-RECORD_HEURISTIC_COMPARISON=0
 CANDIDATE_SELECTION_MODE=epoch
 
 usage() {
@@ -92,14 +90,12 @@ Options:
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
   --selfplay-policy-id ID          Policy id written to trajectory rows.
-  --selfplay-policy-mode MODE      heuristic or neural.
   --skip-tests                     Skip Python tests.
   --skip-onnx-export               Do not export candidate.onnx.
   --skip-eval                      Do not run baseline vs candidate arena evaluation.
   --enforce-candidate-gate         Exit non-zero when no iteration passes candidate gate.
   --allow-rl-baseline-checkpoint   Allow intentionally continuing from an RL checkpoint.
   --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
-  --record-heuristic-comparison    Record same-as-heuristic telemetry during arena runs.
   --candidate-selection-mode MODE  epoch or final. Default epoch.
   -h, --help                       Show this help.
 EOF
@@ -192,9 +188,6 @@ run_candidate_eval() {
         --candidate-onnx "$candidate_model"
         --baseline-onnx "$eval_baseline_onnx"
     )
-    if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
-        eval_config_args+=(--record-heuristic-comparison)
-    fi
     "${PYTHON_CMD[@]}" "${eval_config_args[@]}"
 
     RUN_EVAL_CONFIG="$eval_dir/candidate_eval_config.json"
@@ -392,11 +385,6 @@ while [[ $# -gt 0 ]]; do
             SELFPLAY_POLICY_ID="$2"
             shift 2
             ;;
-        --selfplay-policy-mode)
-            require_value "$1" "${2:-}"
-            SELFPLAY_POLICY_MODE="$2"
-            shift 2
-            ;;
         --skip-tests)
             SKIP_TESTS=1
             shift
@@ -421,10 +409,6 @@ while [[ $# -gt 0 ]]; do
             RECOMPUTE_OLD_POLICY_STATS=1
             shift
             ;;
-        --record-heuristic-comparison)
-            RECORD_HEURISTIC_COMPARISON=1
-            shift
-            ;;
         --candidate-selection-mode)
             require_value "$1" "${2:-}"
             CANDIDATE_SELECTION_MODE="$2"
@@ -442,10 +426,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$SELFPLAY_POLICY_MODE" != "heuristic" && "$SELFPLAY_POLICY_MODE" != "neural" ]]; then
-    echo "--selfplay-policy-mode must be heuristic or neural." >&2
-    exit 2
-fi
 if [[ "$CANDIDATE_SELECTION_MODE" != "epoch" && "$CANDIDATE_SELECTION_MODE" != "final" ]]; then
     echo "--candidate-selection-mode must be epoch or final." >&2
     exit 2
@@ -547,12 +527,6 @@ if (( ARENA_JOBS == 0 )); then
 else
     echo "Arena jobs:          $ARENA_JOBS"
 fi
-if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
-    echo "Heuristic compare:   true"
-else
-    echo "Heuristic compare:   false"
-fi
-
 require_file \
     "$BASELINE_CHECKPOINT" \
     "Baseline checkpoint" \
@@ -640,9 +614,6 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
             --mode trajectory
             --rollout-onnx "$rollout_onnx"
         )
-        if (( RECORD_HEURISTIC_COMPARISON == 1 )); then
-            trajectory_config_args+=(--record-heuristic-comparison)
-        fi
         "${PYTHON_CMD[@]}" "${trajectory_config_args[@]}"
 
         trajectory_files=()

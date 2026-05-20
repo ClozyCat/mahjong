@@ -25,7 +25,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("backend/assets/sft/sft.onnx"),
     )
-    parser.add_argument("--record-heuristic-comparison", action="store_true")
     return parser.parse_args()
 
 
@@ -53,7 +52,6 @@ def build_trajectory_configs(
     matches: int,
     seed: int,
     max_actions: int,
-    record_heuristic_comparison: bool = False,
 ) -> list[dict[str, Any]]:
     learner = clean_policy(pool["learner"])
     opponents = weighted_opponents(pool)
@@ -74,7 +72,6 @@ def build_trajectory_configs(
                 "seed": seed + learner_seat * 100000,
                 "max_actions_per_match": max_actions,
                 "report_trajectories": True,
-                "record_heuristic_comparison": record_heuristic_comparison,
                 "policies": policies,
             }
         )
@@ -87,27 +84,23 @@ def build_eval_config(
     matches: int,
     seed: int,
     max_actions: int,
-    record_heuristic_comparison: bool = False,
 ) -> dict[str, Any]:
     return {
         "matches": matches,
         "seed": seed,
         "max_actions_per_match": max_actions,
         "report_trajectories": False,
-        "record_heuristic_comparison": record_heuristic_comparison,
         "seat_rotation": "cyclic",
         "seat_rotation_offset": 0,
         "policies": [
             {
                 "id": "baseline_neural",
-                "mode": "neural",
                 "model_path": model_path_text(baseline_onnx),
                 "sample_actions": False,
                 "temperature": 1.0,
             },
             {
                 "id": "rl_candidate_neural",
-                "mode": "neural",
                 "model_path": model_path_text(candidate_onnx),
                 "sample_actions": False,
                 "temperature": 1.0,
@@ -120,8 +113,7 @@ def apply_rollout_model_override(pool: dict[str, Any], rollout_onnx: Path | None
     if rollout_onnx is None:
         return
     learner = pool["learner"]
-    if learner.get("mode") == "neural":
-        learner["model_path"] = model_path_text(rollout_onnx)
+    learner["model_path"] = model_path_text(rollout_onnx)
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -141,7 +133,6 @@ def main() -> None:
                 args.matches,
                 args.seed,
                 args.max_actions,
-                args.record_heuristic_comparison,
             )
         ):
             write_json(args.output_dir / f"trajectory_config_{index}.json", config)
@@ -156,7 +147,6 @@ def main() -> None:
                 args.matches,
                 args.seed,
                 args.max_actions,
-                args.record_heuristic_comparison,
             ),
         )
 

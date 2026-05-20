@@ -29,11 +29,52 @@ use crate::rules::standard::{
     ready_hand::is_tenpai_hand_with_melds,
 };
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ArenaPolicyMode {
-    Heuristic,
-    Neural,
+fn bot_context_for_discards(tile_keys: &[&str]) -> BotContext {
+    let concealed_tiles = tile_keys
+        .iter()
+        .enumerate()
+        .map(|(index, tile_key)| super::context::BotTileView {
+            tile_id: format!("{tile_key}-{index}"),
+            tile_key: (*tile_key).to_string(),
+            is_flower: false,
+        })
+        .collect::<Vec<_>>();
+    BotContext {
+        seat_index: 0,
+        seat_count: 4,
+        dealer_seat: 0,
+        round_wind: Some("east".to_string()),
+        minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+        cumulative_scores: vec![0, 0, 0, 0],
+        wall_tiles_remaining: 18,
+        visible_tile_keys: Vec::new(),
+        opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
+        opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
+        discard_history: Vec::new(),
+        kong_entries: Vec::new(),
+        player: super::context::BotPlayerContext {
+            concealed_tiles,
+            concealed_tile_counts: tile_counts_for_keys(tile_keys),
+            meld_tile_key_groups: Vec::new(),
+            flower_count: 0,
+        },
+        restricted_discard_tile_key: None,
+        drawn_tile_id: None,
+        self_kong_candidates: Vec::new(),
+        claim_options: Vec::new(),
+        last_discard_tile_key: None,
+        add_kong_risk_tiles: std::collections::HashSet::new(),
+    }
+}
+
+fn tile_counts_for_keys(tile_keys: &[&str]) -> super::context::TileCounts {
+    let mut counts = [0_u8; super::context::TILE_KIND_COUNT];
+    for tile_key in tile_keys {
+        if let Some(index) = tile_index(tile_key) {
+            counts[index] = counts[index].saturating_add(1);
+        }
+    }
+    counts
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -47,14 +88,11 @@ pub enum ArenaSeatRotation {
 #[serde(deny_unknown_fields)]
 pub struct ArenaBotPolicyConfig {
     pub id: String,
-    pub mode: ArenaPolicyMode,
     pub model_path: Option<String>,
     #[serde(default)]
     pub sample_actions: bool,
     #[serde(default = "default_policy_temperature")]
     pub temperature: f32,
-    #[serde(default)]
-    pub record_heuristic_comparison: bool,
     #[serde(default = "default_discard_base_risk_weight")]
     pub discard_base_risk_weight: f32,
     #[serde(default = "default_discard_value_risk_range")]
@@ -66,6 +104,7 @@ pub struct ArenaBotPolicyConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ArenaConfig {
     pub matches: usize,
     pub seed: u64,
@@ -73,8 +112,6 @@ pub struct ArenaConfig {
     pub max_actions_per_match: usize,
     #[serde(default)]
     pub report_trajectories: bool,
-    #[serde(default)]
-    pub record_heuristic_comparison: bool,
     #[serde(default = "default_seat_rotation")]
     pub seat_rotation: ArenaSeatRotation,
     #[serde(default)]
@@ -96,11 +133,7 @@ pub struct ArenaSeatMetrics {
     pub decision_count: u64,
     pub decision_latency_ms_sum: u128,
     pub model_loaded: bool,
-    pub fallback_count: u64,
     pub neural_action_count: u64,
-    pub same_as_heuristic_count: u64,
-    pub heuristic_comparison_count: u64,
-    pub same_as_heuristic_rate: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -183,23 +216,6 @@ fn default_seat_rotation() -> ArenaSeatRotation {
     ArenaSeatRotation::Fixed
 }
 
-impl ArenaBotPolicyConfig {
-    pub fn heuristic() -> Self {
-        Self {
-            id: "heuristic".to_string(),
-            mode: ArenaPolicyMode::Heuristic,
-            model_path: None,
-            sample_actions: false,
-            temperature: 1.0,
-            record_heuristic_comparison: false,
-            discard_base_risk_weight: default_discard_base_risk_weight(),
-            discard_value_risk_range: default_discard_value_risk_range(),
-            discard_min_risk_weight: default_discard_min_risk_weight(),
-            discard_max_risk_weight: default_discard_max_risk_weight(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct ArenaMatchAccumulator {
     pub seats: Vec<ArenaSeatMetrics>,
@@ -239,17 +255,6 @@ impl ArenaMatchAccumulator {
                 metrics.model_loaded |= telemetry.model_loaded;
                 if telemetry.used_neural_action {
                     metrics.neural_action_count += 1;
-                }
-                if telemetry.used_fallback {
-                    metrics.fallback_count += 1;
-                }
-                if let Some(same_as_heuristic) = telemetry.same_as_heuristic {
-                    metrics.heuristic_comparison_count += 1;
-                    if same_as_heuristic {
-                        metrics.same_as_heuristic_count += 1;
-                    }
-                    metrics.same_as_heuristic_rate = metrics.same_as_heuristic_count as f64
-                        / metrics.heuristic_comparison_count as f64;
                 }
             }
         }
@@ -362,6 +367,7 @@ pub fn run_arena_with_progress(
     if config.policies.is_empty() {
         return Err("arena config requires at least one policy".to_string());
     }
+    validate_policy_models(config)?;
 
     let mut output = ArenaRunOutput::default();
     for match_index in 0..config.matches {
@@ -382,6 +388,7 @@ pub fn run_arena_parallel_with_progress(
     if config.policies.is_empty() {
         return Err("arena config requires at least one policy".to_string());
     }
+    validate_policy_models(config)?;
     if config.matches == 0 {
         return Ok(ArenaRunOutput::default());
     }
@@ -564,21 +571,41 @@ fn policy_for_match_seat(
     seat_index: usize,
 ) -> ArenaBotPolicyConfig {
     let policy_count = config.policies.len();
-    if policy_count == 0 {
-        return ArenaBotPolicyConfig::heuristic();
-    }
+    debug_assert!(policy_count > 0);
     let rotation = match config.seat_rotation {
         ArenaSeatRotation::Fixed => 0,
         ArenaSeatRotation::Cyclic => config.seat_rotation_offset.wrapping_add(match_index),
     };
     let policy_index = seat_index.wrapping_add(rotation) % policy_count;
-    let mut policy = config
+    config
         .policies
         .get(policy_index)
         .cloned()
-        .unwrap_or_else(ArenaBotPolicyConfig::heuristic);
-    policy.record_heuristic_comparison = config.record_heuristic_comparison;
-    policy
+        .expect("arena config has policies")
+}
+
+fn validate_policy_models(config: &ArenaConfig) -> Result<(), String> {
+    let context = validation_bot_context();
+    for policy in &config.policies {
+        if neural_decision_scores_for_model_path(
+            &context,
+            policy.model_path.as_deref().map(std::path::Path::new),
+        )
+        .is_none()
+        {
+            return Err(format!(
+                "failed to load neural model for policy '{}'",
+                policy.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validation_bot_context() -> BotContext {
+    bot_context_for_discards(&[
+        "w1", "w2", "w3", "t1", "t2", "t3", "b1", "b2", "b3", "east", "east", "green", "w9", "w6",
+    ])
 }
 
 fn trajectory_row_from_trace_with_state(
@@ -597,7 +624,8 @@ fn trajectory_row_from_trace_with_state(
         use crate::room_scoring::RoomScoringCache;
 
         let cache = RoomScoringCache::from_state(state);
-        let (tile_planes, scalar_features) = encode_global_features_v2(&cache, trace.action.seat_index);
+        let (tile_planes, scalar_features) =
+            encode_global_features_v2(&cache, trace.action.seat_index);
         (Some(tile_planes), Some(scalar_features))
     };
 
@@ -722,9 +750,6 @@ fn neural_policy_stats(
     action_index: i64,
     trace_scores: Option<&NeuralDecisionScores>,
 ) -> Option<(f32, f32)> {
-    if !matches!(policy.mode, ArenaPolicyMode::Neural) {
-        return None;
-    }
     let computed_scores;
     let scores = match trace_scores {
         Some(scores) => scores,
@@ -933,11 +958,23 @@ fn terminal_reward_for_seat(seat: &ArenaSeatMetrics) -> f32 {
 mod tests {
     use super::*;
     use crate::bot::action_space::{CLAIM_ACTION_COUNT, SELF_KONG_ACTION_COUNT, TILE_KIND_COUNT};
-    use crate::bot::context::{BotPlayerContext, BotTileView, tile_counts34};
     use crate::bot::neural::NeuralDecisionScores;
     use crate::core::state::{PlayerRoundState, RoundState};
     use crate::core::tile::Tile;
     use crate::rules::standard::automation::BotDecisionTrace;
+
+    fn test_policy(id: &str) -> ArenaBotPolicyConfig {
+        ArenaBotPolicyConfig {
+            id: id.to_string(),
+            model_path: Some("backend/assets/sft/sft.onnx".to_string()),
+            sample_actions: false,
+            temperature: 1.0,
+            discard_base_risk_weight: default_discard_base_risk_weight(),
+            discard_value_risk_range: default_discard_value_risk_range(),
+            discard_min_risk_weight: default_discard_min_risk_weight(),
+            discard_max_risk_weight: default_discard_max_risk_weight(),
+        }
+    }
 
     #[test]
     fn arena_config_parses_policy_ids() {
@@ -945,8 +982,8 @@ mod tests {
             "matches": 2,
             "seed": 20260429,
             "policies": [
-                {"id":"heuristic","mode":"heuristic","model_path":null},
-                {"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"sft","model_path":"backend/assets/sft/sft.onnx"},
+                {"id":"candidate","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
@@ -956,27 +993,45 @@ mod tests {
         assert_eq!(config.seed, 20260429);
         assert_eq!(config.max_actions_per_match, 2400);
         assert!(!config.report_trajectories);
-        assert!(!config.record_heuristic_comparison);
-        assert_eq!(config.policies[1].id, "neural");
-        assert_eq!(config.policies[1].mode, ArenaPolicyMode::Neural);
+        assert_eq!(config.policies[1].id, "candidate");
         assert!(!config.policies[0].sample_actions);
         assert_eq!(config.policies[0].temperature, 1.0);
     }
 
     #[test]
-    fn arena_config_parses_heuristic_comparison_toggle() {
+    fn arena_config_rejects_removed_heuristic_comparison_toggle() {
         let raw = r#"{
             "matches": 1,
             "seed": 20260429,
             "record_heuristic_comparison": true,
             "policies": [
-                {"id":"neural","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
-        let config: ArenaConfig = serde_json::from_str(raw).expect("config");
+        let parsed = serde_json::from_str::<ArenaConfig>(raw);
 
-        assert!(config.record_heuristic_comparison);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn arena_errors_when_policy_model_cannot_load() {
+        let mut policy = test_policy("missing-model");
+        policy.model_path = Some("backend/assets/sft/does-not-exist.onnx".to_string());
+        let config = ArenaConfig {
+            matches: 0,
+            seed: 7,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            seat_rotation: ArenaSeatRotation::Fixed,
+            seat_rotation_offset: 0,
+            policies: vec![policy],
+        };
+
+        let error = run_arena(&config, false).expect_err("missing model must fail");
+
+        assert!(error.contains("failed to load neural model"));
+        assert!(error.contains("missing-model"));
     }
 
     #[test]
@@ -987,7 +1042,6 @@ mod tests {
             "policies": [
                 {
                     "id":"learner",
-                    "mode":"neural",
                     "model_path":"backend/assets/models/mahjong_policy_net.onnx",
                     "sample_actions":true,
                     "temperature":0.8
@@ -1009,24 +1063,9 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            record_heuristic_comparison: true,
             seat_rotation: ArenaSeatRotation::Cyclic,
             seat_rotation_offset: 0,
-            policies: ["a", "b", "c", "d"]
-                .into_iter()
-                .map(|id| ArenaBotPolicyConfig {
-                    id: id.to_string(),
-                    mode: ArenaPolicyMode::Heuristic,
-                    model_path: None,
-                    sample_actions: false,
-                    temperature: 1.0,
-                    record_heuristic_comparison: false,
-                    discard_base_risk_weight: default_discard_base_risk_weight(),
-                    discard_value_risk_range: default_discard_value_risk_range(),
-                    discard_min_risk_weight: default_discard_min_risk_weight(),
-                    discard_max_risk_weight: default_discard_max_risk_weight(),
-                })
-                .collect(),
+            policies: ["a", "b", "c", "d"].into_iter().map(test_policy).collect(),
         };
 
         for seat_index in 0..4 {
@@ -1037,7 +1076,6 @@ mod tests {
 
             assert_eq!(policy_ids, vec!["a", "b", "c", "d"]);
         }
-        assert!(policy_for_match_seat(&config, 0, 0).record_heuristic_comparison);
     }
 
     #[test]
@@ -1047,24 +1085,9 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Cyclic,
             seat_rotation_offset: 3,
-            policies: ["a", "b", "c", "d"]
-                .into_iter()
-                .map(|id| ArenaBotPolicyConfig {
-                    id: id.to_string(),
-                    mode: ArenaPolicyMode::Heuristic,
-                    model_path: None,
-                    sample_actions: false,
-                    temperature: 1.0,
-                    record_heuristic_comparison: false,
-                    discard_base_risk_weight: default_discard_base_risk_weight(),
-                    discard_value_risk_range: default_discard_value_risk_range(),
-                    discard_min_risk_weight: default_discard_min_risk_weight(),
-                    discard_max_risk_weight: default_discard_max_risk_weight(),
-                })
-                .collect(),
+            policies: ["a", "b", "c", "d"].into_iter().map(test_policy).collect(),
         };
 
         assert_eq!(policy_for_match_seat(&config, 0, 0).id, "d");
@@ -1077,24 +1100,13 @@ mod tests {
             "matches": 2,
             "seed": 20260429,
             "policies": [
-                {"id":"removed_policy","mode":"removed_policy","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
+                {"id":"removed_policy","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
             ]
         }"#;
 
         let parsed = serde_json::from_str::<ArenaConfig>(raw);
 
         assert!(parsed.is_err());
-    }
-
-    #[test]
-    fn heuristic_policy_config_has_stable_defaults() {
-        let config = ArenaBotPolicyConfig::heuristic();
-
-        assert_eq!(config.id, "heuristic");
-        assert_eq!(config.mode, ArenaPolicyMode::Heuristic);
-        assert_eq!(config.model_path, None);
-        assert!(!config.sample_actions);
-        assert_eq!(config.temperature, 1.0);
     }
 
     #[test]
@@ -1105,7 +1117,7 @@ mod tests {
             "matches": 2,
             "seed": 20260429,
             "policies": [
-                {{"id":"neural","mode":"neural","{removed_field}":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}}
+                {{"id":"neural","{removed_field}":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}}
             ]
         }}"#
         );
@@ -1132,10 +1144,9 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
-            policies: vec![ArenaBotPolicyConfig::heuristic()],
+            policies: vec![test_policy("neural")],
         };
         let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
 
@@ -1155,45 +1166,20 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
-            policies: vec![ArenaBotPolicyConfig {
-                id: "neural".to_string(),
-                mode: ArenaPolicyMode::Neural,
-                model_path: Some("missing.onnx".to_string()),
-                sample_actions: false,
-                temperature: 1.0,
-                record_heuristic_comparison: false,
-                discard_base_risk_weight: default_discard_base_risk_weight(),
-                discard_value_risk_range: default_discard_value_risk_range(),
-                discard_min_risk_weight: default_discard_min_risk_weight(),
-                discard_max_risk_weight: default_discard_max_risk_weight(),
-            }],
+            policies: vec![test_policy("neural")],
         };
         let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
 
         let neural = crate::bot::policy::BotPolicyDecisionTelemetry {
             model_loaded: true,
             used_neural_action: true,
-            used_fallback: false,
-            same_as_heuristic: Some(true),
         };
         accumulator.record_decision(0, "discard", 3, Some(&neural));
-        let fallback = crate::bot::policy::BotPolicyDecisionTelemetry {
-            model_loaded: false,
-            used_neural_action: false,
-            used_fallback: true,
-            same_as_heuristic: None,
-        };
-        accumulator.record_decision(0, "discard", 2, Some(&fallback));
 
         assert!(accumulator.seats[0].model_loaded);
         assert_eq!(accumulator.seats[0].neural_action_count, 1);
-        assert_eq!(accumulator.seats[0].fallback_count, 1);
-        assert_eq!(accumulator.seats[0].same_as_heuristic_count, 1);
-        assert_eq!(accumulator.seats[0].heuristic_comparison_count, 1);
-        assert_eq!(accumulator.seats[0].same_as_heuristic_rate, 1.0);
     }
 
     #[test]
@@ -1203,10 +1189,9 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
-            policies: vec![ArenaBotPolicyConfig::heuristic()],
+            policies: vec![test_policy("neural")],
         };
         let mut room = RoomState {
             phase: "playing".to_string(),
@@ -1251,10 +1236,9 @@ mod tests {
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            record_heuristic_comparison: false,
             seat_rotation: ArenaSeatRotation::Fixed,
             seat_rotation_offset: 0,
-            policies: vec![ArenaBotPolicyConfig::heuristic()],
+            policies: vec![test_policy("neural")],
         };
         let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
         accumulator.seats[0].discard_count = 3;
@@ -1288,7 +1272,7 @@ mod tests {
             match_id: "arena-1".to_string(),
             decision_index: 0,
             seat_index: 0,
-            policy_id: "heuristic".to_string(),
+            policy_id: "neural".to_string(),
             decision_kind: "active_turn".to_string(),
             tile_planes: vec![0.0; 340],
             scalar_features: vec![0.0; 12],
@@ -1350,11 +1334,9 @@ mod tests {
         };
         let policy = ArenaBotPolicyConfig {
             id: "learner".to_string(),
-            mode: ArenaPolicyMode::Neural,
             model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
             sample_actions: true,
             temperature: 1.0,
-            record_heuristic_comparison: false,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),
@@ -1390,11 +1372,9 @@ mod tests {
         };
         let policy = ArenaBotPolicyConfig {
             id: "learner".to_string(),
-            mode: ArenaPolicyMode::Heuristic,
             model_path: None,
             sample_actions: false,
             temperature: 1.0,
-            record_heuristic_comparison: false,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),
@@ -1436,11 +1416,9 @@ mod tests {
         };
         let policy = ArenaBotPolicyConfig {
             id: "learner".to_string(),
-            mode: ArenaPolicyMode::Neural,
             model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
             sample_actions: true,
             temperature: 1.0,
-            record_heuristic_comparison: false,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),
@@ -1541,7 +1519,7 @@ mod tests {
             match_id: "arena-1".to_string(),
             decision_index,
             seat_index,
-            policy_id: "heuristic".to_string(),
+            policy_id: "neural".to_string(),
             decision_kind: "active_turn".to_string(),
             tile_planes: vec![0.0; 340],
             scalar_features: vec![0.0; 12],
@@ -1565,44 +1543,6 @@ mod tests {
             global_tile_planes: None,
             global_scalar_features: None,
             done: false,
-        }
-    }
-
-    fn bot_context_for_discards(tile_keys: &[&str]) -> BotContext {
-        let concealed_tiles = tile_keys
-            .iter()
-            .enumerate()
-            .map(|(index, tile_key)| BotTileView {
-                tile_id: format!("{tile_key}-{index}"),
-                tile_key: (*tile_key).to_string(),
-                is_flower: false,
-            })
-            .collect::<Vec<_>>();
-        BotContext {
-            seat_index: 0,
-            seat_count: 4,
-            dealer_seat: 0,
-            round_wind: Some("east".to_string()),
-            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
-            cumulative_scores: vec![0, 0, 0, 0],
-            wall_tiles_remaining: 18,
-            visible_tile_keys: Vec::new(),
-            opponent_discards_by_seat: vec![vec![], vec![], vec![], vec![]],
-            opponent_melds_by_seat: vec![vec![], vec![], vec![], vec![]],
-            discard_history: Vec::new(),
-            kong_entries: Vec::new(),
-            player: BotPlayerContext {
-                concealed_tiles,
-                concealed_tile_counts: tile_counts34(tile_keys.iter().copied()),
-                meld_tile_key_groups: Vec::new(),
-                flower_count: 0,
-            },
-            restricted_discard_tile_key: None,
-            drawn_tile_id: Some("w2-1".to_string()),
-            self_kong_candidates: Vec::new(),
-            claim_options: Vec::new(),
-            last_discard_tile_key: None,
-            add_kong_risk_tiles: std::collections::HashSet::new(),
         }
     }
 

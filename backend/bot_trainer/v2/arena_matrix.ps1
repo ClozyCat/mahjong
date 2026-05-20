@@ -49,20 +49,14 @@ function ConvertTo-ArenaPolicy {
         [int]$Index
     )
 
-    foreach ($required in @("id", "mode")) {
+    foreach ($required in @("id", "model_path")) {
         if (-not (Test-JsonProperty -Object $Policy -Name $required) -or [string]::IsNullOrWhiteSpace([string]$Policy.$required)) {
             throw "Policy at index $Index must define '$required'."
         }
     }
 
-    $mode = ([string]$Policy.mode).Trim().ToLowerInvariant()
-    if (@("heuristic", "neural") -notcontains $mode) {
-        throw "Policy '$($Policy.id)' has unsupported mode '$($Policy.mode)'. Expected heuristic or neural."
-    }
-
     $arenaPolicy = [ordered]@{
         id = [string]$Policy.id
-        mode = $mode
         model_path = if (Test-JsonProperty -Object $Policy -Name "model_path") { $Policy.model_path } else { $null }
     }
 
@@ -206,16 +200,12 @@ function Write-ArenaSummary {
             $decisions = ($rows | Measure-Object -Property decision_count -Sum).Sum
             $latencySum = ($rows | Measure-Object -Property decision_latency_ms_sum -Sum).Sum
             $modelLoaded = @($rows | Where-Object { $_.model_loaded }).Count
-            $fallbackCount = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "fallback_count") { [int64]$_.fallback_count } else { 0 } } | Measure-Object -Sum).Sum
             $neuralActions = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "neural_action_count") { [int64]$_.neural_action_count } else { 0 } } | Measure-Object -Sum).Sum
-            $sameAsHeuristic = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "same_as_heuristic_count") { [int64]$_.same_as_heuristic_count } else { 0 } } | Measure-Object -Sum).Sum
-            $heuristicComparisons = ($rows | ForEach-Object { if (Test-JsonProperty -Object $_ -Name "heuristic_comparison_count") { [int64]$_.heuristic_comparison_count } else { 0 } } | Measure-Object -Sum).Sum
-            $sameRate = if ($heuristicComparisons -gt 0) { $sameAsHeuristic / $heuristicComparisons } else { 0 }
             $avgScore = if ($rows.Count -gt 0) { $scoreSum / $rows.Count } else { 0 }
             $avgLatency = if ($decisions -gt 0) { $latencySum / $decisions } else { 0 }
             $tenpai = @($rows | Where-Object { $_.final_tenpai }).Count
-            Write-Host ("  {0,-10} seats={1,4} wins={2,3} dealt_in={3,3} score_sum={4,7} avg_score={5,7:N1} decisions={6,6} avg_latency_ms={7,6:N1} final_tenpai={8,3} model_loaded={9,4} fallback={10,5} neural_actions={11,5} same_as_heuristic={12,5:N2}" -f `
-                $_.Name, $rows.Count, $wins, $dealtIn, $scoreSum, $avgScore, $decisions, $avgLatency, $tenpai, $modelLoaded, $fallbackCount, $neuralActions, $sameRate)
+            Write-Host ("  {0,-10} seats={1,4} wins={2,3} dealt_in={3,3} score_sum={4,7} avg_score={5,7:N1} decisions={6,6} avg_latency_ms={7,6:N1} final_tenpai={8,3} model_loaded={9,4} neural_actions={10,5}" -f `
+                $_.Name, $rows.Count, $wins, $dealtIn, $scoreSum, $avgScore, $decisions, $avgLatency, $tenpai, $modelLoaded, $neuralActions)
         }
 }
 

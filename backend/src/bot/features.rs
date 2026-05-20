@@ -612,10 +612,7 @@ mod global_features_tests {
                     PlayerRoundState {
                         seat: 1,
                         is_ready_hand: false,
-                        concealed_tiles: vec![
-                            Tile::tile_key_only("b5"),
-                            Tile::tile_key_only("b6"),
-                        ],
+                        concealed_tiles: vec![Tile::tile_key_only("b5"), Tile::tile_key_only("b6")],
                         melds: Vec::new(),
                         display_melds: Vec::new(),
                         discards: vec![Tile::tile_key_only("t9")],
@@ -631,10 +628,7 @@ mod global_features_tests {
                         melds: Vec::new(),
                         display_melds: Vec::new(),
                         discards: Vec::new(),
-                        flowers: vec![
-                            Tile::tile_key_only("orchid"),
-                            Tile::tile_key_only("bamboo"),
-                        ],
+                        flowers: vec![Tile::tile_key_only("orchid"), Tile::tile_key_only("bamboo")],
                     },
                     PlayerRoundState {
                         seat: 3,

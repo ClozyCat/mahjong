@@ -1,4 +1,4 @@
-use crate::bot::arena::{ArenaBotPolicyConfig, ArenaPolicyMode};
+use crate::bot::arena::ArenaBotPolicyConfig;
 use crate::core::state::{RoomState, SeatState};
 
 pub(crate) const SPECIAL_BOT_SEAT_TYPE: &str = "special_bot";
@@ -50,7 +50,9 @@ pub(crate) fn is_special_bot_username(username: &str) -> bool {
         .any(|bot| bot.username == username)
 }
 
-pub(crate) fn definition_for_display_name(display_name: &str) -> Option<&'static SpecialBotDefinition> {
+pub(crate) fn definition_for_display_name(
+    display_name: &str,
+) -> Option<&'static SpecialBotDefinition> {
     SPECIAL_BOT_DEFINITIONS
         .iter()
         .find(|bot| bot.display_name == display_name)
@@ -58,8 +60,7 @@ pub(crate) fn definition_for_display_name(display_name: &str) -> Option<&'static
 
 #[cfg(test)]
 pub(crate) fn model_path_for_display_name(display_name: &str) -> Option<&'static str> {
-    definition_for_display_name(display_name)
-        .map(|bot| bot.model_path)
+    definition_for_display_name(display_name).map(|bot| bot.model_path)
 }
 
 #[cfg(test)]
@@ -94,11 +95,9 @@ pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> Are
 
     ArenaBotPolicyConfig {
         id: format!("{policy_id}-seat-{seat_index}"),
-        mode: ArenaPolicyMode::Neural,
         model_path: Some(model_path.to_string()),
         sample_actions: false,
         temperature,
-        record_heuristic_comparison: false,
         discard_base_risk_weight: 0.90,
         discard_value_risk_range: 0.55,
         discard_min_risk_weight: 0.25,
@@ -112,22 +111,13 @@ mod tests {
 
     #[test]
     fn maps_special_bot_names_to_model_paths() {
-        assert_eq!(
-            model_path_for_display_name("舒伯特"),
-            Some(SFT_MODEL_PATH)
-        );
-        assert_eq!(
-            model_path_for_display_name("爱伦坡"),
-            Some(PPO_MODEL_PATH)
-        );
+        assert_eq!(model_path_for_display_name("舒伯特"), Some(SFT_MODEL_PATH));
+        assert_eq!(model_path_for_display_name("爱伦坡"), Some(PPO_MODEL_PATH));
         assert_eq!(
             model_path_for_display_name("巴尔扎克"),
             Some(PPO_MODEL_PATH)
         );
-        assert_eq!(
-            model_path_for_display_name("狄更斯"),
-            Some(PPO_MODEL_PATH)
-        );
+        assert_eq!(model_path_for_display_name("狄更斯"), Some(PPO_MODEL_PATH));
         assert_eq!(model_path_for_display_name("爱因斯坦"), None);
         assert_eq!(model_path_for_display_name("伯努利"), None);
         assert_eq!(model_path_for_display_name("达尔文"), None);
