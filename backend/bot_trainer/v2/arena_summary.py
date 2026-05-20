@@ -24,6 +24,7 @@ def load_reports(path: Path) -> list[dict[str, Any]]:
 
 def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
     by_policy: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    by_subject: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     completed_matches = 0
     for report in reports:
         completed_matches += 1 if report.get("completed") else 0
@@ -45,6 +46,19 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             if first_tenpai_turn is not None:
                 metrics["first_tenpai_turn_sum"] += first_tenpai_turn
                 metrics["first_tenpai_turn_count"] += 1
+
+        subject_id = report.get("subject_id")
+        if subject_id:
+            metrics = by_subject[str(subject_id)]
+            metrics["match_count"] += 1
+            metrics["completed"] += 1 if report.get("completed") else 0
+            if report.get("subject_final_score") is not None:
+                metrics["score_sum"] += report["subject_final_score"]
+                metrics["score_count"] += 1
+            if report.get("subject_deal_in_count") is not None:
+                metrics["deal_in_sum"] += report["subject_deal_in_count"]
+            if report.get("subject_win_count") is not None:
+                metrics["win_sum"] += report["subject_win_count"]
 
     policies = {}
     for policy, metrics in sorted(by_policy.items()):
@@ -70,10 +84,23 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             "neural_action_count": int(metrics["neural_action_count"]),
         }
 
+    subjects = {}
+    for subject_id, metrics in sorted(by_subject.items()):
+        match_count = max(metrics["match_count"], 1.0)
+        score_count = max(metrics["score_count"], 1.0)
+        subjects[subject_id] = {
+            "match_count": int(metrics["match_count"]),
+            "completed_matches": int(metrics["completed"]),
+            "avg_final_score": metrics["score_sum"] / score_count,
+            "avg_deal_in_count": metrics["deal_in_sum"] / match_count,
+            "avg_win_count": metrics["win_sum"] / match_count,
+        }
+
     return {
         "matches": len(reports),
         "completed_matches": completed_matches,
         "policies": policies,
+        "subjects": subjects,
     }
 
 
@@ -100,6 +127,17 @@ def print_summary(summary: dict[str, Any]) -> None:
             f"model_loaded_seats={metrics['model_loaded_seats']} "
             f"neural_action_count={metrics['neural_action_count']}"
         )
+    if summary.get("subjects"):
+        print("Subjects:")
+        for subject_id, metrics in summary["subjects"].items():
+            print(
+                f"  {subject_id}: "
+                f"matches={metrics['match_count']} "
+                f"completed={metrics['completed_matches']} "
+                f"avg_final_score={metrics['avg_final_score']:.4f} "
+                f"avg_deal_in_count={metrics['avg_deal_in_count']:.4f} "
+                f"avg_win_count={metrics['avg_win_count']:.4f}"
+            )
 
 
 def main() -> None:

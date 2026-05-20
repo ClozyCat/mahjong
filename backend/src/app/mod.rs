@@ -1,4 +1,5 @@
 pub(crate) mod auth;
+pub(crate) mod evaluation;
 pub(crate) mod invites;
 pub(crate) mod persistence;
 pub(crate) mod protocol;
@@ -42,6 +43,18 @@ pub(crate) const BOT_ACTION_DELAY_MS: u64 = 150;
 pub(crate) const TIMEOUT_AUTO_RESPONSE_BOT_TAKEOVER_THRESHOLD: u8 = 2;
 pub(crate) const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
+pub(crate) fn bot_action_delay_ms(room: &RoomState) -> u64 {
+    if room.mode == crate::evaluation::EVALUATION_ROOM_MODE
+        && room
+            .seats
+            .iter()
+            .all(|seat| seat.is_bot || seat.seat_type != "human")
+    {
+        return 0;
+    }
+    BOT_ACTION_DELAY_MS
+}
+
 #[derive(Clone)]
 pub(crate) struct Settings {
     pub(crate) bind_addr: String,
@@ -84,6 +97,8 @@ pub(crate) struct AppState {
     pub(crate) rooms: RwLock<HashMap<String, Arc<RoomHandle>>>,
     pub(crate) user_connections: RwLock<HashMap<i64, HashMap<u64, ConnectionHandle>>>,
     pub(crate) special_bot_user_ids: RwLock<HashSet<i64>>,
+    pub(crate) evaluation_sessions:
+        RwLock<HashMap<String, self::evaluation::EvaluationSessionResponse>>,
 }
 
 impl AppContext {
@@ -95,6 +110,7 @@ impl AppContext {
                 rooms: RwLock::new(HashMap::new()),
                 user_connections: RwLock::new(HashMap::new()),
                 special_bot_user_ids: RwLock::new(HashSet::new()),
+                evaluation_sessions: RwLock::new(HashMap::new()),
             }),
         }
     }
@@ -827,7 +843,7 @@ pub(crate) async fn online_user_ids(state: &AppContext) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BOT_ACTION_DELAY_MS, convert_seat_to_bot, optional_env_value,
+        BOT_ACTION_DELAY_MS, bot_action_delay_ms, convert_seat_to_bot, optional_env_value,
         record_timeout_auto_responses, remove_bot_from_waiting_room,
         reset_timeout_auto_response_count, resolve_database_path, set_seat_bot_takeover,
         timeout_auto_response_seats,
@@ -838,6 +854,27 @@ mod tests {
     #[test]
     fn bot_action_delay_defaults_to_150ms() {
         assert_eq!(BOT_ACTION_DELAY_MS, 150);
+    }
+
+    #[test]
+    fn evaluation_room_with_only_bots_has_zero_bot_delay() {
+        let mut room = RoomState {
+            mode: crate::evaluation::EVALUATION_ROOM_MODE.to_string(),
+            seats: vec![SeatState {
+                seat_index: 0,
+                connected: true,
+                is_bot: true,
+                seat_type: "bot".to_string(),
+                ..Default::default()
+            }],
+            ..RoomState::default()
+        };
+
+        assert_eq!(bot_action_delay_ms(&room), 0);
+
+        room.seats[0].seat_type = "human".to_string();
+        room.seats[0].is_bot = false;
+        assert_eq!(bot_action_delay_ms(&room), BOT_ACTION_DELAY_MS);
     }
 
     #[test]

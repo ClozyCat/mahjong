@@ -74,7 +74,9 @@ import { buildMeSocketUrl, parseSocialServerMessage } from './lib/meSocket';
 import {
   acceptTableInvite,
   createSocialTable,
+  createEvaluation,
   createTableInvite,
+  getEvaluation,
   getLeaderboard,
   getMyActiveTable,
   getMyInvites,
@@ -100,6 +102,7 @@ import type {
   QuickChatEmoji,
   SessionState,
   TableInvite,
+  EvaluationSessionResponse,
 } from './types/match';
 const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'start_match',
@@ -127,6 +130,8 @@ export default function App() {
   const [onlineUserIds, setOnlineUserIds] = useState<number[]>([]);
   const [pendingInvites, setPendingInvites] = useState<TableInvite[]>([]);
   const [sentInviteStatusesByUserId, setSentInviteStatusesByUserId] = useState<Record<number, SentInviteStatus>>({});
+  const [evaluationSession, setEvaluationSession] = useState<EvaluationSessionResponse | null>(null);
+  const [isEvaluationSubmitting, setIsEvaluationSubmitting] = useState(false);
   const [activeLobbyTableCode, setActiveLobbyTableCode] = useState<string | null>(null);
   const [isActiveTableLookupPending, setIsActiveTableLookupPending] = useState(false);
   const [state, dispatch] = useReducer(
@@ -971,6 +976,53 @@ export default function App() {
     }
   }
 
+  async function handleCreateEvaluation(subjectUserIds: number[]) {
+    if (!authSession?.sessionToken || !currentUser) {
+      setStatusMessage('请先登录。');
+      return;
+    }
+
+    try {
+      setIsEvaluationSubmitting(true);
+      const session = await createEvaluation(defaults.apiBaseUrl, authSession.sessionToken, subjectUserIds);
+      setEvaluationSession(session);
+      setStatusMessage('评测已创建。');
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建评测失败。');
+    } finally {
+      setIsEvaluationSubmitting(false);
+    }
+  }
+
+  async function handleRefreshEvaluation() {
+    if (!authSession?.sessionToken || !evaluationSession) {
+      return;
+    }
+
+    try {
+      const session = await getEvaluation(defaults.apiBaseUrl, authSession.sessionToken, evaluationSession.evaluation_id);
+      setEvaluationSession(session);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '刷新评测失败。');
+    }
+  }
+
+  function handleOpenEvaluationTable(tableCode: string) {
+    if (!authSession?.sessionToken || !currentUser) {
+      setStatusMessage('请先登录。');
+      return;
+    }
+
+    setActiveLobbyTableCode(null);
+    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
+    openRoomSocket({
+      tableCode,
+      nickname: currentUser.display_name,
+      wsBaseUrl: defaults.wsBaseUrl,
+      sessionToken: authSession.sessionToken,
+    });
+  }
+
   async function handleAcceptInvite(invite: TableInvite) {
     if (!authSession?.sessionToken || !currentUser) {
       setStatusMessage('请先登录。');
@@ -1361,6 +1413,8 @@ export default function App() {
           inviteAiUsers={inviteAiUsers}
           inviteStatusesByUserId={sentInviteStatusesByUserId}
           pendingInvitePanel={pendingInvitePanel}
+          evaluationSession={evaluationSession}
+          isEvaluationSubmitting={isEvaluationSubmitting}
           currentUserId={currentUser?.user_id ?? null}
           viewModel={viewModel}
           themeId={themeId}
@@ -1373,6 +1427,9 @@ export default function App() {
           onAction={handleAction}
           onLeaveTable={handleLeaveTable}
           onInvitePlayer={handleInvitePlayer}
+          onCreateEvaluation={handleCreateEvaluation}
+          onRefreshEvaluation={handleRefreshEvaluation}
+          onOpenEvaluationTable={handleOpenEvaluationTable}
           onAddBot={() => handleAdjustBots(1)}
           onRemoveBot={() => handleAdjustBots(-1)}
           onMinimumHuFanChange={handleSetMinimumHuFan}

@@ -1,5 +1,5 @@
 export type Seat = 'bottom' | 'left' | 'top' | 'right';
-export type TableMode = 'normal';
+export type TableMode = 'normal' | 'evaluation';
 export type SeatType = 'human' | 'bot' | 'special_bot';
 export type TableMultiplier = 1;
 export type MinimumHuFan = 0 | 2 | 4 | 6 | 8;
@@ -85,6 +85,25 @@ export interface AcceptInviteResponse {
   table_code: string;
   seat_index: number;
   status: string;
+}
+
+export interface EvaluationSubjectResult {
+  subject_id: string;
+  user_id?: number | null;
+  display_name: string;
+  kind: 'human' | 'bot' | string;
+  table_code: string;
+  phase: RoomPhase;
+  completed: boolean;
+  final_score?: number | null;
+  deal_in_count?: number | null;
+  win_count?: number | null;
+}
+
+export interface EvaluationSessionResponse {
+  evaluation_id: string;
+  seed: number;
+  subjects: EvaluationSubjectResult[];
 }
 
 export interface SeatSnapshot {

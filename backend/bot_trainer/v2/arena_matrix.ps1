@@ -1,12 +1,11 @@
 param(
-    [int]$Matches = 200,
+    [int]$MatchCount = 200,
     [int]$Seed = 20260429,
     [ValidateSet(0, 1)]
     [int]$RandomSeed = 0,
-    [string]$PolicyPool = "",
+    [string]$Config = "",
     [string]$OutputDir = "",
     [int]$ProgressEvery = 10,
-    [int]$Jobs = 0,
     [string]$CargoExe = "cargo"
 )
 
@@ -41,66 +40,54 @@ function Test-JsonProperty {
     return $null -ne ($Object.PSObject.Properties | Where-Object { $_.Name -eq $Name } | Select-Object -First 1)
 }
 
-function ConvertTo-ArenaPolicy {
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$Policy,
-        [Parameter(Mandatory = $true)]
-        [int]$Index
-    )
-
-    foreach ($required in @("id", "model_path")) {
-        if (-not (Test-JsonProperty -Object $Policy -Name $required) -or [string]::IsNullOrWhiteSpace([string]$Policy.$required)) {
-            throw "Policy at index $Index must define '$required'."
-        }
-    }
-
-    $arenaPolicy = [ordered]@{
-        id = [string]$Policy.id
-        model_path = if (Test-JsonProperty -Object $Policy -Name "model_path") { $Policy.model_path } else { $null }
-    }
-
-    if (Test-JsonProperty -Object $Policy -Name "sample_actions") {
-        $arenaPolicy.sample_actions = [bool]$Policy.sample_actions
-    }
-    if (Test-JsonProperty -Object $Policy -Name "temperature") {
-        $arenaPolicy.temperature = [double]$Policy.temperature
-    }
-
-    return $arenaPolicy
-}
-
-function Read-ArenaPolicies {
+function Read-EvaluationConfigTemplate {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path
     )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Policy pool was not found: $Path"
+        throw "Arena evaluation config was not found: $Path"
     }
 
-    $pool = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-    if (Test-JsonProperty -Object $pool -Name "policies") {
-        $rawPolicies = @($pool.policies)
+    $template = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ((Test-JsonProperty -Object $template -Name "policies") -or (Test-JsonProperty -Object $template -Name "learner")) {
+        throw "Arena matrix now accepts only evaluation configs with 'subjects' and exactly three 'opponents': $Path"
     }
-    elseif ((Test-JsonProperty -Object $pool -Name "learner") -and (Test-JsonProperty -Object $pool -Name "opponents")) {
-        $rawPolicies = @($pool.learner) + @($pool.opponents)
+    if (-not (Test-JsonProperty -Object $template -Name "subjects")) {
+        throw "Arena evaluation config must define 'subjects': $Path"
     }
-    else {
-        throw "Policy pool must contain either 'policies' or 'learner' plus 'opponents': $Path"
+    if (-not (Test-JsonProperty -Object $template -Name "opponents")) {
+        throw "Arena evaluation config must define 'opponents': $Path"
     }
-
-    if ($rawPolicies.Count -lt 1) {
-        throw "Policy pool must define at least 1 arena model, but found $($rawPolicies.Count): $Path"
+    $subjects = @($template.subjects)
+    $opponents = @($template.opponents)
+    if ($subjects.Count -lt 1) {
+        throw "Arena evaluation config must define at least one subject: $Path"
     }
-
+    if ($opponents.Count -ne 3) {
+        throw "Arena evaluation config must define exactly three opponents, found $($opponents.Count): $Path"
+    }
     $index = 0
-    return @($rawPolicies | ForEach-Object {
-            $policy = ConvertTo-ArenaPolicy -Policy $_ -Index $index
-            $index += 1
-            $policy
-        })
+    foreach ($subject in $subjects) {
+        foreach ($required in @("id", "display_name", "model_path")) {
+            if (-not (Test-JsonProperty -Object $subject -Name $required) -or [string]::IsNullOrWhiteSpace([string]$subject.$required)) {
+                throw "Arena evaluation config subject at index $index must define '$required': $Path"
+            }
+        }
+        $index += 1
+    }
+    $index = 0
+    foreach ($opponent in $opponents) {
+        foreach ($required in @("id", "model_path")) {
+            if (-not (Test-JsonProperty -Object $opponent -Name $required) -or [string]::IsNullOrWhiteSpace([string]$opponent.$required)) {
+                throw "Arena evaluation config opponent at index $index must define '$required': $Path"
+            }
+        }
+        $index += 1
+    }
+
+    return $template
 }
 
 function Write-Utf8NoBom {
@@ -131,28 +118,13 @@ function Add-Utf8NoBomFile {
     [System.IO.File]::AppendAllText($TargetPath, [System.IO.File]::ReadAllText($SourcePath), $encoding)
 }
 
-function Format-SeatPolicyIds {
+function Format-PolicyIds {
     param(
         [Parameter(Mandatory = $true)]
         [object[]]$Policies
     )
 
     return (($Policies | ForEach-Object { $_.id }) -join ", ")
-}
-
-function Get-CyclicSeatPolicies {
-    param(
-        [Parameter(Mandatory = $true)]
-        [object[]]$Policies,
-        [Parameter(Mandatory = $true)]
-        [int]$Offset
-    )
-
-    $rotated = @()
-    for ($seat = 0; $seat -lt $Policies.Count; $seat += 1) {
-        $rotated += $Policies[($seat + $Offset) % $Policies.Count]
-    }
-    return $rotated
 }
 
 function New-ArenaSeed {
@@ -209,11 +181,13 @@ function Write-ArenaSummary {
         }
 }
 
-$PolicyPool = Resolve-UserPath -Path $PolicyPool -DefaultPath (Join-Path $ScriptDir "arena_policy_pool.json")
+$Config = Resolve-UserPath -Path $Config -DefaultPath (Join-Path $ScriptDir "arena_policy_pool.json")
 $OutputDir = Resolve-UserPath -Path $OutputDir -DefaultPath (Join-Path $ScriptDir "arena_runs")
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$seatPolicies = @(Read-ArenaPolicies -Path $PolicyPool)
+$configTemplate = Read-EvaluationConfigTemplate -Path $Config
+$subjects = @($configTemplate.subjects)
+$opponents = @($configTemplate.opponents)
 
 $outputPath = Join-Path $OutputDir "arena_results.jsonl"
 if (Test-Path -LiteralPath $outputPath) {
@@ -224,8 +198,9 @@ if ($ProgressEvery -le 0) {
     throw "ProgressEvery must be greater than 0."
 }
 
-Write-Host "Initial seat order: $(Format-SeatPolicyIds -Policies $seatPolicies)"
-Write-Host "Policy pool: $PolicyPool"
+Write-Host "Subjects: $(Format-PolicyIds -Policies $subjects)"
+Write-Host "Opponents: $(Format-PolicyIds -Policies $opponents)"
+Write-Host "Arena config: $Config"
 Write-Host "Output: $OutputDir"
 Write-Host "Random seed: $RandomSeed"
 
@@ -234,26 +209,26 @@ try {
     $completedMatches = 0
     $chunkIndex = 0
 
-    while ($completedMatches -lt $Matches) {
-        $chunkMatches = [Math]::Min($ProgressEvery, $Matches - $completedMatches)
+    while ($completedMatches -lt $MatchCount) {
+        $chunkMatches = [Math]::Min($ProgressEvery, $MatchCount - $completedMatches)
         $chunkSeed = if ($RandomSeed -eq 1) { New-ArenaSeed } else { $Seed + $completedMatches }
-        $rotationOffset = $completedMatches % $seatPolicies.Count
         $chunkConfigPath = Join-Path $OutputDir ("arena_config_{0:D3}.json" -f $chunkIndex)
         $chunkOutputPath = Join-Path $OutputDir ("arena_results_{0:D3}.jsonl" -f $chunkIndex)
         if (Test-Path -LiteralPath $chunkOutputPath) {
             Remove-Item -LiteralPath $chunkOutputPath -Force
         }
 
-        $config = @{
+        $maxActionsPerMatch = if (Test-JsonProperty -Object $configTemplate -Name "max_actions_per_match") { [int]$configTemplate.max_actions_per_match } else { 2400 }
+        $reportTrajectories = if (Test-JsonProperty -Object $configTemplate -Name "report_trajectories") { [bool]$configTemplate.report_trajectories } else { $false }
+        $chunkArenaConfig = [PSCustomObject][ordered]@{
             matches = $chunkMatches
             seed = $chunkSeed
-            max_actions_per_match = 2400
-            report_trajectories = $false
-            seat_rotation = "cyclic"
-            seat_rotation_offset = $rotationOffset
-            policies = $seatPolicies
+            max_actions_per_match = $maxActionsPerMatch
+            report_trajectories = $reportTrajectories
+            subjects = $subjects
+            opponents = $opponents
         }
-        Write-Utf8NoBom -Path $chunkConfigPath -Content (($config | ConvertTo-Json -Depth 8) + "`n")
+        Write-Utf8NoBom -Path $chunkConfigPath -Content (($chunkArenaConfig | ConvertTo-Json -Depth 8) + "`n")
 
         $arenaArgs = @(
             "run",
@@ -262,8 +237,7 @@ try {
             "--bin", "bot_arena",
             "--",
             "--config", $chunkConfigPath,
-            "--output", $chunkOutputPath,
-            "--jobs", "$Jobs"
+            "--output", $chunkOutputPath
         )
 
         & $CargoExe @arenaArgs
@@ -273,9 +247,8 @@ try {
 
         Add-Utf8NoBomFile -SourcePath $chunkOutputPath -TargetPath $outputPath
         $completedMatches += $chunkMatches
-        $firstMatchPolicies = @(Get-CyclicSeatPolicies -Policies $seatPolicies -Offset $rotationOffset)
-        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seed={3} rotation_offset={4} first_match_seats={5}" -f `
-            $completedMatches, $Matches, ($chunkIndex + 1), $chunkSeed, $rotationOffset, (Format-SeatPolicyIds -Policies $firstMatchPolicies))
+        Write-Host ("Arena progress: completed {0}/{1} chunk={2} seed={3} subjects={4}" -f `
+            $completedMatches, $MatchCount, ($chunkIndex + 1), $chunkSeed, (Format-PolicyIds -Policies $subjects))
 
         $chunkIndex += 1
     }

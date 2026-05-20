@@ -7,6 +7,8 @@ mod bot;
 #[cfg(test)]
 mod core;
 #[cfg(test)]
+mod evaluation;
+#[cfg(test)]
 mod mahjong;
 #[cfg(test)]
 mod projection;

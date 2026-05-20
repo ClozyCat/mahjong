@@ -2,6 +2,7 @@ mod app;
 pub mod bot;
 pub mod bot_trainer;
 pub mod core;
+pub mod evaluation;
 pub mod projection;
 pub mod room_scoring;
 pub mod rules;

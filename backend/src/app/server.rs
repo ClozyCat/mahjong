@@ -22,8 +22,8 @@ use super::persistence::{Database, DbWorker, UserRecord};
 use super::protocol::{create_table_response, detail_response};
 use super::records::{game_detail_view, game_summary_view};
 use super::room_runtime::{
-    RoomHandle, RoomRuntime, close_room_handle, restore_persisted_rooms, restore_room_snapshot,
-    snapshot_connections,
+    RoomHandle, RoomRuntime, close_room_handle, ensure_room_loaded, restore_persisted_rooms,
+    restore_room_snapshot, snapshot_connections,
 };
 use super::scheduler::schedule_room_tasks_detached;
 use super::social_ws::social_websocket_handler;
@@ -189,6 +189,8 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/leaderboard", get(get_leaderboard))
         .route("/api/me/invites", get(get_my_invites))
         .route("/api/tables", post(create_table))
+        .route("/api/evaluations", post(create_evaluation))
+        .route("/api/evaluations/{evaluation_id}", get(get_evaluation))
         .route(
             "/api/tables/{table_code}/invites",
             post(create_table_invite),
@@ -592,6 +594,166 @@ async fn create_table(
         )
             .into_response(),
     }
+}
+
+async fn create_evaluation(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<super::evaluation::CreateEvaluationRequest>,
+) -> Response {
+    let authenticated_user = match require_authenticated_user(&state, &headers).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut subject_user_ids = vec![authenticated_user.user_id];
+    for user_id in payload.subject_user_ids {
+        if !subject_user_ids.contains(&user_id) {
+            subject_user_ids.push(user_id);
+        }
+    }
+    if subject_user_ids.len() > 4 {
+        return json_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "too_many_evaluation_subjects",
+        );
+    }
+
+    let mut subjects = Vec::new();
+    for user_id in subject_user_ids {
+        let user = match state.inner.db.get_user_by_id(user_id).await {
+            Ok(Some(user)) => user,
+            Ok(None) => return json_error(StatusCode::NOT_FOUND, "evaluation_subject_not_found"),
+            Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        };
+        subjects.push(user);
+    }
+
+    let evaluation_id = super::evaluation::new_evaluation_id();
+    let table_prefix = evaluation_table_prefix(&evaluation_id);
+    let seed = rand::random::<u64>();
+    let special_bot_user_ids = state.inner.special_bot_user_ids.read().await.clone();
+    let mut response = super::evaluation::EvaluationSessionResponse {
+        evaluation_id: evaluation_id.clone(),
+        seed,
+        subjects: Vec::new(),
+    };
+
+    for (index, subject) in subjects.iter().enumerate() {
+        let table_code = super::evaluation::evaluation_table_code(&table_prefix, index);
+        let subject_is_bot = special_bot_user_ids.contains(&subject.user_id);
+        let room = super::evaluation::build_evaluation_room(
+            &table_code,
+            authenticated_user.user_id,
+            Some(subject.user_id),
+            &subject.display_name,
+            subject_is_bot,
+        );
+        let created_at = now_iso();
+        let room_json = match serialize_room_state(&room) {
+            Ok(room_json) => room_json,
+            Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
+        };
+
+        let save_result = if subject_is_bot {
+            state
+                .inner
+                .db
+                .save_table(&table_code, &created_at, &room_json)
+                .await
+        } else {
+            state
+                .inner
+                .db
+                .save_table_and_upsert_participant(
+                    &table_code,
+                    &created_at,
+                    &room_json,
+                    0,
+                    subject.user_id,
+                    &subject.display_name,
+                    &created_at,
+                )
+                .await
+        };
+        if let Err(error) = save_result {
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+        }
+
+        let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(created_at, room.clone())));
+        let old_room = state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert(table_code.clone(), room_handle);
+        if let Some(old_room) = old_room {
+            close_room_handle(&old_room).await;
+        }
+        schedule_room_tasks_detached(state.clone(), table_code.clone());
+
+        response
+            .subjects
+            .push(super::evaluation::EvaluationSubjectResponse {
+                subject_id: format!("user:{}", subject.user_id),
+                user_id: Some(subject.user_id),
+                display_name: subject.display_name.clone(),
+                kind: if subject_is_bot { "bot" } else { "human" }.to_string(),
+                table_code,
+                phase: room.phase,
+                completed: false,
+                final_score: None,
+                deal_in_count: None,
+                win_count: None,
+            });
+    }
+
+    state
+        .inner
+        .evaluation_sessions
+        .write()
+        .await
+        .insert(evaluation_id, response.clone());
+    (StatusCode::CREATED, Json(response)).into_response()
+}
+
+async fn get_evaluation(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(evaluation_id): axum::extract::Path<String>,
+) -> Response {
+    if let Err(response) = require_authenticated_user(&state, &headers).await {
+        return response;
+    }
+    let Some(mut response) = state
+        .inner
+        .evaluation_sessions
+        .read()
+        .await
+        .get(&evaluation_id)
+        .cloned()
+    else {
+        return json_error(StatusCode::NOT_FOUND, "evaluation_not_found");
+    };
+
+    for subject in &mut response.subjects {
+        if let Ok(Some(room_handle)) = ensure_room_loaded(&state, &subject.table_code).await {
+            let runtime = room_handle.runtime.lock().await;
+            super::evaluation::apply_room_result_to_evaluation_subject(subject, &runtime.room);
+        }
+    }
+
+    Json(response).into_response()
+}
+
+fn evaluation_table_prefix(evaluation_id: &str) -> String {
+    let suffix = evaluation_id
+        .rsplit_once('-')
+        .map(|(_, value)| value)
+        .unwrap_or(evaluation_id);
+    let mut prefix = format!("EV{}", suffix.to_ascii_uppercase());
+    prefix.truncate(10);
+    prefix
 }
 
 async fn create_or_replace_table(

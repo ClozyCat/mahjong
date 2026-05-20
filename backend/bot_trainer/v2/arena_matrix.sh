@@ -6,14 +6,12 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 BACKEND_MANIFEST="$REPO_ROOT/backend/Cargo.toml"
 ORIGINAL_PWD="$(pwd)"
 
-MATCHES="${MATCHES:-200}"
+MATCH_COUNT="${MATCH_COUNT:-200}"
 SEED="${SEED:-20260429}"
 RANDOM_SEED="${RANDOM_SEED:-0}"
-POLICY_POOL="${POLICY_POOL:-$SCRIPT_DIR/arena_policy_pool.json}"
+ARENA_CONFIG="${ARENA_CONFIG:-$SCRIPT_DIR/arena_policy_pool.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/arena_runs}"
 PROGRESS_EVERY="${PROGRESS_EVERY:-10}"
-JOBS="${JOBS:-0}"
-MAX_ACTIONS_PER_MATCH="${MAX_ACTIONS_PER_MATCH:-2400}"
 CARGO_EXE="${CARGO_EXE:-cargo}"
 
 resolve_user_path() {
@@ -28,12 +26,12 @@ resolve_user_path() {
     esac
 }
 
-POLICY_POOL="$(resolve_user_path "$POLICY_POOL")"
+ARENA_CONFIG="$(resolve_user_path "$ARENA_CONFIG")"
 OUTPUT_DIR="$(resolve_user_path "$OUTPUT_DIR")"
 
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_PATH="$OUTPUT_DIR/arena_results.jsonl"
-POLICIES_PATH="$OUTPUT_DIR/arena_policies.json"
+CONFIG_TEMPLATE_PATH="$OUTPUT_DIR/arena_template.json"
 
 find_python() {
     if command -v python >/dev/null 2>&1; then
@@ -41,79 +39,64 @@ find_python() {
     elif command -v python3 >/dev/null 2>&1; then
         printf '%s\n' python3
     else
-        echo "Python was not found; cannot read policy pool JSON." >&2
+        echo "Python was not found; cannot read arena evaluation config JSON." >&2
         exit 2
     fi
 }
 
 PYTHON_BIN="$(find_python)"
 
-SEAT_POLICY_IDS_TEXT="$("$PYTHON_BIN" - "$POLICY_POOL" "$POLICIES_PATH" <<'PY'
+SUBJECT_POLICY_IDS_TEXT="$("$PYTHON_BIN" - "$ARENA_CONFIG" "$CONFIG_TEMPLATE_PATH" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-pool_path = Path(sys.argv[1])
-policies_path = Path(sys.argv[2])
+config_path = Path(sys.argv[1])
+template_path = Path(sys.argv[2])
 
-if not pool_path.is_file():
-    print(f"Policy pool was not found: {pool_path}", file=sys.stderr)
+if not config_path.is_file():
+    print(f"Arena evaluation config was not found: {config_path}", file=sys.stderr)
     raise SystemExit(2)
 
-pool = json.loads(pool_path.read_text(encoding="utf-8"))
-if "policies" in pool:
-    raw_policies = pool["policies"]
-elif "learner" in pool and "opponents" in pool:
-    raw_policies = [pool["learner"], *pool["opponents"]]
-else:
+template = json.loads(config_path.read_text(encoding="utf-8"))
+if "policies" in template or "learner" in template:
     print(
-        f"Policy pool must contain either 'policies' or 'learner' plus 'opponents': {pool_path}",
+        f"Arena matrix now accepts only evaluation configs with 'subjects' and exactly three 'opponents': {config_path}",
         file=sys.stderr,
     )
     raise SystemExit(2)
 
-if len(raw_policies) < 1:
-    print(
-        f"Policy pool must define at least 1 arena model, but found {len(raw_policies)}: {pool_path}",
-        file=sys.stderr,
-    )
+subjects = template.get("subjects")
+opponents = template.get("opponents")
+if not isinstance(subjects, list) or not subjects:
+    print(f"Arena evaluation config must define at least one subject: {config_path}", file=sys.stderr)
+    raise SystemExit(2)
+if not isinstance(opponents, list) or len(opponents) != 3:
+    count = len(opponents) if isinstance(opponents, list) else 0
+    print(f"Arena evaluation config must define exactly three opponents, found {count}: {config_path}", file=sys.stderr)
     raise SystemExit(2)
 
-policies = []
-for index, source in enumerate(raw_policies):
-    if not isinstance(source, dict):
-        print(f"Policy at index {index} must be an object.", file=sys.stderr)
-        raise SystemExit(2)
-    for required in ("id", "model_path"):
-        if not source.get(required):
-            print(f"Policy at index {index} must define '{required}'.", file=sys.stderr)
+for section_name, section in (("subjects", subjects), ("opponents", opponents)):
+    for index, source in enumerate(section):
+        if not isinstance(source, dict):
+            print(f"{section_name}[{index}] must be an object.", file=sys.stderr)
             raise SystemExit(2)
-    policy = {
-        "id": str(source["id"]),
-        "model_path": source.get("model_path"),
-    }
-    if "sample_actions" in source:
-        policy["sample_actions"] = bool(source["sample_actions"])
-    if "temperature" in source:
-        policy["temperature"] = float(source["temperature"])
-    policies.append(policy)
+        for required in ("id", "model_path"):
+            if not source.get(required):
+                print(f"{section_name}[{index}] must define '{required}'.", file=sys.stderr)
+                raise SystemExit(2)
+for index, source in enumerate(subjects):
+    if not source.get("display_name"):
+        print(f"subjects[{index}] must define 'display_name'.", file=sys.stderr)
+        raise SystemExit(2)
 
-policies_path.parent.mkdir(parents=True, exist_ok=True)
-policies_path.write_text(
-    json.dumps(
-        policies,
-        indent=2,
-        ensure_ascii=False,
-    )
-    + "\n",
-    encoding="utf-8",
-)
-for policy in policies:
-    print(policy["id"])
+template_path.parent.mkdir(parents=True, exist_ok=True)
+template_path.write_text(json.dumps(template, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+for subject in subjects:
+    print(subject["id"])
 PY
 )"
-mapfile -t SEAT_POLICY_IDS <<< "$SEAT_POLICY_IDS_TEXT"
-POLICY_COUNT="${#SEAT_POLICY_IDS[@]}"
+mapfile -t SUBJECT_POLICY_IDS <<< "$SUBJECT_POLICY_IDS_TEXT"
 
 if (( PROGRESS_EVERY <= 0 )); then
     echo "PROGRESS_EVERY must be greater than 0." >&2
@@ -136,31 +119,23 @@ write_chunk_config() {
     local config_path="$1"
     local chunk_matches="$2"
     local chunk_seed="$3"
-    local rotation_offset="$4"
 
-    "$PYTHON_BIN" - "$POLICIES_PATH" "$config_path" "$chunk_matches" "$chunk_seed" "$MAX_ACTIONS_PER_MATCH" "$rotation_offset" <<'PY'
+    "$PYTHON_BIN" - "$CONFIG_TEMPLATE_PATH" "$config_path" "$chunk_matches" "$chunk_seed" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-policies_path = Path(sys.argv[1])
+template_path = Path(sys.argv[1])
 config_path = Path(sys.argv[2])
 matches = int(sys.argv[3])
 seed = int(sys.argv[4])
-max_actions = int(sys.argv[5])
-rotation_offset = int(sys.argv[6])
-policies = json.loads(policies_path.read_text(encoding="utf-8"))
+template = json.loads(template_path.read_text(encoding="utf-8"))
+template["matches"] = matches
+template["seed"] = seed
+
 config_path.write_text(
     json.dumps(
-        {
-            "matches": matches,
-            "seed": seed,
-            "max_actions_per_match": max_actions,
-            "report_trajectories": False,
-            "seat_rotation": "cyclic",
-            "seat_rotation_offset": rotation_offset,
-            "policies": policies,
-        },
+        template,
         indent=2,
         ensure_ascii=False,
     )
@@ -170,24 +145,9 @@ config_path.write_text(
 PY
 }
 
-seat_order_text() {
-    local ids=()
-    local index
-    for index in "$@"; do
-        ids+=("${SEAT_POLICY_IDS[$index]}")
-    done
-    local joined="${ids[*]}"
+subject_order_text() {
+    local joined="${SUBJECT_POLICY_IDS[*]}"
     printf '%s\n' "${joined// /, }"
-}
-
-cyclic_seat_order_text() {
-    local offset="$1"
-    local order=()
-    local seat
-    for seat in 0 1 2 3; do
-        order+=($(( (seat + offset) % POLICY_COUNT )))
-    done
-    seat_order_text "${order[@]}"
 }
 
 print_summary() {
@@ -254,8 +214,8 @@ for policy_id in sorted(groups):
 PY
 }
 
-echo "Initial seat order: $(cyclic_seat_order_text 0)"
-echo "Policy pool: $POLICY_POOL"
+echo "Subjects: $(subject_order_text)"
+echo "Arena config: $ARENA_CONFIG"
 echo "Output: $OUTPUT_DIR"
 echo "Random seed: $RANDOM_SEED"
 
@@ -265,8 +225,8 @@ rm -f "$OUTPUT_PATH"
 completed_matches=0
 chunk_index=0
 
-while (( completed_matches < MATCHES )); do
-    chunk_matches=$(( MATCHES - completed_matches ))
+while (( completed_matches < MATCH_COUNT )); do
+    chunk_matches=$(( MATCH_COUNT - completed_matches ))
     if (( chunk_matches > PROGRESS_EVERY )); then
         chunk_matches="$PROGRESS_EVERY"
     fi
@@ -279,12 +239,10 @@ while (( completed_matches < MATCHES )); do
     else
         chunk_seed="$(( SEED + completed_matches ))"
     fi
-    rotation_offset=$(( completed_matches % POLICY_COUNT ))
     write_chunk_config \
         "$chunk_config_path" \
         "$chunk_matches" \
-        "$chunk_seed" \
-        "$rotation_offset"
+        "$chunk_seed"
 
     "$CARGO_EXE" run \
         --manifest-path "$BACKEND_MANIFEST" \
@@ -292,12 +250,11 @@ while (( completed_matches < MATCHES )); do
         --bin bot_arena \
         -- \
         --config "$chunk_config_path" \
-        --output "$chunk_output_path" \
-        --jobs "$JOBS"
+        --output "$chunk_output_path"
 
     cat "$chunk_output_path" >> "$OUTPUT_PATH"
     completed_matches=$(( completed_matches + chunk_matches ))
-    echo "Arena progress: completed $completed_matches/$MATCHES chunk=$(( chunk_index + 1 )) seed=$chunk_seed rotation_offset=$rotation_offset first_match_seats=$(cyclic_seat_order_text "$rotation_offset")"
+    echo "Arena progress: completed $completed_matches/$MATCH_COUNT chunk=$(( chunk_index + 1 )) seed=$chunk_seed subjects=$(subject_order_text)"
 
     chunk_index=$(( chunk_index + 1 ))
 done

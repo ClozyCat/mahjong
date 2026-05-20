@@ -127,6 +127,7 @@ interface TableStageProps {
   onToggleVoice?: () => void;
   isBotTakeoverEnabled?: boolean;
   onToggleBotTakeover?: (enabled: boolean) => void;
+  onOpenEvaluationDialog?: () => void;
   isPlaying?: boolean;
   extendedWithExtra?: boolean;
   children?: ReactNode;
@@ -192,6 +193,7 @@ export function TableStage({
   onToggleVoice,
   isBotTakeoverEnabled = false,
   onToggleBotTakeover,
+  onOpenEvaluationDialog,
   isPlaying = false,
   extendedWithExtra = false,
   children,
@@ -291,6 +293,7 @@ export function TableStage({
             onToggleVoice={onToggleVoice}
             isBotTakeoverEnabled={isBotTakeoverEnabled}
             onToggleBotTakeover={onToggleBotTakeover}
+            onOpenEvaluationDialog={onOpenEvaluationDialog}
           />
           <MatchStatusBar
             remainingCount={remainingTileCount}

@@ -24,6 +24,9 @@ import {
   type InviteDialogUser,
   type SentInviteStatus,
 } from './PlayerInviteDialog';
+import { EvaluationDialog } from './EvaluationDialog';
+import { EvaluationPanel } from './EvaluationPanel';
+import type { EvaluationSessionResponse } from '../../types/match';
 
 interface BattleScreenProps {
   viewModel: BattleViewModel;
@@ -37,6 +40,9 @@ interface BattleScreenProps {
   onAction: (actionId: BattleActionId) => void;
   onLeaveTable: () => void;
   onInvitePlayer?: (userId: number) => void;
+  onCreateEvaluation?: (subjectUserIds: number[]) => void;
+  onRefreshEvaluation?: () => void;
+  onOpenEvaluationTable?: (tableCode: string) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onMinimumHuFanChange?: (minimumHuFan: NonNullable<BattleViewModel['waitingControls']>['minimumHuFan']) => void;
@@ -58,6 +64,8 @@ interface BattleScreenProps {
   currentUserId?: number | null;
   inviteStatusesByUserId?: Record<number, SentInviteStatus>;
   pendingInvitePanel?: ReactNode;
+  evaluationSession?: EvaluationSessionResponse | null;
+  isEvaluationSubmitting?: boolean;
 }
 
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
@@ -75,6 +83,9 @@ export function BattleScreen({
   onAction,
   onLeaveTable,
   onInvitePlayer,
+  onCreateEvaluation,
+  onRefreshEvaluation,
+  onOpenEvaluationTable,
   onAddBot,
   onRemoveBot,
   onMinimumHuFanChange,
@@ -96,6 +107,8 @@ export function BattleScreen({
   inviteAiUsers = [],
   inviteStatusesByUserId = {},
   pendingInvitePanel = null,
+  evaluationSession = null,
+  isEvaluationSubmitting = false,
 }: BattleScreenProps) {
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [isDramaticRevealActive, setIsDramaticRevealActive] = useState(false);
@@ -103,6 +116,8 @@ export function BattleScreen({
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isSnakeActive, setIsSnakeActive] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [isEvaluationDialogOpen, setIsEvaluationDialogOpen] = useState(false);
+  const [evaluationSubjectUserIds, setEvaluationSubjectUserIds] = useState<number[]>([]);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
@@ -154,6 +169,23 @@ export function BattleScreen({
     }
 
     onAction(actionId);
+  }
+
+  function handleToggleEvaluationSubject(userId: number) {
+    setEvaluationSubjectUserIds((current) => {
+      if (current.includes(userId)) {
+        return current.filter((candidate) => candidate !== userId);
+      }
+      if (current.length >= 3) {
+        return current;
+      }
+      return [...current, userId];
+    });
+  }
+
+  function handleCreateEvaluation() {
+    onCreateEvaluation?.(evaluationSubjectUserIds);
+    setIsEvaluationDialogOpen(false);
   }
 
   const handleRevealComplete = () => {
@@ -421,6 +453,7 @@ export function BattleScreen({
               onToggleVoice={onToggleVoice}
               isBotTakeoverEnabled={isBotTakeoverEnabled}
               onToggleBotTakeover={onToggleBotTakeover}
+              onOpenEvaluationDialog={onCreateEvaluation ? () => setIsEvaluationDialogOpen(true) : undefined}
               isPlaying={viewModel.mode === 'watching' || viewModel.mode === 'my_turn'}
               extendedWithExtra={viewModel.extendedWithExtra}
             >
@@ -458,6 +491,22 @@ export function BattleScreen({
             inviteStatusesByUserId={inviteStatusesByUserId}
             onClose={() => setIsInviteDialogOpen(false)}
             onInvite={(userId) => onInvitePlayer?.(userId)}
+          />
+          <EvaluationDialog
+            isOpen={isEvaluationDialogOpen}
+            currentUserId={currentUserId}
+            humanUsers={inviteHumanUsers}
+            aiUsers={inviteAiUsers}
+            selectedUserIds={evaluationSubjectUserIds}
+            isSubmitting={isEvaluationSubmitting}
+            onToggleSubject={handleToggleEvaluationSubject}
+            onStart={handleCreateEvaluation}
+            onClose={() => setIsEvaluationDialogOpen(false)}
+          />
+          <EvaluationPanel
+            session={evaluationSession}
+            onRefresh={onRefreshEvaluation}
+            onOpenTable={onOpenEvaluationTable}
           />
           {pendingInvitePanel}
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}

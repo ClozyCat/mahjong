@@ -292,7 +292,7 @@ def test_masked_categorical_kl_is_finite() -> None:
     assert kl.item() >= 0.0
 
 
-def test_league_config_rotates_learner_seat() -> None:
+def test_league_config_uses_single_evaluation_trajectory_config() -> None:
     from league_config import build_trajectory_configs
 
     learner = {
@@ -305,7 +305,21 @@ def test_league_config_rotates_learner_seat() -> None:
         "learner": learner,
         "opponents": [
             {
-                "id": "sft_default",
+                "id": "sft_one",
+                "model_path": "backend/assets/sft/sft.onnx",
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 3,
+            },
+            {
+                "id": "sft_two",
+                "model_path": "backend/assets/sft/sft.onnx",
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 1,
+            },
+            {
+                "id": "sft_three",
                 "model_path": "backend/assets/sft/sft.onnx",
                 "sample_actions": False,
                 "temperature": 1.0,
@@ -316,10 +330,26 @@ def test_league_config_rotates_learner_seat() -> None:
 
     configs = build_trajectory_configs(pool, matches=8, seed=10, max_actions=2400)
 
-    assert len(configs) == 4
-    assert [config["policies"].index(learner) for config in configs] == [0, 1, 2, 3]
-    assert all(config["matches"] == 2 for config in configs)
-    assert all("record_heuristic_comparison" not in config for config in configs)
+    assert len(configs) == 1
+    config = configs[0]
+    assert config["matches"] == 8
+    assert config["seed"] == 10
+    assert config["report_trajectories"] is True
+    assert "policies" not in config
+    assert "seat_rotation" not in config
+    assert config["subjects"] == [
+        {
+            **learner,
+            "display_name": "Learner",
+        }
+    ]
+    assert [opponent["id"] for opponent in config["opponents"]] == [
+        "sft_one",
+        "sft_two",
+        "sft_three",
+    ]
+    assert all("weight" not in opponent for opponent in config["opponents"])
+    assert "record_heuristic_comparison" not in config
 
 
 def test_rollout_override_keeps_neural_opponents_frozen() -> None:
@@ -352,7 +382,15 @@ def test_rollout_override_keeps_neural_opponents_frozen() -> None:
 def test_eval_config_has_no_heuristic_comparison() -> None:
     from league_config import build_eval_config
 
+    pool = {
+        "opponents": [
+            {"id": "opp1", "model_path": "opp1.onnx"},
+            {"id": "opp2", "model_path": "opp2.onnx"},
+            {"id": "opp3", "model_path": "opp3.onnx"},
+        ]
+    }
     config = build_eval_config(
+        pool=pool,
         candidate_onnx=Path("candidate.onnx"),
         baseline_onnx=Path("baseline.onnx"),
         matches=4,
@@ -363,10 +401,36 @@ def test_eval_config_has_no_heuristic_comparison() -> None:
     assert "record_heuristic_comparison" not in config
 
 
-def test_eval_config_uses_cyclic_rotation() -> None:
+def test_eval_config_compares_candidate_and_baseline_against_same_opponents() -> None:
     from league_config import build_eval_config
 
+    pool = {
+        "opponents": [
+            {
+                "id": "sft_one",
+                "model_path": "backend/assets/sft/sft.onnx",
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 3,
+            },
+            {
+                "id": "sft_two",
+                "model_path": "backend/assets/sft/sft.onnx",
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 1,
+            },
+            {
+                "id": "sft_three",
+                "model_path": "backend/assets/sft/sft.onnx",
+                "sample_actions": False,
+                "temperature": 1.0,
+                "weight": 1,
+            },
+        ]
+    }
     config = build_eval_config(
+        pool=pool,
         candidate_onnx=Path("candidate.onnx"),
         baseline_onnx=Path("sft.onnx"),
         matches=1000,
@@ -374,12 +438,17 @@ def test_eval_config_uses_cyclic_rotation() -> None:
         max_actions=2400,
     )
 
-    assert config["seat_rotation"] == "cyclic"
-    assert config["seat_rotation_offset"] == 0
-    assert [policy["id"] for policy in config["policies"]] == [
+    assert "seat_rotation" not in config
+    assert [subject["id"] for subject in config["subjects"]] == [
         "baseline_neural",
         "rl_candidate_neural",
     ]
+    assert [opponent["id"] for opponent in config["opponents"]] == [
+        "sft_one",
+        "sft_two",
+        "sft_three",
+    ]
+    assert all("weight" not in opponent for opponent in config["opponents"])
 
 
 def test_baseline_guard_rejects_rl_checkpoint_as_sft(tmp_path: Path) -> None:

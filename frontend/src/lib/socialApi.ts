@@ -2,6 +2,7 @@ import type {
   AcceptInviteResponse,
   ActiveTableResponse,
   CreateTableResponse,
+  EvaluationSessionResponse,
   PublicUser,
   TableInvite,
 } from '../types/match';
@@ -52,6 +53,23 @@ export function createSocialTable(baseUrl: string, sessionToken: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({}),
+  });
+}
+
+export function createEvaluation(baseUrl: string, sessionToken: string, subjectUserIds: number[]) {
+  return requestJson<EvaluationSessionResponse>(`${normalizeBaseUrl(baseUrl)}/api/evaluations`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(sessionToken),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ subject_user_ids: subjectUserIds }),
+  });
+}
+
+export function getEvaluation(baseUrl: string, sessionToken: string, evaluationId: string) {
+  return requestJson<EvaluationSessionResponse>(`${normalizeBaseUrl(baseUrl)}/api/evaluations/${evaluationId}`, {
+    headers: authHeaders(sessionToken),
   });
 }
 

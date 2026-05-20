@@ -5,10 +5,8 @@ param(
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
-    [int]$ArenaJobs = 0,
     [int]$Iterations = 5,
     [int]$IterationMatches = 1500,
-    [int]$TrajectoryProgressEvery = 500,
     [int]$EvalMatches = 1000,
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
@@ -28,14 +26,11 @@ param(
     [ValidateSet("ppo")]
     [string]$Policy = "ppo",
     [string[]]$Policies = @(),
-    [ValidateSet("", "ppo")]
-    [string]$TrajectoryRolloutPolicy = "",
     [switch]$UseActorCritic,
     [double]$CriticLrMultiplier = 2.0,
     [string]$Device = "auto",
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
-    [string]$SelfPlayPolicyId = "selfplay_neural",
     [switch]$SkipTests,
     [switch]$SkipOnnxExport,
     [switch]$SkipEval,
@@ -131,7 +126,7 @@ function Invoke-CandidateEvaluation {
     $localSummary = Join-Path $EvalDir "candidate_eval_summary.json"
     $localGate = Join-Path $EvalDir "candidate_gate.json"
 
-    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
+    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Invoke-TrainingPython @(
@@ -297,10 +292,6 @@ try {
     $env:PYTEST_DEBUG_TEMPROOT = $env:TEMP
     $activePolicies = Resolve-ActivePolicies
     $multiPolicyTraining = $activePolicies.Count -gt 1
-    if (-not [string]::IsNullOrWhiteSpace($TrajectoryRolloutPolicy)) {
-        Write-Warning "-TrajectoryRolloutPolicy is ignored because each policy now generates its own trajectories."
-    }
-
     Write-Host "Mahjong RL training (iterative self-play)"
     Write-Host "Output:              $OutputDir"
     Write-Host "Baseline checkpoint: $BaselineCheckpoint"
@@ -319,8 +310,6 @@ try {
     Write-Host "Policies:            $($activePolicies -join ', ')"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
-    $arenaJobsLabel = if ($ArenaJobs -eq 0) { "auto" } else { $ArenaJobs }
-    Write-Host ("Arena jobs:          {0}" -f $arenaJobsLabel)
 
     Assert-FileExists `
         $BaselineCheckpoint `
@@ -428,35 +417,23 @@ try {
             Invoke-TrainingPython $trajectoryConfigArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            $trajectoryFiles = @()
-            Get-ChildItem -LiteralPath $iterTrajectoryConfigDir -Filter "trajectory_config_*.json" |
-                Sort-Object Name |
-                ForEach-Object {
-                    $index = [System.IO.Path]::GetFileNameWithoutExtension($_.Name).Replace("trajectory_config_", "")
-                    $partialReport = Join-Path $paths.policy_dir "trajectory_arena_report_$index.jsonl"
-                    $partialTrajectory = Join-Path $paths.policy_dir "trajectories_$index.jsonl"
-                    $trajectoryFiles += $partialTrajectory
-                    $arenaArgs = @(
-                        "run",
-                        "--manifest-path", "backend/Cargo.toml",
-                        "--release",
-                        "--bin", "bot_arena",
-                        "--",
-                        "--config", $_.FullName,
-                        "--output", $partialReport,
-                        "--trajectories", $partialTrajectory,
-                        "--jobs", "$ArenaJobs"
-                    )
-                    if ($TrajectoryProgressEvery -gt 0) {
-                        $arenaArgs += @("--progress-every", "$TrajectoryProgressEvery")
-                    }
-                    & $CargoExe @arenaArgs
-                    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-                }
-            if ($trajectoryFiles.Count -eq 0) {
-                throw "No trajectory configs generated in $iterTrajectoryConfigDir"
+            $trajectoryConfigPath = Join-Path $iterTrajectoryConfigDir "trajectory_config_0.json"
+            if (-not (Test-Path -LiteralPath $trajectoryConfigPath -PathType Leaf)) {
+                throw "No trajectory config generated at $trajectoryConfigPath"
             }
-            Get-Content -LiteralPath $trajectoryFiles | Set-Content -Encoding UTF8 $iterTrajectoryJsonl
+            $trajectoryReport = Join-Path $paths.policy_dir "trajectory_arena_report.jsonl"
+            $arenaArgs = @(
+                "run",
+                "--manifest-path", "backend/Cargo.toml",
+                "--release",
+                "--bin", "bot_arena",
+                "--",
+                "--config", $trajectoryConfigPath,
+                "--output", $trajectoryReport,
+                "--trajectories", $iterTrajectoryJsonl
+            )
+            & $CargoExe @arenaArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
             Write-Host ("  Starting PPO training: policy={0}" -f $style)
             Invoke-PolicyTraining `
@@ -684,4 +661,3 @@ finally {
         $env:PYTEST_DEBUG_TEMPROOT = (Resolve-Path -LiteralPath $PreviousPytestTempRoot).Path
     }
 }
-

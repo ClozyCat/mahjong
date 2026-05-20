@@ -115,6 +115,20 @@ async fn create_table(app: &Router, token: &str, multiplier: i64) -> Result<Stri
         .to_string())
 }
 
+async fn create_evaluation(app: &Router, token: &str, subject_user_ids: Vec<i64>) -> Result<Value> {
+    let response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/evaluations",
+            token,
+            json!({ "subject_user_ids": subject_user_ids }),
+        ))
+        .await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    Ok(json_response(response).await)
+}
+
 async fn add_bots_to_table(
     state: &AppContext,
     worker: &DbWorker,
@@ -135,6 +149,72 @@ async fn add_bots_to_table(
     worker
         .save_table(table_code, &created_at, &room_json)
         .await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn create_evaluation_includes_owner_and_creates_evaluation_room() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (token, user_id) = register_user(&app, &worker, "INVITEEVAL01", "Alice").await?;
+
+    let body = create_evaluation(&app, &token, vec![]).await?;
+    let evaluation_id = body["evaluation_id"]
+        .as_str()
+        .expect("evaluation id should exist");
+    let subject = &body["subjects"][0];
+    let table_code = subject["table_code"]
+        .as_str()
+        .expect("table code should exist");
+
+    assert!(evaluation_id.starts_with("eval-"));
+    assert_eq!(subject["user_id"], user_id);
+    assert_eq!(subject["kind"], "human");
+    assert_eq!(subject["phase"], "waiting");
+
+    let handle = room_handle(&state, table_code)
+        .await
+        .expect("evaluation room should be loaded");
+    let runtime = handle.runtime.lock().await;
+    assert_eq!(runtime.room.mode, crate::evaluation::EVALUATION_ROOM_MODE);
+    assert_eq!(runtime.room.seats.len(), 4);
+    assert_eq!(runtime.room.seats[0].user_id, Some(user_id));
+    assert!(runtime.room.seats[1..].iter().all(|seat| seat.is_bot));
+    drop(runtime);
+
+    let response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            &format!("/api/evaluations/{evaluation_id}"),
+            &token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let fetched = json_response(response).await;
+    assert_eq!(fetched["evaluation_id"], evaluation_id);
+    assert_eq!(fetched["subjects"][0]["table_code"], table_code);
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn create_evaluation_rejects_more_than_four_subjects() -> Result<()> {
+    let (app, worker, _state) = test_app().await?;
+    let (token, _user_id) = register_user(&app, &worker, "INVITEEVAL02", "Alice").await?;
+
+    let response = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            "/api/evaluations",
+            &token,
+            json!({ "subject_user_ids": [2, 3, 4, 5] }),
+        ))
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = json_response(response).await;
+    assert_eq!(body["detail"], "too_many_evaluation_subjects");
     Ok(())
 }
 

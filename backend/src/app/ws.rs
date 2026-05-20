@@ -402,6 +402,10 @@ fn normalize_minimum_hu_fan(value: i64) -> Option<i64> {
     [0, 2, 4, 6, 8].contains(&value).then_some(value)
 }
 
+fn room_is_evaluation(room: &RoomState) -> bool {
+    room.mode == crate::evaluation::EVALUATION_ROOM_MODE
+}
+
 #[derive(Debug, Clone, Copy)]
 enum DealerRuleToggle {
     Repeat,
@@ -685,6 +689,9 @@ async fn handle_adjust_bots(
     if !seat_exists(&runtime.room, seat_index) {
         return reject_to(connection, "seat_not_owned");
     }
+    if room_is_evaluation(&runtime.room) {
+        return reject_to(connection, "evaluation_settings_locked");
+    }
 
     let update_result = match delta {
         1 => add_bot_to_waiting_room(&mut runtime.room).map(|_| ()),
@@ -748,6 +755,9 @@ async fn handle_set_minimum_hu_fan(
     if !seat_exists(&runtime.room, seat_index) {
         return reject_to(connection, "seat_not_owned");
     }
+    if room_is_evaluation(&runtime.room) {
+        return reject_to(connection, "evaluation_settings_locked");
+    }
     if room_phase(&runtime.room) != "waiting" || room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
     }
@@ -804,6 +814,9 @@ async fn handle_set_dealer_rule_toggle(
     let previous_room = runtime.room.clone();
     if !seat_exists(&runtime.room, seat_index) {
         return reject_to(connection, "seat_not_owned");
+    }
+    if room_is_evaluation(&runtime.room) {
+        return reject_to(connection, "evaluation_settings_locked");
     }
     if room_phase(&runtime.room) != "waiting" || room_has_round_state(&runtime.room) {
         return reject_to(connection, "room_already_started");
@@ -1506,8 +1519,9 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, handle_disconnect,
-        handle_join_table, handle_leave_table, handle_quick_chat, parse_client_message,
+        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest,
+        SetMinimumHuFanRequest, handle_disconnect, handle_join_table, handle_leave_table,
+        handle_quick_chat, handle_set_minimum_hu_fan, parse_client_message, room_is_evaluation,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};
@@ -1805,6 +1819,50 @@ mod tests {
             dealer_double,
             ClientMessage::SetDealerDouble(request) if !request.enabled
         ));
+    }
+
+    #[test]
+    fn evaluation_mode_is_detected_for_restricted_table_settings() {
+        let mut room = crate::app::initial_room_state("EVALROOM");
+        crate::evaluation::apply_evaluation_rules(&mut room);
+
+        assert!(room_is_evaluation(&room));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn evaluation_room_rejects_minimum_hu_fan_changes() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let state = AppContext::new(worker.clone());
+        let mut room = initial_room_state_with_owner("EVALLOCK", Some(1), 1);
+        crate::evaluation::apply_evaluation_rules(&mut room);
+        room.seats.push(human_seat(TestSeat {
+            seat_index: 0,
+            user_id: 1,
+            nickname: "Alice",
+            connected: true,
+        }));
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("EVALLOCK", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        ensure_room_loaded(&state, "EVALLOCK").await?;
+        let (connection, _receiver) = test_connection_handle(1, 8);
+
+        let outcome = handle_set_minimum_hu_fan(
+            state,
+            "EVALLOCK",
+            &connection,
+            0,
+            SetMinimumHuFanRequest { minimum_hu_fan: 0 },
+        )
+        .await;
+
+        let payload: Value = serde_json::from_str(&outcome.outbound[0].payload)?;
+        assert_eq!(payload["type"], "action_rejected");
+        assert_eq!(payload["payload"]["reason"], "evaluation_settings_locked");
+        Ok(())
     }
 
     #[test]

@@ -6,10 +6,8 @@ BASELINE_CHECKPOINT="backend/bot_trainer/v2/checkpoints/best.pt"
 BASELINE_ONNX="backend/assets/sft/sft.onnx"
 PYTHON_CMD=(python)
 CARGO_CMD=(cargo)
-ARENA_JOBS=0
 ITERATIONS=5
 ITERATION_MATCHES=500
-TRAJECTORY_PROGRESS_EVERY=20
 EVAL_MATCHES=1000
 SEED=20260429
 MAX_ACTIONS_PER_MATCH=2400
@@ -28,13 +26,11 @@ KL_END_COEF=0.005
 TARGET_KL=0.03
 POLICY=ppo
 POLICIES=""
-TRAJECTORY_ROLLOUT_POLICY=""
 USE_ACTOR_CRITIC=0
 CRITIC_LR_MULTIPLIER=2.0
 DEVICE=auto
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
 LEARNER_POLICY_ID="learner"
-SELFPLAY_POLICY_ID="selfplay_neural"
 SKIP_TESTS=0
 SKIP_ONNX_EXPORT=0
 SKIP_EVAL=0
@@ -61,10 +57,8 @@ Options:
   --baseline-onnx PATH             Baseline ONNX used for evaluation reference.
   --python-exe PATH                Python executable override. Defaults to python.
   --cargo-exe PATH                 Cargo executable override. Defaults to cargo.
-  --arena-jobs N                   Parallel arena workers. Use 0 for all available cores.
   --iterations N                   Number of self-play iterations. Default 5.
   --iteration-matches N            Matches per iteration for trajectory generation. Default 500.
-  --trajectory-progress-every N    Print trajectory arena progress every N matches. Use 0 to disable.
   --eval-matches N                 Matches used for candidate evaluation.
   --seed N                         Arena seed.
   --max-actions-per-match N        Arena action cap.
@@ -83,13 +77,11 @@ Options:
   --target-kl VALUE                Stop PPO epoch loop when approximate KL exceeds this value.
   --policy NAME                    Policy name. Only ppo is valid.
   --policies LIST                  Comma-separated policies. Only ppo is valid.
-  --trajectory-rollout-policy NAME Deprecated; ignored because trajectories are generated per policy.
   --use-actor-critic               Train separate actor and global-information critic.
   --critic-lr-multiplier VALUE     Critic learning-rate multiplier when actor-critic is enabled. Default 2.0.
   --device DEVICE                  auto, cpu, cuda, etc.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
-  --selfplay-policy-id ID          Policy id written to trajectory rows.
   --skip-tests                     Skip Python tests.
   --skip-onnx-export               Do not export candidate.onnx.
   --skip-eval                      Do not run baseline vs candidate arena evaluation.
@@ -197,8 +189,7 @@ run_candidate_eval() {
 
     "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
         --config "$RUN_EVAL_CONFIG" \
-        --output "$RUN_EVAL_JSONL" \
-        --jobs "$ARENA_JOBS"
+        --output "$RUN_EVAL_JSONL"
 
     "${PYTHON_CMD[@]}" backend/bot_trainer/v2/arena_summary.py \
         --input "$RUN_EVAL_JSONL" \
@@ -241,11 +232,6 @@ while [[ $# -gt 0 ]]; do
             CARGO_CMD=("$2")
             shift 2
             ;;
-        --arena-jobs)
-            require_value "$1" "${2:-}"
-            ARENA_JOBS="$2"
-            shift 2
-            ;;
         --iterations)
             require_value "$1" "${2:-}"
             ITERATIONS="$2"
@@ -254,11 +240,6 @@ while [[ $# -gt 0 ]]; do
         --iteration-matches)
             require_value "$1" "${2:-}"
             ITERATION_MATCHES="$2"
-            shift 2
-            ;;
-        --trajectory-progress-every)
-            require_value "$1" "${2:-}"
-            TRAJECTORY_PROGRESS_EVERY="$2"
             shift 2
             ;;
         --eval-matches)
@@ -351,11 +332,6 @@ while [[ $# -gt 0 ]]; do
             POLICIES="$2"
             shift 2
             ;;
-        --trajectory-rollout-policy)
-            require_value "$1" "${2:-}"
-            TRAJECTORY_ROLLOUT_POLICY="$2"
-            shift 2
-            ;;
         --use-actor-critic)
             USE_ACTOR_CRITIC=1
             shift
@@ -378,11 +354,6 @@ while [[ $# -gt 0 ]]; do
         --learner-policy-id)
             require_value "$1" "${2:-}"
             LEARNER_POLICY_ID="$2"
-            shift 2
-            ;;
-        --selfplay-policy-id)
-            require_value "$1" "${2:-}"
-            SELFPLAY_POLICY_ID="$2"
             shift 2
             ;;
         --skip-tests)
@@ -434,10 +405,6 @@ if ! is_valid_policy "$POLICY"; then
     echo "--policy must be ppo." >&2
     exit 2
 fi
-if [[ -n "$TRAJECTORY_ROLLOUT_POLICY" ]]; then
-    echo "--trajectory-rollout-policy is ignored because trajectories are generated per policy." >&2
-fi
-
 ACTIVE_POLICIES=()
 if [[ -n "$POLICIES" ]]; then
     IFS=',' read -ra requested_policies <<< "$POLICIES"
@@ -522,11 +489,6 @@ echo "Device:              $DEVICE"
 echo "Policies:            ${ACTIVE_POLICIES[*]}"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
-if (( ARENA_JOBS == 0 )); then
-    echo "Arena jobs:          auto"
-else
-    echo "Arena jobs:          $ARENA_JOBS"
-fi
 require_file \
     "$BASELINE_CHECKPOINT" \
     "Baseline checkpoint" \
@@ -616,31 +578,19 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
         )
         "${PYTHON_CMD[@]}" "${trajectory_config_args[@]}"
 
-        trajectory_files=()
-        for config_path in "$iter_trajectory_config_dir"/trajectory_config_*.json; do
-            [[ -e "$config_path" ]] || continue
-            config_name="$(basename "$config_path" .json)"
-            index="${config_name#trajectory_config_}"
-            partial_report="$POLICY_DIR/trajectory_arena_report_$index.jsonl"
-            partial_trajectory="$POLICY_DIR/trajectories_$index.jsonl"
-            trajectory_files+=("$partial_trajectory")
-            arena_args=(
-                run --manifest-path backend/Cargo.toml --release --bin bot_arena --
-                --config "$config_path"
-                --output "$partial_report"
-                --trajectories "$partial_trajectory"
-                --jobs "$ARENA_JOBS"
-            )
-            if (( TRAJECTORY_PROGRESS_EVERY > 0 )); then
-                arena_args+=(--progress-every "$TRAJECTORY_PROGRESS_EVERY")
-            fi
-            "${CARGO_CMD[@]}" "${arena_args[@]}"
-        done
-        if (( ${#trajectory_files[@]} == 0 )); then
-            echo "No trajectory configs generated in $iter_trajectory_config_dir" >&2
+        trajectory_config_path="$iter_trajectory_config_dir/trajectory_config_0.json"
+        if [[ ! -f "$trajectory_config_path" ]]; then
+            echo "No trajectory config generated at $trajectory_config_path" >&2
             exit 2
         fi
-        cat "${trajectory_files[@]}" > "$iter_trajectory_jsonl"
+        trajectory_report="$POLICY_DIR/trajectory_arena_report.jsonl"
+        arena_args=(
+            run --manifest-path backend/Cargo.toml --release --bin bot_arena --
+            --config "$trajectory_config_path"
+            --output "$trajectory_report"
+            --trajectories "$iter_trajectory_jsonl"
+        )
+        "${CARGO_CMD[@]}" "${arena_args[@]}"
 
         rl_train_args=(
             backend/bot_trainer/v2/rl_train.py
@@ -949,5 +899,3 @@ for policy in "${ACTIVE_POLICIES[@]}"; do
     echo "[$policy] Candidate:      $FINAL_POLICY_CANDIDATE_ONNX"
 done
 echo "History:        $OUTPUT_DIR/iteration_history.json"
-
-

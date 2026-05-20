@@ -7,7 +7,7 @@ use crate::app::room_runtime::{
     room_handle, room_has_only_bots, snapshot_connections, unregister_room_handle,
 };
 use crate::app::{
-    AppContext, BOT_ACTION_DELAY_MS, broadcast_to_handles,
+    AppContext, bot_action_delay_ms, broadcast_to_handles,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
     notify_all_user_connections, pending_timeout_deadline, record_timeout_auto_responses,
     records::{apply_point_updates_to_room, archive_current_round_if_needed},
@@ -535,8 +535,9 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.bot_nonce;
+        let delay_ms = bot_action_delay_ms(&runtime.room);
         runtime.bot_task = Some(tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(BOT_ACTION_DELAY_MS)).await;
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             process_due_bot_action(state_clone, table_clone, nonce).await;
         }));
     }

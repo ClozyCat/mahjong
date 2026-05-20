@@ -1,11 +1,5 @@
 use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    mpsc,
-};
-
 use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
@@ -25,7 +19,7 @@ use crate::rules::standard::{
         next_bot_action_in_room_state_with_policy_resolver,
         next_bot_decision_trace_in_room_state_with_policy_resolver,
     },
-    flow::start_match_in_room_state,
+    flow::{record_continue_action_in_room_state, start_match_in_room_state},
     ready_hand::is_tenpai_hand_with_melds,
 };
 
@@ -77,13 +71,6 @@ fn tile_counts_for_keys(tile_keys: &[&str]) -> super::context::TileCounts {
     counts
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ArenaSeatRotation {
-    Fixed,
-    Cyclic,
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ArenaBotPolicyConfig {
@@ -101,22 +88,6 @@ pub struct ArenaBotPolicyConfig {
     pub discard_min_risk_weight: f32,
     #[serde(default = "default_discard_max_risk_weight")]
     pub discard_max_risk_weight: f32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ArenaConfig {
-    pub matches: usize,
-    pub seed: u64,
-    #[serde(default = "default_max_actions_per_match")]
-    pub max_actions_per_match: usize,
-    #[serde(default)]
-    pub report_trajectories: bool,
-    #[serde(default = "default_seat_rotation")]
-    pub seat_rotation: ArenaSeatRotation,
-    #[serde(default)]
-    pub seat_rotation_offset: usize,
-    pub policies: Vec<ArenaBotPolicyConfig>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -142,6 +113,18 @@ pub struct ArenaMatchReport {
     pub seed: u64,
     pub completed: bool,
     pub action_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_initial_seat: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_final_score: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_deal_in_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_win_count: Option<u64>,
     pub seats: Vec<ArenaSeatMetrics>,
 }
 
@@ -188,10 +171,6 @@ struct ArenaCompletedMatch {
     trajectories: Vec<ArenaTrajectoryRow>,
 }
 
-fn default_max_actions_per_match() -> usize {
-    2400
-}
-
 fn default_policy_temperature() -> f32 {
     1.0
 }
@@ -212,22 +191,21 @@ fn default_discard_max_risk_weight() -> f32 {
     1.45
 }
 
-fn default_seat_rotation() -> ArenaSeatRotation {
-    ArenaSeatRotation::Fixed
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct ArenaMatchAccumulator {
     pub seats: Vec<ArenaSeatMetrics>,
 }
 
 impl ArenaMatchAccumulator {
-    pub fn new(config: &ArenaConfig, match_index: usize) -> Self {
+    pub fn new_with_policies(policies_by_seat: &[ArenaBotPolicyConfig]) -> Self {
         Self {
             seats: (0..4)
                 .map(|seat_index| ArenaSeatMetrics {
                     seat_index,
-                    policy_id: policy_for_match_seat(config, match_index, seat_index).id,
+                    policy_id: policies_by_seat
+                        .get(seat_index)
+                        .map(|policy| policy.id.clone())
+                        .unwrap_or_else(|| format!("seat-{seat_index}")),
                     ..ArenaSeatMetrics::default()
                 })
                 .collect(),
@@ -275,6 +253,49 @@ impl ArenaMatchAccumulator {
     }
 }
 
+fn arena_identity_index_for_seat(room: &RoomState, seat_index: usize) -> usize {
+    let Some(nickname) = room
+        .seats
+        .iter()
+        .find(|seat| seat.seat_index == seat_index)
+        .and_then(|seat| seat.nickname.as_deref())
+    else {
+        return seat_index;
+    };
+    nickname
+        .strip_prefix("Arena Bot ")
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|index| *index < 4)
+        .unwrap_or(seat_index)
+}
+
+fn record_evaluation_decision(
+    accumulator: &mut ArenaMatchAccumulator,
+    room: &RoomState,
+    seat_index: usize,
+    action_type: &str,
+    latency_ms: u128,
+    telemetry: Option<&super::policy::BotPolicyDecisionTelemetry>,
+) {
+    let identity_index = arena_identity_index_for_seat(room, seat_index);
+    accumulator.record_decision(identity_index, action_type, latency_ms, telemetry);
+}
+
+fn record_evaluation_tenpai_metrics(accumulator: &mut ArenaMatchAccumulator, room: &RoomState) {
+    let Some(round) = &room.round_state else {
+        return;
+    };
+    for player in &round.players {
+        let identity_index = arena_identity_index_for_seat(room, player.seat);
+        if let Some(metrics) = accumulator.seats.get_mut(identity_index) {
+            metrics.final_tenpai = player_is_tenpai(player);
+            if metrics.final_tenpai && metrics.first_tenpai_turn.is_none() {
+                metrics.first_tenpai_turn = Some(metrics.discard_count + 1);
+            }
+        }
+    }
+}
+
 fn player_is_tenpai(player: &PlayerRoundState) -> bool {
     let concealed_tile_keys = player
         .concealed_tiles
@@ -317,171 +338,66 @@ pub fn arena_room(table_code: &str) -> RoomState {
     }
 }
 
-pub fn build_match_report(
-    match_index: usize,
-    seed: u64,
-    room: &RoomState,
-    mut accumulator: ArenaMatchAccumulator,
-    action_count: usize,
-    completed: bool,
-) -> ArenaMatchReport {
-    if let Some(match_state) = &room.match_state {
-        for metrics in &mut accumulator.seats {
-            metrics.score_delta = match_state
-                .cumulative_scores
-                .get(&metrics.seat_index)
-                .copied()
-                .unwrap_or_default();
-            if let Some(stats) = match_state
-                .statistics
-                .seat_stats_by_seat
-                .get(&metrics.seat_index)
-            {
-                metrics.wins = stats.win_count as u64;
-                metrics.dealt_in = stats.deal_in_count as u64;
-            }
-        }
-    }
-    accumulator.record_tenpai_metrics(room);
-    ArenaMatchReport {
-        match_index,
-        seed,
-        completed,
-        action_count,
-        seats: accumulator.seats,
-    }
-}
-
-pub fn run_arena(
-    config: &ArenaConfig,
+pub fn run_evaluation_arena(
+    config: &crate::evaluation::EvaluationArenaConfig,
     include_trajectories: bool,
 ) -> Result<ArenaRunOutput, String> {
-    run_arena_with_progress(config, include_trajectories, |_| {})
-}
-
-pub fn run_arena_with_progress(
-    config: &ArenaConfig,
-    include_trajectories: bool,
-    mut on_match_complete: impl FnMut(&ArenaMatchReport),
-) -> Result<ArenaRunOutput, String> {
-    if config.policies.is_empty() {
-        return Err("arena config requires at least one policy".to_string());
-    }
-    validate_policy_models(config)?;
+    config.validate()?;
+    validate_evaluation_policy_models(config)?;
 
     let mut output = ArenaRunOutput::default();
-    for match_index in 0..config.matches {
-        let completed_match = run_arena_match(config, match_index, include_trajectories)?;
-        on_match_complete(&completed_match.report);
-        output.trajectories.extend(completed_match.trajectories);
-        output.reports.push(completed_match.report);
+    let mut replica_index = 0_usize;
+    for subject in &config.subjects {
+        for match_index in 0..config.matches {
+            let seed = config.seed.wrapping_add(match_index as u64);
+            let completed_match = run_evaluation_arena_match(
+                config,
+                subject,
+                replica_index,
+                match_index,
+                seed,
+                include_trajectories,
+            )?;
+            output.trajectories.extend(completed_match.trajectories);
+            output.reports.push(completed_match.report);
+            replica_index += 1;
+        }
     }
     Ok(output)
 }
 
-pub fn run_arena_parallel_with_progress(
-    config: &ArenaConfig,
-    include_trajectories: bool,
-    worker_count: usize,
-    mut on_match_complete: impl FnMut(&ArenaMatchReport),
-) -> Result<ArenaRunOutput, String> {
-    if config.policies.is_empty() {
-        return Err("arena config requires at least one policy".to_string());
-    }
-    validate_policy_models(config)?;
-    if config.matches == 0 {
-        return Ok(ArenaRunOutput::default());
-    }
-    let worker_count = worker_count.max(1).min(config.matches);
-    if worker_count == 1 {
-        return run_arena_with_progress(config, include_trajectories, on_match_complete);
-    }
-
-    let config = Arc::new(config.clone());
-    let next_match = Arc::new(AtomicUsize::new(0));
-    let cancel = Arc::new(AtomicBool::new(false));
-    let (sender, receiver) = mpsc::channel::<Result<ArenaCompletedMatch, String>>();
-
-    std::thread::scope(|scope| {
-        for _ in 0..worker_count {
-            let config = Arc::clone(&config);
-            let next_match = Arc::clone(&next_match);
-            let cancel = Arc::clone(&cancel);
-            let sender = sender.clone();
-            scope.spawn(move || {
-                loop {
-                    if cancel.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let match_index = next_match.fetch_add(1, Ordering::Relaxed);
-                    if match_index >= config.matches {
-                        break;
-                    }
-                    match run_arena_match(&config, match_index, include_trajectories) {
-                        Ok(completed_match) => {
-                            if sender.send(Ok(completed_match)).is_err() {
-                                break;
-                            }
-                        }
-                        Err(reason) => {
-                            cancel.store(true, Ordering::Relaxed);
-                            let _ = sender.send(Err(reason));
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-        drop(sender);
-
-        let mut reports = Vec::with_capacity(config.matches);
-        let mut trajectories_by_match = Vec::with_capacity(config.matches);
-        let mut completed_matches = 0_usize;
-        for received in receiver {
-            let completed_match = match received {
-                Ok(completed_match) => completed_match,
-                Err(reason) => {
-                    cancel.store(true, Ordering::Relaxed);
-                    return Err(reason);
-                }
-            };
-            completed_matches += 1;
-            on_match_complete(&completed_match.report);
-            let match_index = completed_match.report.match_index;
-            reports.push(completed_match.report);
-            trajectories_by_match.push((match_index, completed_match.trajectories));
-            if completed_matches == config.matches {
-                break;
-            }
-        }
-
-        reports.sort_by_key(|report| report.match_index);
-        trajectories_by_match.sort_by_key(|(match_index, _)| *match_index);
-        Ok(ArenaRunOutput {
-            reports,
-            trajectories: trajectories_by_match
-                .into_iter()
-                .flat_map(|(_, rows)| rows)
-                .collect(),
-        })
-    })
-}
-
-fn run_arena_match(
-    config: &ArenaConfig,
+fn run_evaluation_arena_match(
+    config: &crate::evaluation::EvaluationArenaConfig,
+    subject: &crate::evaluation::EvaluationSubjectPolicyConfig,
+    replica_index: usize,
     match_index: usize,
+    seed: u64,
     include_trajectories: bool,
 ) -> Result<ArenaCompletedMatch, String> {
-    let seed = config.seed.wrapping_add(match_index as u64);
-    let match_id = format!("arena-{seed}-{match_index}");
-    let mut room = arena_room(&format!("ARENA{match_index:04}"));
-    start_match_in_room_state(&mut room, 0, seed)?;
-    let mut accumulator = ArenaMatchAccumulator::new(config, match_index);
+    let match_id = format!("evaluation-{seed}-{replica_index}");
+    let mut room = arena_room(&format!("EVAL{replica_index:04}"));
+    crate::evaluation::apply_evaluation_rules(&mut room);
+    start_match_in_room_state(&mut room, crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT, seed)?;
+    let initial_policies = evaluation_policies_by_current_seat(subject, &config.opponents);
+    let mut accumulator = ArenaMatchAccumulator::new_with_policies(&initial_policies);
     let mut action_count = 0_usize;
     let mut trajectories = Vec::new();
     let mut rollout_rng = StdRng::seed_from_u64(seed ^ 0xA17E_5EED);
 
-    while room.phase == "playing" && action_count < config.max_actions_per_match {
+    while action_count < config.max_actions_per_match {
+        if room.phase == "settlement" {
+            let confirmed_seat = crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT;
+            if record_continue_action_in_room_state(&mut room, confirmed_seat, "start_next_round")
+                .is_err()
+            {
+                break;
+            }
+            continue;
+        }
+        if room.phase != "playing" {
+            break;
+        }
+
         let started = std::time::Instant::now();
         let trace = {
             let rollout_rng = if include_trajectories {
@@ -491,7 +407,7 @@ fn run_arena_match(
             };
             next_bot_decision_trace_in_room_state_with_policy_resolver(
                 &room,
-                &|seat| policy_for_match_seat(config, match_index, seat),
+                &|seat| evaluation_policy_for_current_seat(&room, subject, &config.opponents, seat),
                 rollout_rng,
             )?
         };
@@ -500,7 +416,7 @@ fn run_arena_match(
         } else {
             let Some(action) =
                 next_bot_action_in_room_state_with_policy_resolver(&room, &|seat| {
-                    policy_for_match_seat(config, match_index, seat)
+                    evaluation_policy_for_current_seat(&room, subject, &config.opponents, seat)
                 })?
             else {
                 break;
@@ -522,10 +438,18 @@ fn run_arena_match(
         match handled {
             Some(Ok(_)) => {
                 let telemetry = trace.as_ref().map(|trace| &trace.telemetry);
-                accumulator.record_decision(action_seat, &action_type, elapsed_ms, telemetry);
-                accumulator.record_tenpai_metrics(&room);
+                record_evaluation_decision(
+                    &mut accumulator,
+                    &room,
+                    action_seat,
+                    &action_type,
+                    elapsed_ms,
+                    telemetry,
+                );
+                record_evaluation_tenpai_metrics(&mut accumulator, &room);
                 if let Some(trace) = trace.as_ref() {
-                    let policy = policy_for_match_seat(config, match_index, action_seat);
+                    let policy =
+                        evaluation_policy_for_current_seat(&room, subject, &config.opponents, action_seat);
                     let reward_after = reward_snapshot_from_room(&room, action_seat);
                     if let Some(mut row) = trajectory_row_from_trace_with_state(
                         &match_id,
@@ -550,13 +474,14 @@ fn run_arena_match(
         }
     }
 
-    let report = build_match_report(
+    let report = build_evaluation_match_report(
         match_index,
         seed,
         &room,
         accumulator,
         action_count,
         action_count < config.max_actions_per_match,
+        subject,
     );
     assign_terminal_rewards(&mut trajectories, &report);
     Ok(ArenaCompletedMatch {
@@ -565,28 +490,116 @@ fn run_arena_match(
     })
 }
 
-fn policy_for_match_seat(
-    config: &ArenaConfig,
-    match_index: usize,
-    seat_index: usize,
-) -> ArenaBotPolicyConfig {
-    let policy_count = config.policies.len();
-    debug_assert!(policy_count > 0);
-    let rotation = match config.seat_rotation {
-        ArenaSeatRotation::Fixed => 0,
-        ArenaSeatRotation::Cyclic => config.seat_rotation_offset.wrapping_add(match_index),
-    };
-    let policy_index = seat_index.wrapping_add(rotation) % policy_count;
-    config
-        .policies
-        .get(policy_index)
-        .cloned()
-        .expect("arena config has policies")
+fn evaluation_policies_by_current_seat(
+    subject: &crate::evaluation::EvaluationSubjectPolicyConfig,
+    opponents: &[ArenaBotPolicyConfig],
+) -> Vec<ArenaBotPolicyConfig> {
+    let mut policies = Vec::with_capacity(4);
+    policies.push(subject.policy.clone());
+    policies.extend(opponents.iter().take(3).cloned());
+    policies
 }
 
-fn validate_policy_models(config: &ArenaConfig) -> Result<(), String> {
+fn evaluation_policy_for_current_seat(
+    room: &RoomState,
+    subject: &crate::evaluation::EvaluationSubjectPolicyConfig,
+    opponents: &[ArenaBotPolicyConfig],
+    seat_index: usize,
+) -> ArenaBotPolicyConfig {
+    let seat_name = room
+        .seats
+        .iter()
+        .find(|seat| seat.seat_index == seat_index)
+        .and_then(|seat| seat.nickname.as_deref())
+        .unwrap_or_default();
+    if seat_name == "Arena Bot 0" {
+        return subject.policy.clone();
+    }
+    for opponent_index in 1..4 {
+        if seat_name == format!("Arena Bot {opponent_index}") {
+            return opponents
+                .get(opponent_index - 1)
+                .cloned()
+                .expect("evaluation has exactly three opponents");
+        }
+    }
+    evaluation_policies_by_current_seat(subject, opponents)
+        .get(seat_index)
+        .cloned()
+        .unwrap_or_else(|| subject.policy.clone())
+}
+
+fn apply_subject_fields_to_report(
+    report: &mut ArenaMatchReport,
+    _room: &RoomState,
+    subject: &crate::evaluation::EvaluationSubjectPolicyConfig,
+) {
+    let subject_metrics = report
+        .seats
+        .iter()
+        .find(|seat| seat.policy_id == subject.policy.id)
+        .cloned();
+    report.subject_id = Some(subject.policy.id.clone());
+    report.subject_display_name = Some(subject.display_name.clone());
+    report.subject_initial_seat = Some(crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT);
+    report.subject_final_score = subject_metrics.as_ref().map(|metrics| metrics.score_delta);
+    report.subject_deal_in_count = subject_metrics.as_ref().map(|metrics| metrics.dealt_in);
+    report.subject_win_count = subject_metrics.as_ref().map(|metrics| metrics.wins);
+}
+
+fn build_evaluation_match_report(
+    match_index: usize,
+    seed: u64,
+    room: &RoomState,
+    mut accumulator: ArenaMatchAccumulator,
+    action_count: usize,
+    completed: bool,
+    subject: &crate::evaluation::EvaluationSubjectPolicyConfig,
+) -> ArenaMatchReport {
+    if let Some(match_state) = &room.match_state {
+        for current_seat in 0..4 {
+            let identity_index = arena_identity_index_for_seat(room, current_seat);
+            if let Some(metrics) = accumulator.seats.get_mut(identity_index) {
+                metrics.score_delta = match_state
+                    .cumulative_scores
+                    .get(&current_seat)
+                    .copied()
+                    .unwrap_or_default();
+                if let Some(stats) = match_state.statistics.seat_stats_by_seat.get(&current_seat) {
+                    metrics.wins = stats.win_count as u64;
+                    metrics.dealt_in = stats.deal_in_count as u64;
+                }
+            }
+        }
+    }
+    record_evaluation_tenpai_metrics(&mut accumulator, room);
+    let mut report = ArenaMatchReport {
+        match_index,
+        seed,
+        completed,
+        action_count,
+        subject_id: None,
+        subject_display_name: None,
+        subject_initial_seat: None,
+        subject_final_score: None,
+        subject_deal_in_count: None,
+        subject_win_count: None,
+        seats: accumulator.seats,
+    };
+    apply_subject_fields_to_report(&mut report, room, subject);
+    report
+}
+
+fn validate_evaluation_policy_models(
+    config: &crate::evaluation::EvaluationArenaConfig,
+) -> Result<(), String> {
     let context = validation_bot_context();
-    for policy in &config.policies {
+    for policy in config
+        .subjects
+        .iter()
+        .map(|subject| &subject.policy)
+        .chain(config.opponents.iter())
+    {
         if neural_decision_scores_for_model_path(
             &context,
             policy.model_path.as_deref().map(std::path::Path::new),
@@ -977,152 +990,115 @@ mod tests {
     }
 
     #[test]
-    fn arena_config_parses_policy_ids() {
-        let raw = r#"{
-            "matches": 2,
-            "seed": 20260429,
-            "policies": [
-                {"id":"sft","model_path":"backend/assets/sft/sft.onnx"},
-                {"id":"candidate","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
-            ]
-        }"#;
-
-        let config: ArenaConfig = serde_json::from_str(raw).expect("config");
-
-        assert_eq!(config.matches, 2);
-        assert_eq!(config.seed, 20260429);
-        assert_eq!(config.max_actions_per_match, 2400);
-        assert!(!config.report_trajectories);
-        assert_eq!(config.policies[1].id, "candidate");
-        assert!(!config.policies[0].sample_actions);
-        assert_eq!(config.policies[0].temperature, 1.0);
-    }
-
-    #[test]
-    fn arena_config_rejects_removed_heuristic_comparison_toggle() {
-        let raw = r#"{
-            "matches": 1,
-            "seed": 20260429,
-            "record_heuristic_comparison": true,
-            "policies": [
-                {"id":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
-            ]
-        }"#;
-
-        let parsed = serde_json::from_str::<ArenaConfig>(raw);
-
-        assert!(parsed.is_err());
-    }
-
-    #[test]
-    fn arena_errors_when_policy_model_cannot_load() {
+    fn evaluation_arena_errors_when_policy_model_cannot_load() {
         let mut policy = test_policy("missing-model");
         policy.model_path = Some("backend/assets/sft/does-not-exist.onnx".to_string());
-        let config = ArenaConfig {
-            matches: 0,
+        let config = crate::evaluation::EvaluationArenaConfig {
+            matches: 1,
             seed: 7,
             max_actions_per_match: 10,
             report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Fixed,
-            seat_rotation_offset: 0,
-            policies: vec![policy],
+            subjects: vec![crate::evaluation::EvaluationSubjectPolicyConfig {
+                display_name: "Missing".to_string(),
+                policy,
+            }],
+            opponents: vec![
+                test_policy("opponent-1"),
+                test_policy("opponent-2"),
+                test_policy("opponent-3"),
+            ],
         };
 
-        let error = run_arena(&config, false).expect_err("missing model must fail");
+        let error = run_evaluation_arena(&config, false).expect_err("missing model must fail");
 
         assert!(error.contains("failed to load neural model"));
         assert!(error.contains("missing-model"));
     }
 
     #[test]
-    fn arena_config_parses_stochastic_neural_rollout_policy() {
+    fn arena_policy_config_parses_stochastic_neural_rollout_policy() {
         let raw = r#"{
-            "matches": 1,
-            "seed": 20260429,
-            "policies": [
-                {
-                    "id":"learner",
-                    "model_path":"backend/assets/models/mahjong_policy_net.onnx",
-                    "sample_actions":true,
-                    "temperature":0.8
-                }
-            ]
+            "id":"learner",
+            "model_path":"backend/assets/models/mahjong_policy_net.onnx",
+            "sample_actions":true,
+            "temperature":0.8
         }"#;
 
-        let config: ArenaConfig = serde_json::from_str(raw).expect("config");
+        let config: ArenaBotPolicyConfig = serde_json::from_str(raw).expect("config");
 
-        assert_eq!(config.policies[0].id, "learner");
-        assert!(config.policies[0].sample_actions);
-        assert_eq!(config.policies[0].temperature, 0.8);
+        assert_eq!(config.id, "learner");
+        assert!(config.sample_actions);
+        assert_eq!(config.temperature, 0.8);
     }
 
     #[test]
-    fn cyclic_seat_rotation_assigns_each_policy_to_each_seat_once_per_cycle() {
-        let config = ArenaConfig {
-            matches: 4,
-            seed: 7,
-            max_actions_per_match: 10,
-            report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Cyclic,
-            seat_rotation_offset: 0,
-            policies: ["a", "b", "c", "d"].into_iter().map(test_policy).collect(),
-        };
-
-        for seat_index in 0..4 {
-            let mut policy_ids = (0..4)
-                .map(|match_index| policy_for_match_seat(&config, match_index, seat_index).id)
-                .collect::<Vec<_>>();
-            policy_ids.sort();
-
-            assert_eq!(policy_ids, vec!["a", "b", "c", "d"]);
-        }
-    }
-
-    #[test]
-    fn cyclic_seat_rotation_offset_continues_across_chunks() {
-        let config = ArenaConfig {
-            matches: 2,
-            seed: 7,
-            max_actions_per_match: 10,
-            report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Cyclic,
-            seat_rotation_offset: 3,
-            policies: ["a", "b", "c", "d"].into_iter().map(test_policy).collect(),
-        };
-
-        assert_eq!(policy_for_match_seat(&config, 0, 0).id, "d");
-        assert_eq!(policy_for_match_seat(&config, 1, 0).id, "a");
-    }
-
-    #[test]
-    fn arena_config_rejects_removed_policy_mode() {
+    fn arena_policy_config_rejects_removed_policy_mode() {
         let raw = r#"{
-            "matches": 2,
-            "seed": 20260429,
-            "policies": [
-                {"id":"removed_policy","mode":"neural","model_path":"backend/assets/models/mahjong_policy_net.onnx"}
-            ]
+            "id":"removed_policy",
+            "mode":"neural",
+            "model_path":"backend/assets/models/mahjong_policy_net.onnx"
         }"#;
 
-        let parsed = serde_json::from_str::<ArenaConfig>(raw);
+        let parsed = serde_json::from_str::<ArenaBotPolicyConfig>(raw);
 
         assert!(parsed.is_err());
     }
 
     #[test]
-    fn arena_config_rejects_removed_policy_weight_field() {
+    fn arena_policy_config_rejects_removed_policy_weight_field() {
         let removed_field = concat!("neural", "_weight");
         let raw = format!(
             r#"{{
-            "matches": 2,
-            "seed": 20260429,
-            "policies": [
-                {{"id":"neural","{removed_field}":0,"model_path":"backend/assets/models/mahjong_policy_net.onnx"}}
-            ]
+            "id":"neural",
+            "{removed_field}":0,
+            "model_path":"backend/assets/models/mahjong_policy_net.onnx"
         }}"#
         );
 
-        let parsed = serde_json::from_str::<ArenaConfig>(&raw);
+        let parsed = serde_json::from_str::<ArenaBotPolicyConfig>(&raw);
+
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn arena_config_parses_subject_replica_shape() {
+        let raw = r#"{
+            "matches": 1,
+            "seed": 20260520,
+            "subjects": [
+                {"id":"candidate","display_name":"Candidate","model_path":"backend/assets/sft/sft.onnx"}
+            ],
+            "opponents": [
+                {"id":"sft-a","model_path":"backend/assets/sft/sft.onnx"},
+                {"id":"sft-b","model_path":"backend/assets/sft/sft.onnx"},
+                {"id":"sft-c","model_path":"backend/assets/sft/sft.onnx"}
+            ]
+        }"#;
+
+        let config: crate::evaluation::EvaluationArenaConfig =
+            serde_json::from_str(raw).expect("evaluation arena config");
+
+        assert_eq!(config.subjects.len(), 1);
+        assert_eq!(config.opponents.len(), 3);
+    }
+
+    #[test]
+    fn arena_config_rejects_hard_seat_rotation_fields() {
+        let raw = r#"{
+            "matches": 1,
+            "seed": 20260520,
+            "seat_rotation": "cyclic",
+            "subjects": [
+                {"id":"candidate","display_name":"Candidate","model_path":"backend/assets/sft/sft.onnx"}
+            ],
+            "opponents": [
+                {"id":"sft-a","model_path":"backend/assets/sft/sft.onnx"},
+                {"id":"sft-b","model_path":"backend/assets/sft/sft.onnx"},
+                {"id":"sft-c","model_path":"backend/assets/sft/sft.onnx"}
+            ]
+        }"#;
+
+        let parsed = serde_json::from_str::<crate::evaluation::EvaluationArenaConfig>(raw);
 
         assert!(parsed.is_err());
     }
@@ -1139,16 +1115,7 @@ mod tests {
 
     #[test]
     fn accumulator_records_decision_counts() {
-        let config = ArenaConfig {
-            matches: 1,
-            seed: 7,
-            max_actions_per_match: 10,
-            report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Fixed,
-            seat_rotation_offset: 0,
-            policies: vec![test_policy("neural")],
-        };
-        let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
+        let mut accumulator = ArenaMatchAccumulator::new_with_policies(&[test_policy("neural")]);
 
         accumulator.record_decision(0, "discard", 3, None);
         accumulator.record_decision(0, "pung", 2, None);
@@ -1161,16 +1128,7 @@ mod tests {
 
     #[test]
     fn accumulator_records_policy_telemetry() {
-        let config = ArenaConfig {
-            matches: 1,
-            seed: 7,
-            max_actions_per_match: 10,
-            report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Fixed,
-            seat_rotation_offset: 0,
-            policies: vec![test_policy("neural")],
-        };
-        let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
+        let mut accumulator = ArenaMatchAccumulator::new_with_policies(&[test_policy("neural")]);
 
         let neural = crate::bot::policy::BotPolicyDecisionTelemetry {
             model_loaded: true,
@@ -1184,15 +1142,6 @@ mod tests {
 
     #[test]
     fn match_report_final_tenpai_uses_hand_shape_not_ready_hand_flag() {
-        let config = ArenaConfig {
-            matches: 1,
-            seed: 7,
-            max_actions_per_match: 10,
-            report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Fixed,
-            seat_rotation_offset: 0,
-            policies: vec![test_policy("neural")],
-        };
         let mut room = RoomState {
             phase: "playing".to_string(),
             round_state: Some(RoundState {
@@ -1210,8 +1159,19 @@ mod tests {
             ..RoomState::default()
         };
 
-        let report =
-            build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config, 0), 1, true);
+        let subject = crate::evaluation::EvaluationSubjectPolicyConfig {
+            display_name: "Neural".to_string(),
+            policy: test_policy("neural"),
+        };
+        let report = build_evaluation_match_report(
+            0,
+            7,
+            &room,
+            ArenaMatchAccumulator::new_with_policies(&[test_policy("neural")]),
+            1,
+            true,
+            &subject,
+        );
         assert!(report.seats[0].final_tenpai);
 
         let non_tenpai_tiles = tile_key_only_vec(&[
@@ -1224,23 +1184,21 @@ mod tests {
             .get_mut(0)
             .expect("player")
             .concealed_tiles = non_tenpai_tiles;
-        let report =
-            build_match_report(0, 7, &room, ArenaMatchAccumulator::new(&config, 0), 1, true);
+        let report = build_evaluation_match_report(
+            0,
+            7,
+            &room,
+            ArenaMatchAccumulator::new_with_policies(&[test_policy("neural")]),
+            1,
+            true,
+            &subject,
+        );
         assert!(!report.seats[0].final_tenpai);
     }
 
     #[test]
     fn match_report_records_first_tenpai_turn_from_actual_hand_shape() {
-        let config = ArenaConfig {
-            matches: 1,
-            seed: 7,
-            max_actions_per_match: 10,
-            report_trajectories: false,
-            seat_rotation: ArenaSeatRotation::Fixed,
-            seat_rotation_offset: 0,
-            policies: vec![test_policy("neural")],
-        };
-        let mut accumulator = ArenaMatchAccumulator::new(&config, 0);
+        let mut accumulator = ArenaMatchAccumulator::new_with_policies(&[test_policy("neural")]);
         accumulator.seats[0].discard_count = 3;
         let room = RoomState {
             phase: "playing".to_string(),
@@ -1259,7 +1217,11 @@ mod tests {
             ..RoomState::default()
         };
 
-        let report = build_match_report(0, 7, &room, accumulator, 1, true);
+        let subject = crate::evaluation::EvaluationSubjectPolicyConfig {
+            display_name: "Neural".to_string(),
+            policy: test_policy("neural"),
+        };
+        let report = build_evaluation_match_report(0, 7, &room, accumulator, 1, true, &subject);
 
         assert_eq!(report.seats[0].first_tenpai_turn, Some(4));
         assert!(report.seats[0].final_tenpai);
@@ -1450,6 +1412,12 @@ mod tests {
             seed: 7,
             completed: true,
             action_count: 4,
+            subject_id: None,
+            subject_display_name: None,
+            subject_initial_seat: None,
+            subject_final_score: None,
+            subject_deal_in_count: None,
+            subject_win_count: None,
             seats: vec![
                 ArenaSeatMetrics {
                     seat_index: 0,

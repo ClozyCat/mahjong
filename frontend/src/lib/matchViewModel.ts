@@ -560,6 +560,7 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
   if (!snapshot || snapshot.phase !== 'waiting') {
     return null;
   }
+  const isEvaluationRoom = snapshot.mode === 'evaluation';
 
   const localSeat = snapshot.local_seat;
   const localSeatState = typeof localSeat === 'number' ? snapshot.seats.find((seat) => seat.seat_index === localSeat) : null;
@@ -576,16 +577,20 @@ function createWaitingControls(state: SessionState, options: MatchViewModelOptio
     canStart: allSeatsAvailable && !dealerSelection,
     occupiedSeats,
     botCount,
-    canAddBot: Boolean(localSeatState) && occupiedSeats < 4 && !dealerSelection,
-    canRemoveBot: Boolean(localSeatState) && botCount > 0 && !dealerSelection,
+    canAddBot: Boolean(localSeatState) && occupiedSeats < 4 && !dealerSelection && !isEvaluationRoom,
+    canRemoveBot: Boolean(localSeatState) && botCount > 0 && !dealerSelection && !isEvaluationRoom,
     minimumHuFan,
-    canDecreaseMinimumHuFan: Boolean(localSeatState) && minimumHuFanIndex > 0 && !dealerSelection,
+    canDecreaseMinimumHuFan:
+      Boolean(localSeatState) && minimumHuFanIndex > 0 && !dealerSelection && !isEvaluationRoom,
     canIncreaseMinimumHuFan:
-      Boolean(localSeatState) && minimumHuFanIndex < MINIMUM_HU_FAN_OPTIONS.length - 1 && !dealerSelection,
+      Boolean(localSeatState) &&
+      minimumHuFanIndex < MINIMUM_HU_FAN_OPTIONS.length - 1 &&
+      !dealerSelection &&
+      !isEvaluationRoom,
     dealerRepeatEnabled: snapshot.dealer_repeat_enabled ?? false,
     dealerDoubleEnabled: snapshot.dealer_double_enabled ?? false,
-    canToggleDealerRepeat: Boolean(localSeatState) && !dealerSelection,
-    canToggleDealerDouble: Boolean(localSeatState) && !dealerSelection,
+    canToggleDealerRepeat: Boolean(localSeatState) && !dealerSelection && !isEvaluationRoom,
+    canToggleDealerDouble: Boolean(localSeatState) && !dealerSelection && !isEvaluationRoom,
   };
 }
 

@@ -8,6 +8,8 @@ from typing import Any
 
 CLAIM_RATE_ABSOLUTE_DRIFT_LIMIT = 2.0
 CLAIM_RATE_RATIO_LIMIT = 2.0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=Path, required=True)

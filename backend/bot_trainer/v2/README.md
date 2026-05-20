@@ -86,14 +86,16 @@ cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --conf
 cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl
 ```
 
-矩阵评估使用 `arena_policy_pool.json`。当前池里只应出现 `sft` 与 `ppo` 相关模型路径。
+矩阵评估使用 `arena_policy_pool.json`，格式与 `arena_smoke.json` 一致：顶层必须是
+`subjects` 与正好 3 个 `opponents`。旧的 `policies` 池格式和
+`learner`/`opponents` 加权池格式不再被 arena 评测脚本接受。
 
 ```powershell
-.\backend\bot_trainer\v2\arena_matrix.ps1 -Matches 200 -Seed 20260429
+.\backend\bot_trainer\v2\arena_matrix.ps1 -Config backend\bot_trainer\v2\arena_policy_pool.json -MatchCount 200 -Seed 20260429
 ```
 
 ```bash
-MATCHES=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
+ARENA_CONFIG=backend/bot_trainer/v2/arena_policy_pool.json MATCH_COUNT=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
 ```
 
 主要评估指标：
@@ -158,7 +160,7 @@ PPO 从 SFT checkpoint 与 SFT ONNX 开始。默认：
 
 脚本流程：
 
-1. 用当前 rollout ONNX 生成 arena 轨迹。
+1. 用当前 rollout ONNX 生成一份 evaluation arena 轨迹配置，由系统在完整 16 局比赛内自行换座并采集轨迹。
 2. PPO 只读取 `policy_id=learner` 的轨迹。
 3. 每个 epoch 保存 `epoch_*.pt`。
 4. 默认评估每个 epoch 的候选 ONNX，并选出最优 epoch。
