@@ -189,7 +189,7 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
                     {getFanLabel(fan.fanKey)}
                   </span>
                   <span className="dramatic-reveal__fan-value">
-                    +{formatFanValue(displayValue)}番
+                    {formatFanValue(displayValue)}番
                   </span>
                 </span>
               );
