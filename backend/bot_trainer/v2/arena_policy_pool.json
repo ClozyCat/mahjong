@@ -9,31 +9,19 @@
             "id": "ppo_focused",
             "mode": "neural",
             "model_path": "backend/assets/ppo/ppo.onnx",
-            "temperature": 0.3,
-            "discard_base_risk_weight": 0.90,
-            "discard_value_risk_range": 0.55,
-            "discard_min_risk_weight": 0.25,
-            "discard_max_risk_weight": 1.45
+            "temperature": 0.3
         },
         {
             "id": "ppo",
             "mode": "neural",
             "model_path": "backend/assets/ppo/ppo.onnx",
-            "temperature": 1.0,
-            "discard_base_risk_weight": 0.90,
-            "discard_value_risk_range": 0.55,
-            "discard_min_risk_weight": 0.25,
-            "discard_max_risk_weight": 1.45
+            "temperature": 1.0
         },
         {
-            "id": "ppo_exploratory",
+            "id": "ppo1",
             "mode": "neural",
-            "model_path": "backend/assets/ppo/ppo.onnx",
-            "temperature": 2.0,
-            "discard_base_risk_weight": 0.90,
-            "discard_value_risk_range": 0.55,
-            "discard_min_risk_weight": 0.25,
-            "discard_max_risk_weight": 1.45
+            "model_path": "backend/bot_trainer/v2/rl_runs/202605192147/iter_012/candidate.onnx",
+            "temperature": 1.0
         }
     ]
 }
