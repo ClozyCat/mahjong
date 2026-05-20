@@ -16,10 +16,7 @@ import sys
 import onnx
 
 MODEL_DIRS = [
-    "backend/assets/model_d",
-    "backend/assets/model_a",
-    "backend/assets/model_b",
-    "backend/assets/model_s",
+    "backend/assets/trainning",
 ]
 
 NEW_NAME = "weights.data"
