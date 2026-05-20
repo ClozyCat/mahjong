@@ -6,6 +6,8 @@ BASELINE_CHECKPOINT="backend/bot_trainer/v2/checkpoints/best.pt"
 BASELINE_ONNX="backend/assets/sft/sft.onnx"
 PYTHON_CMD=(python)
 CARGO_CMD=(cargo)
+ARENA_JOBS=1
+EPOCH_EVAL_JOBS=1
 ITERATIONS=5
 ITERATION_MATCHES=500
 EVAL_MATCHES=1000
@@ -57,6 +59,8 @@ Options:
   --baseline-onnx PATH             Baseline ONNX used for evaluation reference.
   --python-exe PATH                Python executable override. Defaults to python.
   --cargo-exe PATH                 Cargo executable override. Defaults to cargo.
+  --arena-jobs N                   Parallel jobs inside bot_arena. Use 0 for all available cores.
+  --epoch-eval-jobs N              Parallel epoch candidate evaluations. Default 1.
   --iterations N                   Number of self-play iterations. Default 5.
   --iteration-matches N            Matches per iteration for trajectory generation. Default 500.
   --eval-matches N                 Matches used for candidate evaluation.
@@ -121,6 +125,54 @@ copy_required_file() {
         exit 2
     fi
     cp -f "$source_path" "$target_path"
+}
+
+write_candidate_entry() {
+    local output_path="$1"
+    local policy="$2"
+    local epoch_number="$3"
+    local checkpoint_path="$4"
+    local onnx_path="$5"
+    local summary_path="$6"
+    local gate_path="$7"
+
+    "${PYTHON_CMD[@]}" - "$output_path" "$policy" "$epoch_number" "$checkpoint_path" "$onnx_path" "$summary_path" "$gate_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+entry = {
+    "policy": sys.argv[2],
+    "epoch": int(sys.argv[3]),
+    "checkpoint": sys.argv[4],
+    "onnx": sys.argv[5],
+    "summary": sys.argv[6],
+    "gate_path": sys.argv[7],
+}
+with output.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+PY
+}
+
+run_epoch_candidate_eval() {
+    local epoch_pt="$1"
+    local policy="$2"
+    local policy_dir="$3"
+    local policy_eval_dir="$4"
+    local baseline_onnx="$5"
+    local entry_path="$6"
+
+    local epoch_name
+    epoch_name="$(basename "$epoch_pt" .pt)"
+    local epoch_number="${epoch_name#epoch_}"
+    local epoch_onnx="$policy_dir/$epoch_name.onnx"
+    local epoch_eval_dir="$policy_eval_dir/$epoch_name"
+    "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
+        --checkpoint "$epoch_pt" \
+        --output "$epoch_onnx"
+    run_candidate_eval "$epoch_onnx" "$epoch_eval_dir" "$baseline_onnx"
+    write_candidate_entry "$entry_path" "$policy" "$epoch_number" "$epoch_pt" "$epoch_onnx" "$RUN_EVAL_SUMMARY" "$RUN_EVAL_GATE"
 }
 
 is_valid_policy() {
@@ -189,7 +241,8 @@ run_candidate_eval() {
 
     "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
         --config "$RUN_EVAL_CONFIG" \
-        --output "$RUN_EVAL_JSONL"
+        --output "$RUN_EVAL_JSONL" \
+        --jobs "$ARENA_JOBS"
 
     "${PYTHON_CMD[@]}" backend/bot_trainer/v2/arena_summary.py \
         --input "$RUN_EVAL_JSONL" \
@@ -230,6 +283,16 @@ while [[ $# -gt 0 ]]; do
         --cargo-exe)
             require_value "$1" "${2:-}"
             CARGO_CMD=("$2")
+            shift 2
+            ;;
+        --arena-jobs)
+            require_value "$1" "${2:-}"
+            ARENA_JOBS="$2"
+            shift 2
+            ;;
+        --epoch-eval-jobs)
+            require_value "$1" "${2:-}"
+            EPOCH_EVAL_JOBS="$2"
             shift 2
             ;;
         --iterations)
@@ -489,6 +552,8 @@ echo "Device:              $DEVICE"
 echo "Policies:            ${ACTIVE_POLICIES[*]}"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
+echo "Arena jobs:          $ARENA_JOBS"
+echo "Epoch eval jobs:     $EPOCH_EVAL_JOBS"
 require_file \
     "$BASELINE_CHECKPOINT" \
     "Baseline checkpoint" \
@@ -589,6 +654,7 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
             --config "$trajectory_config_path"
             --output "$trajectory_report"
             --trajectories "$iter_trajectory_jsonl"
+            --jobs "$ARENA_JOBS"
         )
         "${CARGO_CMD[@]}" "${arena_args[@]}"
 
@@ -640,35 +706,35 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
             candidate_entries_jsonl="$POLICY_DIR/candidate_entries.jsonl"
             candidate_manifest="$POLICY_DIR/candidate_manifest.json"
             candidate_selection="$POLICY_DIR/candidate_selection.json"
-            : > "$candidate_entries_jsonl"
+            candidate_entries_dir="$POLICY_DIR/candidate_entries"
+            rm -rf "$candidate_entries_dir"
+            mkdir -p "$candidate_entries_dir"
+            epoch_eval_pids=()
+            epoch_eval_status=0
             for epoch_pt in "$POLICY_CHECKPOINT_DIR"/epoch_*.pt; do
                 [[ -e "$epoch_pt" ]] || continue
                 epoch_name="$(basename "$epoch_pt" .pt)"
                 epoch_number="${epoch_name#epoch_}"
-                epoch_onnx="$POLICY_DIR/$epoch_name.onnx"
-                epoch_eval_dir="$POLICY_EVAL_DIR/$epoch_name"
-                "${PYTHON_CMD[@]}" backend/bot_trainer/v2/export_onnx.py \
-                    --checkpoint "$epoch_pt" \
-                    --output "$epoch_onnx"
-                run_candidate_eval "$epoch_onnx" "$epoch_eval_dir" "$BASELINE_ONNX"
-                "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$policy" "$epoch_number" "$epoch_pt" "$epoch_onnx" "$RUN_EVAL_SUMMARY" "$RUN_EVAL_GATE" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-output = Path(sys.argv[1])
-entry = {
-    "policy": sys.argv[2],
-    "epoch": int(sys.argv[3]),
-    "checkpoint": sys.argv[4],
-    "onnx": sys.argv[5],
-    "summary": sys.argv[6],
-    "gate_path": sys.argv[7],
-}
-with output.open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-PY
+                entry_path="$candidate_entries_dir/$epoch_name.jsonl"
+                if (( EPOCH_EVAL_JOBS <= 1 )); then
+                    run_epoch_candidate_eval "$epoch_pt" "$policy" "$POLICY_DIR" "$POLICY_EVAL_DIR" "$BASELINE_ONNX" "$entry_path"
+                else
+                    run_epoch_candidate_eval "$epoch_pt" "$policy" "$POLICY_DIR" "$POLICY_EVAL_DIR" "$BASELINE_ONNX" "$entry_path" &
+                    epoch_eval_pids+=("$!")
+                    if (( ${#epoch_eval_pids[@]} >= EPOCH_EVAL_JOBS )); then
+                        wait "${epoch_eval_pids[0]}" || epoch_eval_status=1
+                        epoch_eval_pids=("${epoch_eval_pids[@]:1}")
+                    fi
+                fi
             done
+            for pid in "${epoch_eval_pids[@]}"; do
+                wait "$pid" || epoch_eval_status=1
+            done
+            if (( epoch_eval_status != 0 )); then
+                echo "One or more epoch candidate evaluations failed." >&2
+                exit 1
+            fi
+            cat "$candidate_entries_dir"/epoch_*.jsonl > "$candidate_entries_jsonl"
             "${PYTHON_CMD[@]}" - "$candidate_entries_jsonl" "$candidate_manifest" <<'PY'
 import json
 import sys

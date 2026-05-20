@@ -5,6 +5,8 @@ param(
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
+    [int]$ArenaJobs = 1,
+    [int]$EpochEvalJobs = 1,
     [int]$Iterations = 5,
     [int]$IterationMatches = 1500,
     [int]$EvalMatches = 1000,
@@ -126,7 +128,7 @@ function Invoke-CandidateEvaluation {
     $localSummary = Join-Path $EvalDir "candidate_eval_summary.json"
     $localGate = Join-Path $EvalDir "candidate_gate.json"
 
-    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl
+    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Invoke-TrainingPython @(
@@ -152,6 +154,112 @@ function Invoke-CandidateEvaluation {
         gate = $localGate
         gate_exit = $localGateExit
     }
+}
+
+function Write-CandidateEntry {
+    param(
+        [string]$Path,
+        [string]$PolicyName,
+        [int]$EpochNumber,
+        [string]$Checkpoint,
+        [string]$Onnx,
+        [string]$Summary,
+        [string]$Gate
+    )
+
+    $entry = [ordered]@{
+        policy = $PolicyName
+        epoch = $EpochNumber
+        checkpoint = $Checkpoint
+        onnx = $Onnx
+        summary = $Summary
+        gate_path = $Gate
+    }
+    Write-Utf8NoBom -Path $Path -Content (($entry | ConvertTo-Json -Depth 8 -Compress) + "`n")
+}
+
+$EpochEvaluationScript = {
+    param(
+        [string]$RepoRoot,
+        [string]$PythonExe,
+        [string]$PythonVersion,
+        [string]$CargoExe,
+        [string]$OpponentPool,
+        [int]$EvalMatches,
+        [int]$Seed,
+        [int]$MaxActionsPerMatch,
+        [int]$ArenaJobs,
+        [string]$PolicyName,
+        [string]$EpochPt,
+        [string]$PolicyDir,
+        [string]$PolicyEvalDir,
+        [string]$BaselineOnnx,
+        [string]$EntryPath
+    )
+
+    $ErrorActionPreference = "Stop"
+    Set-Location $RepoRoot
+    function Invoke-JobPython {
+        param([string[]]$Arguments)
+        if ($PythonExe -eq "py" -and $PythonVersion.Length -gt 0) {
+            & $PythonExe "-$PythonVersion" @Arguments
+        }
+        else {
+            & $PythonExe @Arguments
+        }
+    }
+    function Write-JobUtf8NoBom {
+        param([string]$Path, [string]$Content)
+        $encoding = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText((Resolve-Path -LiteralPath (Split-Path -Parent $Path)).Path + [System.IO.Path]::DirectorySeparatorChar + (Split-Path -Leaf $Path), $Content, $encoding)
+    }
+
+    $epochName = [System.IO.Path]::GetFileNameWithoutExtension($EpochPt)
+    $epochNumber = [int]$epochName.Replace("epoch_", "")
+    $epochOnnx = Join-Path $PolicyDir "$epochName.onnx"
+    $epochEvalDir = Join-Path $PolicyEvalDir $epochName
+    Invoke-JobPython @("backend/bot_trainer/v2/export_onnx.py", "--checkpoint", $EpochPt, "--output", $epochOnnx)
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    New-Item -ItemType Directory -Force -Path $epochEvalDir | Out-Null
+    Invoke-JobPython @(
+        "backend/bot_trainer/v2/league_config.py",
+        "--pool", $OpponentPool,
+        "--output-dir", $epochEvalDir,
+        "--matches", "$EvalMatches",
+        "--seed", "$Seed",
+        "--max-actions", "$MaxActionsPerMatch",
+        "--mode", "eval",
+        "--candidate-onnx", $epochOnnx,
+        "--baseline-onnx", $BaselineOnnx
+    )
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    $localConfig = Join-Path $epochEvalDir "candidate_eval_config.json"
+    $localJsonl = Join-Path $epochEvalDir "candidate_eval.jsonl"
+    $localSummary = Join-Path $epochEvalDir "candidate_eval_summary.json"
+    $localGate = Join-Path $epochEvalDir "candidate_gate.json"
+    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Invoke-JobPython @("backend/bot_trainer/v2/arena_summary.py", "--input", $localJsonl, "--output", $localSummary)
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Invoke-JobPython @(
+        "backend/bot_trainer/v2/candidate_gate.py",
+        "--summary", $localSummary,
+        "--baseline-policy", "baseline_neural",
+        "--candidate-policy", "rl_candidate_neural",
+        "--output", $localGate
+    )
+
+    $entry = [ordered]@{
+        policy = $PolicyName
+        epoch = $epochNumber
+        checkpoint = $EpochPt
+        onnx = $epochOnnx
+        summary = $localSummary
+        gate_path = $localGate
+    }
+    Write-JobUtf8NoBom -Path $EntryPath -Content (($entry | ConvertTo-Json -Depth 8 -Compress) + "`n")
 }
 
 function Resolve-ActivePolicies {
@@ -310,6 +418,8 @@ try {
     Write-Host "Policies:            $($activePolicies -join ', ')"
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
+    Write-Host "Arena jobs:          $ArenaJobs"
+    Write-Host "Epoch eval jobs:     $EpochEvalJobs"
 
     Assert-FileExists `
         $BaselineCheckpoint `
@@ -430,7 +540,8 @@ try {
                 "--",
                 "--config", $trajectoryConfigPath,
                 "--output", $trajectoryReport,
-                "--trajectories", $iterTrajectoryJsonl
+                "--trajectories", $iterTrajectoryJsonl,
+                "--jobs", "$ArenaJobs"
             )
             & $CargoExe @arenaArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -461,32 +572,82 @@ try {
             if (($CandidateSelectionMode -eq "epoch") -and (-not $SkipOnnxExport) -and (-not $SkipEval)) {
                 $candidateManifest = Join-Path $paths.policy_dir "candidate_manifest.json"
                 $candidateSelection = Join-Path $paths.policy_dir "candidate_selection.json"
-                $candidateEntries = @()
+                $candidateEntriesDir = Join-Path $paths.policy_dir "candidate_entries"
+                if (Test-Path -LiteralPath $candidateEntriesDir) {
+                    Remove-Item -LiteralPath $candidateEntriesDir -Recurse -Force
+                }
+                New-Item -ItemType Directory -Force -Path $candidateEntriesDir | Out-Null
+                $epochEvalJobs = @()
                 Get-ChildItem -LiteralPath $iterCheckpointDir -Filter "epoch_*.pt" |
                     Sort-Object Name |
                     ForEach-Object {
                         $epochName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-                        $epochOnnx = Join-Path $paths.policy_dir "$epochName.onnx"
-                        $epochEvalDir = Join-Path $iterEvalDir $epochName
-                        Invoke-TrainingPython @(
-                            "backend/bot_trainer/v2/export_onnx.py",
-                            "--checkpoint", $_.FullName,
-                            "--output", $epochOnnx
-                        )
-                        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-                        $epochEval = Invoke-CandidateEvaluation `
-                            -CandidateModel $epochOnnx `
-                            -EvalDir $epochEvalDir `
-                            -EvalBaselineOnnx $BaselineOnnx
                         $epochNumber = [int]$epochName.Replace("epoch_", "")
-                        $candidateEntries += [ordered]@{
-                            policy = $style
-                            epoch = $epochNumber
-                            checkpoint = $_.FullName
-                            onnx = $epochOnnx
-                            summary = $epochEval.summary
-                            gate_path = $epochEval.gate
+                        $entryPath = Join-Path $candidateEntriesDir "$epochName.jsonl"
+                        if ($EpochEvalJobs -le 1) {
+                            $epochOnnx = Join-Path $paths.policy_dir "$epochName.onnx"
+                            $epochEvalDir = Join-Path $iterEvalDir $epochName
+                            Invoke-TrainingPython @(
+                                "backend/bot_trainer/v2/export_onnx.py",
+                                "--checkpoint", $_.FullName,
+                                "--output", $epochOnnx
+                            )
+                            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+                            $epochEval = Invoke-CandidateEvaluation `
+                                -CandidateModel $epochOnnx `
+                                -EvalDir $epochEvalDir `
+                                -EvalBaselineOnnx $BaselineOnnx
+                            Write-CandidateEntry `
+                                -Path $entryPath `
+                                -PolicyName $style `
+                                -EpochNumber $epochNumber `
+                                -Checkpoint $_.FullName `
+                                -Onnx $epochOnnx `
+                                -Summary $epochEval.summary `
+                                -Gate $epochEval.gate
                         }
+                        else {
+                            $epochEvalJobs += Start-Job -ScriptBlock $EpochEvaluationScript -ArgumentList @(
+                                $RepoRoot.Path,
+                                $PythonExe,
+                                $PythonVersion,
+                                $CargoExe,
+                                $OpponentPool,
+                                $EvalMatches,
+                                $Seed,
+                                $MaxActionsPerMatch,
+                                $ArenaJobs,
+                                $style,
+                                $_.FullName,
+                                [string]$paths.policy_dir,
+                                $iterEvalDir,
+                                $BaselineOnnx,
+                                $entryPath
+                            )
+                            while ($epochEvalJobs.Count -ge $EpochEvalJobs) {
+                                $completedJob = Wait-Job -Job $epochEvalJobs -Any
+                                Receive-Job -Job $completedJob
+                                if ($completedJob.State -ne "Completed") {
+                                    throw "Epoch evaluation job failed: $($completedJob.State)"
+                                }
+                                Remove-Job -Job $completedJob
+                                $epochEvalJobs = @($epochEvalJobs | Where-Object { $_.Id -ne $completedJob.Id })
+                            }
+                        }
+                    }
+                foreach ($job in $epochEvalJobs) {
+                    Wait-Job -Job $job | Out-Null
+                    Receive-Job -Job $job
+                    if ($job.State -ne "Completed") {
+                        throw "Epoch evaluation job failed: $($job.State)"
+                    }
+                    Remove-Job -Job $job
+                }
+                $candidateEntries = @()
+                Get-ChildItem -LiteralPath $candidateEntriesDir -Filter "epoch_*.jsonl" |
+                    Sort-Object Name |
+                    ForEach-Object {
+                        $candidateEntries += (Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json)
                     }
                 Write-Utf8NoBom -Path $candidateManifest -Content ((@{ candidates = $candidateEntries } | ConvertTo-Json -Depth 12) + "`n")
                 Invoke-TrainingPython @(

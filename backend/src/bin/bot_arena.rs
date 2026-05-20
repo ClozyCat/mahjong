@@ -5,12 +5,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use backend::{bot::arena::run_evaluation_arena, evaluation::EvaluationArenaConfig};
+use backend::{bot::arena::run_evaluation_arena_with_jobs, evaluation::EvaluationArenaConfig};
 
 struct Args {
     config_path: PathBuf,
     output_path: PathBuf,
     trajectories_path: Option<PathBuf>,
+    jobs: usize,
 }
 
 fn main() -> Result<()> {
@@ -20,8 +21,8 @@ fn main() -> Result<()> {
             .with_context(|| format!("failed to read {}", args.config_path.display()))?,
     )?;
     let include_trajectories = args.trajectories_path.is_some();
-    let arena_output =
-        run_evaluation_arena(&config, include_trajectories).map_err(|reason| anyhow::anyhow!(reason))?;
+    let arena_output = run_evaluation_arena_with_jobs(&config, include_trajectories, args.jobs)
+        .map_err(|reason| anyhow::anyhow!(reason))?;
 
     let mut report_writer = BufWriter::new(File::create(&args.output_path)?);
     for report in arena_output.reports {
@@ -44,12 +45,24 @@ fn parse_args() -> Result<Args> {
     let mut config_path = None;
     let mut output_path = None;
     let mut trajectories_path = None;
+    let mut jobs = 1_usize;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--config" => config_path = args.next().map(PathBuf::from),
             "--output" => output_path = args.next().map(PathBuf::from),
             "--trajectories" => trajectories_path = args.next().map(PathBuf::from),
+            "--jobs" => {
+                let raw = args.next().context("--jobs requires a value")?;
+                jobs = raw
+                    .parse::<usize>()
+                    .with_context(|| format!("invalid --jobs value: {raw}"))?;
+                if jobs == 0 {
+                    jobs = std::thread::available_parallelism()
+                        .map(usize::from)
+                        .unwrap_or(1);
+                }
+            }
             _ => bail!("unknown argument: {arg}"),
         }
     }
@@ -57,5 +70,6 @@ fn parse_args() -> Result<Args> {
         config_path: config_path.context("--config is required")?,
         output_path: output_path.context("--output is required")?,
         trajectories_path,
+        jobs,
     })
 }

@@ -12,6 +12,7 @@ RANDOM_SEED="${RANDOM_SEED:-0}"
 ARENA_CONFIG="${ARENA_CONFIG:-$SCRIPT_DIR/arena_policy_pool.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/arena_runs}"
 PROGRESS_EVERY="${PROGRESS_EVERY:-10}"
+JOBS="${JOBS:-1}"
 CARGO_EXE="${CARGO_EXE:-cargo}"
 
 resolve_user_path() {
@@ -250,7 +251,8 @@ while (( completed_matches < MATCH_COUNT )); do
         --bin bot_arena \
         -- \
         --config "$chunk_config_path" \
-        --output "$chunk_output_path"
+        --output "$chunk_output_path" \
+        --jobs "$JOBS"
 
     cat "$chunk_output_path" >> "$OUTPUT_PATH"
     completed_matches=$(( completed_matches + chunk_matches ))

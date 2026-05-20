@@ -6,6 +6,7 @@ param(
     [string]$Config = "",
     [string]$OutputDir = "",
     [int]$ProgressEvery = 10,
+    [int]$Jobs = 1,
     [string]$CargoExe = "cargo"
 )
 
@@ -237,7 +238,8 @@ try {
             "--bin", "bot_arena",
             "--",
             "--config", $chunkConfigPath,
-            "--output", $chunkOutputPath
+            "--output", $chunkOutputPath,
+            "--jobs", "$Jobs"
         )
 
         & $CargoExe @arenaArgs

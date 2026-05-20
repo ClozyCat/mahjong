@@ -135,6 +135,8 @@ PPO 从 SFT checkpoint 与 SFT ONNX 开始。默认：
   -OutputDir backend/bot_trainer/v2/rl_runs/ppo_smoke `
   -IterationMatches 8 `
   -EvalMatches 4 `
+  -ArenaJobs 2 `
+  -EpochEvalJobs 2 `
   -Epochs 1 `
   -BatchSize 64 `
   -Device cpu `
@@ -149,6 +151,8 @@ PPO 从 SFT checkpoint 与 SFT ONNX 开始。默认：
   --output-dir backend/bot_trainer/v2/rl_runs/ppo_smoke \
   --iteration-matches 8 \
   --eval-matches 4 \
+  --arena-jobs 2 \
+  --epoch-eval-jobs 2 \
   --epochs 1 \
   --batch-size 64 \
   --device cpu \
@@ -165,6 +169,10 @@ PPO 从 SFT checkpoint 与 SFT ONNX 开始。默认：
 3. 每个 epoch 保存 `epoch_*.pt`。
 4. 默认评估每个 epoch 的候选 ONNX，并选出最优 epoch。
 5. 最终产物写入运行目录下的 `candidate.onnx` 和 `checkpoints/best.pt`。
+
+`ArenaJobs` / `--arena-jobs` 控制单次 `bot_arena` 内部并行的完整比赛数；
+`EpochEvalJobs` / `--epoch-eval-jobs` 控制 epoch 候选评测的脚本层并发数。
+两者设为 `1` 时串行，`ArenaJobs` 设为 `0` 时使用系统可用并行度。
 
 若只想评估最后一个 checkpoint，可使用 `-CandidateSelectionMode final` 或 `--candidate-selection-mode final`。
 

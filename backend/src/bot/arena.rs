@@ -1,5 +1,10 @@
 use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    mpsc,
+};
 use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
@@ -169,6 +174,14 @@ pub struct ArenaRunOutput {
 struct ArenaCompletedMatch {
     report: ArenaMatchReport,
     trajectories: Vec<ArenaTrajectoryRow>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EvaluationReplicaSpec {
+    replica_index: usize,
+    subject_index: usize,
+    match_index: usize,
+    seed: u64,
 }
 
 fn default_policy_temperature() -> f32 {
@@ -342,28 +355,147 @@ pub fn run_evaluation_arena(
     config: &crate::evaluation::EvaluationArenaConfig,
     include_trajectories: bool,
 ) -> Result<ArenaRunOutput, String> {
+    run_evaluation_arena_with_jobs(config, include_trajectories, 1)
+}
+
+pub fn run_evaluation_arena_with_jobs(
+    config: &crate::evaluation::EvaluationArenaConfig,
+    include_trajectories: bool,
+    worker_count: usize,
+) -> Result<ArenaRunOutput, String> {
     config.validate()?;
     validate_evaluation_policy_models(config)?;
 
-    let mut output = ArenaRunOutput::default();
-    let mut replica_index = 0_usize;
-    for subject in &config.subjects {
+    let replicas = evaluation_replica_specs(config);
+    if replicas.is_empty() {
+        return Ok(ArenaRunOutput::default());
+    }
+    if worker_count <= 1 || replicas.len() == 1 {
+        return run_evaluation_replicas_serial(config, include_trajectories, &replicas);
+    }
+    run_evaluation_replicas_parallel(config, include_trajectories, &replicas, worker_count)
+}
+
+fn evaluation_replica_specs(
+    config: &crate::evaluation::EvaluationArenaConfig,
+) -> Vec<EvaluationReplicaSpec> {
+    let mut replicas = Vec::with_capacity(config.subjects.len() * config.matches);
+    for subject_index in 0..config.subjects.len() {
         for match_index in 0..config.matches {
-            let seed = config.seed.wrapping_add(match_index as u64);
-            let completed_match = run_evaluation_arena_match(
-                config,
-                subject,
-                replica_index,
+            replicas.push(EvaluationReplicaSpec {
+                replica_index: replicas.len(),
+                subject_index,
                 match_index,
-                seed,
-                include_trajectories,
-            )?;
-            output.trajectories.extend(completed_match.trajectories);
-            output.reports.push(completed_match.report);
-            replica_index += 1;
+                seed: config.seed.wrapping_add(match_index as u64),
+            });
         }
     }
+    replicas
+}
+
+fn run_evaluation_replicas_serial(
+    config: &crate::evaluation::EvaluationArenaConfig,
+    include_trajectories: bool,
+    replicas: &[EvaluationReplicaSpec],
+) -> Result<ArenaRunOutput, String> {
+    let mut output = ArenaRunOutput::default();
+    for replica in replicas {
+        let subject = config
+            .subjects
+            .get(replica.subject_index)
+            .expect("replica subject index is valid");
+        let completed_match = run_evaluation_arena_match(
+            config,
+            subject,
+            replica.replica_index,
+            replica.match_index,
+            replica.seed,
+            include_trajectories,
+        )?;
+        output.trajectories.extend(completed_match.trajectories);
+        output.reports.push(completed_match.report);
+    }
     Ok(output)
+}
+
+fn run_evaluation_replicas_parallel(
+    config: &crate::evaluation::EvaluationArenaConfig,
+    include_trajectories: bool,
+    replicas: &[EvaluationReplicaSpec],
+    worker_count: usize,
+) -> Result<ArenaRunOutput, String> {
+    let config = Arc::new(config.clone());
+    let replicas = Arc::new(replicas.to_vec());
+    let worker_count = worker_count.max(1).min(replicas.len());
+    let next_replica = Arc::new(AtomicUsize::new(0));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = mpsc::channel::<Result<(usize, ArenaCompletedMatch), String>>();
+
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let config = Arc::clone(&config);
+            let replicas = Arc::clone(&replicas);
+            let next_replica = Arc::clone(&next_replica);
+            let cancel = Arc::clone(&cancel);
+            let sender = sender.clone();
+            scope.spawn(move || {
+                loop {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let replica_offset = next_replica.fetch_add(1, Ordering::Relaxed);
+                    let Some(replica) = replicas.get(replica_offset).copied() else {
+                        break;
+                    };
+                    let subject = config
+                        .subjects
+                        .get(replica.subject_index)
+                        .expect("replica subject index is valid");
+                    let result = run_evaluation_arena_match(
+                        &config,
+                        subject,
+                        replica.replica_index,
+                        replica.match_index,
+                        replica.seed,
+                        include_trajectories,
+                    )
+                    .map(|completed_match| (replica_offset, completed_match));
+                    if result.is_err() {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                    if sender.send(result).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(sender);
+
+        let mut completed = Vec::with_capacity(replicas.len());
+        for received in receiver {
+            match received {
+                Ok(row) => completed.push(row),
+                Err(reason) => {
+                    cancel.store(true, Ordering::Relaxed);
+                    return Err(reason);
+                }
+            }
+            if completed.len() == replicas.len() {
+                break;
+            }
+        }
+        completed.sort_by_key(|(replica_offset, _)| *replica_offset);
+        Ok(ArenaRunOutput {
+            reports: completed
+                .iter()
+                .map(|(_, completed_match)| completed_match.report.clone())
+                .collect(),
+            trajectories: completed
+                .into_iter()
+                .flat_map(|(_, completed_match)| completed_match.trajectories)
+                .collect(),
+        })
+    })
 }
 
 fn run_evaluation_arena_match(
@@ -399,18 +531,11 @@ fn run_evaluation_arena_match(
         }
 
         let started = std::time::Instant::now();
-        let trace = {
-            let rollout_rng = if include_trajectories {
-                Some(&mut rollout_rng)
-            } else {
-                None
-            };
-            next_bot_decision_trace_in_room_state_with_policy_resolver(
-                &room,
-                &|seat| evaluation_policy_for_current_seat(&room, subject, &config.opponents, seat),
-                rollout_rng,
-            )?
-        };
+        let trace = next_bot_decision_trace_in_room_state_with_policy_resolver(
+            &room,
+            &|seat| evaluation_policy_for_current_seat(&room, subject, &config.opponents, seat),
+            Some(&mut rollout_rng),
+        )?;
         let action = if let Some(trace) = trace.as_ref() {
             trace.action.clone()
         } else {
@@ -447,7 +572,7 @@ fn run_evaluation_arena_match(
                     telemetry,
                 );
                 record_evaluation_tenpai_metrics(&mut accumulator, &room);
-                if let Some(trace) = trace.as_ref() {
+                if let (true, Some(trace)) = (include_trajectories, trace.as_ref()) {
                     let policy =
                         evaluation_policy_for_current_seat(&room, subject, &config.opponents, action_seat);
                     let reward_after = reward_snapshot_from_room(&room, action_seat);
@@ -1101,6 +1226,63 @@ mod tests {
         let parsed = serde_json::from_str::<crate::evaluation::EvaluationArenaConfig>(raw);
 
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn evaluation_replica_specs_keep_subject_major_order_and_shared_seeds() {
+        let config = crate::evaluation::EvaluationArenaConfig {
+            matches: 2,
+            seed: 100,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            subjects: vec![
+                crate::evaluation::EvaluationSubjectPolicyConfig {
+                    display_name: "Baseline".to_string(),
+                    policy: test_policy("baseline"),
+                },
+                crate::evaluation::EvaluationSubjectPolicyConfig {
+                    display_name: "Candidate".to_string(),
+                    policy: test_policy("candidate"),
+                },
+            ],
+            opponents: vec![
+                test_policy("opponent-1"),
+                test_policy("opponent-2"),
+                test_policy("opponent-3"),
+            ],
+        };
+
+        let specs = evaluation_replica_specs(&config);
+
+        assert_eq!(
+            specs,
+            vec![
+                EvaluationReplicaSpec {
+                    replica_index: 0,
+                    subject_index: 0,
+                    match_index: 0,
+                    seed: 100,
+                },
+                EvaluationReplicaSpec {
+                    replica_index: 1,
+                    subject_index: 0,
+                    match_index: 1,
+                    seed: 101,
+                },
+                EvaluationReplicaSpec {
+                    replica_index: 2,
+                    subject_index: 1,
+                    match_index: 0,
+                    seed: 100,
+                },
+                EvaluationReplicaSpec {
+                    replica_index: 3,
+                    subject_index: 1,
+                    match_index: 1,
+                    seed: 101,
+                },
+            ]
+        );
     }
 
     #[test]
