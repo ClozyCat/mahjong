@@ -288,3 +288,93 @@
   }
 }
 
+
+/* ==============================
+   Dramatic reveal overlay
+   ============================== */
+
+@keyframes dramatic-reveal-mask-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes dramatic-reveal-mask-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes dramatic-reveal-title-pop {
+  0%   { transform: scale(2.5); opacity: 0; filter: blur(6px); }
+  45%  { transform: scale(0.92); opacity: 1; filter: blur(0); }
+  65%  { transform: scale(1.06); }
+  85%  { transform: scale(0.98); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes dramatic-reveal-actor-slide {
+  from { transform: translateY(1.2rem); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes dramatic-reveal-badge-pop {
+  0%   { transform: scale(0) rotate(-8deg); opacity: 0; }
+  55%  { transform: scale(1.12) rotate(2deg); opacity: 1; }
+  80%  { transform: scale(0.96) rotate(0); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes dramatic-reveal-number-glow {
+  0%, 100% {
+    text-shadow:
+      0 0 20px color-mix(in srgb, var(--accent) 35%, transparent),
+      0 0 60px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+  50% {
+    text-shadow:
+      0 0 30px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 0 90px color-mix(in srgb, var(--accent) 25%, transparent),
+      0 0 150px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+}
+
+@keyframes dramatic-reveal-total-pop-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+    filter: brightness(3) blur(4px);
+  }
+  70% {
+    transform: scale(1.35);
+    opacity: 1;
+    filter: brightness(1.5) blur(0);
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes dramatic-reveal-land-glow {
+  0% {
+    box-shadow:
+      0 0 0 rgba(255, 215, 0, 0);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  30% {
+    box-shadow:
+      0 0 80px rgba(255, 215, 0, 0.5),
+      0 0 160px rgba(255, 215, 0, 0.2);
+    border-color: rgba(255, 215, 0, 0.8);
+  }
+  70% {
+    box-shadow:
+      0 0 60px rgba(255, 215, 0, 0.3),
+      0 0 120px rgba(255, 215, 0, 0.1);
+    border-color: rgba(255, 215, 0, 0.5);
+  }
+  100% {
+    box-shadow:
+      0 0 30px rgba(255, 215, 0, 0.15);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+}

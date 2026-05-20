@@ -1029,6 +1029,30 @@ describe('BattleScreen', () => {
 
     expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--right')).toBeNull();
     expect(container.querySelector('.table-stage__action-callout.table-stage__spotlight--top')).toBeNull();
+
+    const dramaticOverlay = document.body.querySelector('.dramatic-reveal');
+    expect(dramaticOverlay).not.toBeNull();
+
+    // Advance timers step-by-step to let sequential useEffect transitions execute under fake timers.
+    act(() => {
+      vi.advanceTimersByTime(800); // ENTRANCE_MS
+    });
+    act(() => {
+      vi.advanceTimersByTime(250); // REVEAL_INTERVAL_MS
+    });
+    act(() => {
+      vi.advanceTimersByTime(400); // TOTAL_REVEAL_DELAY_MS
+    });
+
+    act(() => {
+      fireEvent.click(dramaticOverlay!);
+    });
+
+    // Advance timers by another 500ms to let the exit animation finish and call onComplete.
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
     expect(document.body.querySelector('.result-overlay')).not.toBeNull();
     vi.useRealTimers();
   });

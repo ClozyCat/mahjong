@@ -15,6 +15,7 @@ import {
 } from '../../lib/voicePacks';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
+import { DramaticRevealOverlay } from './DramaticRevealOverlay';
 import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 import { TableStage } from './TableStage';
 import { SnakeOverlay } from './SnakeOverlay';
@@ -97,6 +98,7 @@ export function BattleScreen({
   pendingInvitePanel = null,
 }: BattleScreenProps) {
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
+  const [isDramaticRevealActive, setIsDramaticRevealActive] = useState(false);
   const [consumedActionEffect, setConsumedActionEffect] = useState(viewModel.actionEffect);
   const [returnedLastDiscardKey, setReturnedLastDiscardKey] = useState<string | null>(null);
   const [isSnakeActive, setIsSnakeActive] = useState(false);
@@ -137,9 +139,9 @@ export function BattleScreen({
   const visibleLastDiscardSeat = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscardSeat;
   const visibleResult = isSettlementPanelReady ? viewModel.result : null;
   const visibleSettlementCenterCalloutLabel =
-    !isSettlementPanelReady && viewModel.result?.winType === 'draw' ? '流局' : null;
+    !isSettlementPanelReady && !isDramaticRevealActive && viewModel.result?.winType === 'draw' ? '流局' : null;
   const visibleSettlementWinnerSeats =
-    !isSettlementPanelReady && viewModel.result?.winType === 'discard'
+    !isSettlementPanelReady && !isDramaticRevealActive && viewModel.result?.winType === 'discard'
       ? getSettlementWinnerSeats(viewModel.result)
       : [];
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
@@ -153,6 +155,11 @@ export function BattleScreen({
 
     onAction(actionId);
   }
+
+  const handleRevealComplete = () => {
+    setIsDramaticRevealActive(false);
+    setIsSettlementPanelReady(true);
+  };
 
   useEffect(() => {
     consumedActionEffectRef.current = consumedActionEffect;
@@ -301,18 +308,32 @@ export function BattleScreen({
       hasObservedNoResultRef.current = true;
       previousSettlementPageCountRef.current = 0;
       setIsSettlementPanelReady(true);
+      setIsDramaticRevealActive(false);
       return undefined;
     }
 
+    const isFirstSettlement = hasObservedNoResultRef.current;
     const settlementPageCount = getSettlementPageCount(viewModel.result);
-    const settlementPanelDelayMs = getSettlementPanelDelayMs(
-      viewModel.result.winType,
-      hasObservedNoResultRef.current,
-      settlementPageCount,
-      settlementPageCount > previousSettlementPageCountRef.current,
-    );
+    const hasNewPages = settlementPageCount > previousSettlementPageCountRef.current;
     hasObservedNoResultRef.current = false;
     previousSettlementPageCountRef.current = settlementPageCount;
+
+    // For a win result (non-draw), we delay the dramatic reveal overlay until the "和" Kaiti animation completes (3 seconds).
+    if (isFirstSettlement && viewModel.result.winType !== 'draw') {
+      setIsSettlementPanelReady(false);
+      setIsDramaticRevealActive(false);
+      const timer = window.setTimeout(() => {
+        setIsDramaticRevealActive(true);
+      }, SETTLEMENT_CALLOUT_LINGER_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    const settlementPanelDelayMs = getSettlementPanelDelayMs(
+      viewModel.result.winType,
+      isFirstSettlement,
+      settlementPageCount,
+      hasNewPages,
+    );
 
     if (settlementPanelDelayMs <= 0) {
       setIsSettlementPanelReady(true);
@@ -449,6 +470,12 @@ export function BattleScreen({
               onAction={onAction}
             />
           ) : null}
+          {isDramaticRevealActive && viewModel.result && (
+            <DramaticRevealOverlay
+              result={viewModel.result}
+              onComplete={handleRevealComplete}
+            />
+          )}
         </div>
       </div>
     </main>
