@@ -1980,7 +1980,7 @@
   border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   background: color-mix(in srgb, var(--accent) 6%, rgba(0, 0, 0, 0.3));
   backdrop-filter: blur(8px);
-  animation: dramatic-reveal-number-glow 1.8s var(--ease-lux) infinite;
+  animation: dramatic-reveal-number-glow 1.8s var(--ease-lux) forwards;
 }
 
 .dramatic-reveal__multiplier-number--landed {
