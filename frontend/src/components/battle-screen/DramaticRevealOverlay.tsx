@@ -189,7 +189,7 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
                     {getFanLabel(fan.fanKey)}
                   </span>
                   <span className="dramatic-reveal__fan-value">
-                    ×{formatFanValue(displayValue)}
+                    +{formatFanValue(displayValue)}番
                   </span>
                 </span>
               );
@@ -218,6 +218,7 @@ function calculateDetailedFanTotal(fanBreakdown: ResultView['fanBreakdown'], flo
   if (fanBreakdown.length === 0 && flowerCount === 0) return null;
   let total = 0;
   for (const item of fanBreakdown) {
+    if (item.fanKey === 'flower_tiles') continue;
     const entry = getFanGuideEntry(item.fanKey);
     const displayValue = entry?.fanValue ?? item.fanValue;
     if (!Number.isFinite(displayValue) || displayValue < 0) return null;
