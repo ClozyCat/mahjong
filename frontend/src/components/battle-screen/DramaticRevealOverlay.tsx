@@ -33,7 +33,7 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
   if (resultPages.length > 1) {
     let maxFanTotal = -1;
     for (const page of resultPages) {
-      const fanTotal = calculateDetailedFanTotal(page.fanBreakdown) ?? page.fanTotal ?? 1;
+      const fanTotal = calculateDetailedFanTotal(page.fanBreakdown, page.flowerCount) ?? page.fanTotal ?? 1;
       if (fanTotal > maxFanTotal) {
         maxFanTotal = fanTotal;
         primaryPage = page;
@@ -44,8 +44,9 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
   const displayWinnerSeat = primaryPage?.winnerSeat ?? result.winnerSeat;
   const displayDiscarderSeat = primaryPage?.discarderSeat ?? result.discarderSeat;
   const displayFanBreakdown = primaryPage?.fanBreakdown ?? result.fanBreakdown;
+  const displayFlowerCount = primaryPage?.flowerCount ?? result.flowerCount;
   const hasMultiWin = resultPages.length > 1;
-  const finalFanTotal = calculateDetailedFanTotal(displayFanBreakdown) ?? result.fanTotal ?? 1;
+  const finalFanTotal = calculateDetailedFanTotal(displayFanBreakdown, displayFlowerCount) ?? result.fanTotal ?? 1;
 
   // Resolve winner names: if multi-win, join names of all winning seats with '、'
   let winnerName = null;
@@ -213,19 +214,16 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
   return createPortal(content, document.body);
 }
 
-function calculateDetailedFanTotal(fanBreakdown: ResultView['fanBreakdown']): number | null {
-  if (fanBreakdown.length === 0) return null;
-  let total = 1;
+function calculateDetailedFanTotal(fanBreakdown: ResultView['fanBreakdown'], flowerCount = 0): number | null {
+  if (fanBreakdown.length === 0 && flowerCount === 0) return null;
+  let total = 0;
   for (const item of fanBreakdown) {
     const entry = getFanGuideEntry(item.fanKey);
     const displayValue = entry?.fanValue ?? item.fanValue;
-    const category = entry?.category ?? 'multiply';
-    if (!Number.isFinite(displayValue) || displayValue <= 0) return null;
-    if (category === 'multiply') {
-      total *= displayValue;
-    }
+    if (!Number.isFinite(displayValue) || displayValue < 0) return null;
+    total += displayValue;
   }
-  return total;
+  return total + flowerCount;
 }
 
 function findPlayerName(seat: Seat, seats: ResultSeatView[]): string | undefined {
@@ -246,6 +244,7 @@ function getRevealPages(result: ResultView) {
         discarderAbsoluteSeat: result.discarderAbsoluteSeat ?? null,
         winType: result.winType,
         winTypeLabel: result.winTypeLabel ?? null,
+        flowerCount: result.flowerCount,
         fanBreakdown: result.fanBreakdown,
       },
     ];
