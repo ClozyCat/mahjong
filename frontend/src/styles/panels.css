@@ -642,6 +642,11 @@
   margin-bottom: 0.8rem;
 }
 
+.evaluation-panel__header {
+  cursor: grab;
+  user-select: none;
+}
+
 .evaluation-dialog__header strong,
 .evaluation-panel__header strong {
   font-size: clamp(0.92rem, 0.85rem + 0.3vw, 1.15rem);
