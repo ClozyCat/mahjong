@@ -1082,6 +1082,34 @@ describe('createMatchViewModel', () => {
     expect(viewModel.result?.title).toBe('大局已定');
   });
 
+  it('keeps finished settlement player names when a player leaves and the seat becomes a bot', () => {
+    const base = createFinishedSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: base.roomSnapshot!.payload.seats.map((seat) =>
+            seat.seat_index === 1
+              ? {
+                  ...seat,
+                  nickname: 'bot_1',
+                  connected: true,
+                  is_bot: true,
+                  seat_type: 'bot',
+                  title: null,
+                }
+              : seat,
+          ),
+        },
+      },
+    });
+
+    expect(viewModel.result?.seats.find((seat) => seat.absoluteSeat === 1)?.name).toBe('Player B');
+    expect(viewModel.result?.seats.find((seat) => seat.absoluteSeat === 1)?.displayLabel).toBe('Player B');
+  });
+
   it('shows local claim options when the local seat can respond in a claim window', () => {
     const base = createPlayingSessionState();
     const viewModel = createMatchViewModel({

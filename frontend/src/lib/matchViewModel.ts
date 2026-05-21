@@ -1370,6 +1370,15 @@ function createPlayerDisplayLabel(name: string, title?: string | null) {
   return normalizedTitle ? `${name}（${normalizedTitle}）` : name;
 }
 
+function createResultSeatIdentity(state: SessionState, seat: SeatSnapshot) {
+  const snapshot = state.roomSnapshot?.payload;
+  const privatePlayer = snapshot?.phase === 'finished' ? findPrivatePlayer(state, seat.seat_index) : null;
+  const name = privatePlayer?.nickname ?? seat.nickname;
+  const title = privatePlayer?.title ?? seat.title ?? null;
+
+  return { name, title };
+}
+
 function createResultSeats(
   state: SessionState,
   scoreDeltaBySeat: Record<string, number> | null,
@@ -1386,12 +1395,13 @@ function createResultSeats(
   return snapshot.seats
     .map((seat) => {
       const seatKey = String(seat.seat_index);
+      const identity = createResultSeatIdentity(state, seat);
       return {
         seat: toRelativeSeat(localSeat, seat.seat_index),
         absoluteSeat: seat.seat_index,
-        name: seat.nickname,
-        title: seat.title ?? null,
-        displayLabel: createPlayerDisplayLabel(seat.nickname, seat.title),
+        name: identity.name,
+        title: identity.title,
+        displayLabel: createPlayerDisplayLabel(identity.name, identity.title),
         score: scores[seatKey] ?? 0,
         delta: scoreDeltaBySeat ? (scoreDeltaBySeat[seatKey] ?? 0) : null,
         stats: createResultSeatStats(state, seat.seat_index, scores[seatKey] ?? 0),
