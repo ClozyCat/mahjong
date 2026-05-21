@@ -218,6 +218,39 @@ async fn create_evaluation_rejects_more_than_four_subjects() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn create_evaluation_auto_starts_special_bot_subject_room() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    server::seed_special_bot_users(&state).await?;
+    let bot = worker
+        .find_user_by_identifier("bot_schubert")
+        .await?
+        .expect("special bot should be seeded");
+    let (token, _user_id) = register_user(&app, &worker, "INVITEEVAL03", "Alice").await?;
+
+    let body = create_evaluation(&app, &token, vec![bot.user_id]).await?;
+    let bot_subject = body["subjects"]
+        .as_array()
+        .expect("subjects should be an array")
+        .iter()
+        .find(|subject| subject["user_id"] == bot.user_id)
+        .expect("bot subject should be present");
+    let table_code = bot_subject["table_code"]
+        .as_str()
+        .expect("table code should exist");
+
+    assert_eq!(bot_subject["kind"], "bot");
+    let handle = room_handle(&state, table_code)
+        .await
+        .expect("bot evaluation room should be loaded");
+    let runtime = handle.runtime.lock().await;
+    assert_eq!(runtime.room.phase, "playing");
+    assert!(runtime.room.round_state.is_some());
+    assert!(runtime.room.seats.iter().all(|seat| seat.is_bot));
+    assert_eq!(runtime.room.seats[0].nickname.as_deref(), Some("舒伯特"));
+    Ok(())
+}
+
 async fn add_human_to_table(
     state: &AppContext,
     worker: &DbWorker,

@@ -108,6 +108,7 @@ const BOT_TAKEOVER_ROOM_ACTION_IDS = new Set<BattleActionId>([
   'start_match',
   'start_next_round',
 ]);
+const EVALUATION_REFRESH_INTERVAL_MS = 1_500;
 const BattleScreen = lazy(() =>
   import('./components/battle-screen/BattleScreen').then((module) => ({ default: module.BattleScreen })),
 );
@@ -482,6 +483,33 @@ export default function App() {
     state.wsBaseUrl,
   ]);
 
+  const refreshEvaluationSession = useEffectEvent(async () => {
+    if (!authSession?.sessionToken || !evaluationSession) {
+      return;
+    }
+
+    try {
+      const session = await getEvaluation(defaults.apiBaseUrl, authSession.sessionToken, evaluationSession.evaluation_id);
+      setEvaluationSession(session);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '刷新评测失败。');
+    }
+  });
+
+  useEffect(() => {
+    if (!authSession?.sessionToken || !evaluationSession || evaluationSession.subjects.every((subject) => subject.completed)) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      void refreshEvaluationSession();
+    }, EVALUATION_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [authSession?.sessionToken, evaluationSession?.evaluation_id, evaluationSession?.subjects, refreshEvaluationSession]);
+
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
     leavingTableRef.current = false;
     reconnectCloseCountRef.current = 0;
@@ -562,6 +590,7 @@ export default function App() {
         wsBaseUrl,
         sessionToken,
         reconnect,
+        onOpen,
       } = options;
       if (!reconnect) {
         reconnectCloseCountRef.current = 0;
@@ -580,6 +609,7 @@ export default function App() {
         void (async () => {
           const message = createJoinTableMessage(sessionToken ?? '');
           socket.send(serializeClientMessage(message));
+          onOpen?.(socket);
 
           heartbeatTimerRef.current = window.setInterval(() => {
             if (socket.readyState === WebSocket.OPEN) {
@@ -986,7 +1016,23 @@ export default function App() {
       setIsEvaluationSubmitting(true);
       const session = await createEvaluation(defaults.apiBaseUrl, authSession.sessionToken, subjectUserIds);
       setEvaluationSession(session);
-      setStatusMessage('评测已创建。');
+      const selfSubject = session.subjects.find((subject) => subject.user_id === currentUser.user_id);
+      if (selfSubject) {
+        setActiveLobbyTableCode(null);
+        dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
+        openRoomSocket({
+          tableCode: selfSubject.table_code,
+          nickname: currentUser.display_name,
+          wsBaseUrl: defaults.wsBaseUrl,
+          sessionToken: authSession.sessionToken,
+          onOpen: (socket) => {
+            socket.send(serializeClientMessage(createStartMatchMessage()));
+          },
+        });
+        setStatusMessage('评测已创建，正在进入你的评测牌局。');
+      } else {
+        setStatusMessage('评测已创建。');
+      }
     } catch (error) {
       setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '创建评测失败。');
     } finally {
@@ -995,32 +1041,7 @@ export default function App() {
   }
 
   async function handleRefreshEvaluation() {
-    if (!authSession?.sessionToken || !evaluationSession) {
-      return;
-    }
-
-    try {
-      const session = await getEvaluation(defaults.apiBaseUrl, authSession.sessionToken, evaluationSession.evaluation_id);
-      setEvaluationSession(session);
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '刷新评测失败。');
-    }
-  }
-
-  function handleOpenEvaluationTable(tableCode: string) {
-    if (!authSession?.sessionToken || !currentUser) {
-      setStatusMessage('请先登录。');
-      return;
-    }
-
-    setActiveLobbyTableCode(null);
-    dispatch({ type: 'set_config', apiBaseUrl: defaults.apiBaseUrl, wsBaseUrl: defaults.wsBaseUrl });
-    openRoomSocket({
-      tableCode,
-      nickname: currentUser.display_name,
-      wsBaseUrl: defaults.wsBaseUrl,
-      sessionToken: authSession.sessionToken,
-    });
+    await refreshEvaluationSession();
   }
 
   async function handleAcceptInvite(invite: TableInvite) {
@@ -1429,7 +1450,6 @@ export default function App() {
           onInvitePlayer={handleInvitePlayer}
           onCreateEvaluation={handleCreateEvaluation}
           onRefreshEvaluation={handleRefreshEvaluation}
-          onOpenEvaluationTable={handleOpenEvaluationTable}
           onAddBot={() => handleAdjustBots(1)}
           onRemoveBot={() => handleAdjustBots(-1)}
           onMinimumHuFanChange={handleSetMinimumHuFan}

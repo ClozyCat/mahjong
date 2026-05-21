@@ -110,6 +110,7 @@ export const TableChrome = memo(function TableChrome({
     shouldShowPreMatchActions || canDecreaseMinimumHuFan || canIncreaseMinimumHuFan;
   const shouldShowDealerRuleControls =
     shouldShowPreMatchActions || canToggleDealerRepeat || canToggleDealerDouble;
+  const shouldShowEvaluationAction = Boolean(onOpenEvaluationDialog && shouldShowPreMatchActions);
   const canOpenSeatInvite = resolvedOccupiedSeatCount < seatCapacity;
   const minimumHuFanOptions: MinimumHuFan[] = [0, 2, 4, 6, 8];
   const minimumHuFanIndex = minimumHuFanOptions.indexOf(minimumHuFan);
@@ -275,27 +276,10 @@ export const TableChrome = memo(function TableChrome({
                 </svg>
               </button>
             ) : null}
-            {onOpenEvaluationDialog ? (
-              <button
-                type="button"
-                className="table-stage__quick-setting table-stage__quick-setting--evaluation"
-                aria-label="创建水平评测"
-                title="水平评测"
-                onClick={onOpenEvaluationDialog}
-              >
-                <svg className="table-stage__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M4 19V5" />
-                  <path d="M8 19v-7" />
-                  <path d="M12 19V8" />
-                  <path d="M16 19v-4" />
-                  <path d="M20 19V3" />
-                </svg>
-              </button>
-            ) : null}
           </div>
         ) : null}
       </div>
-      {shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls || shouldShowDealerRuleControls ? (
+      {shouldShowPreMatchActions || shouldShowBotControls || shouldShowMinimumHuFanControls || shouldShowDealerRuleControls || shouldShowEvaluationAction ? (
         <div className="table-stage__lobby-controls">
           <div className="table-stage__lobby-panel">
             <div className="table-stage__lobby-panel-corner table-stage__lobby-panel-corner--tl" />
@@ -412,6 +396,21 @@ export const TableChrome = memo(function TableChrome({
                   <span>庄家翻倍</span>
                 </label>
               </div>
+            ) : null}
+
+            {shouldShowEvaluationAction ? (
+              <>
+                <div className="table-stage__lobby-divider table-stage__lobby-divider--small">
+                  <span className="table-stage__lobby-divider-line"></span>
+                </div>
+                <button
+                  type="button"
+                  className="table-stage__evaluation-action"
+                  onClick={onOpenEvaluationDialog}
+                >
+                  技术评测
+                </button>
+              </>
             ) : null}
           </div>
         </div>

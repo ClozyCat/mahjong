@@ -1519,9 +1519,9 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::{
-        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest,
-        SetMinimumHuFanRequest, handle_disconnect, handle_join_table, handle_leave_table,
-        handle_quick_chat, handle_set_minimum_hu_fan, parse_client_message, room_is_evaluation,
+        ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, SetMinimumHuFanRequest,
+        handle_disconnect, handle_join_table, handle_leave_table, handle_quick_chat,
+        handle_set_minimum_hu_fan, parse_client_message, room_is_evaluation,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::persistence::{DbWorker, in_memory_database};

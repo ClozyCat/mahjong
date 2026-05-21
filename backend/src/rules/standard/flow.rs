@@ -1114,6 +1114,7 @@ mod tests {
                     score_history: vec![0, 10],
                     win_count: 1,
                     deal_in_count: 0,
+                    ready_hand_win_count: 0,
                 },
             ),
             (
@@ -1122,6 +1123,7 @@ mod tests {
                     score_history: vec![0, 20],
                     win_count: 2,
                     deal_in_count: 1,
+                    ready_hand_win_count: 0,
                 },
             ),
             (
@@ -1130,6 +1132,7 @@ mod tests {
                     score_history: vec![0, 30],
                     win_count: 3,
                     deal_in_count: 2,
+                    ready_hand_win_count: 0,
                 },
             ),
             (
@@ -1138,6 +1141,7 @@ mod tests {
                     score_history: vec![0, 40],
                     win_count: 4,
                     deal_in_count: 3,
+                    ready_hand_win_count: 0,
                 },
             ),
         ]);

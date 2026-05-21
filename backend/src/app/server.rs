@@ -38,6 +38,7 @@ use super::{
     send_outbound, serialize_room_state, user_active_table_updated_message,
 };
 use crate::core::state::{RoomState, SeatState};
+use crate::rules::standard::flow::start_match_in_room_state;
 use crate::special_bots::{self, SPECIAL_BOT_SEAT_TYPE};
 
 #[derive(Debug)]
@@ -649,6 +650,10 @@ async fn create_evaluation(
             &subject.display_name,
             subject_is_bot,
         );
+        let mut room = room;
+        if subject_is_bot && let Err(error) = start_match_in_room_state(&mut room, 0, seed) {
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error);
+        }
         let created_at = now_iso();
         let room_json = match serialize_room_state(&room) {
             Ok(room_json) => room_json,
@@ -705,6 +710,8 @@ async fn create_evaluation(
                 final_score: None,
                 deal_in_count: None,
                 win_count: None,
+                completed_round_count: None,
+                ready_hand_win_count: None,
             });
     }
 

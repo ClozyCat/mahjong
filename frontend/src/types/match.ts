@@ -98,6 +98,8 @@ export interface EvaluationSubjectResult {
   final_score?: number | null;
   deal_in_count?: number | null;
   win_count?: number | null;
+  completed_round_count?: number | null;
+  ready_hand_win_count?: number | null;
 }
 
 export interface EvaluationSessionResponse {

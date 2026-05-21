@@ -14,6 +14,7 @@ pub struct MatchSeatStatistics {
     pub score_history: Vec<i64>,
     pub win_count: u32,
     pub deal_in_count: u32,
+    pub ready_hand_win_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -110,6 +111,15 @@ impl MatchState {
             winner_stats.win_count += 1;
         }
 
+        for winner_seat in ready_hand_winning_seats(settlement) {
+            let winner_stats = self
+                .statistics
+                .seat_stats_by_seat
+                .entry(winner_seat)
+                .or_default();
+            winner_stats.ready_hand_win_count += 1;
+        }
+
         if settlement.win_type == "discard" {
             if let Some(discarder_seat) = settlement.discarder_seat {
                 let discarder_stats = self
@@ -125,4 +135,25 @@ impl MatchState {
         self.cumulative_scores = cumulative_scores;
         self.last_completed_round_id = Some(round_id);
     }
+}
+
+fn ready_hand_winning_seats(settlement: &RoundSettlement) -> Vec<Seat> {
+    if !settlement.winning_details.is_empty() {
+        return settlement
+            .winning_details
+            .iter()
+            .filter(|detail| detail.fan_keys.iter().any(|fan| fan == "ready_hand_win"))
+            .map(|detail| detail.winner_seat)
+            .collect();
+    }
+
+    if settlement
+        .fan_keys
+        .iter()
+        .any(|fan| fan == "ready_hand_win")
+    {
+        return settlement.winner_seat.into_iter().collect();
+    }
+
+    Vec::new()
 }

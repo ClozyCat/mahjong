@@ -40,9 +40,8 @@ interface BattleScreenProps {
   onAction: (actionId: BattleActionId) => void;
   onLeaveTable: () => void;
   onInvitePlayer?: (userId: number) => void;
-  onCreateEvaluation?: (subjectUserIds: number[]) => void;
+  onCreateEvaluation?: (subjectUserIds: number[]) => Promise<void> | void;
   onRefreshEvaluation?: () => void;
-  onOpenEvaluationTable?: (tableCode: string) => void;
   onAddBot?: () => void;
   onRemoveBot?: () => void;
   onMinimumHuFanChange?: (minimumHuFan: NonNullable<BattleViewModel['waitingControls']>['minimumHuFan']) => void;
@@ -85,7 +84,6 @@ export function BattleScreen({
   onInvitePlayer,
   onCreateEvaluation,
   onRefreshEvaluation,
-  onOpenEvaluationTable,
   onAddBot,
   onRemoveBot,
   onMinimumHuFanChange,
@@ -183,8 +181,8 @@ export function BattleScreen({
     });
   }
 
-  function handleCreateEvaluation() {
-    onCreateEvaluation?.(evaluationSubjectUserIds);
+  async function handleCreateEvaluation() {
+    await onCreateEvaluation?.(evaluationSubjectUserIds);
     setIsEvaluationDialogOpen(false);
   }
 
@@ -506,7 +504,6 @@ export function BattleScreen({
           <EvaluationPanel
             session={evaluationSession}
             onRefresh={onRefreshEvaluation}
-            onOpenTable={onOpenEvaluationTable}
           />
           {pendingInvitePanel}
           {isSnakeActive && <SnakeOverlay onGameOver={() => setTimeout(() => setIsSnakeActive(false), 2000)} />}

@@ -17,6 +17,7 @@ export type RoomSocketOptions = {
   wsBaseUrl: string;
   sessionToken?: string | null;
   reconnect?: boolean;
+  onOpen?: (socket: WebSocket) => void;
 };
 
 function getRuntimeDefaultBaseUrls() {
@@ -48,4 +49,3 @@ export function getDefaultConfig() {
     storedAuthSession,
   };
 }
-

@@ -1,10 +1,3 @@
-use rand::{SeedableRng, rngs::StdRng};
-use serde::{Deserialize, Serialize};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    mpsc,
-};
 use super::{
     action_space::{claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
@@ -26,6 +19,13 @@ use crate::rules::standard::{
     },
     flow::{record_continue_action_in_room_state, start_match_in_room_state},
     ready_hand::is_tenpai_hand_with_melds,
+};
+use rand::{SeedableRng, rngs::StdRng};
+use serde::{Deserialize, Serialize};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    mpsc,
 };
 
 fn bot_context_for_discards(tile_keys: &[&str]) -> BotContext {
@@ -509,7 +509,11 @@ fn run_evaluation_arena_match(
     let match_id = format!("evaluation-{seed}-{replica_index}");
     let mut room = arena_room(&format!("EVAL{replica_index:04}"));
     crate::evaluation::apply_evaluation_rules(&mut room);
-    start_match_in_room_state(&mut room, crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT, seed)?;
+    start_match_in_room_state(
+        &mut room,
+        crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT,
+        seed,
+    )?;
     let initial_policies = evaluation_policies_by_current_seat(subject, &config.opponents);
     let mut accumulator = ArenaMatchAccumulator::new_with_policies(&initial_policies);
     let mut action_count = 0_usize;
@@ -573,8 +577,12 @@ fn run_evaluation_arena_match(
                 );
                 record_evaluation_tenpai_metrics(&mut accumulator, &room);
                 if let (true, Some(trace)) = (include_trajectories, trace.as_ref()) {
-                    let policy =
-                        evaluation_policy_for_current_seat(&room, subject, &config.opponents, action_seat);
+                    let policy = evaluation_policy_for_current_seat(
+                        &room,
+                        subject,
+                        &config.opponents,
+                        action_seat,
+                    );
                     let reward_after = reward_snapshot_from_room(&room, action_seat);
                     if let Some(mut row) = trajectory_row_from_trace_with_state(
                         &match_id,

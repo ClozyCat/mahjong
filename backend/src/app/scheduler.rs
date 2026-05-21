@@ -39,6 +39,16 @@ fn player_is_ready_hand(room: &crate::core::state::RoomState, seat_index: usize)
 }
 
 fn room_has_online_players(runtime: &crate::app::room_runtime::RoomRuntime) -> bool {
+    if runtime.room.mode == crate::evaluation::EVALUATION_ROOM_MODE
+        && runtime
+            .room
+            .seats
+            .iter()
+            .all(|seat| seat.is_bot || seat.seat_type != "human")
+    {
+        return true;
+    }
+
     runtime.room.seats.iter().any(|seat| {
         seat.seat_type == "human"
             && seat.connected

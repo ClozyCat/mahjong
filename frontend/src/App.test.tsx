@@ -269,6 +269,7 @@ const DEFAULT_PENDING_INVITE = {
 type MockPublicUser = typeof DEFAULT_CURRENT_USER & {
   active_table_code?: string | null;
   active_table_phase?: 'waiting' | 'playing' | 'settlement' | 'finished' | null;
+  is_special_bot?: boolean;
 };
 
 function createMockResponse(body: unknown, status = 200): Response {
@@ -316,6 +317,7 @@ function createFetchMock(options?: {
   leaderboardResponses?: MockPublicUser[][];
   invites?: typeof DEFAULT_PENDING_INVITE[];
   inviteResponses?: Array<typeof DEFAULT_PENDING_INVITE[]>;
+  evaluationResponses?: unknown[];
   createdTableCode?: string;
   createdTableCodes?: string[];
   acceptInviteStatus?: number;
@@ -328,6 +330,7 @@ function createFetchMock(options?: {
   const leaderboardResponses = options?.leaderboardResponses ? [...options.leaderboardResponses] : null;
   const invites = options?.invites ?? [];
   const inviteResponses = options?.inviteResponses ? [...options.inviteResponses] : null;
+  const evaluationResponses = options?.evaluationResponses ? [...options.evaluationResponses] : null;
   const createdTableCodes = options?.createdTableCodes ? [...options.createdTableCodes] : null;
   const createdTableCode = options?.createdTableCode ?? 'AB12CD';
   const acceptInviteStatus = options?.acceptInviteStatus ?? 200;
@@ -394,6 +397,41 @@ function createFetchMock(options?: {
         created_at: '2026-05-06T12:00:00Z',
         seats: [],
       });
+    }
+
+    if (url.endsWith('/api/evaluations') && method === 'POST') {
+      return createMockResponse(
+        evaluationResponses?.shift() ?? {
+          evaluation_id: 'eval-test',
+          seed: 7,
+          subjects: [
+            {
+              subject_id: 'user:1',
+              user_id: 1,
+              display_name: '当前玩家',
+              kind: 'human',
+              table_code: 'EVSELF',
+              phase: 'waiting',
+              completed: false,
+              final_score: null,
+              deal_in_count: null,
+              win_count: null,
+              completed_round_count: null,
+              ready_hand_win_count: null,
+            },
+          ],
+        },
+      );
+    }
+
+    if (/\/api\/evaluations\/[^/]+$/.test(url) && method === 'GET') {
+      return createMockResponse(
+        evaluationResponses?.shift() ?? {
+          evaluation_id: 'eval-test',
+          seed: 7,
+          subjects: [],
+        },
+      );
     }
 
     if (/\/api\/tables\/[^/]+\/invites$/.test(url) && method === 'POST') {
@@ -798,6 +836,91 @@ describe('App', () => {
       invitee_user_id: 2,
     });
     expect(screen.getByRole('button', { name: '已发送' })).toBeDisabled();
+  });
+
+  it('starts evaluation, enters the current user table, and shows subject names instead of table codes', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby({
+      leaderboard: [
+        ...DEFAULT_LEADERBOARD,
+        {
+          user_id: 9,
+          username: 'bot_schubert',
+          display_name: '舒伯特',
+          points: 600,
+          title: 'AI',
+          display_label: '舒伯特（AI）',
+          bio: '',
+          avatar: null,
+          is_special_bot: true,
+        },
+      ],
+      evaluationResponses: [
+        {
+          evaluation_id: 'eval-test',
+          seed: 7,
+          subjects: [
+            {
+              subject_id: 'user:1',
+              user_id: 1,
+              display_name: '当前玩家',
+              kind: 'human',
+              table_code: 'EVSELF',
+              phase: 'waiting',
+              completed: false,
+              final_score: null,
+              deal_in_count: null,
+              win_count: null,
+              completed_round_count: null,
+              ready_hand_win_count: null,
+            },
+            {
+              subject_id: 'user:9',
+              user_id: 9,
+              display_name: '舒伯特',
+              kind: 'bot',
+              table_code: 'EVBOT',
+              phase: 'finished',
+              completed: true,
+              final_score: 32,
+              deal_in_count: 1,
+              win_count: 2,
+              completed_round_count: 16,
+              ready_hand_win_count: 4,
+            },
+          ],
+        },
+      ],
+    });
+
+    await user.click(screen.getByRole('button', { name: '展开牌桌快捷设置' }));
+    await user.click(screen.getByRole('button', { name: '技术评测' }));
+    const dialog = await screen.findByRole('dialog', { name: '创建评测' });
+    await user.click(within(dialog).getByLabelText(/舒伯特/));
+    await user.click(within(dialog).getByRole('button', { name: '开始评测' }));
+
+    const createEvaluationCall = findFetchCall(fetchMock, '/api/evaluations', 'POST');
+    expect(createEvaluationCall).toBeDefined();
+    expect(parseRequestBody(createEvaluationCall?.[1])).toEqual({ subject_user_ids: [9] });
+
+    const evaluationSocket = await waitFor(() => {
+      const socket = getRoomSocket('EVSELF');
+      expect(socket).toBeDefined();
+      return socket!;
+    });
+    await act(async () => {
+      evaluationSocket.triggerOpen();
+    });
+
+    expect(evaluationSocket.sentMessages.map((message) => JSON.parse(message))).toEqual([
+      { type: 'join_table', payload: { session_token: AUTH_SESSION_TOKEN } },
+      { type: 'start_match', payload: {} },
+    ]);
+    expect(screen.getByText('当前玩家')).toBeInTheDocument();
+    expect(screen.getByText('舒伯特')).toBeInTheDocument();
+    expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
+    expect(screen.getAllByText('听牌和 0 次').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: 'EVBOT' })).not.toBeInTheDocument();
   });
 
   it('enables player list invites when the active waiting table reports bots with the legacy is_bot flag', async () => {
