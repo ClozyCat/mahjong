@@ -5,9 +5,7 @@ use std::collections::BTreeMap;
 use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::{plan_flower_action, plan_round_start_payload};
 use crate::core::event::GameEvent;
-#[cfg(test)]
-use crate::core::state::SeatState;
-use crate::core::state::{ContinueActionState, MatchState, RoomState};
+use crate::core::state::{ContinueActionState, MatchState, RoomState, SeatState};
 use crate::core::tile::Tile;
 
 use super::runtime::{
@@ -91,6 +89,7 @@ pub fn start_match_in_room_state(
         cumulative_scores.insert(seat, 0);
     }
     let mut match_state = MatchState {
+        seed,
         prevailing_wind: "east".to_string(),
         hand_number: 1,
         dealer_seat,
@@ -178,6 +177,7 @@ pub fn start_match(room: &mut Value, dealer_seat: usize, seed: u64) {
         cumulative_scores.insert(seat, 0);
     }
     let mut match_state = MatchState {
+        seed,
         prevailing_wind: "east".to_string(),
         hand_number: 1,
         dealer_seat,
@@ -432,6 +432,28 @@ fn remap_seat_keyed_map<T>(
     }
 }
 
+fn wind_seed_component(wind: &str) -> u64 {
+    match wind {
+        "east" => 0xE451,
+        "south" => 0x50A7,
+        "west" => 0xCE57,
+        "north" => 0xA047,
+        _ => 0,
+    }
+}
+
+fn derive_round_seed(
+    base_seed: u64,
+    round_wind: &str,
+    hand_number: usize,
+    dealer_seat: usize,
+) -> u64 {
+    base_seed
+        ^ wind_seed_component(round_wind).rotate_left(7)
+        ^ (hand_number as u64).rotate_left(17)
+        ^ (dealer_seat as u64).rotate_left(29)
+}
+
 fn settlement_is_final_hand_in_room_state(room: &RoomState) -> bool {
     room.phase == "settlement"
         && room
@@ -466,10 +488,14 @@ fn finish_final_settlement_in_room_state(room: &mut RoomState) {
     }
 }
 
+fn is_human_controlled_seat(seat: &SeatState) -> bool {
+    seat.seat_type == "human" || (seat.seat_type.is_empty() && !seat.is_bot)
+}
+
 fn continue_required_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
     room.seats
         .iter()
-        .filter(|seat| !seat.is_bot)
+        .filter(|seat| is_human_controlled_seat(seat))
         .map(|seat| seat.seat_index)
         .collect()
 }
@@ -477,7 +503,7 @@ fn continue_required_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
 fn continue_online_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
     room.seats
         .iter()
-        .filter(|seat| seat.connected && !seat.is_bot)
+        .filter(|seat| seat.connected && is_human_controlled_seat(seat))
         .map(|seat| seat.seat_index)
         .collect()
 }
@@ -640,17 +666,14 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         return Ok(());
     }
 
-    let round_id = format!(
-        "{next_wind}-{next_hand_number}-dealer-{next_dealer}-{}",
-        rand::random::<u64>()
-    );
-    start_round_in_room_state(
-        room,
-        next_dealer,
-        &next_wind,
-        round_id,
-        rand::random::<u64>(),
-    );
+    let base_seed = room
+        .match_state
+        .as_ref()
+        .map(|match_state| match_state.seed)
+        .unwrap_or_default();
+    let round_seed = derive_round_seed(base_seed, &next_wind, next_hand_number, next_dealer);
+    let round_id = format!("{next_wind}-{next_hand_number}-dealer-{next_dealer}-seed-{round_seed}");
+    start_round_in_room_state(room, next_dealer, &next_wind, round_id, round_seed);
     Ok(())
 }
 
@@ -896,6 +919,7 @@ mod tests {
         room.pending_timeout = None;
         room.continue_action = None;
         room.match_state = Some(MatchState {
+            seed: 0,
             prevailing_wind: prevailing_wind.to_string(),
             hand_number: 4,
             dealer_seat: 3,
@@ -998,6 +1022,39 @@ mod tests {
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "east");
         assert_eq!(match_state.hand_number, 4);
+    }
+
+    #[test]
+    fn next_round_seed_is_derived_from_match_seed_and_state() {
+        let mut first = settlement_room_at_wind_end("east");
+        let mut second = settlement_room_at_wind_end("east");
+        for room in [&mut first, &mut second] {
+            let match_state = room.match_state.as_mut().expect("match should exist");
+            match_state.hand_number = 2;
+            match_state.dealer_seat = 1;
+            match_state.seed = 777;
+        }
+
+        complete_start_next_round_in_room_state(&mut first).expect("first next round");
+        complete_start_next_round_in_room_state(&mut second).expect("second next round");
+
+        let first_round = first.round_state.as_ref().expect("first round");
+        let second_round = second.round_state.as_ref().expect("second round");
+        assert_eq!(
+            first_round
+                .wall
+                .tiles
+                .iter()
+                .map(|tile| tile.tile_id.clone())
+                .collect::<Vec<_>>(),
+            second_round
+                .wall
+                .tiles
+                .iter()
+                .map(|tile| tile.tile_id.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(first_round.round_id.contains("seed-"));
     }
 
     #[test]
@@ -1324,5 +1381,29 @@ mod tests {
         assert_eq!(action.required_seats, vec![0, 1, 2]);
         assert_eq!(action.online_seats, vec![0, 1, 2]);
         assert!(action.auto_advance_deadline_at.is_none());
+    }
+
+    #[test]
+    fn reconcile_continue_action_treats_bot_takeover_seats_as_human() {
+        let mut room = settlement_room_at_wind_end("east");
+        room.seats[0].is_bot = true;
+        room.seats[0].seat_type = "human".to_string();
+        room.continue_action = Some(ContinueActionState {
+            action_id: "start_next_round".to_string(),
+            confirmed_seats: vec![1, 2, 3],
+            required_seats: Vec::new(),
+            online_seats: Vec::new(),
+            auto_advance_deadline_at: None,
+        });
+
+        reconcile_continue_action_in_room_state(&mut room)
+            .expect("continue action should reconcile");
+
+        let action = room
+            .continue_action
+            .expect("bot takeover human seat should still be required");
+        assert_eq!(action.confirmed_seats, vec![1, 2, 3]);
+        assert_eq!(action.required_seats, vec![0, 1, 2, 3]);
+        assert_eq!(action.online_seats, vec![0, 1, 2, 3]);
     }
 }

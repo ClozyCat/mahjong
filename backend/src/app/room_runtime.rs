@@ -51,6 +51,7 @@ pub(crate) struct RoomRuntime {
 pub(crate) struct PendingStartMatch {
     pub(crate) dealer_seat: usize,
     pub(crate) reveal_at: String,
+    pub(crate) seed: Option<u64>,
 }
 
 impl RoomRuntime {
@@ -474,5 +475,72 @@ mod tests {
         assert!(seat_group_contains_connection(&runtime, 3, third.id));
         assert!(!seat_group_contains_connection(&runtime, 0, first.id));
         assert!(!seat_group_contains_connection(&runtime, 2, third.id));
+    }
+
+    #[test]
+    fn remaps_bot_takeover_human_connections_when_players_change_seats() {
+        let mut previous_room = initial_room_state("ROOM42");
+        previous_room.seats = (0..4)
+            .map(|seat_index| SeatState {
+                seat_index,
+                user_id: Some((seat_index as i64 + 1) * 100),
+                connected: true,
+                is_bot: seat_index == 0,
+                seat_type: "human".to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let mut runtime =
+            RoomRuntime::new("2026-05-07T00:00:00Z".to_string(), previous_room.clone());
+        let first = test_connection(1);
+        add_seat_connection(&mut runtime, 0, Some(100), &first);
+
+        runtime.room.seats = vec![
+            SeatState {
+                seat_index: 0,
+                ..previous_room.seats[1].clone()
+            },
+            SeatState {
+                seat_index: 1,
+                ..previous_room.seats[0].clone()
+            },
+            SeatState {
+                seat_index: 2,
+                ..previous_room.seats[2].clone()
+            },
+            SeatState {
+                seat_index: 3,
+                ..previous_room.seats[3].clone()
+            },
+        ];
+
+        remap_connections_to_current_seats(&mut runtime, &previous_room);
+
+        assert!(seat_group_contains_connection(&runtime, 1, first.id));
+        assert!(!seat_group_contains_connection(&runtime, 0, first.id));
+    }
+
+    #[test]
+    fn keeps_connections_on_old_seat_until_bot_takeover_player_changes_seats() {
+        let mut previous_room = initial_room_state("ROOM42");
+        previous_room.seats = (0..4)
+            .map(|seat_index| SeatState {
+                seat_index,
+                user_id: Some((seat_index as i64 + 1) * 100),
+                connected: true,
+                is_bot: seat_index == 0,
+                seat_type: "human".to_string(),
+                ..Default::default()
+            })
+            .collect();
+        let mut runtime =
+            RoomRuntime::new("2026-05-07T00:00:00Z".to_string(), previous_room.clone());
+        let first = test_connection(1);
+        add_seat_connection(&mut runtime, 0, Some(100), &first);
+
+        remap_connections_to_current_seats(&mut runtime, &previous_room);
+
+        assert!(seat_group_contains_connection(&runtime, 0, first.id));
+        assert!(!seat_group_contains_connection(&runtime, 1, first.id));
     }
 }

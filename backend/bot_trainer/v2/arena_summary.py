@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ def load_reports(path: Path) -> list[dict[str, Any]]:
 def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
     by_policy: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     by_subject: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    subject_scores_by_pair: dict[tuple[int, int], dict[str, float]] = defaultdict(dict)
     completed_matches = 0
     for report in reports:
         completed_matches += 1 if report.get("completed") else 0
@@ -59,6 +61,10 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
                 metrics["deal_in_sum"] += report["subject_deal_in_count"]
             if report.get("subject_win_count") is not None:
                 metrics["win_sum"] += report["subject_win_count"]
+            if report.get("subject_final_score") is not None:
+                subject_scores_by_pair[
+                    (int(report.get("seed", 0)), int(report.get("match_index", 0)))
+                ][str(subject_id)] = float(report["subject_final_score"])
 
     policies = {}
     for policy, metrics in sorted(by_policy.items()):
@@ -101,7 +107,36 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
         "completed_matches": completed_matches,
         "policies": policies,
         "subjects": subjects,
+        "paired_subjects": paired_subject_deltas(subject_scores_by_pair),
     }
+
+
+def paired_subject_deltas(
+    subject_scores_by_pair: dict[tuple[int, int], dict[str, float]],
+) -> dict[str, Any]:
+    subject_ids = sorted({
+        subject_id
+        for scores in subject_scores_by_pair.values()
+        for subject_id in scores
+    })
+    paired: dict[str, Any] = {}
+    for baseline_id, candidate_id in combinations(subject_ids, 2):
+        deltas = [
+            scores[candidate_id] - scores[baseline_id]
+            for _, scores in sorted(subject_scores_by_pair.items())
+            if baseline_id in scores and candidate_id in scores
+        ]
+        if not deltas:
+            continue
+        key = f"{baseline_id}__vs__{candidate_id}"
+        paired[key] = {
+            "baseline_policy": baseline_id,
+            "candidate_policy": candidate_id,
+            "paired_match_count": len(deltas),
+            "avg_score_delta": sum(deltas) / len(deltas),
+            "deltas": deltas,
+        }
+    return paired
 
 
 def print_summary(summary: dict[str, Any]) -> None:

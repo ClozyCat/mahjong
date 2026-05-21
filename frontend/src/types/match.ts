@@ -136,6 +136,7 @@ export interface ConcealedTile {
 }
 
 export interface MatchState {
+  seed?: number;
   prevailing_wind: 'east' | 'south' | 'west' | 'north';
   hand_number: number;
   dealer_seat: number;

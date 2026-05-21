@@ -1294,6 +1294,72 @@ mod tests {
     }
 
     #[test]
+    fn evaluation_subject_replicas_start_from_same_wall_for_same_match_seed() {
+        let config = crate::evaluation::EvaluationArenaConfig {
+            matches: 1,
+            seed: 100,
+            max_actions_per_match: 10,
+            report_trajectories: false,
+            subjects: vec![
+                crate::evaluation::EvaluationSubjectPolicyConfig {
+                    display_name: "Baseline".to_string(),
+                    policy: test_policy("baseline"),
+                },
+                crate::evaluation::EvaluationSubjectPolicyConfig {
+                    display_name: "Candidate".to_string(),
+                    policy: test_policy("candidate"),
+                },
+            ],
+            opponents: vec![
+                test_policy("opponent-1"),
+                test_policy("opponent-2"),
+                test_policy("opponent-3"),
+            ],
+        };
+        let specs = evaluation_replica_specs(&config);
+
+        let first_seed = specs[0].seed;
+        let second_seed = specs[1].seed;
+        let mut first_room = arena_room("EVALA");
+        let mut second_room = arena_room("EVALB");
+        crate::evaluation::apply_evaluation_rules(&mut first_room);
+        crate::evaluation::apply_evaluation_rules(&mut second_room);
+        start_match_in_room_state(
+            &mut first_room,
+            crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT,
+            first_seed,
+        )
+        .expect("first replica should start");
+        start_match_in_room_state(
+            &mut second_room,
+            crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT,
+            second_seed,
+        )
+        .expect("second replica should start");
+
+        let first_wall = first_room
+            .round_state
+            .as_ref()
+            .expect("first round")
+            .wall
+            .tiles
+            .iter()
+            .map(|tile| tile.tile_id.clone())
+            .collect::<Vec<_>>();
+        let second_wall = second_room
+            .round_state
+            .as_ref()
+            .expect("second round")
+            .wall
+            .tiles
+            .iter()
+            .map(|tile| tile.tile_id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(first_seed, second_seed);
+        assert_eq!(first_wall, second_wall);
+    }
+
+    #[test]
     fn arena_room_creates_four_bot_seats() {
         let room = arena_room("AR01");
 

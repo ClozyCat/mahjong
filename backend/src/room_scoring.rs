@@ -258,6 +258,7 @@ mod tests {
             dealer_double_enabled: false,
             seats: Vec::new(),
             match_state: Some(MatchState {
+                seed: 0,
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 1,

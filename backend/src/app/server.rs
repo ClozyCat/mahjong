@@ -193,6 +193,10 @@ pub(crate) fn build_app(app_state: AppContext, settings: &Settings) -> Router {
         .route("/api/evaluations", post(create_evaluation))
         .route("/api/evaluations/{evaluation_id}", get(get_evaluation))
         .route(
+            "/api/tables/{table_code}/evaluation",
+            get(get_evaluation_by_table),
+        )
+        .route(
             "/api/tables/{table_code}/invites",
             post(create_table_invite),
         )
@@ -651,7 +655,13 @@ async fn create_evaluation(
             subject_is_bot,
         );
         let mut room = room;
-        if subject_is_bot && let Err(error) = start_match_in_room_state(&mut room, 0, seed) {
+        if subject_is_bot
+            && let Err(error) = start_match_in_room_state(
+                &mut room,
+                crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT,
+                seed,
+            )
+        {
             return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error);
         }
         let created_at = now_iso();
@@ -660,7 +670,7 @@ async fn create_evaluation(
             Err(error) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string()),
         };
 
-        let save_result = if subject_is_bot {
+        let save_result = if subject_is_bot || subject.user_id != authenticated_user.user_id {
             state
                 .inner
                 .db
@@ -685,7 +695,10 @@ async fn create_evaluation(
             return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
         }
 
-        let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(created_at, room.clone())));
+        let room_handle = Arc::new(RoomHandle::new(RoomRuntime::new(
+            created_at.clone(),
+            room.clone(),
+        )));
         let old_room = state
             .inner
             .rooms
@@ -696,6 +709,38 @@ async fn create_evaluation(
             close_room_handle(&old_room).await;
         }
         schedule_room_tasks_detached(state.clone(), table_code.clone());
+
+        if !subject_is_bot && subject.user_id != authenticated_user.user_id {
+            let expires_at = invite_expires_at();
+            match state
+                .inner
+                .db
+                .create_table_invite(
+                    &table_code,
+                    authenticated_user.user_id,
+                    subject.user_id,
+                    &created_at,
+                    &expires_at,
+                )
+                .await
+            {
+                Ok(invite) => {
+                    let invite_response = table_invite_response(invite.clone());
+                    notify_user_connections(
+                        &state,
+                        invite.invitee_user_id,
+                        json!({
+                            "type": "table_invite_created",
+                            "payload": invite_response,
+                        }),
+                    )
+                    .await;
+                }
+                Err(error) => {
+                    return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error.to_string());
+                }
+            }
+        }
 
         response
             .subjects
@@ -751,6 +796,35 @@ async fn get_evaluation(
     }
 
     Json(response).into_response()
+}
+
+async fn get_evaluation_by_table(
+    State(state): State<AppContext>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Path(table_code): axum::extract::Path<String>,
+) -> Response {
+    if let Err(response) = require_authenticated_user(&state, &headers).await {
+        return response;
+    }
+    let table_code = normalize_table_code(&table_code);
+    let Some(evaluation_id) = state
+        .inner
+        .evaluation_sessions
+        .read()
+        .await
+        .iter()
+        .find(|(_, session)| {
+            session
+                .subjects
+                .iter()
+                .any(|subject| subject.table_code == table_code)
+        })
+        .map(|(evaluation_id, _)| evaluation_id.clone())
+    else {
+        return json_error(StatusCode::NOT_FOUND, "evaluation_not_found");
+    };
+
+    get_evaluation(State(state), headers, axum::extract::Path(evaluation_id)).await
 }
 
 fn evaluation_table_prefix(evaluation_id: &str) -> String {
@@ -1432,6 +1506,16 @@ fn error_matches(error: &anyhow::Error, expected: &str) -> bool {
 }
 
 fn inviteable_seat_index(room: &crate::core::state::RoomState) -> Option<(usize, bool)> {
+    if room.mode == crate::evaluation::EVALUATION_ROOM_MODE {
+        return room
+            .seats
+            .iter()
+            .find(|seat| seat.seat_index == crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT)
+            .and_then(|seat| {
+                (!seat.is_bot && seat.user_id.is_some()).then_some((seat.seat_index, true))
+            });
+    }
+
     if let Some(seat_index) = crate::app::random_bot_seat_index(room) {
         return Some((seat_index, true));
     }

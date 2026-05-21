@@ -246,8 +246,100 @@ async fn create_evaluation_auto_starts_special_bot_subject_room() -> Result<()> 
     let runtime = handle.runtime.lock().await;
     assert_eq!(runtime.room.phase, "playing");
     assert!(runtime.room.round_state.is_some());
+    assert_eq!(
+        runtime
+            .room
+            .round_state
+            .as_ref()
+            .map(|round| round.dealer_seat),
+        Some(crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT),
+    );
     assert!(runtime.room.seats.iter().all(|seat| seat.is_bot));
     assert_eq!(runtime.room.seats[0].nickname.as_deref(), Some("舒伯特"));
+    Ok(())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn create_evaluation_invites_human_subject_and_exposes_session_by_table() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, owner_id) = register_user(&app, &worker, "INVITEEVAL04", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "INVITEEVAL05", "Guest").await?;
+    let (connection, mut receiver) = test_connection(3001);
+    register_user_connection(&state, guest_id, connection).await;
+    let _ = receiver.recv().await;
+
+    let body = create_evaluation(&app, &owner_token, vec![guest_id]).await?;
+    let evaluation_id = body["evaluation_id"]
+        .as_str()
+        .expect("evaluation id should exist")
+        .to_string();
+    let guest_subject = body["subjects"]
+        .as_array()
+        .expect("subjects should be an array")
+        .iter()
+        .find(|subject| subject["user_id"] == guest_id)
+        .expect("guest subject should be present");
+    let guest_table_code = guest_subject["table_code"]
+        .as_str()
+        .expect("guest table code should exist");
+
+    assert_eq!(guest_subject["kind"], "human");
+    assert_eq!(guest_subject["phase"], "waiting");
+    assert!(
+        worker
+            .get_active_table_participant(guest_table_code, guest_id)
+            .await?
+            .is_none(),
+        "guest should only become an active participant after accepting the evaluation invite",
+    );
+
+    let invite_notification = receiver
+        .recv()
+        .await
+        .expect("guest should receive evaluation invite");
+    let invite_payload: Value = serde_json::from_str(&invite_notification)?;
+    assert_eq!(invite_payload["type"], "table_invite_created");
+    assert_eq!(invite_payload["payload"]["table_code"], guest_table_code);
+    assert_eq!(invite_payload["payload"]["inviter_user_id"], owner_id);
+    assert_eq!(invite_payload["payload"]["invitee_user_id"], guest_id);
+    let invite_id = invite_payload["payload"]["id"]
+        .as_i64()
+        .expect("invite id should exist");
+
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept.status(), StatusCode::OK);
+    let accept_body = json_response(accept).await;
+    assert_eq!(accept_body["table_code"], guest_table_code);
+    assert_eq!(accept_body["seat_index"], 0);
+
+    let participant = worker
+        .get_active_table_participant(guest_table_code, guest_id)
+        .await?
+        .expect("guest should become an active participant after accepting invite");
+    assert_eq!(participant.seat_index, 0);
+
+    let fetched = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::GET,
+            &format!("/api/tables/{guest_table_code}/evaluation"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(fetched.status(), StatusCode::OK);
+    let fetched_body = json_response(fetched).await;
+    assert_eq!(fetched_body["evaluation_id"], evaluation_id);
+    assert_eq!(fetched_body["subjects"][1]["table_code"], guest_table_code);
+
     Ok(())
 }
 

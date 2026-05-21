@@ -46,12 +46,15 @@ def evaluate_candidate(
         failures.append("tenpai")
     if claim_rate_is_excessive(baseline, candidate):
         failures.append("claim_rate")
+    paired_key = f"{baseline_policy}__vs__{candidate_policy}"
+    paired = summary.get("paired_subjects", {}).get(paired_key)
 
     return {
         "accepted": not failures,
         "failures": failures,
         "baseline": baseline,
         "candidate": candidate,
+        "paired": paired,
     }
 
 

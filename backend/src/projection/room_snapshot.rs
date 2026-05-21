@@ -753,6 +753,7 @@ mod tests {
             dealer_double_enabled: false,
             seats: seats(),
             match_state: Some(MatchState {
+                seed: 0,
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 0,
@@ -826,6 +827,7 @@ mod tests {
             dealer_double_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
+                seed: 0,
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 0,

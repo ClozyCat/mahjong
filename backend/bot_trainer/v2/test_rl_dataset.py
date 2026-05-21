@@ -913,3 +913,92 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     assert "same_as_heuristic_rate" not in summary["policies"]["a"]
     assert summary["policies"]["b"]["deal_in_rate"] == 1.0
     assert summary["policies"]["b"]["avg_first_tenpai_turn"] is None
+
+
+def test_arena_summary_reports_paired_subject_score_deltas(tmp_path: Path) -> None:
+    from arena_summary import load_reports, summarize_reports
+
+    path = tmp_path / "arena.jsonl"
+    reports = [
+        {
+            "match_index": 0,
+            "seed": 10,
+            "completed": True,
+            "action_count": 10,
+            "subject_id": "baseline_neural",
+            "subject_final_score": 5,
+            "seats": [],
+        },
+        {
+            "match_index": 0,
+            "seed": 10,
+            "completed": True,
+            "action_count": 10,
+            "subject_id": "rl_candidate_neural",
+            "subject_final_score": 8,
+            "seats": [],
+        },
+        {
+            "match_index": 1,
+            "seed": 11,
+            "completed": True,
+            "action_count": 10,
+            "subject_id": "baseline_neural",
+            "subject_final_score": 2,
+            "seats": [],
+        },
+        {
+            "match_index": 1,
+            "seed": 11,
+            "completed": True,
+            "action_count": 10,
+            "subject_id": "rl_candidate_neural",
+            "subject_final_score": 4,
+            "seats": [],
+        },
+    ]
+    path.write_text("\n".join(json.dumps(report) for report in reports) + "\n", encoding="utf-8")
+
+    summary = summarize_reports(load_reports(path))
+
+    paired = summary["paired_subjects"]["baseline_neural__vs__rl_candidate_neural"]
+    assert paired["paired_match_count"] == 2
+    assert paired["avg_score_delta"] == pytest.approx(2.5)
+    assert paired["deltas"] == [3, 2]
+
+
+def test_candidate_gate_includes_paired_score_delta() -> None:
+    from candidate_gate import evaluate_candidate
+
+    summary = {
+        "policies": {
+            "baseline_neural": {
+                "avg_score_delta": 0.0,
+                "win_rate": 0.20,
+                "deal_in_rate": 0.10,
+                "avg_first_tenpai_turn": 8.0,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 20.0,
+            },
+            "rl_candidate_neural": {
+                "avg_score_delta": 1.5,
+                "win_rate": 0.21,
+                "deal_in_rate": 0.11,
+                "avg_first_tenpai_turn": 7.8,
+                "final_tenpai_rate": 0.55,
+                "avg_latency_ms_per_decision": 22.0,
+            },
+        },
+        "paired_subjects": {
+            "baseline_neural__vs__rl_candidate_neural": {
+                "paired_match_count": 2,
+                "avg_score_delta": 2.5,
+                "deltas": [3, 2],
+            }
+        },
+    }
+
+    result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
+
+    assert result["paired"]["avg_score_delta"] == pytest.approx(2.5)
+    assert result["paired"]["paired_match_count"] == 2

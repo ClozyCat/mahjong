@@ -27,6 +27,8 @@ pub struct MatchStatistics {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct MatchState {
+    #[serde(default)]
+    pub seed: u64,
     pub prevailing_wind: String,
     pub hand_number: u32,
     pub dealer_seat: Seat,

@@ -73,13 +73,10 @@ pub fn plan_round_start_payload(
     dealer_seat: usize,
     round_wind: &str,
     round_id: String,
-    _seed: u64,
+    seed: u64,
 ) -> (RoundState, PendingTimeout) {
     let mut wall_tiles = full_tile_set();
-    // 使用操作系统级别的最高熵真随机种子初始化随机数生成器。
-    // 传入的 _seed: u64 仍保留在函数签名中以维持 API 兼容性并用于 round_id 生成，
-    // 但洗牌时改用从操作系统直接获取随机性，以确保最大的随机安全性。
-    let mut rng = rand::rngs::StdRng::from_os_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     wall_tiles.shuffle(&mut rng);
 
     let mut head_index = 0usize;
@@ -755,6 +752,35 @@ mod tests {
     }
 
     #[test]
+    fn round_start_payload_uses_seed_for_reproducible_wall() {
+        let (first, _) = plan_round_start_payload(0, "east", "round-a".to_string(), 100);
+        let (second, _) = plan_round_start_payload(0, "east", "round-b".to_string(), 100);
+        let (different, _) = plan_round_start_payload(0, "east", "round-c".to_string(), 101);
+
+        let first_wall = first
+            .wall
+            .tiles
+            .iter()
+            .map(|tile| tile.tile_id.clone())
+            .collect::<Vec<_>>();
+        let second_wall = second
+            .wall
+            .tiles
+            .iter()
+            .map(|tile| tile.tile_id.clone())
+            .collect::<Vec<_>>();
+        let different_wall = different
+            .wall
+            .tiles
+            .iter()
+            .map(|tile| tile.tile_id.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(first_wall, second_wall);
+        assert_ne!(first_wall, different_wall);
+    }
+
+    #[test]
     fn round_start_payload_sets_future_timeout_deadline() {
         let (_round, timeout) = plan_round_start_payload(2, "east", "round-future".to_string(), 13);
 
@@ -784,6 +810,7 @@ mod tests {
             dealer_double_enabled: false,
             seats: Vec::new(),
             match_state: Some(crate::core::state::MatchState {
+                seed: 0,
                 prevailing_wind: "east".to_string(),
                 hand_number: 1,
                 dealer_seat: 0,

@@ -69,6 +69,15 @@ fn evaluation_room_has_only_ai_players(room: &crate::core::state::RoomState) -> 
             .all(|seat| seat.is_bot || seat.seat_type != "human")
 }
 
+fn finished_evaluation_room_has_human_subject(room: &crate::core::state::RoomState) -> bool {
+    room.mode == crate::evaluation::EVALUATION_ROOM_MODE
+        && room_match_finished(room)
+        && room
+            .seats
+            .iter()
+            .any(|seat| !seat.is_bot && seat.seat_type == "human" && seat.user_id.is_some())
+}
+
 fn room_match_finished(room: &crate::core::state::RoomState) -> bool {
     room.match_state
         .as_ref()
@@ -316,7 +325,7 @@ async fn process_due_start_match(state: AppContext, table_code: String, expected
     if standard_start_match(
         &mut runtime.room,
         pending_start.dealer_seat,
-        rand::random::<u64>(),
+        pending_start.seed.unwrap_or_else(rand::random::<u64>),
     )
     .is_err()
     {
@@ -521,6 +530,9 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
             .ok();
         return;
     }
+    if finished_evaluation_room_has_human_subject(&runtime.room) {
+        freeze_evaluation_result(&state, &runtime.room).await;
+    }
     if room_seats(&runtime.room).is_empty()
         || (room_has_only_bots(&runtime.room)
             && runtime.connections.is_empty()
@@ -598,7 +610,9 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         }));
     }
 
-    if !room_has_online_players(&runtime) {
+    if !room_has_online_players(&runtime)
+        && !finished_evaluation_room_has_human_subject(&runtime.room)
+    {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
         let nonce = runtime.unattended_cleanup_nonce;
@@ -620,6 +634,7 @@ mod tests {
     use anyhow::Result;
 
     use super::schedule_room_tasks;
+    use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
     use crate::app::evaluation::build_evaluation_room;
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::room_runtime::{RoomRuntime, room_handle};
@@ -644,6 +659,28 @@ mod tests {
             consecutive_timeout_auto_response_count: 0,
         });
         room
+    }
+
+    async fn register_scheduler_test_user(
+        worker: &DbWorker,
+        invite_code: &str,
+        display_name: &str,
+    ) -> Result<i64> {
+        worker
+            .create_invite_code(invite_code, "2026-05-06T00:00:00Z", None)
+            .await?;
+        let session_token = generate_session_token();
+        let user = worker
+            .register_user(
+                display_name,
+                display_name,
+                &hash_password("secret-123")?,
+                invite_code,
+                &hash_session_token(&session_token),
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+        Ok(user.user_id)
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -846,6 +883,70 @@ mod tests {
         assert_eq!(subject.win_count, Some(3));
         assert_eq!(subject.deal_in_count, Some(1));
         assert_eq!(subject.completed_round_count, Some(16));
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn keeps_finished_human_evaluation_room_available_for_refresh() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let owner_user_id = register_scheduler_test_user(&worker, "EVALHUMOWN", "Owner").await?;
+        let subject_user_id =
+            register_scheduler_test_user(&worker, "EVALHUMSUBJ", "Human Subject").await?;
+        let mut room = build_evaluation_room(
+            "EVALHUMDONE",
+            owner_user_id,
+            Some(subject_user_id),
+            "Human Subject",
+            false,
+        );
+        start_match_in_room_state(&mut room, 0, 7).expect("evaluation human room should start");
+        room.phase = "finished".to_string();
+        if let Some(seat) = room.seats.iter_mut().find(|seat| seat.seat_index == 0) {
+            seat.connected = false;
+        }
+        if let Some(match_state) = room.match_state.as_mut() {
+            match_state.match_finished = true;
+            match_state.cumulative_scores.insert(0, 48);
+            match_state.statistics.completed_round_count = 16;
+        }
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table_and_upsert_participant(
+                "EVALHUMDONE",
+                "2026-05-06T00:00:00Z",
+                &room_json,
+                0,
+                subject_user_id,
+                "Human Subject",
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+        let state = AppContext::new(worker.clone());
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("EVALHUMDONE".to_string(), handle.clone());
+
+        schedule_room_tasks(state.clone(), "EVALHUMDONE".to_string()).await;
+
+        assert!(!handle.is_closed());
+        assert!(room_handle(&state, "EVALHUMDONE").await.is_some());
+        assert!(worker.get_table("EVALHUMDONE").await?.is_some());
+        assert!(
+            worker
+                .get_active_table_participant("EVALHUMDONE", subject_user_id)
+                .await?
+                .is_some()
+        );
+        let runtime = handle.runtime.lock().await;
+        assert!(runtime.unattended_cleanup_task.is_none());
         Ok(())
     }
 }

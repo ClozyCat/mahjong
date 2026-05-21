@@ -77,6 +77,7 @@ import {
   createEvaluation,
   createTableInvite,
   getEvaluation,
+  getEvaluationByTable,
   getLeaderboard,
   getMyActiveTable,
   getMyInvites,
@@ -1047,6 +1048,42 @@ export default function App() {
   async function handleRefreshEvaluation() {
     await refreshEvaluationSession();
   }
+
+  useEffect(() => {
+    if (!authSession?.sessionToken || state.roomSnapshot?.payload.mode !== 'evaluation') {
+      return;
+    }
+
+    const tableCode = state.roomSnapshot.payload.table_code;
+    if (evaluationSession?.subjects.some((subject) => subject.table_code === tableCode)) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await getEvaluationByTable(defaults.apiBaseUrl, authSession.sessionToken, tableCode);
+        if (!cancelled) {
+          setEvaluationSession(session);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setStatusMessage(error instanceof Error ? getSocialStatusCopy(error.message) : '加载评测失败。');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authSession?.sessionToken,
+    defaults.apiBaseUrl,
+    evaluationSession?.evaluation_id,
+    evaluationSession?.subjects,
+    state.roomSnapshot?.payload.mode,
+    state.roomSnapshot?.payload.table_code,
+  ]);
 
   async function handleAcceptInvite(invite: TableInvite) {
     if (!authSession?.sessionToken || !currentUser) {

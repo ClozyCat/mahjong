@@ -73,6 +73,15 @@ export function getEvaluation(baseUrl: string, sessionToken: string, evaluationI
   });
 }
 
+export function getEvaluationByTable(baseUrl: string, sessionToken: string, tableCode: string) {
+  return requestJson<EvaluationSessionResponse>(
+    `${normalizeBaseUrl(baseUrl)}/api/tables/${encodeURIComponent(tableCode)}/evaluation`,
+    {
+      headers: authHeaders(sessionToken),
+    },
+  );
+}
+
 export function getLeaderboard(baseUrl: string) {
   return requestJson<PublicUser[]>(`${normalizeBaseUrl(baseUrl)}/api/leaderboard`);
 }

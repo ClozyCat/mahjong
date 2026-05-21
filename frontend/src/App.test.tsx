@@ -434,6 +434,16 @@ function createFetchMock(options?: {
       );
     }
 
+    if (/\/api\/tables\/[^/]+\/evaluation$/.test(url) && method === 'GET') {
+      return createMockResponse(
+        evaluationResponses?.shift() ?? {
+          evaluation_id: 'eval-test',
+          seed: 7,
+          subjects: [],
+        },
+      );
+    }
+
     if (/\/api\/tables\/[^/]+\/invites$/.test(url) && method === 'POST') {
       const body = parseRequestBody(init);
       const tableCode = /\/api\/tables\/([^/]+)\/invites$/.exec(url)?.[1] ?? createdTableCode;
@@ -518,7 +528,8 @@ async function renderAuthenticatedLobby(
   render(<App />);
 
   await screen.findByLabelText('Mahjong table');
-  const initialCreatedTableCode = options?.createdTableCode ?? options?.createdTableCodes?.[0] ?? 'AB12CD';
+  const initialCreatedTableCode =
+    options?.activeTable?.table_code ?? options?.createdTableCode ?? options?.createdTableCodes?.[0] ?? 'AB12CD';
   await waitFor(() => {
     expect(getMeSocket()).toBeDefined();
   });
@@ -924,7 +935,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '收起' }));
     expect(screen.queryByText('已完成 16 局')).not.toBeInTheDocument();
-    expect(screen.getByText('1/2 完成')).toBeInTheDocument();
+    expect(screen.queryByText('1/2 完成')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '展开' }));
     expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
 
@@ -939,6 +950,172 @@ describe('App', () => {
     });
 
     expect(screen.queryByLabelText('评测结果')).not.toBeInTheDocument();
+  });
+
+  it('loads evaluation context after accepting an evaluation table invite', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby({
+      invites: [
+        {
+          ...DEFAULT_PENDING_INVITE,
+          id: 21,
+          table_code: 'EVGUEST',
+          inviter_user_id: 2,
+        },
+      ],
+      evaluationResponses: [
+        {
+          evaluation_id: 'eval-human',
+          seed: 11,
+          subjects: [
+            {
+              subject_id: 'user:1',
+              user_id: 1,
+              display_name: 'Player A',
+              kind: 'human',
+              table_code: 'EVGUEST',
+              phase: 'playing',
+              completed: false,
+              final_score: null,
+              deal_in_count: null,
+              win_count: null,
+              completed_round_count: 1,
+              ready_hand_win_count: 0,
+            },
+            {
+              subject_id: 'user:2',
+              user_id: 2,
+              display_name: 'Player B',
+              kind: 'human',
+              table_code: 'EVOTHER',
+              phase: 'waiting',
+              completed: false,
+              final_score: null,
+              deal_in_count: null,
+              win_count: null,
+              completed_round_count: 0,
+              ready_hand_win_count: 0,
+            },
+          ],
+        },
+      ],
+    });
+
+    await user.click(await screen.findByRole('button', { name: '加入' }));
+
+    const roomSocket = await waitFor(() => {
+      const socket = getRoomSocket('ZXCVBN');
+      expect(socket).toBeDefined();
+      return socket!;
+    });
+    await act(async () => {
+      roomSocket.triggerOpen();
+      roomSocket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'EVGUEST',
+          phase: 'playing',
+          mode: 'evaluation',
+          seats: [
+            { seat_index: 0, user_id: 1, nickname: 'Player A', connected: true, is_bot: false },
+            { seat_index: 1, nickname: 'sft_bot_1', connected: true, is_bot: true },
+            { seat_index: 2, nickname: 'sft_bot_2', connected: true, is_bot: true },
+            { seat_index: 3, nickname: 'sft_bot_3', connected: true, is_bot: true },
+          ],
+          local_seat: 0,
+          match_state: null,
+          private_state: null,
+          owner_user_id: 2,
+        },
+      });
+    });
+
+    const evaluationPanel = await screen.findByLabelText('评测结果');
+    expect(within(evaluationPanel).getByText('Player A')).toBeInTheDocument();
+    expect(within(evaluationPanel).getByText('Player B')).toBeInTheDocument();
+    expect(findFetchCall(fetchMock, '/api/tables/EVGUEST/evaluation')).toBeDefined();
+  });
+
+  it('restores the evaluation panel after refreshing on a finished evaluation table', async () => {
+    const { fetchMock } = await renderAuthenticatedLobby({
+      activeTable: { table_code: 'EVFIN', seat_index: 0, role: 'player' },
+      evaluationResponses: [
+        {
+          evaluation_id: 'eval-finished',
+          seed: 17,
+          subjects: [
+            {
+              subject_id: 'user:1',
+              user_id: 1,
+              display_name: 'Player A',
+              kind: 'human',
+              table_code: 'EVFIN',
+              phase: 'finished',
+              completed: true,
+              final_score: 42,
+              deal_in_count: 1,
+              win_count: 3,
+              completed_round_count: 16,
+              ready_hand_win_count: 2,
+            },
+            {
+              subject_id: 'user:2',
+              user_id: 2,
+              display_name: 'Player B',
+              kind: 'human',
+              table_code: 'EVOTHER',
+              phase: 'finished',
+              completed: true,
+              final_score: 24,
+              deal_in_count: 2,
+              win_count: 1,
+              completed_round_count: 16,
+              ready_hand_win_count: 0,
+            },
+          ],
+        },
+      ],
+    });
+
+    const roomSocket = await waitFor(() => {
+      const socket = getRoomSocket('EVFIN');
+      expect(socket).toBeDefined();
+      return socket!;
+    });
+    await act(async () => {
+      roomSocket.triggerOpen();
+      roomSocket.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'EVFIN',
+          phase: 'finished',
+          mode: 'evaluation',
+          seats: [
+            { seat_index: 0, user_id: 1, nickname: 'Player A', connected: true, is_bot: false },
+            { seat_index: 1, nickname: 'sft_bot_1', connected: true, is_bot: true },
+            { seat_index: 2, nickname: 'sft_bot_2', connected: true, is_bot: true },
+            { seat_index: 3, nickname: 'sft_bot_3', connected: true, is_bot: true },
+          ],
+          local_seat: 0,
+          match_state: {
+            prevailing_wind: 'east',
+            hand_number: 16,
+            dealer_seat: 0,
+            cumulative_scores: { '0': 42, '1': -14, '2': -14, '3': -14 },
+            match_finished: true,
+            last_completed_round_id: 'round-final',
+          },
+          private_state: null,
+          owner_user_id: 2,
+        },
+      });
+    });
+
+    const evaluationPanel = await screen.findByLabelText('评测结果');
+    expect(within(evaluationPanel).getByText('Player A')).toBeInTheDocument();
+    expect(within(evaluationPanel).getByText('Player B')).toBeInTheDocument();
+    expect(within(evaluationPanel).getAllByText('已完成 16 局').length).toBeGreaterThanOrEqual(2);
+    expect(findFetchCall(fetchMock, '/api/tables/EVFIN/evaluation')).toBeDefined();
   });
 
   it('enables player list invites when the active waiting table reports bots with the legacy is_bot flag', async () => {

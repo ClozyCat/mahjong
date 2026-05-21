@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 use super::auth::hash_session_token;
+use super::evaluation::apply_room_result_to_evaluation_session;
 use super::protocol::{
     HeartbeatPayload, action_rejected_message, dealer_selection_started_message, heartbeat_message,
     leave_table_accepted_message, quick_chat_message,
@@ -932,6 +933,7 @@ async fn handle_start_match(
     if room_handle.is_closed() {
         return reject_to(connection, "table_not_found");
     }
+    let evaluation_seed = evaluation_seed_for_table(&state, table_code).await;
     let _persist_guard = room_handle.persist.lock().await;
     let mut runtime = room_handle.runtime.lock().await;
     if room_handle.is_closed() {
@@ -949,7 +951,9 @@ async fn handle_start_match(
     if !ready_to_start {
         return reject_to(connection, "room_not_ready");
     }
-    let dealer_seat = {
+    let dealer_seat = if evaluation_seed.is_some() {
+        crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT
+    } else {
         let occupied: Vec<usize> = occupied.into_iter().collect();
         let mut rng = rand::rng();
         occupied[rng.random_range(0..occupied.len())]
@@ -959,6 +963,7 @@ async fn handle_start_match(
     runtime.pending_start_match = Some(PendingStartMatch {
         dealer_seat,
         reveal_at: reveal_at.clone(),
+        seed: evaluation_seed,
     });
     let connections = snapshot_connections(&runtime);
     drop(runtime);
@@ -980,6 +985,39 @@ async fn handle_start_match(
     };
     schedule_room_tasks_detached(state, table_code.to_string());
     outcome
+}
+
+async fn evaluation_seed_for_table(state: &AppContext, table_code: &str) -> Option<u64> {
+    let sessions = state.inner.evaluation_sessions.read().await;
+    sessions
+        .values()
+        .find(|session| {
+            session
+                .subjects
+                .iter()
+                .any(|subject| subject.table_code == table_code)
+        })
+        .map(|session| session.seed)
+}
+
+async fn freeze_evaluation_result_for_room(state: &AppContext, room: &RoomState) {
+    if room.mode != crate::evaluation::EVALUATION_ROOM_MODE {
+        return;
+    }
+    let Some(match_state) = room.match_state.as_ref() else {
+        return;
+    };
+    if !match_state.match_finished
+        && (match_state.statistics.completed_round_count as usize)
+            < crate::evaluation::EVALUATION_HAND_COUNT
+    {
+        return;
+    }
+
+    let mut sessions = state.inner.evaluation_sessions.write().await;
+    for session in sessions.values_mut() {
+        apply_room_result_to_evaluation_session(session, room);
+    }
 }
 
 async fn handle_continue_action(
@@ -1365,10 +1403,12 @@ async fn handle_leave_table(
             .all(|connected_seat| *connected_seat == seat_index))
         || should_terminate_unattended(&runtime)
     {
+        let room = runtime.room.clone();
         room_handle.mark_closed();
         close_runtime(&mut runtime);
         drop(runtime);
         unregister_room_handle(&state, table_code, &room_handle).await;
+        freeze_evaluation_result_for_room(&state, &room).await;
         state.inner.db.delete_table(table_code, &left_at).await.ok();
         if let Some(user_id) = leaving_user_id {
             notify_all_user_connections(
@@ -1521,15 +1561,19 @@ mod tests {
     use super::{
         ClientMessage, ConnectionRole, JoinTableRequest, QuickChatRequest, SetMinimumHuFanRequest,
         handle_disconnect, handle_join_table, handle_leave_table, handle_quick_chat,
-        handle_set_minimum_hu_fan, parse_client_message, room_is_evaluation,
+        handle_set_minimum_hu_fan, handle_start_match, parse_client_message, room_is_evaluation,
     };
     use crate::app::auth::{generate_session_token, hash_password, hash_session_token};
+    use crate::app::evaluation::{
+        EvaluationSessionResponse, EvaluationSubjectResponse, build_evaluation_room,
+    };
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::room_runtime::{ensure_room_loaded, room_handle};
     use crate::app::{
         AppContext, ConnectionHandle, initial_room_state_with_owner, serialize_room_state,
     };
     use crate::core::state::SeatState;
+    use crate::rules::standard::flow::start_match_in_room_state;
 
     fn test_connection_handle(
         id: u64,
@@ -1968,6 +2012,115 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn evaluation_start_match_uses_shared_session_seed_and_fixed_subject_seat() -> Result<()>
+    {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let state = AppContext::new(worker.clone());
+        let (owner_user_id, _owner_token) =
+            register_ws_test_user(&worker, "INVITE200030", "EvalOwner").await?;
+        let (first_user_id, first_token) =
+            register_ws_test_user(&worker, "INVITE200031", "FirstSubject").await?;
+        let (second_user_id, second_token) =
+            register_ws_test_user(&worker, "INVITE200032", "SecondSubject").await?;
+        let seed = 4242;
+        let subjects = [
+            ("EVALFAIR1", first_user_id, first_token, "FirstSubject"),
+            ("EVALFAIR2", second_user_id, second_token, "SecondSubject"),
+        ];
+        state.inner.evaluation_sessions.write().await.insert(
+            "eval-fair".to_string(),
+            crate::app::evaluation::EvaluationSessionResponse {
+                evaluation_id: "eval-fair".to_string(),
+                seed,
+                subjects: subjects
+                    .iter()
+                    .map(|(table_code, user_id, _, name)| {
+                        crate::app::evaluation::EvaluationSubjectResponse {
+                            subject_id: format!("user:{user_id}"),
+                            user_id: Some(*user_id),
+                            display_name: (*name).to_string(),
+                            kind: "human".to_string(),
+                            table_code: (*table_code).to_string(),
+                            phase: "waiting".to_string(),
+                            completed: false,
+                            final_score: None,
+                            deal_in_count: None,
+                            win_count: None,
+                            completed_round_count: None,
+                            ready_hand_win_count: None,
+                        }
+                    })
+                    .collect(),
+            },
+        );
+        for (table_code, user_id, _, name) in &subjects {
+            let room = crate::app::evaluation::build_evaluation_room(
+                table_code,
+                owner_user_id,
+                Some(*user_id),
+                name,
+                false,
+            );
+            let room_json = serialize_room_state(&room)?;
+            worker
+                .save_table_and_upsert_participant(
+                    table_code,
+                    "2026-05-06T00:00:00Z",
+                    &room_json,
+                    0,
+                    *user_id,
+                    name,
+                    "2026-05-06T00:00:00Z",
+                )
+                .await?;
+        }
+
+        for (index, (table_code, _, token, _)) in subjects.iter().enumerate() {
+            let (connection, _receiver) = test_connection_handle(index as u64 + 1, 8);
+            let join = handle_join_table(
+                state.clone(),
+                table_code,
+                &connection,
+                JoinTableRequest {
+                    session_token: token.clone(),
+                },
+            )
+            .await;
+            assert!(matches!(
+                join.role,
+                Some(ConnectionRole::Player { seat_index: 0 })
+            ));
+
+            let outcome = handle_start_match(state.clone(), table_code, &connection, 0).await;
+            assert!(
+                outcome
+                    .outbound
+                    .iter()
+                    .any(|message| message.payload.contains("dealer_selection_started"))
+            );
+        }
+
+        for (table_code, _, _, _) in subjects {
+            let handle = room_handle(&state, table_code)
+                .await
+                .expect("evaluation room should be loaded");
+            let runtime = handle.runtime.lock().await;
+            let pending_start = runtime
+                .pending_start_match
+                .as_ref()
+                .expect("evaluation start should be pending");
+            assert_eq!(
+                pending_start.dealer_seat,
+                crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT
+            );
+            assert_eq!(pending_start.seed, Some(seed));
+        }
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn leave_table_rejects_single_player_waiting_table() -> Result<()> {
         let (state, guest_token) = build_reserved_participant_state("ROOMSOLO").await?;
         let (connection, _receiver) = test_connection_handle(1, 8);
@@ -1990,6 +2143,101 @@ mod tests {
 
         assert_eq!(payload["payload"]["reason"], "cannot_leave_empty_table");
         assert!(!outcome.close_socket);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn leave_table_cleans_finished_human_evaluation_room_and_freezes_result() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let (owner_user_id, _owner_token) =
+            register_ws_test_user(&worker, "INVITE200020", "EvalOwner").await?;
+        let (subject_user_id, subject_token) =
+            register_ws_test_user(&worker, "INVITE200021", "EvalSubject").await?;
+        let mut room = build_evaluation_room(
+            "EVALLEAVE",
+            owner_user_id,
+            Some(subject_user_id),
+            "EvalSubject",
+            false,
+        );
+        start_match_in_room_state(&mut room, 0, 7).expect("evaluation human room should start");
+        room.phase = "finished".to_string();
+        if let Some(match_state) = room.match_state.as_mut() {
+            match_state.match_finished = true;
+            match_state.cumulative_scores.insert(0, 48);
+            match_state.statistics.completed_round_count = 16;
+            let stats = match_state
+                .statistics
+                .seat_stats_by_seat
+                .entry(0)
+                .or_default();
+            stats.win_count = 2;
+            stats.deal_in_count = 1;
+        }
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table_and_upsert_participant(
+                "EVALLEAVE",
+                "2026-05-06T00:00:00Z",
+                &room_json,
+                0,
+                subject_user_id,
+                "EvalSubject",
+                "2026-05-06T00:00:00Z",
+            )
+            .await?;
+        let state = AppContext::new(worker.clone());
+        state.inner.evaluation_sessions.write().await.insert(
+            "eval-leave".to_string(),
+            EvaluationSessionResponse {
+                evaluation_id: "eval-leave".to_string(),
+                seed: 7,
+                subjects: vec![EvaluationSubjectResponse {
+                    subject_id: format!("user:{subject_user_id}"),
+                    user_id: Some(subject_user_id),
+                    display_name: "EvalSubject".to_string(),
+                    kind: "human".to_string(),
+                    table_code: "EVALLEAVE".to_string(),
+                    phase: "playing".to_string(),
+                    completed: false,
+                    final_score: None,
+                    deal_in_count: None,
+                    win_count: None,
+                    completed_round_count: None,
+                    ready_hand_win_count: None,
+                }],
+            },
+        );
+        ensure_room_loaded(&state, "EVALLEAVE")
+            .await?
+            .expect("room should load");
+        let (connection, _receiver) = test_connection_handle(1, 8);
+        let _ = subject_token;
+
+        let outcome = handle_leave_table(state.clone(), "EVALLEAVE", &connection, 0).await;
+
+        assert!(outcome.close_socket);
+        assert!(room_handle(&state, "EVALLEAVE").await.is_none());
+        assert!(worker.get_table("EVALLEAVE").await?.is_none());
+        assert!(
+            worker
+                .get_active_table_participant("EVALLEAVE", subject_user_id)
+                .await?
+                .is_none()
+        );
+        let sessions = state.inner.evaluation_sessions.read().await;
+        let subject = &sessions
+            .get("eval-leave")
+            .expect("evaluation session should remain")
+            .subjects[0];
+        assert!(subject.completed);
+        assert_eq!(subject.phase, "finished");
+        assert_eq!(subject.final_score, Some(48));
+        assert_eq!(subject.win_count, Some(2));
+        assert_eq!(subject.deal_in_count, Some(1));
+        assert_eq!(subject.completed_round_count, Some(16));
         Ok(())
     }
 
