@@ -577,7 +577,7 @@ try {
                     Remove-Item -LiteralPath $candidateEntriesDir -Recurse -Force
                 }
                 New-Item -ItemType Directory -Force -Path $candidateEntriesDir | Out-Null
-                $epochEvalJobs = @()
+                $runningEpochEvalJobs = @()
                 Get-ChildItem -LiteralPath $iterCheckpointDir -Filter "epoch_*.pt" |
                     Sort-Object Name |
                     ForEach-Object {
@@ -607,7 +607,7 @@ try {
                                 -Gate $epochEval.gate
                         }
                         else {
-                            $epochEvalJobs += Start-Job -ScriptBlock $EpochEvaluationScript -ArgumentList @(
+                            $runningEpochEvalJobs += Start-Job -ScriptBlock $EpochEvaluationScript -ArgumentList @(
                                 $RepoRoot.Path,
                                 $PythonExe,
                                 $PythonVersion,
@@ -624,18 +624,18 @@ try {
                                 $BaselineOnnx,
                                 $entryPath
                             )
-                            while ($epochEvalJobs.Count -ge $EpochEvalJobs) {
-                                $completedJob = Wait-Job -Job $epochEvalJobs -Any
+                            while ($runningEpochEvalJobs.Count -ge $EpochEvalJobs) {
+                                $completedJob = Wait-Job -Job $runningEpochEvalJobs -Any
                                 Receive-Job -Job $completedJob
                                 if ($completedJob.State -ne "Completed") {
                                     throw "Epoch evaluation job failed: $($completedJob.State)"
                                 }
                                 Remove-Job -Job $completedJob
-                                $epochEvalJobs = @($epochEvalJobs | Where-Object { $_.Id -ne $completedJob.Id })
+                                $runningEpochEvalJobs = @($runningEpochEvalJobs | Where-Object { $_.Id -ne $completedJob.Id })
                             }
                         }
                     }
-                foreach ($job in $epochEvalJobs) {
+                foreach ($job in $runningEpochEvalJobs) {
                     Wait-Job -Job $job | Out-Null
                     Receive-Job -Job $job
                     if ($job.State -ne "Completed") {
