@@ -65,6 +65,7 @@ interface BattleScreenProps {
   pendingInvitePanel?: ReactNode;
   evaluationSession?: EvaluationSessionResponse | null;
   isEvaluationSubmitting?: boolean;
+  isOwner?: boolean;
 }
 
 const LAST_DISCARD_SPOTLIGHT_LINGER_MS = 1500;
@@ -107,6 +108,7 @@ export function BattleScreen({
   pendingInvitePanel = null,
   evaluationSession = null,
   isEvaluationSubmitting = false,
+  isOwner = true,
 }: BattleScreenProps) {
   const [isSettlementPanelReady, setIsSettlementPanelReady] = useState(true);
   const [isDramaticRevealActive, setIsDramaticRevealActive] = useState(false);
@@ -127,7 +129,7 @@ export function BattleScreen({
   const trackedLastDiscardStartedAtRef = useRef<number>(0);
   const trackedLastDiscardActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const preMatchActions = viewModel.actions.filter((action) => PRE_MATCH_ACTION_IDS.includes(action.id));
-  const canInvitePlayers = Boolean(onInvitePlayer) && hasInviteableSeat(viewModel);
+  const canInvitePlayers = Boolean(onInvitePlayer) && hasInviteableSeat(viewModel) && isOwner;
   const visiblePreMatchActions = viewModel.dealerSelection
     ? []
     : [

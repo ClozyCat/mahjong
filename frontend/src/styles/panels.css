@@ -889,6 +889,9 @@
   /* Responsive Width for Panel! */
   width: clamp(380px, 60vw, 840px);
   max-width: calc(100vw - 2rem);
+  
+  /* Concise expand/collapse transition - only transition transform (for dragging/resizing) to avoid layout reflow jitter */
+  transition: transform 0.3s var(--ease-lux);
 }
 
 .evaluation-panel--collapsed {

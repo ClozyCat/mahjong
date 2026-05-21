@@ -829,6 +829,9 @@ export default function App() {
     typeof localSeatIndex === 'number'
       ? state.roomSnapshot?.payload.seats.find((seat) => seat.seat_index === localSeatIndex)
       : null;
+  const isOwner = state.roomSnapshot
+    ? state.roomSnapshot.payload.owner_user_id === currentUser?.user_id
+    : true;
   const viewModel = createMatchViewModel(state, {
     showLocalTurnKongPrompt: hasLocalTurnKongPrompt,
     showLocalSelfHuPassOption: hasLocalSelfHuPassOption,
@@ -991,6 +994,11 @@ export default function App() {
   async function handleInvitePlayer(userId: number) {
     if (!authSession?.sessionToken || !activeLobbyTableCode) {
       setStatusMessage('正在准备你的空牌桌，请稍候。');
+      return;
+    }
+
+    if (!isOwner) {
+      setStatusMessage('只有房主可以邀请玩家。');
       return;
     }
 
@@ -1471,6 +1479,7 @@ export default function App() {
           canToggleAutoPassKong={canToggleAutoPassKong}
           onToggleBotTakeover={handleSetBotTakeover}
           onToggleAutoPassKong={setIsAutoPassKongEnabled}
+          isOwner={isOwner}
           inviteHumanUsers={inviteHumanUsers}
           inviteAiUsers={inviteAiUsers}
           inviteStatusesByUserId={sentInviteStatusesByUserId}

@@ -1386,6 +1386,65 @@ describe('App', () => {
     expect(inviteCall).toBeUndefined();
   });
 
+  it('disables and greys out player list invites when the local player is not the room owner', async () => {
+    const user = userEvent.setup();
+    const { fetchMock } = await renderAuthenticatedLobby();
+
+    const meSocket = getMeSocket();
+    const roomSocket = getRoomSocket();
+    expect(meSocket).toBeDefined();
+    expect(roomSocket).toBeDefined();
+
+    await act(async () => {
+      roomSocket!.triggerOpen();
+      roomSocket!.triggerMessage({
+        type: 'room_snapshot',
+        payload: {
+          table_code: 'AB12CD',
+          phase: 'waiting',
+          seats: [
+            { seat_index: 0, nickname: 'Player A', connected: true, is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Player B', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 2, nickname: 'Player C', connected: true, is_bot: true, seat_type: 'bot' },
+            { seat_index: 3, nickname: 'Player D', connected: true, is_bot: true, seat_type: 'bot' },
+          ],
+          local_seat: 0,
+          match_state: null,
+          private_state: null,
+          owner_user_id: 2,
+        },
+      });
+    });
+
+    await act(async () => {
+      meSocket!.triggerMessage({
+        type: 'user_presence_updated',
+        payload: {
+          online_user_ids: [1, 2],
+        },
+      });
+    });
+
+    const openInviteButton = screen.getByRole('button', { name: '打开玩家列表' });
+    expect(openInviteButton).not.toBeDisabled();
+    await user.click(openInviteButton);
+
+    const dialog = await screen.findByRole('dialog', { name: '玩家列表' });
+    expect(dialog).toBeInTheDocument();
+
+    const inviteButtons = within(dialog).getAllByRole('button', { name: '邀请' });
+    expect(inviteButtons.length).toBeGreaterThan(0);
+    for (const button of inviteButtons) {
+      expect(button).toBeDisabled();
+    }
+
+    await user.click(inviteButtons[0]);
+
+    const inviteCall = findFetchCall(fetchMock, '/api/tables/AB12CD/invites', 'POST');
+    expect(inviteCall).toBeUndefined();
+  });
+
+
   it('keeps the social socket alive and reconnects it after an unexpected close', async () => {
     await renderAuthenticatedLobby();
     const firstSocket = getMeSocket();

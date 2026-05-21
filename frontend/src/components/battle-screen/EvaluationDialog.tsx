@@ -37,7 +37,7 @@ export function EvaluationDialog({
     <div className="evaluation-dialog" role="dialog" aria-modal="true" aria-label="创建评测">
       <div className="evaluation-dialog__header">
         <strong>评测对比</strong>
-        <button type="button" aria-label="关闭评测窗口" onClick={onClose}>x</button>
+        <button type="button" aria-label="关闭评测窗口" onClick={onClose}>×</button>
       </div>
       <div className="evaluation-dialog__subjects" role="group" aria-label="选择受测者">
         {candidateUsers.map(({ user, status }) => {
