@@ -20,12 +20,6 @@
       "display_name": "PPO",
       "model_path": "backend/assets/ppo/ppo.onnx",
       "temperature": 1.0
-    },
-    {
-      "id": "ppo1",
-      "display_name": "PPO Iter 006",
-      "model_path": "backend/bot_trainer/v2/rl_runs/202605201408/iter_006/epoch_003.onnx",
-      "temperature": 1.0
     }
   ],
   "opponents": [

@@ -5,7 +5,7 @@ param(
     [int]$RandomSeed = 0,
     [string]$Config = "",
     [string]$OutputDir = "",
-    [int]$ProgressEvery = 10,
+    [int]$ProgressEvery = 100,
     [int]$Jobs = 1,
     [string]$CargoExe = "cargo"
 )
