@@ -121,6 +121,7 @@ export function BattleScreen({
   const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
+  const playedDramaticRevealSettlementKeysRef = useRef<Set<string>>(new Set());
   const lastDiscardReturnTimerRef = useRef<number | null>(null);
   const trackedLastDiscardKeyRef = useRef<string | null>(null);
   const trackedLastDiscardStartedAtRef = useRef<number>(0);
@@ -159,6 +160,7 @@ export function BattleScreen({
       : [];
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
   const settlementResetKey = getSettlementResetKey(viewModel);
+  const settlementRevealKey = settlementResetKey;
 
   function handleAction(actionId: BattleActionId) {
     if (actionId === 'invite') {
@@ -348,11 +350,16 @@ export function BattleScreen({
     hasObservedNoResultRef.current = false;
     previousSettlementPageCountRef.current = settlementPageCount;
 
-    // For a win result (non-draw), we delay the dramatic reveal overlay until the "和" Kaiti animation completes (3 seconds).
-    if (isFirstSettlement && viewModel.result.winType !== 'draw') {
+    // For a win result (non-draw), delay the dramatic reveal until the "和" Kaiti animation completes.
+    if (
+      isFirstSettlement &&
+      viewModel.result.winType !== 'draw' &&
+      !playedDramaticRevealSettlementKeysRef.current.has(settlementRevealKey)
+    ) {
       setIsSettlementPanelReady(false);
       setIsDramaticRevealActive(false);
       const timer = window.setTimeout(() => {
+        playedDramaticRevealSettlementKeysRef.current.add(settlementRevealKey);
         setIsDramaticRevealActive(true);
       }, SETTLEMENT_CALLOUT_LINGER_MS);
       return () => window.clearTimeout(timer);
@@ -376,7 +383,7 @@ export function BattleScreen({
     }, settlementPanelDelayMs);
 
     return () => window.clearTimeout(timer);
-  }, [settlementVisibilityKey, viewModel.result?.winType]);
+  }, [settlementRevealKey, settlementVisibilityKey, viewModel.result?.winType]);
 
   return (
     <main className="battle-screen">

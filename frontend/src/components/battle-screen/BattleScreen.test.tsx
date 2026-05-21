@@ -1057,6 +1057,136 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
+  it('does not replay the dramatic fan reveal when the same settlement result returns after completion', () => {
+    vi.useFakeTimers();
+
+    const settlementResult = {
+      title: '本局结算',
+      summary: '荣和，等待下一局',
+      fanTotal: 8,
+      winnerSeat: 'right' as const,
+      discarderSeat: 'left' as const,
+      winType: 'discard',
+      winTypeLabel: '荣和',
+      provisional: false,
+      flowerCount: 0,
+      fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+      scoreDeltaBySeat: {
+        left: -8,
+        right: 8,
+      },
+      seats: [
+        { seat: 'right' as const, name: 'Player B', score: 25008, delta: 8 },
+        { seat: 'left' as const, name: 'Player Left', score: 24292, delta: -8 },
+      ],
+      continueAction: {
+        id: 'start_next_round' as const,
+        label: '下一局',
+        enabled: true,
+      },
+    };
+
+    const { rerender } = renderBattleScreen(
+      createBattleViewModel({
+        result: null,
+      }),
+    );
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          result: settlementResult,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    let dramaticOverlay = document.body.querySelector('.dramatic-reveal');
+    expect(dramaticOverlay).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    act(() => {
+      fireEvent.click(dramaticOverlay!);
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(document.body.querySelector('.dramatic-reveal')).toBeNull();
+    expect(document.body.querySelector('.result-overlay')).not.toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'watching',
+          phaseLabel: 'playing',
+          result: null,
+          lastDiscard: null,
+          lastDiscardSeat: null,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(document.body.querySelector('.dramatic-reveal')).toBeNull();
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          result: settlementResult,
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(document.body.querySelector('.dramatic-reveal')).toBeNull();
+    vi.useRealTimers();
+  });
+
   it.skip('shows the matching fan guide tooltip after hovering a settlement fan row for 0.35s', () => {
     vi.useFakeTimers();
 
