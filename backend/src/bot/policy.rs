@@ -82,7 +82,7 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
     if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
         telemetry.model_loaded = true;
         let action = if config.sample_actions {
-            rng.as_deref_mut().and_then(|rng| {
+            if let Some(rng) = rng.as_deref_mut() {
                 sample_neural_active_turn_action(
                     context,
                     &features,
@@ -91,7 +91,17 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
                     rng,
                     Some(&risk_config),
                 )
-            })
+            } else {
+                let mut live_rng = rand::rng();
+                sample_neural_active_turn_action(
+                    context,
+                    &features,
+                    &scores,
+                    config.temperature,
+                    &mut live_rng,
+                    Some(&risk_config),
+                )
+            }
         } else {
             select_neural_only_active_turn_action(context, &features, &scores, Some(&risk_config))
         };
@@ -136,9 +146,18 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
     if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
         telemetry.model_loaded = true;
         let action = if config.sample_actions {
-            rng.as_deref_mut().and_then(|rng| {
+            if let Some(rng) = rng.as_deref_mut() {
                 sample_neural_claim_action(context, &features, &scores, config.temperature, rng)
-            })
+            } else {
+                let mut live_rng = rand::rng();
+                sample_neural_claim_action(
+                    context,
+                    &features,
+                    &scores,
+                    config.temperature,
+                    &mut live_rng,
+                )
+            }
         } else {
             select_neural_only_claim(context, &features, &scores)
         };
@@ -171,9 +190,13 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
     let maybe_scores = neural_decision_scores_for_policy_features(&features, config);
     let choice = if let Some(scores) = maybe_scores.as_ref() {
         if config.sample_actions {
-            rng.as_deref_mut()
-                .and_then(|rng| sample_neural_hu_choice(&features, scores, config.temperature, rng))
-                .or_else(|| select_neural_hu_choice(&features, scores))?
+            if let Some(rng) = rng.as_deref_mut() {
+                sample_neural_hu_choice(&features, scores, config.temperature, rng)
+            } else {
+                let mut live_rng = rand::rng();
+                sample_neural_hu_choice(&features, scores, config.temperature, &mut live_rng)
+            }
+            .or_else(|| select_neural_hu_choice(&features, scores))?
         } else {
             select_neural_hu_choice(&features, scores)?
         }
@@ -199,11 +222,19 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
     let features = crate::bot::features::encode_bot_context_v2(context);
     let scores = neural_decision_scores_for_policy_features(&features, config)?;
     let action = if config.sample_actions {
-        rng.as_deref_mut()
-            .and_then(|rng| {
-                sample_neural_claim_action(context, &features, &scores, config.temperature, rng)
-            })
-            .or_else(|| select_neural_only_claim(context, &features, &scores))?
+        if let Some(rng) = rng.as_deref_mut() {
+            sample_neural_claim_action(context, &features, &scores, config.temperature, rng)
+        } else {
+            let mut live_rng = rand::rng();
+            sample_neural_claim_action(
+                context,
+                &features,
+                &scores,
+                config.temperature,
+                &mut live_rng,
+            )
+        }
+        .or_else(|| select_neural_only_claim(context, &features, &scores))?
     } else {
         select_neural_only_claim(context, &features, &scores)?
     };
@@ -321,11 +352,11 @@ fn choose_random_action(actions: Vec<BotAction>, rng: Option<&mut StdRng>) -> Op
     actions.into_iter().nth(index)
 }
 
-fn sample_masked_index<const N: usize>(
+fn sample_masked_index<const N: usize, R: Rng + ?Sized>(
     logits: &[f32; N],
     mask: &[bool; N],
     temperature: f32,
-    rng: &mut StdRng,
+    rng: &mut R,
 ) -> Option<usize> {
     let temperature = temperature.clamp(0.05, 5.0);
     let max_logit = logits
@@ -363,7 +394,7 @@ fn sample_neural_active_turn_action(
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
-    rng: &mut StdRng,
+    rng: &mut impl Rng,
     risk_config: Option<&RiskConfig>,
 ) -> Option<BotAction> {
     if context.self_kong_candidates.is_empty() {
@@ -424,7 +455,7 @@ fn sample_neural_discard_action(
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
-    rng: &mut StdRng,
+    rng: &mut impl Rng,
     risk_config: Option<&RiskConfig>,
 ) -> Option<BotAction> {
     let discard_logits = risk_adjusted_discard_logits(scores, risk_config);
@@ -449,7 +480,7 @@ fn sample_neural_claim_action(
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
-    rng: &mut StdRng,
+    rng: &mut impl Rng,
 ) -> Option<BotAction> {
     let selected =
         sample_masked_index(&scores.claim_logits, &features.claim_mask, temperature, rng)?;
@@ -469,7 +500,7 @@ fn sample_neural_hu_choice(
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
     temperature: f32,
-    rng: &mut StdRng,
+    rng: &mut impl Rng,
 ) -> Option<NeuralHuChoice> {
     if should_take_legal_hu(features, scores)? {
         return Some(NeuralHuChoice::Hu);
@@ -1105,5 +1136,16 @@ mod tests {
                 sample_masked_index(&logits, &mask, 1.0, &mut rng).expect("sample should exist");
             assert_ne!(selected, 0);
         }
+    }
+
+    #[test]
+    fn sample_masked_index_accepts_thread_rng_for_live_bot_sampling() {
+        let logits = [1.0_f32, 2.0, 3.0];
+        let mask = [true, true, true];
+        let mut rng = rand::rng();
+
+        let selected = sample_masked_index(&logits, &mask, 1.0, &mut rng);
+
+        assert!(selected.is_some());
     }
 }

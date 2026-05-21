@@ -202,10 +202,10 @@ $EpochEvaluationScript = {
     function Invoke-JobPython {
         param([string[]]$Arguments)
         if ($PythonExe -eq "py" -and $PythonVersion.Length -gt 0) {
-            & $PythonExe "-$PythonVersion" @Arguments
+            & $PythonExe "-$PythonVersion" @Arguments 2>&1
         }
         else {
-            & $PythonExe @Arguments
+            & $PythonExe @Arguments 2>&1
         }
     }
     function Write-JobUtf8NoBom {
@@ -239,7 +239,7 @@ $EpochEvaluationScript = {
     $localJsonl = Join-Path $epochEvalDir "candidate_eval.jsonl"
     $localSummary = Join-Path $epochEvalDir "candidate_eval_summary.json"
     $localGate = Join-Path $epochEvalDir "candidate_gate.json"
-    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
+    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs 2>&1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Invoke-JobPython @("backend/bot_trainer/v2/arena_summary.py", "--input", $localJsonl, "--output", $localSummary)
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -637,8 +637,9 @@ try {
                     }
                 foreach ($job in $runningEpochEvalJobs) {
                     Wait-Job -Job $job | Out-Null
-                    Receive-Job -Job $job 2>$null
+                    $jobOutput = Receive-Job -Job $job -ErrorAction SilentlyContinue
                     if ($job.State -ne "Completed") {
+                        Write-Host ($jobOutput | Out-String)
                         throw "Epoch evaluation job failed: $($job.State)"
                     }
                     Remove-Job -Job $job
