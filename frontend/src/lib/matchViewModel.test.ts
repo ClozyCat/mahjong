@@ -1082,6 +1082,45 @@ describe('createMatchViewModel', () => {
     expect(viewModel.result?.title).toBe('大局已定');
   });
 
+  it('shows the final hand settlement result after the full match finishes', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          phase: 'finished',
+          match_state: {
+            ...base.roomSnapshot!.payload.match_state!,
+            match_finished: true,
+            last_completed_round_id: 'round-123',
+          },
+        },
+      },
+    });
+
+    expect(viewModel.mode).toBe('finished');
+    expect(viewModel.result?.title).toBe('大局已定');
+    expect(viewModel.result?.fanTotal).toBe(8);
+    expect(viewModel.result?.winnerSeat).toBe('left');
+    expect(viewModel.result?.discarderSeat).toBe('top');
+    expect(viewModel.result?.winTypeLabel).toBe('荣和');
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'match_decided',
+      label: '大局已定',
+      enabled: false,
+    });
+    expect(viewModel.result?.seats.find((seat) => seat.absoluteSeat === 1)?.delta).toBe(8);
+    expect(viewModel.result?.seats.find((seat) => seat.absoluteSeat === 0)?.delta).toBe(-8);
+    expect(viewModel.settlementHands).toEqual({
+      top: ['w1', 'w9'],
+      left: ['b1', 'b3', 'b4'],
+      bottom: ['w2', 't9'],
+      right: ['d1', 'd2'],
+    });
+  });
+
   it('keeps finished settlement player names when a player leaves and the seat becomes a bot', () => {
     const base = createFinishedSessionState();
     const viewModel = createMatchViewModel({

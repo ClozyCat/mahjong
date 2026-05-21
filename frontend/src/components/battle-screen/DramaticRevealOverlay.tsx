@@ -24,11 +24,12 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
 
   const isSelfDraw = result.winType === 'self_draw';
   const isDiscard = result.winType === 'discard';
-
-  // Resolve winner/discarder info from pages (multi-win) or top-level
   const resultPages = getRevealPages(result);
 
-  // Find the page with the highest fan count
+  if ((!isSelfDraw && !isDiscard) || resultPages.length === 0) {
+    return null;
+  }
+
   let primaryPage = resultPages[0] ?? null;
   if (resultPages.length > 1) {
     let maxFanTotal = -1;

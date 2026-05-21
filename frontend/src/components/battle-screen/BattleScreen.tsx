@@ -158,6 +158,7 @@ export function BattleScreen({
     !isSettlementPanelReady && !isDramaticRevealActive && viewModel.result?.winType === 'discard'
       ? getSettlementWinnerSeats(viewModel.result)
       : [];
+  const hasDramaticRevealResult = shouldPlayDramaticReveal(viewModel.result);
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
   const settlementResetKey = getSettlementResetKey(viewModel);
   const settlementRevealKey = settlementResetKey;
@@ -353,7 +354,7 @@ export function BattleScreen({
     // For a win result (non-draw), delay the dramatic reveal until the "和" Kaiti animation completes.
     if (
       isFirstSettlement &&
-      viewModel.result.winType !== 'draw' &&
+      hasDramaticRevealResult &&
       !playedDramaticRevealSettlementKeysRef.current.has(settlementRevealKey)
     ) {
       setIsSettlementPanelReady(false);
@@ -523,7 +524,7 @@ export function BattleScreen({
               onAction={onAction}
             />
           ) : null}
-          {isDramaticRevealActive && viewModel.result && (
+          {isDramaticRevealActive && hasDramaticRevealResult && viewModel.result && (
             <DramaticRevealOverlay
               result={viewModel.result}
               onComplete={handleRevealComplete}
@@ -618,6 +619,14 @@ function getSettlementPanelDelayMs(
   }
 
   return 0;
+}
+
+function shouldPlayDramaticReveal(result: BattleViewModel['result']) {
+  if (!result || (result.winType !== 'discard' && result.winType !== 'self_draw')) {
+    return false;
+  }
+
+  return getSettlementWinnerSeats(result).length > 0;
 }
 
 function getSettlementPageCount(result: BattleViewModel['result']) {

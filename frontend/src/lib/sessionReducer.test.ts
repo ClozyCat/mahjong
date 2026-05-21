@@ -1018,4 +1018,33 @@ describe('sessionReducer', () => {
     expect(afterResult.matchStatistics).toEqual(afterSnapshot.matchStatistics);
   });
 
+  it('keeps the latest match result when the room snapshot reaches finished', () => {
+    const afterSnapshot = sessionReducer(createInitialSessionState(), {
+      type: 'ws_message',
+      message: playingRoomSnapshotMessage,
+    });
+    const afterResult = sessionReducer(afterSnapshot, {
+      type: 'ws_message',
+      message: matchResultMessage,
+    });
+    const finishedSnapshot = {
+      ...playingRoomSnapshotMessage,
+      payload: {
+        ...playingRoomSnapshotMessage.payload,
+        phase: 'finished' as const,
+        match_state: {
+          ...playingRoomSnapshotMessage.payload.match_state!,
+          match_finished: true,
+        },
+      },
+    };
+
+    const afterFinished = sessionReducer(afterResult, {
+      type: 'ws_message',
+      message: finishedSnapshot,
+    });
+
+    expect(afterFinished.latestMatchResult).toBe(matchResultMessage);
+  });
+
 });

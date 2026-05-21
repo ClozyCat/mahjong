@@ -701,6 +701,60 @@ describe('BattleScreen', () => {
     expect(document.body.querySelector('.result-overlay')).not.toBeNull();
   });
 
+  it('does not play the dramatic hu reveal for a finished-match placeholder result', () => {
+    vi.useFakeTimers();
+
+    const { rerender } = renderBattleScreen(createBattleViewModel({ result: null }));
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          mode: 'finished',
+          phaseLabel: '已结束',
+          result: {
+            title: '大局已定',
+            summary: '本桌完整对局已经结束，只能退出牌桌。',
+            fanTotal: null,
+            winnerSeat: null,
+            discarderSeat: null,
+            winType: null,
+            winTypeLabel: null,
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [],
+            scoreDeltaBySeat: {},
+            seats: [
+              { seat: 'bottom', name: 'Player A', score: 25000, delta: null },
+              { seat: 'right', name: 'Player B', score: 25000, delta: null },
+            ],
+            continueAction: {
+              id: 'match_decided',
+              label: '大局已定',
+              enabled: false,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+
+    expect(document.body.querySelector('.dramatic-reveal')).toBeNull();
+    expect(document.body.querySelector('.result-overlay')).not.toBeNull();
+    expect(screen.queryByText('1番')).not.toBeInTheDocument();
+  });
+
   it('keeps a manually collapsed settlement overlay collapsed across equivalent result refreshes', async () => {
     const user = userEvent.setup();
     const settlementResult = {

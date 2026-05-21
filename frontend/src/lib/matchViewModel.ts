@@ -1176,7 +1176,11 @@ function createSettlementHands(state: SessionState, options: MatchViewModelOptio
   const privateState = snapshot?.private_state;
   const settlementWinningDiscard = getSettlementWinningDiscard(state, options);
 
-  if (!snapshot || snapshot.phase !== 'settlement' || !privateState) {
+  if (
+    !snapshot ||
+    !privateState ||
+    (snapshot.phase !== 'settlement' && !(snapshot.phase === 'finished' && state.latestMatchResult))
+  ) {
     return null;
   }
 
@@ -1221,7 +1225,7 @@ function getSettlementWinningDiscard(
 
   if (
     !snapshot ||
-    snapshot.phase !== 'settlement' ||
+    (snapshot.phase !== 'settlement' && snapshot.phase !== 'finished') ||
     !privateState ||
     !result ||
     result.win_type !== 'discard' ||
@@ -1420,9 +1424,10 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
   const localSeat = getPerspectiveSeat(state, options);
   const nextRoundConfirmation = createContinueActionConfirmation(state, 'start_next_round');
 
-  if (snapshot.phase === 'settlement' && state.latestMatchResult) {
+  if ((snapshot.phase === 'settlement' || snapshot.phase === 'finished') && state.latestMatchResult) {
     const result = state.latestMatchResult.payload;
-    const isFinalHand = isFinalSettlement(state);
+    const isFinished = snapshot.phase === 'finished';
+    const isFinalHand = isFinished || isFinalSettlement(state);
     const pages = createResultPages(result, localSeat);
     const primaryPage = pages[0] ?? null;
     const scoreDeltaBySeat: Partial<Record<Seat, number>> = {};
@@ -1432,8 +1437,8 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
 
     return {
       roundId: result.round_id,
-      title: '本局结算',
-      summary: createResultSummary(result, pages.length),
+      title: isFinished ? ACTION_LABELS.match_decided : '本局结算',
+      summary: isFinished ? '最终局已结算，本桌完整对局已经结束。' : createResultSummary(result, pages.length),
       fanTotal: primaryPage?.fanTotal ?? result.fan_total,
       winnerSeat:
         primaryPage?.winnerSeat ??
