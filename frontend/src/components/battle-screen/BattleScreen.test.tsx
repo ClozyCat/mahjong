@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BattleViewModel } from '../../types/match';
 import { BattleScreen } from './BattleScreen';
+import { SETTLEMENT_CALLOUT_LINGER_MS } from './settlementTiming';
 
 function setViewportSize(width: number, height: number) {
   Object.defineProperty(window, 'innerWidth', {
@@ -2580,6 +2581,76 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
+  it('skips the dramatic reveal in evaluation rooms after the hu callout delay', () => {
+    vi.useFakeTimers();
+
+    const { container, rerender } = renderBattleScreen(createBattleViewModel({ result: null }));
+
+    rerender(
+      <BattleScreen
+        viewModel={createBattleViewModel({
+          roomMode: 'evaluation',
+          mode: 'resolving',
+          phaseLabel: 'settlement',
+          actionEffect: {
+            key: 'hu-evaluation-1',
+            label: '和',
+            emphasis: 'claim',
+            seat: 'right',
+            calloutTone: 'hu',
+          },
+          result: {
+            title: '本局结算',
+            summary: '荣和，等待下一局',
+            fanTotal: 8,
+            winnerSeat: 'right',
+            discarderSeat: 'left',
+            winType: 'discard',
+            winTypeLabel: '荣和',
+            provisional: false,
+            flowerCount: 0,
+            fanBreakdown: [{ fanKey: 'ping_hu', fanValue: 8 }],
+            scoreDeltaBySeat: {
+              left: -8,
+              right: 8,
+            },
+            seats: [
+              { seat: 'right', name: 'Player B', score: 25008, delta: 8 },
+              { seat: 'left', name: 'Player Left', score: 24292, delta: -8 },
+            ],
+            continueAction: {
+              id: 'start_next_round',
+              label: '下一局',
+              enabled: true,
+            },
+          },
+        })}
+        themeId="tian-shui-bi"
+        themeLabel="天水碧"
+        onCycleTheme={vi.fn()}
+        onAction={vi.fn()}
+        onTileSelect={vi.fn()}
+        onTileDoubleClick={vi.fn()}
+        onClaimCandidateSelect={vi.fn()}
+        onClaimCandidateActivate={vi.fn()}
+        onLeaveTable={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('和')).toBeInTheDocument();
+    expect(container.querySelector('.table-stage__action-callout--hu')).not.toBeNull();
+    expect(document.body.querySelector('.result-overlay')).toBeNull();
+    expect(document.body.querySelector('.dramatic-reveal')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(SETTLEMENT_CALLOUT_LINGER_MS);
+    });
+
+    expect(document.body.querySelector('.dramatic-reveal')).toBeNull();
+    expect(document.body.querySelector('.result-overlay')).not.toBeNull();
+    vi.useRealTimers();
+  });
+
   it('keeps the freshly drawn tile separated at the end of the hand instead of showing a draw spectacle', () => {
     renderBattleScreen(
       createBattleViewModel({
@@ -2798,6 +2869,38 @@ describe('BattleScreen', () => {
     expect(screen.queryByRole('button', { name: '开始对局' })).toBeNull();
     expect(screen.queryByRole('button', { name: '增加 BOT' })).toBeNull();
     expect(screen.queryByRole('button', { name: '减少 BOT' })).toBeNull();
+  });
+
+  it('skips the dealer selection spinner for evaluation rooms', () => {
+    const { container } = renderBattleScreen(
+      createBattleViewModel({
+        roomMode: 'evaluation',
+        mode: 'disconnected_or_waiting',
+        actions: [
+          { id: 'start_match', label: '开始对局', enabled: false, emphasis: 'high' },
+        ],
+        waitingControls: {
+          ...waitingControlDefaults,
+          canStart: false,
+          occupiedSeats: 4,
+          botCount: 2,
+          canAddBot: false,
+          canRemoveBot: false,
+        },
+        dealerSelection: {
+          key: 'dealer-selection-evaluation-1',
+          dealerSeat: 'right',
+          dealerName: 'Player B',
+          startedAt: '2026-04-27T12:00:00Z',
+          revealAt: '2026-04-27T12:00:04.200Z',
+          durationMs: 4200,
+        },
+      }),
+    );
+
+    expect(container.querySelector('.match-status-bar__arrow')).toBeNull();
+    expect(screen.getByText('等待中')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '开局前房间操作' })).toBeNull();
   });
 
   it('opens the player list from the invite action and allows closing it', async () => {

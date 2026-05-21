@@ -151,6 +151,7 @@ export function BattleScreen({
     (lastDiscardSpotlightKey !== null && returnedLastDiscardKey === lastDiscardSpotlightKey);
   const visibleLastDiscard = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscard;
   const visibleLastDiscardSeat = shouldHideLastDiscardSpotlight ? null : viewModel.lastDiscardSeat;
+  const shouldSkipEvaluationCinematicAnimations = viewModel.roomMode === 'evaluation';
   const visibleResult = isSettlementPanelReady ? viewModel.result : null;
   const visibleSettlementCenterCalloutLabel =
     !isSettlementPanelReady && !isDramaticRevealActive && viewModel.result?.winType === 'draw' ? '流局' : null;
@@ -158,7 +159,8 @@ export function BattleScreen({
     !isSettlementPanelReady && !isDramaticRevealActive && viewModel.result?.winType === 'discard'
       ? getSettlementWinnerSeats(viewModel.result)
       : [];
-  const hasDramaticRevealResult = shouldPlayDramaticReveal(viewModel.result);
+  const hasDramaticRevealResult =
+    !shouldSkipEvaluationCinematicAnimations && shouldPlayDramaticReveal(viewModel.result);
   const settlementVisibilityKey = getSettlementVisibilityKey(viewModel.result);
   const settlementResetKey = getSettlementResetKey(viewModel);
   const settlementRevealKey = settlementResetKey;
@@ -407,7 +409,7 @@ export function BattleScreen({
               remainingTileCount={viewModel.remainingTileCount}
               promptText={viewModel.promptText}
               promptCue={viewModel.promptCue}
-              dealerSelection={viewModel.dealerSelection}
+              dealerSelection={shouldSkipEvaluationCinematicAnimations ? null : viewModel.dealerSelection}
               deadlineAt={viewModel.deadlineAt}
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
