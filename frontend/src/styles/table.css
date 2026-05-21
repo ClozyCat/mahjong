@@ -1603,7 +1603,7 @@
   position: absolute;
   top: clamp(0.5rem, 2vmin, 1rem);
   right: clamp(0.5rem, 2vmin, 1rem);
-  z-index: 5;
+  z-index: 15;
   display: inline-flex;
   align-items: center;
   gap: clamp(0.25rem, 1vmin, 0.38rem);
