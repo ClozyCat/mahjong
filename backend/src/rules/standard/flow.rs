@@ -456,6 +456,16 @@ fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static
     }
 }
 
+fn finish_final_settlement_in_room_state(room: &mut RoomState) {
+    apply_settlement_to_match_in_room_state(room);
+    room.phase = "finished".to_string();
+    room.pending_timeout = None;
+    room.continue_action = None;
+    if let Some(match_state) = room.match_state.as_mut() {
+        match_state.match_finished = true;
+    }
+}
+
 fn continue_required_human_seats_in_room_state(room: &RoomState) -> Vec<usize> {
     room.seats
         .iter()
@@ -481,6 +491,10 @@ fn current_confirmed_continue_seats_in_room_state(room: &RoomState, action_id: &
 }
 
 fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), String> {
+    if settlement_is_final_hand_in_room_state(room) {
+        finish_final_settlement_in_room_state(room);
+        return Ok(());
+    }
     let Some(action_id) = current_continue_action_id_in_room_state(room) else {
         room.continue_action = None;
         return Ok(());
@@ -1216,10 +1230,11 @@ mod tests {
             record_continue_action_in_room_state(&mut room, 0, "restart_match"),
             Err("invalid_action".to_string())
         );
-        assert_eq!(room.phase, "settlement");
+        assert_eq!(room.phase, "finished");
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "north");
         assert_eq!(match_state.hand_number, 4);
+        assert!(match_state.match_finished);
     }
 
     #[test]

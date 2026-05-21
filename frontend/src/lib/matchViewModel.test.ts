@@ -1079,6 +1079,7 @@ describe('createMatchViewModel', () => {
       label: '大局已定',
       enabled: false,
     });
+    expect(viewModel.result?.title).toBe('大局已定');
   });
 
   it('shows local claim options when the local seat can respond in a claim window', () => {

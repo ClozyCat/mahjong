@@ -59,6 +59,21 @@ fn room_has_online_players(runtime: &crate::app::room_runtime::RoomRuntime) -> b
     })
 }
 
+fn evaluation_room_has_only_ai_players(room: &crate::core::state::RoomState) -> bool {
+    room.mode == crate::evaluation::EVALUATION_ROOM_MODE
+        && !room.seats.is_empty()
+        && room
+            .seats
+            .iter()
+            .all(|seat| seat.is_bot || seat.seat_type != "human")
+}
+
+fn room_match_finished(room: &crate::core::state::RoomState) -> bool {
+    room.match_state
+        .as_ref()
+        .is_some_and(|match_state| match_state.match_finished)
+}
+
 async fn process_unattended_room_cleanup(
     state: AppContext,
     table_code: String,
@@ -158,7 +173,9 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
         .map(|outcome| outcome.point_updates.as_slice())
         .unwrap_or(&[]);
     let room_points_changed = apply_point_updates_to_room(&mut runtime.room, point_updates);
-    if room_points_changed {
+    let reconciled_continue_action = runtime.room.phase == "settlement"
+        && reconcile_standard_continue_action_state(&mut runtime.room).is_ok();
+    if room_points_changed || reconciled_continue_action {
         let room_json = match serialize_room(&runtime.room) {
             Ok(value) => value,
             Err(_) => return,
@@ -438,7 +455,9 @@ async fn process_due_bot_action(state: AppContext, table_code: String, expected_
         .map(|outcome| outcome.point_updates.as_slice())
         .unwrap_or(&[]);
     let room_points_changed = apply_point_updates_to_room(&mut runtime.room, point_updates);
-    if room_points_changed {
+    let reconciled_continue_action = runtime.room.phase == "settlement"
+        && reconcile_standard_continue_action_state(&mut runtime.room).is_ok();
+    if room_points_changed || reconciled_continue_action {
         let room_json = match serialize_room(&runtime.room) {
             Ok(value) => value,
             Err(_) => return,
@@ -477,8 +496,26 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     if room_handle.is_closed() {
         return;
     }
+    if runtime.room.phase == "settlement" {
+        let _ = reconcile_standard_continue_action_state(&mut runtime.room);
+    }
+    if evaluation_room_has_only_ai_players(&runtime.room) && room_match_finished(&runtime.room) {
+        room_handle.mark_closed();
+        close_runtime(&mut runtime);
+        drop(runtime);
+        unregister_room_handle(&state, &table_code, &room_handle).await;
+        state
+            .inner
+            .db
+            .delete_table(&table_code, &super::now_iso())
+            .await
+            .ok();
+        return;
+    }
     if room_seats(&runtime.room).is_empty()
-        || (room_has_only_bots(&runtime.room) && runtime.connections.is_empty())
+        || (room_has_only_bots(&runtime.room)
+            && runtime.connections.is_empty()
+            && !room_has_online_players(&runtime))
     {
         room_handle.mark_closed();
         close_runtime(&mut runtime);
@@ -574,10 +611,12 @@ mod tests {
     use anyhow::Result;
 
     use super::schedule_room_tasks;
+    use crate::app::evaluation::build_evaluation_room;
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::room_runtime::{RoomRuntime, room_handle};
     use crate::app::{AppContext, initial_room_state_with_owner, serialize_room_state};
-    use crate::core::state::SeatState;
+    use crate::core::state::{RoundSettlement, SeatState};
+    use crate::rules::standard::flow::start_match_in_room_state;
 
     fn offline_human_room(table_code: &str) -> crate::core::state::RoomState {
         let mut room = initial_room_state_with_owner(table_code, Some(101), 1);
@@ -651,6 +690,112 @@ mod tests {
 
         let runtime = handle.runtime.lock().await;
         assert!(runtime.unattended_cleanup_task.is_some());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn schedules_bot_action_for_unconnected_ai_evaluation_room() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let mut room = build_evaluation_room("EVALBOT", 101, Some(202), "Bot Subject", true);
+        start_match_in_room_state(&mut room, 0, 7).expect("evaluation bot room should start");
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("EVALBOT", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        let state = AppContext::new(worker);
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("EVALBOT".to_string(), handle.clone());
+
+        schedule_room_tasks(state, "EVALBOT".to_string()).await;
+
+        let runtime = handle.runtime.lock().await;
+        assert!(!handle.is_closed());
+        assert!(runtime.bot_task.is_some());
+        assert!(runtime.unattended_cleanup_task.is_none());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn advances_bot_only_evaluation_room_from_settlement() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let mut room = build_evaluation_room("EVALSET", 101, Some(202), "Bot Subject", true);
+        start_match_in_room_state(&mut room, 0, 7).expect("evaluation bot room should start");
+        room.phase = "settlement".to_string();
+        room.pending_timeout = None;
+        if let Some(round) = room.round_state.as_mut() {
+            round.phase = "settlement".to_string();
+            round.pending_action = None;
+            round.settlement = Some(RoundSettlement {
+                win_type: "draw".to_string(),
+                ..RoundSettlement::default()
+            });
+        }
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("EVALSET", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        let state = AppContext::new(worker);
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("EVALSET".to_string(), handle.clone());
+
+        schedule_room_tasks(state, "EVALSET".to_string()).await;
+
+        let runtime = handle.runtime.lock().await;
+        assert_eq!(runtime.room.phase, "playing");
+        assert!(runtime.room.continue_action.is_none());
+        assert!(runtime.bot_task.is_some());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn closes_finished_ai_only_evaluation_room() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let mut room = build_evaluation_room("EVALDONE", 101, Some(202), "Bot Subject", true);
+        start_match_in_room_state(&mut room, 0, 7).expect("evaluation bot room should start");
+        room.phase = "finished".to_string();
+        if let Some(match_state) = room.match_state.as_mut() {
+            match_state.match_finished = true;
+        }
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("EVALDONE", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        let state = AppContext::new(worker.clone());
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("EVALDONE".to_string(), handle.clone());
+
+        schedule_room_tasks(state.clone(), "EVALDONE".to_string()).await;
+
+        assert!(handle.is_closed());
+        assert!(room_handle(&state, "EVALDONE").await.is_none());
+        assert!(worker.get_table("EVALDONE").await?.is_none());
         Ok(())
     }
 }

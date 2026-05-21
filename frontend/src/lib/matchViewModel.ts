@@ -1459,7 +1459,7 @@ function createResult(state: SessionState, options: MatchViewModelOptions = {}):
   if (snapshot.phase === 'finished') {
     return {
       roundId: snapshot.match_state?.last_completed_round_id ?? null,
-      title: '整场结束',
+      title: ACTION_LABELS.match_decided,
       summary: '本桌完整对局已经结束，只能退出牌桌。',
       fanTotal: null,
       winnerSeat: null,
