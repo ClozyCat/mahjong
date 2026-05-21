@@ -85,8 +85,15 @@ pub(crate) fn apply_room_result_to_evaluation_subject(
     subject.completed = match_state.match_finished
         || match_state.statistics.completed_round_count as usize
             >= crate::evaluation::EVALUATION_HAND_COUNT;
-    subject.final_score = match_state.cumulative_scores.get(&0).copied();
-    if let Some(stats) = match_state.statistics.seat_stats_by_seat.get(&0) {
+
+    // Find the subject's current seat index by user_id, fallback to seat 0
+    let subject_seat_index = room.seats.iter()
+        .find(|seat| seat.user_id == subject.user_id)
+        .map(|seat| seat.seat_index)
+        .unwrap_or(0);
+
+    subject.final_score = match_state.cumulative_scores.get(&subject_seat_index).copied();
+    if let Some(stats) = match_state.statistics.seat_stats_by_seat.get(&subject_seat_index) {
         subject.deal_in_count = Some(u64::from(stats.deal_in_count));
         subject.win_count = Some(u64::from(stats.win_count));
         subject.ready_hand_win_count = Some(u64::from(stats.ready_hand_win_count));
@@ -196,6 +203,71 @@ mod tests {
         assert_eq!(subject.deal_in_count, Some(2));
         assert_eq!(subject.win_count, Some(3));
         assert_eq!(subject.completed_round_count, Some(4));
+        assert_eq!(subject.ready_hand_win_count, Some(1));
+    }
+
+    #[test]
+    fn room_result_uses_subject_current_seat_after_wind_rotation() {
+        let mut room = RoomState {
+            phase: "finished".to_string(),
+            seats: vec![
+                SeatState {
+                    seat_index: 0,
+                    nickname: Some("sft_bot_1".to_string()),
+                    is_bot: true,
+                    seat_type: "bot".to_string(),
+                    ..SeatState::default()
+                },
+                SeatState {
+                    seat_index: 1,
+                    user_id: Some(1),
+                    nickname: Some("Alice".to_string()),
+                    seat_type: "human".to_string(),
+                    ..SeatState::default()
+                },
+            ],
+            match_state: Some(MatchState::default()),
+            ..RoomState::default()
+        };
+        let match_state = room.match_state.as_mut().expect("match state");
+        match_state.match_finished = true;
+        match_state.cumulative_scores.insert(0, 11);
+        match_state.cumulative_scores.insert(1, 42);
+        match_state
+            .statistics
+            .seat_stats_by_seat
+            .entry(0)
+            .or_default()
+            .win_count = 9;
+        let subject_stats = match_state
+            .statistics
+            .seat_stats_by_seat
+            .entry(1)
+            .or_default();
+        subject_stats.deal_in_count = 2;
+        subject_stats.win_count = 3;
+        subject_stats.ready_hand_win_count = 1;
+        match_state.statistics.completed_round_count = 4;
+        let mut subject = EvaluationSubjectResponse {
+            subject_id: "user:1".to_string(),
+            user_id: Some(1),
+            display_name: "Alice".to_string(),
+            kind: "human".to_string(),
+            table_code: "EVAL01".to_string(),
+            phase: "playing".to_string(),
+            completed: false,
+            final_score: None,
+            deal_in_count: None,
+            win_count: None,
+            completed_round_count: None,
+            ready_hand_win_count: None,
+        };
+
+        apply_room_result_to_evaluation_subject(&mut subject, &room);
+
+        assert_eq!(subject.final_score, Some(42));
+        assert_eq!(subject.deal_in_count, Some(2));
+        assert_eq!(subject.win_count, Some(3));
         assert_eq!(subject.ready_hand_win_count, Some(1));
     }
 
