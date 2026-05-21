@@ -10,15 +10,10 @@
       "model_path": "backend/assets/sft/sft.onnx"
     },
     {
-      "id": "ppo_focused",
-      "display_name": "PPO Focused",
-      "model_path": "backend/assets/ppo/ppo.onnx",
-      "temperature": 0.3
-    },
-    {
       "id": "ppo",
       "display_name": "PPO",
       "model_path": "backend/assets/ppo/ppo.onnx",
+      "sample_actions": false,
       "temperature": 1.0
     }
   ],

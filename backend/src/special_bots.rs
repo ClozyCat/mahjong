@@ -81,7 +81,7 @@ pub(crate) fn is_independent_bot_seat(seat: &SeatState) -> bool {
 }
 
 pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> ArenaBotPolicyConfig {
-    let (policy_id, model_path, temperature) = room
+    let (policy_id, model_path, temperature, sample_actions) = room
         .seats
         .iter()
         .find(|seat| seat.seat_index == seat_index)
@@ -89,14 +89,14 @@ pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> Are
             seat.nickname
                 .as_deref()
                 .and_then(definition_for_display_name)
-                .map(|bot| ("special", bot.model_path, bot.temperature))
+                .map(|bot| ("special", bot.model_path, bot.temperature, true))
         })
-        .unwrap_or(("sft", SFT_MODEL_PATH, 1.0));
+        .unwrap_or(("sft", SFT_MODEL_PATH, 1.0, false));
 
     ArenaBotPolicyConfig {
         id: format!("{policy_id}-seat-{seat_index}"),
         model_path: Some(model_path.to_string()),
-        sample_actions: false,
+        sample_actions,
         temperature,
         discard_base_risk_weight: 0.90,
         discard_value_risk_range: 0.55,
@@ -174,5 +174,42 @@ mod tests {
             policy_config_for_seat(&room, 1).model_path.as_deref(),
             Some(SFT_MODEL_PATH)
         );
+    }
+
+    #[test]
+    fn policy_config_samples_only_for_named_special_bots() {
+        let room = RoomState {
+            table_code: "ROOM42".to_string(),
+            phase: "playing".to_string(),
+            mode: "normal".to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
+            seats: vec![
+                SeatState {
+                    seat_index: 0,
+                    nickname: Some("舒伯特".to_string()),
+                    is_bot: true,
+                    seat_type: SPECIAL_BOT_SEAT_TYPE.to_string(),
+                    ..SeatState::default()
+                },
+                SeatState {
+                    seat_index: 1,
+                    nickname: Some("bot_1".to_string()),
+                    is_bot: true,
+                    seat_type: "bot".to_string(),
+                    ..SeatState::default()
+                },
+            ],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        assert!(policy_config_for_seat(&room, 0).sample_actions);
+        assert!(!policy_config_for_seat(&room, 1).sample_actions);
     }
 }
