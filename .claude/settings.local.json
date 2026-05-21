@@ -49,7 +49,8 @@
       "Bash(xargs grep -l \"struct.*State\\\\|struct.*Env\\\\|struct.*Game\")",
       "Bash(xargs grep -l \"step_reward\\\\|terminal_reward\")",
       "PowerShell(cargo build *)",
-      "PowerShell(python backend/bot_trainer/v2/model.py 2>&1 | Select-Object -First 20)"
+      "PowerShell(python backend/bot_trainer/v2/model.py 2>&1 | Select-Object -First 20)",
+      "PowerShell(cargo test *)"
     ]
   }
 }

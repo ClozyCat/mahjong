@@ -637,7 +637,7 @@ try {
                     }
                 foreach ($job in $runningEpochEvalJobs) {
                     Wait-Job -Job $job | Out-Null
-                    Receive-Job -Job $job
+                    Receive-Job -Job $job 2>$null
                     if ($job.State -ne "Completed") {
                         throw "Epoch evaluation job failed: $($job.State)"
                     }
