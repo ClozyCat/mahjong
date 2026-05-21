@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 
+use crate::app::evaluation::apply_room_result_to_evaluation_session;
 use crate::app::room_runtime::{
     abort_join_handle, close_runtime, remap_connections_to_current_seats, restore_room_snapshot,
     room_handle, room_has_only_bots, snapshot_connections, unregister_room_handle,
@@ -72,6 +73,13 @@ fn room_match_finished(room: &crate::core::state::RoomState) -> bool {
     room.match_state
         .as_ref()
         .is_some_and(|match_state| match_state.match_finished)
+}
+
+async fn freeze_evaluation_result(state: &AppContext, room: &crate::core::state::RoomState) {
+    let mut sessions = state.inner.evaluation_sessions.write().await;
+    for session in sessions.values_mut() {
+        apply_room_result_to_evaluation_session(session, room);
+    }
 }
 
 async fn process_unattended_room_cleanup(
@@ -500,6 +508,7 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     }
     if evaluation_room_has_only_ai_players(&runtime.room) && room_match_finished(&runtime.room) {
+        freeze_evaluation_result(&state, &runtime.room).await;
         room_handle.mark_closed();
         close_runtime(&mut runtime);
         drop(runtime);
@@ -775,6 +784,15 @@ mod tests {
         room.phase = "finished".to_string();
         if let Some(match_state) = room.match_state.as_mut() {
             match_state.match_finished = true;
+            match_state.cumulative_scores.insert(0, 32);
+            match_state.statistics.completed_round_count = 16;
+            let stats = match_state
+                .statistics
+                .seat_stats_by_seat
+                .entry(0)
+                .or_default();
+            stats.win_count = 3;
+            stats.deal_in_count = 1;
         }
         let room_json = serialize_room_state(&room)?;
         worker
@@ -790,12 +808,44 @@ mod tests {
             .write()
             .await
             .insert("EVALDONE".to_string(), handle.clone());
+        state.inner.evaluation_sessions.write().await.insert(
+            "eval-done".to_string(),
+            crate::app::evaluation::EvaluationSessionResponse {
+                evaluation_id: "eval-done".to_string(),
+                seed: 7,
+                subjects: vec![crate::app::evaluation::EvaluationSubjectResponse {
+                    subject_id: "user:202".to_string(),
+                    user_id: Some(202),
+                    display_name: "Bot Subject".to_string(),
+                    kind: "bot".to_string(),
+                    table_code: "EVALDONE".to_string(),
+                    phase: "playing".to_string(),
+                    completed: false,
+                    final_score: None,
+                    deal_in_count: None,
+                    win_count: None,
+                    completed_round_count: None,
+                    ready_hand_win_count: None,
+                }],
+            },
+        );
 
         schedule_room_tasks(state.clone(), "EVALDONE".to_string()).await;
 
         assert!(handle.is_closed());
         assert!(room_handle(&state, "EVALDONE").await.is_none());
         assert!(worker.get_table("EVALDONE").await?.is_none());
+        let sessions = state.inner.evaluation_sessions.read().await;
+        let subject = &sessions
+            .get("eval-done")
+            .expect("evaluation session should remain")
+            .subjects[0];
+        assert!(subject.completed);
+        assert_eq!(subject.phase, "finished");
+        assert_eq!(subject.final_score, Some(32));
+        assert_eq!(subject.win_count, Some(3));
+        assert_eq!(subject.deal_in_count, Some(1));
+        assert_eq!(subject.completed_round_count, Some(16));
         Ok(())
     }
 }

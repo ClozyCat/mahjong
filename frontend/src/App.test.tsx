@@ -921,6 +921,24 @@ describe('App', () => {
     expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
     expect(screen.getAllByText('听牌和 0 次').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('button', { name: 'EVBOT' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '收起' }));
+    expect(screen.queryByText('已完成 16 局')).not.toBeInTheDocument();
+    expect(screen.getByText('1/2 完成')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '展开' }));
+    expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
+
+    await act(async () => {
+      evaluationSocket.triggerMessage({
+        type: 'leave_table_accepted',
+        payload: {
+          table_code: 'EVSELF',
+          seat_index: 0,
+        },
+      });
+    });
+
+    expect(screen.queryByLabelText('评测结果')).not.toBeInTheDocument();
   });
 
   it('enables player list invites when the active waiting table reports bots with the legacy is_bot flag', async () => {

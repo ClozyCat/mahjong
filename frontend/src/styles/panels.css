@@ -688,6 +688,29 @@
   padding: 0.85rem;
 }
 
+.evaluation-panel--collapsed {
+  width: min(15rem, calc(100vw - 2rem));
+  padding: 0.65rem 0.75rem;
+}
+
+.evaluation-panel__title {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.evaluation-panel__title small {
+  color: var(--theme-paper-muted);
+  font-size: 0.68rem;
+}
+
+.evaluation-panel__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
 .evaluation-panel__rows {
   display: grid;
   gap: 0.45rem;

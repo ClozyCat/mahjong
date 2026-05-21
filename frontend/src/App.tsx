@@ -511,9 +511,13 @@ export default function App() {
   }, [authSession?.sessionToken, evaluationSession?.evaluation_id, evaluationSession?.subjects, refreshEvaluationSession]);
 
   const handleLeaveToLobby = useEffectEvent((tableCode?: string, nextStatusMessage: string | null = null) => {
+    const leavingTableCode = tableCode ?? sessionRef.current.tableCode;
     leavingTableRef.current = false;
     reconnectCloseCountRef.current = 0;
     activeTableRestoreRef.current = null;
+    if (evaluationSession?.subjects.some((subject) => subject.table_code === leavingTableCode)) {
+      setEvaluationSession(null);
+    }
     setActiveLobbyTableCode(null);
     if (currentUser) {
       setCurrentUser((user) => updateUserActiveTableCode(user, currentUser.user_id, null));
@@ -522,7 +526,7 @@ export default function App() {
     clearStoredSession();
     dispatch({
       type: 'return_to_lobby',
-      tableCode: tableCode ?? sessionRef.current.tableCode,
+      tableCode: leavingTableCode,
     });
     closeSocket(socketRef, heartbeatTimerRef);
     setStatusMessage(nextStatusMessage);

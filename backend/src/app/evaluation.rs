@@ -94,6 +94,18 @@ pub(crate) fn apply_room_result_to_evaluation_subject(
     subject.completed_round_count = Some(u64::from(match_state.statistics.completed_round_count));
 }
 
+pub(crate) fn apply_room_result_to_evaluation_session(
+    session: &mut EvaluationSessionResponse,
+    room: &RoomState,
+) {
+    for subject in &mut session.subjects {
+        if subject.table_code == room.table_code {
+            apply_room_result_to_evaluation_subject(subject, room);
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +233,67 @@ mod tests {
             subject.completed_round_count,
             Some(crate::evaluation::EVALUATION_HAND_COUNT as u64)
         );
+    }
+
+    #[test]
+    fn room_result_updates_matching_subject_in_session() {
+        let mut room = RoomState {
+            table_code: "EVAL02".to_string(),
+            phase: "finished".to_string(),
+            match_state: Some(MatchState::default()),
+            ..RoomState::default()
+        };
+        let match_state = room.match_state.as_mut().expect("match state");
+        match_state.match_finished = true;
+        match_state.cumulative_scores.insert(0, 88);
+        match_state.statistics.completed_round_count = 16;
+        match_state
+            .statistics
+            .seat_stats_by_seat
+            .entry(0)
+            .or_default()
+            .win_count = 5;
+        let mut session = EvaluationSessionResponse {
+            evaluation_id: "eval-test".to_string(),
+            seed: 7,
+            subjects: vec![
+                EvaluationSubjectResponse {
+                    subject_id: "user:1".to_string(),
+                    user_id: Some(1),
+                    display_name: "Alice".to_string(),
+                    kind: "human".to_string(),
+                    table_code: "EVAL01".to_string(),
+                    phase: "waiting".to_string(),
+                    completed: false,
+                    final_score: None,
+                    deal_in_count: None,
+                    win_count: None,
+                    completed_round_count: None,
+                    ready_hand_win_count: None,
+                },
+                EvaluationSubjectResponse {
+                    subject_id: "user:2".to_string(),
+                    user_id: Some(2),
+                    display_name: "Bot".to_string(),
+                    kind: "bot".to_string(),
+                    table_code: "EVAL02".to_string(),
+                    phase: "playing".to_string(),
+                    completed: false,
+                    final_score: None,
+                    deal_in_count: None,
+                    win_count: None,
+                    completed_round_count: None,
+                    ready_hand_win_count: None,
+                },
+            ],
+        };
+
+        apply_room_result_to_evaluation_session(&mut session, &room);
+
+        assert!(!session.subjects[0].completed);
+        assert!(session.subjects[1].completed);
+        assert_eq!(session.subjects[1].final_score, Some(88));
+        assert_eq!(session.subjects[1].win_count, Some(5));
+        assert_eq!(session.subjects[1].completed_round_count, Some(16));
     }
 }

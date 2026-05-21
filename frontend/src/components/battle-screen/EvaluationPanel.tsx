@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { EvaluationSessionResponse } from '../../types/match';
 
 interface EvaluationPanelProps {
@@ -6,34 +7,47 @@ interface EvaluationPanelProps {
 }
 
 export function EvaluationPanel({ session, onRefresh }: EvaluationPanelProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   if (!session) {
     return null;
   }
+  const completedCount = session.subjects.filter((subject) => subject.completed).length;
 
   return (
-    <div className="evaluation-panel" aria-label="评测结果">
+    <div className={isCollapsed ? 'evaluation-panel evaluation-panel--collapsed' : 'evaluation-panel'} aria-label="评测结果">
       <div className="evaluation-panel__header">
-        <strong>评测结果</strong>
-        {onRefresh ? (
-          <button type="button" onClick={onRefresh}>刷新</button>
-        ) : null}
+        <div className="evaluation-panel__title">
+          <strong>评测结果</strong>
+          <small>{completedCount}/{session.subjects.length} 完成</small>
+        </div>
+        <div className="evaluation-panel__actions">
+          <button type="button" onClick={() => setIsCollapsed((current) => !current)}>
+            {isCollapsed ? '展开' : '收起'}
+          </button>
+          {onRefresh ? (
+            <button type="button" onClick={onRefresh}>刷新</button>
+          ) : null}
+        </div>
       </div>
-      <div className="evaluation-panel__rows">
-        {session.subjects.map((subject) => (
-          <div key={subject.subject_id} className="evaluation-panel__row">
-            <div className="evaluation-panel__identity">
-              <span>{subject.display_name}</span>
-              <small>{subject.kind === 'bot' ? 'AI' : '真人'}</small>
+      {isCollapsed ? null : (
+        <div className="evaluation-panel__rows">
+          {session.subjects.map((subject) => (
+            <div key={subject.subject_id} className="evaluation-panel__row">
+              <div className="evaluation-panel__identity">
+                <span>{subject.display_name}</span>
+                <small>{subject.kind === 'bot' ? 'AI' : '真人'}</small>
+              </div>
+              <strong>{subject.final_score ?? '-'}</strong>
+              <small>已完成 {formatCount(subject.completed_round_count)} 局</small>
+              <small>和牌 {formatCount(subject.win_count)} 次</small>
+              <small>放铳 {formatCount(subject.deal_in_count)} 次</small>
+              <small>听牌和 {formatReadyHandWinCount(subject)} 次</small>
+              <em>{subject.completed ? '完成' : phaseLabel(subject.phase)}</em>
             </div>
-            <strong>{subject.final_score ?? '-'}</strong>
-            <small>已完成 {formatCount(subject.completed_round_count)} 局</small>
-            <small>和牌 {formatCount(subject.win_count)} 次</small>
-            <small>放铳 {formatCount(subject.deal_in_count)} 次</small>
-            <small>听牌和 {formatReadyHandWinCount(subject)} 次</small>
-            <em>{subject.completed ? '完成' : phaseLabel(subject.phase)}</em>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
