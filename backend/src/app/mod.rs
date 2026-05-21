@@ -243,6 +243,7 @@ pub(crate) fn initial_room_state_with_owner(
         minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
         dealer_repeat_enabled: false,
         dealer_double_enabled: false,
+        ready_hand_enabled: true,
         seats: Vec::new(),
         match_state: None,
         round_state: None,
@@ -924,6 +925,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,
@@ -969,6 +971,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 2,
                 user_id: Some(7),
@@ -1009,6 +1012,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![
                 SeatState {
                     seat_index: 0,
@@ -1065,6 +1069,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),
@@ -1103,6 +1108,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),

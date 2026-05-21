@@ -934,7 +934,6 @@ mod tests {
                     deal_in_count: None,
                     win_count: None,
                     completed_round_count: None,
-                    ready_hand_win_count: None,
                 }],
             },
         );

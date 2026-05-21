@@ -343,6 +343,65 @@ async fn create_evaluation_invites_human_subject_and_exposes_session_by_table() 
     Ok(())
 }
 
+#[tokio::test]
+async fn evaluation_room_auto_starts_after_accepting_invite() -> Result<()> {
+    let (app, worker, state) = test_app().await?;
+    let (owner_token, _owner_id) = register_user(&app, &worker, "AUTOSTART01", "Owner").await?;
+    let (guest_token, guest_id) = register_user(&app, &worker, "AUTOSTART02", "Guest").await?;
+    let (connection, mut receiver) = test_connection(3002);
+    register_user_connection(&state, guest_id, connection).await;
+    let _ = receiver.recv().await;
+
+    let body = create_evaluation(&app, &owner_token, vec![guest_id]).await?;
+    let guest_subject = body["subjects"]
+        .as_array()
+        .expect("subjects should be an array")
+        .iter()
+        .find(|subject| subject["user_id"] == guest_id)
+        .expect("guest subject should be present");
+    let guest_table_code = guest_subject["table_code"]
+        .as_str()
+        .expect("guest table code should exist");
+
+    // Verify room is in waiting phase before accepting
+    let handle = room_handle(&state, guest_table_code)
+        .await
+        .expect("room should be loaded");
+    let runtime = handle.runtime.lock().await;
+    assert_eq!(runtime.room.phase, "waiting");
+    assert!(runtime.room.round_state.is_none());
+    drop(runtime);
+
+    let invite_notification = receiver
+        .recv()
+        .await
+        .expect("guest should receive evaluation invite");
+    let invite_payload: Value = serde_json::from_str(&invite_notification)?;
+    let invite_id = invite_payload["payload"]["id"]
+        .as_i64()
+        .expect("invite id should exist");
+
+    // Accept the invite
+    let accept = app
+        .clone()
+        .oneshot(authed_json_request(
+            Method::POST,
+            &format!("/api/invites/{invite_id}/accept"),
+            &guest_token,
+            json!({}),
+        ))
+        .await?;
+    assert_eq!(accept.status(), StatusCode::OK);
+
+    // Verify room auto-started after accepting
+    let runtime = handle.runtime.lock().await;
+    assert_eq!(runtime.room.phase, "playing", "evaluation room should auto-start after accepting invite");
+    assert!(runtime.room.round_state.is_some(), "round should be started");
+    drop(runtime);
+
+    Ok(())
+}
+
 async fn add_human_to_table(
     state: &AppContext,
     worker: &DbWorker,

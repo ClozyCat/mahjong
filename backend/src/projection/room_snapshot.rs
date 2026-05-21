@@ -29,6 +29,7 @@ struct PlayerRoomSnapshot {
     minimum_hu_fan: i64,
     dealer_repeat_enabled: bool,
     dealer_double_enabled: bool,
+    ready_hand_enabled: bool,
     seats: Vec<PublicSeatView>,
     local_seat: Seat,
     match_state: Option<MatchState>,
@@ -162,6 +163,7 @@ pub fn room_snapshot_message(
         minimum_hu_fan: state.minimum_hu_fan,
         dealer_repeat_enabled: state.dealer_repeat_enabled,
         dealer_double_enabled: state.dealer_double_enabled,
+        ready_hand_enabled: true,
         seats: public_seats(state),
         local_seat,
         match_state: state.match_state.clone(),
@@ -751,6 +753,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
                 seed: 0,
@@ -825,6 +828,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: true,
             dealer_double_enabled: true,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
                 seed: 0,
@@ -861,6 +865,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -908,6 +913,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -956,6 +962,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1004,6 +1011,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1059,6 +1067,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1106,6 +1115,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1165,6 +1175,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1220,6 +1231,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1349,6 +1361,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {

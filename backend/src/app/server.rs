@@ -756,7 +756,6 @@ async fn create_evaluation(
                 deal_in_count: None,
                 win_count: None,
                 completed_round_count: None,
-                ready_hand_win_count: None,
             });
     }
 
@@ -1330,6 +1329,31 @@ async fn accept_table_invite(
     }
     let room = runtime.room.clone();
     let created_at = runtime.created_at.clone();
+    let is_evaluation_room = room.mode == crate::evaluation::EVALUATION_ROOM_MODE;
+    drop(runtime);
+
+    // Auto-start evaluation room after accepting invite
+    if is_evaluation_room {
+        let mut runtime = room_handle.runtime.lock().await;
+        if runtime.room.phase == "waiting" && runtime.room.round_state.is_none() {
+            if let Some(evaluation_session) = state.inner.evaluation_sessions.read().await.values().find(|session| {
+                session.subjects.iter().any(|subject| subject.table_code == invite.table_code)
+            }) {
+                let seed = evaluation_session.seed;
+                if let Err(error) = start_match_in_room_state(
+                    &mut runtime.room,
+                    crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT,
+                    seed,
+                ) {
+                    return json_error(StatusCode::INTERNAL_SERVER_ERROR, &error);
+                }
+            }
+        }
+        drop(runtime);
+    }
+
+    let runtime = room_handle.runtime.lock().await;
+    let room = runtime.room.clone();
     drop(runtime);
 
     let room_json = match serialize_room_state(&room) {

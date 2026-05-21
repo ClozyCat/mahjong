@@ -2463,6 +2463,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {

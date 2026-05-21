@@ -328,6 +328,7 @@ pub fn arena_room(table_code: &str) -> RoomState {
         minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
         dealer_repeat_enabled: false,
         dealer_double_enabled: false,
+        ready_hand_enabled: true,
         seats: (0..4)
             .map(|seat_index| SeatState {
                 seat_index,

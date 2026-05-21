@@ -417,7 +417,6 @@ function createFetchMock(options?: {
               deal_in_count: null,
               win_count: null,
               completed_round_count: null,
-              ready_hand_win_count: null,
             },
           ],
         },
@@ -883,7 +882,6 @@ describe('App', () => {
               deal_in_count: null,
               win_count: null,
               completed_round_count: null,
-              ready_hand_win_count: null,
             },
             {
               subject_id: 'user:9',
@@ -897,7 +895,6 @@ describe('App', () => {
               deal_in_count: 1,
               win_count: 2,
               completed_round_count: 16,
-              ready_hand_win_count: 4,
             },
           ],
         },
@@ -930,7 +927,6 @@ describe('App', () => {
     expect(screen.getByText('当前玩家')).toBeInTheDocument();
     expect(screen.getByText('舒伯特')).toBeInTheDocument();
     expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
-    expect(screen.getAllByText('听牌和 0 次').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('button', { name: 'EVBOT' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '收起' }));
@@ -980,7 +976,6 @@ describe('App', () => {
               deal_in_count: null,
               win_count: null,
               completed_round_count: 1,
-              ready_hand_win_count: 0,
             },
             {
               subject_id: 'user:2',
@@ -994,7 +989,6 @@ describe('App', () => {
               deal_in_count: null,
               win_count: null,
               completed_round_count: 0,
-              ready_hand_win_count: 0,
             },
           ],
         },
@@ -1056,7 +1050,6 @@ describe('App', () => {
               deal_in_count: 1,
               win_count: 3,
               completed_round_count: 16,
-              ready_hand_win_count: 2,
             },
             {
               subject_id: 'user:2',
@@ -1070,7 +1063,6 @@ describe('App', () => {
               deal_in_count: 2,
               win_count: 1,
               completed_round_count: 16,
-              ready_hand_win_count: 0,
             },
           ],
         },

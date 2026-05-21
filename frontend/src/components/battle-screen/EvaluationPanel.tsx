@@ -215,7 +215,6 @@ export function EvaluationPanel({ session, onRefresh }: EvaluationPanelProps) {
               <small>已完成 {formatCount(subject.completed_round_count)} 局</small>
               <small>和牌 {formatCount(subject.win_count)} 次</small>
               <small>放铳 {formatCount(subject.deal_in_count)} 次</small>
-              <small>听牌和 {formatReadyHandWinCount(subject)} 次</small>
               <em className={`evaluation-panel__status evaluation-panel__status--${subject.completed ? 'completed' : subject.phase}`}>
                 {subject.completed ? '完成' : phaseLabel(subject.phase)}
               </em>
@@ -229,13 +228,6 @@ export function EvaluationPanel({ session, onRefresh }: EvaluationPanelProps) {
 
 function formatCount(value?: number | null) {
   return value ?? 0;
-}
-
-function formatReadyHandWinCount(subject: EvaluationSessionResponse['subjects'][number]) {
-  if (subject.kind === 'bot') {
-    return 0;
-  }
-  return formatCount(subject.ready_hand_win_count);
 }
 
 function phaseLabel(phase: string) {

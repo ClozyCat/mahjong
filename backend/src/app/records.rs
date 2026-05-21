@@ -437,6 +437,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats,
             match_state: Some(MatchState {
                 cumulative_scores: cumulative_scores
@@ -611,6 +612,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![
                 SeatState {
                     seat_index: 0,
@@ -684,6 +686,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
+        ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: Some(1),

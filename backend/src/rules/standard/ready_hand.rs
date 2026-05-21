@@ -25,6 +25,9 @@ pub fn can_declare_ready_hand_with_tile_id(
     seat_index: usize,
     tile_id: &str,
 ) -> bool {
+    if !state.ready_hand_enabled {
+        return false;
+    }
     if state.phase != "playing" {
         return false;
     }

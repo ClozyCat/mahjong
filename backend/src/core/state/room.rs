@@ -22,6 +22,8 @@ pub struct RoomState {
     pub dealer_repeat_enabled: bool,
     #[serde(default)]
     pub dealer_double_enabled: bool,
+    #[serde(default = "default_ready_hand_enabled")]
+    pub ready_hand_enabled: bool,
     pub seats: Vec<SeatState>,
     pub match_state: Option<MatchState>,
     pub round_state: Option<RoundState>,
@@ -35,6 +37,10 @@ fn default_multiplier() -> i64 {
 
 pub fn default_minimum_hu_fan() -> i64 {
     8
+}
+
+fn default_ready_hand_enabled() -> bool {
+    true
 }
 
 impl RoomState {
@@ -326,6 +332,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: true,
             dealer_double_enabled: true,
+        ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,

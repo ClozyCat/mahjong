@@ -86,6 +86,7 @@ pub fn apply_evaluation_rules(room: &mut RoomState) {
     room.minimum_hu_fan = EVALUATION_MINIMUM_HU_FAN;
     room.dealer_repeat_enabled = false;
     room.dealer_double_enabled = false;
+    room.ready_hand_enabled = false;
 }
 
 pub fn evaluation_match_seeds(seed: u64, matches: usize) -> Vec<u64> {

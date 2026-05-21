@@ -22,7 +22,6 @@ pub(crate) struct EvaluationSubjectResponse {
     pub(crate) deal_in_count: Option<u64>,
     pub(crate) win_count: Option<u64>,
     pub(crate) completed_round_count: Option<u64>,
-    pub(crate) ready_hand_win_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,7 +95,6 @@ pub(crate) fn apply_room_result_to_evaluation_subject(
     if let Some(stats) = match_state.statistics.seat_stats_by_seat.get(&subject_seat_index) {
         subject.deal_in_count = Some(u64::from(stats.deal_in_count));
         subject.win_count = Some(u64::from(stats.win_count));
-        subject.ready_hand_win_count = Some(u64::from(stats.ready_hand_win_count));
     }
     subject.completed_round_count = Some(u64::from(match_state.statistics.completed_round_count));
 }
@@ -135,7 +133,6 @@ mod tests {
                 deal_in_count: None,
                 win_count: None,
                 completed_round_count: None,
-                ready_hand_win_count: None,
             }],
         };
 
@@ -192,7 +189,6 @@ mod tests {
             deal_in_count: None,
             win_count: None,
             completed_round_count: None,
-            ready_hand_win_count: None,
         };
 
         apply_room_result_to_evaluation_subject(&mut subject, &room);
@@ -203,7 +199,6 @@ mod tests {
         assert_eq!(subject.deal_in_count, Some(2));
         assert_eq!(subject.win_count, Some(3));
         assert_eq!(subject.completed_round_count, Some(4));
-        assert_eq!(subject.ready_hand_win_count, Some(1));
     }
 
     #[test]
@@ -246,7 +241,6 @@ mod tests {
             .or_default();
         subject_stats.deal_in_count = 2;
         subject_stats.win_count = 3;
-        subject_stats.ready_hand_win_count = 1;
         match_state.statistics.completed_round_count = 4;
         let mut subject = EvaluationSubjectResponse {
             subject_id: "user:1".to_string(),
@@ -260,7 +254,6 @@ mod tests {
             deal_in_count: None,
             win_count: None,
             completed_round_count: None,
-            ready_hand_win_count: None,
         };
 
         apply_room_result_to_evaluation_subject(&mut subject, &room);
@@ -268,7 +261,6 @@ mod tests {
         assert_eq!(subject.final_score, Some(42));
         assert_eq!(subject.deal_in_count, Some(2));
         assert_eq!(subject.win_count, Some(3));
-        assert_eq!(subject.ready_hand_win_count, Some(1));
     }
 
     #[test]
@@ -294,7 +286,6 @@ mod tests {
             deal_in_count: None,
             win_count: None,
             completed_round_count: None,
-            ready_hand_win_count: None,
         };
 
         apply_room_result_to_evaluation_subject(&mut subject, &room);
@@ -341,7 +332,6 @@ mod tests {
                     deal_in_count: None,
                     win_count: None,
                     completed_round_count: None,
-                    ready_hand_win_count: None,
                 },
                 EvaluationSubjectResponse {
                     subject_id: "user:2".to_string(),
@@ -355,7 +345,6 @@ mod tests {
                     deal_in_count: None,
                     win_count: None,
                     completed_round_count: None,
-                    ready_hand_win_count: None,
                 },
             ],
         };
