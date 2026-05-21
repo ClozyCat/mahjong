@@ -40,7 +40,7 @@ use crate::projection::support::build_seat_projection_support_for_state;
 pub(crate) const MAX_SEATS: usize = 4;
 pub(crate) const DISCONNECT_GRACE_SECONDS: i64 = 2;
 pub(crate) const BOT_ACTION_DELAY_MS: u64 = 150;
-pub(crate) const TIMEOUT_AUTO_RESPONSE_BOT_TAKEOVER_THRESHOLD: u8 = 2;
+pub(crate) const TIMEOUT_AUTO_RESPONSE_BOT_TAKEOVER_THRESHOLD: u8 = 3;
 pub(crate) const OUTBOUND_CHANNEL_CAPACITY: usize = 128;
 
 pub(crate) fn bot_action_delay_ms(room: &RoomState) -> u64 {
@@ -1055,7 +1055,7 @@ mod tests {
     }
 
     #[test]
-    fn record_timeout_auto_responses_enables_takeover_on_second_human_timeout() {
+    fn record_timeout_auto_responses_enables_takeover_on_third_human_timeout() {
         let mut room = RoomState {
             table_code: "ABCD".to_string(),
             phase: "playing".to_string(),
@@ -1081,6 +1081,10 @@ mod tests {
         assert!(!record_timeout_auto_responses(&mut room, &[0]));
         assert!(!room.seats[0].is_bot);
         assert_eq!(room.seats[0].consecutive_timeout_auto_response_count, 1);
+
+        assert!(!record_timeout_auto_responses(&mut room, &[0]));
+        assert!(!room.seats[0].is_bot);
+        assert_eq!(room.seats[0].consecutive_timeout_auto_response_count, 2);
 
         assert!(record_timeout_auto_responses(&mut room, &[0]));
         assert!(room.seats[0].is_bot);

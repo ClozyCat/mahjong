@@ -152,7 +152,8 @@ async fn process_due_pending_timeout(state: AppContext, table_code: String, expe
     let Some(rust_messages) = rust_messages else {
         return;
     };
-    if record_timeout_auto_responses(&mut runtime.room, &timed_out_seats)
+    if !rust_messages.is_empty()
+        && record_timeout_auto_responses(&mut runtime.room, &timed_out_seats)
         && room_has_round_state(&runtime.room)
     {
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
@@ -638,7 +639,9 @@ mod tests {
     use crate::app::evaluation::build_evaluation_room;
     use crate::app::persistence::{DbWorker, in_memory_database};
     use crate::app::room_runtime::{RoomRuntime, room_handle};
-    use crate::app::{AppContext, initial_room_state_with_owner, serialize_room_state};
+    use crate::app::{
+        AppContext, initial_room_state, initial_room_state_with_owner, serialize_room_state,
+    };
     use crate::core::state::{RoundSettlement, SeatState};
     use crate::rules::standard::flow::start_match_in_room_state;
 
@@ -767,6 +770,75 @@ mod tests {
         assert!(!handle.is_closed());
         assert!(runtime.bot_task.is_some());
         assert!(runtime.unattended_cleanup_task.is_none());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn pending_timeout_extra_time_extension_does_not_count_as_auto_response() -> Result<()> {
+        let db = in_memory_database("")?;
+        db.initialize()?;
+        let worker = DbWorker::start(db)?;
+        let mut room = initial_room_state("EXTRATME");
+        for seat_index in 0..4 {
+            room.seats.push(SeatState {
+                seat_index,
+                nickname: Some(format!("P{seat_index}")),
+                connected: true,
+                is_bot: false,
+                seat_type: "human".to_string(),
+                consecutive_timeout_auto_response_count: if seat_index == 0 { 2 } else { 0 },
+                ..Default::default()
+            });
+        }
+        start_match_in_room_state(&mut room, 0, 7).expect("room should start");
+        room.pending_timeout
+            .as_mut()
+            .expect("started room should have a timeout")
+            .deadline_at = Some("2026-01-01T00:00:00Z".to_string());
+        room.match_state
+            .as_mut()
+            .expect("started room should have match state")
+            .extra_time_pool
+            .insert(0, 5);
+        let room_json = serialize_room_state(&room)?;
+        worker
+            .save_table("EXTRATME", "2026-05-06T00:00:00Z", &room_json)
+            .await?;
+        let state = AppContext::new(worker);
+        let handle = std::sync::Arc::new(crate::app::room_runtime::RoomHandle::new(
+            RoomRuntime::new("2026-05-06T00:00:00Z".to_string(), room),
+        ));
+        state
+            .inner
+            .rooms
+            .write()
+            .await
+            .insert("EXTRATME".to_string(), handle.clone());
+
+        super::process_due_pending_timeout(state, "EXTRATME".to_string(), 0).await;
+
+        let runtime = handle.runtime.lock().await;
+        assert!(!runtime.room.seats[0].is_bot);
+        assert_eq!(
+            runtime.room.seats[0].consecutive_timeout_auto_response_count,
+            2
+        );
+        assert_eq!(
+            runtime
+                .room
+                .match_state
+                .as_ref()
+                .and_then(|match_state| match_state.extra_time_pool.get(&0))
+                .copied(),
+            Some(0)
+        );
+        assert!(
+            runtime
+                .room
+                .pending_timeout
+                .as_ref()
+                .is_some_and(|timeout| timeout.extended_with_extra)
+        );
         Ok(())
     }
 
