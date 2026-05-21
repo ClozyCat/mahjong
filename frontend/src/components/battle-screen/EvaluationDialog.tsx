@@ -28,7 +28,9 @@ export function EvaluationDialog({
   }
 
   const selectedSet = new Set(selectedUserIds);
-  const candidateUsers = [...humanUsers, ...aiUsers].filter(({ user }) => user.user_id !== currentUserId);
+  const candidateUsers = [...humanUsers, ...aiUsers].filter(
+    ({ user, status }) => user.user_id !== currentUserId && status === 'online',
+  );
   const canSelectMore = selectedUserIds.length < 3;
 
   return (

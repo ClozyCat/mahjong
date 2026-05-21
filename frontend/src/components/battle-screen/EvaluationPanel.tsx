@@ -19,13 +19,13 @@ export function EvaluationPanel({ session, onRefresh }: EvaluationPanelProps) {
       <div className="evaluation-panel__header">
         <div className="evaluation-panel__title">
           <strong>评测结果</strong>
-          <small>{completedCount}/{session.subjects.length} 完成</small>
+          {!isCollapsed && <small>{completedCount}/{session.subjects.length} 完成</small>}
         </div>
         <div className="evaluation-panel__actions">
           <button type="button" onClick={() => setIsCollapsed((current) => !current)}>
             {isCollapsed ? '展开' : '收起'}
           </button>
-          {onRefresh ? (
+          {onRefresh && !isCollapsed ? (
             <button type="button" onClick={onRefresh}>刷新</button>
           ) : null}
         </div>
@@ -43,7 +43,9 @@ export function EvaluationPanel({ session, onRefresh }: EvaluationPanelProps) {
               <small>和牌 {formatCount(subject.win_count)} 次</small>
               <small>放铳 {formatCount(subject.deal_in_count)} 次</small>
               <small>听牌和 {formatReadyHandWinCount(subject)} 次</small>
-              <em>{subject.completed ? '完成' : phaseLabel(subject.phase)}</em>
+              <em className={`evaluation-panel__status evaluation-panel__status--${subject.completed ? 'completed' : subject.phase}`}>
+                {subject.completed ? '完成' : phaseLabel(subject.phase)}
+              </em>
             </div>
           ))}
         </div>
