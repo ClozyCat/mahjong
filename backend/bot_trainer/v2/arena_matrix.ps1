@@ -234,6 +234,7 @@ try {
         $arenaArgs = @(
             "run",
             "--manifest-path", $BackendManifest,
+            "--features", "cuda",
             "--release",
             "--bin", "bot_arena",
             "--",

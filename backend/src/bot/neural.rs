@@ -227,6 +227,21 @@ impl OrtNeuralSession {
 }
 
 fn load_session(model_path: &Path) -> Result<Session, ()> {
+    #[cfg(feature = "cuda")]
+    {
+        let r = Session::builder()
+            .map_err(|_| ())
+            .and_then(|b| {
+                b.with_execution_providers(
+                    [ort::execution_providers::CUDAExecutionProvider::default().into()],
+                )
+                .map_err(|_| ())
+            })
+            .and_then(|mut b| b.commit_from_file(model_path).map_err(|_| ()));
+        if r.is_ok() {
+            return r;
+        }
+    }
     Session::builder()
         .map_err(|_| ())?
         .commit_from_file(model_path)

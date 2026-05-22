@@ -247,6 +247,7 @@ while (( completed_matches < MATCH_COUNT )); do
 
     "$CARGO_EXE" run \
         --manifest-path "$BACKEND_MANIFEST" \
+        --features cuda \
         --release \
         --bin bot_arena \
         -- \

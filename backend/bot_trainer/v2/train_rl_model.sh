@@ -239,7 +239,7 @@ run_candidate_eval() {
     RUN_EVAL_SUMMARY="$eval_dir/candidate_eval_summary.json"
     RUN_EVAL_GATE="$eval_dir/candidate_gate.json"
 
-    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --release --bin bot_arena -- \
+    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena -- \
         --config "$RUN_EVAL_CONFIG" \
         --output "$RUN_EVAL_JSONL" \
         --jobs "$ARENA_JOBS"
@@ -650,7 +650,7 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
         fi
         trajectory_report="$POLICY_DIR/trajectory_arena_report.jsonl"
         arena_args=(
-            run --manifest-path backend/Cargo.toml --release --bin bot_arena --
+            run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena --
             --config "$trajectory_config_path"
             --output "$trajectory_report"
             --trajectories "$iter_trajectory_jsonl"

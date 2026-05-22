@@ -3,6 +3,9 @@ name = "backend"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+cuda = ["ort/cuda"]
+
 [dependencies]
 anyhow = "1.0"
 argon2 = "0.5"

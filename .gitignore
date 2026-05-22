@@ -14,3 +14,4 @@ backend/bot_trainer/datasets
 *.pyc
 Mahjong_Voices/
 .claude/
+backend/onnxruntime-gpu

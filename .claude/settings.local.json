@@ -51,7 +51,17 @@
       "PowerShell(cargo build *)",
       "PowerShell(python backend/bot_trainer/v2/model.py 2>&1 | Select-Object -First 20)",
       "PowerShell(cargo test *)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(dir C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend *)",
+      "Read(//c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/**)",
+      "Bash(nvidia-smi)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(python -c \"import onnxruntime; print\\(onnxruntime.__version__\\)\" 2>$null)",
+      "Bash(grep -v 'warnings\\\\|flop\\\\|Skipping\\\\|tensor attributes\\\\|isinstance\\\\|torch.onnx\\\\|^$')",
+      "Bash(cargo search *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\" -Depth 1 -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend\\\\onnxruntime-gpu\" -ErrorAction SilentlyContinue; if \\(-not \\(Test-Path \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend\\\\onnxruntime-gpu\"\\)\\) { Write-Output \"directory not found\" })"
     ]
   }
 }

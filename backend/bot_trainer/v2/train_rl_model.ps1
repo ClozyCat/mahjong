@@ -128,7 +128,7 @@ function Invoke-CandidateEvaluation {
     $localSummary = Join-Path $EvalDir "candidate_eval_summary.json"
     $localGate = Join-Path $EvalDir "candidate_gate.json"
 
-    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
+    & $CargoExe run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Invoke-TrainingPython @(
@@ -253,7 +253,7 @@ $EpochEvaluationScript = {
     $localGate = Join-Path $epochEvalDir "candidate_gate.json"
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs 2>&1 | ForEach-Object { "$_" }
+    & $CargoExe run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs 2>&1 | ForEach-Object { "$_" }
     $ErrorActionPreference = $prevEap
     Assert-JobCommandSucceeded "bot_arena" $LASTEXITCODE
     Invoke-JobPython @("backend/bot_trainer/v2/arena_summary.py", "--input", $localJsonl, "--output", $localSummary)
@@ -550,6 +550,7 @@ try {
             $arenaArgs = @(
                 "run",
                 "--manifest-path", "backend/Cargo.toml",
+                "--features", "cuda",
                 "--release",
                 "--bin", "bot_arena",
                 "--",
