@@ -213,13 +213,22 @@ $EpochEvaluationScript = {
         $encoding = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText((Resolve-Path -LiteralPath (Split-Path -Parent $Path)).Path + [System.IO.Path]::DirectorySeparatorChar + (Split-Path -Leaf $Path), $Content, $encoding)
     }
+    function Assert-JobCommandSucceeded {
+        param(
+            [string]$StepName,
+            [int]$ExitCode
+        )
+        if ($ExitCode -ne 0) {
+            throw "Epoch evaluation step failed: $StepName (exit code $ExitCode)"
+        }
+    }
 
     $epochName = [System.IO.Path]::GetFileNameWithoutExtension($EpochPt)
     $epochNumber = [int]$epochName.Replace("epoch_", "")
     $epochOnnx = Join-Path $PolicyDir "$epochName.onnx"
     $epochEvalDir = Join-Path $PolicyEvalDir $epochName
     Invoke-JobPython @("backend/bot_trainer/v2/export_onnx.py", "--checkpoint", $EpochPt, "--output", $epochOnnx)
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Assert-JobCommandSucceeded "export_onnx.py" $LASTEXITCODE
 
     New-Item -ItemType Directory -Force -Path $epochEvalDir | Out-Null
     Invoke-JobPython @(
@@ -233,16 +242,16 @@ $EpochEvaluationScript = {
         "--candidate-onnx", $epochOnnx,
         "--baseline-onnx", $BaselineOnnx
     )
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Assert-JobCommandSucceeded "league_config.py" $LASTEXITCODE
 
     $localConfig = Join-Path $epochEvalDir "candidate_eval_config.json"
     $localJsonl = Join-Path $epochEvalDir "candidate_eval.jsonl"
     $localSummary = Join-Path $epochEvalDir "candidate_eval_summary.json"
     $localGate = Join-Path $epochEvalDir "candidate_gate.json"
     & $CargoExe run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs 2>&1
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Assert-JobCommandSucceeded "bot_arena" $LASTEXITCODE
     Invoke-JobPython @("backend/bot_trainer/v2/arena_summary.py", "--input", $localJsonl, "--output", $localSummary)
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Assert-JobCommandSucceeded "arena_summary.py" $LASTEXITCODE
     Invoke-JobPython @(
         "backend/bot_trainer/v2/candidate_gate.py",
         "--summary", $localSummary,
@@ -626,8 +635,18 @@ try {
                             )
                             while ($runningEpochEvalJobs.Count -ge $EpochEvalJobs) {
                                 $completedJob = Wait-Job -Job $runningEpochEvalJobs -Any
-                                Receive-Job -Job $completedJob
+                                $jobOutput = Receive-Job -Job $completedJob -ErrorAction Continue
+                                if ($jobOutput) {
+                                    Write-Host ($jobOutput | Out-String)
+                                }
                                 if ($completedJob.State -ne "Completed") {
+                                    $jobReason = $completedJob.ChildJobs[0].JobStateInfo.Reason
+                                    if ($jobReason) {
+                                        Write-Host ($jobReason | Out-String)
+                                    }
+                                    $completedJob.ChildJobs[0].Error | ForEach-Object {
+                                        Write-Host ($_ | Out-String)
+                                    }
                                     throw "Epoch evaluation job failed: $($completedJob.State)"
                                 }
                                 Remove-Job -Job $completedJob
@@ -637,9 +656,18 @@ try {
                     }
                 foreach ($job in $runningEpochEvalJobs) {
                     Wait-Job -Job $job | Out-Null
-                    $jobOutput = Receive-Job -Job $job -ErrorAction SilentlyContinue
-                    if ($job.State -ne "Completed") {
+                    $jobOutput = Receive-Job -Job $job -ErrorAction Continue
+                    if ($jobOutput) {
                         Write-Host ($jobOutput | Out-String)
+                    }
+                    if ($job.State -ne "Completed") {
+                        $jobReason = $job.ChildJobs[0].JobStateInfo.Reason
+                        if ($jobReason) {
+                            Write-Host ($jobReason | Out-String)
+                        }
+                        $job.ChildJobs[0].Error | ForEach-Object {
+                            Write-Host ($_ | Out-String)
+                        }
                         throw "Epoch evaluation job failed: $($job.State)"
                     }
                     Remove-Job -Job $job
