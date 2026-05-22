@@ -1044,7 +1044,10 @@ describe('sessionReducer', () => {
       message: finishedSnapshot,
     });
 
-    expect(afterFinished.latestMatchResult).toBe(matchResultMessage);
+    expect(afterFinished.latestMatchResult).toMatchObject(matchResultMessage);
+    expect(afterFinished.latestMatchResult?.payload.settlement_seats).toEqual(
+      playingRoomSnapshotMessage.payload.seats,
+    );
   });
 
 });

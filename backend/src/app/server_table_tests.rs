@@ -395,8 +395,14 @@ async fn evaluation_room_auto_starts_after_accepting_invite() -> Result<()> {
 
     // Verify room auto-started after accepting
     let runtime = handle.runtime.lock().await;
-    assert_eq!(runtime.room.phase, "playing", "evaluation room should auto-start after accepting invite");
-    assert!(runtime.room.round_state.is_some(), "round should be started");
+    assert_eq!(
+        runtime.room.phase, "playing",
+        "evaluation room should auto-start after accepting invite"
+    );
+    assert!(
+        runtime.room.round_state.is_some(),
+        "round should be started"
+    );
     drop(runtime);
 
     Ok(())

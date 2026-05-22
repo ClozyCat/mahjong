@@ -10,7 +10,8 @@ use crate::app::room_runtime::{
 use crate::app::{
     AppContext, bot_action_delay_ms, broadcast_to_handles,
     collect_snapshot_and_prompt_outbound_from_snapshot, continue_action_deadline,
-    notify_all_user_connections, pending_timeout_deadline, record_timeout_auto_responses,
+    mark_room_finished_if_no_human_players, notify_all_user_connections, pending_timeout_deadline,
+    record_timeout_auto_responses,
     records::{apply_point_updates_to_room, archive_current_round_if_needed},
     room_has_round_state, room_seats, send_outbound, serialize_room, sleep_until,
     timeout_auto_response_seats, user_active_table_updated_message,
@@ -82,6 +83,15 @@ fn room_match_finished(room: &crate::core::state::RoomState) -> bool {
     room.match_state
         .as_ref()
         .is_some_and(|match_state| match_state.match_finished)
+}
+
+fn evaluation_result_can_be_frozen(room: &crate::core::state::RoomState) -> bool {
+    room.mode == crate::evaluation::EVALUATION_ROOM_MODE
+        && room.match_state.as_ref().is_some_and(|match_state| {
+            match_state.match_finished
+                || match_state.statistics.completed_round_count as usize
+                    >= crate::evaluation::EVALUATION_HAND_COUNT
+        })
 }
 
 async fn freeze_evaluation_result(state: &AppContext, room: &crate::core::state::RoomState) {
@@ -517,6 +527,11 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
     if runtime.room.phase == "settlement" {
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
     }
+    if evaluation_room_has_only_ai_players(&runtime.room)
+        && evaluation_result_can_be_frozen(&runtime.room)
+    {
+        mark_room_finished_if_no_human_players(&mut runtime.room);
+    }
     if evaluation_room_has_only_ai_players(&runtime.room) && room_match_finished(&runtime.room) {
         freeze_evaluation_result(&state, &runtime.room).await;
         room_handle.mark_closed();
@@ -531,7 +546,9 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
             .ok();
         return;
     }
-    if finished_evaluation_room_has_human_subject(&runtime.room) {
+    if finished_evaluation_room_has_human_subject(&runtime.room)
+        || evaluation_result_can_be_frozen(&runtime.room)
+    {
         freeze_evaluation_result(&state, &runtime.room).await;
     }
     if room_seats(&runtime.room).is_empty()
@@ -613,6 +630,7 @@ pub(crate) async fn schedule_room_tasks(state: AppContext, table_code: String) {
 
     if !room_has_online_players(&runtime)
         && !finished_evaluation_room_has_human_subject(&runtime.room)
+        && !evaluation_result_can_be_frozen(&runtime.room)
     {
         let state_clone = state.clone();
         let table_clone = table_code.clone();
@@ -958,7 +976,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn keeps_finished_human_evaluation_room_available_for_refresh() -> Result<()> {
+    async fn keeps_final_settlement_human_evaluation_room_available_for_refresh() -> Result<()> {
         let db = in_memory_database("")?;
         db.initialize()?;
         let worker = DbWorker::start(db)?;
@@ -973,14 +991,24 @@ mod tests {
             false,
         );
         start_match_in_room_state(&mut room, 0, 7).expect("evaluation human room should start");
-        room.phase = "finished".to_string();
+        room.phase = "settlement".to_string();
         if let Some(seat) = room.seats.iter_mut().find(|seat| seat.seat_index == 0) {
             seat.connected = false;
         }
+        if let Some(round) = room.round_state.as_mut() {
+            round.phase = "settlement".to_string();
+            round.pending_action = None;
+            round.settlement = Some(RoundSettlement {
+                win_type: "draw".to_string(),
+                ..RoundSettlement::default()
+            });
+        }
         if let Some(match_state) = room.match_state.as_mut() {
-            match_state.match_finished = true;
+            match_state.match_finished = false;
+            match_state.prevailing_wind = "north".to_string();
+            match_state.hand_number = 4;
             match_state.cumulative_scores.insert(0, 48);
-            match_state.statistics.completed_round_count = 16;
+            match_state.statistics.completed_round_count = 15;
         }
         let room_json = serialize_room_state(&room)?;
         worker
@@ -1017,6 +1045,15 @@ mod tests {
                 .is_some()
         );
         let runtime = handle.runtime.lock().await;
+        assert_eq!(runtime.room.phase, "settlement");
+        assert!(
+            !runtime
+                .room
+                .match_state
+                .as_ref()
+                .expect("match state should exist")
+                .match_finished
+        );
         assert!(runtime.unattended_cleanup_task.is_none());
         Ok(())
     }

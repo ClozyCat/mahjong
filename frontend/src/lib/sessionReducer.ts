@@ -485,7 +485,15 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
     case 'match_result':
       return {
         ...state,
-        latestMatchResult: message,
+        latestMatchResult: {
+          ...message,
+          payload: {
+            ...message.payload,
+            settlement_seats:
+              message.payload.settlement_seats ??
+              state.roomSnapshot?.payload.seats.map((seat) => ({ ...seat })),
+          },
+        },
       };
     case 'round_event': {
       const text = getRoundEventCopy(

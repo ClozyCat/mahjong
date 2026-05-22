@@ -1383,6 +1383,11 @@ function createResultSeatIdentity(state: SessionState, seat: SeatSnapshot) {
   return { name, title };
 }
 
+function createSettlementResultSeats(state: SessionState): SeatSnapshot[] | null {
+  const seats = state.latestMatchResult?.payload.settlement_seats;
+  return Array.isArray(seats) && seats.length > 0 ? seats : null;
+}
+
 function createResultSeats(
   state: SessionState,
   scoreDeltaBySeat: Record<string, number> | null,
@@ -1395,8 +1400,9 @@ function createResultSeats(
 
   const localSeat = getPerspectiveSeat(state, options);
   const scores = getDisplayedScores(state);
+  const resultSeats = createSettlementResultSeats(state) ?? snapshot.seats;
 
-  return snapshot.seats
+  return resultSeats
     .map((seat) => {
       const seatKey = String(seat.seat_index);
       const identity = createResultSeatIdentity(state, seat);
@@ -2089,7 +2095,15 @@ function isFinalSettlement(state: SessionState) {
 
   const roundWind = snapshot.private_state?.round_wind ?? snapshot.match_state?.prevailing_wind;
   const handNumber = snapshot.match_state?.hand_number;
-  return roundWind === 'north' && handNumber === 4;
+  const dealerSeat = snapshot.match_state?.dealer_seat;
+  const dealerWonOrDrew =
+    typeof dealerSeat === 'number' &&
+    state.latestMatchResult &&
+    (state.latestMatchResult.payload.win_type === 'draw' ||
+      state.latestMatchResult.payload.winner_seat === dealerSeat ||
+      state.latestMatchResult.payload.winning_details?.some((detail) => detail.winner_seat === dealerSeat));
+
+  return roundWind === 'north' && handNumber === 4 && !(snapshot.dealer_repeat_enabled && dealerWonOrDrew);
 }
 
 function formatContinueActionConfirmedLabel(confirmedCount: number, requiredCount: number) {

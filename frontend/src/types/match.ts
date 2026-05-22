@@ -289,6 +289,7 @@ export interface MatchResultPayload {
     total_delta_by_seat: Record<string, number>;
   };
   draw_type?: string;
+  settlement_seats?: SeatSnapshot[];
 }
 
 export interface MatchResultMessage {

@@ -2020,10 +2020,10 @@ mod tests {
         let result = record_continue_action(&mut room, 0, "restart_match");
 
         assert_eq!(result, Err("invalid_action".to_string()));
-        assert_eq!(room["phase"], "finished");
+        assert_eq!(room["phase"], "settlement");
         assert_eq!(room["match_state"]["prevailing_wind"], "north");
         assert_eq!(room["match_state"]["hand_number"], 4);
-        assert_eq!(room["match_state"]["match_finished"], true);
+        assert_eq!(room["match_state"]["match_finished"], false);
         assert_eq!(room["continue_action"], Value::Null);
     }
 }

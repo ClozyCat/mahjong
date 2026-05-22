@@ -32,8 +32,8 @@ use super::{
     AppContext, ConnectionHandle, OUTBOUND_CHANNEL_CAPACITY, OutboundMessage,
     add_bot_to_waiting_room, collect_join_outbound_from_snapshot,
     collect_snapshot_and_prompt_outbound_from_snapshot, convert_seat_to_bot, generate_short_hex,
-    normalize_table_code, notify_all_user_connections, occupied_seats,
-    presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
+    mark_room_finished_if_no_human_players, normalize_table_code, notify_all_user_connections,
+    occupied_seats, presence_and_snapshot_for_all_from_snapshot, random_open_seat_index,
     remove_bot_from_waiting_room, remove_seat_from_room, reset_timeout_auto_response_count,
     room_has_round_state, room_phase, room_seats, seat_exists, send_outbound, serialize_room,
     set_seat_bot_takeover, set_seat_connected, user_active_table_updated_message,
@@ -1314,6 +1314,7 @@ async fn handle_leave_table(
     } else {
         convert_seat_to_bot(&mut runtime.room, seat_index);
         let _ = reconcile_standard_continue_action_state(&mut runtime.room);
+        mark_room_finished_if_no_human_players(&mut runtime.room);
     }
 
     let leave_payload = leave_table_accepted_message(table_code, seat_index);
@@ -1572,7 +1573,7 @@ mod tests {
     use crate::app::{
         AppContext, ConnectionHandle, initial_room_state_with_owner, serialize_room_state,
     };
-    use crate::core::state::SeatState;
+    use crate::core::state::{RoundSettlement, SeatState};
     use crate::rules::standard::flow::start_match_in_room_state;
 
     fn test_connection_handle(
@@ -2162,11 +2163,21 @@ mod tests {
             false,
         );
         start_match_in_room_state(&mut room, 0, 7).expect("evaluation human room should start");
-        room.phase = "finished".to_string();
+        room.phase = "settlement".to_string();
+        if let Some(round) = room.round_state.as_mut() {
+            round.phase = "settlement".to_string();
+            round.pending_action = None;
+            round.settlement = Some(RoundSettlement {
+                win_type: "draw".to_string(),
+                ..RoundSettlement::default()
+            });
+        }
         if let Some(match_state) = room.match_state.as_mut() {
-            match_state.match_finished = true;
+            match_state.match_finished = false;
+            match_state.prevailing_wind = "north".to_string();
+            match_state.hand_number = 4;
             match_state.cumulative_scores.insert(0, 48);
-            match_state.statistics.completed_round_count = 16;
+            match_state.statistics.completed_round_count = 15;
             let stats = match_state
                 .statistics
                 .seat_stats_by_seat

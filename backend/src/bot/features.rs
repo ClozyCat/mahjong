@@ -572,7 +572,7 @@ mod global_features_tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: Vec::new(),
             match_state: Some(MatchState {
                 seed: 0,

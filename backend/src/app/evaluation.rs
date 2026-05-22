@@ -86,13 +86,22 @@ pub(crate) fn apply_room_result_to_evaluation_subject(
             >= crate::evaluation::EVALUATION_HAND_COUNT;
 
     // Find the subject's current seat index by user_id, fallback to seat 0
-    let subject_seat_index = room.seats.iter()
+    let subject_seat_index = room
+        .seats
+        .iter()
         .find(|seat| seat.user_id == subject.user_id)
         .map(|seat| seat.seat_index)
         .unwrap_or(0);
 
-    subject.final_score = match_state.cumulative_scores.get(&subject_seat_index).copied();
-    if let Some(stats) = match_state.statistics.seat_stats_by_seat.get(&subject_seat_index) {
+    subject.final_score = match_state
+        .cumulative_scores
+        .get(&subject_seat_index)
+        .copied();
+    if let Some(stats) = match_state
+        .statistics
+        .seat_stats_by_seat
+        .get(&subject_seat_index)
+    {
         subject.deal_in_count = Some(u64::from(stats.deal_in_count));
         subject.win_count = Some(u64::from(stats.win_count));
     }

@@ -1645,6 +1645,79 @@ describe('createMatchViewModel', () => {
     });
   });
 
+  it('does not show match-decided on north-four dealer repeat settlement', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          dealer_repeat_enabled: true,
+          match_state: {
+            ...base.roomSnapshot!.payload.match_state!,
+            prevailing_wind: 'north',
+            hand_number: 4,
+            dealer_seat: 1,
+          },
+          private_state: {
+            ...base.roomSnapshot!.payload.private_state!,
+            round_wind: 'north',
+          },
+        },
+      },
+      latestMatchResult: {
+        ...base.latestMatchResult!,
+        payload: {
+          ...base.latestMatchResult!.payload,
+          win_type: 'self_draw',
+          winner_seat: 1,
+        },
+      },
+    });
+
+    expect(viewModel.result?.continueAction).toMatchObject({
+      id: 'start_next_round',
+      label: '下一局',
+      enabled: true,
+    });
+  });
+
+  it('keeps settlement player names when a player leaves before the table is finished', () => {
+    const base = createSettlementSessionState();
+    const viewModel = createMatchViewModel({
+      ...base,
+      latestMatchResult: {
+        ...base.latestMatchResult!,
+        payload: {
+          ...base.latestMatchResult!.payload,
+          settlement_seats: base.roomSnapshot!.payload.seats.map((seat) => ({ ...seat })),
+        },
+      },
+      roomSnapshot: {
+        ...base.roomSnapshot!,
+        payload: {
+          ...base.roomSnapshot!.payload,
+          seats: base.roomSnapshot!.payload.seats.map((seat) =>
+            seat.seat_index === 1
+              ? {
+                  ...seat,
+                  nickname: 'bot_1',
+                  connected: true,
+                  is_bot: true,
+                  seat_type: 'bot',
+                  title: null,
+                }
+              : seat,
+          ),
+        },
+      },
+    });
+
+    expect(viewModel.result?.seats.find((seat) => seat.absoluteSeat === 1)?.name).toBe('Player B');
+    expect(viewModel.result?.seats.find((seat) => seat.absoluteSeat === 1)?.displayLabel).toBe('Player B');
+  });
+
   it('falls back to the occupied human seat count when continue-action totals are missing', () => {
     const base = createSettlementSessionState();
     const viewModel = createMatchViewModel({

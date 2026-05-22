@@ -753,7 +753,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
                 seed: 0,
@@ -828,7 +828,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: true,
             dealer_double_enabled: true,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: Some(MatchState {
                 seed: 0,
@@ -865,7 +865,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -913,7 +913,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -962,7 +962,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1011,7 +1011,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1067,7 +1067,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1115,7 +1115,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1175,7 +1175,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1231,7 +1231,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {
@@ -1361,7 +1361,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: seats(),
             match_state: None,
             round_state: Some(RoundState {

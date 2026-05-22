@@ -480,12 +480,8 @@ fn current_continue_action_id_in_room_state(room: &RoomState) -> Option<&'static
 
 fn finish_final_settlement_in_room_state(room: &mut RoomState) {
     apply_settlement_to_match_in_room_state(room);
-    room.phase = "finished".to_string();
     room.pending_timeout = None;
     room.continue_action = None;
-    if let Some(match_state) = room.match_state.as_mut() {
-        match_state.match_finished = true;
-    }
 }
 
 fn is_human_controlled_seat(seat: &SeatState) -> bool {
@@ -653,7 +649,7 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         } else {
             0
         };
-        match_state.match_finished = match_finished;
+        match_state.match_finished = false;
     }
 
     if !match_finished && !dealer_repeats && next_hand_number == 1 {
@@ -661,8 +657,8 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
     }
 
     if match_finished {
-        room.phase = "finished".to_string();
         room.pending_timeout = None;
+        room.continue_action = None;
         return Ok(());
     }
 
@@ -778,7 +774,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats,
             match_state: None,
             round_state: None,
@@ -831,7 +827,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: (0..4).map(seat_state).collect(),
             match_state: None,
             round_state: Some(RoundState {
@@ -938,6 +934,15 @@ mod tests {
             round.dealer_seat = 3;
         }
         room
+    }
+
+    fn add_draw_settlement(room: &mut RoomState) {
+        if let Some(round) = room.round_state.as_mut() {
+            round.settlement = Some(RoundSettlement {
+                win_type: "draw".to_string(),
+                ..Default::default()
+            });
+        }
     }
 
     fn nicknames_by_seat(room: &RoomState) -> Vec<String> {
@@ -1280,6 +1285,7 @@ mod tests {
     #[test]
     fn north_four_settlement_has_no_continue_action_and_rejects_restart() {
         let mut room = settlement_room_at_wind_end("north");
+        add_draw_settlement(&mut room);
 
         reconcile_continue_action_in_room_state(&mut room)
             .expect("final settlement should reconcile");
@@ -1289,11 +1295,29 @@ mod tests {
             record_continue_action_in_room_state(&mut room, 0, "restart_match"),
             Err("invalid_action".to_string())
         );
-        assert_eq!(room.phase, "finished");
+        assert_eq!(room.phase, "settlement");
         let match_state = room.match_state.as_ref().expect("match should exist");
         assert_eq!(match_state.prevailing_wind, "north");
         assert_eq!(match_state.hand_number, 4);
-        assert!(match_state.match_finished);
+        assert!(!match_state.match_finished);
+        assert_eq!(match_state.statistics.completed_round_count, 1);
+    }
+
+    #[test]
+    fn completing_north_four_next_round_keeps_room_in_final_settlement_until_players_leave() {
+        let mut room = settlement_room_at_wind_end("north");
+        add_draw_settlement(&mut room);
+
+        complete_start_next_round_in_room_state(&mut room).expect("final settlement should apply");
+
+        assert_eq!(room.phase, "settlement");
+        assert!(room.pending_timeout.is_none());
+        assert!(room.continue_action.is_none());
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.prevailing_wind, "north");
+        assert_eq!(match_state.hand_number, 4);
+        assert!(!match_state.match_finished);
+        assert_eq!(match_state.statistics.completed_round_count, 1);
     }
 
     #[test]

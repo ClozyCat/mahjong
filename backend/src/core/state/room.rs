@@ -332,7 +332,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: true,
             dealer_double_enabled: true,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,

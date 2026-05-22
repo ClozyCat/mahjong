@@ -1336,9 +1336,19 @@ async fn accept_table_invite(
     if is_evaluation_room {
         let mut runtime = room_handle.runtime.lock().await;
         if runtime.room.phase == "waiting" && runtime.room.round_state.is_none() {
-            if let Some(evaluation_session) = state.inner.evaluation_sessions.read().await.values().find(|session| {
-                session.subjects.iter().any(|subject| subject.table_code == invite.table_code)
-            }) {
+            if let Some(evaluation_session) = state
+                .inner
+                .evaluation_sessions
+                .read()
+                .await
+                .values()
+                .find(|session| {
+                    session
+                        .subjects
+                        .iter()
+                        .any(|subject| subject.table_code == invite.table_code)
+                })
+            {
                 let seed = evaluation_session.seed;
                 if let Err(error) = start_match_in_room_state(
                     &mut runtime.room,

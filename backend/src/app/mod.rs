@@ -450,6 +450,36 @@ pub(crate) fn convert_seat_to_bot(room: &mut RoomState, seat_index: usize) {
     }
 }
 
+pub(crate) fn mark_room_finished_if_no_human_players(room: &mut RoomState) -> bool {
+    if room
+        .seats
+        .iter()
+        .any(|seat| !seat.is_bot && seat.seat_type == "human" && seat.user_id.is_some())
+    {
+        return false;
+    }
+
+    if room.mode == crate::evaluation::EVALUATION_ROOM_MODE && !room_result_can_be_frozen(room) {
+        return false;
+    }
+
+    room.phase = "finished".to_string();
+    room.pending_timeout = None;
+    room.continue_action = None;
+    if let Some(match_state) = room.match_state.as_mut() {
+        match_state.match_finished = true;
+    }
+    true
+}
+
+fn room_result_can_be_frozen(room: &RoomState) -> bool {
+    room.match_state.as_ref().is_some_and(|match_state| {
+        match_state.match_finished
+            || match_state.statistics.completed_round_count as usize
+                >= crate::evaluation::EVALUATION_HAND_COUNT
+    })
+}
+
 pub(crate) fn set_seat_bot_takeover(
     room: &mut RoomState,
     seat_index: usize,
@@ -925,7 +955,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 user_id: None,
@@ -971,7 +1001,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 2,
                 user_id: Some(7),
@@ -1012,7 +1042,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: vec![
                 SeatState {
                     seat_index: 0,
@@ -1069,7 +1099,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),
@@ -1108,7 +1138,7 @@ mod tests {
             minimum_hu_fan: crate::core::state::room::default_minimum_hu_fan(),
             dealer_repeat_enabled: false,
             dealer_double_enabled: false,
-        ready_hand_enabled: true,
+            ready_hand_enabled: true,
             seats: vec![SeatState {
                 seat_index: 0,
                 nickname: Some("Alice".to_string()),
