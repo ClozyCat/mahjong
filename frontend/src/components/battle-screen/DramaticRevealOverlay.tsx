@@ -21,6 +21,11 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
   const [phase, setPhase] = useState<Phase>('entrance');
   const [revealedCount, setRevealedCount] = useState(0);
   const completeFiredRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   const isSelfDraw = result.winType === 'self_draw';
   const isDiscard = result.winType === 'discard';
@@ -80,7 +85,9 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
       if (!completeFiredRef.current) {
         completeFiredRef.current = true;
         setPhase('exit');
-        setTimeout(onComplete, 300);
+        setTimeout(() => {
+          onCompleteRef.current();
+        }, 300);
       }
     }, FALLBACK_SAFETY_MS);
 
@@ -88,7 +95,7 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
       clearTimeout(tEntrance);
       clearTimeout(tSafety);
     };
-  }, [onComplete]);
+  }, []);
 
   // Handle fan badges sequential reveal
   useEffect(() => {
@@ -127,7 +134,9 @@ export function DramaticRevealOverlay({ result, onComplete }: DramaticRevealOver
     if (phase !== 'revealed-total' || completeFiredRef.current) return;
     completeFiredRef.current = true;
     setPhase('exit');
-    setTimeout(onComplete, 300);
+    setTimeout(() => {
+      onCompleteRef.current();
+    }, 300);
   };
 
   const content = (

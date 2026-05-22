@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import type {
   BattleActionId,
@@ -193,10 +193,10 @@ export function BattleScreen({
     setIsEvaluationDialogOpen(false);
   }
 
-  const handleRevealComplete = () => {
+  const handleRevealComplete = useCallback(() => {
     setIsDramaticRevealActive(false);
     setIsSettlementPanelReady(true);
-  };
+  }, []);
 
   useEffect(() => {
     consumedActionEffectRef.current = consumedActionEffect;
