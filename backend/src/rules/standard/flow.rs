@@ -447,11 +447,13 @@ fn derive_round_seed(
     round_wind: &str,
     hand_number: usize,
     dealer_seat: usize,
+    dealer_repeat_count: u32,
 ) -> u64 {
     base_seed
         ^ wind_seed_component(round_wind).rotate_left(7)
         ^ (hand_number as u64).rotate_left(17)
         ^ (dealer_seat as u64).rotate_left(29)
+        ^ (dealer_repeat_count as u64).rotate_left(41)
 }
 
 fn settlement_is_final_hand_in_room_state(room: &RoomState) -> bool {
@@ -626,6 +628,15 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         }
     }
 
+    let next_dealer_repeat_count = if dealer_repeats {
+        room.match_state
+            .as_ref()
+            .map(|m| m.dealer_repeat_count + 1)
+            .unwrap_or(1)
+    } else {
+        0
+    };
+
     {
         let match_state = room
             .match_state
@@ -644,10 +655,8 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         };
         match_state.dealer_repeat_count = if match_finished {
             match_state.dealer_repeat_count
-        } else if dealer_repeats {
-            match_state.dealer_repeat_count + 1
         } else {
-            0
+            next_dealer_repeat_count
         };
         match_state.match_finished = false;
     }
@@ -667,7 +676,7 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         .as_ref()
         .map(|match_state| match_state.seed)
         .unwrap_or_default();
-    let round_seed = derive_round_seed(base_seed, &next_wind, next_hand_number, next_dealer);
+    let round_seed = derive_round_seed(base_seed, &next_wind, next_hand_number, next_dealer, next_dealer_repeat_count);
     let round_id = format!("{next_wind}-{next_hand_number}-dealer-{next_dealer}-seed-{round_seed}");
     start_round_in_room_state(room, next_dealer, &next_wind, round_id, round_seed);
     Ok(())
@@ -1140,6 +1149,52 @@ mod tests {
         assert_eq!(match_state.hand_number, 2);
         assert_eq!(match_state.dealer_seat, 1);
         assert_eq!(match_state.dealer_repeat_count, 1);
+    }
+
+    #[test]
+    fn dealer_repeat_changes_seed_each_time() {
+        let mut room = settlement_room_at_wind_end("east");
+        room.dealer_repeat_enabled = true;
+        let match_state = room.match_state.as_mut().expect("match should exist");
+        match_state.hand_number = 1;
+        match_state.dealer_seat = 0;
+        match_state.dealer_repeat_count = 0;
+        if let Some(round) = room.round_state.as_mut() {
+            round.dealer_seat = 0;
+            round.settlement = Some(RoundSettlement {
+                win_type: "self_draw".to_string(),
+                winner_seat: Some(0),
+                ..Default::default()
+            });
+        }
+
+        let first_round_id = room.round_state.as_ref().map(|r| r.round_id.clone());
+
+        // First dealer repeat
+        complete_start_next_round_in_room_state(&mut room).expect("next round should start");
+        let second_round_id = room.round_state.as_ref().map(|r| r.round_id.clone());
+
+        // Simulate another dealer win for second repeat
+        if let Some(round) = room.round_state.as_mut() {
+            round.settlement = Some(RoundSettlement {
+                win_type: "self_draw".to_string(),
+                winner_seat: Some(0),
+                ..Default::default()
+            });
+        }
+
+        // Second dealer repeat
+        complete_start_next_round_in_room_state(&mut room).expect("next round should start");
+        let third_round_id = room.round_state.as_ref().map(|r| r.round_id.clone());
+
+        // All three rounds should have different seeds (different round_ids)
+        assert_ne!(first_round_id, second_round_id, "First and second round should have different seeds");
+        assert_ne!(second_round_id, third_round_id, "Second and third round should have different seeds");
+        assert_ne!(first_round_id, third_round_id, "First and third round should have different seeds");
+
+        // Verify dealer_repeat_count is incrementing
+        let match_state = room.match_state.as_ref().expect("match should exist");
+        assert_eq!(match_state.dealer_repeat_count, 2);
     }
 
     #[test]
