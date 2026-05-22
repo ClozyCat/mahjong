@@ -76,7 +76,7 @@ fn finished_evaluation_room_has_human_subject(room: &crate::core::state::RoomSta
         && room
             .seats
             .iter()
-            .any(|seat| !seat.is_bot && seat.seat_type == "human" && seat.user_id.is_some())
+            .any(|seat| seat.seat_type == "human" && seat.user_id.is_some())
 }
 
 fn room_match_finished(room: &crate::core::state::RoomState) -> bool {
