@@ -926,14 +926,14 @@ describe('App', () => {
     ]);
     expect(screen.getByText('当前玩家')).toBeInTheDocument();
     expect(screen.getByText('舒伯特')).toBeInTheDocument();
-    expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
+    expect(screen.getByText('16 局')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'EVBOT' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '收起' }));
-    expect(screen.queryByText('已完成 16 局')).not.toBeInTheDocument();
+    expect(screen.queryByText('16 局')).not.toBeInTheDocument();
     expect(screen.queryByText('1/2 完成')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '展开' }));
-    expect(screen.getByText('已完成 16 局')).toBeInTheDocument();
+    expect(screen.getByText('16 局')).toBeInTheDocument();
 
     await act(async () => {
       evaluationSocket.triggerMessage({
@@ -1106,7 +1106,7 @@ describe('App', () => {
     const evaluationPanel = await screen.findByLabelText('评测结果');
     expect(within(evaluationPanel).getByText('Player A')).toBeInTheDocument();
     expect(within(evaluationPanel).getByText('Player B')).toBeInTheDocument();
-    expect(within(evaluationPanel).getAllByText('已完成 16 局').length).toBeGreaterThanOrEqual(2);
+    expect(within(evaluationPanel).getAllByText('16 局').length).toBeGreaterThanOrEqual(2);
     expect(findFetchCall(fetchMock, '/api/tables/EVFIN/evaluation')).toBeDefined();
   });
 

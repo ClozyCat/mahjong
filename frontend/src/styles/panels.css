@@ -647,13 +647,20 @@
   user-select: none;
 }
 
-.evaluation-dialog__header strong,
-.evaluation-panel__header strong {
+.evaluation-dialog__header strong {
   font-size: clamp(0.92rem, 0.85rem + 0.3vw, 1.15rem);
   font-weight: 800;
   letter-spacing: 0.04em;
   color: #fff;
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
+}
+
+.evaluation-panel__header strong {
+  font-size: clamp(0.82rem, 0.78rem + 0.15vw, 0.95rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.12);
 }
 
 .evaluation-dialog__header button,
@@ -939,77 +946,84 @@
   flex: 0 0 auto;
 }
 
-.evaluation-panel__rows {
-  display: grid;
-  gap: 0.6rem;
+.evaluation-panel__table-container {
   margin-top: 0.8rem;
   max-height: clamp(240px, 50vh, 550px);
   overflow-y: auto;
+  overflow-x: auto;
   padding-right: 0.2rem;
 }
 
-/* Custom Scrollbar for Panel rows */
-.evaluation-panel__rows::-webkit-scrollbar {
+/* Custom Scrollbar for Panel table container */
+.evaluation-panel__table-container::-webkit-scrollbar {
   width: 5px;
+  height: 5px;
 }
-.evaluation-panel__rows::-webkit-scrollbar-track {
+.evaluation-panel__table-container::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.02);
   border-radius: 999px;
 }
-.evaluation-panel__rows::-webkit-scrollbar-thumb {
+.evaluation-panel__table-container::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
   border-radius: 999px;
 }
-.evaluation-panel__rows::-webkit-scrollbar-thumb:hover {
+.evaluation-panel__table-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.22);
 }
 
-.evaluation-panel__row {
-  display: grid;
-  grid-template-columns: minmax(6rem, 1.4fr) minmax(3.2rem, 0.7fr) repeat(4, minmax(4.2rem, 1fr)) minmax(4.2rem, 0.9fr);
-  gap: clamp(0.35rem, 0.8vw, 0.75rem);
-  align-items: center;
+.evaluation-panel__table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: clamp(0.72rem, 0.65rem + 0.22vw, 0.82rem);
-  padding: clamp(0.48rem, 1.2vw, 0.75rem) clamp(0.55rem, 1.5vw, 0.95rem);
-  border-radius: 0.68rem;
-  background: rgba(255, 255, 255, 0.015);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.82);
+  text-align: center;
 }
 
-.evaluation-panel__row:hover {
-  background: rgba(255, 255, 255, 0.045);
-  border-color: rgba(212, 175, 55, 0.22);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+.evaluation-panel__table th {
+  padding: 0.35rem 0.5rem;
+  font-size: clamp(0.68rem, 0.65rem + 0.1vw, 0.76rem);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.evaluation-panel__identity {
-  display: grid;
-  min-width: 0;
-  gap: 0.15rem;
+.evaluation-panel__table td {
+  padding: clamp(0.38rem, 0.9vw, 0.55rem) clamp(0.45rem, 1.2vw, 0.75rem);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+  background: rgba(255, 255, 255, 0.01);
+  transition: background-color 0.2s ease;
 }
 
-.evaluation-panel__identity span {
-  font-size: clamp(0.76rem, 0.68rem + 0.2vw, 0.88rem);
+/* Merged cells styling */
+.evaluation-panel__name-cell {
   font-weight: 700;
   color: #fff;
+  background: rgba(255, 255, 255, 0.02) !important;
+  text-align: left;
 }
 
-.evaluation-panel__identity small {
-  font-size: 0.68rem;
-  font-weight: 600;
+.evaluation-panel__kind-cell {
+  font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.45);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.02) !important;
 }
 
-.evaluation-panel__row strong {
+.evaluation-panel__tr:hover td {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.evaluation-panel__score-cell strong {
   font-size: clamp(0.85rem, 0.76rem + 0.2vw, 1.05rem);
   font-weight: 800;
   color: #d4af37;
   text-shadow: 0 0 6px rgba(212, 175, 55, 0.2);
 }
 
-.evaluation-panel__row em,
-.evaluation-panel__row small {
+.evaluation-panel__table em,
+.evaluation-panel__table small {
   color: rgba(255, 255, 255, 0.72);
   font-style: normal;
   white-space: nowrap;
@@ -1081,25 +1095,16 @@
     padding: 0.35rem 0.68rem;
   }
 
-  .evaluation-panel__rows {
-    gap: 0.4rem;
-    margin-top: 0.6rem;
-  }
-
-  .evaluation-panel__row {
-    grid-template-columns: minmax(4.5rem, 1.2fr) 2.2rem 3rem 3rem;
-    gap: 0.25rem;
-    padding: 0.4rem 0.5rem;
-    font-size: 0.7rem;
-  }
-
-  .evaluation-panel__row small:nth-of-type(n + 3),
-  .evaluation-panel__row em {
+  .evaluation-panel__col-wins,
+  .evaluation-panel__col-deal-ins,
+  .evaluation-panel__col-status {
     display: none;
   }
   
-  .evaluation-panel__identity span {
-    font-size: 0.72rem;
+  .evaluation-panel__table td,
+  .evaluation-panel__table th {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.7rem;
   }
 }
 
