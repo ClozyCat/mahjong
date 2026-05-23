@@ -520,6 +520,9 @@ fn run_evaluation_arena_match(
     let mut action_count = 0_usize;
     let mut trajectories = Vec::new();
     let mut rollout_rng = StdRng::seed_from_u64(seed ^ 0xA17E_5EED);
+    let mut timing_inference_ns = 0_u128;
+    let mut timing_game_ns = 0_u128;
+    let mut timing_trajectory_ns = 0_u128;
 
     while action_count < config.max_actions_per_match {
         if room.phase == "settlement" {
@@ -536,11 +539,13 @@ fn run_evaluation_arena_match(
         }
 
         let started = std::time::Instant::now();
+        let _inference_start = std::time::Instant::now();
         let trace = next_bot_decision_trace_in_room_state_with_policy_resolver(
             &room,
             &|seat| evaluation_policy_for_current_seat(&room, subject, &config.opponents, seat),
             Some(&mut rollout_rng),
         )?;
+        timing_inference_ns += _inference_start.elapsed().as_nanos();
         let action = if let Some(trace) = trace.as_ref() {
             trace.action.clone()
         } else {
@@ -559,12 +564,14 @@ fn run_evaluation_arena_match(
         let reward_before = trace
             .as_ref()
             .and_then(|trace| reward_snapshot_from_context(&trace.context));
+        let _game_start = std::time::Instant::now();
         let handled = try_handle_player_action_in_room_state(
             &mut room,
             action.seat_index,
             &action.action_type,
             &action.tile_ids,
         )?;
+        timing_game_ns += _game_start.elapsed().as_nanos();
         match handled {
             Some(Ok(_)) => {
                 let telemetry = trace.as_ref().map(|trace| &trace.telemetry);
@@ -577,6 +584,7 @@ fn run_evaluation_arena_match(
                     telemetry,
                 );
                 record_evaluation_tenpai_metrics(&mut accumulator, &room);
+                let _traj_start = std::time::Instant::now();
                 if let (true, Some(trace)) = (include_trajectories, trace.as_ref()) {
                     let policy = evaluation_policy_for_current_seat(
                         &room,
@@ -596,6 +604,7 @@ fn run_evaluation_arena_match(
                         trajectories.push(row);
                     }
                 }
+                timing_trajectory_ns += _traj_start.elapsed().as_nanos();
                 action_count += 1;
             }
             Some(Err(reason)) => return Err(format!("arena action was rejected: {reason}")),
@@ -606,6 +615,20 @@ fn run_evaluation_arena_match(
                 ));
             }
         }
+    }
+
+    if action_count > 0 {
+        let total_ns = timing_inference_ns + timing_game_ns + timing_trajectory_ns;
+        eprintln!(
+            "[timing] match={match_index} actions={action_count}  \
+             inference={:.1}ms ({:.0}%)  game={:.1}ms ({:.0}%)  trajectory={:.1}ms ({:.0}%)",
+            timing_inference_ns as f64 / 1_000_000.0,
+            timing_inference_ns as f64 / total_ns as f64 * 100.0,
+            timing_game_ns as f64 / 1_000_000.0,
+            timing_game_ns as f64 / total_ns as f64 * 100.0,
+            timing_trajectory_ns as f64 / 1_000_000.0,
+            timing_trajectory_ns as f64 / total_ns as f64 * 100.0,
+        );
     }
 
     let report = build_evaluation_match_report(

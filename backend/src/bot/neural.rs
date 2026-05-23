@@ -239,8 +239,10 @@ fn load_session(model_path: &Path) -> Result<Session, ()> {
             })
             .and_then(|mut b| b.commit_from_file(model_path).map_err(|_| ()));
         if r.is_ok() {
+            eprintln!("[neural] CUDA EP loaded for: {}", model_path.display());
             return r;
         }
+        eprintln!("[neural] CUDA EP failed, falling back to CPU: {}", model_path.display());
     }
     Session::builder()
         .map_err(|_| ())?
