@@ -6,7 +6,7 @@ BASELINE_CHECKPOINT="backend/bot_trainer/v2/checkpoints/best.pt"
 BASELINE_ONNX="backend/assets/sft/sft.onnx"
 PYTHON_CMD=(python)
 CARGO_CMD=(cargo)
-ARENA_JOBS=1
+ARENA_JOBS=16
 EPOCH_EVAL_JOBS=1
 ITERATIONS=5
 ITERATION_MATCHES=500
@@ -40,6 +40,7 @@ ENFORCE_CANDIDATE_GATE=0
 ALLOW_RL_BASELINE_CHECKPOINT=0
 RECOMPUTE_OLD_POLICY_STATS=0
 CANDIDATE_SELECTION_MODE=epoch
+CUDA_ARENA=0
 
 usage() {
     cat <<'EOF'
@@ -93,6 +94,8 @@ Options:
   --allow-rl-baseline-checkpoint   Allow intentionally continuing from an RL checkpoint.
   --recompute-old-policy-stats     Recompute old log-probs and values from checkpoint.
   --candidate-selection-mode MODE  epoch or final. Default epoch.
+  --cuda-arena                     Use CUDA GPU for arena neural inference (default).
+  --no-cuda-arena                  Use CPU for arena neural inference.
   -h, --help                       Show this help.
 EOF
 }
@@ -239,7 +242,7 @@ run_candidate_eval() {
     RUN_EVAL_SUMMARY="$eval_dir/candidate_eval_summary.json"
     RUN_EVAL_GATE="$eval_dir/candidate_gate.json"
 
-    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena -- \
+    "${CARGO_CMD[@]}" run --manifest-path backend/Cargo.toml $ARENA_FEATURES --release --bin bot_arena -- \
         --config "$RUN_EVAL_CONFIG" \
         --output "$RUN_EVAL_JSONL" \
         --jobs "$ARENA_JOBS"
@@ -448,6 +451,14 @@ while [[ $# -gt 0 ]]; do
             CANDIDATE_SELECTION_MODE="$2"
             shift 2
             ;;
+        --cuda-arena)
+            CUDA_ARENA=1
+            shift
+            ;;
+        --no-cuda-arena)
+            CUDA_ARENA=0
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -492,6 +503,11 @@ fi
 MULTI_POLICY_TRAINING=0
 if (( ${#ACTIVE_POLICIES[@]} > 1 )); then
     MULTI_POLICY_TRAINING=1
+fi
+
+ARENA_FEATURES=""
+if (( CUDA_ARENA == 1 )); then
+    ARENA_FEATURES="--features cuda"
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -553,6 +569,7 @@ echo "Policies:            ${ACTIVE_POLICIES[*]}"
 echo "Python:              ${PYTHON_CMD[*]}"
 echo "Cargo:               ${CARGO_CMD[*]}"
 echo "Arena jobs:          $ARENA_JOBS"
+if (( CUDA_ARENA == 1 )); then echo "Arena device:        GPU (CUDA)"; else echo "Arena device:        CPU"; fi
 echo "Epoch eval jobs:     $EPOCH_EVAL_JOBS"
 require_file \
     "$BASELINE_CHECKPOINT" \
@@ -650,7 +667,7 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
         fi
         trajectory_report="$POLICY_DIR/trajectory_arena_report.jsonl"
         arena_args=(
-            run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena --
+            run --manifest-path backend/Cargo.toml $ARENA_FEATURES --release --bin bot_arena --
             --config "$trajectory_config_path"
             --output "$trajectory_report"
             --trajectories "$iter_trajectory_jsonl"

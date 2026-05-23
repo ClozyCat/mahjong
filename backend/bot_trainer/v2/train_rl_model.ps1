@@ -5,7 +5,7 @@ param(
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [string]$CargoExe = "cargo",
-    [int]$ArenaJobs = 1,
+    [int]$ArenaJobs = 16,
     [int]$EpochEvalJobs = 1,
     [int]$Iterations = 5,
     [int]$IterationMatches = 1500,
@@ -40,7 +40,8 @@ param(
     [switch]$AllowRlBaselineCheckpoint,
     [switch]$RecomputeOldPolicyStats,
     [ValidateSet("epoch", "final")]
-    [string]$CandidateSelectionMode = "epoch"
+    [string]$CandidateSelectionMode = "epoch",
+    [switch]$CudaArena
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +52,8 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+
+$ArenaFeatureArgs = if ($CudaArena) { @("--features", "cuda") } else { @() }
 
 function Invoke-TrainingPython {
     param([string[]]$Arguments)
@@ -128,7 +131,7 @@ function Invoke-CandidateEvaluation {
     $localSummary = Join-Path $EvalDir "candidate_eval_summary.json"
     $localGate = Join-Path $EvalDir "candidate_gate.json"
 
-    & $CargoExe run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
+    & $CargoExe run --manifest-path backend/Cargo.toml @ArenaFeatureArgs --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     Invoke-TrainingPython @(
@@ -253,7 +256,7 @@ $EpochEvaluationScript = {
     $localGate = Join-Path $epochEvalDir "candidate_gate.json"
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $CargoExe run --manifest-path backend/Cargo.toml --features cuda --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs 2>&1 | ForEach-Object { "$_" }
+    & $CargoExe run --manifest-path backend/Cargo.toml @ArenaFeatureArgs --release --bin bot_arena -- --config $localConfig --output $localJsonl --jobs $ArenaJobs 2>&1 | ForEach-Object { "$_" }
     $ErrorActionPreference = $prevEap
     Assert-JobCommandSucceeded "bot_arena" $LASTEXITCODE
     Invoke-JobPython @("backend/bot_trainer/v2/arena_summary.py", "--input", $localJsonl, "--output", $localSummary)
@@ -434,6 +437,7 @@ try {
     Write-Host "Python:              $PythonExe $PythonVersion"
     Write-Host "Cargo:               $CargoExe"
     Write-Host "Arena jobs:          $ArenaJobs"
+    Write-Host "Arena device:        $(if ($CudaArena) { 'GPU (CUDA)' } else { 'CPU' })"
     Write-Host "Epoch eval jobs:     $EpochEvalJobs"
 
     Assert-FileExists `
@@ -549,8 +553,8 @@ try {
             $trajectoryReport = Join-Path $paths.policy_dir "trajectory_arena_report.jsonl"
             $arenaArgs = @(
                 "run",
-                "--manifest-path", "backend/Cargo.toml",
-                "--features", "cuda",
+                "--manifest-path", "backend/Cargo.toml"
+            ) + $ArenaFeatureArgs + @(
                 "--release",
                 "--bin", "bot_arena",
                 "--",

@@ -14,6 +14,12 @@ OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/arena_runs}"
 PROGRESS_EVERY="${PROGRESS_EVERY:-10}"
 JOBS="${JOBS:-1}"
 CARGO_EXE="${CARGO_EXE:-cargo}"
+CUDA_ARENA="${CUDA_ARENA:-0}"
+
+ARENA_FEATURES=""
+if (( CUDA_ARENA == 1 )); then
+    ARENA_FEATURES="--features cuda"
+fi
 
 resolve_user_path() {
     local path="$1"
@@ -247,7 +253,7 @@ while (( completed_matches < MATCH_COUNT )); do
 
     "$CARGO_EXE" run \
         --manifest-path "$BACKEND_MANIFEST" \
-        --features cuda \
+        $ARENA_FEATURES \
         --release \
         --bin bot_arena \
         -- \

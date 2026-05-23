@@ -7,7 +7,8 @@ param(
     [string]$OutputDir = "",
     [int]$ProgressEvery = 100,
     [int]$Jobs = 1,
-    [string]$CargoExe = "cargo"
+    [string]$CargoExe = "cargo",
+    [switch]$CudaArena
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,8 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..\..")).Path
 $BackendManifest = Join-Path $RepoRoot "backend\Cargo.toml"
 $OriginalLocation = (Get-Location).Path
+
+$ArenaFeatureArgs = if ($CudaArena) { @("--features", "cuda") } else { @() }
 
 function Resolve-UserPath {
     param(
@@ -233,8 +236,8 @@ try {
 
         $arenaArgs = @(
             "run",
-            "--manifest-path", $BackendManifest,
-            "--features", "cuda",
+            "--manifest-path", $BackendManifest
+        ) + $ArenaFeatureArgs + @(
             "--release",
             "--bin", "bot_arena",
             "--",
