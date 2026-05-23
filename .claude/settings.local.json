@@ -61,7 +61,8 @@
       "Bash(cargo search *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\" -Depth 1 -Directory)",
       "Bash(Select-Object Name)",
-      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend\\\\onnxruntime-gpu\" -ErrorAction SilentlyContinue; if \\(-not \\(Test-Path \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend\\\\onnxruntime-gpu\"\\)\\) { Write-Output \"directory not found\" })"
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend\\\\onnxruntime-gpu\" -ErrorAction SilentlyContinue; if \\(-not \\(Test-Path \"C:\\\\Users\\\\ZY\\\\Desktop\\\\Projects\\\\dist\\\\mahjong\\\\backend\\\\onnxruntime-gpu\"\\)\\) { Write-Output \"directory not found\" })",
+      "Bash(cargo run *)"
     ]
   }
 }

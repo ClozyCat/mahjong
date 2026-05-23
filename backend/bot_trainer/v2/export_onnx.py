@@ -16,6 +16,43 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 from model import ModelConfig, build_model, build_actor_critic
 
 
+def quantize_onnx(fp32_path: Path) -> Path | None:
+    """Create an int8 quantized copy alongside the fp32 model.
+
+    Returns the quantized path, or None if quantization failed.
+    """
+    try:
+        from onnxruntime.quantization import QuantType, quantize_dynamic
+        from onnxruntime.quantization.shape_inference import quant_pre_process
+    except ImportError:
+        print("onnxruntime.quantization not available; skipping int8 quantization", file=sys.stderr)
+        return None
+
+    quant_path = fp32_path.with_name(fp32_path.stem + ".quant.onnx")
+    if quant_path.exists():
+        print(f"Quantized model already exists: {quant_path}")
+        return quant_path
+
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            preprocessed = Path(tmp) / "preprocessed.onnx"
+            quant_pre_process(fp32_path.as_posix(), preprocessed.as_posix())
+            quantize_dynamic(
+                preprocessed.as_posix(),
+                quant_path.as_posix(),
+                weight_type=QuantType.QInt8,
+                op_types_to_quantize=["MatMul"],
+            )
+    except Exception as exc:
+        print(f"int8 quantization failed: {exc}", file=sys.stderr)
+        return None
+
+    print(f"Exported int8 quantized model: {quant_path}")
+    return quant_path
+
+
 OUTPUT_NAMES = [
     "discard_logits",
     "claim_logits",
@@ -76,6 +113,11 @@ def load_export_model(checkpoint_path: Path) -> tuple[nn.Module, ModelConfig, bo
 def main() -> None:
     make_exporter_logging_windows_safe()
     args = parse_args()
+
+    if args.quantize_only is not None:
+        quantize_onnx(args.quantize_only)
+        return
+
     model, model_config, is_actor_critic = load_export_model(args.checkpoint)
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
 
@@ -128,13 +170,30 @@ def main() -> None:
     write_export_manifest(args.output, args.checkpoint, checkpoint, model_config, is_actor_critic)
     print(f"exported {args.output}")
 
+    if args.quantize:
+        quant_path = quantize_onnx(args.output)
+        if quant_path is not None:
+            smoke_onnxruntime(
+                quant_path,
+                dummy_tile_planes,
+                dummy_scalar_features,
+                dummy_discard_sequence,
+            )
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--opset", type=int, default=18)
-    return parser.parse_args()
+    parser.add_argument("--quantize", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--quantize-only", type=Path, default=None,
+                        help="Quantize an existing ONNX file without exporting from PyTorch")
+    args = parser.parse_args()
+    if args.quantize_only is None:
+        if args.checkpoint is None or args.output is None:
+            parser.error("--checkpoint and --output are required when not using --quantize-only")
+    return args
 
 
 def smoke_onnxruntime(
