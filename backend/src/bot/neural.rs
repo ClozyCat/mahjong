@@ -226,11 +226,25 @@ impl OrtNeuralSession {
     }
 }
 
+fn build_session_builder() -> Result<ort::session::builder::SessionBuilder, ()> {
+    Session::builder()
+        .map_err(|_| ())?
+        .with_intra_threads(1)
+        .map_err(|_| ())?
+        .with_inter_threads(1)
+        .map_err(|_| ())?
+        .with_intra_op_spinning(false)
+        .map_err(|_| ())?
+        .with_inter_op_spinning(false)
+        .map_err(|_| ())?
+        .with_flush_to_zero()
+        .map_err(|_| ())
+}
+
 fn load_session(model_path: &Path) -> Result<Session, ()> {
     #[cfg(feature = "cuda")]
     {
-        let r = Session::builder()
-            .map_err(|_| ())
+        let r = build_session_builder()
             .and_then(|b| {
                 b.with_execution_providers(
                     [ort::execution_providers::CUDAExecutionProvider::default().into()],
@@ -244,8 +258,7 @@ fn load_session(model_path: &Path) -> Result<Session, ()> {
         }
         eprintln!("[neural] CUDA EP failed, falling back to CPU: {}", model_path.display());
     }
-    Session::builder()
-        .map_err(|_| ())?
+    build_session_builder()?
         .commit_from_file(model_path)
         .map_err(|_| ())
 }

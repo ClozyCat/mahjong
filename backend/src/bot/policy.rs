@@ -4,7 +4,35 @@ use super::neural::{NeuralDecisionScores, RankedClaimScore, RankedTileScore};
 use crate::bot::action_space::CLAIM_ACTION_COUNT;
 use crate::bot::arena::ArenaBotPolicyConfig;
 use rand::{Rng, rngs::StdRng};
+use std::cell::Cell;
 use std::env;
+
+thread_local! {
+    static TIMING_ENCODE_NS: Cell<u128> = Cell::new(0);
+    static TIMING_INFERENCE_NS: Cell<u128> = Cell::new(0);
+    static TIMING_SAMPLE_NS: Cell<u128> = Cell::new(0);
+    static TIMING_COUNT: Cell<u64> = Cell::new(0);
+}
+
+pub(crate) fn reset_timing_detail() {
+    TIMING_ENCODE_NS.set(0);
+    TIMING_INFERENCE_NS.set(0);
+    TIMING_SAMPLE_NS.set(0);
+    TIMING_COUNT.set(0);
+}
+
+pub(crate) fn print_timing_detail() {
+    let count = TIMING_COUNT.get();
+    if count == 0 {
+        return;
+    }
+    let enc = TIMING_ENCODE_NS.get() as f64 / count as f64 / 1_000_000.0;
+    let inf = TIMING_INFERENCE_NS.get() as f64 / count as f64 / 1_000_000.0;
+    let sam = TIMING_SAMPLE_NS.get() as f64 / count as f64 / 1_000_000.0;
+    eprintln!(
+        "[timing_detail] encode={enc:.3}ms inference={inf:.3}ms sample={sam:.3}ms  (per-action, n={count})"
+    );
+}
 
 const NEURAL_DISCARD_VALUE_SCALE: f32 = 8.0;
 const NEURAL_HU_PASS_MARGIN: f32 = 3.0;
@@ -78,9 +106,14 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
 ) -> Option<BotPolicyDecision> {
     let mut telemetry = BotPolicyDecisionTelemetry::default();
     let risk_config = RiskConfig::from_arena_config(config);
+    let _t0 = std::time::Instant::now();
     let features = crate::bot::features::encode_bot_context_v2(context);
+    TIMING_ENCODE_NS.with(|t| t.set(t.get() + _t0.elapsed().as_nanos()));
+    let _t1 = std::time::Instant::now();
     if let Some(scores) = neural_decision_scores_for_policy_features(&features, config) {
+        TIMING_INFERENCE_NS.with(|t| t.set(t.get() + _t1.elapsed().as_nanos()));
         telemetry.model_loaded = true;
+        let _t2 = std::time::Instant::now();
         let action = if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
                 sample_neural_active_turn_action(
@@ -105,6 +138,8 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
         } else {
             select_neural_only_active_turn_action(context, &features, &scores, Some(&risk_config))
         };
+        TIMING_SAMPLE_NS.with(|t| t.set(t.get() + _t2.elapsed().as_nanos()));
+        TIMING_COUNT.with(|c| c.set(c.get() + 1));
         if let Some(action) = action {
             telemetry.used_neural_action = true;
             return Some(BotPolicyDecision {

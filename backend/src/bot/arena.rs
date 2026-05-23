@@ -524,6 +524,8 @@ fn run_evaluation_arena_match(
     let mut timing_game_ns = 0_u128;
     let mut timing_trajectory_ns = 0_u128;
 
+    crate::bot::policy::reset_timing_detail();
+
     while action_count < config.max_actions_per_match {
         if room.phase == "settlement" {
             let confirmed_seat = crate::evaluation::EVALUATION_INITIAL_SUBJECT_SEAT;
@@ -629,6 +631,7 @@ fn run_evaluation_arena_match(
             timing_trajectory_ns as f64 / 1_000_000.0,
             timing_trajectory_ns as f64 / total_ns as f64 * 100.0,
         );
+        crate::bot::policy::print_timing_detail();
     }
 
     let report = build_evaluation_match_report(
