@@ -92,12 +92,13 @@ pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> Are
                 .map(|bot| ("special", bot.model_path, bot.temperature, true))
         })
         .unwrap_or(("sft", SFT_MODEL_PATH, 1.0, false));
+    let is_evaluation = room.mode == crate::evaluation::EVALUATION_ROOM_MODE;
 
     ArenaBotPolicyConfig {
         id: format!("{policy_id}-seat-{seat_index}"),
         model_path: Some(model_path.to_string()),
-        sample_actions,
-        temperature,
+        sample_actions: sample_actions && !is_evaluation,
+        temperature: if is_evaluation { 1.0 } else { temperature },
         discard_base_risk_weight: 0.90,
         discard_value_risk_range: 0.55,
         discard_min_risk_weight: 0.25,
@@ -213,5 +214,37 @@ mod tests {
 
         assert!(policy_config_for_seat(&room, 0).sample_actions);
         assert!(!policy_config_for_seat(&room, 1).sample_actions);
+    }
+
+    #[test]
+    fn evaluation_special_bot_policy_uses_deterministic_arena_style() {
+        let room = RoomState {
+            table_code: "EVAL42".to_string(),
+            phase: "playing".to_string(),
+            mode: crate::evaluation::EVALUATION_ROOM_MODE.to_string(),
+            owner_user_id: None,
+            multiplier: 1,
+            minimum_hu_fan: crate::evaluation::EVALUATION_MINIMUM_HU_FAN,
+            dealer_repeat_enabled: false,
+            dealer_double_enabled: false,
+            ready_hand_enabled: false,
+            seats: vec![SeatState {
+                seat_index: 0,
+                nickname: Some("巴尔扎克".to_string()),
+                is_bot: true,
+                seat_type: SPECIAL_BOT_SEAT_TYPE.to_string(),
+                ..SeatState::default()
+            }],
+            match_state: None,
+            round_state: None,
+            pending_timeout: None,
+            continue_action: None,
+        };
+
+        let policy = policy_config_for_seat(&room, 0);
+
+        assert_eq!(policy.model_path.as_deref(), Some(PPO_MODEL_PATH));
+        assert!(!policy.sample_actions);
+        assert_eq!(policy.temperature, 1.0);
     }
 }
