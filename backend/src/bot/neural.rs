@@ -246,9 +246,9 @@ fn load_session(model_path: &Path) -> Result<Session, ()> {
     {
         let r = build_session_builder()
             .and_then(|b| {
-                b.with_execution_providers(
-                    [ort::execution_providers::CUDAExecutionProvider::default().into()],
-                )
+                b.with_execution_providers([
+                    ort::execution_providers::CUDAExecutionProvider::default().into(),
+                ])
                 .map_err(|_| ())
             })
             .and_then(|mut b| b.commit_from_file(model_path).map_err(|_| ()));
@@ -256,7 +256,10 @@ fn load_session(model_path: &Path) -> Result<Session, ()> {
             eprintln!("[neural] CUDA EP loaded for: {}", model_path.display());
             return r;
         }
-        eprintln!("[neural] CUDA EP failed, falling back to CPU: {}", model_path.display());
+        eprintln!(
+            "[neural] CUDA EP failed, falling back to CPU: {}",
+            model_path.display()
+        );
     }
     build_session_builder()?
         .commit_from_file(model_path)

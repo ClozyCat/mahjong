@@ -7,7 +7,7 @@ use crate::bot::arena::ArenaBotPolicyConfig;
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
-use crate::projection::bot_view::{build_bot_context_view, BotClaimOption};
+use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
 use crate::room_scoring::RoomScoringCache;
 
 use super::actions::apply_discard_action_output_in_room_state;
@@ -21,8 +21,8 @@ use super::flow::apply_flower_action_output_in_room_state;
 #[cfg(test)]
 use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
-    available_self_kongs_from_cache, claim_tile_id_options,
-    seats_with_hu_candidate_for_tile_in_room_state, SelfKongKind,
+    SelfKongKind, available_self_kongs_from_cache, claim_tile_id_options,
+    seats_with_hu_candidate_for_tile_in_room_state,
 };
 #[cfg(test)]
 use super::runtime::project_room_state;
@@ -1304,9 +1304,11 @@ mod tests {
     fn claim_window_bot_waits_for_earlier_human_hu_response() {
         let mut room = claim_window_priority_room_state();
 
-        assert!(next_bot_action_in_room_state(&room)
-            .expect("bot lookup should succeed")
-            .is_none());
+        assert!(
+            next_bot_action_in_room_state(&room)
+                .expect("bot lookup should succeed")
+                .is_none()
+        );
 
         let _ = try_handle_player_action_in_room_state(&mut room, 0, "pass", &[])
             .expect("pass should be handled")
@@ -1450,11 +1452,12 @@ mod tests {
             room.round_state.as_ref().map(|round| round.current_actor),
             Some(1)
         );
-        assert!(room
-            .round_state
-            .as_ref()
-            .and_then(|round| round.pending_action.as_ref())
-            .is_none());
+        assert!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref())
+                .is_none()
+        );
         assert_eq!(
             room.pending_timeout
                 .as_ref()
@@ -1498,11 +1501,12 @@ mod tests {
             room.round_state.as_ref().map(|round| round.current_actor),
             Some(1)
         );
-        assert!(room
-            .round_state
-            .as_ref()
-            .and_then(|round| round.pending_action.as_ref())
-            .is_none());
+        assert!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref())
+                .is_none()
+        );
     }
 
     #[test]
@@ -1552,11 +1556,12 @@ mod tests {
             room.round_state.as_ref().map(|round| round.current_actor),
             Some(1)
         );
-        assert!(room
-            .round_state
-            .as_ref()
-            .and_then(|round| round.pending_action.as_ref())
-            .is_none());
+        assert!(
+            room.round_state
+                .as_ref()
+                .and_then(|round| round.pending_action.as_ref())
+                .is_none()
+        );
         assert_eq!(
             room.pending_timeout
                 .as_ref()

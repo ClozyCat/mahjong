@@ -1270,7 +1270,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', title: 'LV7.入门雀友', displayLabel: 'Player A（LV7.入门雀友）', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', title: 'LV11', displayLabel: 'Player A（LV11）', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1333,7 +1333,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', title: 'LV7.入门雀友', displayLabel: 'Player A（LV7.入门雀友）', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', title: 'LV11', displayLabel: 'Player A（LV11）', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1432,7 +1432,7 @@ describe('BattleScreen', () => {
           },
           seats: [
             { seat: 'right', name: 'Player B', score: 24998, delta: -2 },
-            { seat: 'bottom', name: 'Player A', title: 'LV7.入门雀友', displayLabel: 'Player A（LV7.入门雀友）', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', title: 'LV11', displayLabel: 'Player A（LV11）', score: 25008, delta: 8 },
             { seat: 'top', name: 'Player Top', score: 26797, delta: -3 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
@@ -1447,7 +1447,7 @@ describe('BattleScreen', () => {
 
     const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement;
 
-    expect(within(scorePanel).getByText('Player A（LV7.入门雀友）')).toBeInTheDocument();
+    expect(within(scorePanel).getByText('Player A（LV11）')).toBeInTheDocument();
     expect(within(scorePanel).getByText('Player Left')).toBeInTheDocument();
     expect(within(scorePanel).getByText('Player Top')).toBeInTheDocument();
     expect(within(scorePanel).getByText('Player B')).toBeInTheDocument();

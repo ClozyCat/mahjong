@@ -34,6 +34,7 @@ import {
   getLocalTurnKongCandidateGroups,
   isFlowerTileKey,
 } from './kongSelection';
+import { CROWN_TITLE } from './titleBands';
 import { getRemainingSeconds } from './timeSync';
 
 const RELATIVE_SEATS: Seat[] = ['bottom', 'right', 'top', 'left'];
@@ -536,6 +537,25 @@ function getSeatIdentityType(seat: Pick<SeatSnapshot, 'seat_type' | 'nickname'>)
   return typeof seat.nickname === 'string' && /^bot\b/i.test(seat.nickname) ? 'bot' : 'human';
 }
 
+function getUniqueHighestPointsSeatIndex(seats: readonly SeatSnapshot[]) {
+  const scoredSeats = seats.filter((seat) => typeof seat.points === 'number');
+  if (scoredSeats.length === 0) {
+    return null;
+  }
+
+  const highestPoints = Math.max(...scoredSeats.map((seat) => seat.points as number));
+  const highestSeats = scoredSeats.filter((seat) => seat.points === highestPoints);
+  return highestSeats.length === 1 ? highestSeats[0].seat_index : null;
+}
+
+function resolveVisiblePlayerTitle(seat: SeatSnapshot, title: string | null, crownSeatIndex: number | null) {
+  if (seat.seat_index === crownSeatIndex && getSeatIdentityType(seat) !== 'bot') {
+    return CROWN_TITLE;
+  }
+
+  return title;
+}
+
 function canLeaveTable(snapshot: SessionState['roomSnapshot']) {
   const payload = snapshot?.payload;
   if (!payload) {
@@ -871,6 +891,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
   const liveDeltaBySeat = getLiveDeltaBySeat(state);
   const flowerCountBySeat = getFlowerCountBySeat(state);
   const dealerSelection = createDealerSelection(state, options);
+  const crownSeatIndex = getUniqueHighestPointsSeatIndex(snapshot.seats);
 
   return snapshot.seats
     .map((seat) => {
@@ -886,7 +907,7 @@ function createPlayers(state: SessionState, options: MatchViewModelOptions = {})
         absoluteSeat: seat.seat_index,
         userId: seat.user_id ?? null,
         name: seat.nickname,
-        title: privatePlayer?.title ?? seat.title ?? null,
+        title: resolveVisiblePlayerTitle(seat, privatePlayer?.title ?? seat.title ?? null, crownSeatIndex),
         seatType,
         score: displayedScores[seatKey] ?? 0,
         points: seat.points ?? 0,
@@ -1375,11 +1396,11 @@ function createPlayerDisplayLabel(name: string, title?: string | null) {
   return normalizedTitle ? `${name}（${normalizedTitle}）` : name;
 }
 
-function createResultSeatIdentity(state: SessionState, seat: SeatSnapshot) {
+function createResultSeatIdentity(state: SessionState, seat: SeatSnapshot, crownSeatIndex: number | null) {
   const snapshot = state.roomSnapshot?.payload;
   const privatePlayer = snapshot?.phase === 'finished' ? findPrivatePlayer(state, seat.seat_index) : null;
   const name = privatePlayer?.nickname ?? seat.nickname;
-  const title = privatePlayer?.title ?? seat.title ?? null;
+  const title = resolveVisiblePlayerTitle(seat, privatePlayer?.title ?? seat.title ?? null, crownSeatIndex);
 
   return { name, title };
 }
@@ -1402,11 +1423,12 @@ function createResultSeats(
   const localSeat = getPerspectiveSeat(state, options);
   const scores = getDisplayedScores(state);
   const resultSeats = createSettlementResultSeats(state) ?? snapshot.seats;
+  const crownSeatIndex = getUniqueHighestPointsSeatIndex(resultSeats);
 
   return resultSeats
     .map((seat) => {
       const seatKey = String(seat.seat_index);
-      const identity = createResultSeatIdentity(state, seat);
+      const identity = createResultSeatIdentity(state, seat, crownSeatIndex);
       return {
         seat: toRelativeSeat(localSeat, seat.seat_index),
         absoluteSeat: seat.seat_index,

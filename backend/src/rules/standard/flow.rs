@@ -676,7 +676,13 @@ fn complete_start_next_round_in_room_state(room: &mut RoomState) -> Result<(), S
         .as_ref()
         .map(|match_state| match_state.seed)
         .unwrap_or_default();
-    let round_seed = derive_round_seed(base_seed, &next_wind, next_hand_number, next_dealer, next_dealer_repeat_count);
+    let round_seed = derive_round_seed(
+        base_seed,
+        &next_wind,
+        next_hand_number,
+        next_dealer,
+        next_dealer_repeat_count,
+    );
     let round_id = format!("{next_wind}-{next_hand_number}-dealer-{next_dealer}-seed-{round_seed}");
     start_round_in_room_state(room, next_dealer, &next_wind, round_id, round_seed);
     Ok(())
@@ -1188,9 +1194,18 @@ mod tests {
         let third_round_id = room.round_state.as_ref().map(|r| r.round_id.clone());
 
         // All three rounds should have different seeds (different round_ids)
-        assert_ne!(first_round_id, second_round_id, "First and second round should have different seeds");
-        assert_ne!(second_round_id, third_round_id, "Second and third round should have different seeds");
-        assert_ne!(first_round_id, third_round_id, "First and third round should have different seeds");
+        assert_ne!(
+            first_round_id, second_round_id,
+            "First and second round should have different seeds"
+        );
+        assert_ne!(
+            second_round_id, third_round_id,
+            "Second and third round should have different seeds"
+        );
+        assert_ne!(
+            first_round_id, third_round_id,
+            "First and third round should have different seeds"
+        );
 
         // Verify dealer_repeat_count is incrementing
         let match_state = room.match_state.as_ref().expect("match should exist");

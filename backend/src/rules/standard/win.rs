@@ -1,20 +1,20 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::engine::EngineOutput;
+use crate::core::engine::planner::plan_settlement_to_match;
 use crate::core::event::GameEvent;
-use crate::core::state::settlement::{zero_score_map, SettlementWinningDetailEntry};
+use crate::core::state::settlement::{SettlementWinningDetailEntry, zero_score_map};
 use crate::core::state::{
     PendingAction, RoomState, RoundSettlement, SettlementFanBreakdownEntry,
     SettlementKongScoreDetailEntry, SettlementScoreDelta,
 };
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::{
+    Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
+    KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans_with_minimum as scoring_evaluate_fans_with_minimum,
-    extract_hand_features as scoring_extract_hand_features, Decomposition as ScoringDecomposition,
-    EvaluationInput as ScoringEvaluationInput, KongEntry as ScoringKongEntry,
-    TimingFeatures as ScoringTimingFeatures,
+    extract_hand_features as scoring_extract_hand_features,
 };
 
 use super::runtime::round_event_message;
@@ -1069,9 +1069,11 @@ mod tests {
                 .map(|tile_key| (*tile_key).to_string())
                 .collect::<Vec<_>>(),
         );
-        assert!(decompositions
-            .iter()
-            .any(|decomposition| decomposition.kind == "seven_pairs"));
+        assert!(
+            decompositions
+                .iter()
+                .any(|decomposition| decomposition.kind == "seven_pairs")
+        );
 
         let state = test_room_state_with_concealed_tiles(&tile_keys);
         let cache = RoomScoringCache::from_state(&state);
@@ -1092,9 +1094,11 @@ mod tests {
                 .map(|tile_key| (*tile_key).to_string())
                 .collect::<Vec<_>>(),
         );
-        assert!(decompositions
-            .iter()
-            .any(|decomposition| decomposition.kind == "seven_pairs"));
+        assert!(
+            decompositions
+                .iter()
+                .any(|decomposition| decomposition.kind == "seven_pairs")
+        );
 
         let state = test_room_state_with_concealed_tiles(&tile_keys);
         let cache = RoomScoringCache::from_state(&state);
@@ -1413,10 +1417,12 @@ mod tests {
             compute_hu_settlement_for_state(&ready_hand_state, 0, "self_draw")
                 .expect("ready-hand settlement");
 
-        assert!(ready_hand_settlement
-            .fan_keys
-            .iter()
-            .any(|fan| fan == "ready_hand_win"));
+        assert!(
+            ready_hand_settlement
+                .fan_keys
+                .iter()
+                .any(|fan| fan == "ready_hand_win")
+        );
         assert_eq!(
             ready_hand_settlement.fan_total,
             base_settlement.fan_total + 2

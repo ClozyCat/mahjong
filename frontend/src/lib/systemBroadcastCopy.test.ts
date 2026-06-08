@@ -8,20 +8,24 @@ import {
 } from './systemBroadcastCopy';
 
 const seats = [
-  { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: 'LV7.入门雀友', connected: true },
-  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: 'LV1.散财童子', connected: true },
-  { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: 'LV15.至尊雀神', connected: true },
+  { seat_index: 0, user_id: 10, nickname: '小A', points: 550, title: 'LV11', connected: true },
+  { seat_index: 1, user_id: 11, nickname: '小B', points: -20, title: 'LV0', connected: true },
+  { seat_index: 2, user_id: 12, nickname: '小C', points: 1350, title: 'LV27', connected: true },
 ];
 
 describe('system broadcast copy', () => {
-  it('maps player titles with 100-point lower-inclusive bands', () => {
-    expect(titleForPoints(-1000)).toBe('LV1.散财童子');
-    expect(titleForPoints(49)).toBe('LV1.散财童子');
-    expect(titleForPoints(50)).toBe('LV2.点炮能手');
-    expect(titleForPoints(550)).toBe('LV7.入门雀友');
-    expect(titleForPoints(649)).toBe('LV7.入门雀友');
-    expect(titleForPoints(650)).toBe('LV8.初露锋芒');
-    expect(titleForPoints(9999)).toBe('LV15.至尊雀神');
+  it('maps player titles with 50-point lower-inclusive bands and no upper cap', () => {
+    expect(titleForPoints(-1000)).toBe('LV0');
+    expect(titleForPoints(0)).toBe('LV0');
+    expect(titleForPoints(49)).toBe('LV0');
+    expect(titleForPoints(50)).toBe('LV1');
+    expect(titleForPoints(599)).toBe('LV11');
+    expect(titleForPoints(600)).toBe('LV12');
+    expect(titleForPoints(649)).toBe('LV12');
+    expect(titleForPoints(650)).toBe('LV13');
+    expect(titleForPoints(700)).toBe('LV14');
+    expect(titleForPoints(750)).toBe('LV15');
+    expect(titleForPoints(9999)).toBe('LV199');
   });
 
   it('does not create a ready-hand system broadcast', () => {
@@ -62,14 +66,14 @@ describe('system broadcast copy', () => {
       delta: 20,
       old_points: 540,
       points: 560,
-      old_title: 'LV6.迷途麻客',
-      title: 'LV7.入门雀友',
+      old_title: 'LV10',
+      title: 'LV11',
       reason: 'round_settlement',
       source_table_code: 'ROOM1',
       source_round_id: 'east-1',
     });
 
-    expect(copy).toBe('🎉小A已由“LV6.迷途麻客”飞升为“LV7.入门雀友”🍾');
+    expect(copy).toBe('🎉小A已由“LV10”飞升为“LV11”🍾');
   });
 
   it('announces title demotions without appending the old title to the player name', () => {
@@ -79,14 +83,14 @@ describe('system broadcast copy', () => {
       delta: -20,
       old_points: 560,
       points: 540,
-      old_title: 'LV7.入门雀友',
-      title: 'LV6.迷途麻客',
+      old_title: 'LV11',
+      title: 'LV10',
       reason: 'round_settlement',
       source_table_code: 'ROOM1',
       source_round_id: 'east-1',
     });
 
-    expect(copy).toBe('👇小B已由“LV7.入门雀友”陨落为“LV6.迷途麻客”💩');
+    expect(copy).toBe('👇小B已由“LV11”陨落为“LV10”💩');
   });
 
   it('only creates system broadcasts for title changes', () => {
@@ -107,8 +111,8 @@ describe('system broadcast copy', () => {
       delta: 700,
       old_points: 700,
       points: 1400,
-      old_title: 'LV8.初露锋芒',
-      title: 'LV15.至尊雀神',
+      old_title: 'LV14',
+      title: 'LV28',
       reason: 'round_settlement',
       source_table_code: 'ROOM1',
       source_round_id: 'east-1',
@@ -118,6 +122,6 @@ describe('system broadcast copy', () => {
     expect(readyHand).toBeNull();
     expect(selfDraw).toBeNull();
     expect(discardWin).toBeNull();
-    expect(titleChange).toBe('🎉小C已由“LV8.初露锋芒”飞升为“LV15.至尊雀神”🍾');
+    expect(titleChange).toBe('🎉小C已由“LV14”飞升为“LV28”🍾');
   });
 });

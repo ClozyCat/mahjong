@@ -3,8 +3,8 @@
 use crate::bot::BotAction;
 use crate::core::action::GameCommand;
 use crate::core::engine::{
-    discard_supported_locally, parse_player_command, try_handle_command_in_room_state,
-    EngineContext, EngineOutput,
+    EngineContext, EngineOutput, discard_supported_locally, parse_player_command,
+    try_handle_command_in_room_state,
 };
 use crate::core::state::{RoomState, RoundSettlement};
 use crate::projection::support::build_seat_projection_support_for_state;
@@ -23,7 +23,7 @@ use crate::rules::standard::{
     win::apply_hu_settlement_output_in_room_state,
 };
 use chrono::{SecondsFormat, Utc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 15;
 
 #[cfg(test)]
@@ -1676,10 +1676,12 @@ mod tests {
             room["round_state"]["players"][0]["flowers"][0]["tile_id"],
             "f1#draw"
         );
-        assert!(room["round_state"]["players"][0]["discards"]
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            room["round_state"]["players"][0]["discards"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(room["pending_timeout"]["kind"], "active_turn");
         assert_eq!(room["pending_timeout"]["seat_index"], 0);
         assert_eq!(room["pending_timeout"]["drawn_tile_id"], "b9#replacement");

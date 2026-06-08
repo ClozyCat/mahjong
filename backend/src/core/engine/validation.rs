@@ -203,7 +203,7 @@ fn ready_hand_has_self_kong(
 mod tests {
     use serde_json::json;
 
-    use super::{classify_local_player_action, discard_supported_locally, LocalPlayerActionKind};
+    use super::{LocalPlayerActionKind, classify_local_player_action, discard_supported_locally};
     use crate::core::action::PlayerAction;
     use crate::core::engine::EngineContext;
     use crate::core::state::RoomState;
