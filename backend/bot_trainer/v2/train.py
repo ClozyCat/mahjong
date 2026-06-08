@@ -46,7 +46,6 @@ def main() -> None:
         args.data / "metadata.json",
         cache_dir=args.data_cache_dir,
         rebuild_cache=args.rebuild_data_cache,
-        augment=True,
     )
     val_path = args.data / "val.jsonl"
     val_dataset = (

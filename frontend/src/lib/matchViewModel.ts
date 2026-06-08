@@ -1393,7 +1393,7 @@ function createResultSeatStats(state: SessionState, seatIndex: number, score: nu
 
 function createPlayerDisplayLabel(name: string, title?: string | null) {
   const normalizedTitle = title?.trim();
-  return normalizedTitle ? `${name}（${normalizedTitle}）` : name;
+  return normalizedTitle ? `${name} | ${normalizedTitle}` : name;
 }
 
 function createResultSeatIdentity(state: SessionState, seat: SeatSnapshot, crownSeatIndex: number | null) {

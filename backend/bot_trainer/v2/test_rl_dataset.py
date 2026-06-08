@@ -49,8 +49,6 @@ def base_trajectory_row(
         "terminal_reward": reward,
         "shanten_before": None,
         "shanten_after": None,
-        "fan_potential_before": None,
-        "fan_potential_after": None,
         "done": done,
     }
 
@@ -81,8 +79,6 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
         "terminal_reward": 1.0,
         "shanten_before": 1,
         "shanten_after": 0,
-        "fan_potential_before": 2,
-        "fan_potential_after": 3,
         "done": True,
     }
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
@@ -95,7 +91,6 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
     assert row["return"].item() == 1.0
     assert row["advantage"].item() == 1.0
     assert row["shanten_after"].item() == 0
-    assert row["fan_potential_after"].item() == 3
     assert row["tile_planes"].shape == (10, 34)
     assert row["scalar_features"].shape == (12,)
     assert row["discard_sequence"].shape == (
@@ -610,8 +605,6 @@ def test_trajectory_diagnostics_reports_reward_breakdown() -> None:
             "action_head": "claim",
             "shanten_before": 2,
             "shanten_after": 1,
-            "fan_potential_before": 1,
-            "fan_potential_after": 2,
         },
     ]
 
@@ -622,7 +615,6 @@ def test_trajectory_diagnostics_reports_reward_breakdown() -> None:
     assert diagnostics["terminal_reward_mean"] == pytest.approx(0.5)
     assert diagnostics["step_reward_abs_sum"] == pytest.approx(0.2)
     assert diagnostics["shanten_improvement_count"] == 1
-    assert diagnostics["fan_potential_improvement_count"] == 1
 
 
 def test_candidate_gate_accepts_safe_improvement() -> None:

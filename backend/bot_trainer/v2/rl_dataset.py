@@ -166,8 +166,6 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
         "terminal_reward": torch.tensor(row.get("terminal_reward", 0.0), dtype=torch.float32),
         "shanten_before": optional_int_tensor(row.get("shanten_before")),
         "shanten_after": optional_int_tensor(row.get("shanten_after")),
-        "fan_potential_before": optional_int_tensor(row.get("fan_potential_before")),
-        "fan_potential_after": optional_int_tensor(row.get("fan_potential_after")),
         "done": torch.tensor(row["done"], dtype=torch.bool),
         "old_log_prob": torch.tensor(row["log_prob"], dtype=torch.float32),
         "old_value": torch.tensor(row["value"], dtype=torch.float32),
@@ -225,8 +223,6 @@ def empty_tensor_cache() -> dict[str, torch.Tensor]:
         "terminal_reward": torch.empty((0,), dtype=torch.float32),
         "shanten_before": torch.empty((0,), dtype=torch.long),
         "shanten_after": torch.empty((0,), dtype=torch.long),
-        "fan_potential_before": torch.empty((0,), dtype=torch.long),
-        "fan_potential_after": torch.empty((0,), dtype=torch.long),
         "done": torch.empty((0,), dtype=torch.bool),
         "old_log_prob": torch.empty((0,), dtype=torch.float32),
         "old_value": torch.empty((0,), dtype=torch.float32),
@@ -260,11 +256,6 @@ def trajectory_diagnostics(rows: list[dict[str, Any]]) -> dict[str, float | int]
             rows,
             "shanten_before",
             "shanten_after",
-        ),
-        "fan_potential_improvement_count": higher_is_better_improvement_count(
-            rows,
-            "fan_potential_before",
-            "fan_potential_after",
         ),
     }
     for action_head in ("discard", "claim", "self_kong", "hu"):
@@ -310,20 +301,6 @@ def lower_is_better_improvement_count(
         before = row.get(before_key)
         after = row.get(after_key)
         if before is not None and after is not None and int(after) < int(before):
-            count += 1
-    return count
-
-
-def higher_is_better_improvement_count(
-    rows: list[dict[str, Any]],
-    before_key: str,
-    after_key: str,
-) -> int:
-    count = 0
-    for row in rows:
-        before = row.get(before_key)
-        after = row.get(after_key)
-        if before is not None and after is not None and int(after) > int(before):
             count += 1
     return count
 

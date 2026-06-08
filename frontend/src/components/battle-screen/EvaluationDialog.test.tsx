@@ -17,7 +17,7 @@ function createDialogUser(
       display_name: displayName,
       points: 100,
       title: isSpecialBot ? 'AI' : '平民',
-      display_label: `${displayName}（${isSpecialBot ? 'AI' : '平民'}）`,
+      display_label: `${displayName} | ${isSpecialBot ? 'AI' : '平民'}`,
       bio: '',
       avatar: null,
       is_special_bot: isSpecialBot,
@@ -51,8 +51,8 @@ describe('EvaluationDialog', () => {
 
     const dialog = screen.getByRole('dialog', { name: '创建评测' });
 
-    expect(dialog).toHaveTextContent('在线玩家（平民）');
-    expect(dialog).toHaveTextContent('在线 AI（AI）');
+    expect(dialog).toHaveTextContent('在线玩家 | 平民');
+    expect(dialog).toHaveTextContent('在线 AI | AI');
     expect(dialog).not.toHaveTextContent('当前玩家');
     expect(dialog).not.toHaveTextContent('离线玩家');
     expect(dialog).not.toHaveTextContent('对局玩家');

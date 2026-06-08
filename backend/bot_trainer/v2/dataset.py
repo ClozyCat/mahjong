@@ -33,7 +33,6 @@ class MahjongDecisionDataset(Dataset):
         metadata_path: Path,
         cache_dir: Path | None = None,
         rebuild_cache: bool = False,
-        augment: bool = False,
     ) -> None:
         if torch is None:
             raise MissingTorchError("PyTorch is required: pip install torch")
@@ -42,7 +41,6 @@ class MahjongDecisionDataset(Dataset):
         self.metadata = load_metadata(metadata_path)
         self.lookups = build_encoder_lookups(self.metadata)
         self.cache_dir = resolve_cache_dir(jsonl_path, cache_dir)
-        self.augment = augment
         self._arrays: dict[str, np.ndarray] = {}
 
         if not jsonl_path.exists():
@@ -156,40 +154,6 @@ class MahjongDecisionDataset(Dataset):
             name: torch.from_numpy(np.asarray(mmap_array[index_array]))
             for name, mmap_array in self._arrays.items()
         }
-        if self.augment:
-            batch = self._apply_augmentation(batch)
-        return batch
-
-    def _apply_augmentation(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        # 随机置换万、条、筒 (0-8, 9-17, 18-26)
-        p = torch.randperm(3).tolist()
-        if p == [0, 1, 2]:
-            return batch
-        
-        mapping = torch.arange(34)
-        suit_blocks = [torch.arange(0, 9), torch.arange(9, 18), torch.arange(18, 27)]
-        mapping[0:9] = suit_blocks[p[0]]
-        mapping[9:18] = suit_blocks[p[1]]
-        mapping[18:27] = suit_blocks[p[2]]
-        
-        inv_mapping = torch.zeros(34, dtype=torch.long)
-        inv_mapping[mapping] = torch.arange(34)
-        
-        # 应用于输入特征
-        batch["tile_planes"] = batch["tile_planes"][:, :, mapping]
-        batch["discard_sequence"][:, :, :TILE_KIND_COUNT] = batch["discard_sequence"][
-            :, :, :TILE_KIND_COUNT
-        ][:, :, mapping]
-        
-        # 应用于掩码和目标
-        batch["discard_mask"] = batch["discard_mask"][:, mapping]
-        batch["risk_target"] = batch["risk_target"][:, mapping]
-        
-        target = batch["discard_target"]
-        active = (target != IGNORE_INDEX) & (target < 27) # 仅置换数牌
-        if torch.any(active):
-            batch["discard_target"][active] = inv_mapping[target[active]]
-            
         return batch
 
 

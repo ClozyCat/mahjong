@@ -21,10 +21,10 @@ pub(crate) struct PublicUserView {
 
 pub(crate) fn title_for_points(points: i64) -> String {
     if points <= 0 {
-        return "LV0".to_string();
+        return "Lv.0".to_string();
     }
 
-    format!("LV{}", points / POINTS_PER_LEVEL)
+    format!("Lv.{}", points / POINTS_PER_LEVEL)
 }
 
 pub(crate) fn title_description_for_points(points: i64) -> String {
@@ -32,7 +32,7 @@ pub(crate) fn title_description_for_points(points: i64) -> String {
 }
 
 pub(crate) fn display_label(display_name: &str, points: i64) -> String {
-    format!("{display_name}（{}）", title_for_points(points))
+    format!("{display_name} | {}", title_for_points(points))
 }
 
 pub(crate) fn public_user_view(user: &UserRecord) -> PublicUserView {
@@ -71,29 +71,29 @@ mod tests {
 
     #[test]
     fn user_title_thresholds_are_lower_inclusive_upper_exclusive() {
-        assert_eq!(title_for_points(-1_000), "LV0");
-        assert_eq!(title_for_points(0), "LV0");
-        assert_eq!(title_for_points(1), "LV0");
-        assert_eq!(title_for_points(49), "LV0");
-        assert_eq!(title_for_points(50), "LV1");
-        assert_eq!(title_for_points(99), "LV1");
-        assert_eq!(title_for_points(100), "LV2");
-        assert_eq!(title_for_points(599), "LV11");
-        assert_eq!(title_for_points(600), "LV12");
-        assert_eq!(title_for_points(649), "LV12");
-        assert_eq!(title_for_points(650), "LV13");
-        assert_eq!(title_for_points(700), "LV14");
-        assert_eq!(title_for_points(750), "LV15");
-        assert_eq!(title_for_points(9_999), "LV199");
+        assert_eq!(title_for_points(-1_000), "Lv.0");
+        assert_eq!(title_for_points(0), "Lv.0");
+        assert_eq!(title_for_points(1), "Lv.0");
+        assert_eq!(title_for_points(49), "Lv.0");
+        assert_eq!(title_for_points(50), "Lv.1");
+        assert_eq!(title_for_points(99), "Lv.1");
+        assert_eq!(title_for_points(100), "Lv.2");
+        assert_eq!(title_for_points(599), "Lv.11");
+        assert_eq!(title_for_points(600), "Lv.12");
+        assert_eq!(title_for_points(649), "Lv.12");
+        assert_eq!(title_for_points(650), "Lv.13");
+        assert_eq!(title_for_points(700), "Lv.14");
+        assert_eq!(title_for_points(750), "Lv.15");
+        assert_eq!(title_for_points(9_999), "Lv.199");
     }
 
     #[test]
-    fn user_title_display_label_appends_title_with_parentheses() {
-        assert_eq!(display_label("Alice", 600), "Alice（LV12）");
+    fn user_title_display_label_appends_title_with_separator() {
+        assert_eq!(display_label("Alice", 600), "Alice | Lv.12");
     }
 
     #[test]
     fn user_title_description_matches_public_profile_copy() {
-        assert_eq!(title_description_for_points(650), "LV13 段位");
+        assert_eq!(title_description_for_points(650), "Lv.13 段位");
     }
 }

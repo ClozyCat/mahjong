@@ -6,10 +6,10 @@ const POINTS_PER_LEVEL = 50;
 
 export function titleForPoints(points: number): string {
   if (points <= 0) {
-    return 'LV0';
+    return 'Lv.0';
   }
 
-  return `LV${Math.floor(points / POINTS_PER_LEVEL)}`;
+  return `Lv.${Math.floor(points / POINTS_PER_LEVEL)}`;
 }
 
 export function titleDescriptionForTitle(title: string): string {
@@ -25,6 +25,6 @@ export function titleRank(title: string): number {
     return Number.MAX_SAFE_INTEGER;
   }
 
-  const match = /^LV(\d+)$/.exec(title.trim());
+  const match = /^(?:LV|Lv\.)(\d+)$/.exec(title.trim());
   return match ? Number(match[1]) : 0;
 }

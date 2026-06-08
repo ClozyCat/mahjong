@@ -158,8 +158,6 @@ pub struct ArenaTrajectoryRow {
     pub terminal_reward: f32,
     pub shanten_before: Option<i32>,
     pub shanten_after: Option<i32>,
-    pub fan_potential_before: Option<i32>,
-    pub fan_potential_after: Option<i32>,
     pub global_tile_planes: Option<Vec<f32>>,
     pub global_scalar_features: Option<Vec<f32>>,
     pub done: bool,
@@ -837,8 +835,6 @@ fn trajectory_row_from_trace_with_state(
         terminal_reward: 0.0,
         shanten_before: None,
         shanten_after: None,
-        fan_potential_before: None,
-        fan_potential_after: None,
         global_tile_planes,
         global_scalar_features,
         done: false,
@@ -892,8 +888,6 @@ fn trajectory_row_from_trace(
         terminal_reward: 0.0,
         shanten_before: None,
         shanten_after: None,
-        fan_potential_before: None,
-        fan_potential_after: None,
         global_tile_planes: None,
         global_scalar_features: None,
         done: false,
@@ -907,8 +901,6 @@ fn apply_shaping_reward(
 ) {
     row.shanten_before = before.map(|snapshot| snapshot.shanten);
     row.shanten_after = after.map(|snapshot| snapshot.shanten);
-    row.fan_potential_before = before.map(|snapshot| snapshot.fan_potential);
-    row.fan_potential_after = after.map(|snapshot| snapshot.fan_potential);
     if let (Some(before), Some(after)) = (before, after) {
         row.step_reward = shaping_reward(before, after);
         row.reward = row.step_reward;
@@ -1536,8 +1528,6 @@ mod tests {
             terminal_reward: 0.0,
             shanten_before: None,
             shanten_after: None,
-            fan_potential_before: None,
-            fan_potential_after: None,
             global_tile_planes: None,
             global_scalar_features: None,
             done: false,
@@ -1736,14 +1726,8 @@ mod tests {
     #[test]
     fn shaping_reward_updates_step_reward_and_diagnostics() {
         let mut row = trajectory_test_row(0, 0, 0.0);
-        let before = RewardSnapshot {
-            shanten: 2,
-            fan_potential: 1,
-        };
-        let after = RewardSnapshot {
-            shanten: 1,
-            fan_potential: 2,
-        };
+        let before = RewardSnapshot { shanten: 2 };
+        let after = RewardSnapshot { shanten: 1 };
 
         apply_shaping_reward(&mut row, Some(before), Some(after));
 
@@ -1751,8 +1735,6 @@ mod tests {
         assert_eq!(row.reward, row.step_reward);
         assert_eq!(row.shanten_before, Some(2));
         assert_eq!(row.shanten_after, Some(1));
-        assert_eq!(row.fan_potential_before, Some(1));
-        assert_eq!(row.fan_potential_after, Some(2));
 
         let mut worse_row = trajectory_test_row(1, 0, 0.0);
         apply_shaping_reward(&mut worse_row, Some(after), Some(before));
@@ -1789,8 +1771,6 @@ mod tests {
             terminal_reward: 0.0,
             shanten_before: None,
             shanten_after: None,
-            fan_potential_before: None,
-            fan_potential_after: None,
             global_tile_planes: None,
             global_scalar_features: None,
             done: false,

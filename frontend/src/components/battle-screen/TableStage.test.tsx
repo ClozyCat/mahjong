@@ -750,14 +750,14 @@ describe('TableStage', () => {
         lastDiscard={null}
         promptText={null}
         players={[
-          { seat: 'bottom', name: '小A', title: 'LV15', seatType: 'human', melds: [] },
+          { seat: 'bottom', name: '小A', title: 'Lv.15', seatType: 'human', melds: [] },
           { seat: 'right', name: 'bot_1', title: '👑', seatType: 'bot', melds: [] },
           { seat: 'top', name: '舒伯特', title: '👑', seatType: 'special_bot', melds: [] },
         ]}
       />,
     );
 
-    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="小A-LV15"]')).not.toBeNull();
+    expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="小A-Lv.15"]')).not.toBeNull();
     expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="bot_1"]')).not.toBeNull();
     expect(container.querySelector('.table-stage__stat-plate--seat[data-player-name="舒伯特-👑"]')).not.toBeNull();
   });
@@ -770,8 +770,8 @@ describe('TableStage', () => {
       bottom: [],
     };
     const players = [
-      { seat: 'bottom' as const, name: '小A', title: 'LV11', points: 550, melds: [] },
-      { seat: 'right' as const, name: '小B', title: 'LV0', points: -20, melds: [] },
+      { seat: 'bottom' as const, name: '小A', title: 'Lv.11', points: 550, melds: [] },
+      { seat: 'right' as const, name: '小B', title: 'Lv.0', points: -20, melds: [] },
     ];
 
     const { container, rerender } = render(
@@ -786,7 +786,7 @@ describe('TableStage', () => {
     );
 
     expect(container.querySelector('.table-stage__intro-layer')).not.toBeNull();
-    expect(container.querySelector('.table-stage__player-intro--bottom')).toHaveTextContent('小A-LV11-550');
+    expect(container.querySelector('.table-stage__player-intro--bottom')).toHaveTextContent('小A-Lv.11-550');
 
     rerender(
       <TableStage
@@ -1747,12 +1747,12 @@ describe('TableStage', () => {
         promptText={null}
         systemBroadcastEvent={{
           key: 'system-1',
-          text: '🎉小A已由“LV11”飞升为“LV15”🍾',
+          text: '🎉小A已由“Lv.11”飞升为“Lv.15”🍾',
         }}
       />,
     );
 
-    expect(screen.getByText('🎉小A已由“LV11”飞升为“LV15”🍾')).toBeInTheDocument();
+    expect(screen.getByText('🎉小A已由“Lv.11”飞升为“Lv.15”🍾')).toBeInTheDocument();
     expect(document.querySelector('.table-stage__barrage-layer')).not.toBeNull();
   });
 });

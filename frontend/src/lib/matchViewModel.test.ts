@@ -1553,7 +1553,7 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: base.roomSnapshot!.payload.seats.map((seat) =>
-            seat.seat_index === 1 ? { ...seat, title: 'LV11' } : seat,
+            seat.seat_index === 1 ? { ...seat, title: 'Lv.11' } : seat,
           ),
         },
       },
@@ -1561,8 +1561,8 @@ describe('createMatchViewModel', () => {
 
     const leftSeat = viewModel.result?.seats.find((seat) => seat.seat === 'left');
 
-    expect(leftSeat?.title).toBe('LV11');
-    expect(leftSeat?.displayLabel).toBe('Player B（LV11）');
+    expect(leftSeat?.title).toBe('Lv.11');
+    expect(leftSeat?.displayLabel).toBe('Player B | Lv.11');
   });
 
   it('shows the crown title only for a unique highest-points non-normal-bot player', () => {
@@ -1574,16 +1574,16 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, points: 600, title: 'LV12', is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: 'Player B', connected: true, points: 700, title: 'LV14', is_bot: false, seat_type: 'special_bot' },
-            { seat_index: 2, nickname: 'Player C', connected: true, points: 650, title: 'LV13', is_bot: false, seat_type: 'human' },
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 600, title: 'Lv.12', is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'Player B', connected: true, points: 700, title: 'Lv.14', is_bot: false, seat_type: 'special_bot' },
+            { seat_index: 2, nickname: 'Player C', connected: true, points: 650, title: 'Lv.13', is_bot: false, seat_type: 'human' },
           ],
         },
       },
     });
 
     expect(viewModel.players.find((player) => player.name === 'Player B')?.title).toBe('👑');
-    expect(viewModel.players.find((player) => player.name === 'Player A')?.title).toBe('LV12');
+    expect(viewModel.players.find((player) => player.name === 'Player A')?.title).toBe('Lv.12');
   });
 
   it('does not show the crown when highest points are tied or belong only to a normal bot', () => {
@@ -1595,8 +1595,8 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, points: 700, title: 'LV14', is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: '舒伯特', connected: true, points: 700, title: 'LV14', is_bot: true, seat_type: 'special_bot' },
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 700, title: 'Lv.14', is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: '舒伯特', connected: true, points: 700, title: 'Lv.14', is_bot: true, seat_type: 'special_bot' },
           ],
         },
       },
@@ -1608,8 +1608,8 @@ describe('createMatchViewModel', () => {
         payload: {
           ...base.roomSnapshot!.payload,
           seats: [
-            { seat_index: 0, nickname: 'Player A', connected: true, points: 650, title: 'LV13', is_bot: false, seat_type: 'human' },
-            { seat_index: 1, nickname: 'bot_1', connected: true, points: 700, title: 'LV14', is_bot: true, seat_type: 'bot' },
+            { seat_index: 0, nickname: 'Player A', connected: true, points: 650, title: 'Lv.13', is_bot: false, seat_type: 'human' },
+            { seat_index: 1, nickname: 'bot_1', connected: true, points: 700, title: 'Lv.14', is_bot: true, seat_type: 'bot' },
           ],
         },
       },
