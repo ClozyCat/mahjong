@@ -3,8 +3,8 @@
 use crate::bot::BotAction;
 use crate::core::action::GameCommand;
 use crate::core::engine::{
-    EngineContext, EngineOutput, discard_supported_locally, parse_player_command,
-    try_handle_command_in_room_state,
+    discard_supported_locally, parse_player_command, try_handle_command_in_room_state,
+    EngineContext, EngineOutput,
 };
 use crate::core::state::{RoomState, RoundSettlement};
 use crate::projection::support::build_seat_projection_support_for_state;
@@ -23,7 +23,7 @@ use crate::rules::standard::{
     win::apply_hu_settlement_output_in_room_state,
 };
 use chrono::{SecondsFormat, Utc};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 const ACTIVE_TURN_TIMEOUT_SECONDS: i64 = 15;
 
 #[cfg(test)]
@@ -543,8 +543,8 @@ mod tests {
             suit("w6", "w6#1"),
             suit("w7", "w7#1"),
             suit("w8", "w8#1"),
-            wind("red", "red#1a"),
-            wind("red", "red#1b")
+            dragon("red", "red#1a"),
+            dragon("red", "red#1b")
         ]);
         room["round_state"]["players"][2]["discards"] = json!([suit("w1", "w1#seen-a")]);
         room["round_state"]["players"][3]["discards"] = json!([suit("w1", "w1#seen-b")]);
@@ -1324,6 +1324,57 @@ mod tests {
     }
 
     #[test]
+    fn chow_claim_active_turn_does_not_allow_self_hu() {
+        let mut room = room_for_local_claim_window();
+        room["minimum_hu_fan"] = json!(0);
+        room["round_state"]["players"][1]["concealed_tiles"] = json!([
+            suit("w2", "w2#1"),
+            suit("w4", "w4#1"),
+            suit("t1", "t1#1"),
+            suit("t2", "t2#1"),
+            suit("t3", "t3#1"),
+            suit("b1", "b1#1"),
+            suit("b2", "b2#1"),
+            suit("b3", "b3#1"),
+            suit("w5", "w5#1"),
+            suit("w6", "w6#1"),
+            suit("w7", "w7#1"),
+            wind("red", "red#1a"),
+            wind("red", "red#1b")
+        ]);
+
+        let _ = try_handle_action(&mut room, 0, "discard", &[String::from("w3#discard")])
+            .expect("discard should be handled locally")
+            .expect("discard should succeed");
+        let _ = try_handle_action(
+            &mut room,
+            1,
+            "chow",
+            &[String::from("w2#1"), String::from("w4#1")],
+        )
+        .expect("chow should be handled locally")
+        .expect("chow should succeed");
+        let _ = try_handle_action(&mut room, 2, "pass", &[])
+            .expect("pass should be handled locally")
+            .expect("pass should succeed");
+
+        let snapshot = room_snapshot(&room, 1);
+        let options = snapshot["payload"]["private_state"]["pending_action"]["options"]
+            .as_array()
+            .expect("active turn options should be present");
+        assert!(
+            !options.iter().any(|option| option.as_str() == Some("hu")),
+            "chow claim active turn must not offer self hu, got {options:?}"
+        );
+        assert_eq!(
+            try_handle_action(&mut room, 1, "hu", &[])
+                .expect("hu should be handled locally")
+                .expect_err("hu after chow claim should be rejected"),
+            "invalid_action"
+        );
+    }
+
+    #[test]
     fn local_chow_claim_blocks_immediate_same_tile_discard() {
         let mut room = room_for_local_claim_window();
         room["round_state"]["players"][1]["concealed_tiles"] = json!([
@@ -1625,12 +1676,10 @@ mod tests {
             room["round_state"]["players"][0]["flowers"][0]["tile_id"],
             "f1#draw"
         );
-        assert!(
-            room["round_state"]["players"][0]["discards"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        assert!(room["round_state"]["players"][0]["discards"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         assert_eq!(room["pending_timeout"]["kind"], "active_turn");
         assert_eq!(room["pending_timeout"]["seat_index"], 0);
         assert_eq!(room["pending_timeout"]["drawn_tile_id"], "b9#replacement");

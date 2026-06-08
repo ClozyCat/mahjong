@@ -1,20 +1,20 @@
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
-use crate::core::engine::EngineOutput;
 use crate::core::engine::planner::plan_settlement_to_match;
+use crate::core::engine::EngineOutput;
 use crate::core::event::GameEvent;
-use crate::core::state::settlement::{SettlementWinningDetailEntry, zero_score_map};
+use crate::core::state::settlement::{zero_score_map, SettlementWinningDetailEntry};
 use crate::core::state::{
     PendingAction, RoomState, RoundSettlement, SettlementFanBreakdownEntry,
     SettlementKongScoreDetailEntry, SettlementScoreDelta,
 };
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::scoring::{
-    Decomposition as ScoringDecomposition, EvaluationInput as ScoringEvaluationInput,
-    KongEntry as ScoringKongEntry, TimingFeatures as ScoringTimingFeatures,
     decompose_winning_hand_with_melds as scoring_decompose_winning_hand_with_melds,
     evaluate_fans_with_minimum as scoring_evaluate_fans_with_minimum,
-    extract_hand_features as scoring_extract_hand_features,
+    extract_hand_features as scoring_extract_hand_features, Decomposition as ScoringDecomposition,
+    EvaluationInput as ScoringEvaluationInput, KongEntry as ScoringKongEntry,
+    TimingFeatures as ScoringTimingFeatures,
 };
 
 use super::runtime::round_event_message;
@@ -394,7 +394,9 @@ pub fn hu_action_hint_in_room_state(room: &RoomState, seat_index: usize) -> Opti
     }
     let round = room.round_state.as_ref()?;
     let Some(pending_action) = round.pending_action.as_ref() else {
-        return (round.current_actor == seat_index).then_some("self_draw");
+        let cache = RoomScoringCache::from_state(room);
+        return can_declare_self_draw_hu_with_cache_for_state(room, &cache, seat_index)
+            .then_some("self_draw");
     };
     match pending_action {
         PendingAction::ClaimWindow(claim)
@@ -819,6 +821,40 @@ pub fn can_declare_hu_with_cache_for_state(
         })
 }
 
+pub(crate) fn can_declare_self_draw_hu_with_cache_for_state(
+    state: &RoomState,
+    cache: &RoomScoringCache,
+    seat_index: usize,
+) -> bool {
+    is_self_draw_turn_context(state, seat_index)
+        && can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
+}
+
+fn is_self_draw_turn_context(state: &RoomState, seat_index: usize) -> bool {
+    if state.phase != "playing" {
+        return false;
+    }
+    let Some(round) = state.round_state.as_ref() else {
+        return false;
+    };
+    if round.current_actor != seat_index || round.pending_action.is_some() {
+        return false;
+    }
+    let context = &round.last_action_context;
+    if context.seat != seat_index || !matches!(context.kind.as_str(), "draw" | "replacement_draw") {
+        return false;
+    }
+    let Some(tile_id) = context.tile_id.as_deref() else {
+        return false;
+    };
+    round.players.get(seat_index).is_some_and(|player| {
+        player
+            .concealed_tiles
+            .iter()
+            .any(|tile| tile.tile_id == tile_id)
+    })
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 fn json_array_contains_str(values: Option<&Vec<Value>>, needle: &str) -> bool {
@@ -1033,11 +1069,9 @@ mod tests {
                 .map(|tile_key| (*tile_key).to_string())
                 .collect::<Vec<_>>(),
         );
-        assert!(
-            decompositions
-                .iter()
-                .any(|decomposition| decomposition.kind == "seven_pairs")
-        );
+        assert!(decompositions
+            .iter()
+            .any(|decomposition| decomposition.kind == "seven_pairs"));
 
         let state = test_room_state_with_concealed_tiles(&tile_keys);
         let cache = RoomScoringCache::from_state(&state);
@@ -1058,11 +1092,9 @@ mod tests {
                 .map(|tile_key| (*tile_key).to_string())
                 .collect::<Vec<_>>(),
         );
-        assert!(
-            decompositions
-                .iter()
-                .any(|decomposition| decomposition.kind == "seven_pairs")
-        );
+        assert!(decompositions
+            .iter()
+            .any(|decomposition| decomposition.kind == "seven_pairs"));
 
         let state = test_room_state_with_concealed_tiles(&tile_keys);
         let cache = RoomScoringCache::from_state(&state);
@@ -1381,12 +1413,10 @@ mod tests {
             compute_hu_settlement_for_state(&ready_hand_state, 0, "self_draw")
                 .expect("ready-hand settlement");
 
-        assert!(
-            ready_hand_settlement
-                .fan_keys
-                .iter()
-                .any(|fan| fan == "ready_hand_win")
-        );
+        assert!(ready_hand_settlement
+            .fan_keys
+            .iter()
+            .any(|fan| fan == "ready_hand_win"));
         assert_eq!(
             ready_hand_settlement.fan_total,
             base_settlement.fan_total + 2

@@ -7,7 +7,7 @@ use crate::bot::arena::ArenaBotPolicyConfig;
 use crate::bot::{self, BotAction};
 use crate::core::engine::try_handle_player_action_in_room_state;
 use crate::core::state::{PendingAction, RoomState};
-use crate::projection::bot_view::{BotClaimOption, build_bot_context_view};
+use crate::projection::bot_view::{build_bot_context_view, BotClaimOption};
 use crate::room_scoring::RoomScoringCache;
 
 use super::actions::apply_discard_action_output_in_room_state;
@@ -21,15 +21,15 @@ use super::flow::apply_flower_action_output_in_room_state;
 #[cfg(test)]
 use super::meld::seats_with_hu_candidate_for_tile;
 use super::meld::{
-    SelfKongKind, available_self_kongs_from_cache, claim_tile_id_options,
-    seats_with_hu_candidate_for_tile_in_room_state,
+    available_self_kongs_from_cache, claim_tile_id_options,
+    seats_with_hu_candidate_for_tile_in_room_state, SelfKongKind,
 };
 #[cfg(test)]
 use super::runtime::project_room_state;
 #[cfg(test)]
 use super::win::claim_window_offers_claim;
 use super::win::{
-    apply_hu_action_output_in_room_state, can_declare_hu_with_cache_for_state,
+    apply_hu_action_output_in_room_state, can_declare_self_draw_hu_with_cache_for_state,
     hu_meets_bot_minimum_fan_for_state,
 };
 
@@ -120,7 +120,7 @@ pub fn try_process_due_timeout_in_room_state(
                     return apply_flower_action_output_in_room_state(room, seat_index, &[tile_id])
                         .map(|output| Some(output.emitted_messages));
                 }
-                if can_declare_hu_with_cache_for_state(room, &cache, seat_index, None, None)
+                if can_declare_self_draw_hu_with_cache_for_state(room, &cache, seat_index)
                     && (!seat_is_bot(room, seat_index)
                         || hu_meets_bot_minimum_fan_for_state(room, seat_index, "self_draw"))
                 {
@@ -237,7 +237,7 @@ fn ready_hand_human_waits_for_manual_action(
 ) -> bool {
     player_is_ready_hand(state, seat_index)
         && !seat_is_bot(state, seat_index)
-        && (can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
+        && (can_declare_self_draw_hu_with_cache_for_state(state, cache, seat_index)
             || !available_self_kongs_from_cache(cache, seat_index).is_empty())
 }
 
@@ -516,7 +516,7 @@ fn next_ready_hand_action_for_state(
         });
     }
 
-    if can_declare_hu_with_cache_for_state(state, cache, seat_index, None, None)
+    if can_declare_self_draw_hu_with_cache_for_state(state, cache, seat_index)
         && (!seat_is_bot(state, seat_index)
             || hu_meets_bot_minimum_fan_for_state(state, seat_index, "self_draw"))
     {
@@ -584,7 +584,7 @@ fn next_bot_action_for_state_with_policy_resolver(
             if !seat_is_bot(state, seat_index) {
                 return None;
             }
-            let can_hu = can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None);
+            let can_hu = can_declare_self_draw_hu_with_cache_for_state(state, &cache, seat_index);
             if can_hu {
                 let hu_context = build_active_turn_bot_context(state, &cache, seat_index, true)?;
                 if policy_is_neural(&policy_config) {
@@ -704,7 +704,7 @@ fn next_bot_decision_trace_for_state_with_policy_resolver(
             }
             let cache = RoomScoringCache::from_state(state);
             let policy_config = policy_for_seat(seat_index);
-            let can_hu = can_declare_hu_with_cache_for_state(state, &cache, seat_index, None, None);
+            let can_hu = can_declare_self_draw_hu_with_cache_for_state(state, &cache, seat_index);
             if can_hu {
                 let context = build_active_turn_bot_context(state, &cache, seat_index, true)?;
                 if policy_is_neural(&policy_config) {
@@ -1304,11 +1304,9 @@ mod tests {
     fn claim_window_bot_waits_for_earlier_human_hu_response() {
         let mut room = claim_window_priority_room_state();
 
-        assert!(
-            next_bot_action_in_room_state(&room)
-                .expect("bot lookup should succeed")
-                .is_none()
-        );
+        assert!(next_bot_action_in_room_state(&room)
+            .expect("bot lookup should succeed")
+            .is_none());
 
         let _ = try_handle_player_action_in_room_state(&mut room, 0, "pass", &[])
             .expect("pass should be handled")
@@ -1452,12 +1450,11 @@ mod tests {
             room.round_state.as_ref().map(|round| round.current_actor),
             Some(1)
         );
-        assert!(
-            room.round_state
-                .as_ref()
-                .and_then(|round| round.pending_action.as_ref())
-                .is_none()
-        );
+        assert!(room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .is_none());
         assert_eq!(
             room.pending_timeout
                 .as_ref()
@@ -1501,12 +1498,11 @@ mod tests {
             room.round_state.as_ref().map(|round| round.current_actor),
             Some(1)
         );
-        assert!(
-            room.round_state
-                .as_ref()
-                .and_then(|round| round.pending_action.as_ref())
-                .is_none()
-        );
+        assert!(room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .is_none());
     }
 
     #[test]
@@ -1556,12 +1552,11 @@ mod tests {
             room.round_state.as_ref().map(|round| round.current_actor),
             Some(1)
         );
-        assert!(
-            room.round_state
-                .as_ref()
-                .and_then(|round| round.pending_action.as_ref())
-                .is_none()
-        );
+        assert!(room
+            .round_state
+            .as_ref()
+            .and_then(|round| round.pending_action.as_ref())
+            .is_none());
         assert_eq!(
             room.pending_timeout
                 .as_ref()

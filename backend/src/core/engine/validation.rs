@@ -4,7 +4,7 @@ use crate::core::state::PendingAction;
 use crate::room_scoring::RoomScoringCache;
 use crate::rules::standard::meld::available_self_kongs_from_cache;
 use crate::rules::standard::ready_hand::can_declare_ready_hand_with_tile_id;
-use crate::rules::standard::win::can_declare_hu_with_cache_for_state;
+use crate::rules::standard::win::can_declare_self_draw_hu_with_cache_for_state;
 
 use super::command::EngineContext;
 
@@ -183,7 +183,7 @@ fn active_turn_pass_supported(context: &EngineContext, actor: Seat) -> bool {
         return false;
     }
     let cache = RoomScoringCache::from_state(&context.room);
-    can_declare_hu_with_cache_for_state(&context.room, &cache, actor, None, None)
+    can_declare_self_draw_hu_with_cache_for_state(&context.room, &cache, actor)
         || ready_hand_has_self_kong(&context.room, &cache, actor)
 }
 
@@ -203,7 +203,7 @@ fn ready_hand_has_self_kong(
 mod tests {
     use serde_json::json;
 
-    use super::{LocalPlayerActionKind, classify_local_player_action, discard_supported_locally};
+    use super::{classify_local_player_action, discard_supported_locally, LocalPlayerActionKind};
     use crate::core::action::PlayerAction;
     use crate::core::engine::EngineContext;
     use crate::core::state::RoomState;
