@@ -159,9 +159,15 @@ fn seven_pairs_shanten(counts: &TileCounts, open_meld_count: usize) -> i32 {
     if open_meld_count > 0 {
         return i32::MAX / 4;
     }
-    let pair_count = counts.iter().filter(|count| **count >= 2).count() as i32;
-    let distinct_count = counts.iter().filter(|count| **count > 0).count() as i32;
-    6 - pair_count + (7 - distinct_count).max(0)
+    let pair_units = counts
+        .iter()
+        .map(|count| i32::from(*count / 2))
+        .sum::<i32>();
+    let single_units = counts
+        .iter()
+        .map(|count| i32::from(*count % 2))
+        .sum::<i32>();
+    6 - pair_units + (7 - pair_units - single_units).max(0)
 }
 
 fn thirteen_orphans_shanten(counts: &TileCounts, open_meld_count: usize) -> i32 {
@@ -302,6 +308,13 @@ fn target_missing(counts: &TileCounts, target: &TileCounts) -> i32 {
 mod tests {
     use super::*;
     use crate::bot::context::tile_index;
+    use crate::rules::standard::ready_hand::is_tenpai_hand_with_melds;
+
+    const TILE_KEYS: [&str; TILE_KIND_COUNT] = [
+        "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "t1", "t2", "t3", "t4", "t5", "t6",
+        "t7", "t8", "t9", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "east", "south",
+        "west", "north", "red", "green", "white",
+    ];
 
     #[test]
     fn min_shanten_counts_complete_lesser_honours_knitted_hand() {
@@ -378,11 +391,148 @@ mod tests {
         assert!(special_knitted_shanten(&counts, 2) > 8);
     }
 
+    #[test]
+    fn seven_pairs_shanten_counts_quad_as_two_pairs_for_complete_hand() {
+        let counts = counts_for_keys(&[
+            "w1", "w1", "w1", "w1", "w2", "w2", "w3", "w3", "t4", "t4", "t5", "t5", "red", "red",
+        ]);
+
+        assert_eq!(seven_pairs_shanten(&counts, 0), -1);
+        assert_eq!(min_shanten_for_counts(&counts, 0), -1);
+    }
+
+    #[test]
+    fn seven_pairs_shanten_counts_triplet_as_pair_plus_wait_for_tenpai() {
+        let counts = counts_for_keys(&[
+            "w1", "w1", "w1", "w2", "w2", "w3", "w3", "t4", "t4", "t5", "t5", "b6", "b6",
+        ]);
+
+        assert_eq!(seven_pairs_shanten(&counts, 0), 0);
+        assert_eq!(min_shanten_for_counts(&counts, 0), 0);
+    }
+
+    #[test]
+    fn min_shanten_zero_matches_actual_tenpai_for_sampled_closed_hands() {
+        let mut seed = 0x5EED_2026_u64;
+        for _ in 0..256 {
+            let hand_indices = sampled_closed_hand_indices(&mut seed, 13);
+            let counts = counts_for_indices(&hand_indices);
+            let keys = hand_indices
+                .iter()
+                .map(|index| TILE_KEYS[*index].to_string())
+                .collect::<Vec<_>>();
+            let shanten = min_shanten_for_counts(&counts, 0);
+            let actual_tenpai = is_tenpai_hand_with_melds(&keys, &[]);
+
+            assert_eq!(
+                shanten == 0,
+                actual_tenpai,
+                "hand={:?} shanten={shanten} actual_tenpai={actual_tenpai}",
+                keys
+            );
+        }
+    }
+
+    #[test]
+    fn min_shanten_ready_matches_actual_ready_state_for_sampled_drawn_hands() {
+        let mut seed = 0xD0D0_2026_u64;
+        for _ in 0..256 {
+            let hand_indices = sampled_closed_hand_indices(&mut seed, 14);
+            let counts = counts_for_indices(&hand_indices);
+            let keys = hand_indices
+                .iter()
+                .map(|index| TILE_KEYS[*index].to_string())
+                .collect::<Vec<_>>();
+            let shanten = min_shanten_for_counts(&counts, 0);
+            let actual_ready = is_tenpai_hand_with_melds(&keys, &[]);
+
+            assert_eq!(
+                shanten <= 0,
+                actual_ready,
+                "hand={:?} shanten={shanten} actual_ready={actual_ready}",
+                keys
+            );
+        }
+    }
+
+    #[test]
+    fn min_shanten_one_matches_one_draw_discard_tenpai_for_sampled_closed_hands() {
+        let mut seed = 0x1BAD_2026_u64;
+        for _ in 0..8 {
+            let hand_indices = sampled_closed_hand_indices(&mut seed, 13);
+            let counts = counts_for_indices(&hand_indices);
+            let keys = hand_indices
+                .iter()
+                .map(|index| TILE_KEYS[*index].to_string())
+                .collect::<Vec<_>>();
+            let shanten = min_shanten_for_counts(&counts, 0);
+            let actual_one_or_less = can_reach_tenpai_after_one_draw_discard(&keys);
+
+            assert_eq!(
+                shanten <= 1,
+                actual_one_or_less,
+                "hand={:?} shanten={shanten} actual_one_or_less={actual_one_or_less}",
+                keys
+            );
+        }
+    }
+
     fn counts_for_keys(keys: &[&str]) -> TileCounts {
         let mut counts = [0_u8; TILE_KIND_COUNT];
         for key in keys {
             counts[tile_index(key).expect("valid tile key")] += 1;
         }
         counts
+    }
+
+    fn counts_for_indices(indices: &[usize]) -> TileCounts {
+        let mut counts = [0_u8; TILE_KIND_COUNT];
+        for index in indices {
+            counts[*index] += 1;
+        }
+        counts
+    }
+
+    fn can_reach_tenpai_after_one_draw_discard(keys: &[String]) -> bool {
+        let counts = counts_for_string_keys(keys);
+        for draw_index in 0..TILE_KIND_COUNT {
+            if counts[draw_index] >= 4 {
+                continue;
+            }
+            let mut drawn = keys.to_vec();
+            drawn.push(TILE_KEYS[draw_index].to_string());
+            if !crate::rules::scoring::decompose_winning_hand_with_melds(&drawn, &[]).is_empty() {
+                return true;
+            }
+            for discard_index in 0..drawn.len() {
+                let mut after_discard = drawn.clone();
+                after_discard.remove(discard_index);
+                if is_tenpai_hand_with_melds(&after_discard, &[]) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn counts_for_string_keys(keys: &[String]) -> TileCounts {
+        let mut counts = [0_u8; TILE_KIND_COUNT];
+        for key in keys {
+            counts[tile_index(key).expect("valid tile key")] += 1;
+        }
+        counts
+    }
+
+    fn sampled_closed_hand_indices(seed: &mut u64, tile_count: usize) -> Vec<usize> {
+        let mut wall = Vec::with_capacity(TILE_KIND_COUNT * 4);
+        for index in 0..TILE_KIND_COUNT {
+            wall.extend([index; 4]);
+        }
+        for index in (1..wall.len()).rev() {
+            *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let swap_index = (*seed as usize) % (index + 1);
+            wall.swap(index, swap_index);
+        }
+        wall.into_iter().take(tile_count).collect()
     }
 }

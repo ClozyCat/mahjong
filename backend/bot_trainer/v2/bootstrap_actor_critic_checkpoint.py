@@ -21,7 +21,6 @@ ACTOR_KEY_PREFIXES = {
     "hu_head.": "actor.hu_head.",
     "risk_trunk.": "actor.risk_trunk.",
     "risk_head.": "actor.risk_head.",
-    "fan_head.": "actor.fan_head.",
 }
 
 

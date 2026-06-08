@@ -180,7 +180,6 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
         "hu_target": ((), np.dtype(np.int64)),
         "value_target": ((1,), np.dtype(np.float32)),
         "risk_target": ((TILE_KIND_COUNT,), np.dtype(np.float32)),
-        "fan_target": ((1,), np.dtype(np.float32)),
         "decision_kind": ((), np.dtype(np.int64)),
     }
 
@@ -313,7 +312,6 @@ def encode_row(
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
         "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 1000.0], dtype=np.float32),
         "risk_target": risk_target(row, tile_to_index),
-        "fan_target": np.asarray([float(row["outcome"].get("fan_count", 0)) / 10.0], dtype=np.float32),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),
     }
 

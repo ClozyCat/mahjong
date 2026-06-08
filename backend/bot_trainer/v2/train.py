@@ -97,8 +97,6 @@ def main() -> None:
             value_target=args.value_loss_weight,
             risk_start=args.risk_loss_start_weight,
             risk_target=args.risk_loss_weight,
-            fan_start=args.fan_loss_start_weight,
-            fan_target=args.fan_loss_weight,
         )
         loss_weights["risk_pos_weight"] = args.risk_pos_weight
         current_lr = optimizer.param_groups[0]["lr"]
@@ -194,12 +192,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
     parser.add_argument("--value-loss-weight", type=float, default=0.75)
     parser.add_argument("--risk-loss-weight", type=float, default=1.0)
-    parser.add_argument("--fan-loss-weight", type=float, default=0.5)
     parser.add_argument("--risk-pos-weight", type=float, default=300.0,
         help="Positive class weight for risk BCE loss. Mitigates extreme class imbalance (~0.3%% positive positions).")
     parser.add_argument("--value-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--risk-loss-start-weight", type=float, default=0.25)
-    parser.add_argument("--fan-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--aux-loss-warmup-epochs", type=int, default=4)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0,
         help="Maximum gradient norm for clipping. Set to 0 to disable.")
@@ -359,7 +355,6 @@ def compute_losses(
     hu_weight: float = 1.0,
     value_weight: float = 0.25,
     risk_weight: float = 0.25,
-    fan_weight: float = 0.25,
     risk_pos_weight: float = 300.0,
 ) -> dict[str, torch.Tensor]:
     discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
@@ -377,9 +372,6 @@ def compute_losses(
         pos_weight=torch.tensor(risk_pos_weight, device=outputs["risk_logits"].device),
     )
 
-    fan_loss = F.mse_loss(outputs["fan_logits"], batch["fan_target"].float())
-    fan_loss = torch.clamp(fan_loss, max=100.0)  # 防止MSE爆炸
-
     loss = (
         discard_loss
         + claim_weight * claim_loss
@@ -387,7 +379,6 @@ def compute_losses(
         + hu_weight * hu_loss
         + value_weight * value_loss
         + risk_weight * risk_loss
-        + fan_weight * fan_loss
     )
     return {
         "loss": loss,
@@ -397,7 +388,6 @@ def compute_losses(
         "hu_loss": hu_loss,
         "value_loss": value_loss,
         "risk_loss": risk_loss,
-        "fan_loss": fan_loss,
     }
 
 
@@ -411,8 +401,6 @@ def loss_weights_for_epoch(
     value_target: float,
     risk_start: float,
     risk_target: float,
-    fan_start: float,
-    fan_target: float,
 ) -> dict[str, float]:
     if warmup_epochs <= 1:
         progress = 1.0
@@ -424,7 +412,6 @@ def loss_weights_for_epoch(
         "hu_weight": hu_weight,
         "value_weight": value_start + (value_target - value_start) * progress,
         "risk_weight": risk_start + (risk_target - risk_start) * progress,
-        "fan_weight": fan_start + (fan_target - fan_start) * progress,
     }
 
 def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -459,7 +446,6 @@ class MetricTotals:
         self.hu_loss_sum = torch.tensor(0.0, device=device)
         self.value_loss_sum = torch.tensor(0.0, device=device)
         self.risk_loss_sum = torch.tensor(0.0, device=device)
-        self.fan_loss_sum = torch.tensor(0.0, device=device)
         self.batch_count = 0
         self.discard_top1 = torch.tensor(0, device=device)
         self.discard_top3 = torch.tensor(0, device=device)
@@ -477,7 +463,6 @@ class MetricTotals:
         self.hu_loss_sum += losses["hu_loss"].detach()
         self.value_loss_sum += losses["value_loss"].detach()
         self.risk_loss_sum += losses["risk_loss"].detach()
-        self.fan_loss_sum += losses["fan_loss"].detach()
         self.batch_count += 1
         self.update_discard(outputs["discard_logits"], batch)
         self.update_claim(outputs["claim_logits"], batch)
@@ -545,7 +530,6 @@ class MetricTotals:
             "hu_loss": self.hu_loss_sum.item() / max(1, self.batch_count),
             "value_loss": self.value_loss_sum.item() / max(1, self.batch_count),
             "risk_loss": self.risk_loss_sum.item() / max(1, self.batch_count),
-            "fan_loss": self.fan_loss_sum.item() / max(1, self.batch_count),
             "discard_top1": self.discard_top1.item() / max(1, self.discard_count.item()),
             "discard_top3": self.discard_top3.item() / max(1, self.discard_count.item()),
             "discard_top5": self.discard_top5.item() / max(1, self.discard_count.item()),
@@ -611,7 +595,6 @@ def empty_metrics() -> dict[str, float]:
         "hu_loss": 0.0,
         "value_loss": 0.0,
         "risk_loss": 0.0,
-        "fan_loss": 0.0,
         "discard_top1": 0.0,
         "discard_top3": 0.0,
         "discard_top5": 0.0,

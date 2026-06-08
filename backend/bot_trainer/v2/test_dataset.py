@@ -156,7 +156,6 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.tensor([[999.0]]),
         "risk_logits": torch.full((1, 34), 999.0),
-        "fan_logits": torch.zeros((1, 1)),
     }
     batch = {
         "discard_mask": torch.tensor([[True, True] + [False] * 32]),
@@ -169,12 +168,11 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_target": torch.tensor([-100]),
         "value_target": torch.tensor([[0.0]]),
         "risk_target": torch.zeros((1, 34)),
-        "fan_target": torch.zeros((1, 1)),
     }
 
     losses = compute_losses(outputs, batch, value_weight=0.0, risk_weight=0.0, hu_weight=1.0)
 
-    # value_loss和fan_loss被裁剪到max=100.0以防止数值爆炸
+    # value_loss 被裁剪到 max=100.0 以防止数值爆炸
     assert losses["value_loss"].item() == 100.0
     assert losses["risk_loss"].item() > 100.0
     assert losses["loss"].item() < 0.1
@@ -193,8 +191,6 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
         value_target=0.75,
         risk_start=0.25,
         risk_target=1.0,
-        fan_start=0.25,
-        fan_target=0.5,
     )
     final = loss_weights_for_epoch(
         epoch=4,
@@ -206,16 +202,12 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
         value_target=0.75,
         risk_start=0.25,
         risk_target=1.0,
-        fan_start=0.25,
-        fan_target=0.5,
     )
 
     assert first["value_weight"] == 0.25
     assert first["risk_weight"] == 0.25
-    assert first["fan_weight"] == 0.25
     assert final["value_weight"] == 0.75
     assert final["risk_weight"] == 1.0
-    assert final["fan_weight"] == 0.5
 
 
 def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:

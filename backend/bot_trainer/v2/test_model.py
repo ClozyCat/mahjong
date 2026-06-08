@@ -33,7 +33,6 @@ def test_sequence_aware_model_output_shapes() -> None:
     assert outputs["hu_logits"].shape == (2, 2)
     assert outputs["value"].shape == (2, 1)
     assert outputs["risk_logits"].shape == (2, 34)
-    assert outputs["fan_logits"].shape == (2, 1)
 
 
 def test_rl_forward_model_ignores_global_features_for_shared_policy() -> None:

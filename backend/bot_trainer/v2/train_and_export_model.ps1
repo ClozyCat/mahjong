@@ -17,7 +17,6 @@ param(
     [double]$HuLossWeight = 1.0,
     [double]$ValueLossWeight = 0.25,
     [double]$RiskLossWeight = 0.25,
-    [double]$FanLossWeight = 0.25,
     [double]$GradClipNorm = 1.0,
     [int]$MaxNanTolerance = 2,
     [int]$EarlyStopPatience = 0,
@@ -196,7 +195,6 @@ try {
         "--hu-loss-weight", "$HuLossWeight",
         "--value-loss-weight", "$ValueLossWeight",
         "--risk-loss-weight", "$RiskLossWeight",
-        "--fan-loss-weight", "$FanLossWeight",
         "--grad-clip-norm", "$GradClipNorm",
         "--max-nan-tolerance", "$MaxNanTolerance",
         "--early-stop-patience", "$EarlyStopPatience"

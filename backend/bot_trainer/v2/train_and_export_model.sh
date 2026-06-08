@@ -15,7 +15,6 @@ SELF_KONG_LOSS_WEIGHT=1.0
 HU_LOSS_WEIGHT=1.0
 VALUE_LOSS_WEIGHT=0.75
 RISK_LOSS_WEIGHT=1.0
-FAN_LOSS_WEIGHT=0.5
 GRAD_CLIP_NORM=1.0
 MAX_NAN_TOLERANCE=2
 EARLY_STOP_PATIENCE=0
@@ -46,7 +45,6 @@ Options:
   --hu-loss-weight VALUE    Hu head loss weight.
   --value-loss-weight VALUE Value head loss weight.
   --risk-loss-weight VALUE  Risk head loss weight.
-  --fan-loss-weight VALUE   Fan head loss weight.
   --grad-clip-norm VALUE    Gradient clipping norm (0 to disable).
   --max-nan-tolerance N     Max consecutive NaN epochs before stopping.
   --early-stop-patience N   Early stopping patience (0 to disable).
@@ -142,11 +140,6 @@ while [[ $# -gt 0 ]]; do
         --risk-loss-weight)
             require_value "$1" "${2:-}"
             RISK_LOSS_WEIGHT="$2"
-            shift 2
-            ;;
-        --fan-loss-weight)
-            require_value "$1" "${2:-}"
-            FAN_LOSS_WEIGHT="$2"
             shift 2
             ;;
         --grad-clip-norm)
@@ -295,7 +288,6 @@ train_args=(
     --hu-loss-weight "$HU_LOSS_WEIGHT"
     --value-loss-weight "$VALUE_LOSS_WEIGHT"
     --risk-loss-weight "$RISK_LOSS_WEIGHT"
-    --fan-loss-weight "$FAN_LOSS_WEIGHT"
     --grad-clip-norm "$GRAD_CLIP_NORM"
     --max-nan-tolerance "$MAX_NAN_TOLERANCE"
     --early-stop-patience "$EARLY_STOP_PATIENCE"

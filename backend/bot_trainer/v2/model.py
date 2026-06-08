@@ -199,7 +199,6 @@ if nn is not None:
             self.hu_head = HeadMLP(512, 2)
             self.value_head = HeadMLP(512, 1)
             self.risk_head = HeadMLP(512, 34)
-            self.fan_head = HeadMLP(512, 1)
 
         @staticmethod
         def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
@@ -258,7 +257,6 @@ if nn is not None:
                 "hu_logits": self.hu_head(policy_hidden),
                 "value": self.value_head(value_hidden),
                 "risk_logits": self.risk_head(risk_hidden),
-                "fan_logits": self.fan_head(risk_hidden),
             }
 
 
@@ -348,10 +346,9 @@ if nn is not None:
             self.self_kong_head = HeadMLP(512, 3)
             self.hu_head = HeadMLP(512, 2)
 
-            # Risk and fan prediction heads
+            # Risk prediction heads
             self.risk_trunk = self._make_trunk(combined_size, 768, 512)
             self.risk_head = HeadMLP(512, 34)
-            self.fan_head = HeadMLP(512, 1)
 
         @staticmethod
         def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
@@ -390,7 +387,6 @@ if nn is not None:
                 "self_kong_logits": self.self_kong_head(policy_hidden),
                 "hu_logits": self.hu_head(policy_hidden),
                 "risk_logits": self.risk_head(risk_hidden),
-                "fan_logits": self.fan_head(risk_hidden),
             }
 
 
