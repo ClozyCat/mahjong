@@ -32,7 +32,7 @@ pub(crate) fn title_description_for_points(points: i64) -> String {
 }
 
 pub(crate) fn display_label(display_name: &str, points: i64) -> String {
-    format!("{display_name} | {}", title_for_points(points))
+    format!("{display_name} {}", title_for_points(points))
 }
 
 pub(crate) fn public_user_view(user: &UserRecord) -> PublicUserView {
@@ -88,8 +88,8 @@ mod tests {
     }
 
     #[test]
-    fn user_title_display_label_appends_title_with_separator() {
-        assert_eq!(display_label("Alice", 600), "Alice | Lv.12");
+    fn user_title_display_label_appends_title_with_space() {
+        assert_eq!(display_label("Alice", 600), "Alice Lv.12");
     }
 
     #[test]

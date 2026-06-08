@@ -1562,7 +1562,7 @@ describe('createMatchViewModel', () => {
     const leftSeat = viewModel.result?.seats.find((seat) => seat.seat === 'left');
 
     expect(leftSeat?.title).toBe('Lv.11');
-    expect(leftSeat?.displayLabel).toBe('Player B | Lv.11');
+    expect(leftSeat?.displayLabel).toBe('Player B Lv.11');
   });
 
   it('shows the crown title only for a unique highest-points non-normal-bot player', () => {

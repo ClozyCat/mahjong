@@ -184,7 +184,7 @@ export function updateUserPoints(user: PublicUser | null, userId: number, points
     ...user,
     points,
     title: nextTitle,
-    display_label: `${user.display_name} | ${nextTitle}`,
+    display_label: `${user.display_name} ${nextTitle}`,
   };
 }
 

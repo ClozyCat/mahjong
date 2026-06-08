@@ -1270,7 +1270,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', title: 'Lv.11', displayLabel: 'Player A | Lv.11', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', title: 'Lv.11', displayLabel: 'Player A Lv.11', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1333,7 +1333,7 @@ describe('BattleScreen', () => {
             right: -2,
           },
           seats: [
-            { seat: 'bottom', name: 'Player A', title: 'Lv.11', displayLabel: 'Player A | Lv.11', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', title: 'Lv.11', displayLabel: 'Player A Lv.11', score: 25008, delta: 8 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
           continueAction: {
@@ -1432,7 +1432,7 @@ describe('BattleScreen', () => {
           },
           seats: [
             { seat: 'right', name: 'Player B', score: 24998, delta: -2 },
-            { seat: 'bottom', name: 'Player A', title: 'Lv.11', displayLabel: 'Player A | Lv.11', score: 25008, delta: 8 },
+            { seat: 'bottom', name: 'Player A', title: 'Lv.11', displayLabel: 'Player A Lv.11', score: 25008, delta: 8 },
             { seat: 'top', name: 'Player Top', score: 26797, delta: -3 },
             { seat: 'left', name: 'Player Left', score: 24297, delta: -3 },
           ],
@@ -1447,7 +1447,7 @@ describe('BattleScreen', () => {
 
     const scorePanel = document.body.querySelector('.result-overlay__score-panel') as HTMLElement;
 
-    expect(within(scorePanel).getByText('Player A | Lv.11')).toBeInTheDocument();
+    expect(within(scorePanel).getByText('Player A Lv.11')).toBeInTheDocument();
     expect(within(scorePanel).getByText('Player Left')).toBeInTheDocument();
     expect(within(scorePanel).getByText('Player Top')).toBeInTheDocument();
     expect(within(scorePanel).getByText('Player B')).toBeInTheDocument();
@@ -2933,7 +2933,7 @@ describe('BattleScreen', () => {
               display_name: 'Player B',
               points: 300,
               title: '新秀',
-              display_label: 'Player B | 新秀',
+              display_label: 'Player B 新秀',
               bio: '',
               avatar: null,
             },
@@ -3056,7 +3056,7 @@ describe('BattleScreen', () => {
             display_name: 'Player A',
             points: 150,
             title: '平民',
-            display_label: 'Player A | 平民',
+            display_label: 'Player A 平民',
             bio: '',
             avatar: null,
           },
@@ -3071,7 +3071,7 @@ describe('BattleScreen', () => {
             display_name: 'AI 5',
             points: 600,
             title: 'AI',
-            display_label: 'AI 5 | AI',
+            display_label: 'AI 5 AI',
             bio: '',
             avatar: null,
             is_special_bot: true,
@@ -3085,9 +3085,9 @@ describe('BattleScreen', () => {
 
     expect(screen.getByRole('dialog', { name: '玩家列表' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '人类' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('Player A | 平民')).toBeInTheDocument();
+    expect(screen.getByText('Player A 平民')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'AI' }));
-    expect(screen.getByText('AI 5 | AI')).toBeInTheDocument();
+    expect(screen.getByText('AI 5 AI')).toBeInTheDocument();
   });
 
 });

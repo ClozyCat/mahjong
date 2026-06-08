@@ -240,7 +240,7 @@ const DEFAULT_CURRENT_USER = {
   display_name: 'Player A',
   points: 150,
   title: '平民',
-  display_label: 'Player A | 平民',
+  display_label: 'Player A 平民',
   bio: '',
   avatar: null,
 };
@@ -252,7 +252,7 @@ const DEFAULT_LEADERBOARD = [
     display_name: 'Player B',
     points: 90,
     title: '平民',
-    display_label: 'Player B | 平民',
+    display_label: 'Player B 平民',
     bio: '',
     avatar: null,
   },
@@ -358,7 +358,7 @@ function createFetchMock(options?: {
           ...me,
           username: displayName,
           display_name: displayName,
-          display_label: `${displayName} | ${me.title}`,
+          display_label: `${displayName} ${me.title}`,
         },
       });
     }
@@ -859,7 +859,7 @@ describe('App', () => {
           display_name: '舒伯特',
           points: 600,
           title: 'AI',
-          display_label: '舒伯特 | AI',
+          display_label: '舒伯特 AI',
           bio: '',
           avatar: null,
           is_special_bot: true,
@@ -1469,7 +1469,7 @@ describe('App', () => {
       ...DEFAULT_LEADERBOARD[1]!,
       points: 128,
       title: '雀士',
-      display_label: 'Player B | 雀士',
+      display_label: 'Player B 雀士',
     };
     const nextInvite = {
       ...DEFAULT_PENDING_INVITE,
@@ -1520,7 +1520,7 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('dialog', { name: '收到牌局邀请' })).toHaveTextContent(
-      '收到 Player B | 平民 的邀请，是否加入牌局？',
+      '收到 Player B 平民 的邀请，是否加入牌局？',
     );
   });
 
