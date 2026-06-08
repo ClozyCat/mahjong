@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { getRemainingSeconds } from '../../lib/timeSync';
 import type {
   BattleActionId,
   PlayerMeldView,
@@ -21,10 +22,18 @@ interface ResultOverlayProps {
   settlementKey: string;
   settlementHands?: Partial<Record<Seat, string[]>> | null;
   players?: Pick<PlayerView, 'seat' | 'absoluteSeat' | 'melds' | 'wind'>[];
+  serverNowOffsetMs?: number;
   onAction: (actionId: BattleActionId) => void;
 }
 
-export function ResultOverlay({ result, settlementKey, settlementHands, players = [], onAction }: ResultOverlayProps) {
+export function ResultOverlay({
+  result,
+  settlementKey,
+  settlementHands,
+  players = [],
+  serverNowOffsetMs = 0,
+  onAction,
+}: ResultOverlayProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeResultPageIndex, setActiveResultPageIndex] = useState(0);
   const [activeScorePageIndex, setActiveScorePageIndex] = useState(0);
@@ -93,14 +102,13 @@ export function ResultOverlay({ result, settlementKey, settlementHands, players 
     }
 
     const update = () => {
-      const nextRemaining = Math.max(0, Math.ceil((new Date(deadlineAt).getTime() - Date.now()) / 1000));
-      setContinueActionRemainingSeconds(nextRemaining);
+      setContinueActionRemainingSeconds(getRemainingSeconds(deadlineAt, serverNowOffsetMs));
     };
 
     update();
     const timer = window.setInterval(update, 250);
     return () => window.clearInterval(timer);
-  }, [result.continueAction?.countdownDeadlineAt]);
+  }, [result.continueAction?.countdownDeadlineAt, serverNowOffsetMs]);
 
   useLayoutEffect(() => {
     if (!activeFanGuide || typeof window === 'undefined') {

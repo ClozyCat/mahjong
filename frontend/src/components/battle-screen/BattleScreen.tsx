@@ -413,6 +413,7 @@ export function BattleScreen({
               promptCue={viewModel.promptCue}
               dealerSelection={shouldSkipEvaluationCinematicAnimations ? null : viewModel.dealerSelection}
               deadlineAt={viewModel.deadlineAt}
+              serverNowOffsetMs={viewModel.serverNowOffsetMs}
               actionEffect={consumedActionEffect}
               quickChatEvent={viewModel.quickChatEvent}
               systemBroadcastEvent={viewModel.systemBroadcastEvent}
@@ -525,6 +526,7 @@ export function BattleScreen({
               settlementKey={settlementResetKey}
               settlementHands={viewModel.settlementHands}
               players={viewModel.players}
+              serverNowOffsetMs={viewModel.serverNowOffsetMs}
               onAction={onAction}
             />
           ) : null}

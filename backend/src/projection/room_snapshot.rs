@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -22,6 +23,7 @@ struct RoomSnapshotMessage {
 #[derive(Debug, Clone, Serialize)]
 struct PlayerRoomSnapshot {
     table_code: String,
+    server_now: String,
     phase: String,
     mode: String,
     owner_user_id: Option<i64>,
@@ -156,6 +158,7 @@ pub fn room_snapshot_message(
 ) -> Value {
     let payload = PlayerRoomSnapshot {
         table_code: state.table_code.clone(),
+        server_now: now_iso(),
         phase: state.phase.clone(),
         mode: state.mode.clone(),
         owner_user_id: state.owner_user_id,
@@ -179,6 +182,7 @@ pub fn room_snapshot_message(
             "type": "room_snapshot",
             "payload": {
                 "table_code": state.table_code,
+                "server_now": now_iso(),
                 "phase": state.phase,
                 "mode": state.mode,
                 "owner_user_id": state.owner_user_id,
@@ -194,6 +198,10 @@ pub fn room_snapshot_message(
             }
         })
     })
+}
+
+fn now_iso() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 pub fn build_pending_action_view(

@@ -34,6 +34,7 @@ import {
   getLocalTurnKongCandidateGroups,
   isFlowerTileKey,
 } from './kongSelection';
+import { getRemainingSeconds } from './timeSync';
 
 const RELATIVE_SEATS: Seat[] = ['bottom', 'right', 'top', 'left'];
 const WINDS: PlayerView['wind'][] = ['East', 'South', 'West', 'North'];
@@ -794,7 +795,7 @@ function getActionLabel(
 ) {
   const confirmation = id === 'start_next_round' ? continueActionConfirmations?.startNextRound : null;
   if (confirmation?.countdownDeadlineAt) {
-    return formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt);
+    return formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt, state.serverNowOffsetMs);
   }
 
   if (confirmation?.isLocalConfirmed) {
@@ -1889,6 +1890,7 @@ export function createMatchViewModel(state: SessionState, options: MatchViewMode
     phaseLabel: snapshot ? PHASE_LABELS[snapshot.phase] : PHASE_LABELS.waiting,
     roundLabel: createRoundLabel(state),
     deadlineAt,
+    serverNowOffsetMs: state.serverNowOffsetMs ?? 0,
     extendedWithExtra,
     activePlayerSeat,
     actionIndicatorSeat,
@@ -2074,7 +2076,7 @@ function createStartNextRoundContinueAction(
     label: !isConnectionInteractive
       ? '重连中...'
       : confirmation?.countdownDeadlineAt
-        ? formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt)
+        ? formatContinueActionCountdownLabel(confirmation.countdownDeadlineAt, state.serverNowOffsetMs)
         : confirmation?.isLocalConfirmed
           ? formatContinueActionConfirmedLabel(confirmation.confirmedCount, confirmation.requiredCount)
           : getStartNextRoundLabel(state),
@@ -2110,7 +2112,7 @@ function formatContinueActionConfirmedLabel(confirmedCount: number, requiredCoun
   return `已确认 ${confirmedCount}/${requiredCount}`;
 }
 
-function formatContinueActionCountdownLabel(deadlineAt: string) {
-  const remainingSeconds = Math.max(0, Math.ceil((new Date(deadlineAt).getTime() - Date.now()) / 1000));
+function formatContinueActionCountdownLabel(deadlineAt: string, serverNowOffsetMs = 0) {
+  const remainingSeconds = getRemainingSeconds(deadlineAt, serverNowOffsetMs);
   return `${remainingSeconds}s后自动推进`;
 }

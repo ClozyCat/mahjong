@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { getRemainingMs, getRemainingSeconds, getServerNowMs } from '../../../lib/timeSync';
 import type { DealerSelectionView, Seat } from '../../../types/match';
 
 interface MatchStatusBarProps {
@@ -7,6 +8,7 @@ interface MatchStatusBarProps {
   actionSeat: Seat | null;
   dealerSelection?: DealerSelectionView | null;
   deadlineAt: string | null;
+  serverNowOffsetMs?: number;
   isAmbiguous?: boolean;
   shouldDebounceWaiting?: boolean;
   onSizeChange?: (size: { width: number; height: number }) => void;
@@ -23,8 +25,8 @@ const SEAT_LABELS: Record<Seat, string> = {
 const WAITING_ACTION_LABEL = '等待中';
 const NORMAL_TIMEOUT_SECONDS = 15;
 
-function getDealerSelectionTransitionMs(dealerSelection: DealerSelectionView) {
-  const remainingMs = new Date(dealerSelection.revealAt).getTime() - Date.now();
+function getDealerSelectionTransitionMs(dealerSelection: DealerSelectionView, serverNowOffsetMs = 0) {
+  const remainingMs = new Date(dealerSelection.revealAt).getTime() - getServerNowMs(serverNowOffsetMs);
   if (!Number.isFinite(remainingMs)) {
     return Math.max(300, Math.min(4_800, dealerSelection.durationMs));
   }
@@ -32,7 +34,15 @@ function getDealerSelectionTransitionMs(dealerSelection: DealerSelectionView) {
   return Math.max(300, Math.min(4_800, remainingMs));
 }
 
-const SeatArrow = ({ seat, dealerSelection }: { seat: Seat; dealerSelection?: DealerSelectionView | null }) => {
+const SeatArrow = ({
+  seat,
+  dealerSelection,
+  serverNowOffsetMs = 0,
+}: {
+  seat: Seat;
+  dealerSelection?: DealerSelectionView | null;
+  serverNowOffsetMs?: number;
+}) => {
   const seatOrder: Seat[] = ['bottom', 'right', 'top', 'left'];
   const getBaseRotation = (s: Seat) => {
     const index = seatOrder.indexOf(s);
@@ -73,7 +83,7 @@ const SeatArrow = ({ seat, dealerSelection }: { seat: Seat; dealerSelection?: De
     }
   }, [seat, dealerSelectionKey, dealerSelection]);
 
-  const transitionMs = dealerSelection ? getDealerSelectionTransitionMs(dealerSelection) : 200;
+  const transitionMs = dealerSelection ? getDealerSelectionTransitionMs(dealerSelection, serverNowOffsetMs) : 200;
   const timingFunction = dealerSelection ? 'cubic-bezier(0.12, 0.78, 0.12, 1)' : 'var(--ease-spring)';
 
   return (
@@ -177,6 +187,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
   actionSeat,
   dealerSelection = null,
   deadlineAt,
+  serverNowOffsetMs = 0,
   isAmbiguous: isAmbiguousProp = false,
   shouldDebounceWaiting = false,
   onSizeChange,
@@ -225,8 +236,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     }
 
     const update = () => {
-      const remainingMs = new Date(deadlineAt).getTime() - Date.now();
-      setRemainingSeconds(Math.max(0, Math.ceil(remainingMs / 1000)));
+      setRemainingSeconds(getRemainingSeconds(deadlineAt, serverNowOffsetMs));
     };
 
     update();
@@ -234,7 +244,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     return () => {
       window.clearInterval(timer);
     };
-  }, [deadlineAt]);
+  }, [deadlineAt, serverNowOffsetMs]);
 
   useEffect(() => {
     if (!deadlineAt) {
@@ -243,13 +253,12 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     }
 
     const targetDate = new Date(deadlineAt).getTime();
-    const startRemainingMs = targetDate - Date.now();
+    const startRemainingMs = targetDate - getServerNowMs(serverNowOffsetMs);
     // Use a baseline duration of at least 5s, typical mahjong timers are 15-30s.
     const baselineDuration = Math.max(startRemainingMs, 5000);
 
     const update = () => {
-      const now = Date.now();
-      const remaining = targetDate - now;
+      const remaining = getRemainingMs(deadlineAt, serverNowOffsetMs);
       const p = Math.max(0, Math.min(1, remaining / baselineDuration));
       setProgress(p);
     };
@@ -257,7 +266,7 @@ export const MatchStatusBar = memo(function MatchStatusBar({
     update();
     const timer = setInterval(update, 60);
     return () => clearInterval(timer);
-  }, [deadlineAt]);
+  }, [deadlineAt, serverNowOffsetMs]);
 
   const activeSeatLabel = stableDealerSelection
     ? '东家'
@@ -330,7 +339,11 @@ export const MatchStatusBar = memo(function MatchStatusBar({
       >
         {stableDealerSelection ? (
           <span className="match-status-bar__arrow-wrap" aria-hidden="true">
-            <SeatArrow seat={stableDealerSelection.dealerSeat} dealerSelection={stableDealerSelection} />
+            <SeatArrow
+              seat={stableDealerSelection.dealerSeat}
+              dealerSelection={stableDealerSelection}
+              serverNowOffsetMs={serverNowOffsetMs}
+            />
           </span>
         ) : stableActionSeat ? (
           <span className="match-status-bar__arrow-wrap" aria-hidden="true">

@@ -1,3 +1,4 @@
+use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -15,6 +16,7 @@ struct ActionPromptMessage {
 
 #[derive(Debug, Clone, Serialize)]
 struct ActionPromptPayload {
+    server_now: String,
     seat_index: Seat,
     options: Vec<String>,
     deadline_at: Option<String>,
@@ -34,6 +36,7 @@ pub fn action_prompt_message(
     serde_json::to_value(ActionPromptMessage {
         kind: "action_prompt",
         payload: ActionPromptPayload {
+            server_now: now_iso(),
             seat_index: pending.seat_index().unwrap_or(local_seat),
             options,
             deadline_at: pending.deadline_at(),
@@ -41,6 +44,10 @@ pub fn action_prompt_message(
         },
     })
     .ok()
+}
+
+fn now_iso() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 impl PendingActionView {

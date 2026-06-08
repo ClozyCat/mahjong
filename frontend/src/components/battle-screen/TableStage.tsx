@@ -85,6 +85,7 @@ interface TableStageProps {
   promptCue?: BattlePromptView | null;
   dealerSelection?: DealerSelectionView | null;
   deadlineAt?: string | null;
+  serverNowOffsetMs?: number;
   actionEffect?: ActionEffectView | null;
   quickChatEvent?: QuickChatEventView | null;
   systemBroadcastEvent?: SystemBroadcastEventView | null;
@@ -151,6 +152,7 @@ export function TableStage({
   promptCue = null,
   dealerSelection = null,
   deadlineAt = null,
+  serverNowOffsetMs = 0,
   actionEffect = null,
   quickChatEvent = null,
   systemBroadcastEvent = null,
@@ -300,6 +302,7 @@ export function TableStage({
             actionSeat={actionIndicatorSeat}
             dealerSelection={dealerSelection}
             deadlineAt={deadlineAt}
+            serverNowOffsetMs={serverNowOffsetMs}
             isAmbiguous={!actionIndicatorSeat && !!remainingTileCount}
             shouldDebounceWaiting={shouldDebounceWaitingStatus}
             onSizeChange={handleCenterStatusSizeChange}

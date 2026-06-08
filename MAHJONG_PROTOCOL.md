@@ -303,6 +303,7 @@
       "payload": { "sent_at": "2026-05-20T09:17:30.123Z" }
     }
     ```
+    后端回执会保留 `sent_at`，并附加 `server_now` 供客户端校准本地倒计时基准。
 
 ---
 
@@ -316,6 +317,7 @@
         ```json
         {
           "table_code": "AB12CD",
+          "server_now": "2026-05-20T09:17:30.123456Z",
           "phase": "playing", // 房间状态
           "mode": "normal",
           "seats": [ ...SeatSnapshot... ],
@@ -343,6 +345,7 @@
     *   **Payload 结构**:
         ```json
         {
+          "server_now": "2026-05-20T09:17:30.123456Z",
           "seat_index": 0,
           "options": ["pung", "kong", "pass"], // 可选操作数组
           "deadline_at": "2026-05-20T09:17:45.000Z", // 定时器截止时间
@@ -396,7 +399,7 @@
 *   **`quick_chat` (快捷聊天/互动表情推送)**
     *   `payload`: `{ "message_id": "uuid", "actor_seat": 0, "target_seat": 1, "emoji": "sweat", "sent_at": "..." }`
 *   **`heartbeat` (心跳回执)**
-    *   `payload`: `{ "sent_at": "请求中带入的发送时间" }`
+    *   `payload`: `{ "sent_at": "请求中带入的发送时间", "server_now": "服务器发送回执时的 ISO-8601 UTC 时间" }`
 
 ---
 

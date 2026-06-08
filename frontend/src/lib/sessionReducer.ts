@@ -18,6 +18,7 @@ import {
   createRoundEventSystemBroadcast,
   createTitleChangeSystemBroadcast,
 } from './systemBroadcastCopy';
+import { createServerNowOffsetMs } from './timeSync';
 
 export type SessionAction =
   | { type: 'set_config'; apiBaseUrl?: string; wsBaseUrl?: string }
@@ -106,6 +107,29 @@ function updateSeatPointSnapshot(snapshot: RoomSnapshotMessage | null, message: 
         : snapshot.payload.private_state,
     },
   };
+}
+
+function getServerNow(message: ServerMessage) {
+  if ('payload' in message && message.payload && typeof message.payload === 'object' && 'server_now' in message.payload) {
+    const serverNow = (message.payload as { server_now?: unknown }).server_now;
+    return typeof serverNow === 'string' ? serverNow : null;
+  }
+
+  return null;
+}
+
+function getNextServerNowOffsetMs(state: SessionState, message: ServerMessage, receivedAtMs = Date.now()) {
+  const serverNow = getServerNow(message);
+  if (!serverNow) {
+    return state.serverNowOffsetMs;
+  }
+
+  const sentAt =
+    message.type === 'heartbeat' && typeof message.payload.sent_at === 'string'
+      ? Date.parse(message.payload.sent_at)
+      : undefined;
+
+  return createServerNowOffsetMs(serverNow, sentAt, receivedAtMs);
 }
 
 function getActionRejectedCopy(reason: string) {
@@ -420,6 +444,7 @@ export function createInitialSessionState(): SessionState {
     toasts: [],
     matchStatistics: null,
     latestReplacementTileId: null,
+    serverNowOffsetMs: 0,
   };
 }
 
@@ -457,6 +482,7 @@ function applyRoomSnapshotMessage(state: SessionState, message: RoomSnapshotMess
 
   return {
     ...state,
+    serverNowOffsetMs: getNextServerNowOffsetMs(state, message),
     roomSnapshot: message,
     tableCode: message.payload.table_code,
     lastRejectedAction: null,
@@ -474,17 +500,21 @@ function applyRoomSnapshotMessage(state: SessionState, message: RoomSnapshotMess
 }
 
 function applyServerMessage(state: SessionState, message: ServerMessage): SessionState {
+  const serverNowOffsetMs = getNextServerNowOffsetMs(state, message);
+
   switch (message.type) {
     case 'room_snapshot':
       return applyRoomSnapshotMessage(state, message);
     case 'action_prompt':
       return {
         ...state,
+        serverNowOffsetMs,
         latestActionPrompt: message,
       };
     case 'match_result':
       return {
         ...state,
+        serverNowOffsetMs,
         latestMatchResult: {
           ...message,
           payload: {
@@ -515,6 +545,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
 
       return {
         ...state,
+        serverNowOffsetMs,
         latestRoundEvent: getNextLatestRoundEvent(state.latestRoundEvent, message),
         recentRoundEvents: appendRecentRoundEvent(state.recentRoundEvents, message),
         optimisticDiscard: reconcileOptimisticDiscardWithRoundEvent(
@@ -530,6 +561,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
     case 'quick_chat':
       return {
         ...state,
+        serverNowOffsetMs,
         latestQuickChatMessage: message,
       };
     case 'player_presence': {
@@ -539,6 +571,7 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
       );
       return {
         ...state,
+        serverNowOffsetMs,
         latestSystemBroadcast: presenceBroadcastText ? createSystemBroadcast(presenceBroadcastText) : state.latestSystemBroadcast,
         toasts: appendToast(
           state,
@@ -550,13 +583,17 @@ function applyServerMessage(state: SessionState, message: ServerMessage): Sessio
     case 'action_rejected':
       return {
         ...state,
+        serverNowOffsetMs,
         lastRejectedAction: message as ActionRejectedMessage,
         optimisticDiscard: null,
         optimisticFlower: null,
         toasts: appendToast(state, 'error', getActionRejectedCopy(message.payload.reason)),
       };
     case 'heartbeat':
-      return state;
+      return {
+        ...state,
+        serverNowOffsetMs,
+      };
     default:
       return state;
   }

@@ -224,6 +224,7 @@ export interface PrivateState {
 
 export interface RoomSnapshotPayload {
   table_code: string;
+  server_now?: string;
   phase: RoomPhase;
   mode?: TableMode;
   owner_user_id?: number | null;
@@ -300,6 +301,7 @@ export interface MatchResultMessage {
 export interface ActionPromptMessage {
   type: 'action_prompt';
   payload: {
+    server_now?: string;
     seat_index: number;
     options: PromptActionType[];
     deadline_at: string;
@@ -339,6 +341,7 @@ export interface HeartbeatMessage {
   type: 'heartbeat';
   payload: {
     sent_at?: string;
+    server_now?: string;
   };
 }
 
@@ -492,6 +495,7 @@ export interface SessionState {
   selectionMode: 'single' | 'kong' | 'chow' | 'pung' | null;
   toasts: ToastMessage[];
   matchStatistics?: MatchStatisticsState | null;
+  serverNowOffsetMs?: number;
 }
 
 export type BattleActionId =
@@ -752,6 +756,7 @@ export interface BattleViewModel {
   phaseLabel: string;
   roundLabel: string;
   deadlineAt: string | null;
+  serverNowOffsetMs?: number;
   extendedWithExtra: boolean;
   activePlayerSeat: Seat;
   actionIndicatorSeat: Seat | null;

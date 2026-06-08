@@ -1,3 +1,4 @@
+use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -88,6 +89,7 @@ struct DetailPayload {
 pub(crate) struct HeartbeatPayload {
     pub(crate) request_id: Option<String>,
     pub(crate) sent_at: Option<String>,
+    pub(crate) server_now: Option<String>,
 }
 
 pub(crate) fn action_rejected_message(reason: &str) -> Value {
@@ -105,7 +107,9 @@ pub(crate) fn action_rejected_message(reason: &str) -> Value {
     })
 }
 
-pub(crate) fn heartbeat_message(payload: HeartbeatPayload) -> Value {
+pub(crate) fn heartbeat_message(mut payload: HeartbeatPayload) -> Value {
+    payload.server_now = Some(now_iso());
+
     serde_json::to_value(PayloadEnvelope {
         kind: "heartbeat",
         payload,
@@ -116,6 +120,10 @@ pub(crate) fn heartbeat_message(payload: HeartbeatPayload) -> Value {
             "payload": Value::Null,
         })
     })
+}
+
+fn now_iso() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 pub(crate) fn player_presence_message(
