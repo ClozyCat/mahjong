@@ -35,6 +35,8 @@ def summarize_candidate(entry: dict[str, Any]) -> dict[str, Any]:
     gate = entry["gate"]
     baseline = gate["baseline"]
     candidate = gate["candidate"]
+    promotion_report = gate.get("promotion_report")
+    paired = gate.get("paired") or (promotion_report or {}).get("paired")
     score_margin = metric(candidate, "avg_score_delta") - metric(baseline, "avg_score_delta")
     win_margin = metric(candidate, "win_rate") - metric(baseline, "win_rate")
     deal_in_margin = metric(baseline, "deal_in_rate") + 0.01 - metric(candidate, "deal_in_rate")
@@ -58,6 +60,11 @@ def summarize_candidate(entry: dict[str, Any]) -> dict[str, Any]:
         "deal_in_margin": round(deal_in_margin, 6),
         "tenpai_margin": round(tenpai_margin, 6),
         "latency_margin": round(latency_margin, 6),
+        "paired_avg_score_delta": paired_value(paired, "avg_score_delta"),
+        "paired_confidence95_low": paired_value(paired, "confidence95_low"),
+        "paired_confidence95_high": paired_value(paired, "confidence95_high"),
+        "paired_positive_delta_rate": paired_value(paired, "positive_delta_rate"),
+        "promotion_report": promotion_report,
     }
 
 
@@ -70,6 +77,12 @@ def rank_key(summary: dict[str, Any]) -> tuple[float, ...]:
         summary["deal_in_margin"],
         summary["latency_margin"],
     )
+
+
+def paired_value(paired: dict[str, Any] | None, key: str) -> float | None:
+    if paired is None or paired.get(key) is None:
+        return None
+    return round(float(paired[key]), 6)
 
 
 def choose_next_rollout(
@@ -99,6 +112,11 @@ def select_best_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
         "accepted": selected["accepted"],
         "failures": selected["failures"],
         "score_margin": selected["score_margin"],
+        "paired_avg_score_delta": selected["paired_avg_score_delta"],
+        "paired_confidence95_low": selected["paired_confidence95_low"],
+        "paired_confidence95_high": selected["paired_confidence95_high"],
+        "paired_positive_delta_rate": selected["paired_positive_delta_rate"],
+        "promotion_report": selected["promotion_report"],
         "candidates": summaries,
     }
 

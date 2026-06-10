@@ -198,7 +198,7 @@ pub fn split_for_match_id(match_id: &str) -> DatasetSplit {
 
 pub fn export_metadata() -> BotDatasetMetadata {
     BotDatasetMetadata {
-        schema_version: 2,
+        schema_version: 3,
         tile_keys: TILE_KEYS.iter().map(|value| (*value).to_string()).collect(),
         decision_kinds: ["active_turn", "claim_window", "rob_kong"]
             .into_iter()
@@ -218,6 +218,7 @@ pub fn export_metadata() -> BotDatasetMetadata {
             "self_kong_logits",
             "hu_logits",
             "value",
+            "fan_value",
             "risk_logits",
         ]
         .into_iter()
@@ -354,9 +355,9 @@ mod tests {
     }
 
     #[test]
-    fn metadata_contains_v2_model_outputs() {
+    fn metadata_contains_v3_model_outputs() {
         let metadata = export_metadata();
-        assert_eq!(metadata.schema_version, 2);
+        assert_eq!(metadata.schema_version, 3);
         assert!(
             metadata
                 .model_outputs
@@ -364,6 +365,7 @@ mod tests {
         );
         assert!(metadata.model_outputs.contains(&"claim_logits".to_string()));
         assert!(metadata.model_outputs.contains(&"risk_logits".to_string()));
+        assert!(metadata.model_outputs.contains(&"fan_value".to_string()));
     }
 
     #[test]

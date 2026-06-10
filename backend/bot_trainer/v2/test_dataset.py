@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from dataset import (
     DISCARD_EVENT_FEATURE_COUNT,
     DISCARD_SEQUENCE_LENGTH,
     IGNORE_INDEX,
     SCALAR_FEATURE_COUNT,
     encode_row,
+    load_metadata,
 )
 
 
@@ -27,6 +30,57 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     )
     assert encoded["discard_mask"].shape == (34,)
     assert encoded["discard_target"].item() == 0
+
+
+def test_schema_v3_encodes_risk_mask_and_fan_target(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["outcome"]["dealt_in"] = True
+    row["outcome"]["fan_count"] = 8
+
+    encoded = encode_row(row, metadata)
+
+    assert encoded["risk_mask"][0].item()
+    assert encoded["risk_mask"][9].item()
+    assert not encoded["risk_mask"][1].item()
+    assert encoded["risk_target"][0].item() == 1.0
+    assert encoded["risk_target"][9].item() == 0.0
+    assert encoded["fan_target"].shape == (1,)
+    assert encoded["fan_target"][0].item() == 0.5
+
+
+def test_load_metadata_rejects_old_schema_with_export_hint(tmp_path: Path) -> None:
+    metadata_path, _ = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["schema_version"] = 2
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Re-export the dataset"):
+        load_metadata(metadata_path)
+
+
+def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
+    script_dir = Path(__file__).parent
+    powershell = (script_dir / "train_and_export_model.ps1").read_text(encoding="utf-8")
+    bash = (script_dir / "train_and_export_model.sh").read_text(encoding="utf-8")
+    required_flags = [
+        "--fan-loss-weight",
+        "--risk-pos-weight",
+        "--value-loss-start-weight",
+        "--fan-loss-start-weight",
+        "--risk-loss-start-weight",
+        "--aux-loss-warmup-epochs",
+        "--claim-rare-action-weight",
+        "--self-kong-rare-action-weight",
+        "--hu-positive-weight",
+    ]
+
+    for flag in required_flags:
+        assert flag in powershell
+        assert flag in bash
+    assert "[double]$ValueLossWeight = 0.75" in powershell
+    assert "[double]$RiskLossWeight = 1.0" in powershell
 
 
 def test_discard_sequence_encodes_order_source_and_latest_marker(tmp_path: Path) -> None:
@@ -155,6 +209,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "self_kong_logits": torch.zeros((1, 3)),
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.tensor([[999.0]]),
+        "fan_value": torch.tensor([[999.0]]),
         "risk_logits": torch.full((1, 34), 999.0),
     }
     batch = {
@@ -167,15 +222,140 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_mask": torch.tensor([[True, False]]),
         "hu_target": torch.tensor([-100]),
         "value_target": torch.tensor([[0.0]]),
+        "fan_target": torch.tensor([[0.0]]),
         "risk_target": torch.zeros((1, 34)),
+        "risk_mask": torch.ones((1, 34), dtype=torch.bool),
     }
 
-    losses = compute_losses(outputs, batch, value_weight=0.0, risk_weight=0.0, hu_weight=1.0)
+    losses = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        risk_weight=0.0,
+        hu_weight=1.0,
+    )
 
     # value_loss 被裁剪到 max=100.0 以防止数值爆炸
     assert losses["value_loss"].item() == 100.0
+    assert losses["fan_loss"].item() == 100.0
     assert losses["risk_loss"].item() > 100.0
     assert losses["loss"].item() < 0.1
+
+
+def test_risk_loss_ignores_unmasked_tiles() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.zeros((1, 34)),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.zeros((1, 1)),
+        "fan_value": torch.zeros((1, 1)),
+        "risk_logits": torch.tensor([[-20.0, 20.0] + [20.0] * 32]),
+    }
+    batch = {
+        "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "discard_target": torch.tensor([-100]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "risk_target": torch.zeros((1, 34)),
+        "risk_mask": torch.tensor([[True, False] + [False] * 32]),
+    }
+
+    losses = compute_losses(outputs, batch, value_weight=0.0, fan_weight=0.0, risk_weight=1.0)
+
+    assert losses["risk_loss"].item() < 1.0e-6
+
+
+def test_rare_hu_positive_weight_increases_hu_loss() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.zeros((1, 34)),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.zeros((1, 1)),
+        "fan_value": torch.zeros((1, 1)),
+        "risk_logits": torch.zeros((1, 34)),
+    }
+    batch = {
+        "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "discard_target": torch.tensor([-100]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.tensor([[True, True]]),
+        "hu_target": torch.tensor([1]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "risk_target": torch.zeros((1, 34)),
+        "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
+    }
+
+    base = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        risk_weight=0.0,
+        hu_positive_weight=1.0,
+    )
+    weighted = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        risk_weight=0.0,
+        hu_positive_weight=3.0,
+    )
+
+    assert weighted["hu_loss"].item() == base["hu_loss"].item() * 3.0
+
+
+def test_fan_loss_contributes_when_weighted() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.zeros((1, 34)),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.zeros((1, 1)),
+        "fan_value": torch.tensor([[2.0]]),
+        "risk_logits": torch.zeros((1, 34)),
+    }
+    batch = {
+        "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "discard_target": torch.tensor([-100]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "risk_target": torch.zeros((1, 34)),
+        "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
+    }
+
+    losses = compute_losses(outputs, batch, value_weight=0.0, fan_weight=0.5, risk_weight=0.0)
+
+    assert losses["fan_loss"].item() == 4.0
+    assert losses["loss"].item() == 2.0
 
 
 def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
@@ -189,6 +369,8 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
         hu_weight=1.0,
         value_start=0.25,
         value_target=0.75,
+        fan_start=0.1,
+        fan_target=0.5,
         risk_start=0.25,
         risk_target=1.0,
     )
@@ -200,13 +382,17 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
         hu_weight=1.0,
         value_start=0.25,
         value_target=0.75,
+        fan_start=0.1,
+        fan_target=0.5,
         risk_start=0.25,
         risk_target=1.0,
     )
 
     assert first["value_weight"] == 0.25
+    assert first["fan_weight"] == 0.1
     assert first["risk_weight"] == 0.25
     assert final["value_weight"] == 0.75
+    assert final["fan_weight"] == 0.5
     assert final["risk_weight"] == 1.0
 
 
@@ -221,7 +407,7 @@ def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
-        "schema_version": 2,
+        "schema_version": 3,
         "tile_keys": [
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9",
             "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9",
@@ -265,7 +451,13 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         },
         "legal_actions": ["discard:w1", "discard:t1"],
         "label": {"type": "discard", "tile_key": "w1"},
-        "outcome": {"score_delta": 8, "won": True, "dealt_in": False, "round_drawn": False},
+        "outcome": {
+            "score_delta": 8,
+            "fan_count": 0,
+            "won": True,
+            "dealt_in": False,
+            "round_drawn": False,
+        },
     }
     metadata_path = tmp_path / "metadata.json"
     train_path = tmp_path / "train.jsonl"

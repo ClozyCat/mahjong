@@ -138,16 +138,17 @@ pub(crate) fn replay_match_to_samples(
                 state.add_tile(event.actor, tile_key);
             }
             BotZoneAction::Play { tile_key } => {
-                let outcome = outcome_by_seat[event.actor].clone();
                 if state.has_self_kong_candidates(event.actor) {
                     samples.push(state.self_kong_sample(
                         record,
                         &mut decision_index,
                         event.actor,
                         TrainingLabel::Pass,
-                        outcome.clone(),
+                        outcome_by_seat[event.actor].clone(),
                     ));
                 }
+                let mut outcome = outcome_by_seat[event.actor].clone();
+                outcome.dealt_in = play_event_deals_in(record, event_index, event.actor);
                 samples.push(state.active_turn_sample(
                     record,
                     &mut decision_index,
@@ -464,13 +465,16 @@ impl ReplayState {
         claim_options: Vec<SerializableClaimOption>,
     ) -> SerializableBotContext {
         let standard_seat_index = botzone_seat_to_standard(seat_index);
+        let standard_dealer_seat = botzone_seat_to_standard(record.dealer_seat);
         SerializableBotContext {
             seat_index: standard_seat_index,
             seat_count: 4,
-            dealer_seat: 0,
-            seat_wind: Some(standard_seat_index_to_wind(standard_seat_index).to_string()),
+            dealer_seat: standard_dealer_seat,
+            seat_wind: Some(
+                standard_seat_wind(standard_seat_index, standard_dealer_seat).to_string(),
+            ),
             round_wind: record.round_wind.clone(),
-            cumulative_scores: vec![0, 0, 0, 0],
+            cumulative_scores: reorder_botzone_seat_array(&record.cumulative_scores),
             wall_tiles_remaining: self.wall_tiles_remaining,
             visible_tile_keys: self.visible_tile_keys(),
             opponent_discards_by_seat: reorder_botzone_seat_array(&self.discards),
@@ -777,22 +781,22 @@ fn outcome_by_seat(record: &BotZoneMatch, exact_fan: i64) -> [SampleOutcome; 4] 
         .enumerate()
         .find(|(_, event)| matches!(event.action, BotZoneAction::Hu { .. }));
     let winner = winner_event.map(|(_, event)| event.actor);
-    let discarder = winner_event.and_then(|(event_index, _)| {
-        let previous_event = event_index
-            .checked_sub(1)
-            .and_then(|index| record.events.get(index))?;
-        match previous_event.action {
-            BotZoneAction::Play { .. } => Some(previous_event.actor),
-            _ => None,
-        }
-    });
     std::array::from_fn(|seat| SampleOutcome {
         score_delta: score_delta[seat],
         fan_count: if winner == Some(seat) { exact_fan } else { 0 },
         won: winner == Some(seat),
-        dealt_in: winner.is_some() && discarder == Some(seat) && winner != Some(seat),
+        dealt_in: false,
         round_drawn,
     })
+}
+
+fn play_event_deals_in(record: &BotZoneMatch, event_index: usize, actor: usize) -> bool {
+    record
+        .events
+        .get(event_index + 1)
+        .is_some_and(|next_event| {
+            next_event.actor != actor && matches!(next_event.action, BotZoneAction::Hu { .. })
+        })
 }
 
 fn calculate_match_exact_fan(record: &BotZoneMatch) -> i64 {
@@ -915,6 +919,10 @@ fn standard_seat_index_to_wind(index: usize) -> &'static str {
         3 => "north",
         _ => "east",
     }
+}
+
+fn standard_seat_wind(seat_index: usize, dealer_seat: usize) -> &'static str {
+    standard_seat_index_to_wind((seat_index + 4 - dealer_seat) % 4)
 }
 
 fn reorder_botzone_seat_array<T: Clone>(values: &[T; 4]) -> Vec<T> {
@@ -1182,6 +1190,36 @@ Player 1 BuGang W1 Ignore Player 2 Hu W1
 Score 0 0 0 0
 "#;
 
+    const LATE_DEAL_IN_MATCH: &str = r#"
+Match late deal in
+Player 0 Deal W1 J2 B1
+Player 1 Deal T1 T2 T3
+Player 2 Deal B2 B3 B4
+Player 3 Deal J2 J2 W2
+Player 0 Draw W2
+Player 0 Play W1
+Player 1 Draw T4
+Player 1 Play T1
+Player 0 Draw B5
+Player 0 Play J2
+Player 3 Hu J2
+Score -8 0 0 8
+"#;
+
+    const REAL_CONTEXT_MATCH: &str = r#"
+Match real context
+Wind F3
+Dealer 1
+Scores 100 -20 30 -110
+Player 0 Deal W1 W2 W3
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J1 J2 J3
+Player 3 Draw W4
+Player 3 Play J1
+Score 0 0 0 0
+"#;
+
     #[test]
     fn replay_emits_active_turn_discard_sample_before_play_event() {
         let record = parse_match(SIMPLE_MATCH).expect("match");
@@ -1420,6 +1458,36 @@ Score 0 0 0 0
     }
 
     #[test]
+    fn only_dealing_discard_sample_is_marked_dealt_in() {
+        let record = parse_match(LATE_DEAL_IN_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let safe_discard = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 0
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "w1".to_string(),
+                        }
+            })
+            .expect("safe discard");
+        let dealing_discard = samples
+            .iter()
+            .find(|sample| {
+                sample.seat_index == 0
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "green".to_string(),
+                        }
+            })
+            .expect("dealing discard");
+
+        assert!(!safe_discard.outcome.dealt_in);
+        assert!(dealing_discard.outcome.dealt_in);
+    }
+
+    #[test]
     fn replay_emits_rob_kong_hu_and_pass_samples_after_bu_gang() {
         let record = parse_match(ROB_KONG_MATCH).expect("match");
         let samples = replay_match_to_samples(&record).expect("samples");
@@ -1444,5 +1512,28 @@ Score 0 0 0 0
             })
             .expect("rob kong pass sample");
         assert!(pass.legal_actions.iter().any(|action| action == "pass"));
+    }
+
+    #[test]
+    fn replay_context_uses_match_dealer_and_cumulative_scores() {
+        let record = parse_match(REAL_CONTEXT_MATCH).expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+
+        let active_turn = samples
+            .iter()
+            .find(|sample| {
+                sample.decision_kind == DecisionKind::ActiveTurn
+                    && sample.seat_index == 1
+                    && sample.label
+                        == TrainingLabel::Discard {
+                            tile_key: "red".to_string(),
+                        }
+            })
+            .expect("player 3 active turn sample");
+
+        assert_eq!(active_turn.context.dealer_seat, 3);
+        assert_eq!(active_turn.context.seat_wind.as_deref(), Some("west"));
+        assert_eq!(active_turn.context.round_wind, "west");
+        assert_eq!(active_turn.context.cumulative_scores, vec![100, -110, 30, -20]);
     }
 }

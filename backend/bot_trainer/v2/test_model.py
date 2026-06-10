@@ -32,6 +32,7 @@ def test_sequence_aware_model_output_shapes() -> None:
     assert outputs["self_kong_logits"].shape == (2, 3)
     assert outputs["hu_logits"].shape == (2, 2)
     assert outputs["value"].shape == (2, 1)
+    assert outputs["fan_value"].shape == (2, 1)
     assert outputs["risk_logits"].shape == (2, 34)
 
 
@@ -89,6 +90,7 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     shared = build_model(config)
     with torch.no_grad():
         shared.policy_trunk[0].weight.fill_(0.25)
+        shared.fan_head.net[0].weight.fill_(0.5)
     source = tmp_path / "sft.pt"
     output = tmp_path / "actor_critic.pt"
     torch.save(
@@ -109,6 +111,10 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     assert torch.equal(
         state["actor.policy_trunk.0.weight"],
         shared.state_dict()["policy_trunk.0.weight"],
+    )
+    assert torch.equal(
+        state["actor.fan_head.net.0.weight"],
+        shared.state_dict()["fan_head.net.0.weight"],
     )
     assert payload["training_source"] == "actor_critic_bootstrap"
     assert manifest["copied_actor_keys"] > 0
@@ -155,3 +161,4 @@ def test_actor_critic_export_wrapper_preserves_onnx_outputs(tmp_path) -> None:
     assert len(outputs) == len(OUTPUT_NAMES)
     assert outputs[OUTPUT_NAMES.index("discard_logits")].shape == (2, 34)
     assert outputs[OUTPUT_NAMES.index("value")].shape == (2, 1)
+    assert outputs[OUTPUT_NAMES.index("fan_value")].shape == (2, 1)

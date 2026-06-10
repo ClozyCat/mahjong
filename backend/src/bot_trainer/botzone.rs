@@ -2,6 +2,8 @@
 pub(crate) struct BotZoneMatch {
     pub(crate) match_id: String,
     pub(crate) round_wind: String,
+    pub(crate) dealer_seat: usize,
+    pub(crate) cumulative_scores: [i64; 4],
     pub(crate) deals: [Vec<String>; 4],
     pub(crate) events: Vec<BotZoneEvent>,
     pub(crate) result: BotZoneResult,
@@ -126,6 +128,8 @@ pub(crate) fn parse_match(raw: &str) -> Result<BotZoneMatch, BotZoneParseError> 
 fn parse_match_lines(lines: &[String]) -> Result<BotZoneMatch, BotZoneParseError> {
     let mut match_id = None;
     let mut round_wind = "east".to_string();
+    let mut dealer_seat = 0_usize;
+    let mut cumulative_scores = [0_i64; 4];
     let mut deals: [Vec<String>; 4] = std::array::from_fn(|_| Vec::new());
     let mut events = Vec::new();
     let mut score_delta = [0_i64; 4];
@@ -140,6 +144,14 @@ fn parse_match_lines(lines: &[String]) -> Result<BotZoneMatch, BotZoneParseError
         }
         if let Some(rest) = line.strip_prefix("Wind ") {
             round_wind = parse_wind(rest);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Dealer ") {
+            dealer_seat = parse_seat_index(rest);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Scores ") {
+            cumulative_scores = parse_score_delta(rest);
             continue;
         }
         if let Some((seat, rest)) = parse_player_prefix(line) {
@@ -184,6 +196,8 @@ fn parse_match_lines(lines: &[String]) -> Result<BotZoneMatch, BotZoneParseError
     Ok(BotZoneMatch {
         match_id: match_id.unwrap_or_else(|| "unknown".to_string()),
         round_wind,
+        dealer_seat,
+        cumulative_scores,
         deals,
         events,
         result,
@@ -274,6 +288,14 @@ fn parse_score_delta(rest: &str) -> [i64; 4] {
     std::array::from_fn(|index| values.get(index).copied().unwrap_or(0))
 }
 
+fn parse_seat_index(rest: &str) -> usize {
+    rest.split_whitespace()
+        .next()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|seat| *seat < 4)
+        .unwrap_or(0)
+}
+
 fn parse_wind(raw: &str) -> String {
     match raw.trim() {
         "0" => "east",
@@ -324,6 +346,29 @@ Score 0 0 0 0
         .expect("match should parse");
 
         assert_eq!(match_record.round_wind, "north");
+    }
+
+    #[test]
+    fn parses_optional_dealer_and_cumulative_scores() {
+        let match_record = parse_match(
+            r#"
+Match context fixture
+Wind F2
+Dealer 1
+Scores 100 -20 30 -110
+Player 0 Deal W1 W2 W3
+Player 1 Deal B1 B2 B3
+Player 2 Deal T1 T2 T3
+Player 3 Deal J1 J2 J3
+Huang
+Score 0 0 0 0
+"#,
+        )
+        .expect("match should parse");
+
+        assert_eq!(match_record.round_wind, "south");
+        assert_eq!(match_record.dealer_seat, 1);
+        assert_eq!(match_record.cumulative_scores, [100, -20, 30, -110]);
     }
 
     #[test]

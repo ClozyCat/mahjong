@@ -68,9 +68,14 @@
 - `self_kong_logits`：3 个自杠 logits，顺序为 pass、concealed_kong、add_kong
 - `hu_logits`：2 个自摸/不自摸 logits
 - `value`：预期分差
+- `fan_value`：番数辅助回归输出，用于训练一致性，不参与当前 Rust runtime 决策
 - `risk_logits`：34 个牌风险 logits
 
 `discard_sequence` 右对齐保存最近 32 个公开弃牌事件。每个事件包含 34 维牌 one-hot、4 维相对座位 one-hot、1 维进度、1 维最新事件标记。
+
+当前导出 metadata schema 为 v3。相较旧 schema，训练侧额外使用 `risk_mask`
+做反事实风险监督，并使用 `fan_target` 训练 `fan_value` 辅助头；旧 cache 与旧
+metadata 不再兼容，需要重新导出数据并重新训练。
 
 ## 4. Arena 评估
 
@@ -106,6 +111,8 @@ ARENA_CONFIG=backend/bot_trainer/v2/arena_policy_pool.json MATCH_COUNT=200 SEED=
 - 首次听牌巡目
 - 终局听牌率
 - 平均决策耗时
+- seat 级延迟 p50/p95/max
+- paired subject 分差均值、95% 置信区间、正向比例
 
 ## 5. PPO 自博弈训练
 
@@ -247,9 +254,16 @@ python backend/bot_trainer/v2/export_onnx.py \
 
 - 平均分差优于 SFT baseline。
 - 胜率不回退。
-- 放铳率不增加超过 2 个百分点。
+- 放铳率不增加超过 1 个百分点。
 - 首次听牌巡目或终局听牌率不退化。
+- 平均副露数不出现异常膨胀。
 - 平均决策耗时低于 200 ms。
+
+`candidate_gate.json` 会输出 `failure_details` 与 `promotion_report`。其中
+`promotion_report.metrics` 给出关键指标 margin，`promotion_report.paired`
+给出 paired 分差与置信区间，`promotion_report.latency` 给出候选平均延迟和
+seat 级 p95/max，`promotion_report.warnings` 标记 paired 样本缺失或置信区间
+跨 0 等稳定性风险。
 
 Promotion 示例：
 

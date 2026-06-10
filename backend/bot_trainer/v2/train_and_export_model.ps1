@@ -15,8 +15,17 @@ param(
     [double]$ClaimLossWeight = 1.0,
     [double]$SelfKongLossWeight = 1.0,
     [double]$HuLossWeight = 1.0,
-    [double]$ValueLossWeight = 0.25,
-    [double]$RiskLossWeight = 0.25,
+    [double]$ValueLossWeight = 0.75,
+    [double]$FanLossWeight = 0.5,
+    [double]$RiskLossWeight = 1.0,
+    [double]$RiskPosWeight = 300.0,
+    [double]$ValueLossStartWeight = 0.25,
+    [double]$FanLossStartWeight = 0.1,
+    [double]$RiskLossStartWeight = 0.25,
+    [int]$AuxLossWarmupEpochs = 4,
+    [double]$ClaimRareActionWeight = 2.0,
+    [double]$SelfKongRareActionWeight = 3.0,
+    [double]$HuPositiveWeight = 3.0,
     [double]$GradClipNorm = 1.0,
     [int]$MaxNanTolerance = 2,
     [int]$EarlyStopPatience = 0,
@@ -35,6 +44,7 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+$ExpectedMetadataSchemaVersion = 3
 
 function Invoke-TrainingPython {
     param([string[]]$Arguments)
@@ -128,6 +138,52 @@ print('CUDA_DEVICE=' + torch.cuda.get_device_name(0))
     return ($cudaDeviceLine -replace "^CUDA_DEVICE=", "").Trim()
 }
 
+function Assert-DatasetContract {
+    param(
+        [string]$DatasetDir,
+        [string]$CacheDir
+    )
+
+    $metadataPath = Join-Path $DatasetDir "metadata.json"
+    if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
+        [Console]::Error.WriteLine("Dataset metadata not found: $metadataPath")
+        [Console]::Error.WriteLine("Run: .\backend\bot_trainer\v2\export_full_dataset.ps1 -OutputDir $DatasetDir")
+        exit 2
+    }
+
+    try {
+        $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        [Console]::Error.WriteLine("Dataset metadata is not valid JSON: $metadataPath")
+        [Console]::Error.WriteLine($_.Exception.Message)
+        exit 2
+    }
+
+    $schemaVersion = $metadata.schema_version
+    if ($schemaVersion -ne $ExpectedMetadataSchemaVersion) {
+        [Console]::Error.WriteLine(
+            "Unsupported dataset schema: $schemaVersion; expected $ExpectedMetadataSchemaVersion."
+        )
+        [Console]::Error.WriteLine(
+            "Re-export data before training: .\backend\bot_trainer\v2\export_full_dataset.ps1 -OutputDir $DatasetDir"
+        )
+        [Console]::Error.WriteLine(
+            "Then rebuild/remove the tensor cache: use -RebuildDataCache or delete $CacheDir"
+        )
+        exit 2
+    }
+
+    foreach ($name in @("train.jsonl", "val.jsonl", "test.jsonl")) {
+        $splitPath = Join-Path $DatasetDir $name
+        if (-not (Test-Path -LiteralPath $splitPath -PathType Leaf)) {
+            [Console]::Error.WriteLine("Dataset split not found: $splitPath")
+            [Console]::Error.WriteLine("Run: .\backend\bot_trainer\v2\export_full_dataset.ps1 -OutputDir $DatasetDir")
+            exit 2
+        }
+    }
+}
+
 $PreviousTemp = $env:TEMP
 $PreviousTmp = $env:TMP
 $PreviousPytestTempRoot = $env:PYTEST_DEBUG_TEMPROOT
@@ -158,10 +214,14 @@ try {
     Write-Host "Batch size:  $BatchSize"
     Write-Host "Workers:     $NumWorkers"
     Write-Host "Data cache:  $ResolvedDataCacheDir"
+    Write-Host "Aux weights: value=$ValueLossWeight fan=$FanLossWeight risk=$RiskLossWeight risk_pos=$RiskPosWeight"
+    Write-Host "Rare weights: claim=$ClaimRareActionWeight self_kong=$SelfKongRareActionWeight hu=$HuPositiveWeight"
     Write-Host "Grad clip:   $GradClipNorm"
     Write-Host "NaN tolerance: $MaxNanTolerance"
     Write-Host "Early stop:  $EarlyStopPatience"
     Write-Host "Python:      $PythonExe $PythonVersion"
+
+    Assert-DatasetContract -DatasetDir $DataDir -CacheDir $ResolvedDataCacheDir
 
     if (-not $SkipTests) {
         Invoke-TrainingPython @("-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('pytest') else 2)")
@@ -194,7 +254,16 @@ try {
         "--self-kong-loss-weight", "$SelfKongLossWeight",
         "--hu-loss-weight", "$HuLossWeight",
         "--value-loss-weight", "$ValueLossWeight",
+        "--fan-loss-weight", "$FanLossWeight",
         "--risk-loss-weight", "$RiskLossWeight",
+        "--risk-pos-weight", "$RiskPosWeight",
+        "--value-loss-start-weight", "$ValueLossStartWeight",
+        "--fan-loss-start-weight", "$FanLossStartWeight",
+        "--risk-loss-start-weight", "$RiskLossStartWeight",
+        "--aux-loss-warmup-epochs", "$AuxLossWarmupEpochs",
+        "--claim-rare-action-weight", "$ClaimRareActionWeight",
+        "--self-kong-rare-action-weight", "$SelfKongRareActionWeight",
+        "--hu-positive-weight", "$HuPositiveWeight",
         "--grad-clip-norm", "$GradClipNorm",
         "--max-nan-tolerance", "$MaxNanTolerance",
         "--early-stop-patience", "$EarlyStopPatience"

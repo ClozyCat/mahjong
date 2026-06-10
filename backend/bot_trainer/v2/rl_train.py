@@ -26,6 +26,7 @@ POLICY_CONFIGS = {
         "value_risk_range": 0.55,
         "min_risk_weight": 0.25,
         "max_risk_weight": 1.45,
+        "discard_value_source": "network",
         "entropy_multiplier": 1.0,
         "description": "PPO 策略：基于自博弈强化学习的生产策略",
     },
@@ -76,13 +77,25 @@ def masked_head_log_probs(
     return log_probs.gather(1, actions.long().unsqueeze(1)).squeeze(1)
 
 
+def discard_value_for_risk_adjustment(
+    outputs: dict[str, torch.Tensor],
+    policy_config: dict[str, object] | None,
+) -> torch.Tensor | None:
+    value = outputs.get("value")
+    if value is None:
+        return None
+    if policy_config is not None and policy_config.get("discard_value_source") == "zero":
+        return torch.zeros_like(value)
+    return value
+
+
 def risk_adjusted_discard_logits(
     outputs: dict[str, torch.Tensor],
-    policy_config: dict[str, float] | None = None,
+    policy_config: dict[str, object] | None = None,
 ) -> torch.Tensor:
     discard_logits = outputs["discard_logits"]
     risk_logits = outputs.get("risk_logits")
-    value = outputs.get("value")
+    value = discard_value_for_risk_adjustment(outputs, policy_config)
     if risk_logits is None or value is None:
         return discard_logits
 
@@ -92,10 +105,10 @@ def risk_adjusted_discard_logits(
         min_risk_weight = DISCARD_MIN_RISK_WEIGHT
         max_risk_weight = DISCARD_MAX_RISK_WEIGHT
     else:
-        base_risk_weight = policy_config["base_risk_weight"]
-        value_risk_range = policy_config["value_risk_range"]
-        min_risk_weight = policy_config["min_risk_weight"]
-        max_risk_weight = policy_config["max_risk_weight"]
+        base_risk_weight = float(policy_config["base_risk_weight"])
+        value_risk_range = float(policy_config["value_risk_range"])
+        min_risk_weight = float(policy_config["min_risk_weight"])
+        max_risk_weight = float(policy_config["max_risk_weight"])
 
     values = value.squeeze(-1)
     normalized_value = torch.clamp(values / DISCARD_VALUE_SCALE, -1.0, 1.0)
@@ -113,7 +126,7 @@ def risk_adjusted_discard_logits(
 def head_logits(
     outputs: dict[str, torch.Tensor],
     logits_key: str,
-    policy_config: dict[str, float] | None = None,
+    policy_config: dict[str, object] | None = None,
 ) -> torch.Tensor:
     if logits_key == "discard_logits":
         return risk_adjusted_discard_logits(outputs, policy_config)
@@ -276,7 +289,7 @@ def validate_checkpoint_architecture(
 def select_action_log_probs(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
-    policy_config: dict[str, float] | None = None,
+    policy_config: dict[str, object] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros_like(batch["reward"].float())
     heads = [
@@ -321,7 +334,7 @@ def forward_model(
 def select_action_entropy(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
-    policy_config: dict[str, float] | None = None,
+    policy_config: dict[str, object] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros_like(batch["reward"].float())
     heads = [
@@ -348,7 +361,7 @@ def select_action_head_kl(
     teacher_outputs: dict[str, torch.Tensor],
     student_outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
-    policy_config: dict[str, float] | None = None,
+    policy_config: dict[str, object] | None = None,
 ) -> torch.Tensor:
     result = torch.zeros((), device=batch["reward"].device)
     count = 0
@@ -404,16 +417,25 @@ def build_old_policy_model(
     return model
 
 
+def prepare_model_for_ppo_updates(model: torch.nn.Module) -> None:
+    model.train()
+    for module in model.modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.eval()
+
+
 def main() -> None:
     args = parse_args()
     validate_checkpoint_architecture(args.checkpoint, args.use_actor_critic)
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
 
-    policy_config = POLICY_CONFIGS[args.policy]
+    policy_config = dict(POLICY_CONFIGS[args.policy])
+    if args.use_actor_critic:
+        policy_config["discard_value_source"] = "zero"
     print(f"Policy: {args.policy} - {policy_config['description']}")
 
-    entropy_multiplier = policy_config["entropy_multiplier"]
+    entropy_multiplier = float(policy_config["entropy_multiplier"])
     adjusted_entropy_coef = args.entropy_coef * entropy_multiplier
     adjusted_entropy_end_coef = args.entropy_end_coef * entropy_multiplier
 
@@ -447,6 +469,7 @@ def main() -> None:
         print("Using shared policy-value network")
 
     load_checkpoint_if_present(model, args.checkpoint)
+    prepare_model_for_ppo_updates(model)
     old_policy_model = (
         build_old_policy_model(args.checkpoint, device)
         if args.recompute_old_policy_stats

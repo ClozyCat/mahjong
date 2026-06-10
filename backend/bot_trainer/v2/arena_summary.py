@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -26,6 +27,7 @@ def load_reports(path: Path) -> list[dict[str, Any]]:
 def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
     by_policy: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     by_subject: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    latency_samples_by_policy: dict[str, list[float]] = defaultdict(list)
     subject_scores_by_pair: dict[tuple[int, int], dict[str, float]] = defaultdict(dict)
     completed_matches = 0
     for report in reports:
@@ -41,6 +43,11 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             metrics["discard_count"] += seat["discard_count"]
             metrics["decision_count"] += seat["decision_count"]
             metrics["decision_latency_ms_sum"] += seat["decision_latency_ms_sum"]
+            decision_count = float(seat["decision_count"])
+            if decision_count > 0:
+                latency_samples_by_policy[policy].append(
+                    float(seat["decision_latency_ms_sum"]) / decision_count
+                )
             metrics["final_tenpai"] += 1 if seat["final_tenpai"] else 0
             metrics["model_loaded_seats"] += 1 if seat.get("model_loaded") else 0
             metrics["neural_action_count"] += seat.get("neural_action_count", 0)
@@ -88,6 +95,7 @@ def summarize_reports(reports: list[dict[str, Any]]) -> dict[str, Any]:
             "avg_latency_ms_per_decision": metrics["decision_latency_ms_sum"] / decision_count,
             "model_loaded_seats": int(metrics["model_loaded_seats"]),
             "neural_action_count": int(metrics["neural_action_count"]),
+            **latency_distribution(latency_samples_by_policy.get(policy, [])),
         }
 
     subjects = {}
@@ -132,11 +140,62 @@ def paired_subject_deltas(
         paired[key] = {
             "baseline_policy": baseline_id,
             "candidate_policy": candidate_id,
-            "paired_match_count": len(deltas),
-            "avg_score_delta": sum(deltas) / len(deltas),
             "deltas": deltas,
+            **paired_delta_stats(deltas),
         }
     return paired
+
+
+def paired_delta_stats(deltas: list[float]) -> dict[str, float | int]:
+    count = len(deltas)
+    average = sum(deltas) / count
+    stddev = sample_stddev(deltas, average)
+    stderr = stddev / math.sqrt(count) if count else 0.0
+    ci_radius = 1.96 * stderr
+    positive_count = sum(1 for delta in deltas if delta > 0.0)
+    return {
+        "paired_match_count": count,
+        "avg_score_delta": average,
+        "stddev_score_delta": stddev,
+        "stderr_score_delta": stderr,
+        "confidence95_low": average - ci_radius,
+        "confidence95_high": average + ci_radius,
+        "positive_delta_rate": positive_count / count,
+        "min_score_delta": min(deltas),
+        "max_score_delta": max(deltas),
+    }
+
+
+def sample_stddev(values: list[float], average: float) -> float:
+    if len(values) <= 1:
+        return 0.0
+    variance = sum((value - average) ** 2 for value in values) / (len(values) - 1)
+    return math.sqrt(variance)
+
+
+def latency_distribution(samples: list[float]) -> dict[str, float | int | None]:
+    return {
+        "latency_sample_count": len(samples),
+        "latency_ms_p50": percentile(samples, 50.0),
+        "latency_ms_p95": percentile(samples, 95.0),
+        "latency_ms_max": max(samples) if samples else None,
+    }
+
+
+def percentile(samples: list[float], percentile_value: float) -> float | None:
+    if not samples:
+        return None
+    ordered = sorted(samples)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (len(ordered) - 1) * (percentile_value / 100.0)
+    lower_index = math.floor(rank)
+    upper_index = math.ceil(rank)
+    if lower_index == upper_index:
+        return ordered[lower_index]
+    lower_value = ordered[lower_index]
+    upper_value = ordered[upper_index]
+    return lower_value + (upper_value - lower_value) * (rank - lower_index)
 
 
 def print_summary(summary: dict[str, Any]) -> None:
@@ -151,6 +210,8 @@ def print_summary(summary: dict[str, Any]) -> None:
             if avg_first_tenpai_turn is not None
             else "none"
         )
+        latency_p95 = metrics.get("latency_ms_p95")
+        latency_p95_text = f"{latency_p95:.2f}" if latency_p95 is not None else "none"
         print(
             f"  {policy}: "
             f"avg_score_delta={metrics['avg_score_delta']:.4f} "
@@ -159,6 +220,7 @@ def print_summary(summary: dict[str, Any]) -> None:
             f"avg_first_tenpai_turn={avg_first_tenpai_turn_text} "
             f"final_tenpai_rate={metrics['final_tenpai_rate']:.4f} "
             f"avg_latency_ms_per_decision={metrics['avg_latency_ms_per_decision']:.2f} "
+            f"latency_ms_p95={latency_p95_text} "
             f"model_loaded_seats={metrics['model_loaded_seats']} "
             f"neural_action_count={metrics['neural_action_count']}"
         )

@@ -527,6 +527,24 @@ def test_shared_policy_training_rejects_actor_critic_checkpoint(tmp_path: Path) 
         validate_checkpoint_architecture(checkpoint, use_actor_critic=False)
 
 
+def test_prepare_model_for_ppo_updates_disables_dropout_without_freezing_params() -> None:
+    import torch
+    from rl_train import prepare_model_for_ppo_updates
+
+    model = torch.nn.Sequential(
+        torch.nn.Linear(2, 2),
+        torch.nn.Dropout(0.5),
+        torch.nn.LayerNorm(2),
+    )
+
+    prepare_model_for_ppo_updates(model)
+
+    assert model.training is True
+    assert model[1].training is False
+    assert model[0].training is True
+    assert all(parameter.requires_grad for parameter in model.parameters())
+
+
 def test_discard_log_probs_use_risk_adjusted_logits() -> None:
     import math
     import torch
@@ -553,6 +571,47 @@ def test_discard_log_probs_use_risk_adjusted_logits() -> None:
     log_prob = select_action_log_probs(outputs, batch)
 
     risk_weight = 1.45
+    first = -risk_weight * (1.0 / (1.0 + math.exp(-5.0)))
+    second = -risk_weight * (1.0 / (1.0 + math.exp(5.0)))
+    expected = first - max(first, second) - math.log(
+        math.exp(first - max(first, second)) + math.exp(second - max(first, second))
+    )
+    assert log_prob.item() == pytest.approx(expected, abs=1e-5)
+
+
+def test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment() -> None:
+    import math
+    import torch
+    from rl_train import select_action_log_probs
+
+    outputs = {
+        "discard_logits": torch.tensor([[0.0, 0.0] + [-100.0] * 32]),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.tensor([[-8.0]]),
+        "risk_logits": torch.tensor([[5.0, -5.0] + [0.0] * 32]),
+    }
+    batch = {
+        "reward": torch.tensor([0.0]),
+        "action_head": torch.tensor([0]),
+        "action_index": torch.tensor([0]),
+        "discard_mask": torch.tensor([[True, True] + [False] * 32]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "hu_mask": torch.tensor([[True, False]]),
+    }
+    policy_config = {
+        "base_risk_weight": 0.90,
+        "value_risk_range": 0.55,
+        "min_risk_weight": 0.25,
+        "max_risk_weight": 1.45,
+        "discard_value_source": "zero",
+    }
+
+    log_prob = select_action_log_probs(outputs, batch, policy_config)
+
+    risk_weight = 0.90
     first = -risk_weight * (1.0 / (1.0 + math.exp(-5.0)))
     second = -risk_weight * (1.0 / (1.0 + math.exp(5.0)))
     expected = first - max(first, second) - math.log(
@@ -676,7 +735,7 @@ def test_candidate_gate_rejects_higher_deal_in() -> None:
     assert "deal_in_rate" in result["failures"]
 
 
-def test_candidate_gate_does_not_limit_latency() -> None:
+def test_candidate_gate_rejects_high_latency() -> None:
     from candidate_gate import evaluate_candidate
 
     summary = {
@@ -688,22 +747,35 @@ def test_candidate_gate_does_not_limit_latency() -> None:
                 "avg_first_tenpai_turn": 8.0,
                 "final_tenpai_rate": 0.55,
                 "avg_latency_ms_per_decision": 20.0,
+                "avg_claims": 2.0,
             },
             "rl_candidate_neural": {
                 "avg_score_delta": 1.5,
                 "win_rate": 0.21,
-                "deal_in_rate": 0.11,
+                "deal_in_rate": 0.10,
                 "avg_first_tenpai_turn": 7.8,
-                "final_tenpai_rate": 0.55,
-                "avg_latency_ms_per_decision": 2000.0,
+                "final_tenpai_rate": 0.56,
+                "avg_latency_ms_per_decision": 220.0,
+                "avg_claims": 2.2,
             },
         }
     }
 
     result = evaluate_candidate(summary, "baseline_neural", "rl_candidate_neural")
 
-    assert result["accepted"] is True
-    assert "latency" not in result["failures"]
+    assert result["accepted"] is False
+    assert "latency" in result["failures"]
+    assert result["failure_details"] == [
+        {
+            "metric": "latency",
+            "baseline": 20.0,
+            "candidate": 220.0,
+            "threshold": 200.0,
+            "margin": -20.0,
+        }
+    ]
+    assert result["promotion_report"]["latency"]["candidate_avg_ms_per_decision"] == 220.0
+    assert result["promotion_report"]["latency"]["limit_ms"] == 200.0
 
 
 def test_candidate_selector_prefers_accepted_candidate() -> None:
@@ -851,6 +923,63 @@ def test_candidate_selector_preserves_policy_metadata() -> None:
     assert selected["selected"]["policy"] == "ppo"
 
 
+def test_candidate_selector_preserves_promotion_report_metrics() -> None:
+    from candidate_selector import select_best_candidate
+
+    selected = select_best_candidate([
+        {
+            "epoch": 1,
+            "policy": "ppo",
+            "checkpoint": "ppo/epoch_001.pt",
+            "onnx": "ppo/epoch_001.onnx",
+            "gate": {
+                "accepted": True,
+                "failures": [],
+                "baseline": {
+                    "avg_score_delta": 0.0,
+                    "win_rate": 0.30,
+                    "deal_in_rate": 0.12,
+                    "avg_first_tenpai_turn": 10.0,
+                    "final_tenpai_rate": 0.60,
+                    "avg_latency_ms_per_decision": 70.0,
+                },
+                "candidate": {
+                    "avg_score_delta": 1.0,
+                    "win_rate": 0.31,
+                    "deal_in_rate": 0.11,
+                    "avg_first_tenpai_turn": 9.8,
+                    "final_tenpai_rate": 0.62,
+                    "avg_latency_ms_per_decision": 72.0,
+                },
+                "paired": {
+                    "paired_match_count": 8,
+                    "avg_score_delta": 2.5,
+                    "confidence95_low": 0.75,
+                    "confidence95_high": 4.25,
+                    "positive_delta_rate": 0.75,
+                },
+                "promotion_report": {
+                    "paired": {
+                        "paired_match_count": 8,
+                        "avg_score_delta": 2.5,
+                        "confidence95_low": 0.75,
+                        "confidence95_high": 4.25,
+                        "positive_delta_rate": 0.75,
+                    },
+                    "warnings": [],
+                },
+            },
+        }
+    ])
+
+    summary = selected["selected"]
+    assert selected["promotion_report"]["paired"]["avg_score_delta"] == pytest.approx(2.5)
+    assert summary["promotion_report"]["paired"]["positive_delta_rate"] == pytest.approx(0.75)
+    assert summary["paired_avg_score_delta"] == pytest.approx(2.5)
+    assert summary["paired_confidence95_low"] == pytest.approx(0.75)
+    assert summary["paired_positive_delta_rate"] == pytest.approx(0.75)
+
+
 def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     from arena_summary import load_reports, summarize_reports
 
@@ -901,6 +1030,10 @@ def test_arena_summary_aggregates_policy_metrics(tmp_path: Path) -> None:
     assert summary["policies"]["a"]["avg_first_tenpai_turn"] == 4.0
     assert summary["policies"]["a"]["model_loaded_seats"] == 1
     assert summary["policies"]["a"]["neural_action_count"] == 3
+    assert summary["policies"]["a"]["latency_sample_count"] == 1
+    assert summary["policies"]["a"]["latency_ms_p50"] == pytest.approx(5.0)
+    assert summary["policies"]["a"]["latency_ms_p95"] == pytest.approx(5.0)
+    assert summary["policies"]["a"]["latency_ms_max"] == pytest.approx(5.0)
     assert "fallback_count" not in summary["policies"]["a"]
     assert "same_as_heuristic_rate" not in summary["policies"]["a"]
     assert summary["policies"]["b"]["deal_in_rate"] == 1.0
@@ -957,6 +1090,13 @@ def test_arena_summary_reports_paired_subject_score_deltas(tmp_path: Path) -> No
     assert paired["paired_match_count"] == 2
     assert paired["avg_score_delta"] == pytest.approx(2.5)
     assert paired["deltas"] == [3, 2]
+    assert paired["stddev_score_delta"] == pytest.approx(0.70710678)
+    assert paired["stderr_score_delta"] == pytest.approx(0.5)
+    assert paired["confidence95_low"] == pytest.approx(1.52)
+    assert paired["confidence95_high"] == pytest.approx(3.48)
+    assert paired["positive_delta_rate"] == pytest.approx(1.0)
+    assert paired["min_score_delta"] == 2
+    assert paired["max_score_delta"] == 3
 
 
 def test_candidate_gate_includes_paired_score_delta() -> None:
@@ -971,6 +1111,7 @@ def test_candidate_gate_includes_paired_score_delta() -> None:
                 "avg_first_tenpai_turn": 8.0,
                 "final_tenpai_rate": 0.55,
                 "avg_latency_ms_per_decision": 20.0,
+                "avg_claims": 2.0,
             },
             "rl_candidate_neural": {
                 "avg_score_delta": 1.5,
@@ -979,12 +1120,16 @@ def test_candidate_gate_includes_paired_score_delta() -> None:
                 "avg_first_tenpai_turn": 7.8,
                 "final_tenpai_rate": 0.55,
                 "avg_latency_ms_per_decision": 22.0,
+                "avg_claims": 2.2,
             },
         },
         "paired_subjects": {
             "baseline_neural__vs__rl_candidate_neural": {
                 "paired_match_count": 2,
                 "avg_score_delta": 2.5,
+                "confidence95_low": 1.52,
+                "confidence95_high": 3.48,
+                "positive_delta_rate": 1.0,
                 "deltas": [3, 2],
             }
         },
@@ -994,3 +1139,11 @@ def test_candidate_gate_includes_paired_score_delta() -> None:
 
     assert result["paired"]["avg_score_delta"] == pytest.approx(2.5)
     assert result["paired"]["paired_match_count"] == 2
+    assert result["failure_details"] == []
+    report = result["promotion_report"]
+    assert report["metrics"]["avg_score_delta"]["margin"] == pytest.approx(1.5)
+    assert report["metrics"]["deal_in_rate"]["margin"] == pytest.approx(0.0)
+    assert report["paired"]["confidence95_low"] == pytest.approx(1.52)
+    assert report["paired"]["positive_delta_rate"] == pytest.approx(1.0)
+    assert report["claim_rate"]["margin"] == pytest.approx(1.8)
+    assert report["warnings"] == []

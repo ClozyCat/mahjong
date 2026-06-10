@@ -19,6 +19,7 @@ ACTOR_KEY_PREFIXES = {
     "claim_head.": "actor.claim_head.",
     "self_kong_head.": "actor.self_kong_head.",
     "hu_head.": "actor.hu_head.",
+    "fan_head.": "actor.fan_head.",
     "risk_trunk.": "actor.risk_trunk.",
     "risk_head.": "actor.risk_head.",
 }

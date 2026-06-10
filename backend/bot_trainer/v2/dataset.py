@@ -19,7 +19,9 @@ SCALAR_FEATURE_COUNT = 12
 DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 7
+DISK_CACHE_VERSION = 8
+FAN_TARGET_SCALE = 16.0
+EXPECTED_METADATA_SCHEMA_VERSION = 3
 STANDARD_WIND_ORDER = ("east", "south", "west", "north")
 ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
@@ -180,6 +182,8 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
         "hu_target": ((), np.dtype(np.int64)),
         "value_target": ((1,), np.dtype(np.float32)),
         "risk_target": ((TILE_KIND_COUNT,), np.dtype(np.float32)),
+        "risk_mask": ((TILE_KIND_COUNT,), np.dtype(np.bool_)),
+        "fan_target": ((1,), np.dtype(np.float32)),
         "decision_kind": ((), np.dtype(np.int64)),
     }
 
@@ -243,8 +247,15 @@ def count_jsonl_rows(jsonl_path: Path) -> int:
 
 def load_metadata(metadata_path: Path) -> dict[str, Any]:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("schema_version") != 2:
-        raise ValueError(f"unsupported metadata schema: {metadata.get('schema_version')}")
+    schema_version = metadata.get("schema_version")
+    if schema_version != EXPECTED_METADATA_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported metadata schema: {schema_version}; "
+            f"expected {EXPECTED_METADATA_SCHEMA_VERSION}. "
+            "Re-export the dataset with backend/bot_trainer/v2/export_full_dataset.ps1 "
+            "or backend/bot_trainer/v2/export_full_dataset.sh, then rebuild or remove "
+            "the data cache."
+        )
     if len(metadata["tile_keys"]) != TILE_KIND_COUNT:
         raise ValueError("metadata tile_keys must contain 34 entries")
     return metadata
@@ -312,6 +323,8 @@ def encode_row(
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
         "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 1000.0], dtype=np.float32),
         "risk_target": risk_target(row, tile_to_index),
+        "risk_mask": risk_mask(row, tile_to_index),
+        "fan_target": fan_target(row),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),
     }
 
@@ -508,6 +521,32 @@ def risk_target(row: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarra
         if label.get("type") == "discard" and label.get("tile_key") in tile_to_index:
             target[tile_to_index[label["tile_key"]]] = 1.0
     return target
+
+
+def risk_mask(row: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:
+    mask = np.zeros((TILE_KIND_COUNT,), dtype=np.bool_)
+    label = row["label"]
+    if row.get("decision_kind") != "active_turn" or label.get("type") != "discard":
+        return mask
+
+    label_tile_key = label.get("tile_key")
+    if row["outcome"].get("dealt_in", False):
+        for action in row.get("legal_actions", []):
+            if action.startswith("discard:"):
+                tile_key = action.split(":", 1)[1]
+                if tile_key in tile_to_index:
+                    mask[tile_to_index[tile_key]] = True
+    elif label_tile_key in tile_to_index:
+        mask[tile_to_index[label_tile_key]] = True
+
+    if label_tile_key in tile_to_index:
+        mask[tile_to_index[label_tile_key]] = True
+    return mask
+
+
+def fan_target(row: dict[str, Any]) -> np.ndarray:
+    fan_count = max(0.0, float(row.get("outcome", {}).get("fan_count", 0.0)))
+    return np.asarray([fan_count / FAN_TARGET_SCALE], dtype=np.float32)
 
 
 def decision_kind_index(decision_kind: str) -> int:

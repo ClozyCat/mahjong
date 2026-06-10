@@ -28,6 +28,9 @@ from model import ModelConfig, build_model
 
 CLAIM_ACTION_NAMES = ["pass", "hu", "pung", "kong", "chow_left", "chow_mid", "chow_right"]
 SELF_KONG_ACTION_NAMES = ["pass", "concealed_kong", "add_kong"]
+DEFAULT_CLAIM_RARE_ACTION_WEIGHT = 2.0
+DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT = 3.0
+DEFAULT_HU_POSITIVE_WEIGHT = 3.0
 
 def main() -> None:
     args = parse_args()
@@ -95,10 +98,15 @@ def main() -> None:
             hu_weight=args.hu_loss_weight,
             value_start=args.value_loss_start_weight,
             value_target=args.value_loss_weight,
+            fan_start=args.fan_loss_start_weight,
+            fan_target=args.fan_loss_weight,
             risk_start=args.risk_loss_start_weight,
             risk_target=args.risk_loss_weight,
         )
         loss_weights["risk_pos_weight"] = args.risk_pos_weight
+        loss_weights["claim_rare_action_weight"] = args.claim_rare_action_weight
+        loss_weights["self_kong_rare_action_weight"] = args.self_kong_rare_action_weight
+        loss_weights["hu_positive_weight"] = args.hu_positive_weight
         current_lr = optimizer.param_groups[0]["lr"]
         train_metrics = run_epoch(
             model, train_loader, optimizer, device, scaler, use_amp,
@@ -191,12 +199,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--self-kong-loss-weight", type=float, default=1.0)
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
     parser.add_argument("--value-loss-weight", type=float, default=0.75)
+    parser.add_argument("--fan-loss-weight", type=float, default=0.5)
     parser.add_argument("--risk-loss-weight", type=float, default=1.0)
     parser.add_argument("--risk-pos-weight", type=float, default=300.0,
         help="Positive class weight for risk BCE loss. Mitigates extreme class imbalance (~0.3%% positive positions).")
     parser.add_argument("--value-loss-start-weight", type=float, default=0.25)
+    parser.add_argument("--fan-loss-start-weight", type=float, default=0.1)
     parser.add_argument("--risk-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--aux-loss-warmup-epochs", type=int, default=4)
+    parser.add_argument("--claim-rare-action-weight", type=float, default=DEFAULT_CLAIM_RARE_ACTION_WEIGHT)
+    parser.add_argument("--self-kong-rare-action-weight", type=float, default=DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT)
+    parser.add_argument("--hu-positive-weight", type=float, default=DEFAULT_HU_POSITIVE_WEIGHT)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0,
         help="Maximum gradient norm for clipping. Set to 0 to disable.")
     parser.add_argument("--max-nan-tolerance", type=int, default=2,
@@ -354,22 +367,44 @@ def compute_losses(
     self_kong_weight: float = 1.0,
     hu_weight: float = 1.0,
     value_weight: float = 0.25,
+    fan_weight: float = 0.1,
     risk_weight: float = 0.25,
     risk_pos_weight: float = 300.0,
+    claim_rare_action_weight: float = DEFAULT_CLAIM_RARE_ACTION_WEIGHT,
+    self_kong_rare_action_weight: float = DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT,
+    hu_positive_weight: float = DEFAULT_HU_POSITIVE_WEIGHT,
 ) -> dict[str, torch.Tensor]:
     discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
-    claim_loss = masked_cross_entropy(outputs["claim_logits"], batch["claim_mask"], batch["claim_target"])
-    self_kong_loss = masked_cross_entropy(outputs["self_kong_logits"], batch["self_kong_mask"], batch["self_kong_target"])
-    hu_loss = masked_cross_entropy(outputs["hu_logits"], batch["hu_mask"], batch["hu_target"])
+    claim_loss = masked_cross_entropy(
+        outputs["claim_logits"],
+        batch["claim_mask"],
+        batch["claim_target"],
+        non_pass_class_weights(outputs["claim_logits"], claim_rare_action_weight),
+    )
+    self_kong_loss = masked_cross_entropy(
+        outputs["self_kong_logits"],
+        batch["self_kong_mask"],
+        batch["self_kong_target"],
+        non_pass_class_weights(outputs["self_kong_logits"], self_kong_rare_action_weight),
+    )
+    hu_loss = masked_cross_entropy(
+        outputs["hu_logits"],
+        batch["hu_mask"],
+        batch["hu_target"],
+        hu_class_weights(outputs["hu_logits"], hu_positive_weight),
+    )
 
     # 添加数值稳定性保护
     value_loss = F.mse_loss(outputs["value"], batch["value_target"].float())
     value_loss = torch.clamp(value_loss, max=100.0)  # 防止MSE爆炸
+    fan_loss = F.mse_loss(outputs["fan_value"], batch["fan_target"].float())
+    fan_loss = torch.clamp(fan_loss, max=100.0)
 
-    risk_loss = F.binary_cross_entropy_with_logits(
+    risk_loss = masked_binary_cross_entropy_with_logits(
         outputs["risk_logits"],
         batch["risk_target"].float(),
-        pos_weight=torch.tensor(risk_pos_weight, device=outputs["risk_logits"].device),
+        batch["risk_mask"],
+        risk_pos_weight,
     )
 
     loss = (
@@ -378,6 +413,7 @@ def compute_losses(
         + self_kong_weight * self_kong_loss
         + hu_weight * hu_loss
         + value_weight * value_loss
+        + fan_weight * fan_loss
         + risk_weight * risk_loss
     )
     return {
@@ -387,6 +423,7 @@ def compute_losses(
         "self_kong_loss": self_kong_loss,
         "hu_loss": hu_loss,
         "value_loss": value_loss,
+        "fan_loss": fan_loss,
         "risk_loss": risk_loss,
     }
 
@@ -399,6 +436,8 @@ def loss_weights_for_epoch(
     hu_weight: float,
     value_start: float,
     value_target: float,
+    fan_start: float,
+    fan_target: float,
     risk_start: float,
     risk_target: float,
 ) -> dict[str, float]:
@@ -411,10 +450,16 @@ def loss_weights_for_epoch(
         "self_kong_weight": self_kong_weight,
         "hu_weight": hu_weight,
         "value_weight": value_start + (value_target - value_start) * progress,
+        "fan_weight": fan_start + (fan_target - fan_start) * progress,
         "risk_weight": risk_start + (risk_target - risk_start) * progress,
     }
 
-def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def masked_cross_entropy(
+    logits: torch.Tensor,
+    mask: torch.Tensor,
+    target: torch.Tensor,
+    class_weights: torch.Tensor | None = None,
+) -> torch.Tensor:
     active = target != IGNORE_INDEX
     if not torch.any(active):
         return logits.sum() * 0.0
@@ -423,7 +468,48 @@ def masked_cross_entropy(logits: torch.Tensor, mask: torch.Tensor, target: torch
     # 数值稳定性：裁剪logits防止exp溢出
     masked_logits = torch.clamp(masked_logits, min=-100.0, max=100.0)
 
-    return F.cross_entropy(masked_logits[active], target[active].long())
+    active_targets = target[active].long()
+    losses = F.cross_entropy(masked_logits[active], active_targets, reduction="none")
+    if class_weights is not None:
+        losses = losses * class_weights[active_targets]
+    return losses.mean()
+
+
+def non_pass_class_weights(logits: torch.Tensor, rare_action_weight: float) -> torch.Tensor:
+    weights = torch.ones((logits.shape[1],), device=logits.device)
+    if logits.shape[1] > 1:
+        weights[1:] = rare_action_weight
+    return weights
+
+
+def hu_class_weights(logits: torch.Tensor, positive_weight: float) -> torch.Tensor:
+    weights = torch.ones((logits.shape[1],), device=logits.device)
+    if logits.shape[1] > 1:
+        weights[1] = positive_weight
+    return weights
+
+
+def masked_binary_cross_entropy_with_logits(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor,
+    risk_pos_weight: float,
+) -> torch.Tensor:
+    active = mask.bool()
+    if not torch.any(active):
+        return logits.sum() * 0.0
+    pos_weight = torch.full(
+        (logits.shape[1],),
+        risk_pos_weight,
+        device=logits.device,
+    )
+    losses = F.binary_cross_entropy_with_logits(
+        logits,
+        target,
+        pos_weight=pos_weight,
+        reduction="none",
+    )
+    return losses[active].mean()
 
 
 def forward_model(
@@ -445,6 +531,7 @@ class MetricTotals:
         self.self_kong_loss_sum = torch.tensor(0.0, device=device)
         self.hu_loss_sum = torch.tensor(0.0, device=device)
         self.value_loss_sum = torch.tensor(0.0, device=device)
+        self.fan_loss_sum = torch.tensor(0.0, device=device)
         self.risk_loss_sum = torch.tensor(0.0, device=device)
         self.batch_count = 0
         self.discard_top1 = torch.tensor(0, device=device)
@@ -462,6 +549,7 @@ class MetricTotals:
         self.self_kong_loss_sum += losses["self_kong_loss"].detach()
         self.hu_loss_sum += losses["hu_loss"].detach()
         self.value_loss_sum += losses["value_loss"].detach()
+        self.fan_loss_sum += losses["fan_loss"].detach()
         self.risk_loss_sum += losses["risk_loss"].detach()
         self.batch_count += 1
         self.update_discard(outputs["discard_logits"], batch)
@@ -529,6 +617,7 @@ class MetricTotals:
             "self_kong_loss": self.self_kong_loss_sum.item() / max(1, self.batch_count),
             "hu_loss": self.hu_loss_sum.item() / max(1, self.batch_count),
             "value_loss": self.value_loss_sum.item() / max(1, self.batch_count),
+            "fan_loss": self.fan_loss_sum.item() / max(1, self.batch_count),
             "risk_loss": self.risk_loss_sum.item() / max(1, self.batch_count),
             "discard_top1": self.discard_top1.item() / max(1, self.discard_count.item()),
             "discard_top3": self.discard_top3.item() / max(1, self.discard_count.item()),
@@ -594,6 +683,7 @@ def empty_metrics() -> dict[str, float]:
         "self_kong_loss": 0.0,
         "hu_loss": 0.0,
         "value_loss": 0.0,
+        "fan_loss": 0.0,
         "risk_loss": 0.0,
         "discard_top1": 0.0,
         "discard_top3": 0.0,
