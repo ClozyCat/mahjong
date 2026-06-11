@@ -33,6 +33,7 @@ param(
     [int]$EarlyStopPatience = 0,
     [switch]$RebuildDataCache,
     [switch]$Amp,
+    [switch]$NoTf32,
     [switch]$CompileModel,
     [switch]$SkipTests,
     [switch]$SkipOnnxExport
@@ -274,6 +275,9 @@ try {
     )
     if ($Amp) {
         $trainArgs += "--amp"
+    }
+    if ($NoTf32) {
+        $trainArgs += "--no-tf32"
     }
     if ($CompileModel) {
         $trainArgs += "--compile"

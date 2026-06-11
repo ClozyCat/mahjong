@@ -38,6 +38,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
+    math_mode = configure_cuda_math(device, allow_tf32=not args.no_tf32)
     
     # 动态判断是否支持 AMP (ROCm 环境下的 "cuda" 支持，DirectML 暂不支持)
     is_rocm_or_cuda = device.type == "cuda"
@@ -88,7 +89,7 @@ def main() -> None:
         init_scale=1024.0,
         growth_interval=4000,
     )
-    print(f"device={device} amp={use_amp} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
+    print(f"device={device} amp={use_amp} math={math_mode} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
     print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
     best_metric = math.inf
     best_metrics: dict[str, float] = {}
@@ -202,6 +203,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-cache-dir", type=Path, default=None)
     parser.add_argument("--rebuild-data-cache", action="store_true")
     parser.add_argument("--amp", action="store_true")
+    parser.add_argument("--no-tf32", action="store_true", help="Disable CUDA TF32 acceleration for float32 matmul/convolution.")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--claim-loss-weight", type=float, default=1.0)
@@ -260,6 +262,15 @@ def resolve_device(requested: str) -> torch.device:
             raise SystemExit("torch-directml 未安装。请运行: pip install torch-directml") from exc
             
     return torch.device(requested)
+
+
+def configure_cuda_math(device: torch.device, allow_tf32: bool = True) -> str:
+    if device.type != "cuda":
+        return "fp32"
+    torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+    torch.backends.cudnn.allow_tf32 = allow_tf32
+    torch.set_float32_matmul_precision("high" if allow_tf32 else "highest")
+    return "tf32" if allow_tf32 else "fp32"
 
 
 class DatasetBatchCollator:

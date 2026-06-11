@@ -98,9 +98,13 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
     assert "[double]$LearningRate = 0.0003" in powershell
     assert "[switch]$Amp" in powershell
     assert "if ($Amp)" in powershell
+    assert "[switch]$NoTf32" in powershell
+    assert "--no-tf32" in powershell
     assert "LEARNING_RATE=0.0003" in bash
     assert "USE_AMP=0" in bash
     assert "if (( USE_AMP == 1 ))" in bash
+    assert "USE_TF32=1" in bash
+    assert "--no-tf32" in bash
     assert "[double]$ValueLossWeight = 0.75" in powershell
     assert "[double]$RiskLossWeight = 1.0" in powershell
 
@@ -281,6 +285,26 @@ def test_gradients_are_finite_rejects_nan_and_inf() -> None:
 
     parameter.grad = torch.tensor([float("nan")])
     assert not gradients_are_finite([parameter])
+
+
+def test_configure_cuda_math_enables_tf32_for_cuda_device() -> None:
+    import torch
+    from train import configure_cuda_math
+
+    previous_matmul = torch.backends.cuda.matmul.allow_tf32
+    previous_cudnn = torch.backends.cudnn.allow_tf32
+    previous_precision = torch.get_float32_matmul_precision()
+    try:
+        mode = configure_cuda_math(torch.device("cuda"), allow_tf32=True)
+
+        assert mode == "tf32"
+        assert torch.backends.cuda.matmul.allow_tf32
+        assert torch.backends.cudnn.allow_tf32
+        assert torch.get_float32_matmul_precision() == "high"
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = previous_matmul
+        torch.backends.cudnn.allow_tf32 = previous_cudnn
+        torch.set_float32_matmul_precision(previous_precision)
 
 
 def test_risk_loss_ignores_unmasked_tiles() -> None:

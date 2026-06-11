@@ -10,15 +10,6 @@ def model_path_text(path: Path) -> str:
     return path.as_posix()
 
 
-def resolve_quantized(path: Path) -> Path:
-    """Return the quantized variant if available, otherwise the original path."""
-    if path.suffix == ".onnx":
-        quant = path.with_name(path.stem + ".quant.onnx")
-        if quant.exists():
-            return quant
-    return path
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pool", type=Path, default=None)
@@ -34,7 +25,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("backend/assets/sft/sft.onnx"),
     )
-    parser.add_argument("--quantized", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
 
@@ -122,14 +112,6 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def resolve_pool_model_paths(pool: dict[str, Any]) -> None:
-    """Replace all model_path entries with their quantized variants in-place."""
-    for entry in [pool.get("learner", {})] + pool.get("opponents", []):
-        raw = entry.get("model_path")
-        if raw:
-            entry["model_path"] = model_path_text(resolve_quantized(Path(raw)))
-
-
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -137,10 +119,7 @@ def main() -> None:
         if args.pool is None:
             raise SystemExit("--pool is required for trajectory mode")
         pool = load_pool(args.pool)
-        if args.quantized:
-            resolve_pool_model_paths(pool)
-        rollout_onnx = resolve_quantized(args.rollout_onnx) if args.rollout_onnx is not None and args.quantized else args.rollout_onnx
-        apply_rollout_model_override(pool, rollout_onnx)
+        apply_rollout_model_override(pool, args.rollout_onnx)
         for index, config in enumerate(
             build_trajectory_configs(
                 pool,
@@ -156,14 +135,12 @@ def main() -> None:
         if args.candidate_onnx is None:
             raise SystemExit("--candidate-onnx is required for eval mode")
         pool = load_pool(args.pool)
-        candidate_onnx = resolve_quantized(args.candidate_onnx) if args.quantized else args.candidate_onnx
-        baseline_onnx = resolve_quantized(args.baseline_onnx) if args.quantized else args.baseline_onnx
         write_json(
             args.output_dir / "candidate_eval_config.json",
             build_eval_config(
                 pool,
-                candidate_onnx,
-                baseline_onnx,
+                args.candidate_onnx,
+                args.baseline_onnx,
                 args.matches,
                 args.seed,
                 args.max_actions,

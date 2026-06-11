@@ -34,6 +34,7 @@
 ## 2. 监督训练 SFT
 
 监督训练脚本会训练多头策略/价值网络，并默认导出到 `backend/assets/sft/sft.onnx`。
+CUDA 训练默认不启用 FP16 AMP，而是启用 TF32 加速 float32 matmul/convolution，以避免半精度 NaN 同时保留较好的吞吐。
 
 ```powershell
 .\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 4096 -Device cuda -NumWorkers 0
@@ -43,7 +44,8 @@
 ./backend/bot_trainer/v2/train_and_export_model.sh --epochs 20 --batch-size 4096 --device cuda --num-workers 0
 ```
 
-显存不足时先降 `BatchSize` 到 `1024`。CPU 训练可用 PowerShell 的 `-Device cpu -NoAmp`，或 Bash 的 `--device cpu --no-amp`。
+显存不足时先降 `BatchSize` 到 `1024`。CPU 训练可用 PowerShell 的 `-Device cpu`，或 Bash 的 `--device cpu`。
+如果确实需要 FP16 AMP 提速，可显式传 PowerShell 的 `-Amp`，或 Bash 的 `--amp`；若要禁用 CUDA TF32，可传 `-NoTf32` 或 `--no-tf32`。
 
 主要产物：
 

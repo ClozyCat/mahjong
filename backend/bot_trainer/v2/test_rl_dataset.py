@@ -260,6 +260,32 @@ def test_epoch_checkpoint_name_is_zero_padded() -> None:
     assert epoch_checkpoint_name(12) == "epoch_012.pt"
 
 
+def test_league_config_preserves_original_onnx_paths(tmp_path: Path) -> None:
+    import league_config
+    from league_config import apply_rollout_model_override, build_eval_config
+
+    rollout = tmp_path / "rollout.onnx"
+    rollout.write_text("fp32", encoding="utf-8")
+    rollout.with_name("rollout.quant.onnx").write_text("quant", encoding="utf-8")
+    pool = {
+        "learner": {"id": "learner", "model_path": "old.onnx"},
+        "opponents": [
+            {"id": "a", "model_path": rollout.as_posix()},
+            {"id": "b", "model_path": rollout.as_posix()},
+            {"id": "c", "model_path": rollout.as_posix()},
+        ],
+    }
+
+    apply_rollout_model_override(pool, rollout)
+    config = build_eval_config(pool, rollout, rollout, matches=1, seed=1, max_actions=10)
+
+    assert pool["learner"]["model_path"] == rollout.as_posix()
+    assert config["subjects"][0]["model_path"] == rollout.as_posix()
+    assert config["subjects"][1]["model_path"] == rollout.as_posix()
+    assert not hasattr(league_config, "resolve_quantized")
+    assert not hasattr(league_config, "resolve_pool_model_paths")
+
+
 def test_clipped_value_loss_uses_larger_loss() -> None:
     import torch
     from rl_train import clipped_value_loss

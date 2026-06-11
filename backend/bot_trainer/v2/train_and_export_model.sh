@@ -32,6 +32,7 @@ MAX_NAN_TOLERANCE=2
 EARLY_STOP_PATIENCE=0
 DEVICE="cuda"
 USE_AMP=0
+USE_TF32=1
 COMPILE_MODEL=0
 REBUILD_DATA_CACHE=0
 SKIP_TESTS=0
@@ -84,6 +85,7 @@ Options:
   --max-nan-tolerance N     Max consecutive NaN epochs before stopping.
   --early-stop-patience N   Early stopping patience (0 to disable).
   --amp                     Enable mixed precision training.
+  --no-tf32                 Disable CUDA TF32 acceleration for float32 training.
   --compile                 Pass --compile to train.py.
   --rebuild-data-cache      Rebuild tensor cache before training.
   --skip-tests              Skip pytest before training.
@@ -255,6 +257,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --amp)
             USE_AMP=1
+            shift
+            ;;
+        --no-tf32)
+            USE_TF32=0
             shift
             ;;
         --compile)
@@ -475,6 +481,9 @@ train_args=(
 
 if (( USE_AMP == 1 )); then
     train_args+=(--amp)
+fi
+if (( USE_TF32 == 0 )); then
+    train_args+=(--no-tf32)
 fi
 
 if (( COMPILE_MODEL == 1 )); then

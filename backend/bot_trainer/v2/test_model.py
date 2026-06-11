@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import os
-import sys
-import types
-
 import torch
 
 import model as model_module
@@ -175,80 +171,8 @@ def test_actor_critic_export_wrapper_preserves_onnx_outputs(tmp_path) -> None:
     assert outputs[OUTPUT_NAMES.index("qualifying_fan_value")].shape == (2, 1)
 
 
-def test_quantize_onnx_rebuilds_stale_existing_quantized_model(tmp_path, monkeypatch) -> None:
+def test_export_onnx_has_no_quantization_interface() -> None:
     import export_onnx
 
-    fp32_path = tmp_path / "sft.onnx"
-    fp32_path.write_bytes(b"fp32")
-    quant_path = tmp_path / "sft.quant.onnx"
-    quant_path.write_text("stale", encoding="utf-8")
-
-    def fake_output_names(path):
-        if path == quant_path:
-            return ["discard_logits"]
-        return export_onnx.OUTPUT_NAMES
-
-    def fake_quant_pre_process(source, output):
-        assert source == fp32_path.as_posix()
-        torch.save({"source": source}, output)
-
-    def fake_quantize_dynamic(source, output, **kwargs):
-        assert "preprocessed.onnx" in source
-        quant_path.write_text("rebuilt", encoding="utf-8")
-
-    onnxruntime = types.ModuleType("onnxruntime")
-    onnxruntime.__path__ = []
-    quantization = types.ModuleType("onnxruntime.quantization")
-    quantization.QuantType = types.SimpleNamespace(QInt8="qint8")
-    quantization.quantize_dynamic = fake_quantize_dynamic
-    shape_inference = types.ModuleType("onnxruntime.quantization.shape_inference")
-    shape_inference.quant_pre_process = fake_quant_pre_process
-    onnxruntime.quantization = quantization
-
-    monkeypatch.setattr(export_onnx, "onnx_output_names", fake_output_names)
-    monkeypatch.setitem(sys.modules, "onnxruntime", onnxruntime)
-    monkeypatch.setitem(sys.modules, "onnxruntime.quantization", quantization)
-    monkeypatch.setitem(sys.modules, "onnxruntime.quantization.shape_inference", shape_inference)
-
-    result = export_onnx.quantize_onnx(fp32_path)
-
-    assert result == quant_path
-    assert quant_path.read_text(encoding="utf-8") == "rebuilt"
-
-
-def test_quantize_onnx_rebuilds_outdated_existing_quantized_model(tmp_path, monkeypatch) -> None:
-    import export_onnx
-
-    fp32_path = tmp_path / "sft.onnx"
-    fp32_path.write_bytes(b"fp32")
-    quant_path = tmp_path / "sft.quant.onnx"
-    quant_path.write_text("old weights", encoding="utf-8")
-    os.utime(quant_path, (1000, 1000))
-    os.utime(fp32_path, (2000, 2000))
-
-    def fake_quant_pre_process(source, output):
-        assert source == fp32_path.as_posix()
-        torch.save({"source": source}, output)
-
-    def fake_quantize_dynamic(source, output, **kwargs):
-        assert "preprocessed.onnx" in source
-        quant_path.write_text("new weights", encoding="utf-8")
-
-    onnxruntime = types.ModuleType("onnxruntime")
-    onnxruntime.__path__ = []
-    quantization = types.ModuleType("onnxruntime.quantization")
-    quantization.QuantType = types.SimpleNamespace(QInt8="qint8")
-    quantization.quantize_dynamic = fake_quantize_dynamic
-    shape_inference = types.ModuleType("onnxruntime.quantization.shape_inference")
-    shape_inference.quant_pre_process = fake_quant_pre_process
-    onnxruntime.quantization = quantization
-
-    monkeypatch.setattr(export_onnx, "onnx_output_names", lambda path: export_onnx.OUTPUT_NAMES)
-    monkeypatch.setitem(sys.modules, "onnxruntime", onnxruntime)
-    monkeypatch.setitem(sys.modules, "onnxruntime.quantization", quantization)
-    monkeypatch.setitem(sys.modules, "onnxruntime.quantization.shape_inference", shape_inference)
-
-    result = export_onnx.quantize_onnx(fp32_path)
-
-    assert result == quant_path
-    assert quant_path.read_text(encoding="utf-8") == "new weights"
+    assert not hasattr(export_onnx, "quantize_onnx")
+    assert not hasattr(export_onnx, "onnx_output_names")
