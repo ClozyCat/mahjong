@@ -10,17 +10,19 @@ param(
     [string]$PythonVersion = "",
     [ValidateSet("auto", "cuda", "cpu", "dml")]
     [string]$Device = "cuda",
-    [double]$LearningRate = 0.001,
+    [double]$LearningRate = 0.0003,
     [double]$WeightDecay = 0.0001,
     [double]$ClaimLossWeight = 1.0,
     [double]$SelfKongLossWeight = 1.0,
     [double]$HuLossWeight = 1.0,
     [double]$ValueLossWeight = 0.75,
     [double]$FanLossWeight = 0.5,
+    [double]$QualifyingFanLossWeight = 0.75,
     [double]$RiskLossWeight = 1.0,
     [double]$RiskPosWeight = 300.0,
     [double]$ValueLossStartWeight = 0.25,
     [double]$FanLossStartWeight = 0.1,
+    [double]$QualifyingFanLossStartWeight = 0.1,
     [double]$RiskLossStartWeight = 0.25,
     [int]$AuxLossWarmupEpochs = 4,
     [double]$ClaimRareActionWeight = 2.0,
@@ -30,7 +32,7 @@ param(
     [int]$MaxNanTolerance = 2,
     [int]$EarlyStopPatience = 0,
     [switch]$RebuildDataCache,
-    [switch]$NoAmp,
+    [switch]$Amp,
     [switch]$CompileModel,
     [switch]$SkipTests,
     [switch]$SkipOnnxExport
@@ -44,7 +46,7 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-$ExpectedMetadataSchemaVersion = 3
+$ExpectedMetadataSchemaVersion = 4
 
 function Invoke-TrainingPython {
     param([string[]]$Arguments)
@@ -214,7 +216,7 @@ try {
     Write-Host "Batch size:  $BatchSize"
     Write-Host "Workers:     $NumWorkers"
     Write-Host "Data cache:  $ResolvedDataCacheDir"
-    Write-Host "Aux weights: value=$ValueLossWeight fan=$FanLossWeight risk=$RiskLossWeight risk_pos=$RiskPosWeight"
+    Write-Host "Aux weights: value=$ValueLossWeight fan=$FanLossWeight qualifying_fan=$QualifyingFanLossWeight risk=$RiskLossWeight risk_pos=$RiskPosWeight"
     Write-Host "Rare weights: claim=$ClaimRareActionWeight self_kong=$SelfKongRareActionWeight hu=$HuPositiveWeight"
     Write-Host "Grad clip:   $GradClipNorm"
     Write-Host "NaN tolerance: $MaxNanTolerance"
@@ -255,10 +257,12 @@ try {
         "--hu-loss-weight", "$HuLossWeight",
         "--value-loss-weight", "$ValueLossWeight",
         "--fan-loss-weight", "$FanLossWeight",
+        "--qualifying-fan-loss-weight", "$QualifyingFanLossWeight",
         "--risk-loss-weight", "$RiskLossWeight",
         "--risk-pos-weight", "$RiskPosWeight",
         "--value-loss-start-weight", "$ValueLossStartWeight",
         "--fan-loss-start-weight", "$FanLossStartWeight",
+        "--qualifying-fan-loss-start-weight", "$QualifyingFanLossStartWeight",
         "--risk-loss-start-weight", "$RiskLossStartWeight",
         "--aux-loss-warmup-epochs", "$AuxLossWarmupEpochs",
         "--claim-rare-action-weight", "$ClaimRareActionWeight",
@@ -268,7 +272,7 @@ try {
         "--max-nan-tolerance", "$MaxNanTolerance",
         "--early-stop-patience", "$EarlyStopPatience"
     )
-    if (-not $NoAmp) {
+    if ($Amp) {
         $trainArgs += "--amp"
     }
     if ($CompileModel) {

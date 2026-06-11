@@ -68,13 +68,14 @@
 - `self_kong_logits`：3 个自杠 logits，顺序为 pass、concealed_kong、add_kong
 - `hu_logits`：2 个自摸/不自摸 logits
 - `value`：预期分差
-- `fan_value`：番数辅助回归输出，用于训练一致性，不参与当前 Rust runtime 决策
+- `fan_value`：完整番数辅助回归输出，用于训练一致性，不参与当前 Rust runtime 决策
+- `qualifying_fan_value`：8 番起和进度辅助回归输出，目标值为 `min(fan_count, 8) / 8`
 - `risk_logits`：34 个牌风险 logits
 
 `discard_sequence` 右对齐保存最近 32 个公开弃牌事件。每个事件包含 34 维牌 one-hot、4 维相对座位 one-hot、1 维进度、1 维最新事件标记。
 
-当前导出 metadata schema 为 v3。相较旧 schema，训练侧额外使用 `risk_mask`
-做反事实风险监督，并使用 `fan_target` 训练 `fan_value` 辅助头；旧 cache 与旧
+当前导出 metadata schema 为 v4。相较旧 schema，训练侧额外使用 `risk_mask`
+做反事实风险监督，并使用 `fan_target` 与 `qualifying_fan_target` 训练番数辅助头；旧 cache 与旧
 metadata 不再兼容，需要重新导出数据并重新训练。
 
 ## 4. Arena 评估
@@ -90,6 +91,8 @@ cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --conf
 ```powershell
 cargo run --manifest-path backend/Cargo.toml --release --bin bot_arena -- --config backend/bot_trainer/v2/arena_smoke.json --output backend/bot_trainer/v2/arena_smoke.jsonl --trajectories backend/bot_trainer/v2/arena_trajectories_smoke.jsonl
 ```
+
+PPO 轨迹的 step reward 包含弱向听 shaping，并在进入听牌时区分 8 番达标潜力：足番听牌会获得额外奖励，低番听牌会被轻微惩罚，避免 bot 只学习“任意听牌”。
 
 矩阵评估使用 `arena_policy_pool.json`，格式与 `arena_smoke.json` 一致：顶层必须是
 `subjects` 与正好 3 个 `opponents`。旧的 `policies` 池格式和

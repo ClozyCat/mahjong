@@ -31,6 +31,7 @@ SELF_KONG_ACTION_NAMES = ["pass", "concealed_kong", "add_kong"]
 DEFAULT_CLAIM_RARE_ACTION_WEIGHT = 2.0
 DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT = 3.0
 DEFAULT_HU_POSITIVE_WEIGHT = 3.0
+DEFAULT_QUALIFYING_FAN_LOSS_WEIGHT = 0.75
 
 def main() -> None:
     args = parse_args()
@@ -81,7 +82,12 @@ def main() -> None:
             
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr_min)
-    scaler = torch.amp.GradScaler(amp_device_type, enabled=use_amp)
+    scaler = torch.amp.GradScaler(
+        amp_device_type,
+        enabled=use_amp,
+        init_scale=1024.0,
+        growth_interval=4000,
+    )
     print(f"device={device} amp={use_amp} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
     print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
     best_metric = math.inf
@@ -100,6 +106,8 @@ def main() -> None:
             value_target=args.value_loss_weight,
             fan_start=args.fan_loss_start_weight,
             fan_target=args.fan_loss_weight,
+            qualifying_fan_start=args.qualifying_fan_loss_start_weight,
+            qualifying_fan_target=args.qualifying_fan_loss_weight,
             risk_start=args.risk_loss_start_weight,
             risk_target=args.risk_loss_weight,
         )
@@ -164,6 +172,7 @@ def main() -> None:
             f"lr={current_lr:.2e} | "
             f"train_loss={train_metrics['loss']:.4f} | "
             f"val_loss={val_metrics['loss']:.4f} | "
+            f"qfan_loss={val_metrics['qualifying_fan_loss']:.4f} | "
             f"discard_top1={val_metrics['discard_top1']:.4f} | "
             f"discard_top3={val_metrics['discard_top3']:.4f} | "
             f"discard_top5={val_metrics['discard_top5']:.4f} | "
@@ -185,7 +194,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr-min", type=float, default=1e-5, help="Minimum learning rate for cosine annealing scheduler")
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--device", default="auto")
@@ -200,11 +209,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hu-loss-weight", type=float, default=1.0)
     parser.add_argument("--value-loss-weight", type=float, default=0.75)
     parser.add_argument("--fan-loss-weight", type=float, default=0.5)
+    parser.add_argument("--qualifying-fan-loss-weight", type=float, default=DEFAULT_QUALIFYING_FAN_LOSS_WEIGHT)
     parser.add_argument("--risk-loss-weight", type=float, default=1.0)
     parser.add_argument("--risk-pos-weight", type=float, default=300.0,
         help="Positive class weight for risk BCE loss. Mitigates extreme class imbalance (~0.3%% positive positions).")
     parser.add_argument("--value-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--fan-loss-start-weight", type=float, default=0.1)
+    parser.add_argument("--qualifying-fan-loss-start-weight", type=float, default=0.1)
     parser.add_argument("--risk-loss-start-weight", type=float, default=0.25)
     parser.add_argument("--aux-loss-warmup-epochs", type=int, default=4)
     parser.add_argument("--claim-rare-action-weight", type=float, default=DEFAULT_CLAIM_RARE_ACTION_WEIGHT)
@@ -321,14 +332,20 @@ def run_epoch(
             if is_training:
                 optimizer.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+
+                if not gradients_are_finite(model.parameters()):
+                    print(f"\n⚠️  Batch {i}: NaN/Inf gradient detected, skipping batch")
+                    optimizer.zero_grad(set_to_none=True)
+                    scaler.update()
+                    continue
 
                 # 梯度裁剪
                 if grad_clip_norm is not None and grad_clip_norm > 0:
-                    scaler.unscale_(optimizer)
                     grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
 
                     # 检测梯度异常
-                    if torch.isnan(grad_norm) or torch.isinf(grad_norm):
+                    if not torch.isfinite(grad_norm):
                         print(f"\n⚠️  Batch {i}: NaN/Inf gradient detected, skipping batch")
                         optimizer.zero_grad(set_to_none=True)
                         scaler.update()  # 必须调用update()重置scaler状态
@@ -336,19 +353,6 @@ def run_epoch(
 
                     if i % 100 == 0 and grad_norm > grad_clip_norm * 0.8:
                         pbar.set_postfix({"loss": f"{loss.item():.4f}", "grad_norm": f"{grad_norm:.2f}"})
-                else:
-                    # 没有梯度裁剪时也需要检查梯度
-                    scaler.unscale_(optimizer)
-                    has_nan = False
-                    for param in model.parameters():
-                        if param.grad is not None and (torch.isnan(param.grad).any() or torch.isinf(param.grad).any()):
-                            has_nan = True
-                            break
-                    if has_nan:
-                        print(f"\n⚠️  Batch {i}: NaN/Inf gradient detected, skipping batch")
-                        optimizer.zero_grad(set_to_none=True)
-                        scaler.update()
-                        continue
 
                 scaler.step(optimizer)
                 scaler.update()
@@ -360,6 +364,14 @@ def run_epoch(
 
     return totals.as_metrics()
 
+
+def gradients_are_finite(parameters) -> bool:
+    for param in parameters:
+        if param.grad is not None and not torch.isfinite(param.grad).all():
+            return False
+    return True
+
+
 def compute_losses(
     outputs: dict[str, torch.Tensor],
     batch: dict[str, torch.Tensor],
@@ -368,12 +380,14 @@ def compute_losses(
     hu_weight: float = 1.0,
     value_weight: float = 0.25,
     fan_weight: float = 0.1,
+    qualifying_fan_weight: float = DEFAULT_QUALIFYING_FAN_LOSS_WEIGHT,
     risk_weight: float = 0.25,
     risk_pos_weight: float = 300.0,
     claim_rare_action_weight: float = DEFAULT_CLAIM_RARE_ACTION_WEIGHT,
     self_kong_rare_action_weight: float = DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT,
     hu_positive_weight: float = DEFAULT_HU_POSITIVE_WEIGHT,
 ) -> dict[str, torch.Tensor]:
+    outputs = sanitize_outputs(outputs)
     discard_loss = masked_cross_entropy(outputs["discard_logits"], batch["discard_mask"], batch["discard_target"])
     claim_loss = masked_cross_entropy(
         outputs["claim_logits"],
@@ -399,6 +413,11 @@ def compute_losses(
     value_loss = torch.clamp(value_loss, max=100.0)  # 防止MSE爆炸
     fan_loss = F.mse_loss(outputs["fan_value"], batch["fan_target"].float())
     fan_loss = torch.clamp(fan_loss, max=100.0)
+    qualifying_fan_loss = F.mse_loss(
+        outputs["qualifying_fan_value"],
+        batch["qualifying_fan_target"].float(),
+    )
+    qualifying_fan_loss = torch.clamp(qualifying_fan_loss, max=100.0)
 
     risk_loss = masked_binary_cross_entropy_with_logits(
         outputs["risk_logits"],
@@ -414,6 +433,7 @@ def compute_losses(
         + hu_weight * hu_loss
         + value_weight * value_loss
         + fan_weight * fan_loss
+        + qualifying_fan_weight * qualifying_fan_loss
         + risk_weight * risk_loss
     )
     return {
@@ -424,6 +444,7 @@ def compute_losses(
         "hu_loss": hu_loss,
         "value_loss": value_loss,
         "fan_loss": fan_loss,
+        "qualifying_fan_loss": qualifying_fan_loss,
         "risk_loss": risk_loss,
     }
 
@@ -438,6 +459,8 @@ def loss_weights_for_epoch(
     value_target: float,
     fan_start: float,
     fan_target: float,
+    qualifying_fan_start: float,
+    qualifying_fan_target: float,
     risk_start: float,
     risk_target: float,
 ) -> dict[str, float]:
@@ -451,6 +474,8 @@ def loss_weights_for_epoch(
         "hu_weight": hu_weight,
         "value_weight": value_start + (value_target - value_start) * progress,
         "fan_weight": fan_start + (fan_target - fan_start) * progress,
+        "qualifying_fan_weight": qualifying_fan_start
+        + (qualifying_fan_target - qualifying_fan_start) * progress,
         "risk_weight": risk_start + (risk_target - risk_start) * progress,
     }
 
@@ -460,9 +485,10 @@ def masked_cross_entropy(
     target: torch.Tensor,
     class_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    logits = sanitize_tensor(logits).float()
     active = target != IGNORE_INDEX
     if not torch.any(active):
-        return logits.sum() * 0.0
+        return logits.float().sum() * 0.0
     masked_logits = logits.masked_fill(~mask.bool(), -1.0e4)
 
     # 数值稳定性：裁剪logits防止exp溢出
@@ -476,14 +502,14 @@ def masked_cross_entropy(
 
 
 def non_pass_class_weights(logits: torch.Tensor, rare_action_weight: float) -> torch.Tensor:
-    weights = torch.ones((logits.shape[1],), device=logits.device)
+    weights = torch.ones((logits.shape[1],), device=logits.device, dtype=torch.float32)
     if logits.shape[1] > 1:
         weights[1:] = rare_action_weight
     return weights
 
 
 def hu_class_weights(logits: torch.Tensor, positive_weight: float) -> torch.Tensor:
-    weights = torch.ones((logits.shape[1],), device=logits.device)
+    weights = torch.ones((logits.shape[1],), device=logits.device, dtype=torch.float32)
     if logits.shape[1] > 1:
         weights[1] = positive_weight
     return weights
@@ -495,9 +521,11 @@ def masked_binary_cross_entropy_with_logits(
     mask: torch.Tensor,
     risk_pos_weight: float,
 ) -> torch.Tensor:
+    logits = sanitize_tensor(logits).float()
+    target = target.float()
     active = mask.bool()
     if not torch.any(active):
-        return logits.sum() * 0.0
+        return logits.float().sum() * 0.0
     pos_weight = torch.full(
         (logits.shape[1],),
         risk_pos_weight,
@@ -510,6 +538,14 @@ def masked_binary_cross_entropy_with_logits(
         reduction="none",
     )
     return losses[active].mean()
+
+
+def sanitize_outputs(outputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    return {name: sanitize_tensor(tensor).float() for name, tensor in outputs.items()}
+
+
+def sanitize_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    return torch.nan_to_num(tensor, nan=0.0, posinf=100.0, neginf=-100.0)
 
 
 def forward_model(
@@ -532,6 +568,7 @@ class MetricTotals:
         self.hu_loss_sum = torch.tensor(0.0, device=device)
         self.value_loss_sum = torch.tensor(0.0, device=device)
         self.fan_loss_sum = torch.tensor(0.0, device=device)
+        self.qualifying_fan_loss_sum = torch.tensor(0.0, device=device)
         self.risk_loss_sum = torch.tensor(0.0, device=device)
         self.batch_count = 0
         self.discard_top1 = torch.tensor(0, device=device)
@@ -550,6 +587,7 @@ class MetricTotals:
         self.hu_loss_sum += losses["hu_loss"].detach()
         self.value_loss_sum += losses["value_loss"].detach()
         self.fan_loss_sum += losses["fan_loss"].detach()
+        self.qualifying_fan_loss_sum += losses["qualifying_fan_loss"].detach()
         self.risk_loss_sum += losses["risk_loss"].detach()
         self.batch_count += 1
         self.update_discard(outputs["discard_logits"], batch)
@@ -618,6 +656,7 @@ class MetricTotals:
             "hu_loss": self.hu_loss_sum.item() / max(1, self.batch_count),
             "value_loss": self.value_loss_sum.item() / max(1, self.batch_count),
             "fan_loss": self.fan_loss_sum.item() / max(1, self.batch_count),
+            "qualifying_fan_loss": self.qualifying_fan_loss_sum.item() / max(1, self.batch_count),
             "risk_loss": self.risk_loss_sum.item() / max(1, self.batch_count),
             "discard_top1": self.discard_top1.item() / max(1, self.discard_count.item()),
             "discard_top3": self.discard_top3.item() / max(1, self.discard_count.item()),
@@ -684,6 +723,7 @@ def empty_metrics() -> dict[str, float]:
         "hu_loss": 0.0,
         "value_loss": 0.0,
         "fan_loss": 0.0,
+        "qualifying_fan_loss": 0.0,
         "risk_loss": 0.0,
         "discard_top1": 0.0,
         "discard_top3": 0.0,

@@ -9,17 +9,19 @@ EPOCHS=20
 BATCH_SIZE=4096
 NUM_WORKERS=0
 PYTHON_CMD=(python)
-LEARNING_RATE=0.001
+LEARNING_RATE=0.0003
 WEIGHT_DECAY=0.0001
 CLAIM_LOSS_WEIGHT=1.0
 SELF_KONG_LOSS_WEIGHT=1.0
 HU_LOSS_WEIGHT=1.0
 VALUE_LOSS_WEIGHT=0.75
 FAN_LOSS_WEIGHT=0.5
+QUALIFYING_FAN_LOSS_WEIGHT=0.75
 RISK_LOSS_WEIGHT=1.0
 RISK_POS_WEIGHT=300.0
 VALUE_LOSS_START_WEIGHT=0.25
 FAN_LOSS_START_WEIGHT=0.1
+QUALIFYING_FAN_LOSS_START_WEIGHT=0.1
 RISK_LOSS_START_WEIGHT=0.25
 AUX_LOSS_WARMUP_EPOCHS=4
 CLAIM_RARE_ACTION_WEIGHT=2.0
@@ -29,12 +31,12 @@ GRAD_CLIP_NORM=1.0
 MAX_NAN_TOLERANCE=2
 EARLY_STOP_PATIENCE=0
 DEVICE="cuda"
-NO_AMP=0
+USE_AMP=0
 COMPILE_MODEL=0
 REBUILD_DATA_CACHE=0
 SKIP_TESTS=0
 SKIP_ONNX_EXPORT=0
-EXPECTED_METADATA_SCHEMA_VERSION=3
+EXPECTED_METADATA_SCHEMA_VERSION=4
 
 usage() {
     cat <<'EOF'
@@ -58,12 +60,16 @@ Options:
   --hu-loss-weight VALUE    Hu head loss weight.
   --value-loss-weight VALUE Value head loss weight.
   --fan-loss-weight VALUE   Fan auxiliary loss weight.
+  --qualifying-fan-loss-weight VALUE
+                            Qualifying fan auxiliary loss weight.
   --risk-loss-weight VALUE  Risk head loss weight.
   --risk-pos-weight VALUE   Positive class weight for masked risk BCE.
   --value-loss-start-weight VALUE
                             Initial value loss weight during warmup.
   --fan-loss-start-weight VALUE
                             Initial fan loss weight during warmup.
+  --qualifying-fan-loss-start-weight VALUE
+                            Initial qualifying fan loss weight during warmup.
   --risk-loss-start-weight VALUE
                             Initial risk loss weight during warmup.
   --aux-loss-warmup-epochs N
@@ -77,7 +83,7 @@ Options:
   --grad-clip-norm VALUE    Gradient clipping norm (0 to disable).
   --max-nan-tolerance N     Max consecutive NaN epochs before stopping.
   --early-stop-patience N   Early stopping patience (0 to disable).
-  --no-amp                  Do not pass --amp to train.py.
+  --amp                     Enable mixed precision training.
   --compile                 Pass --compile to train.py.
   --rebuild-data-cache      Rebuild tensor cache before training.
   --skip-tests              Skip pytest before training.
@@ -177,6 +183,11 @@ while [[ $# -gt 0 ]]; do
             FAN_LOSS_WEIGHT="$2"
             shift 2
             ;;
+        --qualifying-fan-loss-weight)
+            require_value "$1" "${2:-}"
+            QUALIFYING_FAN_LOSS_WEIGHT="$2"
+            shift 2
+            ;;
         --risk-loss-weight)
             require_value "$1" "${2:-}"
             RISK_LOSS_WEIGHT="$2"
@@ -195,6 +206,11 @@ while [[ $# -gt 0 ]]; do
         --fan-loss-start-weight)
             require_value "$1" "${2:-}"
             FAN_LOSS_START_WEIGHT="$2"
+            shift 2
+            ;;
+        --qualifying-fan-loss-start-weight)
+            require_value "$1" "${2:-}"
+            QUALIFYING_FAN_LOSS_START_WEIGHT="$2"
             shift 2
             ;;
         --risk-loss-start-weight)
@@ -237,8 +253,8 @@ while [[ $# -gt 0 ]]; do
             EARLY_STOP_PATIENCE="$2"
             shift 2
             ;;
-        --no-amp)
-            NO_AMP=1
+        --amp)
+            USE_AMP=1
             shift
             ;;
         --compile)
@@ -408,7 +424,7 @@ echo "Epochs:      $EPOCHS"
 echo "Batch size:  $BATCH_SIZE"
 echo "Workers:     $NUM_WORKERS"
 echo "Data cache:  $RESOLVED_DATA_CACHE_DIR"
-echo "Aux weights: value=$VALUE_LOSS_WEIGHT fan=$FAN_LOSS_WEIGHT risk=$RISK_LOSS_WEIGHT risk_pos=$RISK_POS_WEIGHT"
+echo "Aux weights: value=$VALUE_LOSS_WEIGHT fan=$FAN_LOSS_WEIGHT qualifying_fan=$QUALIFYING_FAN_LOSS_WEIGHT risk=$RISK_LOSS_WEIGHT risk_pos=$RISK_POS_WEIGHT"
 echo "Rare weights: claim=$CLAIM_RARE_ACTION_WEIGHT self_kong=$SELF_KONG_RARE_ACTION_WEIGHT hu=$HU_POSITIVE_WEIGHT"
 echo "Grad clip:   $GRAD_CLIP_NORM"
 echo "NaN tolerance: $MAX_NAN_TOLERANCE"
@@ -441,10 +457,12 @@ train_args=(
     --hu-loss-weight "$HU_LOSS_WEIGHT"
     --value-loss-weight "$VALUE_LOSS_WEIGHT"
     --fan-loss-weight "$FAN_LOSS_WEIGHT"
+    --qualifying-fan-loss-weight "$QUALIFYING_FAN_LOSS_WEIGHT"
     --risk-loss-weight "$RISK_LOSS_WEIGHT"
     --risk-pos-weight "$RISK_POS_WEIGHT"
     --value-loss-start-weight "$VALUE_LOSS_START_WEIGHT"
     --fan-loss-start-weight "$FAN_LOSS_START_WEIGHT"
+    --qualifying-fan-loss-start-weight "$QUALIFYING_FAN_LOSS_START_WEIGHT"
     --risk-loss-start-weight "$RISK_LOSS_START_WEIGHT"
     --aux-loss-warmup-epochs "$AUX_LOSS_WARMUP_EPOCHS"
     --claim-rare-action-weight "$CLAIM_RARE_ACTION_WEIGHT"
@@ -455,7 +473,7 @@ train_args=(
     --early-stop-patience "$EARLY_STOP_PATIENCE"
 )
 
-if (( NO_AMP == 0 )); then
+if (( USE_AMP == 1 )); then
     train_args+=(--amp)
 fi
 

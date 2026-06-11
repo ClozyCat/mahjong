@@ -20,6 +20,7 @@ ACTOR_KEY_PREFIXES = {
     "self_kong_head.": "actor.self_kong_head.",
     "hu_head.": "actor.hu_head.",
     "fan_head.": "actor.fan_head.",
+    "qualifying_fan_head.": "actor.qualifying_fan_head.",
     "risk_trunk.": "actor.risk_trunk.",
     "risk_head.": "actor.risk_head.",
 }

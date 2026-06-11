@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import sys
+import types
+
 import torch
 
 import model as model_module
@@ -33,6 +37,7 @@ def test_sequence_aware_model_output_shapes() -> None:
     assert outputs["hu_logits"].shape == (2, 2)
     assert outputs["value"].shape == (2, 1)
     assert outputs["fan_value"].shape == (2, 1)
+    assert outputs["qualifying_fan_value"].shape == (2, 1)
     assert outputs["risk_logits"].shape == (2, 34)
 
 
@@ -91,6 +96,7 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     with torch.no_grad():
         shared.policy_trunk[0].weight.fill_(0.25)
         shared.fan_head.net[0].weight.fill_(0.5)
+        shared.qualifying_fan_head.net[0].weight.fill_(0.75)
     source = tmp_path / "sft.pt"
     output = tmp_path / "actor_critic.pt"
     torch.save(
@@ -115,6 +121,10 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     assert torch.equal(
         state["actor.fan_head.net.0.weight"],
         shared.state_dict()["fan_head.net.0.weight"],
+    )
+    assert torch.equal(
+        state["actor.qualifying_fan_head.net.0.weight"],
+        shared.state_dict()["qualifying_fan_head.net.0.weight"],
     )
     assert payload["training_source"] == "actor_critic_bootstrap"
     assert manifest["copied_actor_keys"] > 0
@@ -162,3 +172,83 @@ def test_actor_critic_export_wrapper_preserves_onnx_outputs(tmp_path) -> None:
     assert outputs[OUTPUT_NAMES.index("discard_logits")].shape == (2, 34)
     assert outputs[OUTPUT_NAMES.index("value")].shape == (2, 1)
     assert outputs[OUTPUT_NAMES.index("fan_value")].shape == (2, 1)
+    assert outputs[OUTPUT_NAMES.index("qualifying_fan_value")].shape == (2, 1)
+
+
+def test_quantize_onnx_rebuilds_stale_existing_quantized_model(tmp_path, monkeypatch) -> None:
+    import export_onnx
+
+    fp32_path = tmp_path / "sft.onnx"
+    fp32_path.write_bytes(b"fp32")
+    quant_path = tmp_path / "sft.quant.onnx"
+    quant_path.write_text("stale", encoding="utf-8")
+
+    def fake_output_names(path):
+        if path == quant_path:
+            return ["discard_logits"]
+        return export_onnx.OUTPUT_NAMES
+
+    def fake_quant_pre_process(source, output):
+        assert source == fp32_path.as_posix()
+        torch.save({"source": source}, output)
+
+    def fake_quantize_dynamic(source, output, **kwargs):
+        assert "preprocessed.onnx" in source
+        quant_path.write_text("rebuilt", encoding="utf-8")
+
+    onnxruntime = types.ModuleType("onnxruntime")
+    onnxruntime.__path__ = []
+    quantization = types.ModuleType("onnxruntime.quantization")
+    quantization.QuantType = types.SimpleNamespace(QInt8="qint8")
+    quantization.quantize_dynamic = fake_quantize_dynamic
+    shape_inference = types.ModuleType("onnxruntime.quantization.shape_inference")
+    shape_inference.quant_pre_process = fake_quant_pre_process
+    onnxruntime.quantization = quantization
+
+    monkeypatch.setattr(export_onnx, "onnx_output_names", fake_output_names)
+    monkeypatch.setitem(sys.modules, "onnxruntime", onnxruntime)
+    monkeypatch.setitem(sys.modules, "onnxruntime.quantization", quantization)
+    monkeypatch.setitem(sys.modules, "onnxruntime.quantization.shape_inference", shape_inference)
+
+    result = export_onnx.quantize_onnx(fp32_path)
+
+    assert result == quant_path
+    assert quant_path.read_text(encoding="utf-8") == "rebuilt"
+
+
+def test_quantize_onnx_rebuilds_outdated_existing_quantized_model(tmp_path, monkeypatch) -> None:
+    import export_onnx
+
+    fp32_path = tmp_path / "sft.onnx"
+    fp32_path.write_bytes(b"fp32")
+    quant_path = tmp_path / "sft.quant.onnx"
+    quant_path.write_text("old weights", encoding="utf-8")
+    os.utime(quant_path, (1000, 1000))
+    os.utime(fp32_path, (2000, 2000))
+
+    def fake_quant_pre_process(source, output):
+        assert source == fp32_path.as_posix()
+        torch.save({"source": source}, output)
+
+    def fake_quantize_dynamic(source, output, **kwargs):
+        assert "preprocessed.onnx" in source
+        quant_path.write_text("new weights", encoding="utf-8")
+
+    onnxruntime = types.ModuleType("onnxruntime")
+    onnxruntime.__path__ = []
+    quantization = types.ModuleType("onnxruntime.quantization")
+    quantization.QuantType = types.SimpleNamespace(QInt8="qint8")
+    quantization.quantize_dynamic = fake_quantize_dynamic
+    shape_inference = types.ModuleType("onnxruntime.quantization.shape_inference")
+    shape_inference.quant_pre_process = fake_quant_pre_process
+    onnxruntime.quantization = quantization
+
+    monkeypatch.setattr(export_onnx, "onnx_output_names", lambda path: export_onnx.OUTPUT_NAMES)
+    monkeypatch.setitem(sys.modules, "onnxruntime", onnxruntime)
+    monkeypatch.setitem(sys.modules, "onnxruntime.quantization", quantization)
+    monkeypatch.setitem(sys.modules, "onnxruntime.quantization.shape_inference", shape_inference)
+
+    result = export_onnx.quantize_onnx(fp32_path)
+
+    assert result == quant_path
+    assert quant_path.read_text(encoding="utf-8") == "new weights"

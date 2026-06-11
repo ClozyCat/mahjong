@@ -32,7 +32,7 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     assert encoded["discard_target"].item() == 0
 
 
-def test_schema_v3_encodes_risk_mask_and_fan_target(tmp_path: Path) -> None:
+def test_schema_v4_encodes_risk_mask_and_fan_targets(tmp_path: Path) -> None:
     metadata_path, train_path = write_fixture(tmp_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
@@ -48,6 +48,20 @@ def test_schema_v3_encodes_risk_mask_and_fan_target(tmp_path: Path) -> None:
     assert encoded["risk_target"][9].item() == 0.0
     assert encoded["fan_target"].shape == (1,)
     assert encoded["fan_target"][0].item() == 0.5
+    assert encoded["qualifying_fan_target"].shape == (1,)
+    assert encoded["qualifying_fan_target"][0].item() == 1.0
+
+
+def test_qualifying_fan_target_preserves_sub_eight_fan_gradient(tmp_path: Path) -> None:
+    metadata_path, train_path = write_fixture(tmp_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
+    row["outcome"]["fan_count"] = 4
+
+    encoded = encode_row(row, metadata)
+
+    assert encoded["fan_target"][0].item() == 0.25
+    assert encoded["qualifying_fan_target"][0].item() == 0.5
 
 
 def test_load_metadata_rejects_old_schema_with_export_hint(tmp_path: Path) -> None:
@@ -66,9 +80,11 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
     bash = (script_dir / "train_and_export_model.sh").read_text(encoding="utf-8")
     required_flags = [
         "--fan-loss-weight",
+        "--qualifying-fan-loss-weight",
         "--risk-pos-weight",
         "--value-loss-start-weight",
         "--fan-loss-start-weight",
+        "--qualifying-fan-loss-start-weight",
         "--risk-loss-start-weight",
         "--aux-loss-warmup-epochs",
         "--claim-rare-action-weight",
@@ -79,6 +95,12 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
     for flag in required_flags:
         assert flag in powershell
         assert flag in bash
+    assert "[double]$LearningRate = 0.0003" in powershell
+    assert "[switch]$Amp" in powershell
+    assert "if ($Amp)" in powershell
+    assert "LEARNING_RATE=0.0003" in bash
+    assert "USE_AMP=0" in bash
+    assert "if (( USE_AMP == 1 ))" in bash
     assert "[double]$ValueLossWeight = 0.75" in powershell
     assert "[double]$RiskLossWeight = 1.0" in powershell
 
@@ -210,6 +232,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.tensor([[999.0]]),
         "fan_value": torch.tensor([[999.0]]),
+        "qualifying_fan_value": torch.tensor([[999.0]]),
         "risk_logits": torch.full((1, 34), 999.0),
     }
     batch = {
@@ -223,6 +246,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "hu_target": torch.tensor([-100]),
         "value_target": torch.tensor([[0.0]]),
         "fan_target": torch.tensor([[0.0]]),
+        "qualifying_fan_target": torch.tensor([[0.0]]),
         "risk_target": torch.zeros((1, 34)),
         "risk_mask": torch.ones((1, 34), dtype=torch.bool),
     }
@@ -232,6 +256,7 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         batch,
         value_weight=0.0,
         fan_weight=0.0,
+        qualifying_fan_weight=0.0,
         risk_weight=0.0,
         hu_weight=1.0,
     )
@@ -241,6 +266,21 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
     assert losses["fan_loss"].item() == 100.0
     assert losses["risk_loss"].item() > 100.0
     assert losses["loss"].item() < 0.1
+
+
+def test_gradients_are_finite_rejects_nan_and_inf() -> None:
+    import torch
+    from train import gradients_are_finite
+
+    parameter = torch.nn.Parameter(torch.tensor([1.0]))
+    parameter.grad = torch.tensor([0.5])
+    assert gradients_are_finite([parameter])
+
+    parameter.grad = torch.tensor([float("inf")])
+    assert not gradients_are_finite([parameter])
+
+    parameter.grad = torch.tensor([float("nan")])
+    assert not gradients_are_finite([parameter])
 
 
 def test_risk_loss_ignores_unmasked_tiles() -> None:
@@ -254,6 +294,7 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.zeros((1, 1)),
         "fan_value": torch.zeros((1, 1)),
+        "qualifying_fan_value": torch.zeros((1, 1)),
         "risk_logits": torch.tensor([[-20.0, 20.0] + [20.0] * 32]),
     }
     batch = {
@@ -267,13 +308,98 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "hu_target": torch.tensor([-100]),
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.zeros((1, 1)),
         "risk_target": torch.zeros((1, 34)),
         "risk_mask": torch.tensor([[True, False] + [False] * 32]),
     }
 
-    losses = compute_losses(outputs, batch, value_weight=0.0, fan_weight=0.0, risk_weight=1.0)
+    losses = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        qualifying_fan_weight=0.0,
+        risk_weight=1.0,
+    )
 
     assert losses["risk_loss"].item() < 1.0e-6
+
+
+def test_auxiliary_losses_use_float32_for_half_precision_outputs() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.zeros((1, 34), dtype=torch.float16),
+        "claim_logits": torch.zeros((1, 7), dtype=torch.float16),
+        "self_kong_logits": torch.zeros((1, 3), dtype=torch.float16),
+        "hu_logits": torch.zeros((1, 2), dtype=torch.float16),
+        "value": torch.tensor([[0.25]], dtype=torch.float16),
+        "fan_value": torch.tensor([[0.25]], dtype=torch.float16),
+        "qualifying_fan_value": torch.tensor([[0.25]], dtype=torch.float16),
+        "risk_logits": torch.zeros((1, 34), dtype=torch.float16),
+    }
+    batch = {
+        "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "discard_target": torch.tensor([-100]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.ones((1, 1)),
+        "fan_target": torch.ones((1, 1)),
+        "qualifying_fan_target": torch.ones((1, 1)),
+        "risk_target": torch.ones((1, 34)),
+        "risk_mask": torch.ones((1, 34), dtype=torch.bool),
+    }
+
+    losses = compute_losses(outputs, batch)
+
+    assert losses["discard_loss"].dtype == torch.float32
+    assert losses["claim_loss"].dtype == torch.float32
+    assert losses["self_kong_loss"].dtype == torch.float32
+    assert losses["hu_loss"].dtype == torch.float32
+    assert losses["value_loss"].dtype == torch.float32
+    assert losses["fan_loss"].dtype == torch.float32
+    assert losses["qualifying_fan_loss"].dtype == torch.float32
+    assert losses["risk_loss"].dtype == torch.float32
+
+
+def test_losses_sanitize_nonfinite_model_outputs() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.tensor([[float("nan"), float("inf")] + [0.0] * 32]),
+        "claim_logits": torch.tensor([[0.0, float("nan")] + [0.0] * 5]),
+        "self_kong_logits": torch.tensor([[0.0, float("-inf"), 1.0]]),
+        "hu_logits": torch.tensor([[float("inf"), 0.0]]),
+        "value": torch.tensor([[float("inf")]]),
+        "fan_value": torch.tensor([[float("nan")]]),
+        "qualifying_fan_value": torch.tensor([[float("-inf")]]),
+        "risk_logits": torch.tensor([[float("nan"), float("inf"), float("-inf")] + [0.0] * 31]),
+    }
+    batch = {
+        "discard_mask": torch.tensor([[True, True] + [False] * 32]),
+        "discard_target": torch.tensor([0]),
+        "claim_mask": torch.tensor([[True, True] + [False] * 5]),
+        "claim_target": torch.tensor([1]),
+        "self_kong_mask": torch.tensor([[True, True, True]]),
+        "self_kong_target": torch.tensor([2]),
+        "hu_mask": torch.tensor([[True, True]]),
+        "hu_target": torch.tensor([1]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.zeros((1, 1)),
+        "risk_target": torch.zeros((1, 34)),
+        "risk_mask": torch.ones((1, 34), dtype=torch.bool),
+    }
+
+    losses = compute_losses(outputs, batch)
+
+    assert all(torch.isfinite(loss) for loss in losses.values())
 
 
 def test_rare_hu_positive_weight_increases_hu_loss() -> None:
@@ -287,6 +413,7 @@ def test_rare_hu_positive_weight_increases_hu_loss() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.zeros((1, 1)),
         "fan_value": torch.zeros((1, 1)),
+        "qualifying_fan_value": torch.zeros((1, 1)),
         "risk_logits": torch.zeros((1, 34)),
     }
     batch = {
@@ -300,6 +427,7 @@ def test_rare_hu_positive_weight_increases_hu_loss() -> None:
         "hu_target": torch.tensor([1]),
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.zeros((1, 1)),
         "risk_target": torch.zeros((1, 34)),
         "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
     }
@@ -309,6 +437,7 @@ def test_rare_hu_positive_weight_increases_hu_loss() -> None:
         batch,
         value_weight=0.0,
         fan_weight=0.0,
+        qualifying_fan_weight=0.0,
         risk_weight=0.0,
         hu_positive_weight=1.0,
     )
@@ -317,6 +446,7 @@ def test_rare_hu_positive_weight_increases_hu_loss() -> None:
         batch,
         value_weight=0.0,
         fan_weight=0.0,
+        qualifying_fan_weight=0.0,
         risk_weight=0.0,
         hu_positive_weight=3.0,
     )
@@ -335,6 +465,7 @@ def test_fan_loss_contributes_when_weighted() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.zeros((1, 1)),
         "fan_value": torch.tensor([[2.0]]),
+        "qualifying_fan_value": torch.zeros((1, 1)),
         "risk_logits": torch.zeros((1, 34)),
     }
     batch = {
@@ -348,14 +479,65 @@ def test_fan_loss_contributes_when_weighted() -> None:
         "hu_target": torch.tensor([-100]),
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.zeros((1, 1)),
         "risk_target": torch.zeros((1, 34)),
         "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
     }
 
-    losses = compute_losses(outputs, batch, value_weight=0.0, fan_weight=0.5, risk_weight=0.0)
+    losses = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.5,
+        qualifying_fan_weight=0.0,
+        risk_weight=0.0,
+    )
 
     assert losses["fan_loss"].item() == 4.0
     assert losses["loss"].item() == 2.0
+
+
+def test_qualifying_fan_loss_contributes_when_weighted() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.zeros((1, 34)),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.zeros((1, 1)),
+        "fan_value": torch.zeros((1, 1)),
+        "qualifying_fan_value": torch.tensor([[0.25]]),
+        "risk_logits": torch.zeros((1, 34)),
+    }
+    batch = {
+        "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "discard_target": torch.tensor([-100]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.tensor([[1.0]]),
+        "risk_target": torch.zeros((1, 34)),
+        "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
+    }
+
+    losses = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        qualifying_fan_weight=2.0,
+        risk_weight=0.0,
+    )
+
+    assert losses["qualifying_fan_loss"].item() == 0.5625
+    assert losses["loss"].item() == 1.125
 
 
 def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
@@ -371,6 +553,8 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
         value_target=0.75,
         fan_start=0.1,
         fan_target=0.5,
+        qualifying_fan_start=0.1,
+        qualifying_fan_target=0.75,
         risk_start=0.25,
         risk_target=1.0,
     )
@@ -384,15 +568,19 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
         value_target=0.75,
         fan_start=0.1,
         fan_target=0.5,
+        qualifying_fan_start=0.1,
+        qualifying_fan_target=0.75,
         risk_start=0.25,
         risk_target=1.0,
     )
 
     assert first["value_weight"] == 0.25
     assert first["fan_weight"] == 0.1
+    assert first["qualifying_fan_weight"] == 0.1
     assert first["risk_weight"] == 0.25
     assert final["value_weight"] == 0.75
     assert final["fan_weight"] == 0.5
+    assert final["qualifying_fan_weight"] == 0.75
     assert final["risk_weight"] == 1.0
 
 
@@ -407,7 +595,7 @@ def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
-        "schema_version": 3,
+        "schema_version": 4,
         "tile_keys": [
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9",
             "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9",
@@ -418,7 +606,7 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "self_kong_actions": ["pass", "concealed_kong", "add_kong"],
     }
     row = {
-        "schema_version": 2,
+        "schema_version": 3,
         "match_id": "fixture",
         "decision_index": 0,
         "seat_index": 0,

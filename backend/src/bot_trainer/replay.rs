@@ -1534,6 +1534,9 @@ Score 0 0 0 0
         assert_eq!(active_turn.context.dealer_seat, 3);
         assert_eq!(active_turn.context.seat_wind.as_deref(), Some("west"));
         assert_eq!(active_turn.context.round_wind, "west");
-        assert_eq!(active_turn.context.cumulative_scores, vec![100, -110, 30, -20]);
+        assert_eq!(
+            active_turn.context.cumulative_scores,
+            vec![100, -110, 30, -20]
+        );
     }
 }

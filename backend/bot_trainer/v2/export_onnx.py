@@ -16,6 +16,20 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 from model import ModelConfig, build_model, build_actor_critic
 
 
+def onnx_output_names(model_path: Path) -> list[str] | None:
+    try:
+        import onnxruntime as ort
+    except ModuleNotFoundError:
+        return None
+
+    try:
+        session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    except Exception as exc:
+        print(f"Could not inspect existing ONNX model {model_path}: {exc}", file=sys.stderr)
+        return None
+    return [output.name for output in session.get_outputs()]
+
+
 def quantize_onnx(fp32_path: Path) -> Path | None:
     """Create an int8 quantized copy alongside the fp32 model.
 
@@ -30,8 +44,22 @@ def quantize_onnx(fp32_path: Path) -> Path | None:
 
     quant_path = fp32_path.with_name(fp32_path.stem + ".quant.onnx")
     if quant_path.exists():
-        print(f"Quantized model already exists: {quant_path}")
-        return quant_path
+        existing_outputs = onnx_output_names(quant_path)
+        is_current = existing_outputs == OUTPUT_NAMES and (
+            quant_path.stat().st_mtime >= fp32_path.stat().st_mtime
+        )
+        if is_current:
+            print(f"Quantized model already exists: {quant_path}")
+            return quant_path
+        print(
+            f"Quantized model is stale; rebuilding {quant_path}",
+            file=sys.stderr,
+        )
+        try:
+            quant_path.unlink()
+        except OSError as exc:
+            print(f"Could not remove stale quantized model {quant_path}: {exc}", file=sys.stderr)
+            return None
 
     import tempfile
 
@@ -60,6 +88,7 @@ OUTPUT_NAMES = [
     "hu_logits",
     "value",
     "fan_value",
+    "qualifying_fan_value",
     "risk_logits",
 ]
 INPUT_NAMES = ["tile_planes", "scalar_features", "discard_sequence"]
@@ -215,7 +244,7 @@ def smoke_onnxruntime(
         "discard_sequence": discard_sequence.numpy(),
     }
     outputs = session.run(OUTPUT_NAMES, inputs)
-    expected_shapes = [(1, 34), (1, 7), (1, 3), (1, 2), (1, 1), (1, 1), (1, 34)]
+    expected_shapes = [(1, 34), (1, 7), (1, 3), (1, 2), (1, 1), (1, 1), (1, 1), (1, 34)]
     for name, output, expected_shape in zip(OUTPUT_NAMES, outputs, expected_shapes, strict=True):
         if tuple(output.shape) != expected_shape:
             raise RuntimeError(f"{name} shape {tuple(output.shape)} != {expected_shape}")

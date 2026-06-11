@@ -1,0 +1,27 @@
+{
+  "created_at_utc": "2026-06-11T01:18:30.425242+00:00",
+  "onnx": "backend/assets/sft/sft.onnx",
+  "checkpoint": "backend/bot_trainer/v2/checkpoints/best.pt",
+  "training_source": "sft",
+  "checkpoint_created_at_utc": "2026-06-11T01:02:38.632473+00:00",
+  "model_config": {
+    "tile_plane_count": 10,
+    "scalar_feature_count": 12,
+    "discard_sequence_length": 32,
+    "discard_event_feature_count": 40,
+    "global_tile_plane_count": 40,
+    "global_scalar_feature_count": 20
+  },
+  "outputs": [
+    "discard_logits",
+    "claim_logits",
+    "self_kong_logits",
+    "hu_logits",
+    "value",
+    "fan_value",
+    "qualifying_fan_value",
+    "risk_logits"
+  ],
+  "is_actor_critic": false,
+  "exported_component": "full_model"
+}

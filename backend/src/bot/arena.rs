@@ -1726,8 +1726,14 @@ mod tests {
     #[test]
     fn shaping_reward_updates_step_reward_and_diagnostics() {
         let mut row = trajectory_test_row(0, 0, 0.0);
-        let before = RewardSnapshot { shanten: 2 };
-        let after = RewardSnapshot { shanten: 1 };
+        let before = RewardSnapshot {
+            shanten: 2,
+            qualifying_fan_potential: 0,
+        };
+        let after = RewardSnapshot {
+            shanten: 1,
+            qualifying_fan_potential: 0,
+        };
 
         apply_shaping_reward(&mut row, Some(before), Some(after));
 
