@@ -15,16 +15,21 @@ param(
     [int]$Epochs = 1,
     [int]$BatchSize = 2048,
     [double]$LearningRate = 0.000003,
+    [int]$LrWarmupEpochs = 3,
     [double]$Gamma = 0.995,
     [double]$GaeLambda = 0.95,
-    [double]$ClipEpsilon = 0.2,
+    [double]$ClipEpsilon = 0.15,
     [double]$ValueClipEpsilon = 0.2,
-    [double]$EntropyCoef = 0.02,
-    [double]$EntropyEndCoef = 0.005,
-    [int]$EntropyDecaySteps = 0,
+    [double]$EntropyCoef = 0.03,
+    [double]$EntropyEndCoef = 0.008,
+    [ValidateSet("linear", "cosine")]
+    [string]$EntropyDecayMode = "cosine",
     [double]$KlCoef = 0.01,
-    [double]$KlEndCoef = 0.0,
-    [double]$TargetKl = 0.03,
+    [double]$KlTarget = 0.02,
+    [switch]$KlAdaptive = $true,
+    [double]$TargetKl = 0.04,
+    [int]$ReplayBufferEpochs = 3,
+    [double]$ReplayRatio = 0.4,
     [ValidateSet("ppo")]
     [string]$Policy = "ppo",
     [string[]]$Policies = @(),
@@ -333,6 +338,7 @@ function Invoke-PolicyTraining {
         "--epochs", "$Epochs",
         "--batch-size", "$BatchSize",
         "--lr", "$LearningRate",
+        "--lr-warmup-epochs", "$LrWarmupEpochs",
         "--critic-lr-multiplier", "$CriticLrMultiplier",
         "--gamma", "$Gamma",
         "--gae-lambda", "$GaeLambda",
@@ -341,9 +347,12 @@ function Invoke-PolicyTraining {
         "--value-clip-epsilon", "$ValueClipEpsilon",
         "--entropy-coef", "$EntropyCoef",
         "--entropy-end-coef", "$EntropyEndCoef",
+        "--entropy-decay-mode", $EntropyDecayMode,
         "--kl-coef", "$KlCoef",
-        "--kl-end-coef", "$KlEndCoef",
+        "--kl-target", "$KlTarget",
         "--target-kl", "$TargetKl",
+        "--replay-buffer-epochs", "$ReplayBufferEpochs",
+        "--replay-ratio", "$ReplayRatio",
         "--policy", $PolicyName,
         "--output", $CheckpointDir,
         "--device", $Device
@@ -351,8 +360,8 @@ function Invoke-PolicyTraining {
     if ($NoAmp) {
         $rlTrainArgs += @("--no-amp")
     }
-    if ($EntropyDecaySteps -gt 0) {
-        $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
+    if ($KlAdaptive) {
+        $rlTrainArgs += @("--kl-adaptive")
     }
     if ($UseActorCritic) {
         $rlTrainArgs += @("--use-actor-critic")
@@ -429,8 +438,13 @@ try {
     Write-Host "Iterations:          $Iterations"
     Write-Host "Matches/iteration:   $IterationMatches"
     Write-Host "PPO epochs/iter:     $Epochs"
+    Write-Host "Learning rate:       $LearningRate"
+    Write-Host "LR warmup epochs:    $LrWarmupEpochs"
     Write-Host "Gamma:               $Gamma"
-    Write-Host "KL coef:             $KlCoef"
+    Write-Host "Clip epsilon:        $ClipEpsilon"
+    Write-Host "Entropy (start/end): $EntropyCoef -> $EntropyEndCoef ($EntropyDecayMode)"
+    Write-Host "KL coef:             $KlCoef (adaptive=$KlAdaptive, target=$KlTarget)"
+    Write-Host "Replay:              epochs=$ReplayBufferEpochs ratio=$ReplayRatio"
     Write-Host "Actor-critic:        $([bool]$UseActorCritic)"
     Write-Host "Critic LR x:         $CriticLrMultiplier"
     Write-Host "Opponent pool:       $OpponentPool"

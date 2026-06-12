@@ -350,11 +350,40 @@ def compute_gae_for_rows(
         running_advantage = 0.0
         next_value = 0.0
         for index in reversed(indices):
-            reward = float(rows[index]["reward"])
-            value = float(rows[index].get("value", 0.0))
+            row = rows[index]
+            reward = compute_shaped_reward(row)
+            value = float(row.get("value", 0.0))
             delta = reward + gamma * next_value - value
             running_advantage = delta + gamma * gae_lambda * running_advantage
             advantages[index] = round(running_advantage, 6)
             returns[index] = round(value + running_advantage, 6)
             next_value = value
     return advantages, returns
+
+
+def compute_shaped_reward(row: dict[str, Any]) -> float:
+    base_reward = float(row["reward"])
+    step_reward = float(row.get("step_reward", 0.0))
+
+    shanten_reward = 0.0
+    before = row.get("shanten_before")
+    after = row.get("shanten_after")
+    if before is not None and after is not None:
+        improvement = int(before) - int(after)
+        if improvement > 0:
+            shanten_reward = 0.05 / (int(after) + 1)
+
+    risk_penalty = 0.0
+    if row.get("action_head") == "discard":
+        risk_probs = row.get("risk_probs")
+        action_index = row.get("action_index")
+        if risk_probs and action_index is not None and 0 <= action_index < len(risk_probs):
+            risk = risk_probs[action_index]
+            if risk > 0.5:
+                risk_penalty = -0.02 * (risk - 0.5)
+
+    tenpai_reward = 0.0
+    if after is not None and int(after) == 0 and (before is None or int(before) > 0):
+        tenpai_reward = 0.1
+
+    return base_reward + step_reward + shanten_reward + risk_penalty + tenpai_reward

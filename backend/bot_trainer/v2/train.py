@@ -470,12 +470,30 @@ def compute_losses(
     )
     qualifying_fan_loss = torch.clamp(qualifying_fan_loss, max=100.0)
 
-    risk_loss = masked_binary_cross_entropy_with_logits(
-        outputs["risk_logits"],
-        batch["risk_target"].float(),
-        batch["risk_mask"],
-        risk_pos_weight,
-    )
+    opponent_tenpai_loss = torch.tensor(0.0, device=value_loss.device)
+    opponent_risk_loss = torch.tensor(0.0, device=value_loss.device)
+    if "opponent_tenpai_logits" in outputs and "opponent_risk_logits" in outputs:
+        if "opponent_tenpai_target" in batch:
+            opponent_tenpai_loss = F.binary_cross_entropy_with_logits(
+                outputs["opponent_tenpai_logits"],
+                batch["opponent_tenpai_target"].float(),
+                reduction="mean",
+            )
+        if "opponent_risk_target" in batch and "opponent_risk_mask" in batch:
+            risk_targets = batch["opponent_risk_target"].float()
+            risk_masks = batch["opponent_risk_mask"].bool()
+            alpha = 0.25
+            gamma = 2.0
+            bce = F.binary_cross_entropy_with_logits(
+                outputs["opponent_risk_logits"],
+                risk_targets,
+                reduction="none",
+            )
+            probs = torch.sigmoid(outputs["opponent_risk_logits"])
+            pt = torch.where(risk_targets == 1, probs, 1 - probs)
+            focal_weight = (1 - pt) ** gamma
+            focal_loss = alpha * focal_weight * bce
+            opponent_risk_loss = focal_loss[risk_masks].mean() if risk_masks.any() else torch.tensor(0.0, device=value_loss.device)
 
     loss = (
         discard_loss
@@ -485,7 +503,7 @@ def compute_losses(
         + value_weight * value_loss
         + fan_weight * fan_loss
         + qualifying_fan_weight * qualifying_fan_loss
-        + risk_weight * risk_loss
+        + risk_weight * (opponent_tenpai_loss + opponent_risk_loss)
     )
     return {
         "loss": loss,
@@ -496,7 +514,7 @@ def compute_losses(
         "value_loss": value_loss,
         "fan_loss": fan_loss,
         "qualifying_fan_loss": qualifying_fan_loss,
-        "risk_loss": risk_loss,
+        "risk_loss": opponent_tenpai_loss + opponent_risk_loss,
     }
 
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "learner": {
     "id": "learner",
     "model_path": "backend/assets/ppo/ppo.onnx",
@@ -8,22 +8,41 @@
   },
   "opponents": [
     {
-      "id": "sft",
+      "id": "sft_explorer",
       "model_path": "backend/assets/sft/sft.onnx",
       "sample_actions": true,
-      "temperature": 2.0
+      "temperature_range": [1.5, 2.5],
+      "weight": 0.25
     },
     {
-      "id": "ppo_focused",
-      "model_path": "backend/assets/ppo/ppo.onnx",
-      "sample_actions": true,
-      "temperature": 0.3
+      "id": "sft_greedy",
+      "model_path": "backend/assets/sft/sft.onnx",
+      "sample_actions": false,
+      "temperature": 0.1,
+      "weight": 0.25
     },
     {
-      "id": "ppo_history",
-      "model_path": "backend/bot_trainer/v2/rl_runs/202605192147/iter_012/epoch_002.onnx",
+      "id": "self_play_recent",
+      "model_path": "backend/assets/ppo/checkpoints/epoch_{RECENT}.pt",
       "sample_actions": true,
-      "temperature": 2.0
+      "temperature_range": [0.8, 1.2],
+      "weight": 0.3,
+      "self_play": true,
+      "lag_epochs": 5
+    },
+    {
+      "id": "self_play_best",
+      "model_path": "backend/assets/ppo/best.pt",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 0.2,
+      "self_play": true
     }
-  ]
+  ],
+  "adaptive_sampling": {
+    "enabled": true,
+    "min_win_rate": 0.3,
+    "max_win_rate": 0.7,
+    "difficulty_boost_factor": 1.5
+  }
 }

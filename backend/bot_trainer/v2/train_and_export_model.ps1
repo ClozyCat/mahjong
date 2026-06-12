@@ -3,14 +3,15 @@ param(
     [string]$CheckpointDir = "backend/bot_trainer/v2/checkpoints",
     [string]$OnnxOutput = "backend/assets/sft/sft.onnx",
     [int]$Epochs = 20,
-    [int]$BatchSize = 4096,
+    [int]$BatchSize = 512,
     [int]$NumWorkers = 0,
     [string]$DataCacheDir = "",
     [string]$PythonExe = "python",
     [string]$PythonVersion = "",
     [ValidateSet("auto", "cuda", "cpu", "dml")]
-    [string]$Device = "cuda",
+    [string]$Device = "auto",
     [double]$LearningRate = 0.0003,
+    [double]$LrMin = 0.00001,
     [double]$WeightDecay = 0.0001,
     [double]$ClaimLossWeight = 1.0,
     [double]$SelfKongLossWeight = 1.0,
@@ -207,7 +208,7 @@ try {
     }
     $ResolvedDataCacheDir = if ($DataCacheDir.Length -gt 0) { $DataCacheDir } else { Join-Path $DataDir ".tensor_cache" }
 
-    Write-Host "Training Mahjong bot v2 model"
+    Write-Host "Training Mahjong bot v2 model (with optimizations)"
     Write-Host "Data:        $DataDir"
     Write-Host "Checkpoints: $CheckpointDir"
     Write-Host "Device:      $Device"
@@ -215,11 +216,14 @@ try {
         Write-Host "CUDA GPU:    $CudaDeviceName"
     }
     Write-Host "Epochs:      $Epochs"
-    Write-Host "Batch size:  $BatchSize"
+    Write-Host "Batch size:  $BatchSize (optimized: 4096->512)"
+    Write-Host "Learning rate: $LearningRate (min: $LrMin, cosine annealing)"
     Write-Host "Workers:     $NumWorkers"
     Write-Host "Data cache:  $ResolvedDataCacheDir"
-    Write-Host "Aux weights: value=$ValueLossWeight fan=$FanLossWeight qualifying_fan=$QualifyingFanLossWeight risk=$RiskLossWeight risk_pos=$RiskPosWeight"
+    Write-Host "Architecture: Transformer encoder + Opponent modeling + Shared backbone"
+    Write-Host "Loss weights: value=$ValueLossWeight fan=$FanLossWeight qfan=$QualifyingFanLossWeight risk=$RiskLossWeight"
     Write-Host "Rare weights: claim=$ClaimRareActionWeight self_kong=$SelfKongRareActionWeight hu=$HuPositiveWeight"
+    Write-Host "Risk pos weight: $RiskPosWeight (Focal Loss for opponent modeling)"
     Write-Host "Grad clip:   $GradClipNorm"
     Write-Host "NaN tolerance: $MaxNanTolerance"
     Write-Host "Early stop:  $EarlyStopPatience"
@@ -253,6 +257,7 @@ try {
         "--num-workers", "$NumWorkers",
         "--data-cache-dir", $ResolvedDataCacheDir,
         "--lr", "$LearningRate",
+        "--lr-min", "$LrMin",
         "--weight-decay", "$WeightDecay",
         "--claim-loss-weight", "$ClaimLossWeight",
         "--self-kong-loss-weight", "$SelfKongLossWeight",

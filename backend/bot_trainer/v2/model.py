@@ -77,11 +77,18 @@ if nn is not None:
             embedding_size: int = 512,
             channels: int = 128,
             use_attention: bool = False,
+            shared_backbone: nn.Module | None = None,
         ) -> None:
             super().__init__()
             self.use_attention = use_attention
-            self.suited_encoder = self._make_encoder(tile_plane_count, channels, 3)
-            self.honor_encoder = self._make_encoder(tile_plane_count, channels, 2)
+            if shared_backbone is not None:
+                self.suited_encoder = shared_backbone
+                self.honor_encoder = shared_backbone
+                self.use_shared = True
+            else:
+                self.suited_encoder = self._make_encoder(tile_plane_count, channels, 3)
+                self.honor_encoder = self._make_encoder(tile_plane_count, channels, 2)
+                self.use_shared = False
             if use_attention:
                 self.group_attention = GroupAttention(channels)
             self.fusion = nn.Sequential(
@@ -108,11 +115,18 @@ if nn is not None:
             return nn.Sequential(*layers)
 
         def forward(self, tile_planes: torch.Tensor) -> torch.Tensor:
-            suit_embeddings = [
-                self.suited_encoder(tile_planes[:, :, start : start + 9])
-                for start in (0, 9, 18)
-            ]
-            honor_embedding = self.honor_encoder(tile_planes[:, :, 27:34])
+            if self.use_shared:
+                suit_embeddings = [
+                    self.suited_encoder(tile_planes[:, :, start : start + 9])
+                    for start in (0, 9, 18)
+                ]
+                honor_embedding = self.honor_encoder(tile_planes[:, :, 27:34])
+            else:
+                suit_embeddings = [
+                    self.suited_encoder(tile_planes[:, :, start : start + 9])
+                    for start in (0, 9, 18)
+                ]
+                honor_embedding = self.honor_encoder(tile_planes[:, :, 27:34])
             if self.use_attention:
                 group_embeds = torch.stack(
                     [*suit_embeddings, honor_embedding], dim=1
@@ -122,6 +136,45 @@ if nn is not None:
             else:
                 combined = torch.cat([*suit_embeddings, honor_embedding], dim=1)
             return self.fusion(combined)
+
+
+    class TransformerDiscardSequenceEncoder(nn.Module):
+        def __init__(
+            self,
+            event_feature_count: int,
+            embedding_size: int = 256,
+            hidden_size: int = 128,
+            num_heads: int = 4,
+            num_layers: int = 2,
+        ) -> None:
+            super().__init__()
+            self.event_projection = nn.Sequential(
+                nn.Linear(event_feature_count, hidden_size),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_size),
+            )
+            self.pos_encoding = nn.Parameter(torch.randn(1, 32, hidden_size) * 0.02)
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=hidden_size,
+                nhead=num_heads,
+                dim_feedforward=hidden_size * 2,
+                dropout=0.1,
+                activation="relu",
+                batch_first=True,
+                norm_first=True,
+            )
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.output = nn.Sequential(
+                nn.Linear(hidden_size, embedding_size),
+                nn.ReLU(),
+                nn.LayerNorm(embedding_size),
+            )
+
+        def forward(self, discard_sequence: torch.Tensor) -> torch.Tensor:
+            x = self.event_projection(discard_sequence)
+            x = x + self.pos_encoding[:, :x.size(1), :]
+            x = self.transformer(x)
+            return self.output(x[:, -1, :])
 
 
     class DiscardSequenceEncoder(nn.Module):
@@ -163,6 +216,60 @@ if nn is not None:
             return self.net(x)
 
 
+    class MoEGatingNetwork(nn.Module):
+        def __init__(self, scalar_feature_count: int, num_experts: int = 3) -> None:
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(scalar_feature_count, 64),
+                nn.ReLU(),
+                nn.Linear(64, num_experts),
+            )
+
+        def forward(self, scalar_features: torch.Tensor) -> torch.Tensor:
+            return F.softmax(self.net(scalar_features), dim=-1)
+
+
+    class MoETrunk(nn.Module):
+        def __init__(self, input_size: int, hidden_size: int, output_size: int, num_experts: int = 3) -> None:
+            super().__init__()
+            self.num_experts = num_experts
+            self.shared_base = nn.Sequential(
+                nn.Linear(input_size, hidden_size),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_size),
+            )
+            self.experts = nn.ModuleList([
+                nn.Sequential(
+                    nn.Linear(hidden_size, output_size),
+                    nn.ReLU(),
+                    nn.Dropout(0.15),
+                    nn.LayerNorm(output_size),
+                )
+                for _ in range(num_experts)
+            ])
+
+        def forward(self, x: torch.Tensor, gate_weights: torch.Tensor) -> torch.Tensor:
+            shared = self.shared_base(x)
+            expert_outputs = torch.stack([expert(shared) for expert in self.experts], dim=1)
+            return torch.sum(expert_outputs * gate_weights.unsqueeze(-1), dim=1)
+
+
+    class OpponentModelingHead(nn.Module):
+        def __init__(self, input_size: int, num_opponents: int = 3) -> None:
+            super().__init__()
+            self.num_opponents = num_opponents
+            self.tenpai_head = nn.Linear(input_size, num_opponents)
+            self.risk_head = nn.Linear(input_size, 34 * num_opponents)
+
+        def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+            tenpai_logits = self.tenpai_head(x)
+            risk_logits = self.risk_head(x).view(-1, self.num_opponents, 34)
+            return {
+                "opponent_tenpai_logits": tenpai_logits,
+                "opponent_risk_logits": risk_logits,
+            }
+
+
     class MahjongPolicyNetV2(nn.Module):
         def __init__(self, config: ModelConfig) -> None:
             super().__init__()
@@ -172,19 +279,22 @@ if nn is not None:
             self.discard_sequence_length = config.discard_sequence_length
             self.discard_event_feature_count = config.discard_event_feature_count
 
-            self.policy_tile_encoder = SuitFusionTileEncoder(config.tile_plane_count)
+            shared_backbone = self._make_shared_backbone(config.tile_plane_count)
+            self.policy_tile_encoder = SuitFusionTileEncoder(
+                config.tile_plane_count, shared_backbone=shared_backbone
+            )
             self.value_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, use_attention=True,
+                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
             )
             self.risk_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, use_attention=True,
+                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
             )
             self.scalar_encoder = nn.Sequential(
                 nn.Linear(config.scalar_feature_count, 160),
                 nn.ReLU(),
                 nn.LayerNorm(160),
             )
-            self.discard_sequence_encoder = DiscardSequenceEncoder(
+            self.discard_sequence_encoder = TransformerDiscardSequenceEncoder(
                 config.discard_event_feature_count,
             )
 
@@ -200,7 +310,15 @@ if nn is not None:
             self.value_head = HeadMLP(512, 1)
             self.fan_head = HeadMLP(512, 1)
             self.qualifying_fan_head = HeadMLP(512, 1)
-            self.risk_head = HeadMLP(512, 34)
+            self.opponent_modeling = OpponentModelingHead(512, num_opponents=3)
+
+        @staticmethod
+        def _make_shared_backbone(tile_plane_count: int, channels: int = 128) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
+                nn.ReLU(),
+                ResidualConvBlock(channels),
+            )
 
         @staticmethod
         def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
@@ -252,6 +370,7 @@ if nn is not None:
             policy_hidden = self.policy_trunk(policy_features)
             value_hidden = self.value_trunk(value_features)
             risk_hidden = self.risk_trunk(risk_features)
+            opponent_outputs = self.opponent_modeling(risk_hidden)
             return {
                 "discard_logits": self.discard_head(policy_hidden),
                 "claim_logits": self.claim_head(policy_hidden),
@@ -260,7 +379,7 @@ if nn is not None:
                 "value": self.value_head(value_hidden),
                 "fan_value": self.fan_head(value_hidden),
                 "qualifying_fan_value": self.qualifying_fan_head(value_hidden),
-                "risk_logits": self.risk_head(risk_hidden),
+                **opponent_outputs,
             }
 
 
@@ -321,9 +440,10 @@ if nn is not None:
 
     class MahjongActorNetV2(nn.Module):
         """Actor network using only local observations."""
-        def __init__(self, config: ModelConfig) -> None:
+        def __init__(self, config: ModelConfig, use_moe: bool = False) -> None:
             super().__init__()
             self.config = config
+            self.use_moe = use_moe
             self.tile_plane_count = config.tile_plane_count
             self.scalar_feature_count = config.scalar_feature_count
             self.discard_sequence_length = config.discard_sequence_length
@@ -336,13 +456,19 @@ if nn is not None:
                 nn.ReLU(),
                 nn.LayerNorm(160),
             )
-            self.discard_sequence_encoder = DiscardSequenceEncoder(
+            self.discard_sequence_encoder = TransformerDiscardSequenceEncoder(
                 config.discard_event_feature_count,
             )
 
             # Policy trunk
             combined_size = 512 + 160 + 256
-            self.policy_trunk = self._make_trunk(combined_size, 1024, 512)
+            if use_moe:
+                self.gating = MoEGatingNetwork(config.scalar_feature_count, num_experts=3)
+                self.policy_trunk = MoETrunk(combined_size, 1024, 512, num_experts=3)
+                self.risk_trunk = MoETrunk(combined_size, 768, 512, num_experts=3)
+            else:
+                self.policy_trunk = self._make_trunk(combined_size, 1024, 512)
+                self.risk_trunk = self._make_trunk(combined_size, 768, 512)
 
             # Policy heads
             self.discard_head = HeadMLP(512, 34)
@@ -353,8 +479,7 @@ if nn is not None:
             self.qualifying_fan_head = HeadMLP(512, 1)
 
             # Risk prediction heads
-            self.risk_trunk = self._make_trunk(combined_size, 768, 512)
-            self.risk_head = HeadMLP(512, 34)
+            self.opponent_modeling = OpponentModelingHead(512, num_opponents=3)
 
         @staticmethod
         def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
@@ -384,8 +509,15 @@ if nn is not None:
             combined = torch.cat([tile_embedding, scalar_embedding, sequence_embedding], dim=1)
 
             # Policy outputs
-            policy_hidden = self.policy_trunk(combined)
-            risk_hidden = self.risk_trunk(combined)
+            if self.use_moe:
+                gate_weights = self.gating(scalar_features)
+                policy_hidden = self.policy_trunk(combined, gate_weights)
+                risk_hidden = self.risk_trunk(combined, gate_weights)
+            else:
+                policy_hidden = self.policy_trunk(combined)
+                risk_hidden = self.risk_trunk(combined)
+
+            opponent_outputs = self.opponent_modeling(risk_hidden)
 
             return {
                 "discard_logits": self.discard_head(policy_hidden),
@@ -394,16 +526,17 @@ if nn is not None:
                 "hu_logits": self.hu_head(policy_hidden),
                 "fan_value": self.fan_head(policy_hidden),
                 "qualifying_fan_value": self.qualifying_fan_head(policy_hidden),
-                "risk_logits": self.risk_head(risk_hidden),
+                **opponent_outputs,
             }
 
 
     class MahjongCriticNetV2(nn.Module):
         """Critic network using global observations."""
-        def __init__(self, config: ModelConfig, use_local_context: bool = True) -> None:
+        def __init__(self, config: ModelConfig, use_local_context: bool = True, double_critic: bool = True) -> None:
             super().__init__()
             self.config = config
             self.use_local_context = use_local_context
+            self.double_critic = double_critic
 
             # Global feature encoders
             self.global_tile_encoder = GlobalTileEncoder(
@@ -437,7 +570,7 @@ if nn is not None:
                 fusion_input_size = 512 + 128
 
             # Fusion and value head
-            self.value_trunk = nn.Sequential(
+            self.value_trunk_1 = nn.Sequential(
                 nn.Linear(fusion_input_size, 1024),
                 nn.ReLU(),
                 nn.Dropout(0.15),
@@ -447,7 +580,20 @@ if nn is not None:
                 nn.Dropout(0.15),
                 nn.LayerNorm(512),
             )
-            self.value_head = HeadMLP(512, 1)
+            self.value_head_1 = HeadMLP(512, 1)
+
+            if double_critic:
+                self.value_trunk_2 = nn.Sequential(
+                    nn.Linear(fusion_input_size, 1024),
+                    nn.ReLU(),
+                    nn.Dropout(0.15),
+                    nn.LayerNorm(1024),
+                    nn.Linear(1024, 512),
+                    nn.ReLU(),
+                    nn.Dropout(0.15),
+                    nn.LayerNorm(512),
+                )
+                self.value_head_2 = HeadMLP(512, 1)
 
         def forward(
             self,
@@ -455,6 +601,7 @@ if nn is not None:
             global_scalar_features: torch.Tensor,
             tile_planes: torch.Tensor | None = None,
             scalar_features: torch.Tensor | None = None,
+            return_both: bool = False,
         ) -> torch.Tensor:
             # Encode global features
             global_tile_embed = self.global_tile_encoder(global_tile_planes)
@@ -474,21 +621,29 @@ if nn is not None:
                 combined = torch.cat([global_tile_embed, global_scalar_embed], dim=1)
 
             # Value prediction
-            value_hidden = self.value_trunk(combined)
-            return self.value_head(value_hidden).squeeze(-1)
+            value_hidden_1 = self.value_trunk_1(combined)
+            value_1 = self.value_head_1(value_hidden_1).squeeze(-1)
+
+            if self.double_critic:
+                value_hidden_2 = self.value_trunk_2(combined)
+                value_2 = self.value_head_2(value_hidden_2).squeeze(-1)
+                if return_both:
+                    return value_1, value_2
+                return torch.minimum(value_1, value_2)
+            return value_1
 
 
     class MahjongActorCriticV2(nn.Module):
         """Wrapper combining actor and critic for CTDE training."""
-        def __init__(self, config: ModelConfig) -> None:
+        def __init__(self, config: ModelConfig, double_critic: bool = True, use_moe: bool = False) -> None:
             super().__init__()
             self.config = config
             self.tile_plane_count = config.tile_plane_count
             self.scalar_feature_count = config.scalar_feature_count
             self.discard_sequence_length = config.discard_sequence_length
             self.discard_event_feature_count = config.discard_event_feature_count
-            self.actor = MahjongActorNetV2(config)
-            self.critic = MahjongCriticNetV2(config, use_local_context=True)
+            self.actor = MahjongActorNetV2(config, use_moe=use_moe)
+            self.critic = MahjongCriticNetV2(config, use_local_context=True, double_critic=double_critic)
 
         def forward(
             self,
@@ -497,6 +652,7 @@ if nn is not None:
             discard_sequence: torch.Tensor,
             global_tile_planes: torch.Tensor | None = None,
             global_scalar_features: torch.Tensor | None = None,
+            return_both_critics: bool = False,
         ) -> dict[str, torch.Tensor]:
             # Actor forward (always uses local observations)
             actor_output = self.actor(tile_planes, scalar_features, discard_sequence)
@@ -508,16 +664,24 @@ if nn is not None:
                     global_scalar_features,
                     tile_planes,
                     scalar_features,
+                    return_both=return_both_critics,
                 )
             else:
                 # Fallback: use local observations for critic (backward compatibility)
                 # This won't be as accurate but allows inference without global state
                 value = torch.zeros(tile_planes.size(0), device=tile_planes.device)
 
-            return {
-                **actor_output,
-                "value": value.unsqueeze(-1),
-            }
+            if return_both_critics and isinstance(value, tuple):
+                return {
+                    **actor_output,
+                    "value": value[0].unsqueeze(-1),
+                    "value_2": value[1].unsqueeze(-1),
+                }
+            else:
+                return {
+                    **actor_output,
+                    "value": value.unsqueeze(-1) if not isinstance(value, tuple) else value[0].unsqueeze(-1),
+                }
 
 else:
 
@@ -542,5 +706,5 @@ def build_model(config: ModelConfig) -> MahjongPolicyNetV2:
     return MahjongPolicyNetV2(config)
 
 
-def build_actor_critic(config: ModelConfig) -> MahjongActorCriticV2:
-    return MahjongActorCriticV2(config)
+def build_actor_critic(config: ModelConfig, double_critic: bool = True, use_moe: bool = False) -> MahjongActorCriticV2:
+    return MahjongActorCriticV2(config, double_critic=double_critic, use_moe=use_moe)

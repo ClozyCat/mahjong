@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +20,26 @@ DISCARD_VALUE_RISK_RANGE = 0.55
 DISCARD_VALUE_SCALE = 8.0
 DISCARD_MIN_RISK_WEIGHT = 0.25
 DISCARD_MAX_RISK_WEIGHT = 1.45
+
+
+class ReplayBuffer:
+    def __init__(self, max_epochs: int = 3) -> None:
+        self.max_epochs = max_epochs
+        self.buffer: list[list[dict[str, torch.Tensor]]] = []
+
+    def add_epoch(self, batches: list[dict[str, torch.Tensor]]) -> None:
+        self.buffer.append([{k: v.cpu() for k, v in b.items()} for b in batches])
+        if len(self.buffer) > self.max_epochs:
+            self.buffer.pop(0)
+
+    def sample(self, n_batches: int) -> list[dict[str, torch.Tensor]]:
+        if not self.buffer or n_batches <= 0:
+            return []
+        all_batches = [b for epoch_batches in self.buffer for b in epoch_batches]
+        if n_batches >= len(all_batches):
+            return all_batches
+        indices = torch.randperm(len(all_batches))[:n_batches].tolist()
+        return [all_batches[i] for i in indices]
 
 
 POLICY_CONFIGS = {
@@ -41,19 +62,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=3e-6)
+    parser.add_argument("--lr-warmup-epochs", type=int, default=3)
     parser.add_argument("--critic-lr-multiplier", type=float, default=2.0)
     parser.add_argument("--use-actor-critic", action="store_true")
     parser.add_argument("--gamma", type=float, default=0.995)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--policy-id", default=None)
-    parser.add_argument("--clip-epsilon", type=float, default=0.2)
+    parser.add_argument("--clip-epsilon", type=float, default=0.15)
     parser.add_argument("--value-clip-epsilon", type=float, default=0.2)
-    parser.add_argument("--entropy-coef", type=float, default=0.02)
-    parser.add_argument("--entropy-end-coef", type=float, default=0.005)
-    parser.add_argument("--entropy-decay-steps", type=int, default=0)
+    parser.add_argument("--entropy-coef", type=float, default=0.03)
+    parser.add_argument("--entropy-end-coef", type=float, default=0.008)
+    parser.add_argument("--entropy-decay-mode", choices=["linear", "cosine"], default="cosine")
     parser.add_argument("--kl-coef", type=float, default=0.01)
-    parser.add_argument("--kl-end-coef", type=float, default=0.0)
-    parser.add_argument("--target-kl", type=float, default=0.03)
+    parser.add_argument("--kl-target", type=float, default=0.02)
+    parser.add_argument("--kl-adaptive", action="store_true", default=True)
+    parser.add_argument("--target-kl", type=float, default=0.04)
+    parser.add_argument("--replay-buffer-epochs", type=int, default=3)
+    parser.add_argument("--replay-ratio", type=float, default=0.4)
     parser.add_argument(
         "--policy",
         choices=["ppo"],
@@ -109,9 +134,9 @@ def risk_adjusted_discard_logits(
     policy_config: dict[str, object] | None = None,
 ) -> torch.Tensor:
     discard_logits = outputs["discard_logits"]
-    risk_logits = outputs.get("risk_logits")
+    opponent_risk_logits = outputs.get("opponent_risk_logits")
     value = discard_value_for_risk_adjustment(outputs, policy_config)
-    if risk_logits is None or value is None:
+    if opponent_risk_logits is None or value is None:
         return discard_logits
 
     if policy_config is None:
@@ -132,9 +157,10 @@ def risk_adjusted_discard_logits(
         min_risk_weight,
         max_risk_weight,
     ).unsqueeze(1)
-    risk_probability = torch.sigmoid(risk_logits)
-    adjusted = discard_logits - risk_weight * risk_probability
-    finite = torch.isfinite(discard_logits) & torch.isfinite(risk_logits)
+
+    aggregated_risk = torch.sigmoid(opponent_risk_logits).max(dim=1)[0]
+    adjusted = discard_logits - risk_weight * aggregated_risk
+    finite = torch.isfinite(discard_logits) & torch.isfinite(aggregated_risk)
     return torch.where(finite, adjusted, discard_logits)
 
 
@@ -161,15 +187,25 @@ def ppo_policy_loss(
 
 def entropy_coef_for_progress(
     step: int,
-    decay_steps: int,
+    total_steps: int,
     start_coef: float,
     end_coef: float,
+    mode: str = "linear",
 ) -> float:
-    if decay_steps <= 0:
+    if total_steps <= 0:
         return round(end_coef, 10)
-    progress = min(max(step, 0), decay_steps) / decay_steps
-    value = start_coef + (end_coef - start_coef) * progress
+    progress = min(max(step, 0), total_steps) / total_steps
+    if mode == "cosine":
+        value = end_coef + (start_coef - end_coef) * 0.5 * (1.0 + math.cos(progress * math.pi))
+    else:
+        value = start_coef + (end_coef - start_coef) * progress
     return round(value, 10)
+
+
+def lr_warmup_multiplier(epoch: int, warmup_epochs: int) -> float:
+    if warmup_epochs <= 0:
+        return 1.0
+    return min(1.0, (epoch + 1) / warmup_epochs)
 
 
 def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
@@ -328,6 +364,7 @@ def select_action_log_probs(
 def forward_model(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
+    return_both_critics: bool = False,
 ) -> dict[str, torch.Tensor]:
     has_global = batch.get("has_global_state")
     if has_global is not None and torch.any(has_global):
@@ -337,13 +374,18 @@ def forward_model(
         global_tile_planes = None
         global_scalar_features = None
 
-    return model(
-        batch["tile_planes"].float(),
-        batch["scalar_features"].float(),
-        batch["discard_sequence"].float(),
-        global_tile_planes=global_tile_planes.float() if global_tile_planes is not None else None,
-        global_scalar_features=global_scalar_features.float() if global_scalar_features is not None else None,
-    )
+    forward_kwargs = {
+        "tile_planes": batch["tile_planes"].float(),
+        "scalar_features": batch["scalar_features"].float(),
+        "discard_sequence": batch["discard_sequence"].float(),
+        "global_tile_planes": global_tile_planes.float() if global_tile_planes is not None else None,
+        "global_scalar_features": global_scalar_features.float() if global_scalar_features is not None else None,
+    }
+
+    if return_both_critics and hasattr(model, "critic"):
+        forward_kwargs["return_both_critics"] = True
+
+    return model(**forward_kwargs)
 
 
 def select_action_entropy(
@@ -507,6 +549,18 @@ def value_training_metrics(
         returns,
         value_clip_epsilon,
     )
+
+    if "value_2" in outputs:
+        values_2 = outputs["value_2"].squeeze(1)
+        value_loss_2 = clipped_value_loss(
+            values_2,
+            old_values,
+            returns,
+            value_clip_epsilon,
+        )
+        value_loss = (value_loss + value_loss_2) / 2.0
+        values = torch.minimum(values, values_2)
+
     explained_variance = value_explained_variance(values.detach(), returns)
     with torch.no_grad():
         value_mse = (values - returns).pow(2).mean()
@@ -665,15 +719,32 @@ def main() -> None:
         f"epochs={args.epochs} batch_size={args.batch_size} device={device} "
         f"amp={amp_config.enabled} amp_dtype={amp_dtype_name(amp_config)} "
         f"entropy_start={adjusted_entropy_coef:.6f} entropy_end={adjusted_entropy_end_coef:.6f} "
-        f"(base={args.entropy_coef:.6f}, multiplier={entropy_multiplier:.2f})"
+        f"entropy_decay={args.entropy_decay_mode} "
+        f"(base={args.entropy_coef:.6f}, multiplier={entropy_multiplier:.2f}) "
+        f"replay_epochs={args.replay_buffer_epochs} replay_ratio={args.replay_ratio}"
     )
     print("RL trajectory diagnostics: " + json.dumps(diagnostics, ensure_ascii=False))
-    entropy_decay_steps = args.entropy_decay_steps
-    if entropy_decay_steps <= 0:
-        entropy_decay_steps = max(args.epochs * max(len(loader), 1) - 1, 1)
+
+    total_steps = args.epochs * max(len(loader), 1)
     history = []
     global_step = 0
+    kl_coef = args.kl_coef
+
+    replay_buffer = ReplayBuffer(max_epochs=args.replay_buffer_epochs)
+
     for epoch in range(args.epochs):
+        lr_mult = lr_warmup_multiplier(epoch, args.lr_warmup_epochs)
+        for param_group in optimizer.param_groups:
+            base_lr = args.lr if "actor" not in str(param_group) else args.lr * args.critic_lr_multiplier
+            param_group["lr"] = base_lr * lr_mult
+
+        current_batches = list(loader)
+        replay_batches = replay_buffer.sample(int(len(current_batches) * args.replay_ratio))
+        all_batches = current_batches + replay_batches
+
+        if replay_batches:
+            print(f"Epoch {epoch+1}: using {len(current_batches)} new + {len(replay_batches)} replay batches")
+
         total_loss = 0.0
         total_policy_loss = 0.0
         total_value_loss = 0.0
@@ -688,19 +759,15 @@ def main() -> None:
         total_advantage_mean = 0.0
         total_advantage_std = 0.0
         batch_count = 0
-        for batch in loader:
+
+        for batch in all_batches:
             batch = {key: value.to(device) for key, value in batch.items()}
             entropy_coef = entropy_coef_for_progress(
                 global_step,
-                entropy_decay_steps,
+                total_steps,
                 adjusted_entropy_coef,
                 adjusted_entropy_end_coef,
-            )
-            kl_coef = entropy_coef_for_progress(
-                global_step,
-                entropy_decay_steps,
-                args.kl_coef,
-                args.kl_end_coef,
+                args.entropy_decay_mode,
             )
             losses = autocast_ppo_loss(
                 amp_config,
@@ -732,6 +799,16 @@ def main() -> None:
             total_advantage_std += float(losses["raw_advantage_std"].detach().cpu())
             batch_count += 1
             global_step += 1
+
+        replay_buffer.add_epoch(current_batches)
+
+        avg_approx_kl = total_approx_kl / max(batch_count, 1)
+        if args.kl_adaptive:
+            if avg_approx_kl < args.kl_target * 0.5:
+                kl_coef = max(kl_coef * 0.8, 0.0)
+            elif avg_approx_kl > args.kl_target * 1.5:
+                kl_coef = min(kl_coef * 1.5, 0.1)
+
         epoch_metrics = {
             "epoch": epoch + 1,
             "loss": total_loss / max(batch_count, 1),
@@ -740,13 +817,14 @@ def main() -> None:
             "entropy": total_entropy / max(batch_count, 1),
             "entropy_coef": total_entropy_coef / max(batch_count, 1),
             "kl_loss": total_kl_loss / max(batch_count, 1),
-            "kl_coef": total_kl_coef / max(batch_count, 1),
-            "approx_kl": total_approx_kl / max(batch_count, 1),
+            "kl_coef": kl_coef,
+            "approx_kl": avg_approx_kl,
             "clip_fraction": total_clip_fraction / max(batch_count, 1),
             "value_explained_variance": total_value_explained_variance / max(batch_count, 1),
             "value_mse": total_value_mse / max(batch_count, 1),
             "advantage_mean": total_advantage_mean / max(batch_count, 1),
             "advantage_std": total_advantage_std / max(batch_count, 1),
+            "lr": optimizer.param_groups[0]["lr"],
         }
         history.append(epoch_metrics)
         print(format_epoch_metrics(epoch_metrics, args.epochs))
@@ -754,11 +832,11 @@ def main() -> None:
             checkpoint_payload(model, model_config, history),
             args.output / epoch_checkpoint_name(epoch + 1),
         )
-        if args.target_kl > 0.0 and epoch_metrics["approx_kl"] > args.target_kl:
+        if args.target_kl > 0.0 and avg_approx_kl > args.target_kl:
             history[-1]["early_stop"] = 1.0
             print(
                 "RL train early stop: "
-                f"approx_kl={epoch_metrics['approx_kl']:.6f} "
+                f"approx_kl={avg_approx_kl:.6f} "
                 f"target_kl={args.target_kl:.6f}"
             )
             break
