@@ -719,5 +719,5 @@ def build_model(config: ModelConfig) -> MahjongPolicyNetV2:
     return MahjongPolicyNetV2(config)
 
 
-def build_actor_critic(config: ModelConfig, double_critic: bool = True, use_moe: bool = False) -> MahjongActorCriticV2:
+def build_actor_critic(config: ModelConfig, double_critic: bool = True, use_moe: bool = True) -> MahjongActorCriticV2:
     return MahjongActorCriticV2(config, double_critic=double_critic, use_moe=use_moe)
