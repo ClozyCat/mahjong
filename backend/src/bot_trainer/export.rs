@@ -198,7 +198,7 @@ pub fn split_for_match_id(match_id: &str) -> DatasetSplit {
 
 pub fn export_metadata() -> BotDatasetMetadata {
     BotDatasetMetadata {
-        schema_version: 4,
+        schema_version: 5,
         tile_keys: TILE_KEYS.iter().map(|value| (*value).to_string()).collect(),
         decision_kinds: ["active_turn", "claim_window", "rob_kong"]
             .into_iter()
@@ -220,7 +220,8 @@ pub fn export_metadata() -> BotDatasetMetadata {
             "value",
             "fan_value",
             "qualifying_fan_value",
-            "risk_logits",
+            "opponent_tenpai_logits",
+            "opponent_risk_logits",
         ]
         .into_iter()
         .map(str::to_string)
@@ -356,16 +357,25 @@ mod tests {
     }
 
     #[test]
-    fn metadata_contains_v4_model_outputs() {
+    fn metadata_contains_v5_model_outputs() {
         let metadata = export_metadata();
-        assert_eq!(metadata.schema_version, 4);
+        assert_eq!(metadata.schema_version, 5);
         assert!(
             metadata
                 .model_outputs
                 .contains(&"discard_logits".to_string())
         );
         assert!(metadata.model_outputs.contains(&"claim_logits".to_string()));
-        assert!(metadata.model_outputs.contains(&"risk_logits".to_string()));
+        assert!(
+            metadata
+                .model_outputs
+                .contains(&"opponent_tenpai_logits".to_string())
+        );
+        assert!(
+            metadata
+                .model_outputs
+                .contains(&"opponent_risk_logits".to_string())
+        );
         assert!(metadata.model_outputs.contains(&"fan_value".to_string()));
         assert!(
             metadata
@@ -436,6 +446,9 @@ mod tests {
                 dealt_in: false,
                 round_drawn: false,
             },
+            opponent_tenpai_target: vec![0.0; 3],
+            opponent_risk_target: vec![vec![0.0; TILE_KEYS.len()]; 3],
+            opponent_risk_mask: vec![vec![0.0; TILE_KEYS.len()]; 3],
         };
 
         assert!(validate_sample(&sample).is_err());

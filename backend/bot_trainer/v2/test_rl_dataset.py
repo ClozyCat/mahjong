@@ -50,6 +50,10 @@ def base_trajectory_row(
         "terminal_reward": reward,
         "shanten_before": None,
         "shanten_after": None,
+        "risk_probs": [0.0] * 34,
+        "opponent_tenpai_target": [0.0, 0.0, 0.0],
+        "opponent_risk_target": [[0.0] * 34 for _ in range(3)],
+        "opponent_risk_mask": [[1.0] * 34 for _ in range(3)],
         "done": done,
     }
 
@@ -80,6 +84,10 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
         "terminal_reward": 1.0,
         "shanten_before": 1,
         "shanten_after": 0,
+        "risk_probs": [0.0] * 34,
+        "opponent_tenpai_target": [0.0, 0.0, 0.0],
+        "opponent_risk_target": [[0.0] * 34 for _ in range(3)],
+        "opponent_risk_mask": [[0.0] * 34 for _ in range(3)],
         "done": True,
     }
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
@@ -110,6 +118,35 @@ def test_loads_trajectory_jsonl_with_utf8_bom(tmp_path: Path) -> None:
 
     assert len(dataset) == 1
     assert dataset[0]["reward"].item() == 1.0
+
+
+def test_trajectory_dataset_encodes_risk_and_opponent_targets(tmp_path: Path) -> None:
+    path = tmp_path / "trajectories.jsonl"
+    row = base_trajectory_row("learner", 0, reward=0.0, value=0.0)
+    row["risk_probs"] = [0.9, 0.1] + [0.0] * 32
+    row["opponent_tenpai_target"] = [1.0, 0.0, 1.0]
+    row["opponent_risk_target"] = [
+        [1.0, 0.0] + [0.0] * 32,
+        [0.0] * 34,
+        [0.0, 1.0] + [0.0] * 32,
+    ]
+    row["opponent_risk_mask"] = [
+        [1.0, 1.0] + [0.0] * 32,
+        [0.0] * 34,
+        [1.0, 1.0] + [0.0] * 32,
+    ]
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    dataset = ArenaTrajectoryDataset(path)
+    sample = dataset[0]
+
+    assert sample["risk_probs"].shape == (34,)
+    assert sample["risk_probs"][0].item() == pytest.approx(0.9)
+    assert sample["opponent_tenpai_target"].tolist() == [1.0, 0.0, 1.0]
+    assert sample["opponent_risk_target"].shape == (3, 34)
+    assert sample["opponent_risk_mask"].shape == (3, 34)
+    assert sample["opponent_risk_target"][2, 1].item() == 1.0
+    assert sample["opponent_risk_mask"][1].any().item() is False
 
 
 def test_compute_returns_resets_on_done() -> None:

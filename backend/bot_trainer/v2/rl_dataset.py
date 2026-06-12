@@ -166,6 +166,16 @@ def encode_row(row: dict[str, Any], discounted_return: float | None = None) -> d
         "terminal_reward": torch.tensor(row.get("terminal_reward", 0.0), dtype=torch.float32),
         "shanten_before": optional_int_tensor(row.get("shanten_before")),
         "shanten_after": optional_int_tensor(row.get("shanten_after")),
+        "risk_probs": torch.tensor(row["risk_probs"], dtype=torch.float32),
+        "opponent_tenpai_target": torch.tensor(
+            row["opponent_tenpai_target"], dtype=torch.float32
+        ),
+        "opponent_risk_target": torch.tensor(
+            row["opponent_risk_target"], dtype=torch.float32
+        ),
+        "opponent_risk_mask": torch.tensor(
+            row["opponent_risk_mask"], dtype=torch.bool
+        ),
         "done": torch.tensor(row["done"], dtype=torch.bool),
         "old_log_prob": torch.tensor(row["log_prob"], dtype=torch.float32),
         "old_value": torch.tensor(row["value"], dtype=torch.float32),
@@ -223,6 +233,10 @@ def empty_tensor_cache() -> dict[str, torch.Tensor]:
         "terminal_reward": torch.empty((0,), dtype=torch.float32),
         "shanten_before": torch.empty((0,), dtype=torch.long),
         "shanten_after": torch.empty((0,), dtype=torch.long),
+        "risk_probs": torch.empty((0, 34), dtype=torch.float32),
+        "opponent_tenpai_target": torch.empty((0, 3), dtype=torch.float32),
+        "opponent_risk_target": torch.empty((0, 3, 34), dtype=torch.float32),
+        "opponent_risk_mask": torch.empty((0, 3, 34), dtype=torch.bool),
         "done": torch.empty((0,), dtype=torch.bool),
         "old_log_prob": torch.empty((0,), dtype=torch.float32),
         "old_value": torch.empty((0,), dtype=torch.float32),

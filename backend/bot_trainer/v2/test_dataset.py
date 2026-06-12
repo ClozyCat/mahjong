@@ -32,20 +32,30 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     assert encoded["discard_target"].item() == 0
 
 
-def test_schema_v4_encodes_risk_mask_and_fan_targets(tmp_path: Path) -> None:
+def test_schema_v5_encodes_opponent_targets_and_fan_targets(tmp_path: Path) -> None:
     metadata_path, train_path = write_fixture(tmp_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
-    row["outcome"]["dealt_in"] = True
     row["outcome"]["fan_count"] = 8
+    row["opponent_tenpai_target"] = [1.0, 0.0, 1.0]
+    row["opponent_risk_target"] = [
+        [1.0, 0.0] + [0.0] * 32,
+        [0.0] * 34,
+        [0.0, 1.0] + [0.0] * 32,
+    ]
+    row["opponent_risk_mask"] = [
+        [1.0, 1.0] + [0.0] * 32,
+        [0.0] * 34,
+        [1.0, 1.0] + [0.0] * 32,
+    ]
 
     encoded = encode_row(row, metadata)
 
-    assert encoded["risk_mask"][0].item()
-    assert encoded["risk_mask"][9].item()
-    assert not encoded["risk_mask"][1].item()
-    assert encoded["risk_target"][0].item() == 1.0
-    assert encoded["risk_target"][9].item() == 0.0
+    assert encoded["opponent_tenpai_target"].tolist() == [1.0, 0.0, 1.0]
+    assert encoded["opponent_risk_target"].shape == (3, 34)
+    assert encoded["opponent_risk_mask"].shape == (3, 34)
+    assert encoded["opponent_risk_target"][2, 1].item() == 1.0
+    assert not encoded["opponent_risk_mask"][1].any().item()
     assert encoded["fan_target"].shape == (1,)
     assert encoded["fan_target"][0].item() == 0.5
     assert encoded["qualifying_fan_target"].shape == (1,)
@@ -344,7 +354,8 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "value": torch.tensor([[999.0]]),
         "fan_value": torch.tensor([[999.0]]),
         "qualifying_fan_value": torch.tensor([[999.0]]),
-        "opponent_risk_logits": torch.zeros((1, 3, 34)) if False else torch.full((1, 34), 999.0),
+        "opponent_tenpai_logits": torch.zeros((1, 3)),
+        "opponent_risk_logits": torch.full((1, 3, 34), 999.0),
     }
     batch = {
         "discard_mask": torch.tensor([[True, True] + [False] * 32]),
@@ -358,8 +369,9 @@ def test_auxiliary_loss_weights_can_disable_value_and_risk() -> None:
         "value_target": torch.tensor([[0.0]]),
         "fan_target": torch.tensor([[0.0]]),
         "qualifying_fan_target": torch.tensor([[0.0]]),
-        "risk_target": torch.zeros((1, 34)),
-        "risk_mask": torch.ones((1, 34), dtype=torch.bool),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(
@@ -442,8 +454,9 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.tensor([[0.0, 1.0] + [0.0] * 32]),
-        "risk_mask": torch.tensor([[True, False] + [False] * 32]),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.ones((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(
@@ -455,7 +468,11 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         risk_weight=1.0,
     )
 
-    assert losses["risk_loss"].item() < 1.0e-6
+    expected_tenpai_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+        outputs["opponent_tenpai_logits"],
+        batch["opponent_tenpai_target"],
+    )
+    assert losses["risk_loss"].item() == pytest.approx(expected_tenpai_loss.item())
 
 
 def test_auxiliary_losses_use_float32_for_half_precision_outputs() -> None:
@@ -485,8 +502,9 @@ def test_auxiliary_losses_use_float32_for_half_precision_outputs() -> None:
         "value_target": torch.ones((1, 1)),
         "fan_target": torch.ones((1, 1)),
         "qualifying_fan_target": torch.ones((1, 1)),
-        "risk_target": torch.ones((1, 34)),
-        "risk_mask": torch.ones((1, 34), dtype=torch.bool),
+        "opponent_tenpai_target": torch.ones((1, 3)),
+        "opponent_risk_target": torch.ones((1, 3, 34)),
+        "opponent_risk_mask": torch.ones((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(outputs, batch)
@@ -501,7 +519,7 @@ def test_auxiliary_losses_use_float32_for_half_precision_outputs() -> None:
     assert losses["risk_loss"].dtype == torch.float32
 
 
-def test_legacy_risk_targets_supervise_opponent_risk_outputs() -> None:
+def test_opponent_targets_supervise_opponent_outputs() -> None:
     import torch
     from train import compute_losses
 
@@ -528,8 +546,13 @@ def test_legacy_risk_targets_supervise_opponent_risk_outputs() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.tensor([[1.0, 0.0] + [0.0] * 32]),
-        "risk_mask": torch.tensor([[True, True] + [False] * 32]),
+        "opponent_tenpai_target": torch.tensor([[1.0, 0.0, 0.0]]),
+        "opponent_risk_target": torch.tensor(
+            [[[1.0, 0.0] + [0.0] * 32, [0.0] * 34, [0.0] * 34]]
+        ),
+        "opponent_risk_mask": torch.tensor(
+            [[[True, True] + [False] * 32, [False] * 34, [False] * 34]]
+        ),
     }
 
     losses = compute_losses(
@@ -572,8 +595,9 @@ def test_losses_sanitize_nonfinite_model_outputs() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.tensor([[0.0, 1.0] + [0.0] * 32]),
-        "risk_mask": torch.ones((1, 34), dtype=torch.bool),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.ones((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(outputs, batch)
@@ -608,8 +632,9 @@ def test_rare_hu_positive_weight_increases_hu_loss() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.zeros((1, 34)),
-        "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
     }
 
     base = compute_losses(
@@ -661,8 +686,9 @@ def test_fan_loss_contributes_when_weighted() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.zeros((1, 34)),
-        "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(
@@ -705,8 +731,9 @@ def test_qualifying_fan_loss_contributes_when_weighted() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.tensor([[1.0]]),
-        "risk_target": torch.zeros((1, 34)),
-        "risk_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "opponent_tenpai_target": torch.zeros((1, 3)),
+        "opponent_risk_target": torch.zeros((1, 3, 34)),
+        "opponent_risk_mask": torch.zeros((1, 3, 34), dtype=torch.bool),
     }
 
     losses = compute_losses(
@@ -799,7 +826,7 @@ def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
-        "schema_version": 4,
+        "schema_version": 5,
         "tile_keys": [
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9",
             "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9",
@@ -810,7 +837,7 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "self_kong_actions": ["pass", "concealed_kong", "add_kong"],
     }
     row = {
-        "schema_version": 3,
+        "schema_version": 5,
         "match_id": "fixture",
         "decision_index": 0,
         "seat_index": 0,
@@ -850,6 +877,9 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
             "dealt_in": False,
             "round_drawn": False,
         },
+        "opponent_tenpai_target": [0.0, 0.0, 0.0],
+        "opponent_risk_target": [[0.0] * 34 for _ in range(3)],
+        "opponent_risk_mask": [[0.0] * 34 for _ in range(3)],
     }
     metadata_path = tmp_path / "metadata.json"
     train_path = tmp_path / "train.jsonl"

@@ -43,17 +43,18 @@ python train.py \
 ### 2. Critic预训练（可选但推荐）
 ```bash
 python pretrain_critic.py \
-  --data data/sft/ \
-  --checkpoint backend/assets/sft/best.pt \
-  --output backend/assets/ppo/critic_pretrained.pt \
-  --epochs 5
+  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl \
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt \
+  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt \
+  --epochs 5 \
+  --batch-size 256
 ```
 
 ### 3. PPO训练（标准配置）
 ```bash
 python rl_train.py \
   --trajectories data/trajectories.jsonl \
-  --checkpoint backend/assets/ppo/critic_pretrained.pt \
+  --checkpoint backend/bot_trainer/v2/checkpoints/critic_pretrained.pt \
   --output backend/assets/ppo/ \
   --epochs 20 \
   --batch-size 256 \
@@ -128,7 +129,7 @@ Trajectory JSONL格式需包含：
   "shanten_after": 1,
   "risk_probs": [0.1, 0.05, ...],  // 34个
   
-  // 新增：对手建模所需（可选）
+  // 对手建模监督目标（必需）
   "opponent_tenpai_target": [0, 1, 0],  // 3个对手
   "opponent_risk_target": [[0,0,...], [1,0,...], [0,0,...]],  // (3,34)
   "opponent_risk_mask": [[1,1,...], [1,1,...], [1,1,...]],

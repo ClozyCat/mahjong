@@ -304,18 +304,19 @@ output = w1*e1 + w2*e2 + w3*e3
 
 **变更内容：**
 - 新增`pretrain_critic.py`脚本
-- 使用SFT数据的`value_target`预训练Critic
+- 使用 arena trajectory 的 discounted return 预训练 Critic
+- 默认要求轨迹包含 `global_tile_planes` / `global_scalar_features`
 - 冻结Actor参数，仅优化Critic
 - 支持双Critic同时预训练
 
 **使用方法：**
 ```bash
 python pretrain_critic.py \
-  --data data/sft/ \
-  --checkpoint backend/assets/sft/best.pt \
-  --output backend/assets/ppo/critic_pretrained.pt \
+  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl \
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt \
+  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt \
   --epochs 5 \
-  --batch-size 512 \
+  --batch-size 256 \
   --lr 1e-4
 ```
 
@@ -350,7 +351,7 @@ python pretrain_critic.py \
 
 2. **risk_head → opponent_modeling**
    - 输出维度变更：(34,) → (3,) + (3, 34)
-   - 需更新数据生成代码以提供`opponent_tenpai_target`和`opponent_risk_target`
+   - SFT 导出与 arena trajectory 已提供 `opponent_tenpai_target`、`opponent_risk_target` 和 `opponent_risk_mask`
 
 3. **共享Encoder架构**
    - 参数路径变化（shared_backbone）
@@ -386,7 +387,7 @@ python pretrain_critic.py \
 ```bash
 python rl_train.py \
   --trajectories data/trajectories.jsonl \
-  --checkpoint backend/assets/ppo/critic_pretrained.pt \
+  --checkpoint backend/bot_trainer/v2/checkpoints/critic_pretrained.pt \
   --output backend/assets/ppo/ \
   --epochs 20 \
   --batch-size 256 \
@@ -415,31 +416,37 @@ model = build_actor_critic(
 ```
 
 ### Critic预训练流程
-```bash
+```powershell
 # 1. 训练SFT模型
 python train.py --data data/sft/ --output backend/assets/sft/
 
-# 2. 转换为Actor-Critic架构并预训练Critic
-python pretrain_critic.py \
-  --data data/sft/ \
-  --checkpoint backend/assets/sft/best.pt \
-  --output backend/assets/ppo/critic_pretrained.pt \
-  --epochs 5
+# 2. 转换为Actor-Critic架构
+python backend/bot_trainer/v2/bootstrap_actor_critic_checkpoint.py `
+  --source backend/bot_trainer/v2/checkpoints/best.pt `
+  --output backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt
 
-# 3. 使用预训练checkpoint开始RL训练
-python rl_train.py \
-  --checkpoint backend/assets/ppo/critic_pretrained.pt \
+# 3. 用带global features的arena trajectory预训练Critic
+python pretrain_critic.py `
+  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl `
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
+  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
+  --epochs 5 `
+  --batch-size 256
+
+# 4. 使用预训练checkpoint开始RL训练
+python rl_train.py `
+  --checkpoint backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
   ...
 ```
 
 ### 数据生成要求
-需在trajectory数据中添加以下字段：
+trajectory 数据需包含以下字段：
 - `shanten_before`: 动作前的向听数
 - `shanten_after`: 动作后的向听数
 - `risk_probs`: 34张牌的风险概率（用于step reward计算）
-- `opponent_tenpai_target`: (3,) 对手听牌标签（可选，用于训练）
-- `opponent_risk_target`: (3, 34) 对手危险牌标签（可选，用于训练）
-- `opponent_risk_mask`: (3, 34) 对手危险牌mask（可选，用于训练）
+- `opponent_tenpai_target`: (3,) 对手听牌标签（用于训练）
+- `opponent_risk_target`: (3, 34) 对手危险牌标签（用于训练）
+- `opponent_risk_mask`: (3, 34) 对手危险牌mask（用于训练）
 
 ### 性能预期
 - **数据效率**：提升40%（replay机制）
@@ -516,12 +523,12 @@ python rl_train.py \
 - [x] MoE架构测试通过
 - [x] 双Critic架构测试通过
 - [x] 参数量统计（12.1M）
-- [ ] SFT训练兼容性测试
-- [ ] Trajectory生成代码更新
-- [ ] Critic预训练流程测试
+- [x] SFT训练兼容性测试
+- [x] Trajectory生成代码更新
+- [x] Critic预训练流程测试
 - [ ] PPO训练端到端测试
-- [ ] 对手池加载测试
-- [ ] Arena对战评估
+- [x] 对手池加载测试
+- [x] Arena对战评估
 
 ---
 
@@ -736,7 +743,7 @@ aggregated_risk = sigmoid(opponent_risk_logits).max(dim=1)[0]
 
 2. **risk_head → opponent_modeling**
    - 输出维度变更：(34,) → (3,) + (3, 34)
-   - 需更新数据生成代码以提供`opponent_tenpai_target`和`opponent_risk_target`
+   - SFT 导出与 arena trajectory 已提供 `opponent_tenpai_target`、`opponent_risk_target` 和 `opponent_risk_mask`
 
 ### 配置文件变更
 1. **opponent_pool.json schema v1 → v2**
@@ -780,13 +787,13 @@ python rl_train.py \
 ```
 
 ### 数据生成要求
-需在trajectory数据中添加以下字段：
+trajectory 数据需包含以下字段：
 - `shanten_before`: 动作前的向听数
 - `shanten_after`: 动作后的向听数
 - `risk_probs`: 34张牌的风险概率（用于step reward计算）
-- `opponent_tenpai_target`: (3,) 对手听牌标签（可选，用于训练）
-- `opponent_risk_target`: (3, 34) 对手危险牌标签（可选，用于训练）
-- `opponent_risk_mask`: (3, 34) 对手危险牌mask（可选，用于训练）
+- `opponent_tenpai_target`: (3,) 对手听牌标签（用于训练）
+- `opponent_risk_target`: (3, 34) 对手危险牌标签（用于训练）
+- `opponent_risk_mask`: (3, 34) 对手危险牌mask（用于训练）
 
 ### 性能预期
 - 数据效率提升：~40%（replay机制）
@@ -799,13 +806,8 @@ python rl_train.py \
 ## 后续优化方向
 
 ### 未完成的中期优化
-1. **模型架构**
-   - 共享底层encoder减少参数
-   - MoE（Mixture of Experts）针对不同游戏阶段
-
-2. **训练策略**
-   - 双Critic减轻过估计
-   - Critic预训练加速收敛
+当前文档中原列出的共享 encoder、MoE、双 Critic 与 Critic 预训练均已有实现和测试覆盖。
+剩余未完成项归入长期目标。
 
 ### 长期目标
 1. League训练框架（AlphaStar风格）
@@ -818,11 +820,11 @@ python rl_train.py \
 ## 测试清单
 
 - [x] 模型构建测试通过
-- [ ] SFT训练兼容性测试
-- [ ] Trajectory生成代码更新
+- [x] SFT训练兼容性测试
+- [x] Trajectory生成代码更新
 - [ ] PPO训练端到端测试
-- [ ] 对手池加载测试
-- [ ] Arena对战评估
+- [x] 对手池加载测试
+- [x] Arena对战评估
 
 ---
 

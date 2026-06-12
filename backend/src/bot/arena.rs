@@ -1,5 +1,5 @@
 use super::{
-    action_space::{claim_action_index, self_kong_action_index, tile_index},
+    action_space::{TILE_KEYS, TILE_KIND_COUNT, claim_action_index, self_kong_action_index, tile_index},
     context::{BotAction, BotContext, BotSelfKongKind},
     features::{encode_bot_context_v2, encode_global_features_v2},
     neural::{NeuralDecisionScores, neural_decision_scores_for_model_path},
@@ -20,6 +20,7 @@ use crate::rules::standard::{
     flow::{record_continue_action_in_room_state, start_match_in_room_state},
     ready_hand::is_tenpai_hand_with_melds,
 };
+use crate::rules::scoring::decompose_winning_hand_with_melds;
 use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use std::sync::{
@@ -158,6 +159,10 @@ pub struct ArenaTrajectoryRow {
     pub terminal_reward: f32,
     pub shanten_before: Option<i32>,
     pub shanten_after: Option<i32>,
+    pub risk_probs: Vec<f32>,
+    pub opponent_tenpai_target: Vec<f32>,
+    pub opponent_risk_target: Vec<Vec<f32>>,
+    pub opponent_risk_mask: Vec<Vec<f32>>,
     pub global_tile_planes: Option<Vec<f32>>,
     pub global_scalar_features: Option<Vec<f32>>,
     pub done: bool,
@@ -811,6 +816,8 @@ fn trajectory_row_from_trace_with_state(
         trace.neural_scores.as_ref(),
     )
     .unwrap_or((0.0, 0.0));
+    let risk_probs = risk_probs_from_scores(trace.neural_scores.as_ref());
+    let opponent_targets = opponent_targets_from_state(state, trace.action.seat_index);
     Some(ArenaTrajectoryRow {
         schema_version: 1,
         match_id: match_id.to_string(),
@@ -835,6 +842,10 @@ fn trajectory_row_from_trace_with_state(
         terminal_reward: 0.0,
         shanten_before: None,
         shanten_after: None,
+        risk_probs,
+        opponent_tenpai_target: opponent_targets.tenpai,
+        opponent_risk_target: opponent_targets.risk,
+        opponent_risk_mask: opponent_targets.mask,
         global_tile_planes,
         global_scalar_features,
         done: false,
@@ -864,6 +875,7 @@ fn trajectory_row_from_trace(
         trace.neural_scores.as_ref(),
     )
     .unwrap_or((0.0, 0.0));
+    let risk_probs = risk_probs_from_scores(trace.neural_scores.as_ref());
     Some(ArenaTrajectoryRow {
         schema_version: 1,
         match_id: match_id.to_string(),
@@ -888,6 +900,10 @@ fn trajectory_row_from_trace(
         terminal_reward: 0.0,
         shanten_before: None,
         shanten_after: None,
+        risk_probs,
+        opponent_tenpai_target: vec![0.0; 3],
+        opponent_risk_target: vec![vec![0.0; TILE_KIND_COUNT]; 3],
+        opponent_risk_mask: vec![vec![0.0; TILE_KIND_COUNT]; 3],
         global_tile_planes: None,
         global_scalar_features: None,
         done: false,
@@ -905,6 +921,97 @@ fn apply_shaping_reward(
         row.step_reward = shaping_reward(before, after);
         row.reward = row.step_reward;
     }
+}
+
+struct OpponentTargets {
+    tenpai: Vec<f32>,
+    risk: Vec<Vec<f32>>,
+    mask: Vec<Vec<f32>>,
+}
+
+fn risk_probs_from_scores(trace_scores: Option<&NeuralDecisionScores>) -> Vec<f32> {
+    trace_scores
+        .map(|scores| {
+            scores
+                .risk_logits
+                .iter()
+                .map(|logit| sigmoid_probability(*logit).unwrap_or(0.0))
+                .collect()
+        })
+        .unwrap_or_else(|| vec![0.0; TILE_KIND_COUNT])
+}
+
+fn sigmoid_probability(logit: f32) -> Option<f32> {
+    if logit.is_finite() {
+        Some(1.0 / (1.0 + (-logit).exp()))
+    } else {
+        None
+    }
+}
+
+fn opponent_targets_from_state(state: &RoomState, current_seat: usize) -> OpponentTargets {
+    let Some(round) = state.round_state.as_ref() else {
+        return empty_opponent_targets();
+    };
+
+    let mut tenpai = Vec::with_capacity(3);
+    let mut risk = Vec::with_capacity(3);
+    let mut mask = Vec::with_capacity(3);
+    for opponent_offset in 1..=3 {
+        let opponent_seat = (current_seat + opponent_offset) % round.players.len().max(1);
+        let Some(player) = round.players.get(opponent_seat) else {
+            tenpai.push(0.0);
+            risk.push(vec![0.0; TILE_KIND_COUNT]);
+            mask.push(vec![0.0; TILE_KIND_COUNT]);
+            continue;
+        };
+        let concealed_tile_keys = player
+            .concealed_tiles
+            .iter()
+            .filter(|tile| tile_index(&tile.tile_key).is_some())
+            .map(|tile| tile.tile_key.clone())
+            .collect::<Vec<_>>();
+        let is_tenpai = is_tenpai_hand_with_melds(&concealed_tile_keys, &player.melds);
+        tenpai.push(if is_tenpai { 1.0 } else { 0.0 });
+        risk.push(opponent_winning_tile_targets(
+            &concealed_tile_keys,
+            &player.melds,
+            is_tenpai,
+        ));
+        mask.push(vec![if is_tenpai { 1.0 } else { 0.0 }; TILE_KIND_COUNT]);
+    }
+
+    OpponentTargets { tenpai, risk, mask }
+}
+
+fn empty_opponent_targets() -> OpponentTargets {
+    OpponentTargets {
+        tenpai: vec![0.0; 3],
+        risk: vec![vec![0.0; TILE_KIND_COUNT]; 3],
+        mask: vec![vec![0.0; TILE_KIND_COUNT]; 3],
+    }
+}
+
+fn opponent_winning_tile_targets(
+    concealed_tile_keys: &[String],
+    melds: &[Vec<String>],
+    is_tenpai: bool,
+) -> Vec<f32> {
+    if !is_tenpai {
+        return vec![0.0; TILE_KIND_COUNT];
+    }
+    TILE_KEYS
+        .iter()
+        .map(|tile_key| {
+            let mut simulated = concealed_tile_keys.to_vec();
+            simulated.push((*tile_key).to_string());
+            if decompose_winning_hand_with_melds(&simulated, melds).is_empty() {
+                0.0
+            } else {
+                1.0
+            }
+        })
+        .collect()
 }
 
 fn neural_policy_stats(
@@ -1528,6 +1635,10 @@ mod tests {
             terminal_reward: 0.0,
             shanten_before: None,
             shanten_after: None,
+            risk_probs: vec![0.0; TILE_KIND_COUNT],
+            opponent_tenpai_target: vec![0.0, 1.0, 0.0],
+            opponent_risk_target: vec![vec![0.0; TILE_KIND_COUNT]; 3],
+            opponent_risk_mask: vec![vec![1.0; TILE_KIND_COUNT]; 3],
             global_tile_planes: None,
             global_scalar_features: None,
             done: false,
@@ -1540,6 +1651,24 @@ mod tests {
         assert_eq!(
             value["discard_mask"].as_array().expect("mask").len(),
             TILE_KIND_COUNT
+        );
+        assert_eq!(
+            value["risk_probs"].as_array().expect("risk probs").len(),
+            TILE_KIND_COUNT
+        );
+        assert_eq!(
+            value["opponent_tenpai_target"]
+                .as_array()
+                .expect("tenpai target")
+                .len(),
+            3
+        );
+        assert_eq!(
+            value["opponent_risk_target"]
+                .as_array()
+                .expect("risk target")
+                .len(),
+            3
         );
     }
 
@@ -1777,6 +1906,10 @@ mod tests {
             terminal_reward: 0.0,
             shanten_before: None,
             shanten_after: None,
+            risk_probs: vec![0.0; TILE_KIND_COUNT],
+            opponent_tenpai_target: vec![0.0; 3],
+            opponent_risk_target: vec![vec![0.0; TILE_KIND_COUNT]; 3],
+            opponent_risk_mask: vec![vec![0.0; TILE_KIND_COUNT]; 3],
             global_tile_planes: None,
             global_scalar_features: None,
             done: false,

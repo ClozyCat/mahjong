@@ -14,7 +14,10 @@ Rust runtime 会把 `opponent_risk_logits` 按牌聚合为 34 维风险，用于
 - `test_model.py::test_sequence_aware_model_output_shapes`
 - `test_model.py::test_actor_critic_export_wrapper_preserves_onnx_outputs`
 - `test_dataset.py::test_risk_loss_ignores_unmasked_tiles`
-- `test_dataset.py::test_legacy_risk_targets_supervise_opponent_risk_outputs`
+- `test_dataset.py::test_opponent_targets_supervise_opponent_outputs`
+- `test_dataset.py::test_schema_v5_encodes_opponent_targets_and_fan_targets`
+- `test_rl_dataset.py::test_trajectory_dataset_encodes_risk_and_opponent_targets`
+- `test_pretrain_critic.py`
 - `test_rl_dataset.py::test_discard_log_probs_use_risk_adjusted_logits`
 - `test_rl_dataset.py::test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment`
 - `test_rl_dataset.py::test_compute_shaped_reward_does_not_double_count_step_reward`
@@ -26,11 +29,12 @@ Rust runtime 会把 `opponent_risk_logits` 按牌聚合为 34 维风险，用于
 
 当前推荐的训练顺序：
 
-1. 重新导出 schema v4 数据。
+1. 重新导出 schema v5 数据。
 2. 运行 SFT 训练并导出 `backend/assets/sft/sft.onnx`。
 3. 从 SFT checkpoint bootstrap actor-critic checkpoint。
-4. 使用 actor-critic checkpoint 和对应 ONNX 启动 PPO。
-5. 通过 candidate gate 后再推广 PPO ONNX。
+4. 使用带 global features 与 opponent targets 的 arena trajectory 预训练 critic。
+5. 使用 critic-pretrained actor-critic checkpoint 和对应 ONNX 启动 PPO。
+6. 通过 candidate gate 后再推广 PPO ONNX。
 
 更新时间: 2026-06-12
 状态: 测试已适配新模型输出合约

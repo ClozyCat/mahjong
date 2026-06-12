@@ -313,10 +313,7 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
 fn extract_risk_logits(
     outputs: &ort::session::SessionOutputs,
 ) -> Result<[f32; TILE_KIND_COUNT], ()> {
-    if outputs.contains_key("opponent_risk_logits") {
-        return extract_opponent_risk_logits(outputs);
-    }
-    extract_array::<TILE_KIND_COUNT>(outputs, "risk_logits")
+    extract_opponent_risk_logits(outputs)
 }
 
 fn extract_opponent_risk_logits(

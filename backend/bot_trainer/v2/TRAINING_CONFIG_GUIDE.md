@@ -160,17 +160,20 @@
 
 ### 5. 值函数不准
 **症状**: value_explained_variance < 0.5
-**建议**: 先运行Critic预训练
+**建议**: 先用带 global features 的 arena trajectory 运行 Critic 预训练
 ```powershell
 python pretrain_critic.py `
-  --data data/sft/ `
-  --checkpoint backend/assets/sft/best.pt `
-  --output backend/assets/ppo/critic_pretrained.pt `
+  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl `
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
+  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
   --epochs 5
+
+# 该脚本默认要求 trajectory 包含 global_tile_planes/global_scalar_features。
 
 # 然后使用预训练checkpoint
 .\train_rl_model.ps1 `
-  -BaselineCheckpoint "backend/assets/ppo/critic_pretrained.pt" `
+  -BaselineCheckpoint "backend/bot_trainer/v2/checkpoints/critic_pretrained.pt" `
+  -UseActorCritic `
   ...
 ```
 

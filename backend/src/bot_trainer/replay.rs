@@ -3,9 +3,11 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use super::botzone::{BotZoneAction, BotZoneMatch, BotZoneResult};
-use crate::bot::action_space::{TILE_KIND_COUNT, tile_index};
+use crate::bot::action_space::{TILE_KEYS, TILE_KIND_COUNT, tile_index};
+use crate::rules::standard::ready_hand::is_tenpai_hand_with_melds;
 use crate::rules::scoring::{
-    EvaluationInput, TimingFeatures, evaluate_fans, extract_hand_features,
+    EvaluationInput, TimingFeatures, decompose_winning_hand_with_melds, evaluate_fans,
+    extract_hand_features,
 };
 
 const TOTAL_TILE_COUNT: i64 = 136;
@@ -41,6 +43,9 @@ pub(crate) struct TrainingDecisionSampleV2 {
     pub(crate) legal_actions: Vec<String>,
     pub(crate) label: TrainingLabel,
     pub(crate) outcome: SampleOutcome,
+    pub(crate) opponent_tenpai_target: Vec<f32>,
+    pub(crate) opponent_risk_target: Vec<Vec<f32>>,
+    pub(crate) opponent_risk_mask: Vec<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +241,12 @@ struct DeclaredClaim {
     label: TrainingLabel,
 }
 
+struct OpponentTargets {
+    tenpai: Vec<f32>,
+    risk: Vec<Vec<f32>>,
+    mask: Vec<Vec<f32>>,
+}
+
 struct ReplayState {
     match_id: String,
     hands: [Vec<SerializableBotTile>; 4],
@@ -314,6 +325,7 @@ impl ReplayState {
             Vec::new(),
         );
         let legal_actions = legal_discard_actions(&context);
+        let opponent_targets = self.opponent_targets(seat_index);
         let sample = TrainingDecisionSampleV2 {
             schema_version: 2,
             match_id: record.match_id.clone(),
@@ -324,6 +336,9 @@ impl ReplayState {
             legal_actions,
             label,
             outcome,
+            opponent_tenpai_target: opponent_targets.tenpai,
+            opponent_risk_target: opponent_targets.risk,
+            opponent_risk_mask: opponent_targets.mask,
         };
         *decision_index += 1;
         sample
@@ -352,6 +367,7 @@ impl ReplayState {
                 legal_actions.dedup();
             }
         }
+        let opponent_targets = self.opponent_targets(seat_index);
         let sample = TrainingDecisionSampleV2 {
             schema_version: 2,
             match_id: record.match_id.clone(),
@@ -362,6 +378,9 @@ impl ReplayState {
             legal_actions,
             label,
             outcome,
+            opponent_tenpai_target: opponent_targets.tenpai,
+            opponent_risk_target: opponent_targets.risk,
+            opponent_risk_mask: opponent_targets.mask,
         };
         *decision_index += 1;
         sample
@@ -403,6 +422,7 @@ impl ReplayState {
             }
             let context = self.context(record, seat_index, Vec::new(), claim_options);
             let legal_actions = claim_legal_actions(&context);
+            let opponent_targets = self.opponent_targets(seat_index);
             samples.push(TrainingDecisionSampleV2 {
                 schema_version: 2,
                 match_id: record.match_id.clone(),
@@ -413,6 +433,9 @@ impl ReplayState {
                 legal_actions,
                 label,
                 outcome: outcome_by_seat[seat_index].clone(),
+                opponent_tenpai_target: opponent_targets.tenpai,
+                opponent_risk_target: opponent_targets.risk,
+                opponent_risk_mask: opponent_targets.mask,
             });
             *decision_index += 1;
         }
@@ -441,6 +464,7 @@ impl ReplayState {
             let mut context = self.context(record, seat_index, Vec::new(), Vec::new());
             context.last_discard_tile_key = Some(tile_key.to_string());
             context.add_kong_risk_tiles.insert(tile_key.to_string());
+            let opponent_targets = self.opponent_targets(seat_index);
             samples.push(TrainingDecisionSampleV2 {
                 schema_version: 2,
                 match_id: record.match_id.clone(),
@@ -451,6 +475,9 @@ impl ReplayState {
                 legal_actions: vec!["claim:hu".to_string(), "pass".to_string()],
                 label,
                 outcome: outcome_by_seat[seat_index].clone(),
+                opponent_tenpai_target: opponent_targets.tenpai,
+                opponent_risk_target: opponent_targets.risk,
+                opponent_risk_mask: opponent_targets.mask,
             });
             *decision_index += 1;
         }
@@ -493,6 +520,34 @@ impl ReplayState {
             last_discard_tile_key: self.last_discard_tile_key.clone(),
             add_kong_risk_tiles: HashSet::new(),
         }
+    }
+
+    fn opponent_targets(&self, seat_index: usize) -> OpponentTargets {
+        let standard_current = botzone_seat_to_standard(seat_index);
+        let mut tenpai = Vec::with_capacity(3);
+        let mut risk = Vec::with_capacity(3);
+        let mut mask = Vec::with_capacity(3);
+
+        for opponent_offset in 1..=3 {
+            let standard_opponent = (standard_current + opponent_offset) % 4;
+            let opponent_seat = standard_seat_to_botzone(standard_opponent);
+            let concealed_tile_keys = self.hands[opponent_seat]
+                .iter()
+                .filter(|tile| tile_index(&tile.tile_key).is_some())
+                .map(|tile| tile.tile_key.clone())
+                .collect::<Vec<_>>();
+            let melds = &self.melds[opponent_seat];
+            let is_tenpai = is_tenpai_hand_with_melds(&concealed_tile_keys, melds);
+            tenpai.push(if is_tenpai { 1.0 } else { 0.0 });
+            risk.push(opponent_winning_tile_targets(
+                &concealed_tile_keys,
+                melds,
+                is_tenpai,
+            ));
+            mask.push(vec![if is_tenpai { 1.0 } else { 0.0 }; TILE_KIND_COUNT]);
+        }
+
+        OpponentTargets { tenpai, risk, mask }
     }
 
     fn claim_options(
@@ -912,6 +967,14 @@ fn botzone_seat_to_standard(seat_index: usize) -> usize {
     }
 }
 
+fn standard_seat_to_botzone(seat_index: usize) -> usize {
+    match seat_index {
+        1 => 3,
+        3 => 1,
+        _ => seat_index,
+    }
+}
+
 fn standard_seat_index_to_wind(index: usize) -> &'static str {
     match index {
         1 => "south",
@@ -929,6 +992,28 @@ fn reorder_botzone_seat_array<T: Clone>(values: &[T; 4]) -> Vec<T> {
     [0, 3, 2, 1]
         .into_iter()
         .map(|botzone_seat| values[botzone_seat].clone())
+        .collect()
+}
+
+fn opponent_winning_tile_targets(
+    concealed_tile_keys: &[String],
+    melds: &[Vec<String>],
+    is_tenpai: bool,
+) -> Vec<f32> {
+    if !is_tenpai {
+        return vec![0.0; TILE_KIND_COUNT];
+    }
+    TILE_KEYS
+        .iter()
+        .map(|tile_key| {
+            let mut simulated = concealed_tile_keys.to_vec();
+            simulated.push((*tile_key).to_string());
+            if decompose_winning_hand_with_melds(&simulated, melds).is_empty() {
+                0.0
+            } else {
+                1.0
+            }
+        })
         .collect()
 }
 
@@ -1243,6 +1328,34 @@ Score 0 0 0 0
                 .iter()
                 .any(|action| action == "discard:t6")
         );
+    }
+
+    #[test]
+    fn replay_sample_contains_relative_opponent_targets() {
+        let record = parse_match(
+            r#"
+Match opponent targets
+Player 0 Deal W1 W2 W3 W4 W5 W6 T1 T2 T3 B1 B2 B3 F1
+Player 1 Deal W1 W2 W3 W4 W5 W6 T1 T2 T3 B1 B2 B3 F1
+Player 2 Deal W1 W1 W2 W4 W7 T2 T5 T8 B3 B6 B9 F1 J1
+Player 3 Deal W1 W2 W3 W4 W5 W6 T1 T2 T3 B1 B2 B3 F1
+Player 0 Draw J1
+Player 0 Play J1
+Score 0 0 0 0
+"#,
+        )
+        .expect("match");
+        let samples = replay_match_to_samples(&record).expect("samples");
+        let first_discard = samples
+            .iter()
+            .find(|sample| sample.seat_index == 0 && sample.decision_kind == DecisionKind::ActiveTurn)
+            .expect("active turn sample");
+
+        assert_eq!(first_discard.opponent_tenpai_target, vec![1.0, 0.0, 1.0]);
+        assert_eq!(first_discard.opponent_risk_target.len(), 3);
+        assert_eq!(first_discard.opponent_risk_target[0].len(), TILE_KIND_COUNT);
+        assert_eq!(first_discard.opponent_risk_mask[0], vec![1.0; TILE_KIND_COUNT]);
+        assert_eq!(first_discard.opponent_risk_mask[1], vec![0.0; TILE_KIND_COUNT]);
     }
 
     #[test]

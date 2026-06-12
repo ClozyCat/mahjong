@@ -19,10 +19,10 @@ SCALAR_FEATURE_COUNT = 12
 DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
-DISK_CACHE_VERSION = 9
+DISK_CACHE_VERSION = 10
 FAN_TARGET_SCALE = 16.0
 QUALIFYING_FAN_TARGET = 8.0
-EXPECTED_METADATA_SCHEMA_VERSION = 4
+EXPECTED_METADATA_SCHEMA_VERSION = 5
 STANDARD_WIND_ORDER = ("east", "south", "west", "north")
 ROUND_WIND_TO_INDEX = {"east": 0.0, "south": 1.0, "west": 2.0, "north": 3.0}
 
@@ -182,8 +182,9 @@ def tensor_array_specs(metadata: dict[str, Any]) -> dict[str, tuple[tuple[int, .
         "self_kong_target": ((), np.dtype(np.int64)),
         "hu_target": ((), np.dtype(np.int64)),
         "value_target": ((1,), np.dtype(np.float32)),
-        "risk_target": ((TILE_KIND_COUNT,), np.dtype(np.float32)),
-        "risk_mask": ((TILE_KIND_COUNT,), np.dtype(np.bool_)),
+        "opponent_tenpai_target": ((3,), np.dtype(np.float32)),
+        "opponent_risk_target": ((3, TILE_KIND_COUNT), np.dtype(np.float32)),
+        "opponent_risk_mask": ((3, TILE_KIND_COUNT), np.dtype(np.bool_)),
         "fan_target": ((1,), np.dtype(np.float32)),
         "qualifying_fan_target": ((1,), np.dtype(np.float32)),
         "decision_kind": ((), np.dtype(np.int64)),
@@ -324,8 +325,13 @@ def encode_row(
         "self_kong_target": np.asarray(self_kong_target(row, self_kong_to_index), dtype=np.int64),
         "hu_target": np.asarray(hu_target(row), dtype=np.int64),
         "value_target": np.asarray([float(row["outcome"]["score_delta"]) / 1000.0], dtype=np.float32),
-        "risk_target": risk_target(row, tile_to_index),
-        "risk_mask": risk_mask(row, tile_to_index),
+        "opponent_tenpai_target": np.asarray(
+            row["opponent_tenpai_target"], dtype=np.float32
+        ),
+        "opponent_risk_target": np.asarray(
+            row["opponent_risk_target"], dtype=np.float32
+        ),
+        "opponent_risk_mask": np.asarray(row["opponent_risk_mask"], dtype=np.bool_),
         "fan_target": fan_target(row),
         "qualifying_fan_target": qualifying_fan_target(row),
         "decision_kind": np.asarray(decision_kind_index(row["decision_kind"]), dtype=np.int64),
@@ -515,36 +521,6 @@ def hu_target(row: dict[str, Any]) -> int:
     if row["decision_kind"] in {"claim_window", "rob_kong"}:
         return 0
     return IGNORE_INDEX
-
-
-def risk_target(row: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:
-    target = np.zeros((TILE_KIND_COUNT,), dtype=np.float32)
-    if row["outcome"].get("dealt_in", False):
-        label = row["label"]
-        if label.get("type") == "discard" and label.get("tile_key") in tile_to_index:
-            target[tile_to_index[label["tile_key"]]] = 1.0
-    return target
-
-
-def risk_mask(row: dict[str, Any], tile_to_index: dict[str, int]) -> np.ndarray:
-    mask = np.zeros((TILE_KIND_COUNT,), dtype=np.bool_)
-    label = row["label"]
-    if row.get("decision_kind") != "active_turn" or label.get("type") != "discard":
-        return mask
-
-    label_tile_key = label.get("tile_key")
-    if row["outcome"].get("dealt_in", False):
-        for action in row.get("legal_actions", []):
-            if action.startswith("discard:"):
-                tile_key = action.split(":", 1)[1]
-                if tile_key in tile_to_index:
-                    mask[tile_to_index[tile_key]] = True
-    elif label_tile_key in tile_to_index:
-        mask[tile_to_index[label_tile_key]] = True
-
-    if label_tile_key in tile_to_index:
-        mask[tile_to_index[label_tile_key]] = True
-    return mask
 
 
 def fan_target(row: dict[str, Any]) -> np.ndarray:

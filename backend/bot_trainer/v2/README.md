@@ -17,9 +17,6 @@
 .\backend\bot_trainer\v2\export_full_dataset.ps1 -ProgressEvery 100
 ```
 
-```bash
-./backend/bot_trainer/v2/export_full_dataset.sh --progress-every 100
-```
 
 小样本导出：
 
@@ -27,9 +24,6 @@
 .\backend\bot_trainer\v2\export_full_dataset.ps1 -OutputDir backend/bot_trainer/v2/out_smoke -MaxMatches 100 -ProgressEvery 10
 ```
 
-```bash
-./backend/bot_trainer/v2/export_full_dataset.sh --output backend/bot_trainer/v2/out_smoke --max-matches 100 --progress-every 10
-```
 
 ## 2. 监督训练 SFT
 
@@ -40,9 +34,6 @@ CUDA 训练默认启用 BF16 AMP，并继续启用 TF32 加速 float32 matmul/co
 .\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 4096 -Device cuda -NumWorkers 0
 ```
 
-```bash
-./backend/bot_trainer/v2/train_and_export_model.sh --epochs 20 --batch-size 4096 --device cuda --num-workers 0
-```
 
 显存不足时先降 `BatchSize` 到 `1024`。CPU 训练可用 PowerShell 的 `-Device cpu`，或 Bash 的 `--device cpu`。
 如需关闭 AMP，可传 PowerShell 的 `-NoAmp`，或 Bash 的 `--no-amp`；若要禁用 CUDA TF32，可传 `-NoTf32` 或 `--no-tf32`。
@@ -77,9 +68,10 @@ CUDA 训练默认启用 BF16 AMP，并继续启用 TF32 加速 float32 matmul/co
 
 `discard_sequence` 右对齐保存最近 32 个公开弃牌事件。每个事件包含 34 维牌 one-hot、4 维相对座位 one-hot、1 维进度、1 维最新事件标记。
 
-当前导出 metadata schema 为 v4。相较旧 schema，训练侧额外使用 `risk_mask`
-做反事实风险监督，并使用 `fan_target` 与 `qualifying_fan_target` 训练番数辅助头；旧 cache 与旧
-metadata 不再兼容，需要重新导出数据并重新训练。
+当前导出 metadata schema 为 v5。相较旧 schema，SFT 数据直接提供
+`opponent_tenpai_target`、`opponent_risk_target` 与 `opponent_risk_mask`
+训练对手建模头，并继续使用 `fan_target` 与 `qualifying_fan_target`
+训练番数辅助头；旧 cache 与旧 metadata 不再兼容，需要重新导出数据并重新训练。
 
 ## 4. Arena 评估
 
@@ -105,9 +97,6 @@ PPO 轨迹的 step reward 包含弱向听 shaping，并在进入听牌时区分 
 .\backend\bot_trainer\v2\arena_matrix.ps1 -Config backend\bot_trainer\v2\arena_policy_pool.json -MatchCount 200 -Seed 20260429
 ```
 
-```bash
-ARENA_CONFIG=backend/bot_trainer/v2/arena_policy_pool.json MATCH_COUNT=200 SEED=20260429 ./backend/bot_trainer/v2/arena_matrix.sh
-```
 
 主要评估指标：
 
@@ -137,9 +126,6 @@ PPO 训练同样默认启用 BF16 AMP。CPU/DirectML 或不支持 BF16 的 CUDA 
 .\backend\bot_trainer\v2\train_rl_model.ps1 -OutputDir backend/bot_trainer/v2/rl_runs/smoke -IterationMatches 1 -EvalMatches 1 -Epochs 1 -BatchSize 64 -Device cpu -Policy ppo
 ```
 
-```bash
-./backend/bot_trainer/v2/train_rl_model.sh --output-dir backend/bot_trainer/v2/rl_runs/smoke --iteration-matches 1 --eval-matches 1 --epochs 1 --batch-size 64 --device cpu --policy ppo
-```
 
 本地正式实验建议把 `IterationMatches` / `--iteration-matches` 和 `EvalMatches` / `--eval-matches` 提高到至少 `200`。
 
@@ -161,21 +147,6 @@ PPO 训练同样默认启用 BF16 AMP。CPU/DirectML 或不支持 BF16 的 CUDA 
   -KlCoef 0.01
 ```
 
-```bash
-./backend/bot_trainer/v2/train_rl_model.sh \
-  --output-dir backend/bot_trainer/v2/rl_runs/ppo_smoke \
-  --iteration-matches 8 \
-  --eval-matches 4 \
-  --arena-jobs 2 \
-  --epoch-eval-jobs 2 \
-  --epochs 1 \
-  --batch-size 64 \
-  --device cpu \
-  --policy ppo \
-  --learner-policy-id learner \
-  --gae-lambda 0.95 \
-  --kl-coef 0.01
-```
 
 脚本流程：
 
@@ -214,20 +185,24 @@ python backend/bot_trainer/v2/export_onnx.py `
   --output backend/assets/ppo/actor_critic_bootstrap.onnx
 ```
 
-```bash
-python backend/bot_trainer/v2/bootstrap_actor_critic_checkpoint.py \
-  --source backend/bot_trainer/v2/checkpoints/best.pt \
-  --output backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt
+Critic 预训练可在已有 arena trajectory 后执行；该脚本读取 trajectory 的
+discounted return，并默认要求轨迹含 `global_tile_planes` 与
+`global_scalar_features`：
 
-python backend/bot_trainer/v2/export_onnx.py \
-  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt \
-  --output backend/assets/ppo/actor_critic_bootstrap.onnx
+```powershell
+python backend/bot_trainer/v2/pretrain_critic.py `
+  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl `
+  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
+  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
+  --epochs 5 `
+  --batch-size 256
 ```
+
 
 ```powershell
 .\backend\bot_trainer\v2\train_rl_model.ps1 `
   -OutputDir backend/bot_trainer/v2/rl_runs/global_critic_smoke `
-  -BaselineCheckpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
+  -BaselineCheckpoint backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
   -BaselineOnnx backend/assets/ppo/actor_critic_bootstrap.onnx `
   -IterationMatches 8 `
   -EvalMatches 4 `
@@ -239,20 +214,6 @@ python backend/bot_trainer/v2/export_onnx.py \
   -CriticLrMultiplier 2.0
 ```
 
-```bash
-./backend/bot_trainer/v2/train_rl_model.sh \
-  --output-dir backend/bot_trainer/v2/rl_runs/global_critic_smoke \
-  --baseline-checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt \
-  --baseline-onnx backend/assets/ppo/actor_critic_bootstrap.onnx \
-  --iteration-matches 8 \
-  --eval-matches 4 \
-  --epochs 1 \
-  --batch-size 64 \
-  --device cpu \
-  --policy ppo \
-  --use-actor-critic \
-  --critic-lr-multiplier 2.0
-```
 
 `CriticLrMultiplier` / `--critic-lr-multiplier` 默认是 `2.0`。
 
@@ -286,16 +247,6 @@ Promotion 示例：
   -EnforceCandidateGate
 ```
 
-```bash
-./backend/bot_trainer/v2/train_rl_model.sh \
-  --output-dir backend/bot_trainer/v2/rl_runs/promotion \
-  --iteration-matches 400 \
-  --eval-matches 400 \
-  --epochs 3 \
-  --device cuda \
-  --policy ppo \
-  --enforce-candidate-gate
-```
 
 通过验收后，将选中的候选 ONNX 覆盖到 `backend/assets/ppo/ppo.onnx`。配套的外部权重文件 `weights.data` 必须和 ONNX 同目录保留。
 

@@ -70,6 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-id", default=None)
     parser.add_argument("--clip-epsilon", type=float, default=0.15)
     parser.add_argument("--value-clip-epsilon", type=float, default=0.2)
+    parser.add_argument("--opponent-loss-coef", type=float, default=0.05)
     parser.add_argument("--entropy-coef", type=float, default=0.03)
     parser.add_argument("--entropy-end-coef", type=float, default=0.008)
     parser.add_argument("--entropy-decay-mode", choices=["linear", "cosine"], default="cosine")
@@ -233,6 +234,7 @@ def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
         f"entropy_coef={metrics['entropy_coef']:.6f} "
         f"kl_loss={metrics['kl_loss']:.6f} "
         f"kl_coef={metrics['kl_coef']:.6f} "
+        f"opponent_loss={metrics.get('opponent_loss', 0.0):.6f} "
         f"approx_kl={metrics.get('approx_kl', 0.0):.6f} "
         f"clip_fraction={metrics.get('clip_fraction', 0.0):.6f} "
         f"value_ev={metrics.get('value_explained_variance', 0.0):.6f}"
@@ -581,6 +583,30 @@ def value_training_metrics(
     return value_loss, explained_variance, value_mse
 
 
+def opponent_auxiliary_loss(
+    outputs: dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    device = batch["return"].device
+    if "opponent_tenpai_logits" not in outputs or "opponent_risk_logits" not in outputs:
+        return torch.tensor(0.0, device=device)
+
+    tenpai_loss = F.binary_cross_entropy_with_logits(
+        outputs["opponent_tenpai_logits"],
+        batch["opponent_tenpai_target"].float(),
+        reduction="mean",
+    )
+    risk_targets = batch["opponent_risk_target"].float()
+    risk_masks = batch["opponent_risk_mask"].bool()
+    risk_loss = F.binary_cross_entropy_with_logits(
+        outputs["opponent_risk_logits"],
+        risk_targets,
+        reduction="none",
+    )
+    risk_loss = risk_loss[risk_masks].mean() if risk_masks.any() else torch.tensor(0.0, device=device)
+    return tenpai_loss + risk_loss
+
+
 def forward_and_compute_ppo_loss(
     model: torch.nn.Module,
     batch: dict[str, torch.Tensor],
@@ -615,11 +641,19 @@ def forward_and_compute_ppo_loss(
     )
     entropy = select_action_entropy(outputs, batch, policy_config)
     kl_loss = teacher_kl_loss(teacher_model, outputs, batch, policy_config, returns.device)
-    loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
+    opponent_loss = opponent_auxiliary_loss(outputs, batch)
+    loss = (
+        policy_loss
+        + 0.5 * value_loss
+        + args.opponent_loss_coef * opponent_loss
+        - entropy_coef * entropy
+        + kl_coef * kl_loss
+    )
     return {
         "loss": loss,
         "policy_loss": policy_loss,
         "value_loss": value_loss,
+        "opponent_loss": opponent_loss,
         "entropy": entropy,
         "kl_loss": kl_loss,
         "approx_kl": approx_kl,
@@ -765,6 +799,7 @@ def main() -> None:
         total_loss = 0.0
         total_policy_loss = 0.0
         total_value_loss = 0.0
+        total_opponent_loss = 0.0
         total_entropy = 0.0
         total_entropy_coef = 0.0
         total_kl_loss = 0.0
@@ -804,6 +839,7 @@ def main() -> None:
             total_loss += float(loss.detach().cpu())
             total_policy_loss += float(losses["policy_loss"].detach().cpu())
             total_value_loss += float(losses["value_loss"].detach().cpu())
+            total_opponent_loss += float(losses["opponent_loss"].detach().cpu())
             total_entropy += float(losses["entropy"].detach().cpu())
             total_entropy_coef += entropy_coef
             total_kl_loss += float(losses["kl_loss"].detach().cpu())
@@ -831,6 +867,7 @@ def main() -> None:
             "loss": total_loss / max(batch_count, 1),
             "policy_loss": total_policy_loss / max(batch_count, 1),
             "value_loss": total_value_loss / max(batch_count, 1),
+            "opponent_loss": total_opponent_loss / max(batch_count, 1),
             "entropy": total_entropy / max(batch_count, 1),
             "entropy_coef": total_entropy_coef / max(batch_count, 1),
             "kl_loss": total_kl_loss / max(batch_count, 1),
