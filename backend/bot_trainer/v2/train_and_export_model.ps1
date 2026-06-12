@@ -33,6 +33,7 @@ param(
     [int]$EarlyStopPatience = 0,
     [switch]$RebuildDataCache,
     [switch]$Amp,
+    [switch]$NoAmp,
     [switch]$NoTf32,
     [switch]$CompileModel,
     [switch]$SkipTests,
@@ -273,8 +274,8 @@ try {
         "--max-nan-tolerance", "$MaxNanTolerance",
         "--early-stop-patience", "$EarlyStopPatience"
     )
-    if ($Amp) {
-        $trainArgs += "--amp"
+    if ($NoAmp) {
+        $trainArgs += "--no-amp"
     }
     if ($NoTf32) {
         $trainArgs += "--no-tf32"

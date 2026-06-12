@@ -34,7 +34,7 @@
 ## 2. 监督训练 SFT
 
 监督训练脚本会训练多头策略/价值网络，并默认导出到 `backend/assets/sft/sft.onnx`。
-CUDA 训练默认不启用 FP16 AMP，而是启用 TF32 加速 float32 matmul/convolution，以避免半精度 NaN 同时保留较好的吞吐。
+CUDA 训练默认启用 BF16 AMP，并继续启用 TF32 加速 float32 matmul/convolution。训练不会使用 FP16 AMP；如果当前 CUDA 设备不支持 BF16，会自动关闭 AMP 以避免 FP16 带来的精度风险。
 
 ```powershell
 .\backend\bot_trainer\v2\train_and_export_model.ps1 -Epochs 20 -BatchSize 4096 -Device cuda -NumWorkers 0
@@ -45,7 +45,7 @@ CUDA 训练默认不启用 FP16 AMP，而是启用 TF32 加速 float32 matmul/co
 ```
 
 显存不足时先降 `BatchSize` 到 `1024`。CPU 训练可用 PowerShell 的 `-Device cpu`，或 Bash 的 `--device cpu`。
-如果确实需要 FP16 AMP 提速，可显式传 PowerShell 的 `-Amp`，或 Bash 的 `--amp`；若要禁用 CUDA TF32，可传 `-NoTf32` 或 `--no-tf32`。
+如需关闭 AMP，可传 PowerShell 的 `-NoAmp`，或 Bash 的 `--no-amp`；若要禁用 CUDA TF32，可传 `-NoTf32` 或 `--no-tf32`。
 
 主要产物：
 
@@ -127,6 +127,8 @@ PPO 从 SFT checkpoint 与 SFT ONNX 开始。默认：
 - baseline ONNX：`backend/assets/sft/sft.onnx`
 - policy：`ppo`
 - opponent pool：`backend/bot_trainer/v2/opponent_pool.json`
+
+PPO 训练同样默认启用 BF16 AMP。CPU/DirectML 或不支持 BF16 的 CUDA 设备会自动关闭 AMP，不会改用 FP16；如需显式关闭，可传 PowerShell 的 `-NoAmp`，或 Bash 的 `--no-amp`。
 
 快速 smoke：
 

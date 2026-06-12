@@ -97,16 +97,120 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
         assert flag in bash
     assert "[double]$LearningRate = 0.0003" in powershell
     assert "[switch]$Amp" in powershell
-    assert "if ($Amp)" in powershell
+    assert "[switch]$NoAmp" in powershell
+    assert "if ($NoAmp)" in powershell
     assert "[switch]$NoTf32" in powershell
     assert "--no-tf32" in powershell
     assert "LEARNING_RATE=0.0003" in bash
-    assert "USE_AMP=0" in bash
-    assert "if (( USE_AMP == 1 ))" in bash
+    assert "USE_AMP=1" in bash
+    assert "--no-amp" in bash
+    assert "if (( USE_AMP == 0 ))" in bash
     assert "USE_TF32=1" in bash
     assert "--no-tf32" in bash
     assert "[double]$ValueLossWeight = 0.75" in powershell
     assert "[double]$RiskLossWeight = 1.0" in powershell
+
+
+def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    torch = pytest.importorskip("torch")
+    import train
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--data",
+            "backend/bot_trainer/v2/out",
+            "--output",
+            "backend/bot_trainer/v2/checkpoints",
+        ],
+    )
+
+    args = train.parse_args()
+
+    assert args.amp is True
+
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True, raising=False)
+    amp_config = train.resolve_amp_config(torch.device("cuda"), args.amp)
+
+    assert amp_config.enabled is True
+    assert amp_config.dtype == torch.bfloat16
+    assert amp_config.scaler_enabled is False
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--data",
+            "backend/bot_trainer/v2/out",
+            "--output",
+            "backend/bot_trainer/v2/checkpoints",
+            "--no-amp",
+        ],
+    )
+
+    assert train.parse_args().amp is False
+
+
+def test_rl_training_defaults_to_bf16_amp_and_wrappers_can_disable_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    torch = pytest.importorskip("torch")
+    import rl_train
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "rl_train.py",
+            "--trajectories",
+            "backend/bot_trainer/v2/rl_runs/trajectories.jsonl",
+            "--output",
+            "backend/bot_trainer/v2/rl_runs/checkpoints",
+        ],
+    )
+
+    args = rl_train.parse_args()
+
+    assert args.amp is True
+
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True, raising=False)
+    amp_config = rl_train.resolve_amp_config(torch.device("cuda"), args.amp)
+
+    assert amp_config.enabled is True
+    assert amp_config.dtype == torch.bfloat16
+    assert amp_config.scaler_enabled is False
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "rl_train.py",
+            "--trajectories",
+            "backend/bot_trainer/v2/rl_runs/trajectories.jsonl",
+            "--output",
+            "backend/bot_trainer/v2/rl_runs/checkpoints",
+            "--no-amp",
+        ],
+    )
+
+    assert rl_train.parse_args().amp is False
+
+    script_dir = Path(__file__).parent
+    powershell = (script_dir / "train_rl_model.ps1").read_text(encoding="utf-8")
+    bash = (script_dir / "train_rl_model.sh").read_text(encoding="utf-8")
+
+    assert "[switch]$NoAmp" in powershell
+    assert "USE_AMP=1" in bash
+    assert "--no-amp" in powershell
+    assert "--no-amp" in bash
+    assert "if (( USE_AMP == 0 ))" in bash
 
 
 def test_discard_sequence_encodes_order_source_and_latest_marker(tmp_path: Path) -> None:
@@ -606,6 +710,28 @@ def test_auxiliary_loss_weights_warm_up_to_targets() -> None:
     assert final["fan_weight"] == 0.5
     assert final["qualifying_fan_weight"] == 0.75
     assert final["risk_weight"] == 1.0
+
+
+def test_validation_selection_loss_weights_use_final_targets() -> None:
+    from train import selection_loss_weights
+
+    weights = selection_loss_weights(
+        claim_weight=1.0,
+        self_kong_weight=1.0,
+        hu_weight=1.0,
+        value_target=0.75,
+        fan_target=0.5,
+        qualifying_fan_target=0.75,
+        risk_target=1.0,
+    )
+
+    assert weights["claim_weight"] == 1.0
+    assert weights["self_kong_weight"] == 1.0
+    assert weights["hu_weight"] == 1.0
+    assert weights["value_weight"] == 0.75
+    assert weights["fan_weight"] == 0.5
+    assert weights["qualifying_fan_weight"] == 0.75
+    assert weights["risk_weight"] == 1.0
 
 
 def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:

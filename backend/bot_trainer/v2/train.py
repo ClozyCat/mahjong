@@ -25,6 +25,7 @@ from dataset import (
     TILE_PLANE_COUNT,
 )
 from model import ModelConfig, build_model
+from amp_config import AmpConfig, amp_dtype_name, resolve_amp_config
 
 CLAIM_ACTION_NAMES = ["pass", "hu", "pung", "kong", "chow_left", "chow_mid", "chow_right"]
 SELF_KONG_ACTION_NAMES = ["pass", "concealed_kong", "add_kong"]
@@ -33,17 +34,20 @@ DEFAULT_SELF_KONG_RARE_ACTION_WEIGHT = 3.0
 DEFAULT_HU_POSITIVE_WEIGHT = 3.0
 DEFAULT_QUALIFYING_FAN_LOSS_WEIGHT = 0.75
 
+
 def main() -> None:
     args = parse_args()
     torch.manual_seed(args.seed)
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
     math_mode = configure_cuda_math(device, allow_tf32=not args.no_tf32)
-    
-    # 动态判断是否支持 AMP (ROCm 环境下的 "cuda" 支持，DirectML 暂不支持)
+
+    amp_config = resolve_amp_config(device, args.amp)
+    if amp_config.disabled_reason:
+        print(f"Warning: AMP disabled: {amp_config.disabled_reason}")
+
+    # 动态判断 CUDA/ROCm 后端能力，DirectML 暂不支持 AMP/compile
     is_rocm_or_cuda = device.type == "cuda"
-    use_amp = args.amp and is_rocm_or_cuda
-    amp_device_type = "cuda" if is_rocm_or_cuda else "cpu"
 
     print("Initializing datasets...")
     train_dataset = MahjongDecisionDataset(
@@ -84,12 +88,15 @@ def main() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr_min)
     scaler = torch.amp.GradScaler(
-        amp_device_type,
-        enabled=use_amp,
+        amp_config.device_type,
+        enabled=amp_config.scaler_enabled,
         init_scale=1024.0,
         growth_interval=4000,
     )
-    print(f"device={device} amp={use_amp} math={math_mode} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}")
+    print(
+        f"device={device} amp={amp_config.enabled} amp_dtype={amp_dtype_name(amp_config)} "
+        f"math={math_mode} num_workers={args.num_workers} data_cache={args.data_cache_dir or 'auto'}"
+    )
     print(f"Training safeguards: grad_clip={args.grad_clip_norm} nan_check=enabled early_stop_patience={args.early_stop_patience}")
     best_metric = math.inf
     best_metrics: dict[str, float] = {}
@@ -97,29 +104,46 @@ def main() -> None:
     nan_count = 0
     
     for epoch in range(1, args.epochs + 1):
-        loss_weights = loss_weights_for_epoch(
-            epoch=epoch,
-            warmup_epochs=args.aux_loss_warmup_epochs,
-            claim_weight=args.claim_loss_weight,
-            self_kong_weight=args.self_kong_loss_weight,
-            hu_weight=args.hu_loss_weight,
-            value_start=args.value_loss_start_weight,
-            value_target=args.value_loss_weight,
-            fan_start=args.fan_loss_start_weight,
-            fan_target=args.fan_loss_weight,
-            qualifying_fan_start=args.qualifying_fan_loss_start_weight,
-            qualifying_fan_target=args.qualifying_fan_loss_weight,
-            risk_start=args.risk_loss_start_weight,
-            risk_target=args.risk_loss_weight,
+        train_loss_weights = with_static_loss_weights(
+            loss_weights_for_epoch(
+                epoch=epoch,
+                warmup_epochs=args.aux_loss_warmup_epochs,
+                claim_weight=args.claim_loss_weight,
+                self_kong_weight=args.self_kong_loss_weight,
+                hu_weight=args.hu_loss_weight,
+                value_start=args.value_loss_start_weight,
+                value_target=args.value_loss_weight,
+                fan_start=args.fan_loss_start_weight,
+                fan_target=args.fan_loss_weight,
+                qualifying_fan_start=args.qualifying_fan_loss_start_weight,
+                qualifying_fan_target=args.qualifying_fan_loss_weight,
+                risk_start=args.risk_loss_start_weight,
+                risk_target=args.risk_loss_weight,
+            ),
+            risk_pos_weight=args.risk_pos_weight,
+            claim_rare_action_weight=args.claim_rare_action_weight,
+            self_kong_rare_action_weight=args.self_kong_rare_action_weight,
+            hu_positive_weight=args.hu_positive_weight,
         )
-        loss_weights["risk_pos_weight"] = args.risk_pos_weight
-        loss_weights["claim_rare_action_weight"] = args.claim_rare_action_weight
-        loss_weights["self_kong_rare_action_weight"] = args.self_kong_rare_action_weight
-        loss_weights["hu_positive_weight"] = args.hu_positive_weight
+        val_loss_weights = with_static_loss_weights(
+            selection_loss_weights(
+                claim_weight=args.claim_loss_weight,
+                self_kong_weight=args.self_kong_loss_weight,
+                hu_weight=args.hu_loss_weight,
+                value_target=args.value_loss_weight,
+                fan_target=args.fan_loss_weight,
+                qualifying_fan_target=args.qualifying_fan_loss_weight,
+                risk_target=args.risk_loss_weight,
+            ),
+            risk_pos_weight=args.risk_pos_weight,
+            claim_rare_action_weight=args.claim_rare_action_weight,
+            self_kong_rare_action_weight=args.self_kong_rare_action_weight,
+            hu_positive_weight=args.hu_positive_weight,
+        )
         current_lr = optimizer.param_groups[0]["lr"]
         train_metrics = run_epoch(
-            model, train_loader, optimizer, device, scaler, use_amp,
-            loss_weights=loss_weights,
+            model, train_loader, optimizer, device, scaler, amp_config,
+            loss_weights=train_loss_weights,
             epoch_desc=f"Train Epoch {epoch}/{args.epochs}",
             grad_clip_norm=args.grad_clip_norm,
         )
@@ -140,8 +164,8 @@ def main() -> None:
 
         val_metrics = (
             run_epoch(
-                model, val_loader, None, device, scaler, use_amp,
-                loss_weights=loss_weights,
+                model, val_loader, None, device, scaler, amp_config,
+                loss_weights=val_loss_weights,
                 epoch_desc=f"Val Epoch {epoch}/{args.epochs}",
                 grad_clip_norm=None,  # 验证时不需要梯度裁剪
             )
@@ -202,7 +226,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--data-cache-dir", type=Path, default=None)
     parser.add_argument("--rebuild-data-cache", action="store_true")
-    parser.add_argument("--amp", action="store_true")
+    amp_group = parser.add_mutually_exclusive_group()
+    amp_group.add_argument(
+        "--amp",
+        dest="amp",
+        action="store_true",
+        default=True,
+        help="Enable BF16 automatic mixed precision on supported CUDA devices. Enabled by default.",
+    )
+    amp_group.add_argument(
+        "--no-amp",
+        dest="amp",
+        action="store_false",
+        help="Disable automatic mixed precision.",
+    )
     parser.add_argument("--no-tf32", action="store_true", help="Disable CUDA TF32 acceleration for float32 matmul/convolution.")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
@@ -306,7 +343,7 @@ def run_epoch(
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
     scaler: torch.amp.GradScaler,
-    use_amp: bool,
+    amp_config: AmpConfig,
     loss_weights: dict[str, float] | None = None,
     epoch_desc: str = "",
     grad_clip_norm: float | None = None,
@@ -317,7 +354,6 @@ def run_epoch(
     is_training = optimizer is not None
     model.train(is_training)
     totals = MetricTotals(device)
-    amp_device_type = "cuda" if device.type == "cuda" else "cpu"
 
     pbar = tqdm(loader, desc=epoch_desc, leave=False, dynamic_ncols=True)
     nan_batch_count = 0
@@ -326,7 +362,11 @@ def run_epoch(
     for i, batch in enumerate(pbar):
         batch = move_batch(batch, device)
         with torch.set_grad_enabled(is_training):
-            with torch.amp.autocast(amp_device_type, enabled=use_amp):
+            with torch.amp.autocast(
+                amp_config.device_type,
+                enabled=amp_config.enabled,
+                dtype=amp_config.dtype,
+            ):
                 outputs = forward_model(model, batch)
                 losses = compute_losses(outputs, batch, **(loss_weights or {}))
             loss = losses["loss"]
@@ -489,6 +529,42 @@ def loss_weights_for_epoch(
         + (qualifying_fan_target - qualifying_fan_start) * progress,
         "risk_weight": risk_start + (risk_target - risk_start) * progress,
     }
+
+
+def selection_loss_weights(
+    claim_weight: float,
+    self_kong_weight: float,
+    hu_weight: float,
+    value_target: float,
+    fan_target: float,
+    qualifying_fan_target: float,
+    risk_target: float,
+) -> dict[str, float]:
+    return {
+        "claim_weight": claim_weight,
+        "self_kong_weight": self_kong_weight,
+        "hu_weight": hu_weight,
+        "value_weight": value_target,
+        "fan_weight": fan_target,
+        "qualifying_fan_weight": qualifying_fan_target,
+        "risk_weight": risk_target,
+    }
+
+
+def with_static_loss_weights(
+    weights: dict[str, float],
+    risk_pos_weight: float,
+    claim_rare_action_weight: float,
+    self_kong_rare_action_weight: float,
+    hu_positive_weight: float,
+) -> dict[str, float]:
+    merged = dict(weights)
+    merged["risk_pos_weight"] = risk_pos_weight
+    merged["claim_rare_action_weight"] = claim_rare_action_weight
+    merged["self_kong_rare_action_weight"] = self_kong_rare_action_weight
+    merged["hu_positive_weight"] = hu_positive_weight
+    return merged
+
 
 def masked_cross_entropy(
     logits: torch.Tensor,

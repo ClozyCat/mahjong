@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from amp_config import AmpConfig, amp_dtype_name, resolve_amp_config
 from model import ModelConfig, build_model, build_actor_critic
 from rl_dataset import ArenaTrajectoryDataset, trajectory_diagnostics
 
@@ -64,6 +65,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-tensor-cache", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="auto")
+    amp_group = parser.add_mutually_exclusive_group()
+    amp_group.add_argument(
+        "--amp",
+        dest="amp",
+        action="store_true",
+        default=True,
+        help="Enable BF16 automatic mixed precision on supported CUDA devices. Enabled by default.",
+    )
+    amp_group.add_argument(
+        "--no-amp",
+        dest="amp",
+        action="store_false",
+        help="Disable automatic mixed precision.",
+    )
     return parser.parse_args()
 
 
@@ -424,11 +439,166 @@ def prepare_model_for_ppo_updates(model: torch.nn.Module) -> None:
             module.eval()
 
 
+def old_policy_stats(
+    batch: dict[str, torch.Tensor],
+    old_policy_model: torch.nn.Module | None,
+    policy_config: dict[str, object],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if old_policy_model is None:
+        return batch["old_log_prob"].float(), batch["old_value"].float()
+    with torch.no_grad():
+        old_outputs = forward_model(old_policy_model, batch)
+        old_log_probs = select_action_log_probs(old_outputs, batch, policy_config)
+        old_values = old_outputs["value"].squeeze(1)
+    return old_log_probs, old_values
+
+
+def policy_ratio_metrics(
+    log_probs: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    clip_epsilon: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    with torch.no_grad():
+        ratio = torch.exp(log_probs - old_log_probs)
+        approx_kl = (old_log_probs - log_probs).mean()
+        clip_fraction = (
+            (torch.abs(ratio - 1.0) > clip_epsilon).float().mean()
+        )
+    return approx_kl, clip_fraction
+
+
+def teacher_kl_loss(
+    teacher_model: torch.nn.Module | None,
+    outputs: dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
+    policy_config: dict[str, object],
+    device: torch.device,
+) -> torch.Tensor:
+    if teacher_model is None:
+        return torch.zeros((), device=device)
+    with torch.no_grad():
+        teacher_outputs = forward_model(teacher_model, batch)
+    return select_action_head_kl(teacher_outputs, outputs, batch, policy_config)
+
+
+def normalized_advantage_stats(
+    batch: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    advantages = batch["advantage"].float()
+    with torch.no_grad():
+        raw_mean = advantages.mean()
+        raw_std = advantages.std(unbiased=False)
+    normalized = (advantages - advantages.mean()) / (
+        advantages.std(unbiased=False) + 1.0e-8
+    )
+    return normalized, raw_mean, raw_std
+
+
+def value_training_metrics(
+    outputs: dict[str, torch.Tensor],
+    old_values: torch.Tensor,
+    returns: torch.Tensor,
+    value_clip_epsilon: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    values = outputs["value"].squeeze(1)
+    value_loss = clipped_value_loss(
+        values,
+        old_values,
+        returns,
+        value_clip_epsilon,
+    )
+    explained_variance = value_explained_variance(values.detach(), returns)
+    with torch.no_grad():
+        value_mse = (values - returns).pow(2).mean()
+    return value_loss, explained_variance, value_mse
+
+
+def forward_and_compute_ppo_loss(
+    model: torch.nn.Module,
+    batch: dict[str, torch.Tensor],
+    old_policy_model: torch.nn.Module | None,
+    teacher_model: torch.nn.Module | None,
+    policy_config: dict[str, object],
+    args: argparse.Namespace,
+    entropy_coef: float,
+    kl_coef: float,
+) -> dict[str, torch.Tensor]:
+    outputs = forward_model(model, batch)
+    old_log_probs, old_values = old_policy_stats(batch, old_policy_model, policy_config)
+    log_probs = select_action_log_probs(outputs, batch, policy_config)
+    returns = batch["return"].float()
+    advantages, raw_advantage_mean, raw_advantage_std = normalized_advantage_stats(batch)
+    policy_loss = ppo_policy_loss(
+        log_probs,
+        old_log_probs,
+        advantages,
+        args.clip_epsilon,
+    )
+    approx_kl, clip_fraction = policy_ratio_metrics(
+        log_probs,
+        old_log_probs,
+        args.clip_epsilon,
+    )
+    value_loss, explained_variance, value_mse = value_training_metrics(
+        outputs,
+        old_values,
+        returns,
+        args.value_clip_epsilon,
+    )
+    entropy = select_action_entropy(outputs, batch, policy_config)
+    kl_loss = teacher_kl_loss(teacher_model, outputs, batch, policy_config, returns.device)
+    loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
+    return {
+        "loss": loss,
+        "policy_loss": policy_loss,
+        "value_loss": value_loss,
+        "entropy": entropy,
+        "kl_loss": kl_loss,
+        "approx_kl": approx_kl,
+        "clip_fraction": clip_fraction,
+        "explained_variance": explained_variance,
+        "value_mse": value_mse,
+        "raw_advantage_mean": raw_advantage_mean,
+        "raw_advantage_std": raw_advantage_std,
+    }
+
+
+def autocast_ppo_loss(
+    amp_config: AmpConfig,
+    model: torch.nn.Module,
+    batch: dict[str, torch.Tensor],
+    old_policy_model: torch.nn.Module | None,
+    teacher_model: torch.nn.Module | None,
+    policy_config: dict[str, object],
+    args: argparse.Namespace,
+    entropy_coef: float,
+    kl_coef: float,
+) -> dict[str, torch.Tensor]:
+    with torch.amp.autocast(
+        amp_config.device_type,
+        enabled=amp_config.enabled,
+        dtype=amp_config.dtype,
+    ):
+        return forward_and_compute_ppo_loss(
+            model,
+            batch,
+            old_policy_model,
+            teacher_model,
+            policy_config,
+            args,
+            entropy_coef,
+            kl_coef,
+        )
+
+
 def main() -> None:
     args = parse_args()
     validate_checkpoint_architecture(args.checkpoint, args.use_actor_critic)
     args.output.mkdir(parents=True, exist_ok=True)
     device = resolve_device(args.device)
+    amp_config = resolve_amp_config(device, args.amp)
+    if amp_config.disabled_reason:
+        print(f"Warning: AMP disabled: {amp_config.disabled_reason}")
 
     policy_config = dict(POLICY_CONFIGS[args.policy])
     if args.use_actor_critic:
@@ -493,6 +663,7 @@ def main() -> None:
         "RL train: "
         f"trajectories={len(dataset)} batches={len(loader)} "
         f"epochs={args.epochs} batch_size={args.batch_size} device={device} "
+        f"amp={amp_config.enabled} amp_dtype={amp_dtype_name(amp_config)} "
         f"entropy_start={adjusted_entropy_coef:.6f} entropy_end={adjusted_entropy_end_coef:.6f} "
         f"(base={args.entropy_coef:.6f}, multiplier={entropy_multiplier:.2f})"
     )
@@ -531,75 +702,34 @@ def main() -> None:
                 args.kl_coef,
                 args.kl_end_coef,
             )
-            outputs = forward_model(model, batch)
-            if old_policy_model is not None:
-                with torch.no_grad():
-                    old_outputs = forward_model(old_policy_model, batch)
-                    old_log_probs = select_action_log_probs(old_outputs, batch, policy_config)
-                    old_values = old_outputs["value"].squeeze(1)
-            else:
-                old_log_probs = batch["old_log_prob"].float()
-                old_values = batch["old_value"].float()
-            log_probs = select_action_log_probs(outputs, batch, policy_config)
-            returns = batch["return"].float()
-            advantages = batch["advantage"].float()
-
-            # Track raw advantage statistics before normalization
-            with torch.no_grad():
-                raw_advantage_mean = advantages.mean()
-                raw_advantage_std = advantages.std(unbiased=False)
-
-            advantages = (advantages - advantages.mean()) / (
-                advantages.std(unbiased=False) + 1.0e-8
+            losses = autocast_ppo_loss(
+                amp_config,
+                model,
+                batch,
+                old_policy_model,
+                teacher_model,
+                policy_config,
+                args,
+                entropy_coef,
+                kl_coef,
             )
-            policy_loss = ppo_policy_loss(
-                log_probs,
-                old_log_probs,
-                advantages,
-                args.clip_epsilon,
-            )
-            with torch.no_grad():
-                ratio = torch.exp(log_probs - old_log_probs)
-                approx_kl = (old_log_probs - log_probs).mean()
-                clip_fraction = (
-                    (torch.abs(ratio - 1.0) > args.clip_epsilon).float().mean()
-                )
-            values = outputs["value"].squeeze(1)
-            value_loss = clipped_value_loss(
-                values,
-                old_values,
-                returns,
-                args.value_clip_epsilon,
-            )
-            entropy = select_action_entropy(outputs, batch, policy_config)
-            kl_loss = torch.zeros((), device=device)
-            if teacher_model is not None:
-                with torch.no_grad():
-                    teacher_outputs = forward_model(teacher_model, batch)
-                kl_loss = select_action_head_kl(teacher_outputs, outputs, batch, policy_config)
-            explained_variance = value_explained_variance(values.detach(), returns)
-
-            # Compute value MSE for monitoring
-            with torch.no_grad():
-                value_mse = (values - returns).pow(2).mean()
-
-            loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy + kl_coef * kl_loss
+            loss = losses["loss"]
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
             total_loss += float(loss.detach().cpu())
-            total_policy_loss += float(policy_loss.detach().cpu())
-            total_value_loss += float(value_loss.detach().cpu())
-            total_entropy += float(entropy.detach().cpu())
+            total_policy_loss += float(losses["policy_loss"].detach().cpu())
+            total_value_loss += float(losses["value_loss"].detach().cpu())
+            total_entropy += float(losses["entropy"].detach().cpu())
             total_entropy_coef += entropy_coef
-            total_kl_loss += float(kl_loss.detach().cpu())
+            total_kl_loss += float(losses["kl_loss"].detach().cpu())
             total_kl_coef += kl_coef
-            total_approx_kl += float(approx_kl.detach().cpu())
-            total_clip_fraction += float(clip_fraction.detach().cpu())
-            total_value_explained_variance += float(explained_variance.detach().cpu())
-            total_value_mse += float(value_mse.detach().cpu())
-            total_advantage_mean += float(raw_advantage_mean.detach().cpu())
-            total_advantage_std += float(raw_advantage_std.detach().cpu())
+            total_approx_kl += float(losses["approx_kl"].detach().cpu())
+            total_clip_fraction += float(losses["clip_fraction"].detach().cpu())
+            total_value_explained_variance += float(losses["explained_variance"].detach().cpu())
+            total_value_mse += float(losses["value_mse"].detach().cpu())
+            total_advantage_mean += float(losses["raw_advantage_mean"].detach().cpu())
+            total_advantage_std += float(losses["raw_advantage_std"].detach().cpu())
             batch_count += 1
             global_step += 1
         epoch_metrics = {

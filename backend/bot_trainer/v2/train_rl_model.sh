@@ -31,6 +31,7 @@ POLICIES=""
 USE_ACTOR_CRITIC=0
 CRITIC_LR_MULTIPLIER=2.0
 DEVICE=auto
+USE_AMP=1
 OPPONENT_POOL="backend/bot_trainer/v2/opponent_pool.json"
 LEARNER_POLICY_ID="learner"
 SKIP_TESTS=0
@@ -85,6 +86,8 @@ Options:
   --use-actor-critic               Train separate actor and global-information critic.
   --critic-lr-multiplier VALUE     Critic learning-rate multiplier when actor-critic is enabled. Default 2.0.
   --device DEVICE                  auto, cpu, cuda, etc.
+  --amp                            Enable BF16 mixed precision training. Enabled by default.
+  --no-amp                         Disable mixed precision training.
   --opponent-pool PATH             Opponent pool JSON for league rollout.
   --learner-policy-id ID           Policy id filtered for PPO training.
   --skip-tests                     Skip Python tests.
@@ -412,6 +415,14 @@ while [[ $# -gt 0 ]]; do
             DEVICE="$2"
             shift 2
             ;;
+        --amp)
+            USE_AMP=1
+            shift
+            ;;
+        --no-amp)
+            USE_AMP=0
+            shift
+            ;;
         --opponent-pool)
             require_value "$1" "${2:-}"
             OPPONENT_POOL="$2"
@@ -697,6 +708,9 @@ for (( iter = 1; iter <= ITERATIONS; iter++ )); do
             --output "$POLICY_CHECKPOINT_DIR"
             --device "$DEVICE"
         )
+        if (( USE_AMP == 0 )); then
+            rl_train_args+=(--no-amp)
+        fi
         if (( ENTROPY_DECAY_STEPS > 0 )); then
             rl_train_args+=(--entropy-decay-steps "$ENTROPY_DECAY_STEPS")
         fi

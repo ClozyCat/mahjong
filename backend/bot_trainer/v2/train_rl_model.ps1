@@ -31,6 +31,7 @@ param(
     [switch]$UseActorCritic,
     [double]$CriticLrMultiplier = 2.0,
     [string]$Device = "auto",
+    [switch]$NoAmp,
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
     [string]$LearnerPolicyId = "learner",
     [switch]$SkipTests,
@@ -347,6 +348,9 @@ function Invoke-PolicyTraining {
         "--output", $CheckpointDir,
         "--device", $Device
     )
+    if ($NoAmp) {
+        $rlTrainArgs += @("--no-amp")
+    }
     if ($EntropyDecaySteps -gt 0) {
         $rlTrainArgs += @("--entropy-decay-steps", "$EntropyDecaySteps")
     }

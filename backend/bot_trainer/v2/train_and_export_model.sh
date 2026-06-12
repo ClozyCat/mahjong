@@ -31,7 +31,7 @@ GRAD_CLIP_NORM=1.0
 MAX_NAN_TOLERANCE=2
 EARLY_STOP_PATIENCE=0
 DEVICE="cuda"
-USE_AMP=0
+USE_AMP=1
 USE_TF32=1
 COMPILE_MODEL=0
 REBUILD_DATA_CACHE=0
@@ -84,7 +84,8 @@ Options:
   --grad-clip-norm VALUE    Gradient clipping norm (0 to disable).
   --max-nan-tolerance N     Max consecutive NaN epochs before stopping.
   --early-stop-patience N   Early stopping patience (0 to disable).
-  --amp                     Enable mixed precision training.
+  --amp                     Enable BF16 mixed precision training. Enabled by default.
+  --no-amp                  Disable mixed precision training.
   --no-tf32                 Disable CUDA TF32 acceleration for float32 training.
   --compile                 Pass --compile to train.py.
   --rebuild-data-cache      Rebuild tensor cache before training.
@@ -257,6 +258,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --amp)
             USE_AMP=1
+            shift
+            ;;
+        --no-amp)
+            USE_AMP=0
             shift
             ;;
         --no-tf32)
@@ -479,8 +484,8 @@ train_args=(
     --early-stop-patience "$EARLY_STOP_PATIENCE"
 )
 
-if (( USE_AMP == 1 )); then
-    train_args+=(--amp)
+if (( USE_AMP == 0 )); then
+    train_args+=(--no-amp)
 fi
 if (( USE_TF32 == 0 )); then
     train_args+=(--no-tf32)
