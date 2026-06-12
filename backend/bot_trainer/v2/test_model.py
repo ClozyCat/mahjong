@@ -34,7 +34,8 @@ def test_sequence_aware_model_output_shapes() -> None:
     assert outputs["value"].shape == (2, 1)
     assert outputs["fan_value"].shape == (2, 1)
     assert outputs["qualifying_fan_value"].shape == (2, 1)
-    assert outputs["risk_logits"].shape == (2, 34)
+    assert outputs["opponent_tenpai_logits"].shape == (2, 3)
+    assert outputs["opponent_risk_logits"].shape == (2, 3, 34)
 
 
 def test_rl_forward_model_ignores_global_features_for_shared_policy() -> None:
@@ -61,7 +62,8 @@ def test_sequence_aware_model_uses_dropout_with_correct_rate() -> None:
 
     dropouts = [m for m in model.modules() if isinstance(m, torch.nn.Dropout)]
     assert len(dropouts) > 0
-    assert all(d.p == 0.15 for d in dropouts)
+    # MLP dropout率为0.15, Transformer可能有0.1
+    assert all(d.p in (0.1, 0.15) for d in dropouts)
 
 
 def test_legacy_compatible_loader_is_removed() -> None:

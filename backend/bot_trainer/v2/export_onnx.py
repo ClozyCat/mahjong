@@ -24,7 +24,7 @@ OUTPUT_NAMES = [
     "value",
     "fan_value",
     "qualifying_fan_value",
-    "risk_logits",
+    "opponent_risk_logits",
 ]
 INPUT_NAMES = ["tile_planes", "scalar_features", "discard_sequence"]
 

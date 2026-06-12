@@ -81,14 +81,18 @@ if nn is not None:
         ) -> None:
             super().__init__()
             self.use_attention = use_attention
-            if shared_backbone is not None:
-                self.suited_encoder = shared_backbone
-                self.honor_encoder = shared_backbone
-                self.use_shared = True
+            self.use_shared = shared_backbone is not None
+
+            if self.use_shared:
+                self.shared = shared_backbone
+                self.suit_residuals = nn.ModuleList([ResidualConvBlock(channels) for _ in range(2)])
+                self.honor_residuals = nn.ModuleList([ResidualConvBlock(channels) for _ in range(1)])
+                self.suit_pool = nn.Sequential(nn.AdaptiveAvgPool1d(1), nn.Flatten())
+                self.honor_pool = nn.Sequential(nn.AdaptiveAvgPool1d(1), nn.Flatten())
             else:
                 self.suited_encoder = self._make_encoder(tile_plane_count, channels, 3)
                 self.honor_encoder = self._make_encoder(tile_plane_count, channels, 2)
-                self.use_shared = False
+
             if use_attention:
                 self.group_attention = GroupAttention(channels)
             self.fusion = nn.Sequential(
@@ -116,11 +120,16 @@ if nn is not None:
 
         def forward(self, tile_planes: torch.Tensor) -> torch.Tensor:
             if self.use_shared:
-                suit_embeddings = [
-                    self.suited_encoder(tile_planes[:, :, start : start + 9])
-                    for start in (0, 9, 18)
-                ]
-                honor_embedding = self.honor_encoder(tile_planes[:, :, 27:34])
+                suit_embeddings = []
+                for start in (0, 9, 18):
+                    x = self.shared(tile_planes[:, :, start : start + 9])
+                    for block in self.suit_residuals:
+                        x = block(x)
+                    suit_embeddings.append(self.suit_pool(x))
+                x = self.shared(tile_planes[:, :, 27:34])
+                for block in self.honor_residuals:
+                    x = block(x)
+                honor_embedding = self.honor_pool(x)
             else:
                 suit_embeddings = [
                     self.suited_encoder(tile_planes[:, :, start : start + 9])
@@ -163,7 +172,11 @@ if nn is not None:
                 batch_first=True,
                 norm_first=True,
             )
-            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.transformer = nn.TransformerEncoder(
+                encoder_layer,
+                num_layers=num_layers,
+                enable_nested_tensor=False,
+            )
             self.output = nn.Sequential(
                 nn.Linear(hidden_size, embedding_size),
                 nn.ReLU(),
