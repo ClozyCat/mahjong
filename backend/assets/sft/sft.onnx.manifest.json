@@ -1,9 +1,9 @@
 {
-  "created_at_utc": "2026-06-11T12:10:37.664111+00:00",
-  "onnx": "backend/assets/sft/sft.onnx",
-  "checkpoint": "backend/bot_trainer/v2/checkpoints/best.pt",
+  "created_at_utc": "2026-06-12T05:25:23.671658+00:00",
+  "onnx": "../../assets/sft/sft.onnx",
+  "checkpoint": "checkpoints/best.pt",
   "training_source": "sft",
-  "checkpoint_created_at_utc": "2026-06-11T10:49:20.221664+00:00",
+  "checkpoint_created_at_utc": "2026-06-12T04:10:40.247831+00:00",
   "model_config": {
     "tile_plane_count": 10,
     "scalar_feature_count": 12,
@@ -20,7 +20,8 @@
     "value",
     "fan_value",
     "qualifying_fan_value",
-    "risk_logits"
+    "opponent_tenpai_logits",
+    "opponent_risk_logits"
   ],
   "is_actor_critic": false,
   "exported_component": "full_model"

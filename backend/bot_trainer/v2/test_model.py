@@ -113,9 +113,14 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     assert any(key.startswith("actor.") for key in state)
     assert any(key.startswith("critic.") for key in state)
     assert torch.equal(
-        state["actor.policy_trunk.0.weight"],
+        state["actor.policy_trunk.shared_base.0.weight"],
         shared.state_dict()["policy_trunk.0.weight"],
     )
+    for expert_index in range(3):
+        assert torch.equal(
+            state[f"actor.policy_trunk.experts.{expert_index}.0.weight"],
+            shared.state_dict()["policy_trunk.4.weight"],
+        )
     assert torch.equal(
         state["actor.fan_head.net.0.weight"],
         shared.state_dict()["fan_head.net.0.weight"],
@@ -123,6 +128,10 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     assert torch.equal(
         state["actor.qualifying_fan_head.net.0.weight"],
         shared.state_dict()["qualifying_fan_head.net.0.weight"],
+    )
+    assert torch.equal(
+        state["actor.opponent_modeling.risk_head.weight"],
+        shared.state_dict()["opponent_modeling.risk_head.weight"],
     )
     assert payload["training_source"] == "actor_critic_bootstrap"
     assert manifest["copied_actor_keys"] > 0

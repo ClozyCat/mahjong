@@ -1,9 +1,9 @@
 {
-  "created_at_utc": "2026-06-12T01:17:02.125601+00:00",
+  "created_at_utc": "2026-06-12T05:58:30.885172+00:00",
   "onnx": "assets/ppo/actor_critic_bootstrap.onnx",
   "checkpoint": "bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt",
   "training_source": "actor_critic_bootstrap",
-  "checkpoint_created_at_utc": "2026-06-12T01:15:03.526152+00:00",
+  "checkpoint_created_at_utc": "2026-06-12T05:58:14.407269+00:00",
   "model_config": {
     "tile_plane_count": 10,
     "scalar_feature_count": 12,
@@ -20,7 +20,8 @@
     "value",
     "fan_value",
     "qualifying_fan_value",
-    "risk_logits"
+    "opponent_tenpai_logits",
+    "opponent_risk_logits"
   ],
   "is_actor_critic": true,
   "exported_component": "actor_critic_local_inference_wrapper"

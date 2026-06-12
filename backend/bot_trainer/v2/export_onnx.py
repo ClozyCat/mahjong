@@ -24,6 +24,7 @@ OUTPUT_NAMES = [
     "value",
     "fan_value",
     "qualifying_fan_value",
+    "opponent_tenpai_logits",
     "opponent_risk_logits",
 ]
 INPUT_NAMES = ["tile_planes", "scalar_features", "discard_sequence"]
@@ -161,7 +162,7 @@ def smoke_onnxruntime(
         "discard_sequence": discard_sequence.numpy(),
     }
     outputs = session.run(OUTPUT_NAMES, inputs)
-    expected_shapes = [(1, 34), (1, 7), (1, 3), (1, 2), (1, 1), (1, 1), (1, 1), (1, 34)]
+    expected_shapes = [(1, 34), (1, 7), (1, 3), (1, 2), (1, 1), (1, 1), (1, 1), (1, 3), (1, 3, 34)]
     for name, output, expected_shape in zip(OUTPUT_NAMES, outputs, expected_shapes, strict=True):
         if tuple(output.shape) != expected_shape:
             raise RuntimeError(f"{name} shape {tuple(output.shape)} != {expected_shape}")

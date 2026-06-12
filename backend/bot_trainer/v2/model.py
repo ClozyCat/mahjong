@@ -4,6 +4,7 @@ from typing import NamedTuple
 
 try:
     import torch
+    import torch.nn.functional as F
     from torch import nn
 except ModuleNotFoundError:  # pragma: no cover
     torch = None

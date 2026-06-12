@@ -306,8 +306,42 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
         self_kong_logits: extract_array::<SELF_KONG_ACTION_COUNT>(&outputs, "self_kong_logits")?,
         hu_logits: extract_array::<2>(&outputs, "hu_logits")?,
         value: extract_array::<1>(&outputs, "value")?[0],
-        risk_logits: extract_array::<TILE_KIND_COUNT>(&outputs, "risk_logits")?,
+        risk_logits: extract_risk_logits(&outputs)?,
     })
+}
+
+fn extract_risk_logits(
+    outputs: &ort::session::SessionOutputs,
+) -> Result<[f32; TILE_KIND_COUNT], ()> {
+    if outputs.contains_key("opponent_risk_logits") {
+        return extract_opponent_risk_logits(outputs);
+    }
+    extract_array::<TILE_KIND_COUNT>(outputs, "risk_logits")
+}
+
+fn extract_opponent_risk_logits(
+    outputs: &ort::session::SessionOutputs,
+) -> Result<[f32; TILE_KIND_COUNT], ()> {
+    let output = &outputs["opponent_risk_logits"];
+    let (_, values) = output.try_extract_tensor::<f32>().map_err(|_| ())?;
+    aggregate_opponent_risk_logits(values)
+}
+
+fn aggregate_opponent_risk_logits(values: &[f32]) -> Result<[f32; TILE_KIND_COUNT], ()> {
+    if values.len() < 3 * TILE_KIND_COUNT {
+        return Err(());
+    }
+    let mut aggregated = [f32::NEG_INFINITY; TILE_KIND_COUNT];
+    for opponent_index in 0..3 {
+        let start = opponent_index * TILE_KIND_COUNT;
+        for tile_index in 0..TILE_KIND_COUNT {
+            let value = values[start + tile_index];
+            if value > aggregated[tile_index] {
+                aggregated[tile_index] = value;
+            }
+        }
+    }
+    Ok(aggregated)
 }
 
 fn extract_array<const N: usize>(
@@ -454,6 +488,19 @@ mod tests {
         assert_eq!(scores.self_kong_logits.len(), SELF_KONG_ACTION_COUNT);
         assert_eq!(scores.hu_logits.len(), 2);
         assert_eq!(scores.risk_logits.len(), TILE_KIND_COUNT);
+    }
+
+    #[test]
+    fn opponent_risk_logits_are_aggregated_by_tile() {
+        let mut values = vec![-5.0_f32; 3 * TILE_KIND_COUNT];
+        values[tile_index("w1").expect("w1 index")] = 1.0;
+        values[TILE_KIND_COUNT + tile_index("w1").expect("w1 index")] = 3.0;
+        values[2 * TILE_KIND_COUNT + tile_index("w1").expect("w1 index")] = 2.0;
+
+        let aggregated = aggregate_opponent_risk_logits(&values).expect("aggregated risk");
+
+        assert_eq!(aggregated[tile_index("w1").expect("w1 index")], 3.0);
+        assert_eq!(aggregated[tile_index("t1").expect("t1 index")], -5.0);
     }
 
     #[test]
