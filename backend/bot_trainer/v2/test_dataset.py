@@ -428,7 +428,7 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "fan_value": torch.zeros((1, 1)),
         "qualifying_fan_value": torch.zeros((1, 1)),
         "opponent_tenpai_logits": torch.zeros((1, 3)),
-        "opponent_risk_logits": torch.zeros((1, 3, 34)),
+        "opponent_risk_logits": torch.full((1, 3, 34), -10.0),
     }
     batch = {
         "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
@@ -442,7 +442,7 @@ def test_risk_loss_ignores_unmasked_tiles() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.zeros((1, 34)),
+        "risk_target": torch.tensor([[0.0, 1.0] + [0.0] * 32]),
         "risk_mask": torch.tensor([[True, False] + [False] * 32]),
     }
 
@@ -501,6 +501,50 @@ def test_auxiliary_losses_use_float32_for_half_precision_outputs() -> None:
     assert losses["risk_loss"].dtype == torch.float32
 
 
+def test_legacy_risk_targets_supervise_opponent_risk_outputs() -> None:
+    import torch
+    from train import compute_losses
+
+    outputs = {
+        "discard_logits": torch.zeros((1, 34)),
+        "claim_logits": torch.zeros((1, 7)),
+        "self_kong_logits": torch.zeros((1, 3)),
+        "hu_logits": torch.zeros((1, 2)),
+        "value": torch.zeros((1, 1)),
+        "fan_value": torch.zeros((1, 1)),
+        "qualifying_fan_value": torch.zeros((1, 1)),
+        "opponent_tenpai_logits": torch.zeros((1, 3)),
+        "opponent_risk_logits": torch.zeros((1, 3, 34)),
+    }
+    batch = {
+        "discard_mask": torch.zeros((1, 34), dtype=torch.bool),
+        "discard_target": torch.tensor([-100]),
+        "claim_mask": torch.zeros((1, 7), dtype=torch.bool),
+        "claim_target": torch.tensor([-100]),
+        "self_kong_mask": torch.zeros((1, 3), dtype=torch.bool),
+        "self_kong_target": torch.tensor([-100]),
+        "hu_mask": torch.zeros((1, 2), dtype=torch.bool),
+        "hu_target": torch.tensor([-100]),
+        "value_target": torch.zeros((1, 1)),
+        "fan_target": torch.zeros((1, 1)),
+        "qualifying_fan_target": torch.zeros((1, 1)),
+        "risk_target": torch.tensor([[1.0, 0.0] + [0.0] * 32]),
+        "risk_mask": torch.tensor([[True, True] + [False] * 32]),
+    }
+
+    losses = compute_losses(
+        outputs,
+        batch,
+        value_weight=0.0,
+        fan_weight=0.0,
+        qualifying_fan_weight=0.0,
+        risk_weight=1.0,
+    )
+
+    assert losses["risk_loss"].item() > 0.0
+    assert losses["loss"].item() == losses["risk_loss"].item()
+
+
 def test_losses_sanitize_nonfinite_model_outputs() -> None:
     import torch
     from train import compute_losses
@@ -528,7 +572,7 @@ def test_losses_sanitize_nonfinite_model_outputs() -> None:
         "value_target": torch.zeros((1, 1)),
         "fan_target": torch.zeros((1, 1)),
         "qualifying_fan_target": torch.zeros((1, 1)),
-        "risk_target": torch.zeros((1, 34)),
+        "risk_target": torch.tensor([[0.0, 1.0] + [0.0] * 32]),
         "risk_mask": torch.ones((1, 34), dtype=torch.bool),
     }
 

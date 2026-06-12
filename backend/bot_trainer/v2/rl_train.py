@@ -208,6 +208,20 @@ def lr_warmup_multiplier(epoch: int, warmup_epochs: int) -> float:
     return min(1.0, (epoch + 1) / warmup_epochs)
 
 
+def apply_lr_warmup(
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    warmup_epochs: int,
+    actor_lr: float,
+    critic_lr_multiplier: float,
+) -> None:
+    lr_mult = lr_warmup_multiplier(epoch, warmup_epochs)
+    for param_group in optimizer.param_groups:
+        group_name = param_group.get("name", "actor")
+        base_lr = actor_lr * critic_lr_multiplier if group_name == "critic" else actor_lr
+        param_group["lr"] = base_lr * lr_mult
+
+
 def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
     base_msg = (
         "RL train epoch "
@@ -706,8 +720,8 @@ def main() -> None:
         critic_params = list(model.critic.parameters())
         critic_lr = args.lr * args.critic_lr_multiplier
         optimizer = torch.optim.AdamW([
-            {"params": actor_params, "lr": args.lr},
-            {"params": critic_params, "lr": critic_lr},
+            {"params": actor_params, "lr": args.lr, "name": "actor"},
+            {"params": critic_params, "lr": critic_lr, "name": "critic"},
         ])
         print(f"Using separate optimizers: actor_lr={args.lr:.6f}, critic_lr={critic_lr:.6f}")
     else:
@@ -733,10 +747,13 @@ def main() -> None:
     replay_buffer = ReplayBuffer(max_epochs=args.replay_buffer_epochs)
 
     for epoch in range(args.epochs):
-        lr_mult = lr_warmup_multiplier(epoch, args.lr_warmup_epochs)
-        for param_group in optimizer.param_groups:
-            base_lr = args.lr if "actor" not in str(param_group) else args.lr * args.critic_lr_multiplier
-            param_group["lr"] = base_lr * lr_mult
+        apply_lr_warmup(
+            optimizer,
+            epoch,
+            args.lr_warmup_epochs,
+            args.lr,
+            args.critic_lr_multiplier,
+        )
 
         current_batches = list(loader)
         replay_batches = replay_buffer.sample(int(len(current_batches) * args.replay_ratio))
@@ -860,4 +877,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

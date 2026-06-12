@@ -10,6 +10,7 @@ from rl_dataset import (
     DISCARD_EVENT_FEATURE_COUNT,
     DISCARD_SEQUENCE_LENGTH,
     build_tensor_cache,
+    compute_shaped_reward,
     compute_discounted_returns_for_rows,
     compute_gae_for_rows,
     compute_returns,
@@ -203,6 +204,20 @@ def test_compute_gae_for_rows_is_per_seat_episode() -> None:
 
     assert advantages == [0.5, 5.0, 0.75]
     assert returns == [1.0, 5.0, 1.0]
+
+
+def test_compute_shaped_reward_does_not_double_count_step_reward() -> None:
+    row = {
+        "reward": 0.25,
+        "step_reward": 0.25,
+        "terminal_reward": 0.0,
+        "shanten_before": None,
+        "shanten_after": None,
+        "action_head": "discard",
+        "action_index": 0,
+    }
+
+    assert compute_shaped_reward(row) == 0.25
 
 
 def test_masked_ppo_loss_is_finite() -> None:
@@ -571,7 +586,31 @@ def test_prepare_model_for_ppo_updates_disables_dropout_without_freezing_params(
     assert all(parameter.requires_grad for parameter in model.parameters())
 
 
-@pytest.mark.skip(reason="Opponent modeling changes risk adjustment logic")
+def test_actor_critic_lr_warmup_preserves_critic_multiplier() -> None:
+    import torch
+    from rl_train import apply_lr_warmup
+
+    actor = torch.nn.Linear(1, 1)
+    critic = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": actor.parameters(), "lr": 3e-6, "name": "actor"},
+            {"params": critic.parameters(), "lr": 6e-6, "name": "critic"},
+        ]
+    )
+
+    apply_lr_warmup(
+        optimizer,
+        epoch=0,
+        warmup_epochs=3,
+        actor_lr=3e-6,
+        critic_lr_multiplier=2.0,
+    )
+
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-6)
+    assert optimizer.param_groups[1]["lr"] == pytest.approx(2e-6)
+
+
 def test_discard_log_probs_use_risk_adjusted_logits() -> None:
     import math
     import torch
@@ -584,7 +623,7 @@ def test_discard_log_probs_use_risk_adjusted_logits() -> None:
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.tensor([[-8.0]]),
         "opponent_tenpai_logits": torch.zeros((1, 3)),
-        "opponent_risk_logits": torch.zeros((1, 3, 34)),
+        "opponent_risk_logits": torch.tensor([[[5.0, -5.0] + [0.0] * 32] * 3]),
     }
     batch = {
         "reward": torch.tensor([0.0]),
@@ -607,7 +646,6 @@ def test_discard_log_probs_use_risk_adjusted_logits() -> None:
     assert log_prob.item() == pytest.approx(expected, abs=1e-5)
 
 
-@pytest.mark.skip(reason="Opponent modeling changes risk adjustment logic")
 def test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment() -> None:
     import math
     import torch
@@ -620,7 +658,7 @@ def test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment() -
         "hu_logits": torch.zeros((1, 2)),
         "value": torch.tensor([[-8.0]]),
         "opponent_tenpai_logits": torch.zeros((1, 3)),
-        "opponent_risk_logits": torch.zeros((1, 3, 34)),
+        "opponent_risk_logits": torch.tensor([[[5.0, -5.0] + [0.0] * 32] * 3]),
     }
     batch = {
         "reward": torch.tensor([0.0]),

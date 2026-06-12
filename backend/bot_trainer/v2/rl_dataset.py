@@ -363,7 +363,6 @@ def compute_gae_for_rows(
 
 def compute_shaped_reward(row: dict[str, Any]) -> float:
     base_reward = float(row["reward"])
-    step_reward = float(row.get("step_reward", 0.0))
 
     shanten_reward = 0.0
     before = row.get("shanten_before")
@@ -386,4 +385,4 @@ def compute_shaped_reward(row: dict[str, Any]) -> float:
     if after is not None and int(after) == 0 and (before is None or int(before) > 0):
         tenpai_reward = 0.1
 
-    return base_reward + step_reward + shanten_reward + risk_penalty + tenpai_reward
+    return base_reward + shanten_reward + risk_penalty + tenpai_reward

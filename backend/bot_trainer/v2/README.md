@@ -72,7 +72,8 @@ CUDA 训练默认启用 BF16 AMP，并继续启用 TF32 加速 float32 matmul/co
 - `value`：预期分差
 - `fan_value`：完整番数辅助回归输出，用于训练一致性，不参与当前 Rust runtime 决策
 - `qualifying_fan_value`：8 番起和进度辅助回归输出，目标值为 `min(fan_count, 8) / 8`
-- `risk_logits`：34 个牌风险 logits
+- `opponent_tenpai_logits`：3 个对手听牌 logits
+- `opponent_risk_logits`：`3 x 34` 个对手分牌风险 logits。Rust runtime 会按牌取 3 个对手风险的最大值，聚合为策略层使用的 34 维风险。
 
 `discard_sequence` 右对齐保存最近 32 个公开弃牌事件。每个事件包含 34 维牌 one-hot、4 维相对座位 one-hot、1 维进度、1 维最新事件标记。
 

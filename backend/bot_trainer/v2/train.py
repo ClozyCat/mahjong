@@ -479,9 +479,19 @@ def compute_losses(
                 batch["opponent_tenpai_target"].float(),
                 reduction="mean",
             )
+        risk_targets = None
+        risk_masks = None
         if "opponent_risk_target" in batch and "opponent_risk_mask" in batch:
             risk_targets = batch["opponent_risk_target"].float()
             risk_masks = batch["opponent_risk_mask"].bool()
+        elif "risk_target" in batch and "risk_mask" in batch:
+            risk_targets = batch["risk_target"].float().unsqueeze(1).expand_as(
+                outputs["opponent_risk_logits"]
+            )
+            risk_masks = batch["risk_mask"].bool().unsqueeze(1).expand_as(
+                outputs["opponent_risk_logits"]
+            )
+        if risk_targets is not None and risk_masks is not None:
             alpha = 0.25
             gamma = 2.0
             bce = F.binary_cross_entropy_with_logits(
