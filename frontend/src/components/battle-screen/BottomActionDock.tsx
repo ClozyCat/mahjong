@@ -27,6 +27,8 @@ interface BottomActionDockProps {
   canToggleAutoPassKong?: boolean;
   promptCue: BattlePromptView | null;
   deadlineAt: string | null;
+  discards?: Record<string, string[]>;
+  players?: BattleViewModel['players'];
   onTileSelect: (tileId: string) => void;
   onTileDoubleClick: (tileId: string) => void;
   onClaimCandidateSelect: (actionId: ClaimActionId, tileIds: string[]) => void;
@@ -50,6 +52,8 @@ export function BottomActionDock({
   canToggleAutoPassKong = false,
   promptCue,
   deadlineAt,
+  discards = {},
+  players = [],
   onTileSelect,
   onTileDoubleClick,
   onClaimCandidateSelect,
@@ -349,6 +353,9 @@ export function BottomActionDock({
               <div className="action-dock__hand" aria-label="Local hand">
                 {hand.map((tile, index) => {
                   const isTileInteractionDisabled = tile.isDisabled || isHandInteractionDisabled;
+                  const tileCountInfo = tile.isSelected && selectedTileCode === tile.code
+                    ? getTileCountInfo(tile.code, tile.tileId, hand, discards || {}, players || [])
+                    : null;
 
                   return (
                     <button
@@ -392,6 +399,16 @@ export function BottomActionDock({
                         isDisabled={isTileInteractionDisabled}
                         relatedTileCode={selectedTileCode}
                       />
+                      {tileCountInfo && (
+                        <div className="action-dock__tile-count-indicator">
+                          {Array.from({ length: tileCountInfo.inHandCount }).map((_, i) => (
+                            <span key={`hollow-${i}`} className="action-dock__tile-count-dot action-dock__tile-count-dot--hollow" />
+                          ))}
+                          {Array.from({ length: tileCountInfo.unknownCount }).map((_, i) => (
+                            <span key={`solid-${i}`} className="action-dock__tile-count-dot action-dock__tile-count-dot--solid" />
+                          ))}
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -526,6 +543,47 @@ const ACTION_PRIORITY: Partial<Record<BattleActionView['id'], number>> = {
   ready_hand: 6,
   pass: 7,
 };
+
+function getTileCountInfo(
+  tileCode: string,
+  selectedTileId: string,
+  hand: BattleViewModel['localHand'],
+  discards: Record<string, string[]>,
+  players: Array<{ melds: (string[] | { tiles: Array<{ code: string }> })[] }>
+) {
+  let visibleCount = 0;
+  let inHandCount = 0;
+
+  // Count visible tiles in discards
+  Object.values(discards).forEach((discardPile) => {
+    visibleCount += discardPile.filter((code) => code === tileCode).length;
+  });
+
+  // Count visible tiles in melds
+  players.forEach((player) => {
+    player.melds.forEach((meld) => {
+      if (Array.isArray(meld)) {
+        // Simple string array
+        visibleCount += meld.filter((code) => code === tileCode).length;
+      } else if (meld && 'tiles' in meld && Array.isArray(meld.tiles)) {
+        // DisplayMeldView
+        visibleCount += meld.tiles.filter((tile) => tile.code === tileCode).length;
+      }
+    });
+  });
+
+  // Count tiles in own hand (excluding the selected tile)
+  hand.forEach((tile) => {
+    if (tile.code === tileCode && tile.tileId !== selectedTileId) {
+      inHandCount++;
+    }
+  });
+
+  // Total tiles of this type is 4 (standard mahjong)
+  const unknownCount = Math.max(0, 4 - visibleCount - inHandCount - 1); // -1 for the selected tile itself
+
+  return { inHandCount, unknownCount };
+}
 
 function getHandInsightTriggerLabel(handInsight: NonNullable<BottomActionDockProps['handInsight']>) {
   if (handInsight.source === 'selected_discard') {

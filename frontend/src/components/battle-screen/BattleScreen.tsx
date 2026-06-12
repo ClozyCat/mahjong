@@ -483,6 +483,8 @@ export function BattleScreen({
                 canToggleAutoPassKong={canToggleAutoPassKong}
                 promptCue={viewModel.promptCue}
                 deadlineAt={viewModel.deadlineAt}
+                discards={viewModel.discards}
+                players={viewModel.players}
                 onTileSelect={onTileSelect}
                 onTileDoubleClick={onTileDoubleClick}
                 onClaimCandidateSelect={onClaimCandidateSelect}

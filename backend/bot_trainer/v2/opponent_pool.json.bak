@@ -2,8 +2,8 @@
   "schema_version": 2,
   "learner": {
     "id": "learner",
-    "model_path": "backend/assets/sft/sft.onnx",
-    "sample_actions": false,
+    "model_path": "backend/assets/ppo/ppo.onnx",
+    "sample_actions": true,
     "temperature": 1.0
   },
   "opponents": [
@@ -22,11 +22,21 @@
       "weight": 0.25
     },
     {
-      "id": "sft_greedy",
-      "model_path": "backend/assets/sft/sft.onnx",
+      "id": "self_play_recent",
+      "model_path": "backend/assets/ppo/checkpoints/epoch_{RECENT}.pt",
       "sample_actions": true,
-      "temperature": 0.1,
-      "weight": 0.25
+      "temperature_range": [0.8, 1.2],
+      "weight": 0.3,
+      "self_play": true,
+      "lag_epochs": 5
+    },
+    {
+      "id": "self_play_best",
+      "model_path": "backend/assets/ppo/best.pt",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 0.2,
+      "self_play": true
     }
   ],
   "adaptive_sampling": {
