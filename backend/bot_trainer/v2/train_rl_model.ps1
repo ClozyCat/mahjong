@@ -35,6 +35,10 @@ param(
     [string[]]$Policies = @(),
     [switch]$UseActorCritic,
     [double]$CriticLrMultiplier = 2.0,
+    [switch]$PretrainCritic,
+    [int]$CriticPretrainEpochs = 5,
+    [int]$CriticPretrainBatchSize = 256,
+    [double]$CriticPretrainLearningRate = 0.0001,
     [string]$Device = "auto",
     [switch]$NoAmp,
     [string]$OpponentPool = "backend/bot_trainer/v2/opponent_pool.json",
@@ -60,6 +64,21 @@ $env:PYTHONIOENCODING = "utf-8"
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ArenaFeatureArgs = if ($CudaArena) { @("--features", "cuda") } else { @() }
+
+if ($PretrainCritic) {
+    if (-not $UseActorCritic) {
+        throw "-PretrainCritic requires -UseActorCritic because critic pretraining expects an actor-critic checkpoint."
+    }
+    if ($CriticPretrainEpochs -lt 1) {
+        throw "-CriticPretrainEpochs must be greater than or equal to 1."
+    }
+    if ($CriticPretrainBatchSize -lt 1) {
+        throw "-CriticPretrainBatchSize must be greater than or equal to 1."
+    }
+    if ($CriticPretrainLearningRate -le 0) {
+        throw "-CriticPretrainLearningRate must be greater than 0."
+    }
+}
 
 function Invoke-TrainingPython {
     param([string[]]$Arguments)
@@ -374,6 +393,31 @@ function Invoke-PolicyTraining {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+function Invoke-CriticPretraining {
+    param(
+        [string]$TrajectoryJsonl,
+        [string]$Checkpoint,
+        [string]$OutputCheckpoint
+    )
+
+    $criticPretrainArgs = @(
+        "backend/bot_trainer/v2/pretrain_critic.py",
+        "--trajectories", $TrajectoryJsonl,
+        "--checkpoint", $Checkpoint,
+        "--output", $OutputCheckpoint,
+        "--epochs", "$CriticPretrainEpochs",
+        "--batch-size", "$CriticPretrainBatchSize",
+        "--lr", "$CriticPretrainLearningRate",
+        "--gamma", "$Gamma",
+        "--gae-lambda", "$GaeLambda",
+        "--policy-id", $LearnerPolicyId,
+        "--device", $Device
+    )
+
+    Invoke-TrainingPython $criticPretrainArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 function New-PytestWindowsSiteCustomize {
     param([string]$TempDir)
     $siteDir = Join-Path $TempDir "pytest_site"
@@ -447,6 +491,10 @@ try {
     Write-Host "Replay:              epochs=$ReplayBufferEpochs ratio=$ReplayRatio"
     Write-Host "Actor-critic:        $([bool]$UseActorCritic)"
     Write-Host "Critic LR x:         $CriticLrMultiplier"
+    Write-Host "Critic pretrain:     $([bool]$PretrainCritic)"
+    if ($PretrainCritic) {
+        Write-Host "Critic pretrain cfg: epochs=$CriticPretrainEpochs batch=$CriticPretrainBatchSize lr=$CriticPretrainLearningRate"
+    }
     Write-Host "Opponent pool:       $OpponentPool"
     Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"
@@ -584,11 +632,24 @@ try {
             & $CargoExe @arenaArgs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+            $trainingCheckpoint = [string]$policyState.current_checkpoint
+            $criticPretrainCheckpoint = $null
+            if ($PretrainCritic) {
+                $criticPretrainCheckpoint = Join-Path $iterCheckpointDir "critic_pretrained.pt"
+                Write-Host ("  Pretraining critic: policy={0} source={1}" -f $style, (Split-Path -Leaf $trainingCheckpoint))
+                Invoke-CriticPretraining `
+                    -TrajectoryJsonl $iterTrajectoryJsonl `
+                    -Checkpoint $trainingCheckpoint `
+                    -OutputCheckpoint $criticPretrainCheckpoint
+                $trainingCheckpoint = $criticPretrainCheckpoint
+                Write-Host ("  Critic pretraining finished: policy={0}" -f $style)
+            }
+
             Write-Host ("  Starting PPO training: policy={0}" -f $style)
             Invoke-PolicyTraining `
                 -PolicyName $style `
                 -TrajectoryJsonl $iterTrajectoryJsonl `
-                -Checkpoint ([string]$policyState.current_checkpoint) `
+                -Checkpoint $trainingCheckpoint `
                 -CheckpointDir $iterCheckpointDir
             Write-Host ("  PPO training finished: policy={0}" -f $style)
 
@@ -735,6 +796,9 @@ try {
                 onnx = $iterCandidateOnnx
                 accepted = $false
                 score_margin = 0.0
+                critic_pretrain_enabled = [bool]$PretrainCritic
+                critic_pretrain_checkpoint = $criticPretrainCheckpoint
+                ppo_start_checkpoint = $trainingCheckpoint
             }
 
             if ((-not $SkipOnnxExport) -and (-not $SkipEval)) {

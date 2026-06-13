@@ -86,6 +86,8 @@ pub struct ArenaBotPolicyConfig {
     pub sample_actions: bool,
     #[serde(default = "default_policy_temperature")]
     pub temperature: f32,
+    #[serde(default)]
+    pub temperature_range: Option<[f32; 2]>,
     #[serde(default = "default_discard_base_risk_weight")]
     pub discard_base_risk_weight: f32,
     #[serde(default = "default_discard_value_risk_range")]
@@ -1241,6 +1243,7 @@ mod tests {
             model_path: Some("backend/assets/sft/sft.onnx".to_string()),
             sample_actions: false,
             temperature: 1.0,
+            temperature_range: None,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),
@@ -1288,6 +1291,20 @@ mod tests {
         assert_eq!(config.id, "learner");
         assert!(config.sample_actions);
         assert_eq!(config.temperature, 0.8);
+    }
+
+    #[test]
+    fn arena_policy_config_parses_temperature_range() {
+        let raw = r#"{
+            "id":"explorer",
+            "model_path":"backend/assets/models/mahjong_policy_net.onnx",
+            "sample_actions":true,
+            "temperature_range":[1.5,2.5]
+        }"#;
+
+        let config: ArenaBotPolicyConfig = serde_json::from_str(raw).expect("config");
+
+        assert_eq!(config.temperature_range, Some([1.5, 2.5]));
     }
 
     #[test]
@@ -1701,6 +1718,7 @@ mod tests {
             model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
             sample_actions: true,
             temperature: 1.0,
+            temperature_range: None,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),
@@ -1739,6 +1757,7 @@ mod tests {
             model_path: None,
             sample_actions: false,
             temperature: 1.0,
+            temperature_range: None,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),
@@ -1783,6 +1802,7 @@ mod tests {
             model_path: Some("missing-model-for-trajectory-test.onnx".to_string()),
             sample_actions: true,
             temperature: 1.0,
+            temperature_range: None,
             discard_base_risk_weight: default_discard_base_risk_weight(),
             discard_value_risk_range: default_discard_value_risk_range(),
             discard_min_risk_weight: default_discard_min_risk_weight(),

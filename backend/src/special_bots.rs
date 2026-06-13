@@ -99,6 +99,7 @@ pub(crate) fn policy_config_for_seat(room: &RoomState, seat_index: usize) -> Are
         model_path: Some(model_path.to_string()),
         sample_actions: sample_actions && !is_evaluation,
         temperature: if is_evaluation { 1.0 } else { temperature },
+        temperature_range: None,
         discard_base_risk_weight: 0.90,
         discard_value_risk_range: 0.55,
         discard_min_risk_weight: 0.25,

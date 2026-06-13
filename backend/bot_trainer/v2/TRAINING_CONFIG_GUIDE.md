@@ -71,6 +71,10 @@
 - `-UseActorCritic`: 启用Actor-Critic架构
   - 支持双Critic和MoE（需代码修改）
 - `-CriticLrMultiplier`: Critic学习率=Actor学习率×此值
+- `-PretrainCritic`: 每轮轨迹生成后、PPO训练前自动预训练Critic（默认关闭，要求同时启用 `-UseActorCritic`）
+- `-CriticPretrainEpochs`: Critic预训练epoch数（默认5）
+- `-CriticPretrainBatchSize`: Critic预训练batch大小（默认256）
+- `-CriticPretrainLearningRate`: Critic预训练学习率（默认1e-4）
 
 ### 其他参数
 - `-BatchSize`: 批大小（默认2048，建议256-512）
@@ -160,22 +164,18 @@
 
 ### 5. 值函数不准
 **症状**: value_explained_variance < 0.5
-**建议**: 先用带 global features 的 arena trajectory 运行 Critic 预训练
+**建议**: 在RL流程中启用 Critic 预训练，让脚本先生成带 global features 的 arena trajectory，再用该 trajectory 预训练 Critic。
 ```powershell
-python pretrain_critic.py `
-  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl `
-  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
-  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
-  --epochs 5
-
-# 该脚本默认要求 trajectory 包含 global_tile_planes/global_scalar_features。
-
-# 然后使用预训练checkpoint
 .\train_rl_model.ps1 `
-  -BaselineCheckpoint "backend/bot_trainer/v2/checkpoints/critic_pretrained.pt" `
+  -BaselineCheckpoint "backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt" `
+  -BaselineOnnx "backend/assets/ppo/actor_critic_bootstrap.onnx" `
   -UseActorCritic `
+  -PretrainCritic `
+  -CriticPretrainEpochs 5 `
   ...
 ```
+
+`-PretrainCritic` 会在每轮 trajectory 生成后运行，产物为本轮 checkpoint 目录下的 `critic_pretrained.pt`，随后自动作为 PPO 的输入 checkpoint。
 
 ## 监控指标参考
 

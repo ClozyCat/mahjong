@@ -6613,12 +6613,11 @@ main_graph*€
 length1024p*x@Bmodel.actor.gating.net.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset60952j
-length3072p*¦@Bmodel.actor.gating.net.0.biasJ€oŠŠ¾Æq?¾€N½Ô¿O¾Ïİ!¾LA*¾Â-?¾@Èc¼ “€¼ÈÄ*=€
-G;Š^‘>*¶º½Cg>Àoì»øµÉ½ü8½Çx¾Àlô»u£C¾”†¾º‡>X³X=.µp¾¸Ê§½òb=¾,*§½<°V¾# ¾ˆ%c>ûeˆ¾¼>Æh,>F–‹>ğ–©½Jy¾ 8¾>Œ>>´¡G>nÆ\¾ºÕ½´ù½„¼½&
-s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”?½*w@Bmodel.actor.gating.net.2.weightj,
+length3072p*¦@Bmodel.actor.gating.net.0.biasJ€,ep¾êOI>@Šó;&B¾¸µƒ>ØlT=Ë~‚¾È‡e½nï>¿’¾°.¼rE‚¾h<¾#„>Ğ×ƒ¾ó¾*Q>:4X¾—ïH¾@‰=$ùZ>.ª ¾Ğ	Z>D¸b¾İ‰½€®½ùõŒ¾S˜¾D.C½ğ–{¾8‡Ã½¬5M> :t½	©o¾ æy>FMD>À¼D=Œg‹>¶t“>ÜYm>”·}½v:*>@ı=ïƒ¾dX¥=Zè‡¾éÁ¾î=2¾è	è=ŞM>ºj†½L„
+>älS¾rp¾€ÀT>DÆ)>@•½ù4„¾Ø]`¾@©N<ØS{>¤\â=ŞlU¾ ø>*w@Bmodel.actor.gating.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset17176j
-length768p*1Bmodel.actor.gating.net.2.biasJZ”=&^ı=ø9½*€ B-model.actor.policy_trunk.shared_base.0.weightj,
+length768p*1Bmodel.actor.gating.net.2.biasJ,-=j…é½‹–½*€ B-model.actor.policy_trunk.shared_base.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset22740992j
 length3801088p*ƒ€B+model.actor.policy_trunk.shared_base.0.biasj,
@@ -6687,7 +6686,7 @@ s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”
 length1024p*"€B%model.actor.discard_head.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset177176j
-length34816p*´"B#model.actor.discard_head.net.2.biasJˆŒ=¨ì	>§I§½ŸwXºò]S½xú‹¼ˆf¹¼WË»-9<ñ’<Áp¼s/h=—A=hÄ­½šä'=ã;¼v†<Fò°=Áõš=‘É»]Ö½›j	½±Ú'¼øR·¼ë¦6½9ãp½lŞ&½I™<ÜGõ¼u¤½n… =Iô¯=}'(½Š1=*‚€€B#model.actor.claim_head.net.0.weightj,
+length34816p*´"B#model.actor.discard_head.net.2.biasJˆ¯İ=š%›=ÎPB½!æ¼¨a­½ !½ º¤³Ñ<3Wü¼DÜª<ÔèQ<c˜=ß®=P@F½³W=3ñĞ;åU&¼ÜÂ=»ƒ\< ğq½šÍİ½ût½£›¶»|Ï¼èù	½éÍx½n<½4¶m=ğ…<ãD½¶2Â=Æ=*{½€'s=*‚€€B#model.actor.claim_head.net.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset4090904j
 length524288p*y€B!model.actor.claim_head.net.0.biasj,
@@ -6696,7 +6695,7 @@ s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”
 length1024p*}€B#model.actor.claim_head.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset94744j
-length7168p*EB!model.actor.claim_head.net.2.biasJ«Ã!½Êˆ¼²#‡=“l<VMÙ¼ßƒ©=ë©ƒ¼*†€€B'model.actor.self_kong_head.net.0.weightj,
+length7168p*EB!model.actor.claim_head.net.2.biasJÏÄèº{Ø8< =ÑÙ<°'Ë¼GP¿<T‹´º*†€€B'model.actor.self_kong_head.net.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset4615192j
 length524288p*}€B%model.actor.self_kong_head.net.0.biasj,
@@ -6705,8 +6704,7 @@ s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”
 length1024p*€B'model.actor.self_kong_head.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset73240j
-length3072p*9B%model.actor.self_kong_head.net.2.biasJ+
-'=ãS‚=ÇÉµ<*€€B model.actor.hu_head.net.0.weightj,
+length3072p*9B%model.actor.self_kong_head.net.2.biasJµël=ÆMS=<”%<*€€B model.actor.hu_head.net.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset5139480j
 length524288p*v€Bmodel.actor.hu_head.net.0.biasj,
@@ -6715,7 +6713,7 @@ s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”
 length1024p*z€B model.actor.hu_head.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset58904j
-length2048p*.Bmodel.actor.hu_head.net.2.biasJàâ½s_>*€€€B!model.actor.fan_head.net.0.weightj,
+length2048p*.Bmodel.actor.hu_head.net.2.biasJê€©½N2Î=*€€€B!model.actor.fan_head.net.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset5663768j
 length524288p*w€Bmodel.actor.fan_head.net.0.biasj,
@@ -6724,7 +6722,7 @@ s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”
 length1024p*{€B!model.actor.fan_head.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset28184j
-length1024p*+Bmodel.actor.fan_head.net.2.biasJ ß=*‹€€B,model.actor.qualifying_fan_head.net.0.weightj,
+length1024p*+Bmodel.actor.fan_head.net.2.biasJæÖè=*‹€€B,model.actor.qualifying_fan_head.net.0.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset6188056j
 length524288p*‚€B*model.actor.qualifying_fan_head.net.0.biasj,
@@ -6733,10 +6731,11 @@ s¾„¾bŠ>bÉL>Pma=˜å×=ØÎ>4åô=25>`Ù1<ØMg>˜˜D¾ª“¾à‘|>hkV>®]Œ>l<€>Ö’H¾l‡½òš½Ô”
 length1024p*†€B,model.actor.qualifying_fan_head.net.2.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset30232j
-length1024p*6B*model.actor.qualifying_fan_head.net.2.biasJ…Â>*Š€B0model.actor.opponent_modeling.tenpai_head.weightj,
+length1024p*6B*model.actor.qualifying_fan_head.net.2.biasJ8û>*Š€B0model.actor.opponent_modeling.tenpai_head.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset88600j
-length6144p*BB.model.actor.opponent_modeling.tenpai_head.biasJCßŞ¼øş¼µóİ¼*Œf€B.model.actor.opponent_modeling.risk_head.weightj,
+length6144p*BB.model.actor.opponent_modeling.tenpai_head.biasJzi½Y7”½}
+‘½*Œf€B.model.actor.opponent_modeling.risk_head.weightj,
 location actor_critic_bootstrap.onnx.dataj
 offset3357720j
 length208896p*~fB,model.actor.opponent_modeling.risk_head.biasj,

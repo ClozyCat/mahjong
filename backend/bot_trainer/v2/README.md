@@ -185,24 +185,16 @@ python backend/bot_trainer/v2/export_onnx.py `
   --output backend/assets/ppo/actor_critic_bootstrap.onnx
 ```
 
-Critic 预训练可在已有 arena trajectory 后执行；该脚本读取 trajectory 的
+启用 `-PretrainCritic` 后，RL 脚本会在每轮 arena trajectory 生成完成后、
+PPO 训练开始前调用 `pretrain_critic.py`。该步骤读取本轮 trajectory 的
 discounted return，并默认要求轨迹含 `global_tile_planes` 与
-`global_scalar_features`：
-
-```powershell
-python backend/bot_trainer/v2/pretrain_critic.py `
-  --trajectories backend/bot_trainer/v2/rl_runs/iter_001/trajectories.jsonl `
-  --checkpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
-  --output backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
-  --epochs 5 `
-  --batch-size 256
-```
-
+`global_scalar_features`。预训练产物会写入本轮 checkpoint 目录下的
+`critic_pretrained.pt`，并作为随后的 PPO 起点。
 
 ```powershell
 .\backend\bot_trainer\v2\train_rl_model.ps1 `
   -OutputDir backend/bot_trainer/v2/rl_runs/global_critic_smoke `
-  -BaselineCheckpoint backend/bot_trainer/v2/checkpoints/critic_pretrained.pt `
+  -BaselineCheckpoint backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt `
   -BaselineOnnx backend/assets/ppo/actor_critic_bootstrap.onnx `
   -IterationMatches 8 `
   -EvalMatches 4 `
@@ -211,11 +203,15 @@ python backend/bot_trainer/v2/pretrain_critic.py `
   -Device cpu `
   -Policy ppo `
   -UseActorCritic `
+  -PretrainCritic `
+  -CriticPretrainEpochs 5 `
+  -CriticPretrainBatchSize 256 `
   -CriticLrMultiplier 2.0
 ```
 
 
 `CriticLrMultiplier` / `--critic-lr-multiplier` 默认是 `2.0`。
+`PretrainCritic` 默认关闭；开启时必须同时传 `-UseActorCritic`。
 
 ## 7. 候选验收与上线
 

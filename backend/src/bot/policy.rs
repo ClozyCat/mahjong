@@ -116,21 +116,23 @@ pub(crate) fn choose_active_turn_decision_with_config_and_rng(
         let _t2 = std::time::Instant::now();
         let action = if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
+                let temperature = sample_temperature(config, rng);
                 sample_neural_active_turn_action(
                     context,
                     &features,
                     &scores,
-                    config.temperature,
+                    temperature,
                     rng,
                     Some(&risk_config),
                 )
             } else {
                 let mut live_rng = rand::rng();
+                let temperature = sample_temperature(config, &mut live_rng);
                 sample_neural_active_turn_action(
                     context,
                     &features,
                     &scores,
-                    config.temperature,
+                    temperature,
                     &mut live_rng,
                     Some(&risk_config),
                 )
@@ -182,14 +184,16 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
         telemetry.model_loaded = true;
         let action = if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
-                sample_neural_claim_action(context, &features, &scores, config.temperature, rng)
+                let temperature = sample_temperature(config, rng);
+                sample_neural_claim_action(context, &features, &scores, temperature, rng)
             } else {
                 let mut live_rng = rand::rng();
+                let temperature = sample_temperature(config, &mut live_rng);
                 sample_neural_claim_action(
                     context,
                     &features,
                     &scores,
-                    config.temperature,
+                    temperature,
                     &mut live_rng,
                 )
             }
@@ -226,10 +230,12 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
     let choice = if let Some(scores) = maybe_scores.as_ref() {
         if config.sample_actions {
             if let Some(rng) = rng.as_deref_mut() {
-                sample_neural_hu_choice(&features, scores, config.temperature, rng)
+                let temperature = sample_temperature(config, rng);
+                sample_neural_hu_choice(&features, scores, temperature, rng)
             } else {
                 let mut live_rng = rand::rng();
-                sample_neural_hu_choice(&features, scores, config.temperature, &mut live_rng)
+                let temperature = sample_temperature(config, &mut live_rng);
+                sample_neural_hu_choice(&features, scores, temperature, &mut live_rng)
             }
             .or_else(|| select_neural_hu_choice(&features, scores))?
         } else {
@@ -258,14 +264,16 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
     let scores = neural_decision_scores_for_policy_features(&features, config)?;
     let action = if config.sample_actions {
         if let Some(rng) = rng.as_deref_mut() {
-            sample_neural_claim_action(context, &features, &scores, config.temperature, rng)
+            let temperature = sample_temperature(config, rng);
+            sample_neural_claim_action(context, &features, &scores, temperature, rng)
         } else {
             let mut live_rng = rand::rng();
+            let temperature = sample_temperature(config, &mut live_rng);
             sample_neural_claim_action(
                 context,
                 &features,
                 &scores,
-                config.temperature,
+                temperature,
                 &mut live_rng,
             )
         }
@@ -292,6 +300,7 @@ pub(crate) fn bot_policy_config_from_env() -> ArenaBotPolicyConfig {
         model_path: Some(model_path),
         sample_actions: false,
         temperature: 1.0,
+        temperature_range: None,
         discard_base_risk_weight: 0.90,
         discard_value_risk_range: 0.55,
         discard_min_risk_weight: 0.25,
@@ -305,6 +314,15 @@ fn neural_decision_scores_for_policy_features(
 ) -> Option<NeuralDecisionScores> {
     let path = config.model_path.as_deref().map(std::path::Path::new);
     super::neural::neural_decision_scores_for_features(path, features.clone())
+}
+
+fn sample_temperature(config: &ArenaBotPolicyConfig, rng: &mut impl Rng) -> f32 {
+    match config.temperature_range {
+        Some([min, max]) if min.is_finite() && max.is_finite() && max > min => {
+            rng.random_range(min..max)
+        }
+        _ => config.temperature,
+    }
 }
 
 fn random_active_turn_action(context: &BotContext, rng: Option<&mut StdRng>) -> Option<BotAction> {
@@ -947,6 +965,7 @@ mod tests {
             model_path: Some("missing-model.onnx".to_string()),
             sample_actions: false,
             temperature: 1.0,
+            temperature_range: None,
             discard_base_risk_weight: 0.90,
             discard_value_risk_range: 0.55,
             discard_min_risk_weight: 0.25,
@@ -970,6 +989,27 @@ mod tests {
     }
 
     #[test]
+    fn sample_temperature_uses_configured_range() {
+        let config = ArenaBotPolicyConfig {
+            id: "explorer".to_string(),
+            model_path: None,
+            sample_actions: true,
+            temperature: 1.0,
+            temperature_range: Some([1.5, 2.5]),
+            discard_base_risk_weight: 0.90,
+            discard_value_risk_range: 0.55,
+            discard_min_risk_weight: 0.25,
+            discard_max_risk_weight: 1.45,
+        };
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+
+        for _ in 0..16 {
+            let temperature = sample_temperature(&config, &mut rng);
+            assert!((1.5..2.5).contains(&temperature));
+        }
+    }
+
+    #[test]
     fn missing_neural_model_falls_back_to_hu_when_hu_is_available() {
         let mut context = base_context();
         context.claim_options = vec![BotClaimOption {
@@ -981,6 +1021,7 @@ mod tests {
             model_path: Some("missing-model.onnx".to_string()),
             sample_actions: false,
             temperature: 1.0,
+            temperature_range: None,
             discard_base_risk_weight: 0.90,
             discard_value_risk_range: 0.55,
             discard_min_risk_weight: 0.25,
