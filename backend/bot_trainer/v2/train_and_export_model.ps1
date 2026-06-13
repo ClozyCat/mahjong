@@ -49,7 +49,7 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-$ExpectedMetadataSchemaVersion = 4
+$ExpectedMetadataSchemaVersion = 5
 
 function Invoke-TrainingPython {
     param([string[]]$Arguments)
