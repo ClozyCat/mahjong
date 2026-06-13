@@ -97,8 +97,8 @@ def test_loads_trajectory_row(tmp_path: Path) -> None:
 
     assert row["action_index"].item() == 0
     assert row["reward"].item() == 1.0
-    assert 1.0 <= row["return"].item() <= 1.2  # Shaped reward adds bonus
-    assert 1.0 <= row["advantage"].item() <= 1.3  # Shaped reward adds bonus
+    assert row["return"].item() == pytest.approx(1.0)
+    assert row["advantage"].item() == pytest.approx(1.0)
     assert row["shanten_after"].item() == 0
     assert row["tile_planes"].shape == (10, 34)
     assert row["scalar_features"].shape == (12,)
@@ -255,6 +255,20 @@ def test_compute_shaped_reward_does_not_double_count_step_reward() -> None:
     }
 
     assert compute_shaped_reward(row) == 0.25
+
+
+def test_compute_shaped_reward_accepts_complete_hand_shanten() -> None:
+    row = {
+        "reward": 0.06,
+        "step_reward": 0.06,
+        "terminal_reward": 0.0,
+        "shanten_before": 0,
+        "shanten_after": -1,
+        "action_head": "claim",
+        "action_index": 0,
+    }
+
+    assert compute_shaped_reward(row) == pytest.approx(0.06)
 
 
 def test_masked_ppo_loss_is_finite() -> None:

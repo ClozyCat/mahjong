@@ -376,27 +376,5 @@ def compute_gae_for_rows(
 
 
 def compute_shaped_reward(row: dict[str, Any]) -> float:
-    base_reward = float(row["reward"])
-
-    shanten_reward = 0.0
-    before = row.get("shanten_before")
-    after = row.get("shanten_after")
-    if before is not None and after is not None:
-        improvement = int(before) - int(after)
-        if improvement > 0:
-            shanten_reward = 0.05 / (int(after) + 1)
-
-    risk_penalty = 0.0
-    if row.get("action_head") == "discard":
-        risk_probs = row.get("risk_probs")
-        action_index = row.get("action_index")
-        if risk_probs and action_index is not None and 0 <= action_index < len(risk_probs):
-            risk = risk_probs[action_index]
-            if risk > 0.5:
-                risk_penalty = -0.02 * (risk - 0.5)
-
-    tenpai_reward = 0.0
-    if after is not None and int(after) == 0 and (before is None or int(before) > 0):
-        tenpai_reward = 0.1
-
-    return base_reward + shanten_reward + risk_penalty + tenpai_reward
+    # Arena already writes step and terminal shaping into reward.
+    return float(row["reward"])
