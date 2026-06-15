@@ -12,24 +12,26 @@ param(
     [int]$EvalMatches = 1000,
     [int]$Seed = 20260429,
     [int]$MaxActionsPerMatch = 2400,
-    [int]$Epochs = 1,
+    [int]$Epochs = 4,
     [int]$BatchSize = 512,
-    [double]$LearningRate = 0.000003,
+    [double]$LearningRate = 0.00003,
     [int]$LrWarmupEpochs = 3,
     [double]$Gamma = 0.995,
     [double]$GaeLambda = 0.95,
-    [double]$ClipEpsilon = 0.15,
+    [double]$ClipEpsilon = 0.2,
     [double]$ValueClipEpsilon = 0.2,
-    [double]$EntropyCoef = 0.03,
-    [double]$EntropyEndCoef = 0.008,
+    [double]$EntropyCoef = 0.06,
+    [double]$EntropyEndCoef = 0.02,
     [ValidateSet("linear", "cosine")]
     [string]$EntropyDecayMode = "cosine",
-    [double]$KlCoef = 0.01,
-    [double]$KlTarget = 0.02,
+    [double]$KlCoef = 0.02,
+    [double]$KlTarget = 0.03,
     [switch]$KlAdaptive = $true,
     [double]$TargetKl = 0.04,
-    [int]$ReplayBufferEpochs = 3,
-    [double]$ReplayRatio = 0.4,
+    [double]$OpponentLossCoef = 0.3,
+    [double]$GradClipNorm = 1.0,
+    [int]$ValueEarlyStopPatience = 0,
+    [int]$MiniBatchSize = 0,
     [ValidateSet("ppo")]
     [string]$Policy = "ppo",
     [string[]]$Policies = @(),
@@ -364,18 +366,22 @@ function Invoke-PolicyTraining {
         "--policy-id", $LearnerPolicyId,
         "--clip-epsilon", "$ClipEpsilon",
         "--value-clip-epsilon", "$ValueClipEpsilon",
+        "--opponent-loss-coef", "$OpponentLossCoef",
         "--entropy-coef", "$EntropyCoef",
         "--entropy-end-coef", "$EntropyEndCoef",
         "--entropy-decay-mode", $EntropyDecayMode,
         "--kl-coef", "$KlCoef",
         "--kl-target", "$KlTarget",
         "--target-kl", "$TargetKl",
-        "--replay-buffer-epochs", "$ReplayBufferEpochs",
-        "--replay-ratio", "$ReplayRatio",
+        "--grad-clip-norm", "$GradClipNorm",
+        "--value-early-stop-patience", "$ValueEarlyStopPatience",
         "--policy", $PolicyName,
         "--output", $CheckpointDir,
         "--device", $Device
     )
+    if ($MiniBatchSize -gt 0) {
+        $rlTrainArgs += @("--mini-batch-size", "$MiniBatchSize")
+    }
     if ($NoAmp) {
         $rlTrainArgs += @("--no-amp")
     }
@@ -488,13 +494,16 @@ try {
     Write-Host "Clip epsilon:        $ClipEpsilon"
     Write-Host "Entropy (start/end): $EntropyCoef -> $EntropyEndCoef ($EntropyDecayMode)"
     Write-Host "KL coef:             $KlCoef (adaptive=$KlAdaptive, target=$KlTarget)"
-    Write-Host "Replay:              epochs=$ReplayBufferEpochs ratio=$ReplayRatio"
+    Write-Host "Opponent loss coef:  $OpponentLossCoef"
     Write-Host "Actor-critic:        $([bool]$UseActorCritic)"
     Write-Host "Critic LR x:         $CriticLrMultiplier"
     Write-Host "Critic pretrain:     $([bool]$PretrainCritic)"
     if ($PretrainCritic) {
         Write-Host "Critic pretrain cfg: epochs=$CriticPretrainEpochs batch=$CriticPretrainBatchSize lr=$CriticPretrainLearningRate"
     }
+    Write-Host "Grad clip norm:      $GradClipNorm"
+    Write-Host "Value early stop:    $ValueEarlyStopPatience"
+    Write-Host "Mini-batch size:     $(if ($MiniBatchSize -gt 0) { $MiniBatchSize } else { 'same as batch' })"
     Write-Host "Opponent pool:       $OpponentPool"
     Write-Host "Learner policy id:   $LearnerPolicyId"
     Write-Host "Eval matches:        $EvalMatches"

@@ -22,24 +22,7 @@ DISCARD_MIN_RISK_WEIGHT = 0.25
 DISCARD_MAX_RISK_WEIGHT = 1.45
 
 
-class ReplayBuffer:
-    def __init__(self, max_epochs: int = 3) -> None:
-        self.max_epochs = max_epochs
-        self.buffer: list[list[dict[str, torch.Tensor]]] = []
 
-    def add_epoch(self, batches: list[dict[str, torch.Tensor]]) -> None:
-        self.buffer.append([{k: v.cpu() for k, v in b.items()} for b in batches])
-        if len(self.buffer) > self.max_epochs:
-            self.buffer.pop(0)
-
-    def sample(self, n_batches: int) -> list[dict[str, torch.Tensor]]:
-        if not self.buffer or n_batches <= 0:
-            return []
-        all_batches = [b for epoch_batches in self.buffer for b in epoch_batches]
-        if n_batches >= len(all_batches):
-            return all_batches
-        indices = torch.randperm(len(all_batches))[:n_batches].tolist()
-        return [all_batches[i] for i in indices]
 
 
 POLICY_CONFIGS = {
@@ -58,27 +41,31 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trajectories", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, default=None)
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--lr", type=float, default=3e-6)
+    parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--lr-warmup-epochs", type=int, default=3)
     parser.add_argument("--critic-lr-multiplier", type=float, default=2.0)
     parser.add_argument("--use-actor-critic", action="store_true")
     parser.add_argument("--gamma", type=float, default=0.995)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--policy-id", default=None)
-    parser.add_argument("--clip-epsilon", type=float, default=0.15)
+    parser.add_argument("--clip-epsilon", type=float, default=0.2)
     parser.add_argument("--value-clip-epsilon", type=float, default=0.2)
-    parser.add_argument("--opponent-loss-coef", type=float, default=0.05)
-    parser.add_argument("--entropy-coef", type=float, default=0.03)
-    parser.add_argument("--entropy-end-coef", type=float, default=0.008)
+    parser.add_argument("--opponent-loss-coef", type=float, default=0.3)
+    parser.add_argument("--entropy-coef", type=float, default=0.06)
+    parser.add_argument("--entropy-end-coef", type=float, default=0.02)
     parser.add_argument("--entropy-decay-mode", choices=["linear", "cosine"], default="cosine")
-    parser.add_argument("--kl-coef", type=float, default=0.01)
-    parser.add_argument("--kl-target", type=float, default=0.02)
+    parser.add_argument("--kl-coef", type=float, default=0.02)
+    parser.add_argument("--kl-target", type=float, default=0.03)
     parser.add_argument("--kl-adaptive", action="store_true", default=True)
     parser.add_argument("--target-kl", type=float, default=0.04)
-    parser.add_argument("--replay-buffer-epochs", type=int, default=3)
-    parser.add_argument("--replay-ratio", type=float, default=0.4)
+    parser.add_argument("--grad-clip-norm", type=float, default=1.0,
+        help="Max gradient norm for clipping. 0 to disable.")
+    parser.add_argument("--value-early-stop-patience", type=int, default=0,
+        help="Stop value updates if explained variance doesn't improve for N mini-batches. 0 to disable.")
+    parser.add_argument("--mini-batch-size", type=int, default=None,
+        help="Mini-batch size for PPO updates. Defaults to batch-size if not set.")
     parser.add_argument(
         "--policy",
         choices=["ppo"],
@@ -244,6 +231,10 @@ def format_epoch_metrics(metrics: dict[str, float], total_epochs: int) -> str:
         base_msg += f" adv_mean={metrics['advantage_mean']:.6f}"
     if 'advantage_std' in metrics:
         base_msg += f" adv_std={metrics['advantage_std']:.6f}"
+    if 'mini_batch_count' in metrics:
+        base_msg += f" mb_count={int(metrics['mini_batch_count'])}"
+    if metrics.get('value_early_stopped'):
+        base_msg += " value_early_stopped=true"
 
     return base_msg
 
@@ -497,6 +488,37 @@ def build_old_policy_model(
     return model
 
 
+def _make_critic_value_fn(model: torch.nn.Module, device: torch.device):
+    def value_fn(batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        outputs = forward_model(model, batch)
+        if "value" not in outputs:
+            raise SystemExit(
+                "Cannot auto-recompute values: model forward pass did not "
+                "produce 'value'. Use --use-actor-critic with a checkpoint "
+                "that has a value head."
+            )
+        return outputs["value"].squeeze(-1)
+    return value_fn
+
+
+def split_into_mini_batches(
+    batch: dict[str, torch.Tensor],
+    mini_batch_size: int,
+) -> list[dict[str, torch.Tensor]]:
+    batch_size = batch["reward"].shape[0]
+    if mini_batch_size >= batch_size:
+        return [batch]
+    indices = torch.randperm(batch_size)
+    mini_batches = []
+    for start in range(0, batch_size, mini_batch_size):
+        end = min(start + mini_batch_size, batch_size)
+        mb_indices = indices[start:end]
+        mini_batches.append({
+            key: tensor[mb_indices] for key, tensor in batch.items()
+        })
+    return mini_batches
+
+
 def prepare_model_for_ppo_updates(model: torch.nn.Module) -> None:
     model.train()
     for module in model.modules():
@@ -586,19 +608,6 @@ def teacher_kl_loss(
     return select_action_head_kl(teacher_outputs, outputs, batch, policy_config)
 
 
-def normalized_advantage_stats(
-    batch: dict[str, torch.Tensor],
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    advantages = batch["advantage"].float()
-    with torch.no_grad():
-        raw_mean = advantages.mean()
-        raw_std = advantages.std(unbiased=False)
-    normalized = (advantages - advantages.mean()) / (
-        advantages.std(unbiased=False) + 1.0e-8
-    )
-    return normalized, raw_mean, raw_std
-
-
 def value_training_metrics(
     outputs: dict[str, torch.Tensor],
     old_values: torch.Tensor,
@@ -663,12 +672,15 @@ def forward_and_compute_ppo_loss(
     args: argparse.Namespace,
     entropy_coef: float,
     kl_coef: float,
+    advantages: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
     outputs = forward_model(model, batch)
     old_log_probs, old_values = old_policy_stats(batch, old_policy_model, policy_config)
     log_probs = select_action_log_probs(outputs, batch, policy_config)
     returns = batch["return"].float()
-    advantages, raw_advantage_mean, raw_advantage_std = normalized_advantage_stats(batch)
+    with torch.no_grad():
+        raw_advantage_mean = advantages.mean()
+        raw_advantage_std = advantages.std(unbiased=False)
     policy_loss = ppo_policy_loss(
         log_probs,
         old_log_probs,
@@ -722,6 +734,7 @@ def autocast_ppo_loss(
     args: argparse.Namespace,
     entropy_coef: float,
     kl_coef: float,
+    advantages: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
     with torch.amp.autocast(
         amp_config.device_type,
@@ -737,6 +750,7 @@ def autocast_ppo_loss(
             args,
             entropy_coef,
             kl_coef,
+            advantages,
         )
 
 
@@ -769,10 +783,11 @@ def main() -> None:
         policy_id=args.policy_id,
         cache_path=tensor_cache,
     )
-    if trajectory_stats_are_all_zero(dataset) and not args.recompute_old_policy_stats:
+    if trajectory_stats_are_all_zero(dataset) and not args.recompute_old_policy_stats and not args.use_actor_critic:
         raise SystemExit(
             "Trajectory old policy stats are all zero. Regenerate trajectories with "
-            "log_prob/value, or pass --recompute-old-policy-stats with the rollout checkpoint."
+            "log_prob/value, or pass --recompute-old-policy-stats with the rollout checkpoint, "
+            "or use --use-actor-critic to auto-recompute values."
         )
     model_config = model_config_from_checkpoint(args.checkpoint)
 
@@ -785,6 +800,19 @@ def main() -> None:
 
     load_checkpoint_if_present(model, args.checkpoint)
     prepare_model_for_ppo_updates(model)
+
+    if args.use_actor_critic:
+        print("Auto-recomputing values with critic before GAE...")
+        critic_value_fn = _make_critic_value_fn(model, device)
+        dataset.recompute_values_and_gae(
+            critic_value_fn,
+            device,
+            batch_size=args.batch_size,
+            gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+        )
+        print("Critic values recomputed. GAE advantages updated.")
+
     old_policy_model = (
         build_old_policy_model(args.checkpoint, device)
         if args.recompute_old_policy_stats
@@ -795,8 +823,7 @@ def main() -> None:
     if args.recompute_old_policy_stats:
         if old_policy_model is None:
             raise SystemExit(
-                "--recompute-old-policy-stats requires --checkpoint so old "
-                "critic values can be recomputed from global features."
+                "--recompute-old-policy-stats requires --checkpoint."
             )
         recompute_dataset_values_from_old_policy(
             dataset,
@@ -809,6 +836,8 @@ def main() -> None:
 
     diagnostics = trajectory_diagnostics(dataset.rows)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+
+    mini_batch_size = args.mini_batch_size or args.batch_size
 
     if args.use_actor_critic:
         actor_params = list(model.actor.parameters())
@@ -825,12 +854,15 @@ def main() -> None:
     print(
         "RL train: "
         f"trajectories={len(dataset)} batches={len(loader)} "
-        f"epochs={args.epochs} batch_size={args.batch_size} device={device} "
+        f"epochs={args.epochs} batch_size={args.batch_size} "
+        f"mini_batch_size={mini_batch_size} "
+        f"device={device} "
         f"amp={amp_config.enabled} amp_dtype={amp_dtype_name(amp_config)} "
         f"entropy_start={adjusted_entropy_coef:.6f} entropy_end={adjusted_entropy_end_coef:.6f} "
         f"entropy_decay={args.entropy_decay_mode} "
         f"(base={args.entropy_coef:.6f}, multiplier={entropy_multiplier:.2f}) "
-        f"replay_epochs={args.replay_buffer_epochs} replay_ratio={args.replay_ratio}"
+        f"grad_clip={args.grad_clip_norm} "
+        f"value_early_stop_patience={args.value_early_stop_patience}"
     )
     print("RL trajectory diagnostics: " + json.dumps(diagnostics, ensure_ascii=False))
 
@@ -838,8 +870,6 @@ def main() -> None:
     history = []
     global_step = 0
     kl_coef = args.kl_coef
-
-    replay_buffer = ReplayBuffer(max_epochs=args.replay_buffer_epochs)
 
     for epoch in range(args.epochs):
         apply_lr_warmup(
@@ -850,13 +880,7 @@ def main() -> None:
             args.critic_lr_multiplier,
         )
 
-        current_batches = list(loader)
-        replay_batches = replay_buffer.sample(int(len(current_batches) * args.replay_ratio))
-        all_batches = current_batches + replay_batches
-
-        if replay_batches:
-            print(f"Epoch {epoch+1}: using {len(current_batches)} new + {len(replay_batches)} replay batches")
-
+        epoch_batches = list(loader)
         total_loss = 0.0
         total_policy_loss = 0.0
         total_value_loss = 0.0
@@ -871,52 +895,82 @@ def main() -> None:
         total_value_mse = 0.0
         total_advantage_mean = 0.0
         total_advantage_std = 0.0
-        batch_count = 0
+        mini_batch_count = 0
+        value_no_improve_count = 0
+        skip_value_update = False
 
-        for batch in all_batches:
-            batch = {key: value.to(device) for key, value in batch.items()}
-            entropy_coef = entropy_coef_for_progress(
-                global_step,
-                total_steps,
-                adjusted_entropy_coef,
-                adjusted_entropy_end_coef,
-                args.entropy_decay_mode,
-            )
-            losses = autocast_ppo_loss(
-                amp_config,
-                model,
-                batch,
-                old_policy_model,
-                teacher_model,
-                policy_config,
-                args,
-                entropy_coef,
-                kl_coef,
-            )
-            loss = losses["loss"]
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            optimizer.step()
-            total_loss += float(loss.detach().cpu())
-            total_policy_loss += float(losses["policy_loss"].detach().cpu())
-            total_value_loss += float(losses["value_loss"].detach().cpu())
-            total_opponent_loss += float(losses["opponent_loss"].detach().cpu())
-            total_entropy += float(losses["entropy"].detach().cpu())
-            total_entropy_coef += entropy_coef
-            total_kl_loss += float(losses["kl_loss"].detach().cpu())
-            total_kl_coef += kl_coef
-            total_approx_kl += float(losses["approx_kl"].detach().cpu())
-            total_clip_fraction += float(losses["clip_fraction"].detach().cpu())
-            total_value_explained_variance += float(losses["explained_variance"].detach().cpu())
-            total_value_mse += float(losses["value_mse"].detach().cpu())
-            total_advantage_mean += float(losses["raw_advantage_mean"].detach().cpu())
-            total_advantage_std += float(losses["raw_advantage_std"].detach().cpu())
-            batch_count += 1
-            global_step += 1
+        for full_batch in epoch_batches:
+            full_batch = {key: value.to(device) for key, value in full_batch.items()}
+            mini_batches = split_into_mini_batches(full_batch, mini_batch_size)
 
-        replay_buffer.add_epoch(current_batches)
+            for mb in mini_batches:
+                mb_advantages = mb["advantage"].float()
+                mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std(unbiased=False) + 1e-8)
 
-        avg_approx_kl = total_approx_kl / max(batch_count, 1)
+                entropy_coef = entropy_coef_for_progress(
+                    global_step,
+                    total_steps,
+                    adjusted_entropy_coef,
+                    adjusted_entropy_end_coef,
+                    args.entropy_decay_mode,
+                )
+                losses = autocast_ppo_loss(
+                    amp_config,
+                    model,
+                    mb,
+                    old_policy_model,
+                    teacher_model,
+                    policy_config,
+                    args,
+                    entropy_coef,
+                    kl_coef,
+                    mb_advantages,
+                )
+                loss = losses["loss"]
+
+                if skip_value_update:
+                    loss = loss - 0.5 * losses["value_loss"] + 0.5 * losses["value_loss"].detach()
+
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+
+                if args.grad_clip_norm > 0:
+                    if args.use_actor_critic:
+                        torch.nn.utils.clip_grad_norm_(model.actor.parameters(), args.grad_clip_norm)
+                        torch.nn.utils.clip_grad_norm_(model.critic.parameters(), args.grad_clip_norm)
+                    else:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip_norm)
+
+                optimizer.step()
+
+                total_loss += float(loss.detach().cpu())
+                total_policy_loss += float(losses["policy_loss"].detach().cpu())
+                total_value_loss += float(losses["value_loss"].detach().cpu())
+                total_opponent_loss += float(losses["opponent_loss"].detach().cpu())
+                total_entropy += float(losses["entropy"].detach().cpu())
+                total_entropy_coef += entropy_coef
+                total_kl_loss += float(losses["kl_loss"].detach().cpu())
+                total_kl_coef += kl_coef
+                total_approx_kl += float(losses["approx_kl"].detach().cpu())
+                total_clip_fraction += float(losses["clip_fraction"].detach().cpu())
+                total_value_explained_variance += float(losses["explained_variance"].detach().cpu())
+                total_value_mse += float(losses["value_mse"].detach().cpu())
+                total_advantage_mean += float(losses["raw_advantage_mean"].detach().cpu())
+                total_advantage_std += float(losses["raw_advantage_std"].detach().cpu())
+                mini_batch_count += 1
+                global_step += 1
+
+                if args.value_early_stop_patience > 0 and not skip_value_update:
+                    ev = float(losses["explained_variance"].detach().cpu())
+                    if ev < 0.0:
+                        value_no_improve_count += 1
+                    else:
+                        value_no_improve_count = 0
+                    if value_no_improve_count >= args.value_early_stop_patience:
+                        skip_value_update = True
+                        print(f"  Value early stop triggered at mini-batch {mini_batch_count}")
+
+        avg_approx_kl = total_approx_kl / max(mini_batch_count, 1)
         if args.kl_adaptive:
             if avg_approx_kl < args.kl_target * 0.5:
                 kl_coef = max(kl_coef * 0.8, 0.0)
@@ -925,21 +979,23 @@ def main() -> None:
 
         epoch_metrics = {
             "epoch": epoch + 1,
-            "loss": total_loss / max(batch_count, 1),
-            "policy_loss": total_policy_loss / max(batch_count, 1),
-            "value_loss": total_value_loss / max(batch_count, 1),
-            "opponent_loss": total_opponent_loss / max(batch_count, 1),
-            "entropy": total_entropy / max(batch_count, 1),
-            "entropy_coef": total_entropy_coef / max(batch_count, 1),
-            "kl_loss": total_kl_loss / max(batch_count, 1),
+            "loss": total_loss / max(mini_batch_count, 1),
+            "policy_loss": total_policy_loss / max(mini_batch_count, 1),
+            "value_loss": total_value_loss / max(mini_batch_count, 1),
+            "opponent_loss": total_opponent_loss / max(mini_batch_count, 1),
+            "entropy": total_entropy / max(mini_batch_count, 1),
+            "entropy_coef": total_entropy_coef / max(mini_batch_count, 1),
+            "kl_loss": total_kl_loss / max(mini_batch_count, 1),
             "kl_coef": kl_coef,
             "approx_kl": avg_approx_kl,
-            "clip_fraction": total_clip_fraction / max(batch_count, 1),
-            "value_explained_variance": total_value_explained_variance / max(batch_count, 1),
-            "value_mse": total_value_mse / max(batch_count, 1),
-            "advantage_mean": total_advantage_mean / max(batch_count, 1),
-            "advantage_std": total_advantage_std / max(batch_count, 1),
+            "clip_fraction": total_clip_fraction / max(mini_batch_count, 1),
+            "value_explained_variance": total_value_explained_variance / max(mini_batch_count, 1),
+            "value_mse": total_value_mse / max(mini_batch_count, 1),
+            "advantage_mean": total_advantage_mean / max(mini_batch_count, 1),
+            "advantage_std": total_advantage_std / max(mini_batch_count, 1),
             "lr": optimizer.param_groups[0]["lr"],
+            "mini_batch_count": mini_batch_count,
+            "value_early_stopped": skip_value_update,
         }
         history.append(epoch_metrics)
         print(format_epoch_metrics(epoch_metrics, args.epochs))

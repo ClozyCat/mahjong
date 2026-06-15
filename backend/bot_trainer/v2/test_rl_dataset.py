@@ -1327,3 +1327,123 @@ def test_candidate_gate_includes_paired_score_delta() -> None:
     assert report["paired"]["positive_delta_rate"] == pytest.approx(1.0)
     assert report["claim_rate"]["margin"] == pytest.approx(1.8)
     assert report["warnings"] == []
+
+
+def test_gae_with_zero_values():
+    """When value=0.0, GAE advantages should approximate discounted reward sums."""
+    rows = [
+        {"match_id": "m1", "seat_index": 0, "reward": 0.1, "value": 0.0, "done": False},
+        {"match_id": "m1", "seat_index": 0, "reward": 0.2, "value": 0.0, "done": False},
+        {"match_id": "m1", "seat_index": 0, "reward": 1.0, "value": 0.0, "done": True},
+    ]
+    gamma = 0.99
+    gae_lambda = 0.95
+    advantages, returns = compute_gae_for_rows(rows, gamma, gae_lambda)
+
+    assert len(advantages) == 3
+    assert len(returns) == 3
+
+    # With value=0.0, delta_t = r_t + gamma * 0 - 0 = r_t
+    # advantage_2 = delta_2 = 1.0
+    assert abs(advantages[2] - 1.0) < 1e-6
+    # advantage_1 = delta_1 + gamma*lambda*advantage_2 = 0.2 + 0.99*0.95*1.0
+    expected_adv1 = 0.2 + gamma * gae_lambda * 1.0
+    assert abs(advantages[1] - expected_adv1) < 1e-4
+    # return_2 = value_2 + advantage_2 = 0 + 1.0 = 1.0
+    assert abs(returns[2] - 1.0) < 1e-6
+
+
+def test_gae_with_known_values():
+    """GAE with known values should compute correct TD residuals."""
+    rows = [
+        {"match_id": "m1", "seat_index": 0, "reward": 0.1, "value": 1.0, "done": False},
+        {"match_id": "m1", "seat_index": 0, "reward": 0.2, "value": 0.8, "done": False},
+        {"match_id": "m1", "seat_index": 0, "reward": 1.0, "value": 0.5, "done": True},
+    ]
+    gamma = 0.99
+    gae_lambda = 0.95
+    advantages, returns = compute_gae_for_rows(rows, gamma, gae_lambda)
+
+    # delta_2 = r_2 + gamma * 0 - V(s_2) = 1.0 + 0 - 0.5 = 0.5
+    # advantage_2 = delta_2 = 0.5
+    assert abs(advantages[2] - 0.5) < 1e-6
+    # return_2 = V(s_2) + advantage_2 = 0.5 + 0.5 = 1.0
+    assert abs(returns[2] - 1.0) < 1e-6
+
+    # delta_1 = r_1 + gamma * V(s_2) - V(s_1) = 0.2 + 0.99*0.5 - 0.8 = -0.105
+    delta_1 = 0.2 + gamma * 0.5 - 0.8
+    expected_adv1 = delta_1 + gamma * gae_lambda * 0.5
+    assert abs(advantages[1] - expected_adv1) < 1e-4
+
+
+def test_recompute_values_and_gae(tmp_path: Path):
+    """recompute_values_and_gae should update values and recompute advantages."""
+    import torch
+
+    rows = [
+        base_trajectory_row("learner", 0, reward=0.1, value=0.0, done=False),
+        {
+            **base_trajectory_row("learner", 0, reward=1.0, value=0.0, done=True),
+            "decision_index": 1,
+        },
+    ]
+    path = tmp_path / "trajectories.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    dataset = ArenaTrajectoryDataset(path, gamma=0.99, gae_lambda=0.95)
+
+    # Before recomputation: value should be 0.0
+    assert float(dataset.rows[0]["value"]) == 0.0
+    assert float(dataset.rows[1]["value"]) == 0.0
+
+    # Define a mock value function that returns fixed values
+    def mock_value_fn(batch):
+        batch_size = batch["reward"].shape[0]
+        return torch.ones(batch_size, 1) * 0.5
+
+    dataset.recompute_values_and_gae(
+        mock_value_fn,
+        device=torch.device("cpu"),
+        batch_size=256,
+        gamma=0.99,
+        gae_lambda=0.95,
+    )
+
+    # After recomputation: value should be 0.5
+    assert float(dataset.rows[0]["value"]) == pytest.approx(0.5)
+    assert float(dataset.rows[1]["value"]) == pytest.approx(0.5)
+
+    # Advantages and returns should have been recomputed
+    assert len(dataset.advantages) == 2
+    assert len(dataset.returns) == 2
+
+    # Tensor cache should have been invalidated
+    assert not hasattr(dataset, "tensors")
+
+
+def test_split_into_mini_batches():
+    """Mini-batch split should preserve data and handle edge cases."""
+    import torch
+    from rl_train import split_into_mini_batches
+
+    batch = {
+        "reward": torch.randn(10),
+        "advantage": torch.randn(10),
+        "action_index": torch.zeros(10, dtype=torch.long),
+    }
+
+    # mini_batch_size >= batch_size -> return single batch
+    result = split_into_mini_batches(batch, mini_batch_size=20)
+    assert len(result) == 1
+
+    # mini_batch_size = 4 -> 3 mini-batches (4+4+2)
+    result = split_into_mini_batches(batch, mini_batch_size=4)
+    assert len(result) == 3
+    total_samples = sum(mb["reward"].shape[0] for mb in result)
+    assert total_samples == 10
+
+    # mini_batch_size = 3 -> 4 mini-batches (3+3+3+1)
+    result = split_into_mini_batches(batch, mini_batch_size=3)
+    assert len(result) == 4
+    total_samples = sum(mb["reward"].shape[0] for mb in result)
+    assert total_samples == 10

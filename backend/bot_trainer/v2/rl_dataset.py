@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from torch.utils.data import Dataset
@@ -62,6 +62,46 @@ class ArenaTrajectoryDataset(Dataset):
             item["advantage"] = self.tensors["advantage"][index]
             return item
         return encode_row(row, self.returns[index])
+
+    def recompute_values_and_gae(
+        self,
+        value_fn: Callable[[dict[str, torch.Tensor]], torch.Tensor],
+        device: torch.device,
+        batch_size: int = 256,
+        gamma: float = 0.995,
+        gae_lambda: float = 0.95,
+    ) -> None:
+        from torch.utils.data import DataLoader
+
+        loader = DataLoader(self, batch_size=batch_size, shuffle=False)
+        values: list[float] = []
+        with torch.no_grad():
+            for batch in loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                v = value_fn(batch)
+                if isinstance(v, torch.Tensor):
+                    while v.dim() > 1:
+                        v = v.squeeze(-1)
+                    values.extend(v.detach().cpu().tolist())
+                else:
+                    values.extend([float(v)] * len(batch["reward"]))
+
+        if len(values) != len(self.rows):
+            raise ValueError(
+                f"Value count mismatch: {len(values)} values for {len(self.rows)} rows"
+            )
+
+        for row, val in zip(self.rows, values, strict=True):
+            row["value"] = float(val)
+
+        self.advantages, self.returns = compute_gae_for_rows(
+            self.rows,
+            gamma=gamma,
+            gae_lambda=gae_lambda,
+        )
+
+        if hasattr(self, "tensors"):
+            delattr(self, "tensors")
 
 
 def cache_metadata(
