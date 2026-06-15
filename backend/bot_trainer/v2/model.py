@@ -385,12 +385,14 @@ if nn is not None:
             value_hidden = self.value_trunk(value_features)
             risk_hidden = self.risk_trunk(risk_features)
             opponent_outputs = self.opponent_modeling(risk_hidden)
+            local_value = self.value_head(value_hidden)
             return {
                 "discard_logits": self.discard_head(policy_hidden),
                 "claim_logits": self.claim_head(policy_hidden),
                 "self_kong_logits": self.self_kong_head(policy_hidden),
                 "hu_logits": self.hu_head(policy_hidden),
-                "value": self.value_head(value_hidden),
+                "value": local_value,
+                "value_for_risk": local_value,
                 "fan_value": self.fan_head(value_hidden),
                 "qualifying_fan_value": self.qualifying_fan_head(value_hidden),
                 **opponent_outputs,
@@ -453,18 +455,25 @@ if nn is not None:
 
 
     class MahjongActorNetV2(nn.Module):
-        """Actor network using only local observations."""
-        def __init__(self, config: ModelConfig, use_moe: bool = False) -> None:
+        """Deployable actor network using only local observations."""
+        def __init__(self, config: ModelConfig) -> None:
             super().__init__()
             self.config = config
-            self.use_moe = use_moe
             self.tile_plane_count = config.tile_plane_count
             self.scalar_feature_count = config.scalar_feature_count
             self.discard_sequence_length = config.discard_sequence_length
             self.discard_event_feature_count = config.discard_event_feature_count
 
-            # Local feature encoders
-            self.tile_encoder = SuitFusionTileEncoder(config.tile_plane_count)
+            shared_backbone = self._make_shared_backbone(config.tile_plane_count)
+            self.policy_tile_encoder = SuitFusionTileEncoder(
+                config.tile_plane_count, shared_backbone=shared_backbone
+            )
+            self.value_tile_encoder = SuitFusionTileEncoder(
+                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
+            )
+            self.risk_tile_encoder = SuitFusionTileEncoder(
+                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
+            )
             self.scalar_encoder = nn.Sequential(
                 nn.Linear(config.scalar_feature_count, 160),
                 nn.ReLU(),
@@ -474,26 +483,27 @@ if nn is not None:
                 config.discard_event_feature_count,
             )
 
-            # Policy trunk
             combined_size = 512 + 160 + 256
-            if use_moe:
-                self.gating = MoEGatingNetwork(config.scalar_feature_count, num_experts=3)
-                self.policy_trunk = MoETrunk(combined_size, 1024, 512, num_experts=3)
-                self.risk_trunk = MoETrunk(combined_size, 768, 512, num_experts=3)
-            else:
-                self.policy_trunk = self._make_trunk(combined_size, 1024, 512)
-                self.risk_trunk = self._make_trunk(combined_size, 768, 512)
+            self.policy_trunk = self._make_trunk(combined_size, 1024, 512)
+            self.value_trunk = self._make_trunk(combined_size, 1024, 512)
+            self.risk_trunk = self._make_trunk(combined_size, 768, 512)
 
-            # Policy heads
             self.discard_head = HeadMLP(512, 34)
             self.claim_head = HeadMLP(512, 7)
             self.self_kong_head = HeadMLP(512, 3)
             self.hu_head = HeadMLP(512, 2)
+            self.value_head = HeadMLP(512, 1)
             self.fan_head = HeadMLP(512, 1)
             self.qualifying_fan_head = HeadMLP(512, 1)
-
-            # Risk prediction heads
             self.opponent_modeling = OpponentModelingHead(512, num_opponents=3)
+
+        @staticmethod
+        def _make_shared_backbone(tile_plane_count: int, channels: int = 128) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
+                nn.ReLU(),
+                ResidualConvBlock(channels),
+            )
 
         @staticmethod
         def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
@@ -514,23 +524,35 @@ if nn is not None:
             scalar_features: torch.Tensor,
             discard_sequence: torch.Tensor,
         ) -> dict[str, torch.Tensor]:
-            # Encode local features
-            tile_embedding = self.tile_encoder(tile_planes)
             scalar_embedding = self.scalar_encoder(scalar_features)
             sequence_embedding = self.discard_sequence_encoder(discard_sequence)
-
-            # Combine features
-            combined = torch.cat([tile_embedding, scalar_embedding, sequence_embedding], dim=1)
-
-            # Policy outputs
-            if self.use_moe:
-                gate_weights = self.gating(scalar_features)
-                policy_hidden = self.policy_trunk(combined, gate_weights)
-                risk_hidden = self.risk_trunk(combined, gate_weights)
-            else:
-                policy_hidden = self.policy_trunk(combined)
-                risk_hidden = self.risk_trunk(combined)
-
+            policy_features = torch.cat(
+                [
+                    self.policy_tile_encoder(tile_planes),
+                    scalar_embedding,
+                    sequence_embedding,
+                ],
+                dim=1,
+            )
+            value_features = torch.cat(
+                [
+                    self.value_tile_encoder(tile_planes),
+                    scalar_embedding,
+                    sequence_embedding,
+                ],
+                dim=1,
+            )
+            risk_features = torch.cat(
+                [
+                    self.risk_tile_encoder(tile_planes),
+                    scalar_embedding,
+                    sequence_embedding,
+                ],
+                dim=1,
+            )
+            policy_hidden = self.policy_trunk(policy_features)
+            value_hidden = self.value_trunk(value_features)
+            risk_hidden = self.risk_trunk(risk_features)
             opponent_outputs = self.opponent_modeling(risk_hidden)
 
             return {
@@ -538,8 +560,9 @@ if nn is not None:
                 "claim_logits": self.claim_head(policy_hidden),
                 "self_kong_logits": self.self_kong_head(policy_hidden),
                 "hu_logits": self.hu_head(policy_hidden),
-                "fan_value": self.fan_head(policy_hidden),
-                "qualifying_fan_value": self.qualifying_fan_head(policy_hidden),
+                "value_for_risk": self.value_head(value_hidden),
+                "fan_value": self.fan_head(value_hidden),
+                "qualifying_fan_value": self.qualifying_fan_head(value_hidden),
                 **opponent_outputs,
             }
 
@@ -649,14 +672,14 @@ if nn is not None:
 
     class MahjongActorCriticV2(nn.Module):
         """Wrapper combining actor and critic for CTDE training."""
-        def __init__(self, config: ModelConfig, double_critic: bool = True, use_moe: bool = False) -> None:
+        def __init__(self, config: ModelConfig, double_critic: bool = True) -> None:
             super().__init__()
             self.config = config
             self.tile_plane_count = config.tile_plane_count
             self.scalar_feature_count = config.scalar_feature_count
             self.discard_sequence_length = config.discard_sequence_length
             self.discard_event_feature_count = config.discard_event_feature_count
-            self.actor = MahjongActorNetV2(config, use_moe=use_moe)
+            self.actor = MahjongActorNetV2(config)
             self.critic = MahjongCriticNetV2(config, use_local_context=True, double_critic=double_critic)
 
         def forward(
@@ -671,7 +694,6 @@ if nn is not None:
             # Actor forward (always uses local observations)
             actor_output = self.actor(tile_planes, scalar_features, discard_sequence)
 
-            # Critic forward (uses global if available, otherwise falls back to local)
             if global_tile_planes is not None and global_scalar_features is not None:
                 value = self.critic(
                     global_tile_planes,
@@ -681,9 +703,7 @@ if nn is not None:
                     return_both=return_both_critics,
                 )
             else:
-                # Fallback: use local observations for critic (backward compatibility)
-                # This won't be as accurate but allows inference without global state
-                value = torch.zeros(tile_planes.size(0), device=tile_planes.device)
+                return actor_output
 
             if return_both_critics and isinstance(value, tuple):
                 return {
@@ -720,5 +740,5 @@ def build_model(config: ModelConfig) -> MahjongPolicyNetV2:
     return MahjongPolicyNetV2(config)
 
 
-def build_actor_critic(config: ModelConfig, double_critic: bool = True, use_moe: bool = True) -> MahjongActorCriticV2:
-    return MahjongActorCriticV2(config, double_critic=double_critic, use_moe=use_moe)
+def build_actor_critic(config: ModelConfig, double_critic: bool = True) -> MahjongActorCriticV2:
+    return MahjongActorCriticV2(config, double_critic=double_critic)

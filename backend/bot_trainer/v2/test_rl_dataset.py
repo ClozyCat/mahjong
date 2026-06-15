@@ -672,7 +672,7 @@ def test_discard_log_probs_use_risk_adjusted_logits() -> None:
         "claim_logits": torch.zeros((1, 7)),
         "self_kong_logits": torch.zeros((1, 3)),
         "hu_logits": torch.zeros((1, 2)),
-        "value": torch.tensor([[-8.0]]),
+        "value_for_risk": torch.tensor([[-8.0]]),
         "opponent_tenpai_logits": torch.zeros((1, 3)),
         "opponent_risk_logits": torch.tensor([[[5.0, -5.0] + [0.0] * 32] * 3]),
     }
@@ -697,7 +697,68 @@ def test_discard_log_probs_use_risk_adjusted_logits() -> None:
     assert log_prob.item() == pytest.approx(expected, abs=1e-5)
 
 
-def test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment() -> None:
+def test_recompute_dataset_values_uses_global_critic_value(tmp_path: Path) -> None:
+    import torch
+    from rl_train import recompute_dataset_values_from_old_policy
+
+    class FakeOldPolicy(torch.nn.Module):
+        def forward(
+            self,
+            tile_planes: torch.Tensor,
+            scalar_features: torch.Tensor,
+            discard_sequence: torch.Tensor,
+            global_tile_planes: torch.Tensor | None = None,
+            global_scalar_features: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            assert global_tile_planes is not None
+            assert global_scalar_features is not None
+            assert global_tile_planes.shape == (2, 40, 34)
+            assert global_scalar_features.shape == (2, 20)
+            return {
+                "discard_logits": torch.zeros((2, 34)),
+                "claim_logits": torch.zeros((2, 7)),
+                "self_kong_logits": torch.zeros((2, 3)),
+                "hu_logits": torch.zeros((2, 2)),
+                "value": torch.tensor([[0.5], [1.25]]),
+                "value_for_risk": torch.tensor([[-8.0], [-8.0]]),
+            }
+
+    rows = [
+        {
+            **base_trajectory_row("learner", 0, reward=0.0, value=0.0, done=False),
+            "global_tile_planes": [0.0] * (40 * 34),
+            "global_scalar_features": [0.0] * 20,
+        },
+        {
+            **base_trajectory_row("learner", 0, reward=1.0, value=0.0, done=True),
+            "decision_index": 1,
+            "global_tile_planes": [0.0] * (40 * 34),
+            "global_scalar_features": [0.0] * 20,
+        },
+    ]
+    path = tmp_path / "trajectories.jsonl"
+    path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    dataset = ArenaTrajectoryDataset(path, gamma=1.0, gae_lambda=1.0)
+
+    recompute_dataset_values_from_old_policy(
+        dataset,
+        FakeOldPolicy(),
+        torch.device("cpu"),
+        gamma=1.0,
+        gae_lambda=1.0,
+        batch_size=2,
+    )
+
+    assert dataset.rows[0]["value"] == pytest.approx(0.5)
+    assert dataset.rows[1]["value"] == pytest.approx(1.25)
+    assert dataset.advantages == pytest.approx([0.5, -0.25])
+    assert dataset.returns == pytest.approx([1.0, 1.0])
+
+
+def test_discard_log_probs_use_value_for_risk_not_critic_value() -> None:
     import math
     import torch
     from rl_train import select_action_log_probs
@@ -707,7 +768,8 @@ def test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment() -
         "claim_logits": torch.zeros((1, 7)),
         "self_kong_logits": torch.zeros((1, 3)),
         "hu_logits": torch.zeros((1, 2)),
-        "value": torch.tensor([[-8.0]]),
+        "value": torch.tensor([[8.0]]),
+        "value_for_risk": torch.tensor([[-8.0]]),
         "opponent_tenpai_logits": torch.zeros((1, 3)),
         "opponent_risk_logits": torch.tensor([[[5.0, -5.0] + [0.0] * 32] * 3]),
     }
@@ -725,12 +787,11 @@ def test_discard_log_probs_can_use_deployable_zero_value_for_risk_adjustment() -
         "value_risk_range": 0.55,
         "min_risk_weight": 0.25,
         "max_risk_weight": 1.45,
-        "discard_value_source": "zero",
     }
 
     log_prob = select_action_log_probs(outputs, batch, policy_config)
 
-    risk_weight = 0.90
+    risk_weight = 1.45
     first = -risk_weight * (1.0 / (1.0 + math.exp(-5.0)))
     second = -risk_weight * (1.0 / (1.0 + math.exp(5.0)))
     expected = first - max(first, second) - math.log(

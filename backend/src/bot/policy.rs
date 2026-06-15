@@ -189,13 +189,7 @@ pub(crate) fn choose_claim_decision_with_config_and_rng(
             } else {
                 let mut live_rng = rand::rng();
                 let temperature = sample_temperature(config, &mut live_rng);
-                sample_neural_claim_action(
-                    context,
-                    &features,
-                    &scores,
-                    temperature,
-                    &mut live_rng,
-                )
+                sample_neural_claim_action(context, &features, &scores, temperature, &mut live_rng)
             }
         } else {
             select_neural_only_claim(context, &features, &scores)
@@ -269,13 +263,7 @@ pub(crate) fn choose_neural_claim_decision_with_config_and_rng(
         } else {
             let mut live_rng = rand::rng();
             let temperature = sample_temperature(config, &mut live_rng);
-            sample_neural_claim_action(
-                context,
-                &features,
-                &scores,
-                temperature,
-                &mut live_rng,
-            )
+            sample_neural_claim_action(context, &features, &scores, temperature, &mut live_rng)
         }
         .or_else(|| select_neural_only_claim(context, &features, &scores))?
     } else {
@@ -686,7 +674,7 @@ pub(crate) fn risk_adjusted_discard_logits(
     risk_config: Option<&RiskConfig>,
 ) -> [f32; TILE_KIND_COUNT] {
     let risk_config = risk_config.copied().unwrap_or_default();
-    let risk_weight = neural_discard_risk_weight(scores.value, &risk_config);
+    let risk_weight = neural_discard_risk_weight(scores.value_for_risk, &risk_config);
     let mut adjusted = scores.discard_logits;
     for (index, logit) in adjusted.iter_mut().enumerate() {
         let policy_logit = scores.discard_logits[index];
@@ -941,14 +929,14 @@ mod tests {
     fn neural_scores_for_discards(
         discard_logits: [f32; TILE_KIND_COUNT],
         risk_logits: [f32; TILE_KIND_COUNT],
-        value: f32,
+        value_for_risk: f32,
     ) -> neural::NeuralDecisionScores {
         neural::NeuralDecisionScores {
             discard_logits,
             claim_logits: [0.0; CLAIM_ACTION_COUNT],
             self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
             hu_logits: [0.0; 2],
-            value,
+            value_for_risk,
             risk_logits,
         }
     }

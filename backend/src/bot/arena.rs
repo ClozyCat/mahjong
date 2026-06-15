@@ -1,5 +1,7 @@
 use super::{
-    action_space::{TILE_KEYS, TILE_KIND_COUNT, claim_action_index, self_kong_action_index, tile_index},
+    action_space::{
+        TILE_KEYS, TILE_KIND_COUNT, claim_action_index, self_kong_action_index, tile_index,
+    },
     context::{BotAction, BotContext, BotSelfKongKind},
     features::{encode_bot_context_v2, encode_global_features_v2},
     neural::{NeuralDecisionScores, neural_decision_scores_for_model_path},
@@ -12,6 +14,7 @@ use crate::core::{
     engine::try_handle_player_action_in_room_state,
     state::{PlayerRoundState, RoomState, SeatState},
 };
+use crate::rules::scoring::decompose_winning_hand_with_melds;
 use crate::rules::standard::{
     automation::{
         next_bot_action_in_room_state_with_policy_resolver,
@@ -20,7 +23,6 @@ use crate::rules::standard::{
     flow::{record_continue_action_in_room_state, start_match_in_room_state},
     ready_hand::is_tenpai_hand_with_melds,
 };
-use crate::rules::scoring::decompose_winning_hand_with_melds;
 use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use std::sync::{
@@ -809,7 +811,7 @@ fn trajectory_row_from_trace_with_state(
 
     let (action_head, action_index, action_semantic) =
         encode_action_for_trajectory(&trace.decision_kind, &trace.context, &trace.action)?;
-    let (log_prob, value) = neural_policy_stats(
+    let log_prob = neural_policy_log_prob(
         policy,
         &trace.context,
         &features,
@@ -817,7 +819,7 @@ fn trajectory_row_from_trace_with_state(
         action_index,
         trace.neural_scores.as_ref(),
     )
-    .unwrap_or((0.0, 0.0));
+    .unwrap_or(0.0);
     let risk_probs = risk_probs_from_scores(trace.neural_scores.as_ref());
     let opponent_targets = opponent_targets_from_state(state, trace.action.seat_index);
     Some(ArenaTrajectoryRow {
@@ -838,7 +840,7 @@ fn trajectory_row_from_trace_with_state(
         action_index,
         action_semantic,
         log_prob,
-        value,
+        value: 0.0,
         reward: 0.0,
         step_reward: 0.0,
         terminal_reward: 0.0,
@@ -868,7 +870,7 @@ fn trajectory_row_from_trace(
 
     let (action_head, action_index, action_semantic) =
         encode_action_for_trajectory(&trace.decision_kind, &trace.context, &trace.action)?;
-    let (log_prob, value) = neural_policy_stats(
+    let log_prob = neural_policy_log_prob(
         policy,
         &trace.context,
         &features,
@@ -876,7 +878,7 @@ fn trajectory_row_from_trace(
         action_index,
         trace.neural_scores.as_ref(),
     )
-    .unwrap_or((0.0, 0.0));
+    .unwrap_or(0.0);
     let risk_probs = risk_probs_from_scores(trace.neural_scores.as_ref());
     Some(ArenaTrajectoryRow {
         schema_version: 1,
@@ -896,7 +898,7 @@ fn trajectory_row_from_trace(
         action_index,
         action_semantic,
         log_prob,
-        value,
+        value: 0.0,
         reward: 0.0,
         step_reward: 0.0,
         terminal_reward: 0.0,
@@ -1016,14 +1018,14 @@ fn opponent_winning_tile_targets(
         .collect()
 }
 
-fn neural_policy_stats(
+fn neural_policy_log_prob(
     policy: &ArenaBotPolicyConfig,
     context: &BotContext,
     features: &super::features::BotFeaturesV2,
     action_head: &str,
     action_index: i64,
     trace_scores: Option<&NeuralDecisionScores>,
-) -> Option<(f32, f32)> {
+) -> Option<f32> {
     let computed_scores;
     let scores = match trace_scores {
         Some(scores) => scores,
@@ -1056,7 +1058,7 @@ fn neural_policy_stats(
         "hu" => masked_log_prob(&scores.hu_logits, &features.hu_mask, action_index as usize)?,
         _ => return None,
     };
-    Some((log_prob, scores.value))
+    Some(log_prob)
 }
 
 fn masked_log_prob<const N: usize>(
@@ -1709,7 +1711,7 @@ mod tests {
                 claim_logits: [0.0; CLAIM_ACTION_COUNT],
                 self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
                 hu_logits: [0.0; 2],
-                value: 0.75,
+                value_for_risk: 0.75,
                 risk_logits: [0.0; TILE_KIND_COUNT],
             }),
         };
@@ -1729,7 +1731,7 @@ mod tests {
 
         let expected = -(1.0_f32 + (-2.0_f32).exp()).ln();
         assert!((row.log_prob - expected).abs() < 0.0001);
-        assert_eq!(row.value, 0.75);
+        assert_eq!(row.value, 0.0);
     }
 
     #[test]
@@ -1782,7 +1784,7 @@ mod tests {
             claim_logits: [0.0; CLAIM_ACTION_COUNT],
             self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
             hu_logits: [0.0; 2],
-            value: -8.0,
+            value_for_risk: -8.0,
             risk_logits,
         };
         let trace = BotDecisionTrace {

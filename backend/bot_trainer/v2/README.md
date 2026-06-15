@@ -54,24 +54,30 @@ CUDA 训练默认启用 BF16 AMP，并继续启用 TF32 加速 float32 matmul/co
 - `scalar_features`：`batch x 12`
 - `discard_sequence`：`batch x 32 x 40`
 
-模型输出：
+训练模型输出：
 
 - `discard_logits`：34 个弃牌 logits
 - `claim_logits`：7 个响应 logits，顺序为 pass、hu、pung、kong、chow_left、chow_mid、chow_right
 - `self_kong_logits`：3 个自杠 logits，顺序为 pass、concealed_kong、add_kong
 - `hu_logits`：2 个自摸/不自摸 logits
-- `value`：预期分差
+- `value`：训练 critic 预期分差。actor-critic 训练时只在提供 `global_tile_planes` 与 `global_scalar_features` 时输出，不属于部署 ONNX 合约。
+- `value_for_risk`：本地 actor 的预期分差估计，仅用于弃牌风险权重。部署 ONNX 使用该输出，Rust runtime 不再读取 `value`。
 - `fan_value`：完整番数辅助回归输出，用于训练一致性，不参与当前 Rust runtime 决策
 - `qualifying_fan_value`：8 番起和进度辅助回归输出，目标值为 `min(fan_count, 8) / 8`
 - `opponent_tenpai_logits`：3 个对手听牌 logits
 - `opponent_risk_logits`：`3 x 34` 个对手分牌风险 logits。Rust runtime 会按牌取 3 个对手风险的最大值，聚合为策略层使用的 34 维风险。
 
+部署 ONNX 输出不包含 `value`。PPO 的 GAE、value loss 与 `old_value`
+重算必须使用全局 critic 的 `value`；弃牌风险调权和 Rust runtime 必须使用
+本地 actor 的 `value_for_risk`。这两个值的语义不同，不可互相兜底。
+
 `discard_sequence` 右对齐保存最近 32 个公开弃牌事件。每个事件包含 34 维牌 one-hot、4 维相对座位 one-hot、1 维进度、1 维最新事件标记。
 
-当前导出 metadata schema 为 v5。相较旧 schema，SFT 数据直接提供
+当前导出 metadata schema 为 v6。相较旧 schema，SFT 数据直接提供
 `opponent_tenpai_target`、`opponent_risk_target` 与 `opponent_risk_mask`
 训练对手建模头，并继续使用 `fan_target` 与 `qualifying_fan_target`
-训练番数辅助头；旧 cache 与旧 metadata 不再兼容，需要重新导出数据并重新训练。
+训练番数辅助头。v6 将部署风险值显式命名为 `value_for_risk`，旧 cache、
+旧 metadata 与旧 ONNX 合约不再兼容，需要重新导出数据并重新训练/导出模型。
 
 ## 4. Arena 评估
 
@@ -169,7 +175,8 @@ Arena 轨迹包含可选的全局信息字段：
 - `global_tile_planes`
 - `global_scalar_features`
 
-启用 actor-critic 后，actor 仍只使用本地观测，critic 会优先使用全局信息；旧轨迹没有全局字段时会回退到本地上下文。
+启用 actor-critic 后，actor 仍只使用本地观测，critic 必须使用全局信息。
+旧轨迹没有全局字段时不再回退到本地上下文，需要重新生成 arena trajectories。
 
 首次启用 actor-critic 前，先从 SFT/shared checkpoint 生成一次性 bootstrap checkpoint。后续
 `--use-actor-critic` / `-UseActorCritic` 只接受 actor-critic checkpoint，避免旧 checkpoint

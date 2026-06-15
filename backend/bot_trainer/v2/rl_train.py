@@ -48,7 +48,6 @@ POLICY_CONFIGS = {
         "value_risk_range": 0.55,
         "min_risk_weight": 0.25,
         "max_risk_weight": 1.45,
-        "discard_value_source": "network",
         "entropy_multiplier": 1.0,
         "description": "PPO 策略：基于自博弈强化学习的生产策略",
     },
@@ -122,11 +121,9 @@ def discard_value_for_risk_adjustment(
     outputs: dict[str, torch.Tensor],
     policy_config: dict[str, object] | None,
 ) -> torch.Tensor | None:
-    value = outputs.get("value")
+    value = outputs.get("value_for_risk")
     if value is None:
         return None
-    if policy_config is not None and policy_config.get("discard_value_source") == "zero":
-        return torch.zeros_like(value)
     return value
 
 
@@ -310,9 +307,14 @@ def load_checkpoint_if_present(model: torch.nn.Module, checkpoint: Path | None) 
         )
     payload = torch.load(checkpoint, map_location="cpu")
     state = payload.get("model_state", payload)
-    missing, _ = model.load_state_dict(state, strict=False)
-    if missing:
-        print(f"Checkpoint missing keys (new params initialized fresh): {missing}")
+    try:
+        model.load_state_dict(state, strict=True)
+    except RuntimeError as exc:
+        raise SystemExit(
+            f"Checkpoint state does not match the current model contract: {checkpoint}\n"
+            "Regenerate actor-critic checkpoints with bootstrap_actor_critic_checkpoint.py "
+            "or choose a checkpoint produced by the current code."
+        ) from exc
 
 
 def model_config_from_checkpoint(checkpoint: Path | None) -> ModelConfig:
@@ -384,6 +386,11 @@ def forward_model(
 ) -> dict[str, torch.Tensor]:
     has_global = batch.get("has_global_state")
     if has_global is not None and torch.any(has_global):
+        if not torch.all(has_global):
+            raise ValueError(
+                "Mixed batches with and without global state are not supported. "
+                "Use trajectories exported with global state for actor-critic PPO."
+            )
         global_tile_planes = batch.get("global_tile_planes")
         global_scalar_features = batch.get("global_scalar_features")
     else:
@@ -509,6 +516,46 @@ def old_policy_stats(
         old_log_probs = select_action_log_probs(old_outputs, batch, policy_config)
         old_values = old_outputs["value"].squeeze(1)
     return old_log_probs, old_values
+
+
+def recompute_dataset_values_from_old_policy(
+    dataset: ArenaTrajectoryDataset,
+    old_policy_model: torch.nn.Module,
+    device: torch.device,
+    gamma: float,
+    gae_lambda: float,
+    batch_size: int,
+) -> None:
+    from rl_dataset import compute_gae_for_rows
+
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    values: list[float] = []
+    old_policy_model.eval()
+    with torch.no_grad():
+        for batch in loader:
+            batch = {key: value.to(device) for key, value in batch.items()}
+            outputs = forward_model(old_policy_model, batch)
+            if "value" not in outputs:
+                raise SystemExit(
+                    "Cannot recompute old critic values: checkpoint forward pass "
+                    "did not produce global critic 'value'."
+                )
+            values.extend(outputs["value"].squeeze(1).detach().cpu().tolist())
+
+    if len(values) != len(dataset.rows):
+        raise SystemExit(
+            "Cannot recompute old critic values: row/value count mismatch "
+            f"({len(dataset.rows)} rows, {len(values)} values)."
+        )
+    for row, value in zip(dataset.rows, values, strict=True):
+        row["value"] = float(value)
+    dataset.advantages, dataset.returns = compute_gae_for_rows(
+        dataset.rows,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
+    )
+    if hasattr(dataset, "tensors"):
+        delattr(dataset, "tensors")
 
 
 def policy_ratio_metrics(
@@ -703,8 +750,6 @@ def main() -> None:
         print(f"Warning: AMP disabled: {amp_config.disabled_reason}")
 
     policy_config = dict(POLICY_CONFIGS[args.policy])
-    if args.use_actor_critic:
-        policy_config["discard_value_source"] = "zero"
     print(f"Policy: {args.policy} - {policy_config['description']}")
 
     entropy_multiplier = float(policy_config["entropy_multiplier"])
@@ -729,8 +774,6 @@ def main() -> None:
             "Trajectory old policy stats are all zero. Regenerate trajectories with "
             "log_prob/value, or pass --recompute-old-policy-stats with the rollout checkpoint."
         )
-    diagnostics = trajectory_diagnostics(dataset.rows)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     model_config = model_config_from_checkpoint(args.checkpoint)
 
     if args.use_actor_critic:
@@ -748,6 +791,24 @@ def main() -> None:
         else None
     )
     teacher_model = build_old_policy_model(args.checkpoint, device) if args.kl_coef > 0.0 else None
+
+    if args.recompute_old_policy_stats:
+        if old_policy_model is None:
+            raise SystemExit(
+                "--recompute-old-policy-stats requires --checkpoint so old "
+                "critic values can be recomputed from global features."
+            )
+        recompute_dataset_values_from_old_policy(
+            dataset,
+            old_policy_model,
+            device,
+            gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            batch_size=args.batch_size,
+        )
+
+    diagnostics = trajectory_diagnostics(dataset.rows)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     if args.use_actor_critic:
         actor_params = list(model.actor.parameters())

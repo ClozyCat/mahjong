@@ -1,9 +1,9 @@
 {
-  "created_at_utc": "2026-06-13T02:08:16.775389+00:00",
-  "onnx": "assets/ppo/actor_critic_bootstrap.onnx",
-  "checkpoint": "bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt",
+  "created_at_utc": "2026-06-15T03:58:03.738420+00:00",
+  "onnx": "backend/assets/ppo/actor_critic_bootstrap.onnx",
+  "checkpoint": "backend/bot_trainer/v2/checkpoints/actor_critic_bootstrap.pt",
   "training_source": "actor_critic_bootstrap",
-  "checkpoint_created_at_utc": "2026-06-13T02:08:09.339868+00:00",
+  "checkpoint_created_at_utc": "2026-06-15T03:55:14.874740+00:00",
   "model_config": {
     "tile_plane_count": 10,
     "scalar_feature_count": 12,
@@ -17,7 +17,7 @@
     "claim_logits",
     "self_kong_logits",
     "hu_logits",
-    "value",
+    "value_for_risk",
     "fan_value",
     "qualifying_fan_value",
     "opponent_tenpai_logits",

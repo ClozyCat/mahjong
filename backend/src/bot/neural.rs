@@ -31,7 +31,7 @@ pub(crate) struct NeuralDecisionScores {
     pub(crate) claim_logits: [f32; CLAIM_ACTION_COUNT],
     pub(crate) self_kong_logits: [f32; SELF_KONG_ACTION_COUNT],
     pub(crate) hu_logits: [f32; 2],
-    pub(crate) value: f32,
+    pub(crate) value_for_risk: f32,
     pub(crate) risk_logits: [f32; TILE_KIND_COUNT],
 }
 
@@ -305,7 +305,7 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
         claim_logits: extract_array::<CLAIM_ACTION_COUNT>(&outputs, "claim_logits")?,
         self_kong_logits: extract_array::<SELF_KONG_ACTION_COUNT>(&outputs, "self_kong_logits")?,
         hu_logits: extract_array::<2>(&outputs, "hu_logits")?,
-        value: extract_array::<1>(&outputs, "value")?[0],
+        value_for_risk: extract_array::<1>(&outputs, "value_for_risk")?[0],
         risk_logits: extract_risk_logits(&outputs)?,
     })
 }
@@ -420,7 +420,7 @@ mod tests {
             assert_eq!(scores.self_kong_logits.len(), 3);
             assert_eq!(scores.hu_logits.len(), 2);
             assert_eq!(scores.risk_logits.len(), 34);
-            assert!(scores.value.is_finite());
+            assert!(scores.value_for_risk.is_finite());
         }
     }
 

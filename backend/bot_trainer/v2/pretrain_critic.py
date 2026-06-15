@@ -124,11 +124,13 @@ def main() -> None:
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
     model = build_actor_critic(model_config).to(device)
-    missing, unexpected = model.load_state_dict(checkpoint["model_state"], strict=False)
-    if unexpected:
-        raise SystemExit(f"unexpected checkpoint keys: {unexpected}")
-    if missing:
-        print(f"Critic pretrain: missing keys initialized fresh: {missing}")
+    try:
+        model.load_state_dict(checkpoint["model_state"], strict=True)
+    except RuntimeError as exc:
+        raise SystemExit(
+            f"Checkpoint state does not match the current actor-critic contract: {args.checkpoint}\n"
+            "Regenerate it with bootstrap_actor_critic_checkpoint.py before critic pretraining."
+        ) from exc
 
     print("Pretraining critic from trajectory returns...")
     optimizer = torch.optim.AdamW(model.critic.parameters(), lr=args.lr)

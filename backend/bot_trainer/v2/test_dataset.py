@@ -32,7 +32,7 @@ def test_encode_row_without_torch_dependency(tmp_path: Path) -> None:
     assert encoded["discard_target"].item() == 0
 
 
-def test_schema_v5_encodes_opponent_targets_and_fan_targets(tmp_path: Path) -> None:
+def test_schema_v6_encodes_opponent_targets_and_fan_targets(tmp_path: Path) -> None:
     metadata_path, train_path = write_fixture(tmp_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     row = json.loads(train_path.read_text(encoding="utf-8").splitlines()[0])
@@ -826,7 +826,7 @@ def claim_row(base_row: dict, last_discard: str, middle_tile_key: str) -> dict:
 
 def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
-        "schema_version": 5,
+        "schema_version": 6,
         "tile_keys": [
             "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9",
             "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9",
@@ -837,7 +837,7 @@ def write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "self_kong_actions": ["pass", "concealed_kong", "add_kong"],
     }
     row = {
-        "schema_version": 5,
+        "schema_version": 6,
         "match_id": "fixture",
         "decision_index": 0,
         "seat_index": 0,

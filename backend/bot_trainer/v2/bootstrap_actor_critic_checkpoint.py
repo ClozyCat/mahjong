@@ -11,13 +11,19 @@ from model import ModelConfig, build_actor_critic
 
 
 ACTOR_KEY_PREFIXES = {
-    "policy_tile_encoder.": "actor.tile_encoder.",
+    "policy_tile_encoder.": "actor.policy_tile_encoder.",
+    "value_tile_encoder.": "actor.value_tile_encoder.",
+    "risk_tile_encoder.": "actor.risk_tile_encoder.",
     "scalar_encoder.": "actor.scalar_encoder.",
     "discard_sequence_encoder.": "actor.discard_sequence_encoder.",
+    "policy_trunk.": "actor.policy_trunk.",
+    "value_trunk.": "actor.value_trunk.",
+    "risk_trunk.": "actor.risk_trunk.",
     "discard_head.": "actor.discard_head.",
     "claim_head.": "actor.claim_head.",
     "self_kong_head.": "actor.self_kong_head.",
     "hu_head.": "actor.hu_head.",
+    "value_head.": "actor.value_head.",
     "fan_head.": "actor.fan_head.",
     "qualifying_fan_head.": "actor.qualifying_fan_head.",
     "opponent_modeling.": "actor.opponent_modeling.",
@@ -50,28 +56,6 @@ def actor_key_for_shared_key(shared_key: str) -> str | None:
     return None
 
 
-def moe_actor_keys_for_shared_key(shared_key: str) -> list[str]:
-    mappings: list[str] = []
-    for shared_prefix, actor_prefix in (
-        ("policy_trunk.", "actor.policy_trunk."),
-        ("risk_trunk.", "actor.risk_trunk."),
-    ):
-        if not shared_key.startswith(shared_prefix):
-            continue
-        suffix = shared_key[len(shared_prefix):]
-        if suffix.startswith("0."):
-            mappings.append(actor_prefix + "shared_base.0." + suffix[2:])
-        elif suffix.startswith("3."):
-            mappings.append(actor_prefix + "shared_base.2." + suffix[2:])
-        elif suffix.startswith("4."):
-            for expert_index in range(3):
-                mappings.append(actor_prefix + f"experts.{expert_index}.0." + suffix[2:])
-        elif suffix.startswith("7."):
-            for expert_index in range(3):
-                mappings.append(actor_prefix + f"experts.{expert_index}.3." + suffix[2:])
-    return mappings
-
-
 def copy_shared_actor_weights(
     target_state: dict[str, torch.Tensor],
     source_state: dict[str, torch.Tensor],
@@ -82,7 +66,6 @@ def copy_shared_actor_weights(
         target_key = actor_key_for_shared_key(source_key)
         if target_key is not None:
             target_keys.append(target_key)
-        target_keys.extend(moe_actor_keys_for_shared_key(source_key))
         for target_key in target_keys:
             if target_key not in target_state:
                 continue

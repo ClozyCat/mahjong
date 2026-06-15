@@ -21,7 +21,7 @@ OUTPUT_NAMES = [
     "claim_logits",
     "self_kong_logits",
     "hu_logits",
-    "value",
+    "value_for_risk",
     "fan_value",
     "qualifying_fan_value",
     "opponent_tenpai_logits",
@@ -67,12 +67,14 @@ def load_export_model(checkpoint_path: Path) -> tuple[nn.Module, ModelConfig, bo
     else:
         print("Detected shared policy-value checkpoint")
         model = build_model(model_config)
-    missing, _ = model.load_state_dict(state_dict, strict=False)
-    if missing:
-        print(
-            f"ONNX export: checkpoint missing keys (new params initialized fresh): {missing}",
-            file=sys.stderr,
-        )
+    try:
+        model.load_state_dict(state_dict, strict=True)
+    except RuntimeError as exc:
+        raise SystemExit(
+            f"Checkpoint state does not match the current ONNX export contract: {checkpoint_path}\n"
+            "Regenerate actor-critic checkpoints with bootstrap_actor_critic_checkpoint.py "
+            "or export from a checkpoint produced by the current code."
+        ) from exc
     return model, model_config, is_actor_critic
 
 

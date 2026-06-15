@@ -32,6 +32,7 @@ def test_sequence_aware_model_output_shapes() -> None:
     assert outputs["self_kong_logits"].shape == (2, 3)
     assert outputs["hu_logits"].shape == (2, 2)
     assert outputs["value"].shape == (2, 1)
+    assert outputs["value_for_risk"].shape == (2, 1)
     assert outputs["fan_value"].shape == (2, 1)
     assert outputs["qualifying_fan_value"].shape == (2, 1)
     assert outputs["opponent_tenpai_logits"].shape == (2, 3)
@@ -55,6 +56,32 @@ def test_rl_forward_model_ignores_global_features_for_shared_policy() -> None:
 
     assert outputs["discard_logits"].shape == (2, 34)
     assert outputs["value"].shape == (2, 1)
+    assert outputs["value_for_risk"].shape == (2, 1)
+
+
+def test_actor_critic_separates_critic_value_from_deployable_risk_value() -> None:
+    model = build_actor_critic(sequence_aware_config())
+    batch_size = 2
+
+    local_only_outputs = model(
+        torch.zeros((batch_size, 10, 34)),
+        torch.zeros((batch_size, 12)),
+        torch.zeros((batch_size, 32, 40)),
+    )
+
+    assert "value" not in local_only_outputs
+    assert local_only_outputs["value_for_risk"].shape == (batch_size, 1)
+
+    global_outputs = model(
+        torch.zeros((batch_size, 10, 34)),
+        torch.zeros((batch_size, 12)),
+        torch.zeros((batch_size, 32, 40)),
+        global_tile_planes=torch.zeros((batch_size, 40, 34)),
+        global_scalar_features=torch.zeros((batch_size, 20)),
+    )
+
+    assert global_outputs["value"].shape == (batch_size, 1)
+    assert global_outputs["value_for_risk"].shape == (batch_size, 1)
 
 
 def test_sequence_aware_model_uses_dropout_with_correct_rate() -> None:
@@ -113,14 +140,21 @@ def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
     assert any(key.startswith("actor.") for key in state)
     assert any(key.startswith("critic.") for key in state)
     assert torch.equal(
-        state["actor.policy_trunk.shared_base.0.weight"],
+        state["actor.policy_trunk.0.weight"],
         shared.state_dict()["policy_trunk.0.weight"],
     )
-    for expert_index in range(3):
-        assert torch.equal(
-            state[f"actor.policy_trunk.experts.{expert_index}.0.weight"],
-            shared.state_dict()["policy_trunk.4.weight"],
-        )
+    assert torch.equal(
+        state["actor.value_trunk.0.weight"],
+        shared.state_dict()["value_trunk.0.weight"],
+    )
+    assert torch.equal(
+        state["actor.risk_trunk.0.weight"],
+        shared.state_dict()["risk_trunk.0.weight"],
+    )
+    assert torch.equal(
+        state["actor.value_head.net.0.weight"],
+        shared.state_dict()["value_head.net.0.weight"],
+    )
     assert torch.equal(
         state["actor.fan_head.net.0.weight"],
         shared.state_dict()["fan_head.net.0.weight"],
@@ -177,7 +211,8 @@ def test_actor_critic_export_wrapper_preserves_onnx_outputs(tmp_path) -> None:
     assert is_actor_critic
     assert len(outputs) == len(OUTPUT_NAMES)
     assert outputs[OUTPUT_NAMES.index("discard_logits")].shape == (2, 34)
-    assert outputs[OUTPUT_NAMES.index("value")].shape == (2, 1)
+    assert "value" not in OUTPUT_NAMES
+    assert outputs[OUTPUT_NAMES.index("value_for_risk")].shape == (2, 1)
     assert outputs[OUTPUT_NAMES.index("fan_value")].shape == (2, 1)
     assert outputs[OUTPUT_NAMES.index("qualifying_fan_value")].shape == (2, 1)
 
