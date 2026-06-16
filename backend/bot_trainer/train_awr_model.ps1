@@ -49,10 +49,10 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --mode trajectory
 
     $trajOut = "$OutputDir/iter_$iter/trajectories.jsonl"
-    cargo run --bin bot_arena -- `
+    cargo run --manifest-path backend/Cargo.toml --bin bot_arena -- `
         --config "$trajConfigDir/trajectory_config_0.json" `
         --trajectories "$trajOut" `
-        --workers 4
+        --jobs 4
 
     if (-not (Test-Path $trajOut)) {
         Write-Error "Trajectory generation failed for iteration $iter"
@@ -113,7 +113,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --baseline-onnx $SftOnnx
 
     $evalOut = "$OutputDir/iter_$iter/eval_results.json"
-    cargo run --bin bot_arena -- `
+    cargo run --manifest-path backend/Cargo.toml --bin bot_arena -- `
         --config "$evalConfigDir/candidate_eval_config.json" `
         --output "$evalOut"
 
