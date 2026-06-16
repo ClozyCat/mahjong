@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from awr_dataset import ArenaTrajectoryDataset
+from awr_dataset import ArenaTrajectoryDataset, compute_normalized_advantages
 from model import ModelConfig, build_model
 
 
@@ -23,13 +23,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--gamma", type=float, default=0.995)
-    parser.add_argument("--temperature", type=float, default=1.0,
+    parser.add_argument("--temperature", type=float, default=0.5,
                         help="AWR temperature for exp(adv/T)")
-    parser.add_argument("--weight-clip", type=float, default=10.0,
+    parser.add_argument("--weight-clip", type=float, default=20.0,
                         help="Max advantage weight")
     parser.add_argument("--policy-filter", default="positive",
                         choices=["all", "positive"],
                         help="positive = only samples with adv>0; all = all samples")
+    parser.add_argument("--adv-norm", default="per_match",
+                        choices=["none", "per_match", "per_seat", "batch"],
+                        help="Advantage normalization mode")
     parser.add_argument("--policy-id", default=None)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
@@ -56,6 +59,15 @@ def main() -> None:
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     ds = ArenaTrajectoryDataset(args.trajectories, gamma=args.gamma, policy_id=args.policy_id)
+
+    if args.adv_norm in ("per_match", "per_seat"):
+        values = [float(row.get("value", 0.0)) for row in ds.rows]
+        norm_adv = compute_normalized_advantages(
+            ds.rows, ds.returns, values, mode=args.adv_norm
+        )
+        for i, row in enumerate(ds.rows):
+            row["advantage"] = norm_adv[i]
+
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
@@ -87,6 +99,13 @@ def main() -> None:
 
             with torch.no_grad():
                 advantage = returns - value.detach()
+                if args.adv_norm == "batch":
+                    adv_mean = advantage.mean()
+                    adv_std = advantage.std() + 1e-8
+                    advantage = (advantage - adv_mean) / adv_std
+                    advantage = advantage.clamp(-5.0, 5.0)
+                elif args.adv_norm == "none":
+                    advantage = advantage.clamp(-5.0, 5.0)
                 weights = torch.exp(advantage / args.temperature).clamp(
                     max=args.weight_clip
                 )
