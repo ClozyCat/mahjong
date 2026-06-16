@@ -1,10 +1,32 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "learner": {
     "id": "learner",
     "model_path": "backend/assets/sft/sft.onnx",
     "sample_actions": true,
     "temperature": 1.0
   },
-  "opponents": []
+  "rollout_opponents": [
+    {
+      "id": "sft_cold",
+      "model_path": "backend/assets/sft/sft.onnx",
+      "sample_actions": true,
+      "temperature": 0.5,
+      "weight": 1
+    },
+    {
+      "id": "sft_warm",
+      "model_path": "backend/assets/sft/sft.onnx",
+      "sample_actions": true,
+      "temperature": 1.0,
+      "weight": 2
+    },
+    {
+      "id": "sft_hot",
+      "model_path": "backend/assets/sft/sft.onnx",
+      "sample_actions": true,
+      "temperature": 2.0,
+      "weight": 1
+    }
+  ]
 }
