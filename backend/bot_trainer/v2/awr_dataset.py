@@ -96,6 +96,59 @@ def compute_discounted_returns_for_rows(
     return returns
 
 
+def compute_normalized_advantages(
+    rows: list[dict[str, Any]],
+    returns: list[float],
+    values: list[float],
+    mode: str = "per_match",
+) -> list[float]:
+    """
+    Compute normalized advantages from returns and values.
+
+    mode:
+      "none"       — raw advantage = return - value, clipped to [-5, 5]
+      "per_match"  — z-score normalize within each match_id group
+      "per_seat"   — z-score normalize within each (match_id, seat_index) group
+      "batch"      — z-score normalize across entire dataset
+    """
+    n = len(rows)
+    raw = [min(max(returns[i] - values[i], -5.0), 5.0) for i in range(n)]
+
+    if mode == "none":
+        return raw
+
+    if mode == "batch":
+        mean = sum(raw) / n
+        var = sum((x - mean) ** 2 for x in raw) / n
+        std = (var + 1e-8) ** 0.5
+        return [(x - mean) / std for x in raw]
+
+    groups: dict[tuple[str, ...], list[int]] = {}
+    for i, row in enumerate(rows):
+        if mode == "per_match":
+            key = (str(row["match_id"]),)
+        elif mode == "per_seat":
+            key = (str(row["match_id"]), str(row["seat_index"]))
+        else:
+            key = ("_global",)
+        groups.setdefault(key, []).append(i)
+
+    result = [0.0] * n
+    for indices in groups.values():
+        group_raw = [raw[i] for i in indices]
+        g_n = len(group_raw)
+        if g_n < 2:
+            for i in indices:
+                result[i] = raw[i]
+            continue
+        mean = sum(group_raw) / g_n
+        var = sum((x - mean) ** 2 for x in group_raw) / g_n
+        std = (var + 1e-8) ** 0.5
+        for i in indices:
+            result[i] = min(max((raw[i] - mean) / std, -5.0), 5.0)
+    return result
+
+
 def trajectory_diagnostics(rows: list[dict[str, Any]]) -> dict[str, float | int]:
     diagnostics: dict[str, float | int] = {
         "row_count": len(rows),

@@ -9,6 +9,7 @@ from awr_dataset import (
     ArenaTrajectoryDataset,
     encode_row,
     compute_discounted_returns_for_rows,
+    compute_normalized_advantages,
     action_head_index,
     trajectory_diagnostics,
 )
@@ -119,3 +120,50 @@ class TestArenaTrajectoryDataset:
         assert diag["row_count"] == 4
         assert diag["action_head_discard"] == 3
         assert diag["action_head_claim"] == 1
+
+
+class TestNormalizedAdvantages:
+    def test_none_mode_returns_raw_advantage(self):
+        rows = [
+            {"match_id": "m1", "seat_index": 0, "reward": 0.1},
+            {"match_id": "m1", "seat_index": 0, "reward": 0.5},
+        ]
+        returns = [0.2, 0.6]
+        values = [0.3, 0.4]
+        adv = compute_normalized_advantages(rows, returns, values, mode="none")
+        assert abs(adv[0] - (-0.1)) < 0.001
+        assert abs(adv[1] - 0.2) < 0.001
+
+    def test_per_match_normalization(self):
+        rows = [
+            {"match_id": "m1", "seat_index": 0, "reward": 0.1},
+            {"match_id": "m1", "seat_index": 0, "reward": 0.5},
+            {"match_id": "m1", "seat_index": 0, "reward": -0.3},
+        ]
+        returns = [0.2, 0.6, -0.2]
+        values = [0.3, 0.3, 0.3]
+        adv = compute_normalized_advantages(rows, returns, values, mode="per_match")
+        mean = sum(adv) / len(adv)
+        assert abs(mean) < 0.001, f"mean should be ~0, got {mean}"
+        std = (sum((a - mean) ** 2 for a in adv) / len(adv)) ** 0.5
+        assert abs(std - 1.0) < 0.001, f"std should be ~1, got {std}"
+
+    def test_per_seat_normalization(self):
+        rows = [
+            {"match_id": "m1", "seat_index": 0, "reward": 0.1},
+            {"match_id": "m1", "seat_index": 0, "reward": -0.1},
+            {"match_id": "m1", "seat_index": 1, "reward": 0.9},
+            {"match_id": "m1", "seat_index": 1, "reward": 1.1},
+        ]
+        returns = [0.2, -0.2, 1.0, 1.2]
+        values = [0.1, 0.1, 0.1, 0.1]
+        adv = compute_normalized_advantages(rows, returns, values, mode="per_seat")
+        assert abs(adv[0] - (-adv[1])) < 0.001
+        assert abs(adv[2] - (-adv[3])) < 0.001
+
+    def test_clips_outliers(self):
+        rows = [{"match_id": "m1", "seat_index": 0, "reward": 100.0}]
+        returns = [100.0]
+        values = [0.0]
+        adv = compute_normalized_advantages(rows, returns, values, mode="none")
+        assert abs(adv[0]) <= 5.0
