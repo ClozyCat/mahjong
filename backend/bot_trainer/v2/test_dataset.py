@@ -120,6 +120,18 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
         assert "USE_TF32=1" in bash
     assert "[double]$ValueLossWeight = 0.75" in powershell
     assert "[double]$RiskLossWeight = 1.0" in powershell
+    assert 'Write-Host "Batch size:  $BatchSize"' in powershell
+    assert "optimized: 4096->512" not in powershell
+    assert (
+        "Architecture: Lightweight actor + suit-fusion tile CNN + GRU discard "
+        "sequence + opponent modeling"
+    ) in powershell
+    assert "Transformer encoder" not in powershell
+    assert (
+        "Loss weights: value=$ValueLossWeight fan=$FanLossWeight "
+        "qfan=$QualifyingFanLossWeight opponent=$RiskLossWeight"
+    ) in powershell
+    assert "Risk pos weight:" not in powershell
     assert "MAHJONG_BOT_MODEL_PATH" in powershell
     assert "Resolve-Path -LiteralPath $OnnxOutput" in powershell
 
