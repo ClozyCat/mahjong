@@ -13,20 +13,10 @@ try:
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("PyTorch is required: pip install torch") from exc
 
-from model import ModelConfig, build_model, build_actor_critic
+from model import LightweightActor, ModelConfig
 
 
-OUTPUT_NAMES = [
-    "discard_logits",
-    "claim_logits",
-    "self_kong_logits",
-    "hu_logits",
-    "value_for_risk",
-    "fan_value",
-    "qualifying_fan_value",
-    "opponent_tenpai_logits",
-    "opponent_risk_logits",
-]
+OUTPUT_NAMES = LightweightActor.ONNX_OUTPUT_NAMES
 INPUT_NAMES = ["tile_planes", "scalar_features", "discard_sequence"]
 
 
@@ -38,7 +28,7 @@ def make_exporter_logging_windows_safe() -> None:
 
 
 class OnnxWrapper(nn.Module):
-    def __init__(self, model: nn.Module) -> None:
+    def __init__(self, model: LightweightActor) -> None:
         super().__init__()
         self.model = model
 
@@ -52,39 +42,20 @@ class OnnxWrapper(nn.Module):
         return tuple(outputs[name] for name in OUTPUT_NAMES)
 
 
-def load_export_model(checkpoint_path: Path) -> tuple[nn.Module, ModelConfig, bool]:
+def load_export_model(checkpoint_path: Path) -> tuple[LightweightActor, ModelConfig]:
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
     state_dict = checkpoint["model_state"]
-    is_actor_critic = any(
-        key.startswith("actor.") or key.startswith("critic.")
-        for key in state_dict.keys()
-    )
-
-    if is_actor_critic:
-        print("Detected actor-critic checkpoint, exporting local inference wrapper")
-        model = build_actor_critic(model_config)
-    else:
-        print("Detected shared policy-value checkpoint")
-        model = build_model(model_config)
-    try:
-        model.load_state_dict(state_dict, strict=True)
-    except RuntimeError as exc:
-        raise SystemExit(
-            f"Checkpoint state does not match the current ONNX export contract: {checkpoint_path}\n"
-            "Regenerate actor-critic checkpoints with bootstrap_actor_critic_checkpoint.py "
-            "or export from a checkpoint produced by the current code."
-        ) from exc
-    return model, model_config, is_actor_critic
+    model = LightweightActor(model_config)
+    model.load_state_dict(state_dict, strict=True)
+    return model, model_config
 
 
 def main() -> None:
     make_exporter_logging_windows_safe()
     args = parse_args()
 
-    model, model_config, is_actor_critic = load_export_model(args.checkpoint)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu")
-
+    model, model_config = load_export_model(args.checkpoint)
     model.eval()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +102,7 @@ def main() -> None:
         dummy_scalar_features,
         dummy_discard_sequence,
     )
-    write_export_manifest(args.output, args.checkpoint, checkpoint, model_config, is_actor_critic)
+    write_export_manifest(args.output, args.checkpoint, model_config)
     print(f"exported {args.output}")
 
 
@@ -164,7 +135,10 @@ def smoke_onnxruntime(
         "discard_sequence": discard_sequence.numpy(),
     }
     outputs = session.run(OUTPUT_NAMES, inputs)
-    expected_shapes = [(1, 34), (1, 7), (1, 3), (1, 2), (1, 1), (1, 1), (1, 1), (1, 3), (1, 3, 34)]
+    expected_shapes = [
+        (1, 34), (1, 7), (1, 3), (1, 2), (1, 1),
+        (1, 1), (1, 1), (1, 3), (1, 3, 34),
+    ]
     for name, output, expected_shape in zip(OUTPUT_NAMES, outputs, expected_shapes, strict=True):
         if tuple(output.shape) != expected_shape:
             raise RuntimeError(f"{name} shape {tuple(output.shape)} != {expected_shape}")
@@ -173,24 +147,15 @@ def smoke_onnxruntime(
 def write_export_manifest(
     output: Path,
     checkpoint_path: Path,
-    checkpoint: dict[str, object],
     model_config: ModelConfig,
-    is_actor_critic: bool = False,
 ) -> None:
     manifest = {
         "created_at_utc": datetime.now(UTC).isoformat(),
         "onnx": output.as_posix(),
         "checkpoint": checkpoint_path.as_posix(),
-        "training_source": checkpoint.get("training_source", "unknown"),
-        "checkpoint_created_at_utc": checkpoint.get("created_at_utc"),
         "model_config": model_config.to_dict(),
         "outputs": OUTPUT_NAMES,
-        "is_actor_critic": is_actor_critic,
-        "exported_component": (
-            "actor_critic_local_inference_wrapper"
-            if is_actor_critic
-            else "full_model"
-        ),
+        "exported_component": "lightweight_actor",
     }
     manifest_path = output.with_suffix(output.suffix + ".manifest.json")
     manifest_path.write_text(
