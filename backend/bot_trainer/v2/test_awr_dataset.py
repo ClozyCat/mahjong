@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 import pytest
 
 from awr_dataset import (
@@ -167,3 +168,43 @@ class TestNormalizedAdvantages:
         values = [0.0]
         adv = compute_normalized_advantages(rows, returns, values, mode="none")
         assert abs(adv[0]) <= 5.0
+
+
+def masked_categorical_kl(teacher_logits, student_logits, mask):
+    teacher = teacher_logits.clone()
+    student = student_logits.clone()
+    teacher[~mask] = float("-inf")
+    student[~mask] = float("-inf")
+    teacher_probs = F.softmax(teacher, dim=-1)
+    student_log_probs = F.log_softmax(student, dim=-1)
+    element_kl = teacher_probs * (torch.log(teacher_probs + 1e-8) - student_log_probs)
+    element_kl = torch.where(mask, element_kl, torch.zeros_like(element_kl))
+    kl_per_sample = element_kl.sum(-1)
+    return kl_per_sample.mean()
+
+
+class TestKLDivergence:
+    def test_identical_logits_kl_zero(self):
+        logits = torch.randn(4, 34)
+        mask = torch.ones(4, 34, dtype=torch.bool)
+        kl = masked_categorical_kl(logits, logits, mask)
+        assert kl.item() < 0.01
+
+    def test_maximally_different_kl_positive(self):
+        teacher = torch.zeros(4, 34)
+        teacher[:, 0] = 10.0
+        student = torch.zeros(4, 34)
+        student[:, -1] = 10.0
+        mask = torch.ones(4, 34, dtype=torch.bool)
+        kl = masked_categorical_kl(teacher, student, mask)
+        assert kl.item() > 1.0
+
+    def test_masked_positions_ignored(self):
+        teacher = torch.randn(4, 7)
+        student = torch.randn(4, 7)
+        mask = torch.zeros(4, 7, dtype=torch.bool)
+        mask[:, 0] = True
+        teacher[:, 1:] = 0
+        student[:, 1:] = 999
+        kl = masked_categorical_kl(teacher, student, mask)
+        assert kl.item() < 0.01

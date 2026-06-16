@@ -13,16 +13,32 @@ from awr_dataset import ArenaTrajectoryDataset
 from model import ModelConfig, build_model
 
 
+def score_bucket_index(terminal_reward: float) -> int:
+    """Map terminal reward to 5 bucket indices."""
+    if terminal_reward <= -1.5:
+        return 0
+    elif terminal_reward <= -0.5:
+        return 1
+    elif terminal_reward < 0.5:
+        return 2
+    elif terminal_reward <= 1.5:
+        return 3
+    else:
+        return 4
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trajectories", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True,
                         help="SFT checkpoint to load actor weights from")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--gamma", type=float, default=0.995)
+    parser.add_argument("--score-bucket-weight", type=float, default=0.1,
+                        help="Weight for auxiliary score bucket classification loss")
     parser.add_argument("--policy-id", default=None,
                         help="Only train on this policy's data")
     parser.add_argument("--device", default="cuda")
@@ -45,19 +61,18 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state"], strict=True)
 
     for name, param in model.named_parameters():
-        if "value_head" in name:
+        if "value_head" in name or "score_bucket_head" in name:
             param.requires_grad = True
         else:
             param.requires_grad = False
 
-    optimizer = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=args.lr,
-    )
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
 
     model.train()
     for epoch in range(args.epochs):
-        total_loss = 0.0
+        total_value_loss = 0.0
+        total_score_loss = 0.0
         for batch in tqdm(loader, desc=f"Value epoch {epoch+1}/{args.epochs}"):
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(
@@ -67,15 +82,31 @@ def main() -> None:
             )
             value = outputs["value"].squeeze(-1)
             returns = batch["return"].float()
-            loss = F.mse_loss(value, returns)
+            value_loss = F.mse_loss(value, returns)
+
+            score_loss = torch.tensor(0.0, device=device)
+            if args.score_bucket_weight > 0:
+                done_mask = batch["done"]
+                if done_mask.any():
+                    score_logits = outputs["score_bucket_logits"][done_mask]
+                    terminal_rewards = batch["terminal_reward"][done_mask].cpu().tolist()
+                    bucket_targets = torch.tensor(
+                        [score_bucket_index(r) for r in terminal_rewards],
+                        dtype=torch.long, device=device,
+                    )
+                    score_loss = F.cross_entropy(score_logits, bucket_targets)
+
+            loss = value_loss + args.score_bucket_weight * score_loss
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
+            total_value_loss += value_loss.item()
+            total_score_loss += score_loss.item()
 
-        avg_loss = total_loss / len(loader)
-        print(f"Epoch {epoch+1}: avg_value_mse={avg_loss:.6f}")
+        avg_value = total_value_loss / len(loader)
+        avg_score = total_score_loss / len(loader)
+        print(f"Epoch {epoch+1}: value_mse={avg_value:.6f} score_ce={avg_score:.6f}")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -84,7 +115,7 @@ def main() -> None:
             "model_config": model_config.to_dict(),
             "training_source": "value_pretrain",
             "created_at_utc": datetime.now(UTC).isoformat(),
-            "value_metrics": {"final_mse": avg_loss},
+            "value_metrics": {"final_mse": avg_value, "final_score_ce": avg_score},
         },
         args.output,
     )

@@ -33,6 +33,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adv-norm", default="per_match",
                         choices=["none", "per_match", "per_seat", "batch"],
                         help="Advantage normalization mode")
+    parser.add_argument("--head-weights", default="1.0,3.0,5.0,5.0",
+                        help="Comma-separated weights for discard,claim,self_kong,hu")
+    parser.add_argument("--kl-coef", type=float, default=0.01,
+                        help="KL divergence penalty coefficient against SFT reference")
+    parser.add_argument("--sft-checkpoint", type=Path, default=None,
+                        help="SFT checkpoint for KL reference; defaults to --checkpoint")
     parser.add_argument("--policy-id", default=None)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
@@ -51,6 +57,23 @@ def compute_ce_loss_for_action(
     log_probs = F.log_softmax(masked, dim=-1)
     nll = -log_probs[range(len(action_index)), action_index]
     return (nll * weights).mean()
+
+
+def masked_categorical_kl(
+    teacher_logits: torch.Tensor,
+    student_logits: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    teacher = teacher_logits.clone()
+    student = student_logits.clone()
+    teacher[~mask] = float("-inf")
+    student[~mask] = float("-inf")
+    teacher_probs = F.softmax(teacher, dim=-1)
+    student_log_probs = F.log_softmax(student, dim=-1)
+    element_kl = teacher_probs * (torch.log(teacher_probs + 1e-8) - student_log_probs)
+    element_kl = torch.where(mask, element_kl, torch.zeros_like(element_kl))
+    kl_per_sample = element_kl.sum(-1)
+    return kl_per_sample.mean()
 
 
 def main() -> None:
@@ -76,12 +99,30 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state"], strict=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
+    sft_model = None
+    if args.kl_coef > 0:
+        sft_path = args.sft_checkpoint or args.checkpoint
+        sft_checkpoint = torch.load(sft_path, map_location="cpu")
+        sft_model = build_model(model_config).to(device)
+        sft_model.load_state_dict(sft_checkpoint["model_state"], strict=True)
+        sft_model.eval()
+        for p in sft_model.parameters():
+            p.requires_grad = False
+
+    head_weights = [float(w) for w in args.head_weights.split(",")]
+    if len(head_weights) != 4:
+        raise ValueError("--head-weights must have exactly 4 values (discard,claim,self_kong,hu)")
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    head_logits_keys = ["discard_logits", "claim_logits", "self_kong_logits", "hu_logits"]
+    head_mask_keys = ["discard_mask", "claim_mask", "self_kong_mask", "hu_mask"]
 
     for epoch in range(args.epochs):
         model.train()
         total_policy_loss = 0.0
         total_value_loss = 0.0
+        total_kl_loss = 0.0
         total_samples = 0
 
         for batch in tqdm(loader, desc=f"AWR epoch {epoch+1}/{args.epochs}"):
@@ -114,58 +155,45 @@ def main() -> None:
 
             action_head = batch["action_head"]
 
-            discard_mask_t = action_head == 0
-            claim_mask_t = action_head == 1
-            self_kong_mask_t = action_head == 2
-            hu_mask_t = action_head == 3
-
             policy_loss = 0.0
-            valid = 0
+            weight_sum = 0.0
 
-            if discard_mask_t.any():
+            for head_idx in range(4):
+                mask_t = action_head == head_idx
+                if not mask_t.any():
+                    continue
                 loss = compute_ce_loss_for_action(
-                    outputs["discard_logits"][discard_mask_t],
-                    batch["discard_mask"][discard_mask_t],
-                    batch["action_index"][discard_mask_t],
-                    weights[discard_mask_t],
+                    outputs[head_logits_keys[head_idx]][mask_t],
+                    batch[head_mask_keys[head_idx]][mask_t],
+                    batch["action_index"][mask_t],
+                    weights[mask_t],
                 )
-                policy_loss = policy_loss + loss
-                valid += 1
+                policy_loss = policy_loss + head_weights[head_idx] * loss
+                weight_sum += head_weights[head_idx]
 
-            if claim_mask_t.any():
-                loss = compute_ce_loss_for_action(
-                    outputs["claim_logits"][claim_mask_t],
-                    batch["claim_mask"][claim_mask_t],
-                    batch["action_index"][claim_mask_t],
-                    weights[claim_mask_t],
-                )
-                policy_loss = policy_loss + loss
-                valid += 1
+            if weight_sum > 0:
+                policy_loss = policy_loss / weight_sum
 
-            if self_kong_mask_t.any():
-                loss = compute_ce_loss_for_action(
-                    outputs["self_kong_logits"][self_kong_mask_t],
-                    batch["self_kong_mask"][self_kong_mask_t],
-                    batch["action_index"][self_kong_mask_t],
-                    weights[self_kong_mask_t],
-                )
-                policy_loss = policy_loss + loss
-                valid += 1
+            kl_loss = torch.tensor(0.0, device=device)
+            if sft_model is not None and args.kl_coef > 0:
+                with torch.no_grad():
+                    sft_outputs = sft_model(
+                        batch["tile_planes"],
+                        batch["scalar_features"],
+                        batch["discard_sequence"],
+                    )
+                kl_parts = []
+                for head_idx in range(4):
+                    kl_parts.append(
+                        masked_categorical_kl(
+                            sft_outputs[head_logits_keys[head_idx]],
+                            outputs[head_logits_keys[head_idx]],
+                            batch[head_mask_keys[head_idx]],
+                        )
+                    )
+                kl_loss = sum(kl_parts) / 4.0
 
-            if hu_mask_t.any():
-                loss = compute_ce_loss_for_action(
-                    outputs["hu_logits"][hu_mask_t],
-                    batch["hu_mask"][hu_mask_t],
-                    batch["action_index"][hu_mask_t],
-                    weights[hu_mask_t],
-                )
-                policy_loss = policy_loss + loss
-                valid += 1
-
-            if valid > 0:
-                policy_loss = policy_loss / valid
-
-            total_loss = policy_loss + 0.5 * value_loss
+            total_loss = policy_loss + 0.5 * value_loss + args.kl_coef * kl_loss
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -174,11 +202,13 @@ def main() -> None:
 
             total_policy_loss += policy_loss.item() if isinstance(policy_loss, torch.Tensor) else 0.0
             total_value_loss += value_loss.item()
+            total_kl_loss += kl_loss.item()
             total_samples += len(batch["return"])
 
         print(
             f"Epoch {epoch+1}: policy_loss={total_policy_loss/len(loader):.6f} "
             f"value_loss={total_value_loss/len(loader):.6f} "
+            f"kl_loss={total_kl_loss/len(loader):.6f} "
             f"samples={total_samples}"
         )
 
