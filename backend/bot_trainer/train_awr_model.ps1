@@ -15,7 +15,7 @@
 
 param(
     [string]$Iterations = "3",
-    [string]$TrajectoryMatches = "20",
+    [string]$TrajectoryMatches = "100",
     [string]$Seed = (Get-Date -Format "yyyyMMdd"),
     [string]$SftOnnx = "backend/assets/sft/sft.onnx",
     [string]$SftCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt",
