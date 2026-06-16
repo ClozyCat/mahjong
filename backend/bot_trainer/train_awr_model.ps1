@@ -18,7 +18,7 @@ param(
     [string]$TrajectoryMatches = "20",
     [string]$Seed = (Get-Date -Format "yyyyMMdd"),
     [string]$SftOnnx = "backend/assets/sft/sft.onnx",
-    [string]$SftCheckpoint = "output/sft/best.pt",
+    [string]$SftCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt",
     [string]$OutputDir = "output/awr_training",
     [string]$Pool = "backend/bot_trainer/v2/opponent_pool.json"
 )
@@ -46,11 +46,14 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --output-dir $trajConfigDir `
         --matches $TrajectoryMatches `
         --seed $iterSeed `
-        --mode trajectory
+        --mode trajectory `
+        --rollout-onnx $SftOnnx
 
     $trajOut = "$OutputDir/iter_$iter/trajectories.jsonl"
-    cargo run --manifest-path backend/Cargo.toml --bin bot_arena -- `
+    $trajSummary = "$OutputDir/iter_$iter/trajectory_summary.json"
+    cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- `
         --config "$trajConfigDir/trajectory_config_0.json" `
+        --output "$trajSummary" `
         --trajectories "$trajOut" `
         --jobs 4
 
@@ -63,12 +66,17 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
     Write-Host "[2/4] Pretraining value head..."
     $valueCkpt = "$OutputDir/iter_$iter/value_pretrained.pt"
     if (-not (Test-Path $SftCheckpoint)) {
-        $altCheckpoint = "output/sft_checkpoints/best.pt"
+        $altCheckpoint = "output/sft/best.pt"
         if (Test-Path $altCheckpoint) {
             $SftCheckpoint = $altCheckpoint
         } else {
-            Write-Error "SFT checkpoint not found at $SftCheckpoint or $altCheckpoint"
-            exit 1
+            $legacyCheckpoint = "output/sft_checkpoints/best.pt"
+            if (Test-Path $legacyCheckpoint) {
+                $SftCheckpoint = $legacyCheckpoint
+            } else {
+                Write-Error "SFT checkpoint not found at $SftCheckpoint, $altCheckpoint, or $legacyCheckpoint"
+                exit 1
+            }
         }
     }
     python backend/bot_trainer/v2/train_value.py `
@@ -77,7 +85,8 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --output $valueCkpt `
         --epochs 10 `
         --batch-size 256 `
-        --lr 1e-3
+        --lr 1e-3 `
+        --policy-id learner
 
     # 3. AWR training
     Write-Host "[3/4] Running AWR training..."
@@ -89,7 +98,8 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --epochs 5 `
         --batch-size 256 `
         --lr 3e-5 `
-        --temperature 1.0
+        --temperature 1.0 `
+        --policy-id learner
 
     # 4. Export best AWR checkpoint to ONNX
     Write-Host "[4/4] Exporting AWR ONNX..."
@@ -113,7 +123,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --baseline-onnx $SftOnnx
 
     $evalOut = "$OutputDir/iter_$iter/eval_results.json"
-    cargo run --manifest-path backend/Cargo.toml --bin bot_arena -- `
+    cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- `
         --config "$evalConfigDir/candidate_eval_config.json" `
         --output "$evalOut"
 

@@ -49,7 +49,7 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-$ExpectedMetadataSchemaVersion = 5
+$ExpectedMetadataSchemaVersion = 6
 
 function Invoke-TrainingPython {
     param([string[]]$Arguments)
@@ -192,6 +192,7 @@ function Assert-DatasetContract {
 $PreviousTemp = $env:TEMP
 $PreviousTmp = $env:TMP
 $PreviousPytestTempRoot = $env:PYTEST_DEBUG_TEMPROOT
+$PreviousMahjongBotModelPath = $env:MAHJONG_BOT_MODEL_PATH
 
 Push-Location $RepoRoot
 try {
@@ -302,6 +303,7 @@ try {
         )
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+        $env:MAHJONG_BOT_MODEL_PATH = (Resolve-Path -LiteralPath $OnnxOutput).Path
         cargo test --manifest-path backend/Cargo.toml bot::neural::tests::runs_local_onnx_model_when_available -- --nocapture
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
@@ -315,5 +317,11 @@ finally {
     }
     else {
         $env:PYTEST_DEBUG_TEMPROOT = (Resolve-Path -LiteralPath $PreviousPytestTempRoot).Path
+    }
+    if ([string]::IsNullOrWhiteSpace($PreviousMahjongBotModelPath)) {
+        Remove-Item Env:MAHJONG_BOT_MODEL_PATH -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:MAHJONG_BOT_MODEL_PATH = $PreviousMahjongBotModelPath
     }
 }

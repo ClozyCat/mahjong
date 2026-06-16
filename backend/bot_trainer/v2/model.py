@@ -262,7 +262,6 @@ if nn is not None:
             self.claim_head = HeadMLP(256, 7)
             self.self_kong_head = HeadMLP(256, 3)
             self.hu_head = HeadMLP(256, 2)
-            self.value_for_risk_head = HeadMLP(256, 1)
             self.fan_head = HeadMLP(256, 1)
             self.qualifying_fan_head = HeadMLP(256, 1)
             self.opponent_modeling = OpponentModelingHead(256, num_opponents=3)
@@ -326,16 +325,17 @@ if nn is not None:
             policy_hidden = self.policy_trunk(policy_features)
             risk_hidden = self.risk_trunk(risk_features)
             opponent_outputs = self.opponent_modeling(risk_hidden)
+            value = self.value_head(policy_hidden)
 
             return {
                 "discard_logits": self.discard_head(policy_hidden),
                 "claim_logits": self.claim_head(policy_hidden),
                 "self_kong_logits": self.self_kong_head(policy_hidden),
                 "hu_logits": self.hu_head(policy_hidden),
-                "value_for_risk": self.value_for_risk_head(policy_hidden),
+                "value_for_risk": value,
                 "fan_value": self.fan_head(policy_hidden),
                 "qualifying_fan_value": self.qualifying_fan_head(policy_hidden),
-                "value": self.value_head(policy_hidden),
+                "value": value,
                 **opponent_outputs,
             }
 

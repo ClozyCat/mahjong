@@ -36,21 +36,72 @@ def clean_policy(policy: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in policy.items() if key != "weight"}
 
 
+def sampled_policy(policy: dict[str, Any], *, display_name: str | None = None) -> dict[str, Any]:
+    result = clean_policy(policy)
+    if display_name is None:
+        result.pop("display_name", None)
+    else:
+        result["display_name"] = display_name
+    result["sample_actions"] = True
+    result.setdefault("temperature", 1.0)
+    return result
+
+
+def fallback_opponents_from_policy(
+    policy: dict[str, Any],
+    *,
+    id_prefix: str | None = None,
+    sample_actions: bool,
+) -> list[dict[str, Any]]:
+    opponents = []
+    for index in range(3):
+        opponent = clean_policy(policy)
+        opponent.pop("display_name", None)
+        if id_prefix is not None:
+            opponent["id"] = f"{id_prefix}-{index + 1}"
+        opponent["sample_actions"] = sample_actions
+        opponent.setdefault("temperature", 1.0)
+        opponents.append(opponent)
+    return opponents
+
+
+def normalize_opponents(
+    pool: dict[str, Any],
+    fallback_policy: dict[str, Any],
+    *,
+    fallback_id_prefix: str | None,
+    sample_actions: bool,
+) -> list[dict[str, Any]]:
+    raw_opponents = [clean_policy(opponent) for opponent in pool.get("opponents", [])]
+    if not raw_opponents:
+        return fallback_opponents_from_policy(
+            fallback_policy,
+            id_prefix=fallback_id_prefix,
+            sample_actions=sample_actions,
+        )
+    opponents = []
+    for index in range(3):
+        opponent = dict(raw_opponents[index % len(raw_opponents)])
+        opponent.pop("display_name", None)
+        opponent["sample_actions"] = sample_actions
+        opponent.setdefault("temperature", 1.0)
+        opponents.append(opponent)
+    return opponents
+
+
 def build_trajectory_configs(
     pool: dict[str, Any],
     matches: int,
     seed: int,
     max_actions: int,
 ) -> list[dict[str, Any]]:
-    learner = clean_policy(pool["learner"])
-    learner.setdefault("display_name", "Learner")
-    learner["sample_actions"] = True
-    learner.setdefault("temperature", 1.0)
-
-    subjects = [
-        {**learner, "display_name": f"Learner_{i}"}
-        for i in range(4)
-    ]
+    learner = sampled_policy(pool["learner"], display_name="Learner")
+    opponents = normalize_opponents(
+        pool,
+        learner,
+        fallback_id_prefix=None,
+        sample_actions=True,
+    )
 
     return [
         {
@@ -58,8 +109,8 @@ def build_trajectory_configs(
             "seed": seed,
             "max_actions_per_match": max_actions,
             "report_trajectories": True,
-            "subjects": subjects,
-            "opponents": [],
+            "subjects": [learner],
+            "opponents": opponents,
         }
     ]
 
@@ -72,6 +123,12 @@ def build_eval_config(
     seed: int,
     max_actions: int,
 ) -> dict[str, Any]:
+    baseline_policy = {
+        "id": "baseline_neural",
+        "model_path": model_path_text(baseline_onnx),
+        "sample_actions": False,
+        "temperature": 1.0,
+    }
     return {
         "matches": matches,
         "seed": seed,
@@ -93,7 +150,12 @@ def build_eval_config(
                 "temperature": 1.0,
             },
         ],
-        "opponents": [],
+        "opponents": normalize_opponents(
+            pool,
+            baseline_policy,
+            fallback_id_prefix="baseline-opponent",
+            sample_actions=False,
+        ),
     }
 
 

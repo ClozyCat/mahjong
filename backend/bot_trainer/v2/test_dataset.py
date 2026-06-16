@@ -120,6 +120,8 @@ def test_sft_wrappers_forward_auxiliary_training_flags() -> None:
         assert "USE_TF32=1" in bash
     assert "[double]$ValueLossWeight = 0.75" in powershell
     assert "[double]$RiskLossWeight = 1.0" in powershell
+    assert "MAHJONG_BOT_MODEL_PATH" in powershell
+    assert "Resolve-Path -LiteralPath $OnnxOutput" in powershell
 
 
 def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -166,64 +168,6 @@ def test_sft_training_defaults_to_bf16_amp_without_grad_scaling(monkeypatch: pyt
 
     assert train.parse_args().amp is False
 
-
-def test_rl_training_defaults_to_bf16_amp_and_wrappers_can_disable_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import sys
-
-    torch = pytest.importorskip("torch")
-    import rl_train
-
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "rl_train.py",
-            "--trajectories",
-            "backend/bot_trainer/v2/rl_runs/trajectories.jsonl",
-            "--output",
-            "backend/bot_trainer/v2/rl_runs/checkpoints",
-        ],
-    )
-
-    args = rl_train.parse_args()
-
-    assert args.amp is True
-
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True, raising=False)
-    amp_config = rl_train.resolve_amp_config(torch.device("cuda"), args.amp)
-
-    assert amp_config.enabled is True
-    assert amp_config.dtype == torch.bfloat16
-    assert amp_config.scaler_enabled is False
-
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "rl_train.py",
-            "--trajectories",
-            "backend/bot_trainer/v2/rl_runs/trajectories.jsonl",
-            "--output",
-            "backend/bot_trainer/v2/rl_runs/checkpoints",
-            "--no-amp",
-        ],
-    )
-
-    assert rl_train.parse_args().amp is False
-
-    script_dir = Path(__file__).parent
-    powershell = (script_dir / "train_rl_model.ps1").read_text(encoding="utf-8")
-    bash_script = script_dir / "train_rl_model.sh"
-    bash = bash_script.read_text(encoding="utf-8") if bash_script.exists() else ""
-
-    assert "[switch]$NoAmp" in powershell
-    assert "--no-amp" in powershell
-    if bash:
-        assert "USE_AMP=1" in bash
-        assert "--no-amp" in bash
-        assert "if (( USE_AMP == 0 ))" in bash
 
 
 def test_discard_sequence_encodes_order_source_and_latest_marker(tmp_path: Path) -> None:

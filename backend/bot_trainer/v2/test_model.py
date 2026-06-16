@@ -42,6 +42,28 @@ class TestLightweightActor:
         assert "value" not in LightweightActor.ONNX_OUTPUT_NAMES
         assert "value" in m.TRAINING_ONLY_HEADS
 
+    def test_value_for_risk_reuses_trained_value_head(self):
+        m = build_model(ModelConfig())
+        m.train()
+        tp = torch.randn((2, 10, 34))
+        sf = torch.randn((2, 12))
+        ds = torch.randn((2, 32, 40))
+
+        out = m(tp, sf, ds)
+
+        assert "value_for_risk_head" not in dict(m.named_modules())
+        assert out["value_for_risk"].data_ptr() == out["value"].data_ptr()
+
+        out["value_for_risk"].sum().backward()
+
+        value_head_grads = [
+            param.grad
+            for name, param in m.named_parameters()
+            if name.startswith("value_head.")
+        ]
+        assert value_head_grads
+        assert all(grad is not None for grad in value_head_grads)
+
     def test_gradient_flow(self):
         m = build_model(ModelConfig())
         m.train()
