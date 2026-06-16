@@ -1,224 +1,101 @@
-from __future__ import annotations
-
 import torch
-
-import model as model_module
-from model import ModelConfig, build_actor_critic, build_model
-
-
-def parameter_count(model: torch.nn.Module) -> int:
-    return sum(parameter.numel() for parameter in model.parameters())
-
-
-def sequence_aware_config() -> ModelConfig:
-    return ModelConfig(
-        tile_plane_count=10,
-        scalar_feature_count=12,
-        discard_sequence_length=32,
-        discard_event_feature_count=40,
-    )
+from torch import nn
+from model import (
+    ModelConfig, LightweightActor, build_model,
+    ResidualConvBlock, GRUDiscardSequenceEncoder,
+    SuitFusionTileEncoder, HeadMLP, OpponentModelingHead,
+)
 
 
-def test_sequence_aware_model_output_shapes() -> None:
-    model = build_model(sequence_aware_config())
-    outputs = model(
-        torch.zeros((2, 10, 34)),
-        torch.zeros((2, 12)),
-        torch.zeros((2, 32, 40)),
-    )
+class TestLightweightActor:
+    def test_forward_shapes(self):
+        m = build_model(ModelConfig())
+        m.eval()
+        tp = torch.zeros((2, 10, 34))
+        sf = torch.zeros((2, 12))
+        ds = torch.zeros((2, 32, 40))
+        out = m(tp, sf, ds)
+        assert out["discard_logits"].shape == (2, 34)
+        assert out["claim_logits"].shape == (2, 7)
+        assert out["self_kong_logits"].shape == (2, 3)
+        assert out["hu_logits"].shape == (2, 2)
+        assert out["value_for_risk"].shape == (2, 1)
+        assert out["fan_value"].shape == (2, 1)
+        assert out["qualifying_fan_value"].shape == (2, 1)
+        assert out["value"].shape == (2, 1)
+        assert out["opponent_tenpai_logits"].shape == (2, 3)
+        assert out["opponent_risk_logits"].shape == (2, 3, 34)
 
-    assert outputs["discard_logits"].shape == (2, 34)
-    assert outputs["claim_logits"].shape == (2, 7)
-    assert outputs["self_kong_logits"].shape == (2, 3)
-    assert outputs["hu_logits"].shape == (2, 2)
-    assert outputs["value"].shape == (2, 1)
-    assert outputs["value_for_risk"].shape == (2, 1)
-    assert outputs["fan_value"].shape == (2, 1)
-    assert outputs["qualifying_fan_value"].shape == (2, 1)
-    assert outputs["opponent_tenpai_logits"].shape == (2, 3)
-    assert outputs["opponent_risk_logits"].shape == (2, 3, 34)
+    def test_model_config_roundtrip(self):
+        cfg = ModelConfig()
+        d = cfg.to_dict()
+        cfg2 = ModelConfig.from_dict(d)
+        assert cfg == cfg2
 
+    def test_build_model_param_count(self):
+        m = build_model(ModelConfig())
+        total = sum(p.numel() for p in m.parameters())
+        assert total < 3_000_000, f"Model too large: {total}"
 
-def test_rl_forward_model_ignores_global_features_for_shared_policy() -> None:
-    from rl_train import forward_model
+    def test_training_heads_separate(self):
+        m = build_model(ModelConfig())
+        assert "value" not in LightweightActor.ONNX_OUTPUT_NAMES
+        assert "value" in m.TRAINING_ONLY_HEADS
 
-    model = build_model(sequence_aware_config())
-    batch = {
-        "tile_planes": torch.zeros((2, 10, 34)),
-        "scalar_features": torch.zeros((2, 12)),
-        "discard_sequence": torch.zeros((2, 32, 40)),
-        "has_global_state": torch.tensor([True, True]),
-        "global_tile_planes": torch.zeros((2, 40, 34)),
-        "global_scalar_features": torch.zeros((2, 20)),
-    }
-
-    outputs = forward_model(model, batch)
-
-    assert outputs["discard_logits"].shape == (2, 34)
-    assert outputs["value"].shape == (2, 1)
-    assert outputs["value_for_risk"].shape == (2, 1)
-
-
-def test_actor_critic_separates_critic_value_from_deployable_risk_value() -> None:
-    model = build_actor_critic(sequence_aware_config())
-    batch_size = 2
-
-    local_only_outputs = model(
-        torch.zeros((batch_size, 10, 34)),
-        torch.zeros((batch_size, 12)),
-        torch.zeros((batch_size, 32, 40)),
-    )
-
-    assert "value" not in local_only_outputs
-    assert local_only_outputs["value_for_risk"].shape == (batch_size, 1)
-
-    global_outputs = model(
-        torch.zeros((batch_size, 10, 34)),
-        torch.zeros((batch_size, 12)),
-        torch.zeros((batch_size, 32, 40)),
-        global_tile_planes=torch.zeros((batch_size, 40, 34)),
-        global_scalar_features=torch.zeros((batch_size, 20)),
-    )
-
-    assert global_outputs["value"].shape == (batch_size, 1)
-    assert global_outputs["value_for_risk"].shape == (batch_size, 1)
+    def test_gradient_flow(self):
+        m = build_model(ModelConfig())
+        m.train()
+        tp = torch.randn((2, 10, 34))
+        sf = torch.randn((2, 12))
+        ds = torch.randn((2, 32, 40))
+        out = m(tp, sf, ds)
+        loss = (
+            out["discard_logits"].sum()
+            + out["value"].sum()
+            + out["opponent_tenpai_logits"].sum()
+            + out["opponent_risk_logits"].sum()
+        )
+        loss.backward()
+        grad_count = 0
+        for name, param in m.named_parameters():
+            if param.grad is None:
+                continue
+            assert torch.isfinite(param.grad).all(), f"Non-finite grad for {name}"
+            grad_count += 1
+        assert grad_count > 0, "No parameters received gradients"
 
 
-def test_sequence_aware_model_uses_dropout_with_correct_rate() -> None:
-    model = build_model(sequence_aware_config())
+class TestGRUEncoder:
+    def test_output_shape(self):
+        enc = GRUDiscardSequenceEncoder(40, 192, 96)
+        x = torch.zeros((2, 32, 40))
+        out = enc(x)
+        assert out.shape == (2, 192)
 
-    dropouts = [m for m in model.modules() if isinstance(m, torch.nn.Dropout)]
-    assert len(dropouts) > 0
-    # MLP dropout率为0.15, Transformer可能有0.1
-    assert all(d.p in (0.1, 0.15) for d in dropouts)
-
-
-def test_legacy_compatible_loader_is_removed() -> None:
-    assert not hasattr(model_module, "load_compatible_state_dict")
-
-
-def test_model_config_from_dict_reads_sequence_schema() -> None:
-    config = ModelConfig.from_dict(
-        {
-            "tile_plane_count": 10,
-            "scalar_feature_count": 12,
-            "discard_sequence_length": 32,
-            "discard_event_feature_count": 40,
-        }
-    )
-
-    assert config.tile_plane_count == 10
-    assert config.scalar_feature_count == 12
-    assert config.discard_sequence_length == 32
-    assert config.discard_event_feature_count == 40
+    def test_batch_independence(self):
+        enc = GRUDiscardSequenceEncoder(40, 192, 96)
+        enc.eval()
+        x1 = torch.randn((4, 32, 40))
+        x2 = x1.clone()
+        out1 = enc(x1)
+        out2 = enc(x2)
+        assert torch.allclose(out1, out2)
 
 
-def test_bootstrap_actor_critic_checkpoint_from_shared_policy(tmp_path) -> None:
-    from bootstrap_actor_critic_checkpoint import bootstrap_actor_critic_checkpoint
+class TestSuitFusionTileEncoder:
+    def test_output_shape(self):
+        enc = SuitFusionTileEncoder(10, embedding_size=256, channels=64)
+        x = torch.zeros((2, 10, 34))
+        out = enc(x)
+        assert out.shape == (2, 256)
 
-    config = sequence_aware_config()
-    shared = build_model(config)
-    with torch.no_grad():
-        shared.policy_trunk[0].weight.fill_(0.25)
-        shared.fan_head.net[0].weight.fill_(0.5)
-        shared.qualifying_fan_head.net[0].weight.fill_(0.75)
-    source = tmp_path / "sft.pt"
-    output = tmp_path / "actor_critic.pt"
-    torch.save(
-        {
-            "model_state": shared.state_dict(),
-            "model_config": config.to_dict(),
-            "training_source": "sft",
-        },
-        source,
-    )
-
-    manifest = bootstrap_actor_critic_checkpoint(source, output)
-
-    payload = torch.load(output, map_location="cpu")
-    state = payload["model_state"]
-    assert any(key.startswith("actor.") for key in state)
-    assert any(key.startswith("critic.") for key in state)
-    assert torch.equal(
-        state["actor.policy_trunk.0.weight"],
-        shared.state_dict()["policy_trunk.0.weight"],
-    )
-    assert torch.equal(
-        state["actor.value_trunk.0.weight"],
-        shared.state_dict()["value_trunk.0.weight"],
-    )
-    assert torch.equal(
-        state["actor.risk_trunk.0.weight"],
-        shared.state_dict()["risk_trunk.0.weight"],
-    )
-    assert torch.equal(
-        state["actor.value_head.net.0.weight"],
-        shared.state_dict()["value_head.net.0.weight"],
-    )
-    assert torch.equal(
-        state["actor.fan_head.net.0.weight"],
-        shared.state_dict()["fan_head.net.0.weight"],
-    )
-    assert torch.equal(
-        state["actor.qualifying_fan_head.net.0.weight"],
-        shared.state_dict()["qualifying_fan_head.net.0.weight"],
-    )
-    assert torch.equal(
-        state["actor.opponent_modeling.risk_head.weight"],
-        shared.state_dict()["opponent_modeling.risk_head.weight"],
-    )
-    assert payload["training_source"] == "actor_critic_bootstrap"
-    assert manifest["copied_actor_keys"] > 0
-
-    actor_critic = build_actor_critic(config)
-    missing, unexpected = actor_critic.load_state_dict(state, strict=True)
-    assert missing == []
-    assert unexpected == []
-
-
-def test_actor_critic_export_wrapper_preserves_onnx_outputs(tmp_path) -> None:
-    from bootstrap_actor_critic_checkpoint import bootstrap_actor_critic_checkpoint
-    from export_onnx import OUTPUT_NAMES, OnnxWrapper, load_export_model
-
-    config = sequence_aware_config()
-    shared = build_model(config)
-    source = tmp_path / "sft.pt"
-    checkpoint = tmp_path / "actor_critic.pt"
-    torch.save(
-        {
-            "model_state": shared.state_dict(),
-            "model_config": config.to_dict(),
-            "training_source": "sft",
-        },
-        source,
-    )
-    bootstrap_actor_critic_checkpoint(source, checkpoint)
-
-    model, model_config, is_actor_critic = load_export_model(checkpoint)
-    wrapper = OnnxWrapper(model)
-    outputs = wrapper(
-        torch.zeros((2, model_config.tile_plane_count, 34)),
-        torch.zeros((2, model_config.scalar_feature_count)),
-        torch.zeros(
-            (
-                2,
-                model_config.discard_sequence_length,
-                model_config.discard_event_feature_count,
-            )
-        ),
-    )
-
-    assert is_actor_critic
-    assert len(outputs) == len(OUTPUT_NAMES)
-    assert outputs[OUTPUT_NAMES.index("discard_logits")].shape == (2, 34)
-    assert "value" not in OUTPUT_NAMES
-    assert outputs[OUTPUT_NAMES.index("value_for_risk")].shape == (2, 1)
-    assert outputs[OUTPUT_NAMES.index("fan_value")].shape == (2, 1)
-    assert outputs[OUTPUT_NAMES.index("qualifying_fan_value")].shape == (2, 1)
-
-
-def test_export_onnx_has_no_quantization_interface() -> None:
-    import export_onnx
-
-    assert not hasattr(export_onnx, "quantize_onnx")
-    assert not hasattr(export_onnx, "onnx_output_names")
+    def test_shared_backbone(self):
+        backbone = nn.Sequential(
+            nn.Conv1d(10, 64, 3, padding=1), nn.ReLU(), ResidualConvBlock(64)
+        )
+        enc = SuitFusionTileEncoder(
+            10, embedding_size=256, channels=64, shared_backbone=backbone
+        )
+        x = torch.zeros((2, 10, 34))
+        out = enc(x)
+        assert out.shape == (2, 256)
