@@ -354,6 +354,172 @@ fn extract_array<const N: usize>(
     values.get(0..N).ok_or(())?.try_into().map_err(|_| ())
 }
 
+#[allow(dead_code)]
+fn extract_vec(
+    outputs: &ort::session::SessionOutputs,
+    output_name: &str,
+) -> Result<Vec<f32>, ()> {
+    let output = outputs.get(output_name).ok_or(())?;
+    let (_, values) = output.try_extract_tensor::<f32>().map_err(|_| ())?;
+    Ok(values.to_vec())
+}
+
+// ──  Batched inference  ──
+
+#[allow(dead_code)]
+pub(crate) fn neural_decision_scores_batched(
+    model_path: Option<&Path>,
+    features_batch: &[BotFeaturesV2],
+) -> Option<Vec<NeuralDecisionScores>> {
+    if features_batch.is_empty() {
+        return Some(vec![]);
+    }
+    let path_or_env = model_path.map(|p| resolve_model_path(p));
+    if let Some(ref path) = path_or_env {
+        return CACHED_SESSIONS.with(|sessions| {
+            let session = *sessions
+                .borrow_mut()
+                .entry(path.clone())
+                .or_insert_with(|| {
+                    Box::leak(Box::new(RefCell::new(OrtNeuralSession::new(path.clone()))))
+                });
+            session.borrow_mut().run_batched(features_batch).ok()
+        });
+    }
+    shared_session().lock().ok()?.run_batched(features_batch).ok()
+}
+
+impl OrtNeuralSession {
+    #[allow(dead_code)]
+    pub(crate) fn run_batched(
+        &mut self,
+        features_batch: &[BotFeaturesV2],
+    ) -> Result<Vec<NeuralDecisionScores>, ()> {
+        if self.disabled {
+            return Err(());
+        }
+        if features_batch.is_empty() {
+            return Ok(vec![]);
+        }
+        if features_batch.len() == 1 {
+            return self.run(features_batch[0].clone()).map(|s| vec![s]);
+        }
+        if self.session.is_none() {
+            #[cfg(test)]
+            {
+                self.load_attempts += 1;
+            }
+            self.session = match load_session(&self.model_path) {
+                Ok(session) => Some(session),
+                Err(_) => {
+                    self.disabled = true;
+                    return Err(());
+                }
+            };
+        }
+        run_session_batched(
+            self.session.as_mut().expect("session initialized"),
+            features_batch,
+        )
+    }
+}
+
+#[allow(dead_code)]
+fn run_session_batched(
+    session: &mut Session,
+    features_batch: &[BotFeaturesV2],
+) -> Result<Vec<NeuralDecisionScores>, ()> {
+    let batch_size = features_batch.len();
+    let tile_plane_count = tile_plane_count_v2();
+    let scalar_count = scalar_feature_count_v2();
+    let seq_len = discard_sequence_length_v2();
+    let event_count = discard_event_feature_count_v2();
+
+    let tp_per = tile_plane_count * TILE_KIND_COUNT;
+    let mut tp_flat: Vec<f32> = Vec::with_capacity(batch_size * tp_per);
+    let mut sf_flat: Vec<f32> = Vec::with_capacity(batch_size * scalar_count);
+    let mut ds_flat: Vec<f32> = Vec::with_capacity(batch_size * seq_len * event_count);
+
+    for f in features_batch {
+        tp_flat.extend_from_slice(&f.tile_planes);
+        sf_flat.extend_from_slice(&f.scalar_features);
+        ds_flat.extend_from_slice(&f.discard_sequence);
+    }
+
+    let tp_tensor = Tensor::from_array(
+        ([batch_size, tile_plane_count, TILE_KIND_COUNT], tp_flat),
+    )
+    .map_err(|_| ())?;
+    let sf_tensor = Tensor::from_array(([batch_size, scalar_count], sf_flat))
+        .map_err(|_| ())?;
+    let ds_tensor = Tensor::from_array(
+        ([batch_size, seq_len, event_count], ds_flat),
+    )
+    .map_err(|_| ())?;
+
+    let outputs = session
+        .run(ort::inputs![
+            "tile_planes" => tp_tensor,
+            "scalar_features" => sf_tensor,
+            "discard_sequence" => ds_tensor,
+        ])
+        .map_err(|_| ())?;
+
+    let discard_all = extract_vec(&outputs, "discard_logits")?;
+    let claim_all = extract_vec(&outputs, "claim_logits")?;
+    let self_kong_all = extract_vec(&outputs, "self_kong_logits")?;
+    let hu_all = extract_vec(&outputs, "hu_logits")?;
+    let value_all = extract_vec(&outputs, "value_for_risk")?;
+    let risk_all = extract_risk_logits_batched(&outputs, batch_size)?;
+
+    let mut results = Vec::with_capacity(batch_size);
+    for i in 0..batch_size {
+        let mut discard = [0.0f32; TILE_KIND_COUNT];
+        discard.copy_from_slice(
+            &discard_all[i * TILE_KIND_COUNT..(i + 1) * TILE_KIND_COUNT],
+        );
+        let mut claim = [0.0f32; CLAIM_ACTION_COUNT];
+        claim.copy_from_slice(
+            &claim_all[i * CLAIM_ACTION_COUNT..(i + 1) * CLAIM_ACTION_COUNT],
+        );
+        let mut sk = [0.0f32; SELF_KONG_ACTION_COUNT];
+        sk.copy_from_slice(
+            &self_kong_all[i * SELF_KONG_ACTION_COUNT..(i + 1) * SELF_KONG_ACTION_COUNT],
+        );
+        let mut hu = [0.0f32; 2];
+        hu.copy_from_slice(&hu_all[i * 2..(i + 1) * 2]);
+        let mut risk = [0.0f32; TILE_KIND_COUNT];
+        risk.copy_from_slice(&risk_all[i * TILE_KIND_COUNT..(i + 1) * TILE_KIND_COUNT]);
+
+        results.push(NeuralDecisionScores {
+            discard_logits: discard,
+            claim_logits: claim,
+            self_kong_logits: sk,
+            hu_logits: hu,
+            value_for_risk: value_all[i],
+            risk_logits: risk,
+        });
+    }
+    Ok(results)
+}
+
+#[allow(dead_code)]
+fn extract_risk_logits_batched(
+    outputs: &ort::session::SessionOutputs,
+    batch_size: usize,
+) -> Result<Vec<f32>, ()> {
+    let output = &outputs["opponent_risk_logits"];
+    let (_, all_values) = output.try_extract_tensor::<f32>().map_err(|_| ())?;
+    let mut result = Vec::with_capacity(batch_size * TILE_KIND_COUNT);
+    for i in 0..batch_size {
+        let start = i * 3 * TILE_KIND_COUNT;
+        let sample = &all_values[start..start + 3 * TILE_KIND_COUNT];
+        let aggregated = aggregate_opponent_risk_logits(sample)?;
+        result.extend_from_slice(&aggregated);
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 fn preferred_discard_tile_id_for_key(
     concealed_tiles: &[BotTileView],
