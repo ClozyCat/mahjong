@@ -16,6 +16,7 @@
 param(
     [string]$Iterations = "3",
     [string]$TrajectoryMatches = "100",
+    [string]$MatrixMatches = "20",
     [string]$Seed = (Get-Date -Format "yyyyMMdd"),
     [string]$SftOnnx = "backend/assets/sft/sft.onnx",
     [string]$SftCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt",
@@ -108,31 +109,38 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --checkpoint "$awrDir/awr_best.pt" `
         --output $awrOnnx
 
-    # 5. Evaluate vs baseline
-    Write-Host "Evaluating candidate vs baseline..."
-    $evalConfigDir = "$OutputDir/iter_$iter/eval_config"
-    New-Item -ItemType Directory -Force -Path $evalConfigDir | Out-Null
+    # 5. Matrix evaluation
+    Write-Host "Evaluating candidate vs multiple opponents..."
+    $matrixConfigDir = "$OutputDir/iter_$iter/matrix_config"
+    New-Item -ItemType Directory -Force -Path $matrixConfigDir | Out-Null
 
     python backend/bot_trainer/v2/league_config.py `
         --pool $Pool `
-        --output-dir $evalConfigDir `
-        --matches 50 `
-        --seed $($iterSeed + 1) `
-        --mode eval `
-        --candidate-onnx $awrOnnx `
-        --baseline-onnx $SftOnnx
+        --output-dir $matrixConfigDir `
+        --matches $MatrixMatches `
+        --seed $($iterSeed + 2) `
+        --mode matrix `
+        --candidate-onnx $awrOnnx
 
-    $evalOut = "$OutputDir/iter_$iter/eval_results.json"
-    cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- `
-        --config "$evalConfigDir/candidate_eval_config.json" `
-        --output "$evalOut"
+    $matrixResults = @()
+    $configFiles = Get-ChildItem -LiteralPath $matrixConfigDir -Filter "matrix_config_*.json" | Sort-Object Name
+    foreach ($configFile in $configFiles) {
+        $resultFile = "$OutputDir/iter_$iter/matrix_result_$($configFile.BaseName).json"
+        cargo run --manifest-path backend/Cargo.toml --bin bot_arena -- `
+            --config $configFile.FullName `
+            --output $resultFile
+        if (Test-Path $resultFile) {
+            $matrixResults += $resultFile
+        }
+    }
 
-    # 6. Candidate gate
+    # 6. Candidate gate (matrix mode)
     $gateResult = "$OutputDir/iter_$iter/gate_result.json"
     $exitCode = 0
     try {
         python backend/bot_trainer/v2/candidate_gate.py `
-            --summary $evalOut `
+            --summary $matrixResults `
+            --pool $Pool `
             --output $gateResult
     } catch {
         $exitCode = $LASTEXITCODE

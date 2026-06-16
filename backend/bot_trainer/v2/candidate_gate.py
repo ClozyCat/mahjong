@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,12 @@ LATENCY_LIMIT_MS = 200.0
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--summary", type=Path, required=True)
+    parser.add_argument("--summary", type=Path, nargs="+", required=True,
+                        help="One or more arena summary JSON files")
     parser.add_argument("--baseline-policy", default="baseline_neural")
     parser.add_argument("--candidate-policy", default="awr_candidate_neural")
+    parser.add_argument("--pool", type=Path, default=None,
+                        help="opponent_pool.json for weighted averaging")
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -268,10 +272,73 @@ def latency_is_excessive(candidate: dict[str, Any]) -> bool:
     return not latency_report({}, candidate)["passed"]
 
 
+def evaluate_candidate_matrix(
+    summaries: list[dict[str, Any]],
+    pool_path: Path | None,
+    baseline_policy: str = "baseline_neural",
+    candidate_policy: str = "awr_candidate_neural",
+) -> dict[str, Any]:
+    if pool_path is not None:
+        pool = json.loads(pool_path.read_text(encoding="utf-8"))
+        opponents = pool.get("rollout_opponents", [])
+    else:
+        opponents = [{"weight": 1.0} for _ in summaries]
+
+    if len(summaries) != len(opponents):
+        raise ValueError(f"Mismatch: {len(summaries)} summaries for {len(opponents)} opponents")
+
+    per_opponent: list[dict[str, Any]] = []
+    total_weight = 0.0
+    weighted_metrics: dict[str, float] = defaultdict(float)
+    all_failures: set[str] = set()
+
+    for i, (summary, opp) in enumerate(zip(summaries, opponents, strict=True)):
+        result = evaluate_candidate(summary, baseline_policy, candidate_policy)
+        per_opponent.append({
+            "opponent_id": opp.get("id", f"opponent_{i}"),
+            "weight": float(opp.get("weight", 1.0)),
+            "result": result,
+        })
+        w = float(opp.get("weight", 1.0))
+        for metric_key in ["avg_score_delta", "win_rate", "deal_in_rate"]:
+            m = result["promotion_report"]["metrics"].get(metric_key, {})
+            weighted_metrics[metric_key] += float(m.get("margin", 0.0)) * w
+        total_weight += w
+        if not result["accepted"]:
+            all_failures.update(result["failures"])
+
+    for key in weighted_metrics:
+        weighted_metrics[key] /= total_weight if total_weight > 0 else 1.0
+
+    accepted = (
+        weighted_metrics.get("avg_score_delta", -1.0) > 0
+        and weighted_metrics.get("win_rate", -1.0) >= 0
+        and weighted_metrics.get("deal_in_rate", -1.0) >= 0
+    )
+
+    return {
+        "accepted": accepted,
+        "weighted_metrics": dict(weighted_metrics),
+        "per_opponent": per_opponent,
+        "all_failures": sorted(all_failures),
+    }
+
+
 def main() -> None:
     args = parse_args()
-    summary = json.loads(args.summary.read_text(encoding="utf-8"))
-    result = evaluate_candidate(summary, args.baseline_policy, args.candidate_policy)
+    summaries = [
+        json.loads(p.read_text(encoding="utf-8"))
+        for p in args.summary
+    ]
+    if len(summaries) > 1 or args.pool is not None:
+        result = evaluate_candidate_matrix(
+            summaries, args.pool,
+            args.baseline_policy, args.candidate_policy,
+        )
+    else:
+        result = evaluate_candidate(
+            summaries[0], args.baseline_policy, args.candidate_policy
+        )
     text = json.dumps(result, indent=2, ensure_ascii=False)
     print(text)
     if args.output is not None:
