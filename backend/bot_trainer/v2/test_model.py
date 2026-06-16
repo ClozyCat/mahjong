@@ -74,6 +74,7 @@ class TestLightweightActor:
         loss = (
             out["discard_logits"].sum()
             + out["value"].sum()
+            + out["score_bucket_logits"].sum()
             + out["opponent_tenpai_logits"].sum()
             + out["opponent_risk_logits"].sum()
         )
@@ -85,6 +86,21 @@ class TestLightweightActor:
             assert torch.isfinite(param.grad).all(), f"Non-finite grad for {name}"
             grad_count += 1
         assert grad_count > 0, "No parameters received gradients"
+
+    def test_score_bucket_head_present(self):
+        m = build_model(ModelConfig())
+        m.eval()
+        tp = torch.zeros((2, 10, 34))
+        sf = torch.zeros((2, 12))
+        ds = torch.zeros((2, 32, 40))
+        out = m(tp, sf, ds)
+        assert "score_bucket_logits" in out
+        assert out["score_bucket_logits"].shape == (2, 5)
+
+    def test_score_bucket_head_not_in_onnx(self):
+        m = build_model(ModelConfig())
+        assert "score_bucket_logits" not in LightweightActor.ONNX_OUTPUT_NAMES
+        assert "score_bucket_logits" in m.TRAINING_ONLY_HEADS
 
 
 class TestGRUEncoder:

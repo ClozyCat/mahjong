@@ -219,7 +219,7 @@ if nn is not None:
             "opponent_risk_logits",
         ]
 
-        TRAINING_ONLY_HEADS = {"value"}
+        TRAINING_ONLY_HEADS = {"value", "score_bucket_logits"}
 
         def __init__(self, config: ModelConfig) -> None:
             super().__init__()
@@ -267,6 +267,7 @@ if nn is not None:
             self.opponent_modeling = OpponentModelingHead(256, num_opponents=3)
 
             self.value_head = HeadMLP(256, 1)
+            self.score_bucket_head = HeadMLP(256, 5)
 
         @staticmethod
         def _make_shared_backbone(
@@ -336,6 +337,7 @@ if nn is not None:
                 "fan_value": self.fan_head(policy_hidden),
                 "qualifying_fan_value": self.qualifying_fan_head(policy_hidden),
                 "value": value,
+                "score_bucket_logits": self.score_bucket_head(policy_hidden),
                 **opponent_outputs,
             }
 
