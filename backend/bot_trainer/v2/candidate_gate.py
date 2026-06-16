@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--baseline-policy", default="baseline_neural")
-    parser.add_argument("--candidate-policy", default="rl_candidate_neural")
+    parser.add_argument("--candidate-policy", default="awr_candidate_neural")
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 

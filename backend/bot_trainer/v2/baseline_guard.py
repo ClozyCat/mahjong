@@ -35,10 +35,12 @@ def checkpoint_training_source(payload_or_path: dict[str, Any] | Path) -> str:
     source = payload.get("training_source")
     if source:
         return str(source)
-    if "rl_metrics" in payload:
-        return "rl"
     if "metrics" in payload:
         return "sft"
+    if "awr_metrics" in payload:
+        return "awr"
+    if "value_metrics" in payload:
+        return "value_pretrain"
     return "unknown"
 
 
@@ -58,11 +60,6 @@ def validate_baseline_checkpoint(
     allow_rl_checkpoint: bool = False,
 ) -> dict[str, Any]:
     manifest = checkpoint_manifest(path)
-    if manifest["training_source"] == "rl" and not allow_rl_checkpoint:
-        raise ValueError(
-            f"RL checkpoint cannot be used as an SFT baseline: {path}. "
-            "Pass the explicit continuation flag only when intentionally continuing RL."
-        )
     if not manifest["has_model_state"]:
         raise ValueError(f"checkpoint has no model_state: {path}")
     return manifest
@@ -130,8 +127,6 @@ def validate_checkpoint_onnx_pair(
                 raise ValueError("checkpoint/ONNX discard_event_feature_count mismatch")
     sidecar = onnx_info.get("sidecar")
     if sidecar:
-        if sidecar.get("training_source") != checkpoint_info.get("training_source"):
-            raise ValueError("checkpoint/ONNX training_source mismatch")
         if sidecar.get("model_config") != checkpoint_info.get("model_config"):
             raise ValueError("checkpoint/ONNX model_config mismatch")
     return {

@@ -36,17 +36,6 @@ def clean_policy(policy: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in policy.items() if key != "weight"}
 
 
-def trajectory_opponents(pool: dict[str, Any]) -> list[dict[str, Any]]:
-    opponents = []
-    for opponent in pool["opponents"]:
-        opponents.append(clean_policy(opponent))
-        if len(opponents) == 3:
-            break
-    if len(opponents) != 3:
-        raise ValueError("trajectory generation requires exactly three opponents")
-    return opponents
-
-
 def build_trajectory_configs(
     pool: dict[str, Any],
     matches: int,
@@ -55,14 +44,22 @@ def build_trajectory_configs(
 ) -> list[dict[str, Any]]:
     learner = clean_policy(pool["learner"])
     learner.setdefault("display_name", "Learner")
+    learner["sample_actions"] = True
+    learner.setdefault("temperature", 1.0)
+
+    subjects = [
+        {**learner, "display_name": f"Learner_{i}"}
+        for i in range(4)
+    ]
+
     return [
         {
             "matches": matches,
             "seed": seed,
             "max_actions_per_match": max_actions,
             "report_trajectories": True,
-            "subjects": [learner],
-            "opponents": trajectory_opponents(pool),
+            "subjects": subjects,
+            "opponents": [],
         }
     ]
 
@@ -89,14 +86,14 @@ def build_eval_config(
                 "temperature": 1.0,
             },
             {
-                "id": "rl_candidate_neural",
-                "display_name": "RL candidate",
+                "id": "awr_candidate_neural",
+                "display_name": "AWR candidate",
                 "model_path": model_path_text(candidate_onnx),
                 "sample_actions": False,
                 "temperature": 1.0,
             },
         ],
-        "opponents": trajectory_opponents(pool),
+        "opponents": [],
     }
 
 
