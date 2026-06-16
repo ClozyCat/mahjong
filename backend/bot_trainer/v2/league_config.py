@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--matches", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-actions", type=int, default=2400)
-    parser.add_argument("--mode", choices=["trajectory", "eval"], default="trajectory")
+    parser.add_argument("--mode", choices=["trajectory", "eval", "matrix"], default="trajectory")
     parser.add_argument("--rollout-onnx", type=Path, default=None)
     parser.add_argument("--candidate-onnx", type=Path, default=None)
     parser.add_argument(
@@ -133,6 +133,45 @@ def apply_rollout_model_override(pool: dict[str, Any], rollout_onnx: Path | None
     learner["model_path"] = model_path_text(rollout_onnx)
 
 
+def build_matrix_configs(
+    pool: dict[str, Any],
+    candidate_onnx: Path,
+    matches: int,
+    seed: int,
+    max_actions: int,
+) -> list[dict[str, Any]]:
+    opponents_pool = pool.get("rollout_opponents", [])
+    if not opponents_pool:
+        raise ValueError("--mode matrix requires rollout_opponents in pool")
+    configs: list[dict[str, Any]] = []
+    for i, opp in enumerate(opponents_pool):
+        opp_clean = clean_policy(opp)
+        subjects: list[dict[str, Any]] = [
+            {
+                "id": "awr_candidate_neural",
+                "display_name": "AWR Candidate",
+                "model_path": model_path_text(candidate_onnx),
+                "sample_actions": False,
+                "temperature": 1.0,
+            },
+        ]
+        for j in range(3):
+            subjects.append({
+                **opp_clean,
+                "id": f"{opp['id']}_opponent_{j}",
+                "display_name": f"{opp['id']} #{j+1}",
+            })
+        configs.append({
+            "matches": matches,
+            "seed": seed + i * 1000,
+            "max_actions_per_match": max_actions,
+            "report_trajectories": False,
+            "subjects": subjects,
+            "opponents": [],
+        })
+    return configs
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -155,6 +194,22 @@ def main() -> None:
             )
         ):
             write_json(args.output_dir / f"trajectory_config_{index}.json", config)
+    elif args.mode == "matrix":
+        if args.pool is None:
+            raise SystemExit("--pool is required for matrix mode")
+        if args.candidate_onnx is None:
+            raise SystemExit("--candidate-onnx is required for matrix mode")
+        pool = load_pool(args.pool)
+        for index, config in enumerate(
+            build_matrix_configs(
+                pool,
+                args.candidate_onnx,
+                args.matches,
+                args.seed,
+                args.max_actions,
+            )
+        ):
+            write_json(args.output_dir / f"matrix_config_{index}.json", config)
     else:
         if args.pool is None:
             raise SystemExit("--pool is required for eval mode")
