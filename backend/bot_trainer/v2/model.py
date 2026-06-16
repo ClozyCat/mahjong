@@ -20,8 +20,6 @@ class ModelConfig(NamedTuple):
     scalar_feature_count: int = 12
     discard_sequence_length: int = 32
     discard_event_feature_count: int = 40
-    global_tile_plane_count: int = 40
-    global_scalar_feature_count: int = 20
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> "ModelConfig":
@@ -30,8 +28,6 @@ class ModelConfig(NamedTuple):
             scalar_feature_count=int(value.get("scalar_feature_count", 12)),
             discard_sequence_length=int(value.get("discard_sequence_length", 32)),
             discard_event_feature_count=int(value.get("discard_event_feature_count", 40)),
-            global_tile_plane_count=int(value.get("global_tile_plane_count", 40)),
-            global_scalar_feature_count=int(value.get("global_scalar_feature_count", 20)),
         )
 
     def to_dict(self) -> dict[str, int]:
@@ -40,8 +36,6 @@ class ModelConfig(NamedTuple):
             "scalar_feature_count": self.scalar_feature_count,
             "discard_sequence_length": self.discard_sequence_length,
             "discard_event_feature_count": self.discard_event_feature_count,
-            "global_tile_plane_count": self.global_tile_plane_count,
-            "global_scalar_feature_count": self.global_scalar_feature_count,
         }
 
 
@@ -69,20 +63,22 @@ if nn is not None:
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             attended, _ = self.attn(self.norm(x), self.norm(x), self.norm(x))
-            return x + attended  # residual
+            return x + attended
+
 
     class SuitFusionTileEncoder(nn.Module):
         def __init__(
             self,
             tile_plane_count: int,
-            embedding_size: int = 512,
-            channels: int = 128,
+            embedding_size: int = 256,
+            channels: int = 64,
             use_attention: bool = False,
             shared_backbone: nn.Module | None = None,
         ) -> None:
             super().__init__()
             self.use_attention = use_attention
             self.use_shared = shared_backbone is not None
+            self.embedding_size = embedding_size
 
             if self.use_shared:
                 self.shared = shared_backbone
@@ -148,14 +144,13 @@ if nn is not None:
             return self.fusion(combined)
 
 
-    class TransformerDiscardSequenceEncoder(nn.Module):
+    class GRUDiscardSequenceEncoder(nn.Module):
         def __init__(
             self,
             event_feature_count: int,
-            embedding_size: int = 256,
-            hidden_size: int = 128,
-            num_heads: int = 4,
-            num_layers: int = 2,
+            embedding_size: int = 192,
+            hidden_size: int = 96,
+            num_layers: int = 1,
         ) -> None:
             super().__init__()
             self.event_projection = nn.Sequential(
@@ -163,48 +158,11 @@ if nn is not None:
                 nn.ReLU(),
                 nn.LayerNorm(hidden_size),
             )
-            self.pos_encoding = nn.Parameter(torch.randn(1, 32, hidden_size) * 0.02)
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=hidden_size,
-                nhead=num_heads,
-                dim_feedforward=hidden_size * 2,
-                dropout=0.1,
-                activation="relu",
-                batch_first=True,
-                norm_first=True,
-            )
-            self.transformer = nn.TransformerEncoder(
-                encoder_layer,
+            self.gru = nn.GRU(
+                hidden_size, hidden_size,
                 num_layers=num_layers,
-                enable_nested_tensor=False,
+                batch_first=True,
             )
-            self.output = nn.Sequential(
-                nn.Linear(hidden_size, embedding_size),
-                nn.ReLU(),
-                nn.LayerNorm(embedding_size),
-            )
-
-        def forward(self, discard_sequence: torch.Tensor) -> torch.Tensor:
-            x = self.event_projection(discard_sequence)
-            x = x + self.pos_encoding[:, :x.size(1), :]
-            x = self.transformer(x)
-            return self.output(x[:, -1, :])
-
-
-    class DiscardSequenceEncoder(nn.Module):
-        def __init__(
-            self,
-            event_feature_count: int,
-            embedding_size: int = 256,
-            hidden_size: int = 128,
-        ) -> None:
-            super().__init__()
-            self.event_projection = nn.Sequential(
-                nn.Linear(event_feature_count, hidden_size),
-                nn.ReLU(),
-                nn.LayerNorm(hidden_size),
-            )
-            self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
             self.output = nn.Sequential(
                 nn.Linear(hidden_size, embedding_size),
                 nn.ReLU(),
@@ -230,44 +188,6 @@ if nn is not None:
             return self.net(x)
 
 
-    class MoEGatingNetwork(nn.Module):
-        def __init__(self, scalar_feature_count: int, num_experts: int = 3) -> None:
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(scalar_feature_count, 64),
-                nn.ReLU(),
-                nn.Linear(64, num_experts),
-            )
-
-        def forward(self, scalar_features: torch.Tensor) -> torch.Tensor:
-            return F.softmax(self.net(scalar_features), dim=-1)
-
-
-    class MoETrunk(nn.Module):
-        def __init__(self, input_size: int, hidden_size: int, output_size: int, num_experts: int = 3) -> None:
-            super().__init__()
-            self.num_experts = num_experts
-            self.shared_base = nn.Sequential(
-                nn.Linear(input_size, hidden_size),
-                nn.ReLU(),
-                nn.LayerNorm(hidden_size),
-            )
-            self.experts = nn.ModuleList([
-                nn.Sequential(
-                    nn.Linear(hidden_size, output_size),
-                    nn.ReLU(),
-                    nn.Dropout(0.15),
-                    nn.LayerNorm(output_size),
-                )
-                for _ in range(num_experts)
-            ])
-
-        def forward(self, x: torch.Tensor, gate_weights: torch.Tensor) -> torch.Tensor:
-            shared = self.shared_base(x)
-            expert_outputs = torch.stack([expert(shared) for expert in self.experts], dim=1)
-            return torch.sum(expert_outputs * gate_weights.unsqueeze(-1), dim=1)
-
-
     class OpponentModelingHead(nn.Module):
         def __init__(self, input_size: int, num_opponents: int = 3) -> None:
             super().__init__()
@@ -284,7 +204,23 @@ if nn is not None:
             }
 
 
-    class MahjongPolicyNetV2(nn.Module):
+    class LightweightActor(nn.Module):
+        """Single model: local features → all heads. No global critic, no actor-critic split."""
+
+        ONNX_OUTPUT_NAMES = [
+            "discard_logits",
+            "claim_logits",
+            "self_kong_logits",
+            "hu_logits",
+            "value_for_risk",
+            "fan_value",
+            "qualifying_fan_value",
+            "opponent_tenpai_logits",
+            "opponent_risk_logits",
+        ]
+
+        TRAINING_ONLY_HEADS = {"value"}
+
         def __init__(self, config: ModelConfig) -> None:
             super().__init__()
             self.config = config
@@ -295,210 +231,49 @@ if nn is not None:
 
             shared_backbone = self._make_shared_backbone(config.tile_plane_count)
             self.policy_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, shared_backbone=shared_backbone
-            )
-            self.value_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
+                config.tile_plane_count,
+                embedding_size=256,
+                channels=64,
+                shared_backbone=shared_backbone,
             )
             self.risk_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
-            )
-            self.scalar_encoder = nn.Sequential(
-                nn.Linear(config.scalar_feature_count, 160),
-                nn.ReLU(),
-                nn.LayerNorm(160),
-            )
-            self.discard_sequence_encoder = TransformerDiscardSequenceEncoder(
-                config.discard_event_feature_count,
-            )
-
-            combined_size = 512 + 160 + 256
-            self.policy_trunk = self._make_trunk(combined_size, 1024, 512)
-            self.value_trunk = self._make_trunk(combined_size, 1024, 512)
-            self.risk_trunk = self._make_trunk(combined_size, 768, 512)
-
-            self.discard_head = HeadMLP(512, 34)
-            self.claim_head = HeadMLP(512, 7)
-            self.self_kong_head = HeadMLP(512, 3)
-            self.hu_head = HeadMLP(512, 2)
-            self.value_head = HeadMLP(512, 1)
-            self.fan_head = HeadMLP(512, 1)
-            self.qualifying_fan_head = HeadMLP(512, 1)
-            self.opponent_modeling = OpponentModelingHead(512, num_opponents=3)
-
-        @staticmethod
-        def _make_shared_backbone(tile_plane_count: int, channels: int = 128) -> nn.Sequential:
-            return nn.Sequential(
-                nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
-                nn.ReLU(),
-                ResidualConvBlock(channels),
-            )
-
-        @staticmethod
-        def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
-            return nn.Sequential(
-                nn.Linear(input_size, hidden_size),
-                nn.ReLU(),
-                nn.Dropout(0.15),
-                nn.LayerNorm(hidden_size),
-                nn.Linear(hidden_size, output_size),
-                nn.ReLU(),
-                nn.Dropout(0.15),
-                nn.LayerNorm(output_size),
-            )
-
-        def forward(
-            self,
-            tile_planes: torch.Tensor,
-            scalar_features: torch.Tensor,
-            discard_sequence: torch.Tensor,
-            global_tile_planes: torch.Tensor | None = None,
-            global_scalar_features: torch.Tensor | None = None,
-        ) -> dict[str, torch.Tensor]:
-            scalar_embedding = self.scalar_encoder(scalar_features)
-            sequence_embedding = self.discard_sequence_encoder(discard_sequence)
-            policy_features = torch.cat(
-                [
-                    self.policy_tile_encoder(tile_planes),
-                    scalar_embedding,
-                    sequence_embedding,
-                ],
-                dim=1,
-            )
-            value_features = torch.cat(
-                [
-                    self.value_tile_encoder(tile_planes),
-                    scalar_embedding,
-                    sequence_embedding,
-                ],
-                dim=1,
-            )
-            risk_features = torch.cat(
-                [
-                    self.risk_tile_encoder(tile_planes),
-                    scalar_embedding,
-                    sequence_embedding,
-                ],
-                dim=1,
-            )
-            policy_hidden = self.policy_trunk(policy_features)
-            value_hidden = self.value_trunk(value_features)
-            risk_hidden = self.risk_trunk(risk_features)
-            opponent_outputs = self.opponent_modeling(risk_hidden)
-            local_value = self.value_head(value_hidden)
-            return {
-                "discard_logits": self.discard_head(policy_hidden),
-                "claim_logits": self.claim_head(policy_hidden),
-                "self_kong_logits": self.self_kong_head(policy_hidden),
-                "hu_logits": self.hu_head(policy_hidden),
-                "value": local_value,
-                "value_for_risk": local_value,
-                "fan_value": self.fan_head(value_hidden),
-                "qualifying_fan_value": self.qualifying_fan_head(value_hidden),
-                **opponent_outputs,
-            }
-
-
-    class GlobalTileEncoder(nn.Module):
-        """Encodes global tile planes (40 planes = 4 players × 10 planes each)."""
-        def __init__(
-            self,
-            tile_plane_count: int = 10,
-            embedding_size: int = 512,
-            use_cross_player_attention: bool = False,
-        ) -> None:
-            super().__init__()
-            self.tile_plane_count = tile_plane_count
-            self.use_cross_player_attention = use_cross_player_attention
-
-            # Per-player encoder (shared across all 4 players)
-            self.per_player_encoder = SuitFusionTileEncoder(
-                tile_plane_count=tile_plane_count,
-                embedding_size=embedding_size // 4,
+                config.tile_plane_count,
+                embedding_size=256,
+                channels=64,
                 use_attention=True,
-            )
-
-            if use_cross_player_attention:
-                self.cross_player_attention = GroupAttention(embedding_size // 4, num_heads=4)
-
-            # Fusion layer to combine all player embeddings
-            self.fusion = nn.Sequential(
-                nn.Linear(embedding_size, embedding_size),
-                nn.ReLU(),
-                nn.LayerNorm(embedding_size),
-            )
-
-        def forward(self, global_tile_planes: torch.Tensor) -> torch.Tensor:
-            # global_tile_planes: (batch, 40, 34)
-            batch_size = global_tile_planes.size(0)
-
-            # Reshape to (batch, 4, 10, 34) for per-player processing
-            reshaped = global_tile_planes.view(batch_size, 4, self.tile_plane_count, 34)
-
-            # Encode each player's tiles
-            player_embeddings = []
-            for player_idx in range(4):
-                player_planes = reshaped[:, player_idx, :, :]  # (batch, 10, 34)
-                player_embed = self.per_player_encoder(player_planes)  # (batch, embedding_size // 4)
-                player_embeddings.append(player_embed)
-
-            # Stack: (batch, 4, embedding_size // 4)
-            stacked = torch.stack(player_embeddings, dim=1)
-
-            if self.use_cross_player_attention:
-                # Apply cross-player attention
-                stacked = self.cross_player_attention(stacked)
-
-            # Flatten and fuse: (batch, 4 * (embedding_size // 4)) = (batch, embedding_size)
-            combined = stacked.reshape(batch_size, -1)
-            return self.fusion(combined)
-
-
-    class MahjongActorNetV2(nn.Module):
-        """Deployable actor network using only local observations."""
-        def __init__(self, config: ModelConfig) -> None:
-            super().__init__()
-            self.config = config
-            self.tile_plane_count = config.tile_plane_count
-            self.scalar_feature_count = config.scalar_feature_count
-            self.discard_sequence_length = config.discard_sequence_length
-            self.discard_event_feature_count = config.discard_event_feature_count
-
-            shared_backbone = self._make_shared_backbone(config.tile_plane_count)
-            self.policy_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, shared_backbone=shared_backbone
-            )
-            self.value_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
-            )
-            self.risk_tile_encoder = SuitFusionTileEncoder(
-                config.tile_plane_count, use_attention=True, shared_backbone=shared_backbone
+                shared_backbone=shared_backbone,
             )
             self.scalar_encoder = nn.Sequential(
-                nn.Linear(config.scalar_feature_count, 160),
+                nn.Linear(config.scalar_feature_count, 96),
                 nn.ReLU(),
-                nn.LayerNorm(160),
+                nn.LayerNorm(96),
             )
-            self.discard_sequence_encoder = TransformerDiscardSequenceEncoder(
+            self.discard_sequence_encoder = GRUDiscardSequenceEncoder(
                 config.discard_event_feature_count,
+                embedding_size=192,
+                hidden_size=96,
             )
 
-            combined_size = 512 + 160 + 256
-            self.policy_trunk = self._make_trunk(combined_size, 1024, 512)
-            self.value_trunk = self._make_trunk(combined_size, 1024, 512)
-            self.risk_trunk = self._make_trunk(combined_size, 768, 512)
+            combined_size = 256 + 96 + 192
+            self.policy_trunk = self._make_trunk(combined_size, 512, 256)
+            self.risk_trunk = self._make_trunk(combined_size, 384, 256)
 
-            self.discard_head = HeadMLP(512, 34)
-            self.claim_head = HeadMLP(512, 7)
-            self.self_kong_head = HeadMLP(512, 3)
-            self.hu_head = HeadMLP(512, 2)
-            self.value_head = HeadMLP(512, 1)
-            self.fan_head = HeadMLP(512, 1)
-            self.qualifying_fan_head = HeadMLP(512, 1)
-            self.opponent_modeling = OpponentModelingHead(512, num_opponents=3)
+            self.discard_head = HeadMLP(256, 34)
+            self.claim_head = HeadMLP(256, 7)
+            self.self_kong_head = HeadMLP(256, 3)
+            self.hu_head = HeadMLP(256, 2)
+            self.value_for_risk_head = HeadMLP(256, 1)
+            self.fan_head = HeadMLP(256, 1)
+            self.qualifying_fan_head = HeadMLP(256, 1)
+            self.opponent_modeling = OpponentModelingHead(256, num_opponents=3)
+
+            self.value_head = HeadMLP(256, 1)
 
         @staticmethod
-        def _make_shared_backbone(tile_plane_count: int, channels: int = 128) -> nn.Sequential:
+        def _make_shared_backbone(
+            tile_plane_count: int,
+            channels: int = 64,
+        ) -> nn.Sequential:
             return nn.Sequential(
                 nn.Conv1d(tile_plane_count, channels, kernel_size=3, padding=1),
                 nn.ReLU(),
@@ -506,7 +281,11 @@ if nn is not None:
             )
 
         @staticmethod
-        def _make_trunk(input_size: int, hidden_size: int, output_size: int) -> nn.Sequential:
+        def _make_trunk(
+            input_size: int,
+            hidden_size: int,
+            output_size: int,
+        ) -> nn.Sequential:
             return nn.Sequential(
                 nn.Linear(input_size, hidden_size),
                 nn.ReLU(),
@@ -526,17 +305,10 @@ if nn is not None:
         ) -> dict[str, torch.Tensor]:
             scalar_embedding = self.scalar_encoder(scalar_features)
             sequence_embedding = self.discard_sequence_encoder(discard_sequence)
+
             policy_features = torch.cat(
                 [
                     self.policy_tile_encoder(tile_planes),
-                    scalar_embedding,
-                    sequence_embedding,
-                ],
-                dim=1,
-            )
-            value_features = torch.cat(
-                [
-                    self.value_tile_encoder(tile_planes),
                     scalar_embedding,
                     sequence_embedding,
                 ],
@@ -550,8 +322,8 @@ if nn is not None:
                 ],
                 dim=1,
             )
+
             policy_hidden = self.policy_trunk(policy_features)
-            value_hidden = self.value_trunk(value_features)
             risk_hidden = self.risk_trunk(risk_features)
             opponent_outputs = self.opponent_modeling(risk_hidden)
 
@@ -560,185 +332,19 @@ if nn is not None:
                 "claim_logits": self.claim_head(policy_hidden),
                 "self_kong_logits": self.self_kong_head(policy_hidden),
                 "hu_logits": self.hu_head(policy_hidden),
-                "value_for_risk": self.value_head(value_hidden),
-                "fan_value": self.fan_head(value_hidden),
-                "qualifying_fan_value": self.qualifying_fan_head(value_hidden),
+                "value_for_risk": self.value_for_risk_head(policy_hidden),
+                "fan_value": self.fan_head(policy_hidden),
+                "qualifying_fan_value": self.qualifying_fan_head(policy_hidden),
+                "value": self.value_head(policy_hidden),
                 **opponent_outputs,
             }
-
-
-    class MahjongCriticNetV2(nn.Module):
-        """Critic network using global observations."""
-        def __init__(self, config: ModelConfig, use_local_context: bool = True, double_critic: bool = True) -> None:
-            super().__init__()
-            self.config = config
-            self.use_local_context = use_local_context
-            self.double_critic = double_critic
-
-            # Global feature encoders
-            self.global_tile_encoder = GlobalTileEncoder(
-                tile_plane_count=10,
-                embedding_size=512,
-                use_cross_player_attention=True,
-            )
-            self.global_scalar_encoder = nn.Sequential(
-                nn.Linear(config.global_scalar_feature_count, 128),
-                nn.ReLU(),
-                nn.LayerNorm(128),
-                nn.Linear(128, 128),
-                nn.ReLU(),
-                nn.LayerNorm(128),
-            )
-
-            # Local context encoders (for alignment with actor)
-            if use_local_context:
-                self.local_tile_encoder = SuitFusionTileEncoder(
-                    config.tile_plane_count,
-                    embedding_size=256,
-                    use_attention=True,
-                )
-                self.local_scalar_encoder = nn.Sequential(
-                    nn.Linear(config.scalar_feature_count, 64),
-                    nn.ReLU(),
-                    nn.LayerNorm(64),
-                )
-                fusion_input_size = 512 + 128 + 256 + 64
-            else:
-                fusion_input_size = 512 + 128
-
-            # Fusion and value head
-            self.value_trunk_1 = nn.Sequential(
-                nn.Linear(fusion_input_size, 1024),
-                nn.ReLU(),
-                nn.Dropout(0.15),
-                nn.LayerNorm(1024),
-                nn.Linear(1024, 512),
-                nn.ReLU(),
-                nn.Dropout(0.15),
-                nn.LayerNorm(512),
-            )
-            self.value_head_1 = HeadMLP(512, 1)
-
-            if double_critic:
-                self.value_trunk_2 = nn.Sequential(
-                    nn.Linear(fusion_input_size, 1024),
-                    nn.ReLU(),
-                    nn.Dropout(0.15),
-                    nn.LayerNorm(1024),
-                    nn.Linear(1024, 512),
-                    nn.ReLU(),
-                    nn.Dropout(0.15),
-                    nn.LayerNorm(512),
-                )
-                self.value_head_2 = HeadMLP(512, 1)
-
-        def forward(
-            self,
-            global_tile_planes: torch.Tensor,
-            global_scalar_features: torch.Tensor,
-            tile_planes: torch.Tensor | None = None,
-            scalar_features: torch.Tensor | None = None,
-            return_both: bool = False,
-        ) -> torch.Tensor:
-            # Encode global features
-            global_tile_embed = self.global_tile_encoder(global_tile_planes)
-            global_scalar_embed = self.global_scalar_encoder(global_scalar_features)
-
-            # Optionally encode local context
-            if self.use_local_context and tile_planes is not None and scalar_features is not None:
-                local_tile_embed = self.local_tile_encoder(tile_planes)
-                local_scalar_embed = self.local_scalar_encoder(scalar_features)
-                combined = torch.cat([
-                    global_tile_embed,
-                    global_scalar_embed,
-                    local_tile_embed,
-                    local_scalar_embed,
-                ], dim=1)
-            else:
-                combined = torch.cat([global_tile_embed, global_scalar_embed], dim=1)
-
-            # Value prediction
-            value_hidden_1 = self.value_trunk_1(combined)
-            value_1 = self.value_head_1(value_hidden_1).squeeze(-1)
-
-            if self.double_critic:
-                value_hidden_2 = self.value_trunk_2(combined)
-                value_2 = self.value_head_2(value_hidden_2).squeeze(-1)
-                if return_both:
-                    return value_1, value_2
-                return torch.minimum(value_1, value_2)
-            return value_1
-
-
-    class MahjongActorCriticV2(nn.Module):
-        """Wrapper combining actor and critic for CTDE training."""
-        def __init__(self, config: ModelConfig, double_critic: bool = True) -> None:
-            super().__init__()
-            self.config = config
-            self.tile_plane_count = config.tile_plane_count
-            self.scalar_feature_count = config.scalar_feature_count
-            self.discard_sequence_length = config.discard_sequence_length
-            self.discard_event_feature_count = config.discard_event_feature_count
-            self.actor = MahjongActorNetV2(config)
-            self.critic = MahjongCriticNetV2(config, use_local_context=True, double_critic=double_critic)
-
-        def forward(
-            self,
-            tile_planes: torch.Tensor,
-            scalar_features: torch.Tensor,
-            discard_sequence: torch.Tensor,
-            global_tile_planes: torch.Tensor | None = None,
-            global_scalar_features: torch.Tensor | None = None,
-            return_both_critics: bool = False,
-        ) -> dict[str, torch.Tensor]:
-            # Actor forward (always uses local observations)
-            actor_output = self.actor(tile_planes, scalar_features, discard_sequence)
-
-            if global_tile_planes is not None and global_scalar_features is not None:
-                value = self.critic(
-                    global_tile_planes,
-                    global_scalar_features,
-                    tile_planes,
-                    scalar_features,
-                    return_both=return_both_critics,
-                )
-            else:
-                return actor_output
-
-            if return_both_critics and isinstance(value, tuple):
-                return {
-                    **actor_output,
-                    "value": value[0].unsqueeze(-1),
-                    "value_2": value[1].unsqueeze(-1),
-                }
-            else:
-                return {
-                    **actor_output,
-                    "value": value.unsqueeze(-1) if not isinstance(value, tuple) else value[0].unsqueeze(-1),
-                }
 
 else:
 
-    class MahjongPolicyNetV2:  # type: ignore[no-redef]
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            raise MissingTorchError("PyTorch is required: pip install torch")
-
-    class MahjongActorNetV2:  # type: ignore[no-redef]
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            raise MissingTorchError("PyTorch is required: pip install torch")
-
-    class MahjongCriticNetV2:  # type: ignore[no-redef]
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            raise MissingTorchError("PyTorch is required: pip install torch")
-
-    class MahjongActorCriticV2:  # type: ignore[no-redef]
+    class LightweightActor:  # type: ignore[no-redef]
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             raise MissingTorchError("PyTorch is required: pip install torch")
 
 
-def build_model(config: ModelConfig) -> MahjongPolicyNetV2:
-    return MahjongPolicyNetV2(config)
-
-
-def build_actor_critic(config: ModelConfig, double_critic: bool = True) -> MahjongActorCriticV2:
-    return MahjongActorCriticV2(config, double_critic=double_critic)
+def build_model(config: ModelConfig) -> LightweightActor:
+    return LightweightActor(config)
