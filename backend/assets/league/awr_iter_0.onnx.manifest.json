@@ -1,0 +1,23 @@
+{
+  "created_at_utc": "2026-06-17T09:16:25.834828+00:00",
+  "onnx": "output/awr_training/iter_0/awr.onnx",
+  "checkpoint": "output/awr_training/iter_0/awr_checkpoints/awr_best.pt",
+  "model_config": {
+    "tile_plane_count": 10,
+    "scalar_feature_count": 12,
+    "discard_sequence_length": 32,
+    "discard_event_feature_count": 40
+  },
+  "outputs": [
+    "discard_logits",
+    "claim_logits",
+    "self_kong_logits",
+    "hu_logits",
+    "value_for_risk",
+    "fan_value",
+    "qualifying_fan_value",
+    "opponent_tenpai_logits",
+    "opponent_risk_logits"
+  ],
+  "exported_component": "lightweight_actor"
+}

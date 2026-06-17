@@ -195,7 +195,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         $absLeagueHistory = Join-Path (Get-Location).Path $leagueHistory
         $historyJson = ConvertTo-Json -InputObject $history -Depth 3 -Compress
         New-Item -ItemType Directory -Force -Path (Split-Path $absLeagueHistory -Parent) | Out-Null
-        $historyJson | Out-File -LiteralPath $absLeagueHistory -Encoding utf8NoBom
+        $historyJson | Set-Content -LiteralPath $absLeagueHistory -Encoding UTF8
         Write-Host "  Added to league pool ($stableOnnx)"
     }
 
@@ -233,8 +233,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             rollout_opponents = @($newOpponents + $selected)
         }
         $absPool = Join-Path (Get-Location).Path $Pool
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        (ConvertTo-Json -InputObject $updatedPool -Depth 4) | Out-File -LiteralPath $absPool -Encoding utf8NoBom
+        (ConvertTo-Json -InputObject $updatedPool -Depth 4) | Set-Content -LiteralPath $absPool -Encoding UTF8
         Write-Host "  League pool updated: $($newOpponents.Count) base + $(@($selected).Count) AWR opponents"
     }
 }
