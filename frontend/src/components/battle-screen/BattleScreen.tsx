@@ -7,12 +7,7 @@ import type {
   QuickChatEmoji,
 } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
-import {
-  getVoiceClipNameForAction,
-  playVoiceClip,
-  resolveVoiceClipUrl,
-  type VoiceCue,
-} from '../../lib/voicePacks';
+import { playButtonSound, playClearComboSound, playItemPickUpSound } from '../../lib/soundEffects';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { DramaticRevealOverlay } from './DramaticRevealOverlay';
@@ -120,7 +115,8 @@ export function BattleScreen({
   const [evaluationSubjectUserIds, setEvaluationSubjectUserIds] = useState<number[]>([]);
   const consumedActionEffectKeyRef = useRef<string | null>(viewModel.actionEffect?.key ?? null);
   const consumedActionEffectRef = useRef(viewModel.actionEffect);
-  const playedVoiceCueKeysRef = useRef<Set<string>>(new Set());
+  const playedActionEffectKeysRef = useRef<Set<string>>(new Set());
+  const prevTurnActiveRef = useRef(false);
   const hasObservedNoResultRef = useRef(viewModel.result === null);
   const previousSettlementPageCountRef = useRef(getSettlementPageCount(viewModel.result));
   const playedDramaticRevealSettlementKeysRef = useRef<Set<string>>(new Set());
@@ -206,33 +202,38 @@ export function BattleScreen({
     const actionEffects = viewModel.actionEffects?.length ? viewModel.actionEffects : [viewModel.actionEffect];
 
     for (const actionEffect of actionEffects) {
-      const voiceCue = createVoiceCue(viewModel, actionEffect);
-      if (
-        !voiceCue ||
-        playedVoiceCueKeysRef.current.has(voiceCue.key)
-      ) {
+      if (!actionEffect?.key || playedActionEffectKeysRef.current.has(actionEffect.key)) {
         continue;
       }
 
-      playedVoiceCueKeysRef.current.add(voiceCue.key);
+      playedActionEffectKeysRef.current.add(actionEffect.key);
       if (!isVoiceEnabled) {
         continue;
       }
 
-      const voiceUrl = resolveVoiceClipUrl(viewModel.tableCode, voiceCue.voiceKey, voiceCue.clipName);
-      if (!voiceUrl) {
-        continue;
+      if (actionEffect.emphasis === 'discard' && !actionEffect.calloutTone) {
+        playButtonSound();
+      } else if (actionEffect.calloutTone) {
+        playClearComboSound();
       }
-
-      playVoiceClip(voiceUrl, voiceCue.voiceKey);
     }
   }, [
     viewModel.actionEffect,
     viewModel.actionEffects,
-    viewModel.players,
-    viewModel.tableCode,
     isVoiceEnabled,
   ]);
+
+  useEffect(() => {
+    const turnActive =
+      viewModel.mode === 'my_turn' ||
+      viewModel.claimCandidates.length > 0;
+
+    if (turnActive && !prevTurnActiveRef.current && isVoiceEnabled) {
+      playItemPickUpSound();
+    }
+
+    prevTurnActiveRef.current = turnActive;
+  }, [viewModel.mode, viewModel.claimCandidates, isVoiceEnabled]);
 
   useEffect(() => {
     const nextActionEffect = viewModel.actionEffect;
@@ -564,52 +565,6 @@ function getLastDiscardSpotlightKey(viewModel: BattleViewModel) {
 
   const discardCount = viewModel.discards[viewModel.lastDiscardSeat]?.length ?? 0;
   return `${viewModel.lastDiscardSeat}:${viewModel.lastDiscard}:${discardCount}`;
-}
-
-function createVoiceCue(
-  viewModel: BattleViewModel,
-  actionEffect: BattleViewModel['actionEffect'],
-): VoiceCue | null {
-  if (!actionEffect?.key || !actionEffect.seat) {
-    return null;
-  }
-
-  const player = getPlayerForRelativeSeat(viewModel, actionEffect.seat);
-  if (!player) {
-    return null;
-  }
-
-  const clipName = getVoiceClipNameForAction(actionEffect.calloutTone);
-  if (!clipName) {
-    return null;
-  }
-
-  return {
-    key: `action:${actionEffect.key}:${getVoiceIdentityKey(player)}:${clipName}`,
-    voiceKey: getVoiceIdentityKey(player),
-    clipName,
-  };
-}
-
-function getPlayerForRelativeSeat(viewModel: BattleViewModel, seat: NonNullable<BattleViewModel['actionEffect']>['seat']) {
-  if (!seat) {
-    return null;
-  }
-
-  return viewModel.players.find((player) => player.seat === seat) ?? null;
-}
-
-function getVoiceIdentityKey(player: BattleViewModel['players'][number]) {
-  if (typeof player.userId === 'number') {
-    return `user:${player.userId}`;
-  }
-
-  const name = player.name.trim();
-  if (name) {
-    return `name:${name}`;
-  }
-
-  return `seat:${player.absoluteSeat ?? player.seat}`;
 }
 
 function getSettlementPanelDelayMs(

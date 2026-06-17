@@ -1,5 +1,5 @@
 {
-  "created_at_utc": "2026-06-16T10:50:05.750085+00:00",
+  "created_at_utc": "2026-06-17T03:30:52.619079+00:00",
   "onnx": "backend/assets/sft/sft.onnx",
   "checkpoint": "backend/bot_trainer/v2/checkpoints/best.pt",
   "model_config": {

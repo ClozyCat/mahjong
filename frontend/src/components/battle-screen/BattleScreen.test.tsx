@@ -265,7 +265,7 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('does not play tile voice when a discard action effect arrives', () => {
+  it('plays the button sound when a discard action effect arrives', () => {
     const audioMock = mockAudioPlayback();
 
     try {
@@ -283,14 +283,15 @@ describe('BattleScreen', () => {
         }),
       );
 
-      expect(audioMock.audio).not.toHaveBeenCalled();
-      expect(audioMock.play).not.toHaveBeenCalled();
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-button');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
     }
   });
 
-  it('plays the matching operation voice when a claim action effect arrives', () => {
+  it('plays the clear combo sound when a claim action effect arrives', () => {
     const audioMock = mockAudioPlayback();
 
     try {
@@ -307,14 +308,14 @@ describe('BattleScreen', () => {
       );
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-clear-combo');
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
     }
   });
 
-  it('keeps the same operation voice for the same player after wind rotation moves seats', () => {
+  it('plays the clear combo sound for claim actions consistently regardless of seat changes', () => {
     const audioMock = mockAudioPlayback();
     const playerB = {
       seat: 'left' as const,
@@ -351,7 +352,6 @@ describe('BattleScreen', () => {
           players: [playerB],
         }),
       );
-      const firstVoiceUrl = String(audioMock.audio.mock.calls[0][0]);
 
       rerender(
         <BattleScreen
@@ -384,7 +384,8 @@ describe('BattleScreen', () => {
       );
 
       expect(audioMock.audio).toHaveBeenCalledTimes(2);
-      expect(String(audioMock.audio.mock.calls[1][0])).toBe(firstVoiceUrl);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-clear-combo');
+      expect(String(audioMock.audio.mock.calls[1][0])).toContain('freesound_gamestudio-clear-combo');
     } finally {
       audioMock.restore();
     }
@@ -414,7 +415,7 @@ describe('BattleScreen', () => {
     }
   });
 
-  it('plays the ready hand operation voice', () => {
+  it('plays the clear combo sound for ready hand declaration', () => {
     const audioMock = mockAudioPlayback();
 
     try {
@@ -434,14 +435,14 @@ describe('BattleScreen', () => {
       );
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('ting');
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-clear-combo');
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
     }
   });
 
-  it('ignores queued discard effects and plays later queued action voices', () => {
+  it('plays button sound for discard and clear combo sound for claim actions from queued effects', () => {
     const audioMock = mockAudioPlayback();
     const discardEffect = {
       key: 'tile_discarded:seat-1:b7',
@@ -468,15 +469,16 @@ describe('BattleScreen', () => {
     try {
       renderBattleScreen(viewModel);
 
-      expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
-      expect(audioMock.play).toHaveBeenCalledTimes(1);
+      expect(audioMock.audio).toHaveBeenCalledTimes(2);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-button');
+      expect(String(audioMock.audio.mock.calls[1][0])).toContain('freesound_gamestudio-clear-combo');
+      expect(audioMock.play).toHaveBeenCalledTimes(2);
     } finally {
       audioMock.restore();
     }
   });
 
-  it('plays each queued action voice even when one player repeats the same operation quickly', () => {
+  it('plays clear combo sound for each queued action even when the same operation repeats quickly', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
     const audioMock = mockAudioPlayback();
@@ -505,8 +507,8 @@ describe('BattleScreen', () => {
       renderBattleScreen(viewModel);
 
       expect(audioMock.audio).toHaveBeenCalledTimes(2);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('peng');
-      expect(String(audioMock.audio.mock.calls[1][0])).toContain('peng');
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-clear-combo');
+      expect(String(audioMock.audio.mock.calls[1][0])).toContain('freesound_gamestudio-clear-combo');
       expect(audioMock.play).toHaveBeenCalledTimes(2);
     } finally {
       audioMock.restore();
