@@ -172,7 +172,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
     $leagueHistory = "$OutputDir/league_history.json"
     $history = @()
     if (Test-Path $leagueHistory) {
-        $history = ,@(Get-Content -Raw -LiteralPath $leagueHistory | ConvertFrom-Json)
+        $history = @(Get-Content -Raw -LiteralPath $leagueHistory | ConvertFrom-Json)
     }
     if ($exitCode -eq 0) {
         $stableDir = "backend/assets/league"
@@ -202,7 +202,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
     # Rebuild opponent_pool.json with league history mixed in
     if ($history.Count -gt 0) {
         $origPool = Get-Content -LiteralPath $Pool -Raw | ConvertFrom-Json
-        $baseOpponents = ,@($origPool.rollout_opponents)
+        $baseOpponents = @($origPool.rollout_opponents)
         # Keep up to 3 base SFT opponents
         $keepBase = [Math]::Min(3, $baseOpponents.Count)
         $newOpponents = @($baseOpponents[0..($keepBase - 1)])
