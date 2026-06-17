@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
                         choices=["all", "positive"],
                         help="positive = only samples with adv>0; all = all samples")
     parser.add_argument("--adv-norm", default="per_match",
-                        choices=["none", "per_match", "per_seat", "batch"],
+                        choices=["none", "per_match", "per_player", "batch"],
                         help="Advantage normalization mode")
     parser.add_argument("--head-weights", default="1.0,3.0,5.0,5.0",
                         help="Comma-separated weights for discard,claim,self_kong,hu")
@@ -76,7 +76,7 @@ def advantage_weights(
     weight_clip: float,
     policy_filter: str,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    if precomputed_advantage is not None and adv_norm in ("per_match", "per_seat"):
+    if precomputed_advantage is not None and adv_norm in ("per_match", "per_player"):
         advantage = precomputed_advantage.float()
     else:
         advantage = returns - values.detach()
@@ -123,7 +123,7 @@ def main() -> None:
 
     ds = ArenaTrajectoryDataset(args.trajectories, gamma=args.gamma, policy_id=args.policy_id)
 
-    if args.adv_norm in ("per_match", "per_seat"):
+    if args.adv_norm in ("per_match", "per_player"):
         values = [float(row.get("value", 0.0)) for row in ds.rows]
         norm_adv = compute_normalized_advantages(
             ds.rows, ds.returns, values, mode=args.adv_norm

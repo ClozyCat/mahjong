@@ -86,10 +86,12 @@ def compute_discounted_returns_for_rows(
     rows: list[dict[str, Any]],
     gamma: float,
 ) -> list[float]:
+    """Compute MC discounted returns, grouped by (match_id, policy_id)
+    to correctly track the same bot across seat rotations (wind round changes)."""
     returns = [0.0 for _ in rows]
-    groups: dict[tuple[str, int], list[int]] = {}
+    groups: dict[tuple[str, str], list[int]] = {}
     for index, row in enumerate(rows):
-        key = (str(row["match_id"]), int(row["seat_index"]))
+        key = (str(row["match_id"]), str(row["policy_id"]))
         groups.setdefault(key, []).append(index)
 
     for indices in groups.values():
@@ -110,10 +112,11 @@ def compute_normalized_advantages(
     Compute normalized advantages from returns and values.
 
     mode:
-      "none"       — raw advantage = return - value, clipped to [-5, 5]
-      "per_match"  — z-score normalize within each match_id group
-      "per_seat"   — z-score normalize within each (match_id, seat_index) group
-      "batch"      — z-score normalize across entire dataset
+      "none"        — raw advantage = return - value, clipped to [-5, 5]
+      "per_match"   — z-score normalize within each match_id group
+      "per_player"  — z-score normalize within each (match_id, policy_id) group
+                       (tracks same bot across seat rotations after wind changes)
+      "batch"       — z-score normalize across entire dataset
     """
     n = len(rows)
     raw = [min(max(returns[i] - values[i], -5.0), 5.0) for i in range(n)]
@@ -131,8 +134,8 @@ def compute_normalized_advantages(
     for i, row in enumerate(rows):
         if mode == "per_match":
             key = (str(row["match_id"]),)
-        elif mode == "per_seat":
-            key = (str(row["match_id"]), str(row["seat_index"]))
+        elif mode == "per_player":
+            key = (str(row["match_id"]), str(row["policy_id"]))
         else:
             key = ("_global",)
         groups.setdefault(key, []).append(i)

@@ -162,16 +162,16 @@ class TestNormalizedAdvantages:
         std = (sum((a - mean) ** 2 for a in adv) / len(adv)) ** 0.5
         assert abs(std - 1.0) < 0.001, f"std should be ~1, got {std}"
 
-    def test_per_seat_normalization(self):
+    def test_per_player_normalization(self):
         rows = [
-            {"match_id": "m1", "seat_index": 0, "reward": 0.1},
-            {"match_id": "m1", "seat_index": 0, "reward": -0.1},
-            {"match_id": "m1", "seat_index": 1, "reward": 0.9},
-            {"match_id": "m1", "seat_index": 1, "reward": 1.1},
+            {"match_id": "m1", "seat_index": 0, "policy_id": "p1", "reward": 0.1},
+            {"match_id": "m1", "seat_index": 1, "policy_id": "p1", "reward": -0.1},
+            {"match_id": "m1", "seat_index": 0, "policy_id": "p2", "reward": 0.9},
+            {"match_id": "m1", "seat_index": 1, "policy_id": "p2", "reward": 1.1},
         ]
         returns = [0.2, -0.2, 1.0, 1.2]
         values = [0.1, 0.1, 0.1, 0.1]
-        adv = compute_normalized_advantages(rows, returns, values, mode="per_seat")
+        adv = compute_normalized_advantages(rows, returns, values, mode="per_player")
         assert abs(adv[0] - (-adv[1])) < 0.001
         assert abs(adv[2] - (-adv[3])) < 0.001
 
