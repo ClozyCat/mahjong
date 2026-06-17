@@ -167,6 +167,71 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
     } else {
         Write-Host ">>> ITERATION $iter : CANDIDATE REJECTED <<<" -ForegroundColor Yellow
     }
+
+    # 7. League update: if accepted, add this model to opponent pool
+    $leagueHistory = "$OutputDir/league_history.json"
+    $history = @()
+    if (Test-Path $leagueHistory) {
+        $history = ,@(Get-Content -LiteralPath $leagueHistory | ConvertFrom-Json)
+    }
+    if ($exitCode -eq 0) {
+        $stableDir = "backend/assets/league"
+        New-Item -ItemType Directory -Force -Path $stableDir | Out-Null
+        $stableOnnx = "$stableDir/awr_iter_$iter.onnx"
+        Copy-Item -LiteralPath $awrOnnx -Destination $stableOnnx -Force
+        $dataFile = "$awrOnnx.data"
+        if (Test-Path $dataFile) {
+            Copy-Item -LiteralPath $dataFile -Destination "$stableOnnx.data" -Force
+        }
+        $manifestFile = "$awrOnnx.manifest.json"
+        if (Test-Path $manifestFile) {
+            Copy-Item -LiteralPath $manifestFile -Destination "$stableOnnx.manifest.json" -Force
+        }
+        $history += @{
+            iter = $iter
+            model_path = $stableOnnx
+            temperature = 1.0
+        }
+        ConvertTo-Json -InputObject $history -Depth 3 | Set-Content -LiteralPath $leagueHistory -Encoding UTF8
+        Write-Host "  Added to league pool ($stableOnnx)"
+    }
+
+    # Rebuild opponent_pool.json with league history mixed in
+    if ($history.Count -gt 0) {
+        $origPool = Get-Content -LiteralPath $Pool -Raw | ConvertFrom-Json
+        $baseOpponents = ,@($origPool.rollout_opponents)
+        # Keep up to 3 base SFT opponents
+        $keepBase = [Math]::Min(3, $baseOpponents.Count)
+        $newOpponents = @($baseOpponents[0..($keepBase - 1)])
+        # Build AWR opponent entries from history
+        $awrEntries = $history | ForEach-Object {
+            @{
+                id = "awr_iter_$($_.iter)"
+                model_path = $_.model_path
+                sample_actions = $true
+                temperature = if ($_.iter % 3 -eq 0) { 0.5 } elseif ($_.iter % 3 -eq 1) { 1.0 } else { 1.5 }
+                weight = 1
+            }
+        }
+        # Randomly select 0-3 AWR opponents to inject
+        $rng = [Random]::new($iterSeed + 3)
+        $shuffled = @($awrEntries | Sort-Object { $rng.Next() })
+        # Always include most recent if it passed (already last in history)
+        if ($exitCode -eq 0) {
+            $injectCount = $rng.Next([Math]::Min(1, $shuffled.Count), [Math]::Min($shuffled.Count, 4))
+        } else {
+            $injectCount = $rng.Next(0, [Math]::Min($shuffled.Count, 4))
+        }
+        $selected = if ($injectCount -gt 0) { @($shuffled[0..($injectCount - 1)]) } else { @() }
+
+        $updatedPool = @{
+            schema_version = 3
+            learner = $origPool.learner
+            rollout_opponents = @($newOpponents + $selected)
+        }
+        ConvertTo-Json -InputObject $updatedPool -Depth 4 | Set-Content -LiteralPath $Pool -Encoding UTF8
+        Write-Host "  League pool updated: $($newOpponents.Count) base + $(@($selected).Count) AWR opponents"
+    }
 }
 
 Write-Host "`nAWR training pipeline complete. Output: $OutputDir" -ForegroundColor Cyan
