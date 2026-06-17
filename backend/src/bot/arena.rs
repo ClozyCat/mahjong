@@ -867,7 +867,6 @@ fn trajectory_row_from_trace(
         trace.neural_scores.as_ref(),
     )
     .unwrap_or(0.0);
-    let risk_probs = risk_probs_from_scores(trace.neural_scores.as_ref());
     Some(ArenaTrajectoryRow {
         schema_version: 1,
         match_id: match_id.to_string(),
@@ -892,10 +891,10 @@ fn trajectory_row_from_trace(
         terminal_reward: 0.0,
         shanten_before: None,
         shanten_after: None,
-        risk_probs,
-        opponent_tenpai_target: vec![0.0; 3],
-        opponent_risk_target: vec![vec![0.0; TILE_KIND_COUNT]; 3],
-        opponent_risk_mask: vec![vec![0.0; TILE_KIND_COUNT]; 3],
+        risk_probs: vec![],
+        opponent_tenpai_target: vec![],
+        opponent_risk_target: vec![],
+        opponent_risk_mask: vec![],
         global_tile_planes: None,
         global_scalar_features: None,
         done: false,
