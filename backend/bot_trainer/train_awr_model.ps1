@@ -193,6 +193,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             temperature = 1.0
         }
         $historyJson = ConvertTo-Json -InputObject $history -Depth 3 -Compress
+        New-Item -ItemType Directory -Force -Path (Split-Path $leagueHistory -Parent) | Out-Null
         [System.IO.File]::WriteAllText($leagueHistory, $historyJson, (New-Object System.Text.UTF8Encoding $false))
         Write-Host "  Added to league pool ($stableOnnx)"
     }
