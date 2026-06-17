@@ -1,10 +1,7 @@
-import buttonSound from '../../sounds/freesound_gamestudio-button-394464.mp3';
 import clearComboSound from '../../sounds/freesound_gamestudio-clear-combo-4-394493.mp3';
 import itemPickUpSound from '../../sounds/freesound_community-item-pick-up-38258.mp3';
-
-export function playButtonSound(): Promise<void> {
-  return playSound(buttonSound);
-}
+import huSound from '../../sounds/puyopuyomegafan1234-winner-game-sound-404167.mp3';
+import readyHandSound from '../../sounds/ncprime-rise-304744.mp3';
 
 export function playClearComboSound(): Promise<void> {
   return playSound(clearComboSound);
@@ -12,6 +9,14 @@ export function playClearComboSound(): Promise<void> {
 
 export function playItemPickUpSound(): Promise<void> {
   return playSound(itemPickUpSound);
+}
+
+export function playHuSound(): Promise<void> {
+  return playSound(huSound);
+}
+
+export function playReadyHandSound(): Promise<void> {
+  return playSound(readyHandSound);
 }
 
 function playSound(url: string): Promise<void> {

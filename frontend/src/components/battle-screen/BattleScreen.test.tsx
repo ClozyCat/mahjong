@@ -265,7 +265,7 @@ describe('BattleScreen', () => {
     vi.useRealTimers();
   });
 
-  it('plays the button sound when a discard action effect arrives', () => {
+  it('does not play any sound when a discard action effect arrives', () => {
     const audioMock = mockAudioPlayback();
 
     try {
@@ -283,9 +283,8 @@ describe('BattleScreen', () => {
         }),
       );
 
-      expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-button');
-      expect(audioMock.play).toHaveBeenCalledTimes(1);
+      expect(audioMock.audio).not.toHaveBeenCalled();
+      expect(audioMock.play).not.toHaveBeenCalled();
     } finally {
       audioMock.restore();
     }
@@ -415,7 +414,7 @@ describe('BattleScreen', () => {
     }
   });
 
-  it('plays the clear combo sound for ready hand declaration', () => {
+  it('plays the ready hand sound for ready hand declaration', () => {
     const audioMock = mockAudioPlayback();
 
     try {
@@ -435,14 +434,14 @@ describe('BattleScreen', () => {
       );
 
       expect(audioMock.audio).toHaveBeenCalledTimes(1);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-clear-combo');
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('ncprime-rise');
       expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
     }
   });
 
-  it('plays button sound for discard and clear combo sound for claim actions from queued effects', () => {
+  it('plays clear combo sound only for claim actions, ignores discard effects in queued effects', () => {
     const audioMock = mockAudioPlayback();
     const discardEffect = {
       key: 'tile_discarded:seat-1:b7',
@@ -469,10 +468,9 @@ describe('BattleScreen', () => {
     try {
       renderBattleScreen(viewModel);
 
-      expect(audioMock.audio).toHaveBeenCalledTimes(2);
-      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-button');
-      expect(String(audioMock.audio.mock.calls[1][0])).toContain('freesound_gamestudio-clear-combo');
-      expect(audioMock.play).toHaveBeenCalledTimes(2);
+      expect(audioMock.audio).toHaveBeenCalledTimes(1);
+      expect(String(audioMock.audio.mock.calls[0][0])).toContain('freesound_gamestudio-clear-combo');
+      expect(audioMock.play).toHaveBeenCalledTimes(1);
     } finally {
       audioMock.restore();
     }

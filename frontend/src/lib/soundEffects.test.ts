@@ -1,38 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { playButtonSound, playClearComboSound, playItemPickUpSound } from './soundEffects';
+import { playClearComboSound, playHuSound, playItemPickUpSound, playReadyHandSound } from './soundEffects';
 
 describe('soundEffects', () => {
-  it('plays the button sound when a discard occurs', async () => {
-    let endedHandler: (() => void) | undefined;
-    const play = vi.fn(() => Promise.resolve());
-    const audio = vi.fn(() => ({
-      addEventListener: vi.fn((eventName: string, handler: () => void) => {
-        if (eventName === 'ended') {
-          endedHandler = handler;
-        }
-      }),
-      removeEventListener: vi.fn(),
-      play,
-    }));
-    const originalAudio = globalThis.Audio;
-
-    globalThis.Audio = audio as unknown as typeof Audio;
-    const playback = playButtonSound();
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(audio).toHaveBeenCalledTimes(1);
-    expect(play).toHaveBeenCalled();
-
-    endedHandler?.();
-    await playback;
-
-    globalThis.Audio = originalAudio;
-  });
-
-  it('plays the clear combo sound when chi/peng/gang/hu occurs', async () => {
+  it('plays the clear combo sound when chi/peng/gang occurs', async () => {
     const play = vi.fn(() => Promise.resolve());
     const audio = vi.fn(() => ({
       addEventListener: vi.fn(),
@@ -43,6 +14,46 @@ describe('soundEffects', () => {
 
     globalThis.Audio = audio as unknown as typeof Audio;
     const playback = playClearComboSound();
+
+    await Promise.resolve();
+
+    expect(audio).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalled();
+
+    globalThis.Audio = originalAudio;
+  });
+
+  it('plays the hu sound when a win occurs', async () => {
+    const play = vi.fn(() => Promise.resolve());
+    const audio = vi.fn(() => ({
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      play,
+    }));
+    const originalAudio = globalThis.Audio;
+
+    globalThis.Audio = audio as unknown as typeof Audio;
+    const playback = playHuSound();
+
+    await Promise.resolve();
+
+    expect(audio).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalled();
+
+    globalThis.Audio = originalAudio;
+  });
+
+  it('plays the ready hand sound when ready hand is declared', async () => {
+    const play = vi.fn(() => Promise.resolve());
+    const audio = vi.fn(() => ({
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      play,
+    }));
+    const originalAudio = globalThis.Audio;
+
+    globalThis.Audio = audio as unknown as typeof Audio;
+    const playback = playReadyHandSound();
 
     await Promise.resolve();
 

@@ -7,7 +7,7 @@ import type {
   QuickChatEmoji,
 } from '../../types/match';
 import type { ThemeId } from '../../lib/themes';
-import { playButtonSound, playClearComboSound, playItemPickUpSound } from '../../lib/soundEffects';
+import { playClearComboSound, playHuSound, playItemPickUpSound, playReadyHandSound } from '../../lib/soundEffects';
 import { BottomActionDock } from './BottomActionDock';
 import { ResultOverlay } from './ResultOverlay';
 import { DramaticRevealOverlay } from './DramaticRevealOverlay';
@@ -211,8 +211,10 @@ export function BattleScreen({
         continue;
       }
 
-      if (actionEffect.emphasis === 'discard' && !actionEffect.calloutTone) {
-        playButtonSound();
+      if (actionEffect.calloutTone === 'hu') {
+        playHuSound();
+      } else if (actionEffect.calloutTone === 'ready_hand') {
+        playReadyHandSound();
       } else if (actionEffect.calloutTone) {
         playClearComboSound();
       }
