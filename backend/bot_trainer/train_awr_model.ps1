@@ -229,7 +229,8 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             learner = $origPool.learner
             rollout_opponents = @($newOpponents + $selected)
         }
-        ConvertTo-Json -InputObject $updatedPool -Depth 4 | Set-Content -LiteralPath $Pool -Encoding UTF8
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($Pool, (ConvertTo-Json -InputObject $updatedPool -Depth 4), $utf8NoBom)
         Write-Host "  League pool updated: $($newOpponents.Count) base + $(@($selected).Count) AWR opponents"
     }
 }

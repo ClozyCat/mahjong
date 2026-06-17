@@ -99,7 +99,7 @@ def format_markdown(matrix: dict[str, Any]) -> str:
 
 def main() -> None:
     args = parse_args()
-    pool = json.loads(args.pool.read_text(encoding="utf-8"))
+    pool = json.loads(args.pool.read_text(encoding="utf-8-sig"))
     matrix = build_matrix(args.results, pool, args.candidate_policy)
 
     if args.format in ("json", "both"):

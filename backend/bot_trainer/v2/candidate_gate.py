@@ -279,7 +279,7 @@ def evaluate_candidate_matrix(
     candidate_policy: str = "awr_candidate_neural",
 ) -> dict[str, Any]:
     if pool_path is not None:
-        pool = json.loads(pool_path.read_text(encoding="utf-8"))
+        pool = json.loads(pool_path.read_text(encoding="utf-8-sig"))
         opponents = pool.get("rollout_opponents", [])
     else:
         opponents = [{"weight": 1.0} for _ in summaries]

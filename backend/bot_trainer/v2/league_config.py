@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_pool(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def clean_policy(policy: dict[str, Any]) -> dict[str, Any]:
