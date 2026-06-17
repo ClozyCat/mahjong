@@ -226,16 +226,26 @@ export function BattleScreen({
   ]);
 
   useEffect(() => {
-    const turnActive =
-      viewModel.mode === 'my_turn' ||
-      viewModel.claimCandidates.length > 0;
+    const localPlayer = viewModel.players.find((p) => p.isLocal);
+    const isReadyHand = localPlayer?.isReadyHand ?? false;
+
+    let turnActive: boolean;
+    if (isReadyHand) {
+      const hasKongCandidate = viewModel.claimCandidates.some((c) => c.actionId === 'kong');
+      const hasHuPrompt = viewModel.promptCue?.actionIds?.includes('hu') ?? false;
+      turnActive = hasKongCandidate || hasHuPrompt;
+    } else {
+      turnActive =
+        viewModel.mode === 'my_turn' ||
+        viewModel.claimCandidates.length > 0;
+    }
 
     if (turnActive && !prevTurnActiveRef.current && isVoiceEnabled) {
       playItemPickUpSound();
     }
 
     prevTurnActiveRef.current = turnActive;
-  }, [viewModel.mode, viewModel.claimCandidates, isVoiceEnabled]);
+  }, [viewModel.mode, viewModel.claimCandidates, viewModel.players, viewModel.promptCue, isVoiceEnabled]);
 
   useEffect(() => {
     const nextActionEffect = viewModel.actionEffect;
