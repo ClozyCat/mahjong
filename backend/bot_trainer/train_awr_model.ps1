@@ -51,12 +51,22 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --rollout-onnx $SftOnnx
 
     $trajOut = "$OutputDir/iter_$iter/trajectories.jsonl"
-    $trajSummary = "$OutputDir/iter_$iter/trajectory_summary.json"
-    cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- `
-        --config "$trajConfigDir/trajectory_config_0.json" `
-        --output "$trajSummary" `
-        --trajectories "$trajOut" `
-        --jobs 4
+    if (Test-Path $trajOut) {
+        Remove-Item -LiteralPath $trajOut -Force
+    }
+    $trajectoryConfigFiles = Get-ChildItem -LiteralPath $trajConfigDir -Filter "trajectory_config_*.json" | Sort-Object Name
+    foreach ($configFile in $trajectoryConfigFiles) {
+        $chunkSummary = "$OutputDir/iter_$iter/trajectory_summary_$($configFile.BaseName).json"
+        $chunkTrajectories = "$OutputDir/iter_$iter/trajectories_$($configFile.BaseName).jsonl"
+        cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- `
+            --config $configFile.FullName `
+            --output "$chunkSummary" `
+            --trajectories "$chunkTrajectories" `
+            --jobs 4
+        if (Test-Path $chunkTrajectories) {
+            Get-Content -LiteralPath $chunkTrajectories | Add-Content -LiteralPath $trajOut
+        }
+    }
 
     if (-not (Test-Path $trajOut)) {
         Write-Error "Trajectory generation failed for iteration $iter"
@@ -99,7 +109,8 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --epochs 5 `
         --batch-size 256 `
         --lr 3e-5 `
-        --temperature 1.0 `
+        --temperature 0.5 `
+        --sft-checkpoint $SftCheckpoint `
         --policy-id learner
 
     # 4. Export best AWR checkpoint to ONNX
@@ -120,17 +131,22 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --matches $MatrixMatches `
         --seed $($iterSeed + 2) `
         --mode matrix `
-        --candidate-onnx $awrOnnx
+        --candidate-onnx $awrOnnx `
+        --baseline-onnx $SftOnnx
 
-    $matrixResults = @()
+    $matrixSummaries = @()
     $configFiles = Get-ChildItem -LiteralPath $matrixConfigDir -Filter "matrix_config_*.json" | Sort-Object Name
     foreach ($configFile in $configFiles) {
-        $resultFile = "$OutputDir/iter_$iter/matrix_result_$($configFile.BaseName).json"
-        cargo run --manifest-path backend/Cargo.toml --bin bot_arena -- `
+        $resultFile = "$OutputDir/iter_$iter/matrix_result_$($configFile.BaseName).jsonl"
+        $summaryFile = "$OutputDir/iter_$iter/matrix_summary_$($configFile.BaseName).json"
+        cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena -- `
             --config $configFile.FullName `
             --output $resultFile
         if (Test-Path $resultFile) {
-            $matrixResults += $resultFile
+            python backend/bot_trainer/v2/arena_summary.py `
+                --input $resultFile `
+                --output $summaryFile
+            $matrixSummaries += $summaryFile
         }
     }
 
@@ -139,7 +155,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
     $exitCode = 0
     try {
         python backend/bot_trainer/v2/candidate_gate.py `
-            --summary $matrixResults `
+            --summary $matrixSummaries `
             --pool $Pool `
             --output $gateResult
     } catch {

@@ -54,6 +54,10 @@ def encode_row(row: dict[str, Any], discounted_return: float) -> dict[str, torch
         "action_index": torch.tensor(row["action_index"], dtype=torch.long),
         "reward": torch.tensor(row["reward"], dtype=torch.float32),
         "return": torch.tensor(discounted_return, dtype=torch.float32),
+        "advantage": torch.tensor(
+            row.get("advantage", discounted_return - float(row.get("value", 0.0))),
+            dtype=torch.float32,
+        ),
         "step_reward": torch.tensor(row.get("step_reward", 0.0), dtype=torch.float32),
         "terminal_reward": torch.tensor(row.get("terminal_reward", 0.0), dtype=torch.float32),
         "risk_probs": torch.tensor(row["risk_probs"], dtype=torch.float32),

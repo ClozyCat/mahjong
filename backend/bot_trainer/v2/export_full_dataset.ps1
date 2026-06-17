@@ -1,7 +1,7 @@
 param(
     [string]$InputPath = "backend/bot_trainer/datasets/data.txt",
     [string]$OutputDir = "backend/bot_trainer/v2/out",
-    [int]$ProgressEvery = 1000,
+    [int]$ProgressEvery = 10000,
     [int]$MaxMatches = 0
 )
 

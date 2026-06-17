@@ -52,11 +52,45 @@ def compute_ce_loss_for_action(
     action_index: torch.Tensor,
     weights: torch.Tensor,
 ) -> torch.Tensor:
+    active = mask.any(dim=-1) & (weights > 0)
+    if not active.any():
+        return logits.sum() * 0.0
+    logits = logits[active]
+    mask = mask[active]
+    action_index = action_index[active]
+    weights = weights[active]
     masked = logits.clone()
     masked[~mask] = float("-inf")
     log_probs = F.log_softmax(masked, dim=-1)
     nll = -log_probs[range(len(action_index)), action_index]
-    return (nll * weights).mean()
+    return (nll * weights).sum() / weights.numel()
+
+
+def advantage_weights(
+    returns: torch.Tensor,
+    values: torch.Tensor,
+    precomputed_advantage: torch.Tensor | None,
+    *,
+    adv_norm: str,
+    temperature: float,
+    weight_clip: float,
+    policy_filter: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if precomputed_advantage is not None and adv_norm in ("per_match", "per_seat"):
+        advantage = precomputed_advantage.float()
+    else:
+        advantage = returns - values.detach()
+        if adv_norm == "batch":
+            adv_mean = advantage.mean()
+            adv_std = advantage.std(unbiased=False) + 1e-8
+            advantage = (advantage - adv_mean) / adv_std
+            advantage = advantage.clamp(-5.0, 5.0)
+        elif adv_norm == "none":
+            advantage = advantage.clamp(-5.0, 5.0)
+    weights = torch.exp(advantage / temperature).clamp(max=weight_clip)
+    if policy_filter == "positive":
+        weights = torch.where(advantage > 0, weights, torch.zeros_like(weights))
+    return weights, advantage
 
 
 def masked_categorical_kl(
@@ -64,6 +98,12 @@ def masked_categorical_kl(
     student_logits: torch.Tensor,
     mask: torch.Tensor,
 ) -> torch.Tensor:
+    valid_rows = mask.any(dim=-1)
+    if not valid_rows.any():
+        return teacher_logits.sum() * 0.0 + student_logits.sum() * 0.0
+    teacher_logits = teacher_logits[valid_rows]
+    student_logits = student_logits[valid_rows]
+    mask = mask[valid_rows]
     teacher = teacher_logits.clone()
     student = student_logits.clone()
     teacher[~mask] = float("-inf")
@@ -139,23 +179,19 @@ def main() -> None:
             value_loss = F.mse_loss(value, returns)
 
             with torch.no_grad():
-                advantage = returns - value.detach()
-                if args.adv_norm == "batch":
-                    adv_mean = advantage.mean()
-                    adv_std = advantage.std() + 1e-8
-                    advantage = (advantage - adv_mean) / adv_std
-                    advantage = advantage.clamp(-5.0, 5.0)
-                elif args.adv_norm == "none":
-                    advantage = advantage.clamp(-5.0, 5.0)
-                weights = torch.exp(advantage / args.temperature).clamp(
-                    max=args.weight_clip
+                weights, _advantage = advantage_weights(
+                    returns,
+                    value,
+                    batch.get("advantage"),
+                    adv_norm=args.adv_norm,
+                    temperature=args.temperature,
+                    weight_clip=args.weight_clip,
+                    policy_filter=args.policy_filter,
                 )
-                if args.policy_filter == "positive":
-                    weights = torch.where(advantage > 0, weights, torch.zeros_like(weights))
 
             action_head = batch["action_head"]
 
-            policy_loss = 0.0
+            policy_loss = torch.tensor(0.0, device=device)
             weight_sum = 0.0
 
             for head_idx in range(4):

@@ -62,6 +62,36 @@ def weighted_sample(
     return chosen
 
 
+def default_neural_opponents(
+    model_path: Path | str,
+    *,
+    prefix: str,
+    sample_actions: bool,
+    temperature: float = 1.0,
+) -> list[dict[str, Any]]:
+    path_text = model_path_text(model_path if isinstance(model_path, Path) else Path(model_path))
+    return [
+        {
+            "id": f"{prefix}-{index + 1}",
+            "model_path": path_text,
+            "sample_actions": sample_actions,
+            "temperature": temperature,
+        }
+        for index in range(3)
+    ]
+
+
+def repeated_opponents(policy: dict[str, Any], prefix: str) -> list[dict[str, Any]]:
+    clean = clean_policy(policy)
+    return [
+        {
+            **clean,
+            "id": f"{prefix}-{index + 1}",
+        }
+        for index in range(3)
+    ]
+
+
 def build_trajectory_configs(
     pool: dict[str, Any],
     matches: int,
@@ -69,28 +99,25 @@ def build_trajectory_configs(
     max_actions: int,
 ) -> list[dict[str, Any]]:
     learner = clean_policy(pool["learner"])
-    learner.setdefault("display_name", "Learner")
     learner["sample_actions"] = True
     learner.setdefault("temperature", 1.0)
+    learner_subject = {**learner, "display_name": "Learner"}
 
-    opponents_pool = pool.get("rollout_opponents", [])
-
-    configs: list[dict[str, Any]] = []
-    for m in range(matches):
-        match_rng = random.Random(seed + m * 1000 + 1)
-        if opponents_pool:
-            chosen = weighted_sample(opponents_pool, 3, match_rng)
-        else:
-            chosen = []
-        configs.append({
-            "matches": 1,
-            "seed": seed + m * 1000,
-            "max_actions_per_match": max_actions,
-            "report_trajectories": True,
-            "subjects": [{**learner, "display_name": "Learner"}],
-            "opponents": [clean_policy(o) for o in chosen],
-        })
-    return configs
+    opponents_pool = pool.get("rollout_opponents") or pool.get("opponents") or []
+    match_rng = random.Random(seed + 1)
+    if opponents_pool:
+        chosen = weighted_sample(opponents_pool, 3, match_rng)
+        opponents = [clean_policy(o) for o in chosen]
+    else:
+        opponents = [clean_policy(learner) for _ in range(3)]
+    return [{
+        "matches": matches,
+        "seed": seed,
+        "max_actions_per_match": max_actions,
+        "report_trajectories": True,
+        "subjects": [learner_subject],
+        "opponents": opponents,
+    }]
 
 
 def build_eval_config(
@@ -122,7 +149,11 @@ def build_eval_config(
                 "temperature": 1.0,
             },
         ],
-        "opponents": [],
+        "opponents": default_neural_opponents(
+            baseline_onnx,
+            prefix="baseline-opponent",
+            sample_actions=False,
+        ),
     }
 
 
@@ -136,6 +167,7 @@ def apply_rollout_model_override(pool: dict[str, Any], rollout_onnx: Path | None
 def build_matrix_configs(
     pool: dict[str, Any],
     candidate_onnx: Path,
+    baseline_onnx: Path,
     matches: int,
     seed: int,
     max_actions: int,
@@ -148,6 +180,13 @@ def build_matrix_configs(
         opp_clean = clean_policy(opp)
         subjects: list[dict[str, Any]] = [
             {
+                "id": "baseline_neural",
+                "display_name": "Baseline",
+                "model_path": model_path_text(baseline_onnx),
+                "sample_actions": False,
+                "temperature": 1.0,
+            },
+            {
                 "id": "awr_candidate_neural",
                 "display_name": "AWR Candidate",
                 "model_path": model_path_text(candidate_onnx),
@@ -155,19 +194,13 @@ def build_matrix_configs(
                 "temperature": 1.0,
             },
         ]
-        for j in range(3):
-            subjects.append({
-                **opp_clean,
-                "id": f"{opp['id']}_opponent_{j}",
-                "display_name": f"{opp['id']} #{j+1}",
-            })
         configs.append({
             "matches": matches,
             "seed": seed + i * 1000,
             "max_actions_per_match": max_actions,
             "report_trajectories": False,
             "subjects": subjects,
-            "opponents": [],
+            "opponents": repeated_opponents(opp_clean, f"{opp['id']}-opponent"),
         })
     return configs
 
@@ -204,6 +237,7 @@ def main() -> None:
             build_matrix_configs(
                 pool,
                 args.candidate_onnx,
+                args.baseline_onnx,
                 args.matches,
                 args.seed,
                 args.max_actions,

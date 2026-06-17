@@ -3,9 +3,13 @@ import tempfile
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 import pytest
 
+from train_awr import (
+    advantage_weights,
+    compute_ce_loss_for_action,
+    masked_categorical_kl,
+)
 from awr_dataset import (
     ArenaTrajectoryDataset,
     encode_row,
@@ -93,6 +97,15 @@ class TestArenaTrajectoryDataset:
             assert item["action_index"].ndim == 0
             assert "return" in item
 
+    def test_item_includes_precomputed_advantage_when_available(self):
+        rows = [make_sample_row(advantage=1.25)]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "test.jsonl"
+            write_jsonl(rows, path)
+            ds = ArenaTrajectoryDataset(path)
+            item = ds[0]
+            assert item["advantage"].item() == pytest.approx(1.25)
+
     def test_compute_returns_single_seat(self):
         rows = [
             make_sample_row(decision_index=0, seat_index=0, reward=0.0, done=False),
@@ -169,20 +182,6 @@ class TestNormalizedAdvantages:
         adv = compute_normalized_advantages(rows, returns, values, mode="none")
         assert abs(adv[0]) <= 5.0
 
-
-def masked_categorical_kl(teacher_logits, student_logits, mask):
-    teacher = teacher_logits.clone()
-    student = student_logits.clone()
-    teacher[~mask] = float("-inf")
-    student[~mask] = float("-inf")
-    teacher_probs = F.softmax(teacher, dim=-1)
-    student_log_probs = F.log_softmax(student, dim=-1)
-    element_kl = teacher_probs * (torch.log(teacher_probs + 1e-8) - student_log_probs)
-    element_kl = torch.where(mask, element_kl, torch.zeros_like(element_kl))
-    kl_per_sample = element_kl.sum(-1)
-    return kl_per_sample.mean()
-
-
 class TestKLDivergence:
     def test_identical_logits_kl_zero(self):
         logits = torch.randn(4, 34)
@@ -208,3 +207,56 @@ class TestKLDivergence:
         student[:, 1:] = 999
         kl = masked_categorical_kl(teacher, student, mask)
         assert kl.item() < 0.01
+
+    def test_all_invalid_rows_do_not_produce_nan(self):
+        teacher = torch.randn(4, 7)
+        student = torch.randn(4, 7)
+        mask = torch.zeros(4, 7, dtype=torch.bool)
+        kl = masked_categorical_kl(teacher, student, mask)
+        assert torch.isfinite(kl)
+        assert kl.item() == pytest.approx(0.0)
+
+
+class TestAwrWeights:
+    def test_precomputed_advantage_drives_weights(self):
+        returns = torch.tensor([0.0, 0.0])
+        values = torch.tensor([0.0, 0.0])
+        precomputed = torch.tensor([-1.0, 2.0])
+
+        weights, advantage = advantage_weights(
+            returns,
+            values,
+            precomputed,
+            adv_norm="per_match",
+            temperature=1.0,
+            weight_clip=20.0,
+            policy_filter="positive",
+        )
+
+        assert advantage.tolist() == pytest.approx([-1.0, 2.0])
+        assert weights[0].item() == pytest.approx(0.0)
+        assert weights[1].item() > 1.0
+
+    def test_zero_action_weights_have_zero_loss_and_finite_gradient(self):
+        logits = torch.randn(2, 4, requires_grad=True)
+        mask = torch.ones(2, 4, dtype=torch.bool)
+        actions = torch.tensor([0, 1])
+        weights = torch.zeros(2)
+
+        loss = compute_ce_loss_for_action(logits, mask, actions, weights)
+        loss.backward()
+
+        assert loss.item() == pytest.approx(0.0)
+        assert torch.isfinite(logits.grad).all()
+
+    def test_inactive_mask_rows_with_zero_weight_do_not_produce_nan(self):
+        logits = torch.randn(2, 4, requires_grad=True)
+        mask = torch.zeros(2, 4, dtype=torch.bool)
+        actions = torch.tensor([0, 1])
+        weights = torch.zeros(2)
+
+        loss = compute_ce_loss_for_action(logits, mask, actions, weights)
+        loss.backward()
+
+        assert loss.item() == pytest.approx(0.0)
+        assert torch.isfinite(logits.grad).all()
