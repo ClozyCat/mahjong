@@ -62,7 +62,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             --config $configFile.FullName `
             --output "$chunkSummary" `
             --trajectories "$chunkTrajectories" `
-            --jobs 16
+            --jobs 4
         if (Test-Path $chunkTrajectories) {
             Get-Content -LiteralPath $chunkTrajectories | Add-Content -LiteralPath $trajOut
         }
