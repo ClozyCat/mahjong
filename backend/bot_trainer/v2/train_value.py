@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, required=True,
                         help="SFT checkpoint to load actor weights from")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--gamma", type=float, default=0.995)

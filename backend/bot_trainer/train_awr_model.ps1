@@ -94,7 +94,6 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --trajectories $trajOut `
         --checkpoint $SftCheckpoint `
         --output $valueCkpt `
-        --epochs 10 `
         --batch-size 512 `
         --lr 1e-3 `
         --policy-id learner
@@ -107,6 +106,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         --checkpoint $valueCkpt `
         --output-dir $awrDir `
         --epochs 5 `
+        --value-finetune-epochs 3 `
         --batch-size 512 `
         --lr 3e-5 `
         --temperature 0.5 `

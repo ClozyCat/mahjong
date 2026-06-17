@@ -37,10 +37,12 @@ def parse_args() -> argparse.Namespace:
                         help="Comma-separated weights for discard,claim,self_kong,hu")
     parser.add_argument("--kl-coef", type=float, default=0.01,
                         help="KL divergence penalty coefficient against SFT reference")
-    parser.add_argument("--value-loss-coef", type=float, default=1.0,
-                        help="Weight for value loss in total loss (was hardcoded 0.5)")
-    parser.add_argument("--value-lr-multiplier", type=float, default=10.0,
+    parser.add_argument("--value-loss-coef", type=float, default=2.0,
+                        help="Weight for value loss in total loss")
+    parser.add_argument("--value-lr-multiplier", type=float, default=20.0,
                         help="Value head LR = lr * multiplier for faster value convergence")
+    parser.add_argument("--value-finetune-epochs", type=int, default=3,
+                        help="After AWR epochs, freeze policy and train value head only for N epochs")
     parser.add_argument("--sft-checkpoint", type=Path, default=None,
                         help="SFT checkpoint for KL reference; defaults to --checkpoint")
     parser.add_argument("--policy-id", default=None)
@@ -278,6 +280,37 @@ def main() -> None:
             },
             args.output_dir / f"awr_epoch_{epoch+1:03d}.pt",
         )
+
+    # Value-only fine-tune: freeze policy, train value head aggressively
+    if args.value_finetune_epochs > 0:
+        print("Value fine-tune: freezing policy, training value head...")
+        for name, param in model.named_parameters():
+            param.requires_grad = "value_head" in name
+        value_optimizer = torch.optim.AdamW(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=args.lr * 50.0,
+        )
+        for ve in range(args.value_finetune_epochs):
+            total_vl = 0.0
+            for batch in loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                outputs = model(
+                    batch["tile_planes"],
+                    batch["scalar_features"],
+                    batch["discard_sequence"],
+                )
+                val = outputs["value"].squeeze(-1)
+                ret = batch["return"].float()
+                vl = F.mse_loss(val, ret)
+                value_optimizer.zero_grad()
+                vl.backward()
+                value_optimizer.step()
+                total_vl += vl.item()
+            avg_vl = total_vl / len(loader)
+            vev = 1.0 - avg_vl / (torch.tensor(ds.returns).float().var().item() + 1e-8)
+            print(f"  value_ft epoch {ve+1}: mse={avg_vl:.6f} ev={vev:.4f}")
+            avg_value = avg_vl
+            explained_var = vev
 
     torch.save(
         {
