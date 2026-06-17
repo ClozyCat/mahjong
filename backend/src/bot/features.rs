@@ -10,7 +10,9 @@ const SCALAR_FEATURE_COUNT: usize = 12;
 const DISCARD_SEQUENCE_LENGTH: usize = 32;
 const DISCARD_EVENT_FEATURE_COUNT: usize = 40;
 
+#[allow(dead_code)]
 const GLOBAL_TILE_PLANE_COUNT: usize = 40;
+#[allow(dead_code)]
 const GLOBAL_SCALAR_FEATURE_COUNT: usize = 20;
 
 #[derive(Clone, Debug)]
@@ -440,6 +442,7 @@ mod tests {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn encode_global_features_v2(
     cache: &RoomScoringCache,
     current_seat: usize,
@@ -459,6 +462,7 @@ pub(crate) fn global_scalar_feature_count_v2() -> usize {
     GLOBAL_SCALAR_FEATURE_COUNT
 }
 
+#[allow(dead_code)]
 fn encode_global_tile_planes_v2(cache: &RoomScoringCache, current_seat: usize) -> Vec<f32> {
     let mut planes = vec![0.0_f32; GLOBAL_TILE_PLANE_COUNT * TILE_KIND_COUNT];
 
@@ -517,6 +521,7 @@ fn encode_global_tile_planes_v2(cache: &RoomScoringCache, current_seat: usize) -
     planes
 }
 
+#[allow(dead_code)]
 fn encode_global_scalar_features_v2(cache: &RoomScoringCache, current_seat: usize) -> Vec<f32> {
     let mut features = vec![0.0_f32; GLOBAL_SCALAR_FEATURE_COUNT];
     let seat_count = cache.seat_count.max(1);
