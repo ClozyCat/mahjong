@@ -192,9 +192,10 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             model_path = $stableOnnx
             temperature = 1.0
         }
+        $absLeagueHistory = Join-Path (Get-Location).Path $leagueHistory
         $historyJson = ConvertTo-Json -InputObject $history -Depth 3 -Compress
-        New-Item -ItemType Directory -Force -Path (Split-Path $leagueHistory -Parent) | Out-Null
-        [System.IO.File]::WriteAllText($leagueHistory, $historyJson, (New-Object System.Text.UTF8Encoding $false))
+        New-Item -ItemType Directory -Force -Path (Split-Path $absLeagueHistory -Parent) | Out-Null
+        $historyJson | Out-File -LiteralPath $absLeagueHistory -Encoding utf8NoBom
         Write-Host "  Added to league pool ($stableOnnx)"
     }
 
@@ -231,8 +232,9 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             learner = $origPool.learner
             rollout_opponents = @($newOpponents + $selected)
         }
+        $absPool = Join-Path (Get-Location).Path $Pool
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($Pool, (ConvertTo-Json -InputObject $updatedPool -Depth 4), $utf8NoBom)
+        (ConvertTo-Json -InputObject $updatedPool -Depth 4) | Out-File -LiteralPath $absPool -Encoding utf8NoBom
         Write-Host "  League pool updated: $($newOpponents.Count) base + $(@($selected).Count) AWR opponents"
     }
 }
