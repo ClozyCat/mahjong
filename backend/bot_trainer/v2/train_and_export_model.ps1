@@ -3,7 +3,7 @@ param(
     [string]$CheckpointDir = "backend/bot_trainer/v2/checkpoints",
     [string]$OnnxOutput = "backend/assets/sft/sft.onnx",
     [int]$Epochs = 20,
-    [int]$BatchSize = 512,
+    [int]$BatchSize = 1024,
     [int]$NumWorkers = 0,
     [string]$DataCacheDir = "",
     [string]$PythonExe = "python",

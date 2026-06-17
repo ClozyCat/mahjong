@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
                         help="Checkpoint with pretrained actor + value head")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=5)
-    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--gamma", type=float, default=0.995)
     parser.add_argument("--temperature", type=float, default=0.5,
