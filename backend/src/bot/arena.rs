@@ -625,7 +625,7 @@ fn run_evaluation_arena_match(
         }
     }
 
-    if action_count > 0 {
+    if action_count > 0 && match_index % 10 == 0 {
         let total_ns = timing_inference_ns + timing_game_ns + timing_trajectory_ns;
         eprintln!(
             "[timing] match={match_index} actions={action_count}  \
