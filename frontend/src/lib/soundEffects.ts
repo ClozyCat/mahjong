@@ -1,7 +1,7 @@
 import clearComboSound from '../../sounds/freesound_gamestudio-clear-combo-4-394493.mp3';
 import itemPickUpSound from '../../sounds/freesound_community-item-pick-up-38258.mp3';
 import huSound from '../../sounds/puyopuyomegafan1234-winner-game-sound-404167.mp3';
-import readyHandSound from '../../sounds/submority-boom-geomorphism-cinematic-trailer-sound-effects-123876.mp3';
+import readyHandSound from '../../sounds/universfield-game-bonus-02-294436.mp3';
 
 export function playClearComboSound(): Promise<void> {
   return playSound(clearComboSound);
