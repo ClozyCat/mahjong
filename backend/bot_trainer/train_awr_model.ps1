@@ -172,7 +172,7 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
     $leagueHistory = "$OutputDir/league_history.json"
     $history = @()
     if (Test-Path $leagueHistory) {
-        $history = ,@(Get-Content -LiteralPath $leagueHistory | ConvertFrom-Json)
+        $history = ,@(Get-Content -Raw -LiteralPath $leagueHistory | ConvertFrom-Json)
     }
     if ($exitCode -eq 0) {
         $stableDir = "backend/assets/league"
@@ -192,7 +192,8 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
             model_path = $stableOnnx
             temperature = 1.0
         }
-        ConvertTo-Json -InputObject $history -Depth 3 | Set-Content -LiteralPath $leagueHistory -Encoding UTF8
+        $historyJson = ConvertTo-Json -InputObject $history -Depth 3 -Compress
+        [System.IO.File]::WriteAllText($leagueHistory, $historyJson, (New-Object System.Text.UTF8Encoding $false))
         Write-Host "  Added to league pool ($stableOnnx)"
     }
 
