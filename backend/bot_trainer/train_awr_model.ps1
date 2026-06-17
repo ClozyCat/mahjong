@@ -199,42 +199,77 @@ for ($iter = 0; $iter -lt [int]$Iterations; $iter++) {
         Write-Host "  Added to league pool ($stableOnnx)"
     }
 
-    # Rebuild opponent_pool.json with league history mixed in
+    # Rebuild opponent_pool.json with league history — rotate, don't just append
     if ($history.Count -gt 0) {
         $origPool = Get-Content -LiteralPath $Pool -Raw | ConvertFrom-Json
-        $baseOpponents = @($origPool.rollout_opponents)
-        # Keep up to 3 base SFT opponents
-        $keepBase = [Math]::Min(3, $baseOpponents.Count)
-        $newOpponents = @($baseOpponents[0..($keepBase - 1)])
-        # Build AWR opponent entries from history
-        $awrEntries = $history | ForEach-Object {
+
+        # SFT base variants: always keep as candidates for rotation
+        $sftBase = @($origPool.rollout_opponents | Where-Object { $_.id -like "sft_*" })
+        if ($sftBase.Count -eq 0) {
+            # Fallback: read from a pristine pool copy or hardcode
+            $sftBase = @(
+                @{id="sft_cold"; model_path="backend/assets/sft/sft.onnx"; sample_actions=$true; temperature=0.5; weight=1},
+                @{id="sft_warm"; model_path="backend/assets/sft/sft.onnx"; sample_actions=$true; temperature=1.0; weight=2},
+                @{id="sft_hot";  model_path="backend/assets/sft/sft.onnx"; sample_actions=$true; temperature=2.0; weight=1}
+            )
+        }
+
+        # AWR league models with recency weight (more recent = higher weight)
+        $awrPool = @($history | ForEach-Object {
             @{
                 id = "awr_iter_$($_.iter)"
                 model_path = $_.model_path
                 sample_actions = $true
                 temperature = if ($_.iter % 3 -eq 0) { 0.5 } elseif ($_.iter % 3 -eq 1) { 1.0 } else { 1.5 }
-                weight = 1
+                weight = [Math]::Max(1, 5 - ($history.Count - 1 - ([array]::IndexOf($history, $_))))
             }
-        }
-        # Randomly select 0-3 AWR opponents to inject
+        })
+
+        # Build weighted candidate pool: SFT base (each weight 1) + AWR (recency-weighted)
+        $candidatePool = @()
+        foreach ($s in $sftBase) { $candidatePool += $s }
+        foreach ($a in $awrPool)  { $candidatePool += $a }
+
         $rng = [Random]::new($iterSeed + 3)
-        $shuffled = @($awrEntries | Sort-Object { $rng.Next() })
-        # Always include most recent if it passed (already last in history)
+        $maxSlots = 6
+
+        # Always reserve 1 slot for a random SFT baseline
+        $sftSlot = $sftBase[$rng.Next($sftBase.Count)]
+
+        # Always include the most recent accepted AWR if it passed this round
+        $mustInclude = @()
         if ($exitCode -eq 0) {
-            $injectCount = $rng.Next([Math]::Min(1, $shuffled.Count), [Math]::Min($shuffled.Count, 4))
-        } else {
-            $injectCount = $rng.Next(0, [Math]::Min($shuffled.Count, 4))
+            $mustInclude = @($awrPool | Where-Object { $_.id -eq "awr_iter_$iter" })
         }
-        $selected = if ($injectCount -gt 0) { @($shuffled[0..($injectCount - 1)]) } else { @() }
+
+        # Remaining slots: weighted random sample from candidate pool (excluding already selected)
+        $remainingSlots = $maxSlots - 1 - $mustInclude.Count
+        if ($remainingSlots -lt 0) { $remainingSlots = 0 }
+
+        $others = @($candidatePool | Where-Object {
+            $_.id -ne $sftSlot.id -and ($mustInclude.Count -eq 0 -or $_.id -ne $mustInclude[0].id)
+        })
+
+        # Weighted shuffle: repeat each candidate by its weight, then shuffle
+        $weightedOthers = @()
+        foreach ($o in $others) {
+            1..([int]$o.weight) | ForEach-Object { $weightedOthers += $o }
+        }
+        $shuffled = @($weightedOthers | Sort-Object { $rng.Next() })
+        $selectedOthers = @{}
+        foreach ($s in $shuffled) {
+            if ($selectedOthers.Count -ge $remainingSlots) { break }
+            $selectedOthers[$s.id] = $s
+        }
 
         $updatedPool = @{
             schema_version = 3
             learner = $origPool.learner
-            rollout_opponents = @($newOpponents + $selected)
+            rollout_opponents = @(@($sftSlot) + $mustInclude + @($selectedOthers.Values))
         }
         $absPool = Join-Path (Get-Location).Path $Pool
         (ConvertTo-Json -InputObject $updatedPool -Depth 4) | Set-Content -LiteralPath $absPool -Encoding UTF8
-        Write-Host "  League pool updated: $($newOpponents.Count) base + $(@($selected).Count) AWR opponents"
+        Write-Host "  League pool updated: 1 SFT baseline + $($mustInclude.Count) required AWR + $(@($selectedOthers.Values).Count) random = $(@($updatedPool.rollout_opponents).Count) total"
     }
 }
 
