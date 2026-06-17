@@ -37,6 +37,10 @@ def parse_args() -> argparse.Namespace:
                         help="Comma-separated weights for discard,claim,self_kong,hu")
     parser.add_argument("--kl-coef", type=float, default=0.01,
                         help="KL divergence penalty coefficient against SFT reference")
+    parser.add_argument("--value-loss-coef", type=float, default=1.0,
+                        help="Weight for value loss in total loss (was hardcoded 0.5)")
+    parser.add_argument("--value-lr-multiplier", type=float, default=10.0,
+                        help="Value head LR = lr * multiplier for faster value convergence")
     parser.add_argument("--sft-checkpoint", type=Path, default=None,
                         help="SFT checkpoint for KL reference; defaults to --checkpoint")
     parser.add_argument("--policy-id", default=None)
@@ -137,7 +141,13 @@ def main() -> None:
     model_config = ModelConfig.from_dict(checkpoint.get("model_config", {}))
     model = build_model(model_config).to(device)
     model.load_state_dict(checkpoint["model_state"], strict=True)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+
+    value_head_params = [p for n, p in model.named_parameters() if "value_head" in n and p.requires_grad]
+    policy_params = [p for n, p in model.named_parameters() if "value_head" not in n and p.requires_grad]
+    optimizer = torch.optim.AdamW([
+        {"params": policy_params, "lr": args.lr},
+        {"params": value_head_params, "lr": args.lr * args.value_lr_multiplier},
+    ])
 
     sft_model = None
     if args.kl_coef > 0:
@@ -229,7 +239,7 @@ def main() -> None:
                     )
                 kl_loss = sum(kl_parts) / 4.0
 
-            total_loss = policy_loss + 0.5 * value_loss + args.kl_coef * kl_loss
+            total_loss = policy_loss + args.value_loss_coef * value_loss + args.kl_coef * kl_loss
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -241,10 +251,14 @@ def main() -> None:
             total_kl_loss += kl_loss.item()
             total_samples += len(batch["return"])
 
+        avg_policy = total_policy_loss / len(loader)
+        avg_value = total_value_loss / len(loader)
+        avg_kl = total_kl_loss / len(loader)
+        explained_var = 1.0 - avg_value / (torch.tensor(ds.returns).float().var().item() + 1e-8)
         print(
-            f"Epoch {epoch+1}: policy_loss={total_policy_loss/len(loader):.6f} "
-            f"value_loss={total_value_loss/len(loader):.6f} "
-            f"kl_loss={total_kl_loss/len(loader):.6f} "
+            f"Epoch {epoch+1}: policy_loss={avg_policy:.6f} "
+            f"value_mse={avg_value:.6f} value_ev={explained_var:.4f} "
+            f"kl_loss={avg_kl:.6f} "
             f"samples={total_samples}"
         )
 
@@ -255,6 +269,12 @@ def main() -> None:
                 "training_source": "awr",
                 "created_at_utc": datetime.now(UTC).isoformat(),
                 "awr_epoch": epoch + 1,
+                "awr_metrics": {
+                    "policy_loss": avg_policy,
+                    "value_mse": avg_value,
+                    "value_explained_variance": explained_var,
+                    "kl_loss": avg_kl,
+                },
             },
             args.output_dir / f"awr_epoch_{epoch+1:03d}.pt",
         )
@@ -265,6 +285,12 @@ def main() -> None:
             "model_config": model_config.to_dict(),
             "training_source": "awr",
             "created_at_utc": datetime.now(UTC).isoformat(),
+            "awr_metrics": {
+                "policy_loss": avg_policy,
+                "value_mse": avg_value,
+                "value_explained_variance": explained_var,
+                "kl_loss": avg_kl,
+            },
         },
         args.output_dir / "awr_best.pt",
     )
