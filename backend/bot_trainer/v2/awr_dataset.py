@@ -60,16 +60,6 @@ def encode_row(row: dict[str, Any], discounted_return: float) -> dict[str, torch
         ),
         "step_reward": torch.tensor(row.get("step_reward", 0.0), dtype=torch.float32),
         "terminal_reward": torch.tensor(row.get("terminal_reward", 0.0), dtype=torch.float32),
-        "risk_probs": torch.tensor(row["risk_probs"], dtype=torch.float32),
-        "opponent_tenpai_target": torch.tensor(
-            row["opponent_tenpai_target"], dtype=torch.float32
-        ),
-        "opponent_risk_target": torch.tensor(
-            row["opponent_risk_target"], dtype=torch.float32
-        ),
-        "opponent_risk_mask": torch.tensor(
-            row["opponent_risk_mask"], dtype=torch.bool
-        ),
         "done": torch.tensor(row["done"], dtype=torch.bool),
         "log_prob": torch.tensor(row["log_prob"], dtype=torch.float32),
         "action_head": torch.tensor(action_head_index(row["action_head"]), dtype=torch.long),
