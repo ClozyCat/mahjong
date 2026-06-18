@@ -109,8 +109,15 @@ def update_league_pool(
 
     new_opponents = [sft_slot] + must_include + list(selected_others.values())
     orig["rollout_opponents"] = new_opponents
+
+    # Update learner model if this iteration was accepted
+    if accepted:
+        league_onnx = f"backend/assets/league/iter_{iter_num}/awr.onnx"
+        orig["learner"]["model_path"] = league_onnx
+
     save_json(pool_path, orig)
-    print(f"  League pool: 1 SFT + {len(must_include)} required + {len(selected_others)} random = {len(new_opponents)} total")
+    print(f"  League pool: 1 SFT + {len(must_include)} required + {len(selected_others)} random = {len(new_opponents)} total"
+          + (f" (learner updated: {league_onnx})" if accepted else ""))
 
 
 def main() -> None:
@@ -145,15 +152,18 @@ def main() -> None:
         config_dir = output_dir / f"iter_{iter_num}" / "configs"
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        run([
+        traj_cmd = [
             sys.executable, "backend/bot_trainer/v2/league_config.py",
             "--pool", pool_path,
             "--output-dir", str(config_dir),
             "--matches", str(args.trajectory_matches),
             "--seed", str(iter_seed),
             "--mode", "trajectory",
-            "--rollout-onnx", args.sft_onnx,
-        ])
+        ]
+        # Only override with SFT for iter 0 (before any AWR model exists)
+        if iter_num == 0:
+            traj_cmd += ["--rollout-onnx", args.sft_onnx]
+        run(traj_cmd)
 
         traj_out = output_dir / f"iter_{iter_num}" / "trajectories.jsonl"
         if traj_out.exists():

@@ -15,3 +15,4 @@ backend/bot_trainer/datasets
 Mahjong_Voices/
 .claude/
 backend/onnxruntime-gpu
+backend/assets/league
