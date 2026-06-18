@@ -283,14 +283,15 @@ def main() -> None:
 
         # 7. League pool update
         if accepted:
-            league_dir = Path("backend/assets/league")
+            league_dir = Path(f"backend/assets/league/iter_{iter_num}")
             league_dir.mkdir(parents=True, exist_ok=True)
-            stable_onnx = league_dir / f"awr_iter_{iter_num}.onnx"
+            # Keep original filename so embedded .data path stays valid
+            stable_onnx = league_dir / "awr.onnx"
             shutil.copy2(awr_onnx, stable_onnx)
             for suffix in [".data", ".manifest.json"]:
                 src = Path(str(awr_onnx) + suffix)
                 if src.exists():
-                    shutil.copy2(src, Path(str(stable_onnx) + suffix))
+                    shutil.copy2(src, league_dir / f"awr.onnx{suffix}")
             history.append({
                 "iter": iter_num,
                 "model_path": str(stable_onnx.as_posix()),
