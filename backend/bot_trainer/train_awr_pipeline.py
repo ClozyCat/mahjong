@@ -124,9 +124,15 @@ def main() -> None:
     print(f"Iterations: {args.iterations}, TrajectoryMatches: {args.trajectory_matches}, Seed: {args.seed}")
     print(f"Working dir: {repo_root}")
 
-    pool_path = args.pool
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy pool to working copy so original stays pristine
+    pool_path = output_dir / "working_pool.json"
+    if not pool_path.exists():
+        shutil.copy2(args.pool, pool_path)
+        print(f"Copied pool: {args.pool} -> {pool_path}")
+    pool_path = str(pool_path)
 
     history: list[dict] = []
 
