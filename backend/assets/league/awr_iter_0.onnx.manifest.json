@@ -1,5 +1,5 @@
 {
-  "created_at_utc": "2026-06-17T09:16:25.834828+00:00",
+  "created_at_utc": "2026-06-17T10:46:44.864131+00:00",
   "onnx": "output/awr_training/iter_0/awr.onnx",
   "checkpoint": "output/awr_training/iter_0/awr_checkpoints/awr_best.pt",
   "model_config": {

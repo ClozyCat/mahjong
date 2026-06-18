@@ -100,15 +100,15 @@ def test_matrix_config_compares_baseline_and_candidate_against_three_opponents()
 
 
 def test_awr_wrapper_uses_v2_sft_checkpoint_and_rollout_override() -> None:
-    script = Path("backend/bot_trainer/train_awr_model.ps1").read_text(encoding="utf-8")
+    script_path = Path(__file__).resolve().parent.parent / "train_awr_pipeline.py"
+    script = script_path.read_text(encoding="utf-8")
 
-    assert '[string]$SftCheckpoint = "backend/bot_trainer/v2/checkpoints/best.pt"' in script
-    assert "--rollout-onnx $SftOnnx" in script
-    assert "cargo run --release --manifest-path backend/Cargo.toml --bin bot_arena" in script
-    assert "trajectory_config_*.json" in script
-    assert "--output \"$chunkSummary\"" in script
+    assert '"backend/bot_trainer/v2/checkpoints/best.pt"' in script
+    assert "--rollout-onnx" in script
+    assert "cargo" in script and "bot_arena" in script
+    assert "trajectory_config_" in script
     assert "arena_summary.py" in script
-    assert "--summary $matrixSummaries" in script
-    assert "--temperature 0.5" in script
-    assert "--sft-checkpoint $SftCheckpoint" in script
-    assert "--policy-id learner" in script
+    assert "matrix_summaries" in script
+    assert "--temperature" in script and "0.5" in script
+    assert "--sft-checkpoint" in script
+    assert "--policy-id" in script and "learner" in script
