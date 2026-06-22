@@ -39,6 +39,8 @@ def parse_args() -> argparse.Namespace:
                         help="KL divergence penalty coefficient against SFT reference")
     parser.add_argument("--fan-distill-coef", type=float, default=0.05,
                         help="MSE distillation loss for qualifying_fan_value against SFT reference")
+    parser.add_argument("--fan-value-distill-coef", type=float, default=0.05,
+                        help="MSE distillation loss for fan_value against SFT reference")
     parser.add_argument("--value-loss-coef", type=float, default=2.0,
                         help="Weight for value loss in total loss")
     parser.add_argument("--value-lr-multiplier", type=float, default=20.0,
@@ -178,6 +180,7 @@ def main() -> None:
         total_value_loss = 0.0
         total_kl_loss = 0.0
         total_fan_distill_loss = 0.0
+        total_fan_value_distill_loss = 0.0
         total_samples = 0
 
         for batch in tqdm(loader, desc=f"AWR epoch {epoch+1}/{args.epochs}"):
@@ -228,9 +231,11 @@ def main() -> None:
             # KL divergence penalty and fan distillation (both use SFT reference)
             kl_loss = torch.tensor(0.0, device=device)
             fan_distill_loss = torch.tensor(0.0, device=device)
+            fan_value_distill_loss = torch.tensor(0.0, device=device)
             sft_outputs = None
             if sft_model is not None:
-                need_sft = args.kl_coef > 0 or args.fan_distill_coef > 0
+                need_sft = (args.kl_coef > 0 or args.fan_distill_coef > 0
+                            or args.fan_value_distill_coef > 0)
                 if need_sft:
                     with torch.no_grad():
                         sft_outputs = sft_model(
@@ -254,10 +259,16 @@ def main() -> None:
                         outputs["qualifying_fan_value"],
                         sft_outputs["qualifying_fan_value"],
                     )
+                if args.fan_value_distill_coef > 0 and sft_outputs is not None:
+                    fan_value_distill_loss = F.mse_loss(
+                        outputs["fan_value"],
+                        sft_outputs["fan_value"],
+                    )
 
             total_loss = (policy_loss + args.value_loss_coef * value_loss
                           + args.kl_coef * kl_loss
-                          + args.fan_distill_coef * fan_distill_loss)
+                          + args.fan_distill_coef * fan_distill_loss
+                          + args.fan_value_distill_coef * fan_value_distill_loss)
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -268,17 +279,19 @@ def main() -> None:
             total_value_loss += value_loss.item()
             total_kl_loss += kl_loss.item()
             total_fan_distill_loss += fan_distill_loss.item()
+            total_fan_value_distill_loss += fan_value_distill_loss.item()
             total_samples += len(batch["return"])
 
         avg_policy = total_policy_loss / len(loader)
         avg_value = total_value_loss / len(loader)
         avg_kl = total_kl_loss / len(loader)
         avg_fan = total_fan_distill_loss / len(loader)
+        avg_fan_value = total_fan_value_distill_loss / len(loader)
         explained_var = 1.0 - avg_value / (torch.tensor(ds.returns).float().var().item() + 1e-8)
         print(
             f"Epoch {epoch+1}: policy_loss={avg_policy:.6f} "
             f"value_mse={avg_value:.6f} value_ev={explained_var:.4f} "
-            f"kl_loss={avg_kl:.6f} fan_distill={avg_fan:.6f} "
+            f"kl_loss={avg_kl:.6f} fan_d={avg_fan:.6f} fanv_d={avg_fan_value:.6f} "
             f"samples={total_samples}"
         )
 

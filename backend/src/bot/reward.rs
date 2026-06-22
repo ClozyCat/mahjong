@@ -17,6 +17,7 @@ const QUALIFYING_FAN_TARGET: i64 = 8;
 pub(crate) struct RewardSnapshot {
     pub(crate) shanten: i32,
     pub(crate) qualifying_fan_potential: i64,
+    pub(crate) raw_fan_potential: i64,
 }
 
 pub(crate) fn shanten_for_tile_keys(tile_keys: &[String], open_meld_count: usize) -> Option<i32> {
@@ -77,17 +78,19 @@ fn reward_snapshot_for_tile_keys(
     minimum_hu_fan: i64,
 ) -> Option<RewardSnapshot> {
     let shanten = shanten_for_tile_keys(concealed_tile_keys, open_meld_count)?;
+    let (capped, raw) = qualifying_fan_potential(
+        concealed_tile_keys,
+        meld_tile_key_groups,
+        shanten,
+        seat_index,
+        dealer_seat,
+        round_wind,
+        minimum_hu_fan,
+    );
     Some(RewardSnapshot {
         shanten,
-        qualifying_fan_potential: qualifying_fan_potential(
-            concealed_tile_keys,
-            meld_tile_key_groups,
-            shanten,
-            seat_index,
-            dealer_seat,
-            round_wind,
-            minimum_hu_fan,
-        ),
+        qualifying_fan_potential: capped,
+        raw_fan_potential: raw,
     })
 }
 
@@ -104,10 +107,17 @@ pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f
         0.0
     };
     let fan_progress_reward =
-        ((after.qualifying_fan_potential - before.qualifying_fan_potential) as f32 / 8.0)
+        ((after.raw_fan_potential - before.raw_fan_potential) as f32 / 8.0)
             .clamp(-1.0, 1.0)
             * 0.15;
-    shanten_reward + tenpai_bonus + fan_progress_reward
+    let high_fan_bonus = if after.raw_fan_potential >= 24 {
+        0.05
+    } else if after.raw_fan_potential >= 16 {
+        0.03
+    } else {
+        0.0
+    };
+    shanten_reward + tenpai_bonus + fan_progress_reward + high_fan_bonus
 }
 
 fn tile_counts_for_tile_keys(tile_keys: &[String]) -> Option<[u8; TILE_KIND_COUNT]> {
@@ -127,11 +137,11 @@ fn qualifying_fan_potential(
     dealer_seat: usize,
     round_wind: &str,
     minimum_hu_fan: i64,
-) -> i64 {
+) -> (i64, i64) {
     if shanten != 0 {
-        return 0;
+        return (0, 0);
     }
-    candidate_winning_tile_keys(concealed_tile_keys, meld_tile_key_groups)
+    let max_fan = candidate_winning_tile_keys(concealed_tile_keys, meld_tile_key_groups)
         .into_iter()
         .filter_map(|winning_tile| {
             evaluate_candidate_fan(
@@ -143,9 +153,10 @@ fn qualifying_fan_potential(
                 round_wind,
             )
         })
-        .map(|fan| fan.min(minimum_hu_fan.max(0)))
         .max()
-        .unwrap_or(0)
+        .unwrap_or(0);
+    let cap = minimum_hu_fan.max(0);
+    (max_fan.min(cap), max_fan)
 }
 
 fn candidate_winning_tile_keys(
@@ -244,6 +255,7 @@ mod tests {
 
         assert_eq!(snapshot.shanten, 0);
         assert_eq!(snapshot.qualifying_fan_potential, 8);
+        assert!(snapshot.raw_fan_potential >= 8);
     }
 
     #[test]
@@ -251,10 +263,12 @@ mod tests {
         let before = RewardSnapshot {
             shanten: 2,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
         let after = RewardSnapshot {
             shanten: 1,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
 
         assert!(shaping_reward(before, after) > 0.0);
@@ -266,13 +280,15 @@ mod tests {
         let before = RewardSnapshot {
             shanten: 1,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
         let after = RewardSnapshot {
             shanten: 0,
             qualifying_fan_potential: 8,
+            raw_fan_potential: 8,
         };
 
-        assert!(shaping_reward(before, after).abs() <= 0.55);
+        assert!(shaping_reward(before, after).abs() <= 0.85);
     }
 
     #[test]
@@ -280,10 +296,12 @@ mod tests {
         let before = RewardSnapshot {
             shanten: 1,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
         let after = RewardSnapshot {
             shanten: 0,
             qualifying_fan_potential: 2,
+            raw_fan_potential: 2,
         };
 
         assert!(shaping_reward(before, after) < 0.0);
@@ -294,14 +312,17 @@ mod tests {
         let before = RewardSnapshot {
             shanten: 1,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
         let low_fan = RewardSnapshot {
             shanten: 0,
             qualifying_fan_potential: 2,
+            raw_fan_potential: 2,
         };
         let qualifying = RewardSnapshot {
             shanten: 0,
             qualifying_fan_potential: 8,
+            raw_fan_potential: 8,
         };
 
         assert!(shaping_reward(before, qualifying) > shaping_reward(before, low_fan));

@@ -1802,10 +1802,12 @@ mod tests {
         let before = RewardSnapshot {
             shanten: 2,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
         let after = RewardSnapshot {
             shanten: 1,
             qualifying_fan_potential: 0,
+            raw_fan_potential: 0,
         };
 
         apply_shaping_reward(&mut row, Some(before), Some(after));
