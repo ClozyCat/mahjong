@@ -615,7 +615,31 @@ fn run_evaluation_arena_match(
                 timing_trajectory_ns += _traj_start.elapsed().as_nanos();
                 action_count += 1;
             }
-            Some(Err(reason)) => return Err(format!("arena action was rejected: {reason}")),
+            Some(Err(_reason)) => {
+                // Record rejected action with penalty (e.g., illegal hu)
+                let telemetry = trace.as_ref().map(|trace| &trace.telemetry);
+                record_evaluation_decision(
+                    &mut accumulator,
+                    &room,
+                    action_seat,
+                    &action_type,
+                    elapsed_ms,
+                    telemetry,
+                );
+                if let (true, Some(trace)) = (include_trajectories, trace.as_ref()) {
+                    let policy = evaluation_policy_for_current_seat(
+                        &room, subject, &config.opponents, action_seat,
+                    );
+                    if let Some(mut row) = trajectory_row_from_trace_with_state(
+                        &match_id, trajectories.len() as u64, &policy, trace, &room,
+                    ) {
+                        row.step_reward = -1.0;
+                        row.reward = -1.0;
+                        trajectories.push(row);
+                    }
+                }
+                action_count += 1;
+            }
             None => {
                 return Err(format!(
                     "arena action was not handled: seat={} action={}",

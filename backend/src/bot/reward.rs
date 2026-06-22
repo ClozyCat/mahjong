@@ -96,9 +96,9 @@ pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f
     let shanten_reward = shanten_delta.clamp(-1, 1) as f32 * 0.10;
     let tenpai_bonus = if before.shanten > 0 && after.shanten == 0 {
         if after.qualifying_fan_potential >= QUALIFYING_FAN_TARGET {
-            0.30
+            0.50
         } else {
-            -0.20
+            -0.30
         }
     } else {
         0.0
@@ -106,7 +106,7 @@ pub(crate) fn shaping_reward(before: RewardSnapshot, after: RewardSnapshot) -> f
     let fan_progress_reward =
         ((after.qualifying_fan_potential - before.qualifying_fan_potential) as f32 / 8.0)
             .clamp(-1.0, 1.0)
-            * 0.08;
+            * 0.15;
     shanten_reward + tenpai_bonus + fan_progress_reward
 }
 
