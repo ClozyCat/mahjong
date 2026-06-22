@@ -56,6 +56,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+_best_value_ev_state = {"ev": -1.0}
+
+
 def compute_ce_loss_for_action(
     logits: torch.Tensor,
     mask: torch.Tensor,
@@ -312,6 +315,26 @@ def main() -> None:
             args.output_dir / f"awr_epoch_{epoch+1:03d}.pt",
         )
 
+        # Track best checkpoint by value_ev
+        if explained_var > _best_value_ev_state["ev"]:
+            _best_value_ev_state["ev"] = explained_var
+            torch.save(
+                {
+                    "model_state": {k: v.clone() for k, v in model.state_dict().items()},
+                    "model_config": model_config.to_dict(),
+                    "training_source": "awr",
+                    "created_at_utc": datetime.now(UTC).isoformat(),
+                    "awr_epoch": epoch + 1,
+                    "awr_metrics": {
+                        "policy_loss": avg_policy,
+                        "value_mse": avg_value,
+                        "value_explained_variance": explained_var,
+                        "kl_loss": avg_kl,
+                    },
+                },
+                args.output_dir / "awr_best.pt",
+            )
+
     # Value-only fine-tune: freeze policy, train value head aggressively
     if args.value_finetune_epochs > 0:
         print("Value fine-tune: freezing policy, training value head...")
@@ -343,22 +366,23 @@ def main() -> None:
             avg_value = avg_vl
             explained_var = vev
 
-    torch.save(
-        {
-            "model_state": model.state_dict(),
-            "model_config": model_config.to_dict(),
-            "training_source": "awr",
-            "created_at_utc": datetime.now(UTC).isoformat(),
-            "awr_metrics": {
-                "policy_loss": avg_policy,
-                "value_mse": avg_value,
-                "value_explained_variance": explained_var,
-                "kl_loss": avg_kl,
+    if _best_value_ev_state["ev"] < 0:
+        torch.save(
+            {
+                "model_state": model.state_dict(),
+                "model_config": model_config.to_dict(),
+                "training_source": "awr",
+                "created_at_utc": datetime.now(UTC).isoformat(),
+                "awr_metrics": {
+                    "policy_loss": avg_policy,
+                    "value_mse": avg_value,
+                    "value_explained_variance": explained_var,
+                    "kl_loss": avg_kl,
+                },
             },
-        },
-        args.output_dir / "awr_best.pt",
-    )
-    print(f"Saved to {args.output_dir}")
+            args.output_dir / "awr_best.pt",
+        )
+    print(f"Saved to {args.output_dir} (best value_ev={_best_value_ev_state['ev']:.4f})")
 
 
 if __name__ == "__main__":

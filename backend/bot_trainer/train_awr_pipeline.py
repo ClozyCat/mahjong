@@ -17,7 +17,7 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="AWR Training Pipeline")
     p.add_argument("--iterations", type=int, default=3)
-    p.add_argument("--trajectory-matches", type=int, default=100)
+    p.add_argument("--trajectory-matches", type=int, default=200)
     p.add_argument("--matrix-matches", type=int, default=20)
     p.add_argument("--seed", default=datetime.now().strftime("%Y%m%d"))
     p.add_argument("--sft-onnx", default="backend/assets/sft/sft.onnx")
@@ -190,33 +190,38 @@ def main() -> None:
             print(f"ERROR: Trajectory generation failed for iteration {iter_num}", file=sys.stderr)
             sys.exit(1)
 
-        # 2. Value pretraining
+        # 2. Value pretraining — use previous AWR checkpoint if available, else SFT
         print("[2/4] Pretraining value head...")
         value_ckpt = output_dir / f"iter_{iter_num}" / "value_pretrained.pt"
 
-        sft_ckpt = Path(args.sft_checkpoint)
-        if not sft_ckpt.exists():
+        base_ckpt = Path(args.sft_checkpoint)
+        # Prefer previous iteration's AWR best checkpoint (matches current trunk)
+        prev_awr = output_dir / f"iter_{iter_num - 1}" / "awr_checkpoints" / "awr_best.pt"
+        if prev_awr.exists():
+            base_ckpt = prev_awr
+        elif not base_ckpt.exists():
             for alt in ["output/sft/best.pt", "output/sft_checkpoints/best.pt"]:
                 if Path(alt).exists():
-                    sft_ckpt = Path(alt)
+                    base_ckpt = Path(alt)
                     break
             else:
-                print(f"ERROR: SFT checkpoint not found", file=sys.stderr)
+                print(f"ERROR: No checkpoint found", file=sys.stderr)
                 sys.exit(1)
 
         run([
             sys.executable, "backend/bot_trainer/v2/train_value.py",
             "--trajectories", str(traj_out),
-            "--checkpoint", str(sft_ckpt),
+            "--checkpoint", str(base_ckpt),
             "--output", str(value_ckpt),
             "--batch-size", "512",
             "--lr", "1e-3",
             "--policy-id", "learner",
         ])
 
-        # 3. AWR training
+        # 3. AWR training — KL reference uses previous AWR (or SFT for iter 0)
         print("[3/4] Running AWR training...")
         awr_dir = output_dir / f"iter_{iter_num}" / "awr_checkpoints"
+        kl_ref = prev_awr if prev_awr.exists() else base_ckpt
         run([
             sys.executable, "backend/bot_trainer/v2/train_awr.py",
             "--trajectories", str(traj_out),
@@ -227,7 +232,7 @@ def main() -> None:
             "--batch-size", "512",
             "--lr", "3e-5",
             "--temperature", "0.5",
-            "--sft-checkpoint", str(sft_ckpt),
+            "--sft-checkpoint", str(kl_ref),
             "--policy-id", "learner",
         ])
 
