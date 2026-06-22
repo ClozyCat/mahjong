@@ -28,6 +28,7 @@ use crate::core::engine::reducer::update_room_state;
 
 const MAX_SEATS: usize = 4;
 const CONTINUE_ACTION_AUTO_ADVANCE_SECONDS: i64 = 15;
+const BOT_TAKEOVER_AUTO_CONTINUE_SECONDS: i64 = 3;
 const WIND_ORDER: [&str; 4] = ["east", "south", "west", "north"];
 
 #[cfg(test)]
@@ -524,8 +525,48 @@ fn reconcile_continue_action_in_room_state(room: &mut RoomState) -> Result<(), S
         return Ok(());
     };
     let required = continue_required_human_seats_in_room_state(room);
-    let confirmed = current_confirmed_continue_seats_in_room_state(room, action_id);
+    let mut confirmed = current_confirmed_continue_seats_in_room_state(room, action_id);
     let online = continue_online_human_seats_in_room_state(room);
+
+    let is_non_evaluation = room.mode != crate::evaluation::EVALUATION_ROOM_MODE;
+    if is_non_evaluation {
+        let bot_takeover_unconfirmed: Vec<usize> = room
+            .seats
+            .iter()
+            .filter(|s| {
+                s.is_bot && s.seat_type == "human" && required.contains(&s.seat_index)
+            })
+            .map(|s| s.seat_index)
+            .filter(|idx| !confirmed.contains(idx))
+            .collect();
+        for idx in &bot_takeover_unconfirmed {
+            confirmed.push(*idx);
+        }
+        confirmed.sort();
+        confirmed.dedup();
+        if !bot_takeover_unconfirmed.is_empty()
+            && required.iter().all(|seat| confirmed.contains(seat))
+        {
+            let deadline = (Utc::now()
+                + TimeDelta::seconds(BOT_TAKEOVER_AUTO_CONTINUE_SECONDS))
+            .to_rfc3339_opts(SecondsFormat::Micros, true);
+            let action = room
+                .continue_action
+                .get_or_insert_with(|| ContinueActionState {
+                    action_id: action_id.to_string(),
+                    confirmed_seats: Vec::new(),
+                    required_seats: Vec::new(),
+                    online_seats: Vec::new(),
+                    auto_advance_deadline_at: None,
+                });
+            action.action_id = action_id.to_string();
+            action.confirmed_seats = confirmed.clone();
+            action.required_seats = required.clone();
+            action.online_seats = online.clone();
+            action.auto_advance_deadline_at = Some(deadline);
+            return Ok(());
+        }
+    }
 
     if required.iter().all(|seat| confirmed.contains(seat)) {
         complete_continue_action_in_room_state(room, action_id)?;
@@ -1498,8 +1539,15 @@ mod tests {
         let action = room
             .continue_action
             .expect("bot takeover human seat should still be required");
-        assert_eq!(action.confirmed_seats, vec![1, 2, 3]);
+        assert_eq!(
+            action.confirmed_seats, vec![0, 1, 2, 3],
+            "bot takeover seat should be auto-confirmed"
+        );
         assert_eq!(action.required_seats, vec![0, 1, 2, 3]);
         assert_eq!(action.online_seats, vec![0, 1, 2, 3]);
+        assert!(
+            action.auto_advance_deadline_at.is_some(),
+            "should set 3-second auto-advance deadline"
+        );
     }
 }
