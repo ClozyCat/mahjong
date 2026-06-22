@@ -231,9 +231,9 @@ pub(crate) fn choose_neural_hu_decision_with_config_and_rng(
                 let temperature = sample_temperature(config, &mut live_rng);
                 sample_neural_hu_choice(&features, scores, temperature, &mut live_rng)
             }
-            .or_else(|| select_neural_hu_choice(&features, scores))?
+            .or_else(|| select_neural_hu_choice(&features, scores, context))?
         } else {
-            select_neural_hu_choice(&features, scores)?
+            select_neural_hu_choice(&features, scores, context)?
         }
     } else {
         random_hu_choice(&features)?
@@ -553,9 +553,14 @@ fn sample_neural_hu_choice(
 fn select_neural_hu_choice(
     features: &BotFeaturesV2,
     scores: &NeuralDecisionScores,
+    context: &BotContext,
 ) -> Option<NeuralHuChoice> {
     if !features.hu_mask[1] {
         return None;
+    }
+    let min_fan = context.minimum_hu_fan as f32;
+    if min_fan > 0.0 && scores.qualifying_fan_value < min_fan {
+        return Some(NeuralHuChoice::Pass);
     }
     let pass_logit = scores.hu_logits[0];
     let hu_logit = scores.hu_logits[1];
@@ -937,6 +942,7 @@ mod tests {
             self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
             hu_logits: [0.0; 2],
             value_for_risk,
+            qualifying_fan_value: 0.0,
             risk_logits,
         }
     }
@@ -1146,9 +1152,10 @@ mod tests {
         let mut scores =
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [2.0, 1.0];
+        scores.qualifying_fan_value = 8.0;
 
         let features = crate::bot::features::encode_bot_context_v2(&context);
-        let decision = select_neural_hu_choice(&features, &scores).expect("hu decision");
+        let decision = select_neural_hu_choice(&features, &scores, &context).expect("hu decision");
 
         assert_eq!(decision, NeuralHuChoice::Hu);
     }
@@ -1163,9 +1170,10 @@ mod tests {
         let mut scores =
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [5.0, 1.0];
+        scores.qualifying_fan_value = 8.0;
 
         let features = crate::bot::features::encode_bot_context_v2(&context);
-        let decision = select_neural_hu_choice(&features, &scores).expect("hu decision");
+        let decision = select_neural_hu_choice(&features, &scores, &context).expect("hu decision");
 
         assert_eq!(decision, NeuralHuChoice::Pass);
     }
@@ -1180,9 +1188,10 @@ mod tests {
         let mut scores =
             neural_scores_for_discards([0.0; TILE_KIND_COUNT], [0.0; TILE_KIND_COUNT], 0.0);
         scores.hu_logits = [1.0, 2.0];
+        scores.qualifying_fan_value = 8.0;
 
         let features = crate::bot::features::encode_bot_context_v2(&context);
-        let decision = select_neural_hu_choice(&features, &scores).expect("hu decision");
+        let decision = select_neural_hu_choice(&features, &scores, &context).expect("hu decision");
 
         assert_eq!(decision, NeuralHuChoice::Hu);
     }

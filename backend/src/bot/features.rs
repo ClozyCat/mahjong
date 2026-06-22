@@ -6,7 +6,7 @@ use super::context::{BotContext, BotSelfKongKind, seat_wind_key};
 use crate::room_scoring::RoomScoringCache;
 
 const TILE_PLANE_COUNT: usize = 10;
-const SCALAR_FEATURE_COUNT: usize = 12;
+const SCALAR_FEATURE_COUNT: usize = 13;
 const DISCARD_SEQUENCE_LENGTH: usize = 32;
 const DISCARD_EVENT_FEATURE_COUNT: usize = 40;
 
@@ -156,6 +156,7 @@ fn encode_scalar_features(context: &BotContext) -> Vec<f32> {
     features[10] = round_wind_index as f32 / 3.0;
     let seat_wind = seat_wind_key(context.seat_index, context.dealer_seat);
     features[11] = f32::from(context.round_wind.as_deref() == Some(seat_wind.as_str()));
+    features[12] = context.minimum_hu_fan as f32 / 16.0;
     features
 }
 
@@ -388,7 +389,7 @@ mod tests {
 
         let encoded = encode_bot_context_v2(&context);
 
-        assert_eq!(encoded.scalar_features.len(), 12);
+        assert_eq!(encoded.scalar_features.len(), 13);
         assert_eq!(encoded.scalar_features[10], 1.0 / 3.0);
         assert_eq!(encoded.scalar_features[11], 1.0);
     }

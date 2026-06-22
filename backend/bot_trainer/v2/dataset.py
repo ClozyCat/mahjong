@@ -15,7 +15,7 @@ except ModuleNotFoundError:
 
 TILE_KIND_COUNT = 34
 TILE_PLANE_COUNT = 10
-SCALAR_FEATURE_COUNT = 12
+SCALAR_FEATURE_COUNT = 13
 DISCARD_SEQUENCE_LENGTH = 32
 DISCARD_EVENT_FEATURE_COUNT = 40
 IGNORE_INDEX = -100
@@ -418,6 +418,7 @@ def encode_scalar_features(context: dict[str, Any]) -> np.ndarray:
         int(context.get("dealer_seat", 0)),
     )
     features[11] = 1.0 if seat_wind == round_wind else 0.0
+    features[12] = int(context.get("minimum_hu_fan", 8)) / 16.0
     
     return features
 

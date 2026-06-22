@@ -1534,7 +1534,7 @@ mod tests {
             policy_id: "neural".to_string(),
             decision_kind: "active_turn".to_string(),
             tile_planes: vec![0.0; 340],
-            scalar_features: vec![0.0; 12],
+            scalar_features: vec![0.0; 13],
             discard_sequence: vec![0.0; 32 * 40],
             discard_mask: vec![true; TILE_KIND_COUNT],
             claim_mask: vec![true; CLAIM_ACTION_COUNT],
@@ -1608,6 +1608,7 @@ mod tests {
                 self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
                 hu_logits: [0.0; 2],
                 value_for_risk: 0.75,
+                qualifying_fan_value: 0.0,
                 risk_logits: [0.0; TILE_KIND_COUNT],
             }),
         };
@@ -1681,6 +1682,7 @@ mod tests {
             self_kong_logits: [0.0; SELF_KONG_ACTION_COUNT],
             hu_logits: [0.0; 2],
             value_for_risk: -8.0,
+            qualifying_fan_value: 0.0,
             risk_logits,
         };
         let trace = BotDecisionTrace {
@@ -1808,7 +1810,7 @@ mod tests {
             policy_id: "neural".to_string(),
             decision_kind: "active_turn".to_string(),
             tile_planes: vec![0.0; 340],
-            scalar_features: vec![0.0; 12],
+            scalar_features: vec![0.0; 13],
             discard_sequence: vec![0.0; 32 * 40],
             discard_mask: vec![true; TILE_KIND_COUNT],
             claim_mask: vec![true; CLAIM_ACTION_COUNT],

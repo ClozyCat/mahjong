@@ -38,7 +38,7 @@ def make_sample_row(**overrides) -> dict:
         "shanten_after": 2,
         "done": False,
         "tile_planes": [0.0] * 340,
-        "scalar_features": [0.0] * 12,
+        "scalar_features": [0.0] * 13,
         "discard_sequence": [0.0] * 1280,
         "discard_mask": [True] * 34,
         "claim_mask": [True] * 7,
@@ -84,7 +84,7 @@ class TestArenaTrajectoryDataset:
             ds = ArenaTrajectoryDataset(path)
             item = ds[0]
             assert item["tile_planes"].shape == (10, 34)
-            assert item["scalar_features"].shape == (12,)
+            assert item["scalar_features"].shape == (13,)
             assert item["discard_sequence"].shape == (32, 40)
             assert item["discard_mask"].shape == (34,)
             assert item["claim_mask"].shape == (7,)

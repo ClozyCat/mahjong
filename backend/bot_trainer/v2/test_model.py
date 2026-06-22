@@ -12,7 +12,7 @@ class TestLightweightActor:
         m = build_model(ModelConfig())
         m.eval()
         tp = torch.zeros((2, 10, 34))
-        sf = torch.zeros((2, 12))
+        sf = torch.zeros((2, ModelConfig().scalar_feature_count))
         ds = torch.zeros((2, 32, 40))
         out = m(tp, sf, ds)
         assert out["discard_logits"].shape == (2, 34)
@@ -46,7 +46,7 @@ class TestLightweightActor:
         m = build_model(ModelConfig())
         m.train()
         tp = torch.randn((2, 10, 34))
-        sf = torch.randn((2, 12))
+        sf = torch.randn((2, ModelConfig().scalar_feature_count))
         ds = torch.randn((2, 32, 40))
 
         out = m(tp, sf, ds)
@@ -68,7 +68,7 @@ class TestLightweightActor:
         m = build_model(ModelConfig())
         m.train()
         tp = torch.randn((2, 10, 34))
-        sf = torch.randn((2, 12))
+        sf = torch.randn((2, ModelConfig().scalar_feature_count))
         ds = torch.randn((2, 32, 40))
         out = m(tp, sf, ds)
         loss = (
@@ -91,7 +91,7 @@ class TestLightweightActor:
         m = build_model(ModelConfig())
         m.eval()
         tp = torch.zeros((2, 10, 34))
-        sf = torch.zeros((2, 12))
+        sf = torch.zeros((2, ModelConfig().scalar_feature_count))
         ds = torch.zeros((2, 32, 40))
         out = m(tp, sf, ds)
         assert "score_bucket_logits" in out

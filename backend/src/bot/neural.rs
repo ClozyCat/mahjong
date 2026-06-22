@@ -32,6 +32,7 @@ pub(crate) struct NeuralDecisionScores {
     pub(crate) self_kong_logits: [f32; SELF_KONG_ACTION_COUNT],
     pub(crate) hu_logits: [f32; 2],
     pub(crate) value_for_risk: f32,
+    pub(crate) qualifying_fan_value: f32,
     pub(crate) risk_logits: [f32; TILE_KIND_COUNT],
 }
 
@@ -306,6 +307,7 @@ fn run_session(session: &mut Session, features: BotFeaturesV2) -> Result<NeuralD
         self_kong_logits: extract_array::<SELF_KONG_ACTION_COUNT>(&outputs, "self_kong_logits")?,
         hu_logits: extract_array::<2>(&outputs, "hu_logits")?,
         value_for_risk: extract_array::<1>(&outputs, "value_for_risk")?[0],
+        qualifying_fan_value: extract_array::<1>(&outputs, "qualifying_fan_value")?[0],
         risk_logits: extract_risk_logits(&outputs)?,
     })
 }
@@ -470,6 +472,7 @@ fn run_session_batched(
     let self_kong_all = extract_vec(&outputs, "self_kong_logits")?;
     let hu_all = extract_vec(&outputs, "hu_logits")?;
     let value_all = extract_vec(&outputs, "value_for_risk")?;
+    let fan_all = extract_vec(&outputs, "qualifying_fan_value")?;
     let risk_all = extract_risk_logits_batched(&outputs, batch_size)?;
 
     let mut results = Vec::with_capacity(batch_size);
@@ -497,6 +500,7 @@ fn run_session_batched(
             self_kong_logits: sk,
             hu_logits: hu,
             value_for_risk: value_all[i],
+            qualifying_fan_value: fan_all[i],
             risk_logits: risk,
         });
     }

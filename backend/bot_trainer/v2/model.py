@@ -17,7 +17,7 @@ class MissingTorchError(RuntimeError):
 
 class ModelConfig(NamedTuple):
     tile_plane_count: int = 10
-    scalar_feature_count: int = 12
+    scalar_feature_count: int = 13
     discard_sequence_length: int = 32
     discard_event_feature_count: int = 40
 
@@ -25,7 +25,7 @@ class ModelConfig(NamedTuple):
     def from_dict(cls, value: dict[str, object]) -> "ModelConfig":
         return cls(
             tile_plane_count=int(value.get("tile_plane_count", 10)),
-            scalar_feature_count=int(value.get("scalar_feature_count", 12)),
+            scalar_feature_count=int(value.get("scalar_feature_count", 13)),
             discard_sequence_length=int(value.get("discard_sequence_length", 32)),
             discard_event_feature_count=int(value.get("discard_event_feature_count", 40)),
         )
